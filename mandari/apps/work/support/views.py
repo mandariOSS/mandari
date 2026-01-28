@@ -7,32 +7,17 @@ Provides support ticket system and knowledge base for organizations.
 
 import json
 import re
-from urllib.parse import urlparse
 
 from django.contrib import messages
 from django.db.models import Q, Count
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
-
-
-def get_safe_redirect_url(request, default_url):
-    """
-    Get a safe redirect URL from HTTP_REFERER.
-
-    Validates that the referer is from the same host to prevent Open Redirect attacks.
-    """
-    referer = request.META.get("HTTP_REFERER", "")
-    if referer:
-        parsed = urlparse(referer)
-        # Only allow same-host redirects
-        if not parsed.netloc or parsed.netloc == request.get_host():
-            return parsed.path + ("?" + parsed.query if parsed.query else "")
-    return default_url
 from apps.work.notifications.services import NotificationHub
 from .models import (
     SupportTicket,
@@ -586,9 +571,16 @@ class ArticleFeedbackView(WorkViewMixin, View):
             })
 
         messages.success(request, "Vielen Dank für Ihr Feedback!")
-        # SECURITY: Validate referer to prevent Open Redirect attacks
-        safe_url = get_safe_redirect_url(request, f"/work/{self.organization.slug}/support/")
-        return redirect(safe_url)
+        # SECURITY: Use Django's built-in URL validation to prevent Open Redirect
+        default_url = f"/work/{self.organization.slug}/support/"
+        referer = request.META.get("HTTP_REFERER", "")
+        if referer and url_has_allowed_host_and_scheme(
+            referer,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        ):
+            return redirect(referer)
+        return redirect(default_url)
 
 
 class ArticleSearchAPIView(WorkViewMixin, View):

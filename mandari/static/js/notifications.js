@@ -183,7 +183,22 @@
     }
 
     /**
+     * Validate icon name against allowlist to prevent XSS
+     */
+    function getSafeIconName(icon) {
+        // Allowlist of valid Lucide icon names used in notifications
+        const allowedIcons = [
+            'bell', 'check', 'info', 'alert-circle', 'alert-triangle',
+            'message-circle', 'mail', 'calendar', 'file-text', 'users',
+            'user-plus', 'settings', 'star', 'heart', 'thumbs-up',
+            'clock', 'check-circle', 'x-circle', 'plus', 'minus'
+        ];
+        return allowedIcons.includes(icon) ? icon : 'bell';
+    }
+
+    /**
      * Show toast notification
+     * SECURITY: Uses DOM API instead of innerHTML to prevent XSS
      */
     function showToast(notification) {
         // Check if toast container exists, create if not
@@ -195,23 +210,51 @@
             document.body.appendChild(container);
         }
 
-        // Create toast element
+        // Create toast element using DOM API (secure, no innerHTML)
         const toast = document.createElement('div');
         toast.className = 'notification-toast bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-4 max-w-sm transform transition-all duration-300 translate-x-full opacity-0';
-        toast.innerHTML = `
-            <div class="flex items-start gap-3">
-                <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
-                    <i data-lucide="${notification.icon || 'bell'}" class="w-4 h-4 text-primary-600 dark:text-primary-400"></i>
-                </div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-900 dark:text-white">${escapeHtml(notification.title)}</p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">${escapeHtml(notification.message)}</p>
-                </div>
-                <button class="flex-shrink-0 text-gray-400 hover:text-gray-500" onclick="this.closest('.notification-toast').remove()">
-                    <i data-lucide="x" class="w-4 h-4"></i>
-                </button>
-            </div>
-        `;
+
+        // Build toast structure with DOM API
+        const flexContainer = document.createElement('div');
+        flexContainer.className = 'flex items-start gap-3';
+
+        // Icon container
+        const iconContainer = document.createElement('div');
+        iconContainer.className = 'flex-shrink-0 w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center';
+        const icon = document.createElement('i');
+        icon.setAttribute('data-lucide', getSafeIconName(notification.icon));
+        icon.className = 'w-4 h-4 text-primary-600 dark:text-primary-400';
+        iconContainer.appendChild(icon);
+
+        // Content container
+        const contentContainer = document.createElement('div');
+        contentContainer.className = 'flex-1 min-w-0';
+
+        const titleEl = document.createElement('p');
+        titleEl.className = 'text-sm font-medium text-gray-900 dark:text-white';
+        titleEl.textContent = notification.title || '';  // textContent is safe
+
+        const messageEl = document.createElement('p');
+        messageEl.className = 'text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2';
+        messageEl.textContent = notification.message || '';  // textContent is safe
+
+        contentContainer.appendChild(titleEl);
+        contentContainer.appendChild(messageEl);
+
+        // Close button
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'flex-shrink-0 text-gray-400 hover:text-gray-500';
+        closeBtn.addEventListener('click', () => toast.remove());
+        const closeIcon = document.createElement('i');
+        closeIcon.setAttribute('data-lucide', 'x');
+        closeIcon.className = 'w-4 h-4';
+        closeBtn.appendChild(closeIcon);
+
+        // Assemble
+        flexContainer.appendChild(iconContainer);
+        flexContainer.appendChild(contentContainer);
+        flexContainer.appendChild(closeBtn);
+        toast.appendChild(flexContainer);
 
         // Add click handler for the toast body
         // SECURITY: Only allow same-origin redirects to prevent Open Redirect attacks
@@ -255,15 +298,6 @@
                 poll();
             }
         }
-    }
-
-    /**
-     * Escape HTML to prevent XSS
-     */
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     /**

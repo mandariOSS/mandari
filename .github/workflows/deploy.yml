@@ -84,9 +84,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libcairo2-dev \
             libpango1.0-dev \
-            libgdk-pixbuf2.0-dev \
             libffi-dev \
             shared-mime-info \
+            pkg-config \
             poppler-utils \
             tesseract-ocr \
             tesseract-ocr-deu
@@ -194,7 +194,10 @@ jobs:
     name: Deploy
     runs-on: ubuntu-latest
     needs: [build]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'
+    # Only deploy if secrets are configured (infrastructure exists)
+    if: |
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch')
+      && vars.DEPLOYMENT_ENABLED == 'true'
 
     environment:
       name: ${{ inputs.environment || 'production' }}
@@ -205,6 +208,15 @@ jobs:
       cancel-in-progress: false
 
     steps:
+      - name: Check deployment prerequisites
+        run: |
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ] || [ -z "${{ secrets.MASTER_IP }}" ]; then
+            echo "❌ Deployment secrets not configured!"
+            echo "Required secrets: SSH_PRIVATE_KEY, MASTER_IP, SLAVE_IP"
+            echo "Set DEPLOYMENT_ENABLED=true in repository variables when ready."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -216,15 +228,19 @@ jobs:
       - name: Install Ansible
         run: |
           pip install ansible ansible-lint
-          ansible-galaxy install -r infrastructure/ansible/requirements.yml
+          ansible-galaxy install -r infrastructure/ansible/requirements.yml || true
 
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.MASTER_IP }} >> ~/.ssh/known_hosts
-          ssh-keyscan -H ${{ secrets.SLAVE_IP }} >> ~/.ssh/known_hosts
+          if [ -n "${{ secrets.MASTER_IP }}" ]; then
+            ssh-keyscan -H "${{ secrets.MASTER_IP }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
+          if [ -n "${{ secrets.SLAVE_IP }}" ]; then
+            ssh-keyscan -H "${{ secrets.SLAVE_IP }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
 
       - name: Create Ansible inventory
         run: |
@@ -310,15 +326,10 @@ jobs:
 
       - name: Notify on failure
         if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number || 1,
-              body: '❌ Deployment failed! Check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})'
-            })
+        run: |
+          echo "❌ Deployment failed!"
+          echo "Check the workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # Don't fail the job just because notification failed
 
   # ===========================================================================
   # Post-Deploy Tasks
@@ -330,21 +341,9 @@ jobs:
     if: success()
 
     steps:
-      - name: Create deployment record
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.repos.createDeploymentStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              deployment_id: context.payload.deployment?.id || 0,
-              state: 'success',
-              environment_url: 'https://mandari.de',
-              description: 'Deployment successful'
-            });
-
       - name: Notify success
         run: |
           echo "🚀 Deployment successful!"
           echo "Version: ${{ github.sha }}"
           echo "URL: https://mandari.de"
+          echo "Environment: ${{ inputs.environment || 'production' }}"

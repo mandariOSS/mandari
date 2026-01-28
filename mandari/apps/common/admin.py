@@ -9,8 +9,8 @@ from urllib.parse import urlparse
 
 from django import forms
 from django.contrib import admin
-from django.core.mail import send_mail
 from django.contrib import messages
+from django.utils.http import url_has_allowed_host_and_scheme
 from unfold.admin import ModelAdmin
 from unfold.decorators import action
 
@@ -21,15 +21,19 @@ def get_safe_admin_redirect(request):
     """
     Get a safe redirect URL from HTTP_REFERER for admin actions.
 
-    Validates that the referer is from the same host to prevent Open Redirect attacks.
+    SECURITY: Uses Django's url_has_allowed_host_and_scheme to prevent Open Redirect attacks.
     Only allows paths starting with /admin/ for additional security.
     """
     referer = request.META.get("HTTP_REFERER", "")
-    if referer:
+    if referer and url_has_allowed_host_and_scheme(
+        referer,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        # Additional check: only allow admin paths
         parsed = urlparse(referer)
-        # Only allow same-host redirects that start with /admin/
-        if (not parsed.netloc or parsed.netloc == request.get_host()) and parsed.path.startswith("/admin/"):
-            return parsed.path + ("?" + parsed.query if parsed.query else "")
+        if parsed.path.startswith("/admin/"):
+            return referer
     return "/admin/"
 
 

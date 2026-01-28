@@ -129,7 +129,7 @@ class PortalHomeView(TemplateView):
 
 def set_body(request, body_id):
     """Setzt die aktive Kommune und leitet zur Portal-Homepage weiter."""
-    from urllib.parse import urlparse
+    from django.utils.http import url_has_allowed_host_and_scheme
 
     try:
         body = OParlBody.objects.get(id=body_id)
@@ -137,21 +137,18 @@ def set_body(request, body_id):
     except OParlBody.DoesNotExist:
         pass
 
-    # Zurück zur vorherigen Seite oder Portal-Homepage
-    # SECURITY: Validate referer to prevent Open Redirect attacks
+    # SECURITY: Use Django's built-in URL validation to prevent Open Redirect
+    default_redirect = "/insight/"
     referer = request.META.get("HTTP_REFERER", "")
-    safe_redirect = "/insight/"
 
-    if referer:
-        parsed = urlparse(referer)
-        # Only allow same-host redirects (empty netloc = relative URL, or matching host)
-        if not parsed.netloc or parsed.netloc == request.get_host():
-            # Use only the path (and query) to prevent scheme manipulation
-            safe_redirect = parsed.path
-            if parsed.query:
-                safe_redirect += "?" + parsed.query
+    if referer and url_has_allowed_host_and_scheme(
+        referer,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return redirect(referer)
 
-    return redirect(safe_redirect)
+    return redirect(default_redirect)
 
 
 def clear_body(request):
