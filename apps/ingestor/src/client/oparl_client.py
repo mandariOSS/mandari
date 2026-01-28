@@ -7,6 +7,8 @@ Features:
 - ETag and If-Modified-Since caching
 - Exponential backoff retry
 - Rate limiting
+- Circuit breaker for resilience
+- Prometheus metrics
 """
 
 import asyncio
@@ -15,11 +17,14 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, AsyncIterator
+from urllib.parse import urlparse
 
 import httpx
 from rich.console import Console
 
+from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError
 from src.config import settings
+from src.metrics import metrics
 
 console = Console()
 
@@ -73,6 +78,8 @@ class OParlClient:
     - If-Modified-Since header support
     - Exponential backoff retry logic
     - Rate limiting between requests
+    - Circuit breaker for resilience
+    - Prometheus metrics collection
     """
 
     def __init__(
@@ -80,12 +87,14 @@ class OParlClient:
         max_concurrent: int = 10,
         timeout: int | None = None,
         wait_time: float | None = None,
+        source_name: str | None = None,
     ) -> None:
         self.max_concurrent = max_concurrent
         self.timeout = timeout or settings.oparl_request_timeout
         self.wait_time = wait_time or settings.oparl_wait_time
         self.max_retries = settings.oparl_max_retries
         self.retry_backoff = settings.oparl_retry_backoff
+        self.source_name = source_name or "unknown"
 
         # Caching
         self.etag_cache: dict[str, str] = {}
@@ -94,6 +103,14 @@ class OParlClient:
         # Concurrency control
         self._semaphore: asyncio.Semaphore | None = None
         self._client: httpx.AsyncClient | None = None
+
+        # Circuit breaker per source host
+        self._circuit_breakers: dict[str, CircuitBreaker] = {}
+        self._circuit_breaker_config = CircuitBreakerConfig(
+            failure_threshold=settings.circuit_breaker_failure_threshold,
+            recovery_timeout=settings.circuit_breaker_recovery_timeout,
+            success_threshold=settings.circuit_breaker_success_threshold,
+        )
 
         # Statistics
         self.stats = SyncStats()
@@ -114,7 +131,25 @@ class OParlClient:
             follow_redirects=True,  # Follow HTTP 301/302 redirects
         )
         self.stats = SyncStats()
+        self._circuit_breakers = {}
         return self
+
+    def _get_circuit_breaker(self, url: str) -> CircuitBreaker:
+        """Get or create circuit breaker for URL's host."""
+        if not settings.circuit_breaker_enabled:
+            # Return a no-op breaker that never opens
+            return CircuitBreaker(
+                name="disabled",
+                config=CircuitBreakerConfig(failure_threshold=999999),
+            )
+
+        host = urlparse(url).netloc
+        if host not in self._circuit_breakers:
+            self._circuit_breakers[host] = CircuitBreaker(
+                name=host,
+                config=self._circuit_breaker_config,
+            )
+        return self._circuit_breakers[host]
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
@@ -151,34 +186,58 @@ class OParlClient:
         use_cache: bool,
         skip_wait: bool,
     ) -> FetchResult:
-        """Fetch with exponential backoff retry."""
+        """Fetch with exponential backoff retry and circuit breaker."""
         last_error: str | None = None
+        circuit_breaker = self._get_circuit_breaker(url)
 
-        for attempt in range(self.max_retries):
-            try:
-                result = await self._do_fetch(url, use_cache, skip_wait)
-                return result
+        # Check if circuit is open
+        try:
+            # Try to execute through circuit breaker
+            for attempt in range(self.max_retries):
+                try:
+                    result = await circuit_breaker.call(
+                        self._do_fetch, url, use_cache, skip_wait
+                    )
+                    return result
 
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 404:
-                    return FetchResult(url=url, data=None, status_code=404, error="Not found")
-                if e.response.status_code >= 500:
-                    last_error = f"HTTP {e.response.status_code}"
-                else:
+                except CircuitOpenError as e:
+                    # Circuit is open - fail fast
+                    self.stats.errors += 1
+                    metrics.record_http_error(self.source_name, "circuit_open")
                     return FetchResult(
                         url=url,
                         data=None,
-                        status_code=e.response.status_code,
-                        error=f"HTTP {e.response.status_code}",
+                        status_code=0,
+                        error=f"Circuit breaker open: {e}",
                     )
 
-            except (httpx.RequestError, httpx.TimeoutException) as e:
-                last_error = str(e)
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 404:
+                        return FetchResult(url=url, data=None, status_code=404, error="Not found")
+                    if e.response.status_code >= 500:
+                        last_error = f"HTTP {e.response.status_code}"
+                        metrics.record_http_error(self.source_name, f"http_{e.response.status_code}")
+                    else:
+                        return FetchResult(
+                            url=url,
+                            data=None,
+                            status_code=e.response.status_code,
+                            error=f"HTTP {e.response.status_code}",
+                        )
 
-            # Exponential backoff
-            if attempt < self.max_retries - 1:
-                wait = self.retry_backoff ** attempt
-                await asyncio.sleep(wait)
+                except (httpx.RequestError, httpx.TimeoutException) as e:
+                    last_error = str(e)
+                    error_type = "timeout" if isinstance(e, httpx.TimeoutException) else "request_error"
+                    metrics.record_http_error(self.source_name, error_type)
+
+                # Exponential backoff
+                if attempt < self.max_retries - 1:
+                    wait = self.retry_backoff ** attempt
+                    await asyncio.sleep(wait)
+
+        except Exception as e:
+            last_error = str(e)
+            metrics.record_http_error(self.source_name, "unknown")
 
         self.stats.errors += 1
         return FetchResult(
@@ -194,7 +253,7 @@ class OParlClient:
         use_cache: bool,
         skip_wait: bool,
     ) -> FetchResult:
-        """Perform the actual HTTP fetch."""
+        """Perform the actual HTTP fetch with metrics."""
         assert self._client is not None
 
         headers: dict[str, str] = {}
@@ -216,6 +275,15 @@ class OParlClient:
 
         self.stats.http_requests += 1
         self.stats.http_time += fetch_time
+
+        # Record metrics
+        from_cache = response.status_code == 304
+        metrics.record_http_request(
+            source=self.source_name,
+            status=response.status_code,
+            duration=fetch_time,
+            from_cache=from_cache,
+        )
 
         # Not modified - cache hit
         if response.status_code == 304:

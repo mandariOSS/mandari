@@ -218,6 +218,7 @@ async def run_scheduler(
     sync_interval: int | None = None,
     full_sync_hour: int = 3,
     max_concurrent: int = 10,
+    metrics_port: int = 9090,
 ) -> None:
     """
     Run the sync scheduler continuously.
@@ -226,7 +227,10 @@ async def run_scheduler(
         sync_interval: Minutes between incremental syncs.
         full_sync_hour: Hour for daily full sync.
         max_concurrent: Max concurrent HTTP requests.
+        metrics_port: Port for Prometheus metrics server.
     """
+    from src.metrics import metrics
+
     scheduler = SyncScheduler(
         sync_interval_minutes=sync_interval,
         full_sync_hour=full_sync_hour,
@@ -234,6 +238,9 @@ async def run_scheduler(
     )
 
     try:
+        # Start metrics server
+        await metrics.start_server(port=metrics_port)
+
         await scheduler.start()
 
         # Keep running until interrupted

@@ -50,6 +50,20 @@ class Settings(BaseSettings):
     full_sync_interval_hours: int = 24  # Full sync once a day
     sync_enabled: bool = True
 
+    # Event Emission Settings
+    events_enabled: bool = True  # Enable Redis event emission
+    events_batch_size: int = 50  # Batch size for entity events
+
+    # Metrics Settings
+    metrics_enabled: bool = True  # Enable Prometheus metrics
+    metrics_port: int = 9090  # Port for metrics HTTP server
+
+    # Circuit Breaker Settings
+    circuit_breaker_enabled: bool = True  # Enable circuit breakers
+    circuit_breaker_failure_threshold: int = 5  # Failures before opening
+    circuit_breaker_recovery_timeout: float = 60.0  # Seconds to wait
+    circuit_breaker_success_threshold: int = 2  # Successes to close
+
 
 @lru_cache
 def get_settings() -> Settings:

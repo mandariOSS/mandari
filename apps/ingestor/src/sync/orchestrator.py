@@ -6,6 +6,8 @@ Coordinates the complete OParl synchronization process with:
 - Parallel processing of entities
 - Progress tracking and statistics
 - Error handling and retry logic
+- Redis event emission
+- Prometheus metrics
 """
 
 import asyncio
@@ -14,19 +16,20 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-import sys
 from rich.console import Console
 from rich.progress import (
+    BarColumn,
     Progress,
     SpinnerColumn,
-    TextColumn,
-    BarColumn,
     TaskProgressColumn,
+    TextColumn,
     TimeElapsedColumn,
 )
 
 from src.client.oparl_client import OParlClient, SyncStats
 from src.config import settings
+from src.events import EventEmitter
+from src.metrics import metrics
 from src.storage.database import DatabaseStorage
 from src.sync.processor import (
     OParlProcessor,
@@ -78,6 +81,8 @@ class SyncOrchestrator:
     - Parallel processing: Fetches multiple entity types concurrently
     - Progress tracking: Real-time progress display
     - Error recovery: Continues sync even if some entities fail
+    - Redis event emission for real-time updates
+    - Prometheus metrics for monitoring
     """
 
     def __init__(
@@ -99,14 +104,22 @@ class SyncOrchestrator:
         self.max_concurrent = max_concurrent or settings.oparl_max_concurrent
         # Track if we're in parallel mode (disables Rich Progress to avoid conflicts)
         self._parallel_mode = False
+        # Event emitter for Redis pub/sub
+        self._event_emitter: EventEmitter | None = None
 
     async def __aenter__(self) -> "SyncOrchestrator":
         """Async context manager entry."""
         await self.storage.initialize()
+        # Initialize event emitter
+        self._event_emitter = EventEmitter()
+        await self._event_emitter.__aenter__()
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
+        # Close event emitter
+        if self._event_emitter:
+            await self._event_emitter.__aexit__(exc_type, exc_val, exc_tb)
         await self.storage.close()
 
     # ========== Source Management ==========
@@ -171,9 +184,13 @@ class SyncOrchestrator:
         """
         start_time = datetime.now(timezone.utc)
         result = SyncResult(source_url=url, source_name="", success=False)
+        sync_type = "full" if full else "incremental"
 
         try:
-            async with OParlClient(max_concurrent=self.max_concurrent) as client:
+            async with OParlClient(
+                max_concurrent=self.max_concurrent,
+                source_name=url.split("/")[2] if "/" in url else "unknown",
+            ) as client:
                 # Fetch system
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
                 system_data = await client.fetch_system(url)
@@ -184,6 +201,14 @@ class SyncOrchestrator:
 
                 result.source_name = system_data.get("name", "Unknown")
                 console.print(f"[green]Connected to: {result.source_name}[/green]")
+
+                # Emit sync started event
+                if self._event_emitter:
+                    await self._event_emitter.emit_sync_started(
+                        source_url=url,
+                        source_name=result.source_name,
+                        full_sync=full,
+                    )
 
                 # Ensure source exists in database
                 source_id = await self.storage.upsert_source(
@@ -258,9 +283,43 @@ class SyncOrchestrator:
                 result.http_stats = client.stats
                 result.success = True
 
+                # Calculate total entities synced
+                total_synced = (
+                    result.meetings_synced
+                    + result.papers_synced
+                    + result.persons_synced
+                    + result.organizations_synced
+                    + result.memberships_synced
+                    + result.files_synced
+                    + result.agenda_items_synced
+                    + result.consultations_synced
+                )
+
+                # Emit sync completed event
+                if self._event_emitter:
+                    await self._event_emitter.emit_sync_completed(
+                        source_url=url,
+                        source_name=result.source_name,
+                        duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+                        entities_synced=total_synced,
+                        errors_count=len(result.errors),
+                    )
+
+                # Record metrics
+                metrics.record_entities_batch(result.source_name, total_synced)
+
         except Exception as e:
             result.errors.append(str(e))
             console.print(f"[red]Sync failed: {e}[/red]")
+
+            # Emit sync failed event
+            if self._event_emitter:
+                await self._event_emitter.emit_sync_failed(
+                    source_url=url,
+                    source_name=result.source_name or "Unknown",
+                    error=str(e),
+                    duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+                )
 
         result.duration_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
         return result
@@ -333,6 +392,7 @@ class SyncOrchestrator:
                 entity_type="organization",
                 body_id=body_id,
                 body_external_id=body_external_id,
+                body_name=body_name,
                 modified_since=modified_since,
                 full=full,
             )
@@ -343,6 +403,7 @@ class SyncOrchestrator:
                 entity_type="person",
                 body_id=body_id,
                 body_external_id=body_external_id,
+                body_name=body_name,
                 modified_since=modified_since,
                 full=full,
             )
@@ -371,6 +432,7 @@ class SyncOrchestrator:
                 entity_type="membership",
                 body_id=body_id,
                 body_external_id=body_external_id,
+                body_name=body_name,
                 modified_since=modified_since,
                 full=full,
             )
@@ -387,6 +449,7 @@ class SyncOrchestrator:
                 entity_type="meeting",
                 body_id=body_id,
                 body_external_id=body_external_id,
+                body_name=body_name,
                 modified_since=modified_since,
                 full=full,
             )
@@ -397,6 +460,7 @@ class SyncOrchestrator:
                 entity_type="paper",
                 body_id=body_id,
                 body_external_id=body_external_id,
+                body_name=body_name,
                 modified_since=modified_since,
                 full=full,
             )
@@ -429,6 +493,7 @@ class SyncOrchestrator:
                 entity_type="location",
                 body_id=body_id,
                 body_external_id=body_external_id,
+                body_name=body_name,
                 modified_since=modified_since,
                 full=full,
             )
@@ -439,6 +504,7 @@ class SyncOrchestrator:
                 entity_type="agendaitem",
                 body_id=body_id,
                 body_external_id=body_external_id,
+                body_name=body_name,
                 modified_since=modified_since,
                 full=full,
             )
@@ -449,6 +515,7 @@ class SyncOrchestrator:
                 entity_type="file",
                 body_id=body_id,
                 body_external_id=body_external_id,
+                body_name=body_name,
                 modified_since=modified_since,
                 full=full,
             )
@@ -459,6 +526,7 @@ class SyncOrchestrator:
                 entity_type="consultation",
                 body_id=body_id,
                 body_external_id=body_external_id,
+                body_name=body_name,
                 modified_since=modified_since,
                 full=full,
             )
@@ -515,6 +583,7 @@ class SyncOrchestrator:
         entity_type: str,
         body_id: UUID,
         body_external_id: str,
+        body_name: str | None = None,
         modified_since: datetime | None = None,
         full: bool = False,
     ) -> int:
@@ -554,7 +623,7 @@ class SyncOrchestrator:
                     try:
                         processed = self.processor.process(item, body_external_id)
                         if processed:
-                            await self._store_entity(processed, body_id, entity_type)
+                            await self._store_entity(processed, body_id, entity_type, body_name)
                             count += 1
                     except Exception as e:
                         console.print(f"[red]Error processing {entity_type}: {e}[/red]")
@@ -582,7 +651,7 @@ class SyncOrchestrator:
                             new_on_page += 1
                             processed = self.processor.process(item, body_external_id)
                             if processed:
-                                await self._store_entity(processed, body_id, entity_type)
+                                await self._store_entity(processed, body_id, entity_type, body_name)
                                 count += 1
 
                     except Exception as e:
@@ -610,20 +679,45 @@ class SyncOrchestrator:
         entity: ProcessedEntity,
         body_id: UUID,
         entity_type: str,
+        body_name: str | None = None,
     ) -> None:
-        """Store a processed entity to the database."""
+        """Store a processed entity to the database and emit events."""
+        entity_id: str | None = None
+
         if isinstance(entity, ProcessedMeeting):
-            await self.storage.upsert_meeting(entity, body_id)
+            entity_id = str(await self.storage.upsert_meeting(entity, body_id))
+            # Emit high-priority event for new meetings
+            if self._event_emitter and entity_id:
+                await self._event_emitter.emit_new_meeting(
+                    meeting_id=entity_id,
+                    external_id=entity.external_id,
+                    name=entity.name or "Unbekannte Sitzung",
+                    body_name=body_name,
+                    start_time=entity.start,
+                )
         elif isinstance(entity, ProcessedPaper):
-            await self.storage.upsert_paper(entity, body_id)
+            entity_id = str(await self.storage.upsert_paper(entity, body_id))
+            # Emit high-priority event for new papers
+            if self._event_emitter and entity_id:
+                await self._event_emitter.emit_new_paper(
+                    paper_id=entity_id,
+                    external_id=entity.external_id,
+                    name=entity.name or "Unbekannte Vorlage",
+                    body_name=body_name,
+                    paper_type=entity.paper_type,
+                )
         elif isinstance(entity, ProcessedPerson):
             await self.storage.upsert_person(entity, body_id)
+            metrics.record_entity_synced("person", body_name or "unknown")
         elif isinstance(entity, ProcessedOrganization):
             await self.storage.upsert_organization(entity, body_id)
+            metrics.record_entity_synced("organization", body_name or "unknown")
         elif isinstance(entity, ProcessedMembership):
             await self.storage.upsert_membership(entity, body_id)
+            metrics.record_entity_synced("membership", body_name or "unknown")
         elif isinstance(entity, ProcessedLocation):
             await self.storage.upsert_location(entity, body_id)
+            metrics.record_entity_synced("location", body_name or "unknown")
         elif isinstance(entity, ProcessedAgendaItem):
             # AgendaItems need meeting_id - try to look it up
             meeting_id = None
@@ -631,18 +725,27 @@ class SyncOrchestrator:
                 meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_id)
             if meeting_id:
                 await self.storage.upsert_agenda_item(entity, meeting_id)
+                metrics.record_entity_synced("agendaitem", body_name or "unknown")
             # If no meeting_id found, skip (item likely from nested sync already)
         elif isinstance(entity, ProcessedFile):
             # Files can belong to papers or meetings - store with body_id only for standalone
             await self.storage.upsert_file(entity, body_id)
+            metrics.record_entity_synced("file", body_name or "unknown")
         elif isinstance(entity, ProcessedConsultation):
             # Consultations can belong to papers - try to look it up
             paper_id = None
             if entity.paper_external_id:
                 paper_id = await self.storage.get_paper_uuid(entity.paper_external_id)
             await self.storage.upsert_consultation(entity, body_id, paper_id)
+            metrics.record_entity_synced("consultation", body_name or "unknown")
         else:
             await self.storage.upsert_entity(entity, body_id)
+
+        # Record metrics for meetings and papers
+        if isinstance(entity, ProcessedMeeting):
+            metrics.record_entity_synced("meeting", body_name or "unknown")
+        elif isinstance(entity, ProcessedPaper):
+            metrics.record_entity_synced("paper", body_name or "unknown")
 
     # ========== Sync All Sources ==========
 
