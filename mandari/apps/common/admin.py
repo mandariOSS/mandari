@@ -5,6 +5,8 @@ Admin configuration for common app.
 Includes SiteSettings admin for global configuration.
 """
 
+from urllib.parse import urlparse
+
 from django import forms
 from django.contrib import admin
 from django.core.mail import send_mail
@@ -13,6 +15,22 @@ from unfold.admin import ModelAdmin
 from unfold.decorators import action
 
 from .models import SiteSettings
+
+
+def get_safe_admin_redirect(request):
+    """
+    Get a safe redirect URL from HTTP_REFERER for admin actions.
+
+    Validates that the referer is from the same host to prevent Open Redirect attacks.
+    Only allows paths starting with /admin/ for additional security.
+    """
+    referer = request.META.get("HTTP_REFERER", "")
+    if referer:
+        parsed = urlparse(referer)
+        # Only allow same-host redirects that start with /admin/
+        if (not parsed.netloc or parsed.netloc == request.get_host()) and parsed.path.startswith("/admin/"):
+            return parsed.path + ("?" + parsed.query if parsed.query else "")
+    return "/admin/"
 
 
 class SiteSettingsAdminForm(forms.ModelForm):
@@ -145,7 +163,8 @@ class SiteSettingsAdmin(ModelAdmin):
             )
 
         from django.http import HttpResponseRedirect
-        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/admin/"))
+        # SECURITY: Validate referer to prevent Open Redirect attacks
+        return HttpResponseRedirect(get_safe_admin_redirect(request))
 
     def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
         # Always edit the singleton instance

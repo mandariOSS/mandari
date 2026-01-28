@@ -818,12 +818,15 @@ def tile_proxy(request, z, x, y):
 
     if tile_data:
         # Tile aus Cache liefern (super schnell!)
+        # SECURITY NOTE: CORS "*" is intentional for public map tiles.
+        # Map tiles must be accessible from any origin for proper rendering.
+        # This endpoint only serves static, public image data with no auth.
         return HttpResponse(
             tile_data,
             content_type=content_type,
             headers={
                 "Cache-Control": "public, max-age=604800",  # 7 Tage Browser-Cache
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "*",  # nosec: intentional for public tiles
                 "X-Tile-Source": "cache",
             }
         )
@@ -842,12 +845,13 @@ def tile_proxy(request, z, x, y):
                 # Im Cache speichern für zukünftige Requests
                 TileCache.store_tile(z, x, y, response.content, "image/png", "openstreetmap")
 
+                # SECURITY NOTE: CORS "*" is intentional for public map tiles.
                 return HttpResponse(
                     response.content,
                     content_type="image/png",
                     headers={
                         "Cache-Control": "public, max-age=604800",  # 7 Tage Browser-Cache
-                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Origin": "*",  # nosec: intentional for public tiles
                         "X-Tile-Source": "osm",
                     }
                 )

@@ -214,7 +214,8 @@
         `;
 
         // Add click handler for the toast body
-        if (notification.link) {
+        // SECURITY: Only allow same-origin redirects to prevent Open Redirect attacks
+        if (notification.link && isSafeUrl(notification.link)) {
             toast.style.cursor = 'pointer';
             toast.addEventListener('click', (e) => {
                 if (!e.target.closest('button')) {
@@ -263,6 +264,27 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * Check if URL is safe for redirect (same-origin only)
+     * Prevents Open Redirect attacks from malicious notification data
+     */
+    function isSafeUrl(url) {
+        if (!url) return false;
+
+        // Allow relative URLs (starting with /)
+        if (url.startsWith('/') && !url.startsWith('//')) {
+            return true;
+        }
+
+        // For absolute URLs, check if same origin
+        try {
+            const parsed = new URL(url, window.location.origin);
+            return parsed.origin === window.location.origin;
+        } catch (e) {
+            return false;
+        }
     }
 
     /**

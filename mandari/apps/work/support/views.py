@@ -7,6 +7,7 @@ Provides support ticket system and knowledge base for organizations.
 
 import json
 import re
+from urllib.parse import urlparse
 
 from django.contrib import messages
 from django.db.models import Q, Count
@@ -17,6 +18,21 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+
+
+def get_safe_redirect_url(request, default_url):
+    """
+    Get a safe redirect URL from HTTP_REFERER.
+
+    Validates that the referer is from the same host to prevent Open Redirect attacks.
+    """
+    referer = request.META.get("HTTP_REFERER", "")
+    if referer:
+        parsed = urlparse(referer)
+        # Only allow same-host redirects
+        if not parsed.netloc or parsed.netloc == request.get_host():
+            return parsed.path + ("?" + parsed.query if parsed.query else "")
+    return default_url
 from apps.work.notifications.services import NotificationHub
 from .models import (
     SupportTicket,
@@ -570,7 +586,9 @@ class ArticleFeedbackView(WorkViewMixin, View):
             })
 
         messages.success(request, "Vielen Dank für Ihr Feedback!")
-        return redirect(request.META.get("HTTP_REFERER", "work:support"))
+        # SECURITY: Validate referer to prevent Open Redirect attacks
+        safe_url = get_safe_redirect_url(request, f"/work/{self.organization.slug}/support/")
+        return redirect(safe_url)
 
 
 class ArticleSearchAPIView(WorkViewMixin, View):

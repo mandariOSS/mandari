@@ -352,4 +352,5 @@ class OParlClient:
 
     def get_url_hash(self, url: str) -> str:
         """Generate a short hash for a URL (for logging)."""
-        return hashlib.md5(url.encode()).hexdigest()[:8]
+        # Use SHA256 instead of MD5 (MD5 is considered weak)
+        return hashlib.sha256(url.encode()).hexdigest()[:8]
