@@ -131,7 +131,7 @@ class MotionExportService:
             bytes: The merged PDF with letterhead
         """
         try:
-            from PyPDF2 import PdfReader, PdfWriter
+            from pypdf import PdfReader, PdfWriter
 
             # Read the content PDF
             content_pdf = PdfReader(io.BytesIO(pdf_content))

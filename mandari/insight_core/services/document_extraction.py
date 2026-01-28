@@ -17,7 +17,7 @@ import httpx
 from django.utils.encoding import force_str
 
 try:
-    from PyPDF2 import PdfReader
+    from pypdf import PdfReader
 except ImportError:
     PdfReader = None  # type: ignore[assignment, misc]
 
@@ -86,14 +86,14 @@ def _extract_text_from_pdf(data: bytes) -> tuple[str, Optional[int], bool]:
     """
     Extrahiert Text aus einer PDF-Datei.
 
-    Versucht zuerst textbasierte Extraktion mit PyPDF2,
+    Versucht zuerst textbasierte Extraktion mit pypdf,
     fällt bei Bedarf auf OCR zurück.
 
     Returns:
         Tuple mit (text, page_count, ocr_used)
     """
     if PdfReader is None:
-        logger.warning("PyPDF2 nicht installiert, PDF-Extraktion nicht möglich.")
+        logger.warning("pypdf nicht installiert, PDF-Extraktion nicht möglich.")
         return "", None, False
 
     try:

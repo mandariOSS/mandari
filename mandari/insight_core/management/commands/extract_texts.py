@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Extrahiert Text aus OParl-Dateien (PDFs) mittels PyPDF2 und OCR."
+    help = "Extrahiert Text aus OParl-Dateien (PDFs) mittels pypdf und OCR."
 
     def add_arguments(self, parser):
         parser.add_argument(

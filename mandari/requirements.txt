@@ -27,18 +27,25 @@ httpx>=0.28.0
 
 # Utilities
 python-dateutil>=2.9.0
-pillow>=10.0.0
+pillow>=10.3.0  # Security: fixes heap buffer overflow, DoS, eval injection
 markdown>=3.7
 cryptography>=44.0.0
 
 # Document extraction (OCR)
-PyPDF2>=3.0.0
+# Note: PyPDF2 is deprecated, using pypdf instead
+pypdf>=6.4.0  # Security: fixes resource exhaustion, data amplification, infinite loop
 pytesseract>=0.3.10
 pdf2image>=1.16.0
 
 # PDF generation
-xhtml2pdf>=0.2.11
+xhtml2pdf>=0.2.17  # Security: fixes ReDoS vulnerability
 reportlab>=4.0.0
 
 # Production server
 gunicorn>=23.0.0
+
+# Transitive dependencies pinned for security
+urllib3>=2.5.0  # Security: fixes open redirect, info disclosure
+requests>=2.32.4  # Security: fixes control flow, sensitive data issues
+anyio>=4.4.0  # Security: fixes race condition
+zipp>=3.19.1  # Security: fixes infinite loop
