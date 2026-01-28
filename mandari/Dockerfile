@@ -12,12 +12,24 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install system dependencies including Node.js
+# pycairo requires: libcairo2-dev, pkg-config
+# pdf2image requires: poppler-utils
+# pytesseract requires: tesseract-ocr
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     libpq-dev \
     build-essential \
     curl \
     gnupg \
+    pkg-config \
+    libcairo2-dev \
+    libpango1.0-dev \
+    libgdk-pixbuf2.0-dev \
+    libffi-dev \
+    shared-mime-info \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-deu \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
