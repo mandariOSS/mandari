@@ -1,0 +1,322 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Protokoll - {{ meeting.title }}{% endblock %}
+
+{% block header_title %}Sitzungsprotokoll{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ meeting.title }} · {{ meeting.start|date:"d.m.Y" }}</p>
+{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-2">
+    <a href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=meeting.id %}"
+       class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+        <i data-lucide="arrow-left" class="w-4 h-4 inline mr-1"></i>
+        Zurück
+    </a>
+    {% if meeting.status == 'ongoing' %}
+    <form method="post" class="inline">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="end_meeting">
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700">
+            <i data-lucide="stop-circle" class="w-4 h-4"></i>
+            Sitzung beenden
+        </button>
+    </form>
+    {% elif meeting.status == 'completed' and not meeting.protocol_approved and can_edit %}
+    <form method="post" class="inline">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="approve_protocol">
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            Protokoll genehmigen
+        </button>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block work_content %}
+<div class="grid grid-cols-1 xl:grid-cols-4 gap-6" x-data="protocolEditor()">
+    <!-- Main Protocol -->
+    <div class="xl:col-span-3 space-y-6">
+        <!-- Status Banner -->
+        {% if meeting.status == 'ongoing' %}
+        <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 flex items-center gap-3">
+            <div class="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                <i data-lucide="radio" class="w-5 h-5 text-green-600 dark:text-green-400 animate-pulse"></i>
+            </div>
+            <div>
+                <p class="font-medium text-green-800 dark:text-green-200">Sitzung läuft</p>
+                <p class="text-sm text-green-600 dark:text-green-400">Protokollieren Sie die Beiträge und Beschlüsse live.</p>
+            </div>
+        </div>
+        {% elif meeting.protocol_approved %}
+        <div class="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-4 flex items-center gap-3">
+            <div class="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                <i data-lucide="check-circle" class="w-5 h-5 text-purple-600 dark:text-purple-400"></i>
+            </div>
+            <div>
+                <p class="font-medium text-purple-800 dark:text-purple-200">Protokoll genehmigt</p>
+                <p class="text-sm text-purple-600 dark:text-purple-400">
+                    Genehmigt von {{ meeting.protocol_approved_by.user.get_display_name }} am {{ meeting.protocol_approved_at|date:"d.m.Y" }}
+                </p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Agenda Items with Protocol -->
+        {% for item in agenda_items %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <!-- Item Header -->
+            <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="w-8 h-8 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center text-sm font-medium text-primary-600 dark:text-primary-400">
+                        {{ item.number }}
+                    </span>
+                    <h3 class="font-medium text-gray-900 dark:text-white">{{ item.title }}</h3>
+                </div>
+                {% if item.has_decision %}
+                <span class="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-medium rounded">
+                    Beschluss: {{ item.votes_for }}/{{ item.votes_against }}/{{ item.votes_abstain }}
+                </span>
+                {% endif %}
+            </div>
+
+            <!-- Protocol Entries for this Item -->
+            <div class="p-6">
+                <div class="space-y-3 mb-4">
+                    {% for entry in protocol_entries %}
+                    {% if entry.agenda_item_id == item.id %}
+                    <div class="flex items-start gap-3 p-3 rounded-lg
+                        {% if entry.entry_type == 'speech' %}bg-blue-50 dark:bg-blue-900/10
+                        {% elif entry.entry_type == 'decision' %}bg-green-50 dark:bg-green-900/10
+                        {% elif entry.entry_type == 'action' %}bg-amber-50 dark:bg-amber-900/10
+                        {% else %}bg-gray-50 dark:bg-gray-900{% endif %}">
+                        <div class="flex-shrink-0 mt-0.5">
+                            {% if entry.entry_type == 'speech' %}
+                            <i data-lucide="message-circle" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+                            {% elif entry.entry_type == 'decision' %}
+                            <i data-lucide="gavel" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
+                            {% elif entry.entry_type == 'action' %}
+                            <i data-lucide="clipboard-list" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                            {% else %}
+                            <i data-lucide="file-text" class="w-4 h-4 text-gray-500"></i>
+                            {% endif %}
+                        </div>
+                        <div class="flex-1">
+                            {% if entry.speaker %}
+                            <p class="text-xs font-medium text-gray-500 mb-1">{{ entry.speaker.user.get_display_name }}</p>
+                            {% endif %}
+                            <p class="text-sm text-gray-700 dark:text-gray-300">{{ entry.content }}</p>
+                            {% if entry.entry_type == 'action' %}
+                            <div class="flex items-center justify-between mt-2">
+                                {% if entry.action_assignee %}
+                                <p class="text-xs text-gray-500">
+                                    Verantwortlich: {{ entry.action_assignee.user.get_display_name }}
+                                    {% if entry.action_due_date %} · Fällig: {{ entry.action_due_date|date:"d.m.Y" }}{% endif %}
+                                </p>
+                                {% endif %}
+                                {% if entry.action_completed %}
+                                <span class="px-2 py-1 text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded flex items-center gap-1">
+                                    <i data-lucide="check" class="w-3 h-3"></i>
+                                    Im Task-Board
+                                </span>
+                                {% elif can_edit %}
+                                <form method="post" action="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=meeting.id %}" class="inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="create_task">
+                                    <input type="hidden" name="entry_id" value="{{ entry.id }}">
+                                    <button type="submit" class="px-2 py-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 flex items-center gap-1">
+                                        <i data-lucide="clipboard-check" class="w-3 h-3"></i>
+                                        Ins Task-Board
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+
+                <!-- Add Entry Form -->
+                {% if can_edit %}
+                <form method="post" class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="add_entry">
+                    <input type="hidden" name="agenda_item" value="{{ item.id }}">
+
+                    <div class="flex items-start gap-3">
+                        <select name="entry_type"
+                                class="px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                            <option value="note">Notiz</option>
+                            <option value="speech">Wortbeitrag</option>
+                            <option value="decision">Beschluss</option>
+                            <option value="action">Aufgabe</option>
+                        </select>
+                        <div class="flex-1">
+                            <textarea name="content_encrypted" rows="2" required
+                                      class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                      placeholder="Protokolleintrag..."></textarea>
+                        </div>
+                        <button type="submit"
+                                class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </form>
+                {% endif %}
+
+                <!-- Record Decision -->
+                {% if can_edit and not item.has_decision %}
+                <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <button type="button" @click="showDecisionForm = '{{ item.id }}'"
+                            class="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1">
+                        <i data-lucide="gavel" class="w-4 h-4"></i>
+                        Abstimmung erfassen
+                    </button>
+
+                    <!-- Decision Form Modal -->
+                    <div x-show="showDecisionForm === '{{ item.id }}'" x-transition
+                         class="mt-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="record_decision">
+                            <input type="hidden" name="agenda_item_id" value="{{ item.id }}">
+
+                            <div class="grid grid-cols-3 gap-3 mb-3">
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">Ja</label>
+                                    <input type="number" name="votes_yes" value="0" min="0"
+                                           class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">Nein</label>
+                                    <input type="number" name="votes_no" value="0" min="0"
+                                           class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">Enthaltung</label>
+                                    <input type="number" name="votes_abstain" value="0" min="0"
+                                           class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="block text-xs text-gray-500 mb-1">Ergebnis</label>
+                                <select name="result"
+                                        class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                    <option value="accepted">Angenommen</option>
+                                    <option value="rejected">Abgelehnt</option>
+                                    <option value="postponed">Vertagt</option>
+                                    <option value="modified">Geändert angenommen</option>
+                                </select>
+                            </div>
+
+                            <div class="flex justify-end gap-2">
+                                <button type="button" @click="showDecisionForm = null"
+                                        class="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900">
+                                    Abbrechen
+                                </button>
+                                <button type="submit"
+                                        class="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700">
+                                    Erfassen
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+            <i data-lucide="list" class="w-12 h-12 mx-auto mb-4 text-gray-300"></i>
+            <p class="text-gray-500">Keine Tagesordnungspunkte vorhanden.</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-6">
+        <!-- Present Members -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Anwesend</h3>
+
+            <ul class="space-y-2">
+                {% for attendance in present_members %}
+                <li class="flex items-center justify-between py-1">
+                    <span class="text-sm text-gray-900 dark:text-white">{{ attendance.membership.user.get_display_name }}</span>
+                    {% if can_edit %}
+                    <form method="post" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="check_out">
+                        <input type="hidden" name="member_id" value="{{ attendance.membership.id }}">
+                        <button type="submit" class="text-xs text-gray-500 hover:text-red-500">
+                            Austragen
+                        </button>
+                    </form>
+                    {% endif %}
+                </li>
+                {% empty %}
+                <li class="text-sm text-gray-500 text-center py-2">Noch niemand eingecheckt</li>
+                {% endfor %}
+            </ul>
+
+            {% if can_edit and meeting.status == 'ongoing' %}
+            <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <form method="post" x-data="{ memberId: '' }">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="check_in">
+                    <div class="flex gap-2">
+                        <select name="member_id" x-model="memberId"
+                                class="flex-1 px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+                            <option value="">Mitglied wählen...</option>
+                            {% for member in all_members %}
+                            <option value="{{ member.id }}">{{ member.user.get_display_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" :disabled="!memberId"
+                                class="px-3 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50">
+                            <i data-lucide="user-plus" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Übersicht</h3>
+
+            <dl class="space-y-3">
+                <div class="flex justify-between">
+                    <dt class="text-sm text-gray-500">Tagesordnungspunkte</dt>
+                    <dd class="text-sm font-medium text-gray-900 dark:text-white">{{ agenda_items|length }}</dd>
+                </div>
+                <div class="flex justify-between">
+                    <dt class="text-sm text-gray-500">Protokolleinträge</dt>
+                    <dd class="text-sm font-medium text-gray-900 dark:text-white">{{ protocol_entries|length }}</dd>
+                </div>
+                <div class="flex justify-between">
+                    <dt class="text-sm text-gray-500">Anwesende</dt>
+                    <dd class="text-sm font-medium text-gray-900 dark:text-white">{{ present_members|length }}</dd>
+                </div>
+            </dl>
+        </div>
+    </div>
+</div>
+
+<script>
+function protocolEditor() {
+    return {
+        showDecisionForm: null,
+    }
+}
+</script>
+{% endblock %}

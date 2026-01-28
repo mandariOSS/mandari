@@ -1,0 +1,146 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block header_title %}Dashboard{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Willkommen zurück{% if request.user.display_name %}, {{ request.user.display_name }}{% endif %}</p>
+{% endblock %}
+
+{% block work_content %}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <!-- Upcoming Meetings -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 border-t-4 border-t-blue-500">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                <i data-lucide="calendar" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+            </div>
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Anstehende Sitzungen</h2>
+        </div>
+        <div class="space-y-3">
+            <div class="flex flex-col items-center justify-center py-4 text-center">
+                <div class="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-2">
+                    <i data-lucide="calendar-x" class="w-6 h-6 text-blue-400 dark:text-blue-500"></i>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Keine anstehenden Sitzungen</p>
+            </div>
+        </div>
+        <a href="{% url 'work:meetings' org_slug=organization.slug %}"
+           class="mt-4 inline-flex items-center text-sm text-primary-600 dark:text-primary-400 hover:underline">
+            Alle Sitzungen anzeigen
+            <i data-lucide="arrow-right" class="w-4 h-4 ml-1"></i>
+        </a>
+    </div>
+
+    <!-- My Tasks -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 border-t-4 border-t-amber-500">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+                <i data-lucide="check-square" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+            </div>
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Meine Aufgaben</h2>
+        </div>
+        <div class="space-y-3">
+            <div class="flex flex-col items-center justify-center py-4 text-center">
+                <div class="w-12 h-12 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center mb-2">
+                    <i data-lucide="check-circle" class="w-6 h-6 text-amber-400 dark:text-amber-500"></i>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Keine offenen Aufgaben</p>
+            </div>
+        </div>
+        <a href="{% url 'work:tasks' org_slug=organization.slug %}"
+           class="mt-4 inline-flex items-center text-sm text-primary-600 dark:text-primary-400 hover:underline">
+            Alle Aufgaben anzeigen
+            <i data-lucide="arrow-right" class="w-4 h-4 ml-1"></i>
+        </a>
+    </div>
+
+    <!-- Recent Motions -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 border-t-4 border-t-green-500">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                <i data-lucide="file-text" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+            </div>
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Aktuelle Dokumente</h2>
+        </div>
+        <div class="space-y-3">
+            <div class="flex flex-col items-center justify-center py-4 text-center">
+                <div class="w-12 h-12 bg-green-50 dark:bg-green-900/20 rounded-full flex items-center justify-center mb-2">
+                    <i data-lucide="file-x" class="w-6 h-6 text-green-400 dark:text-green-500"></i>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Keine aktuellen Dokumente</p>
+            </div>
+        </div>
+        <a href="{% url 'work:motions' org_slug=organization.slug %}"
+           class="mt-4 inline-flex items-center text-sm text-primary-600 dark:text-primary-400 hover:underline">
+            Alle Dokumente anzeigen
+            <i data-lucide="arrow-right" class="w-4 h-4 ml-1"></i>
+        </a>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Schnellaktionen</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <a href="{% url 'work:motion_create' org_slug=organization.slug %}"
+           class="flex items-center gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
+            <div class="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
+                <i data-lucide="plus" class="w-5 h-5 text-primary-600 dark:text-primary-400"></i>
+            </div>
+            <div>
+                <div class="font-medium text-gray-900 dark:text-white">Neues Dokument</div>
+                <div class="text-sm text-gray-500 dark:text-gray-400">Dokument erstellen</div>
+            </div>
+        </a>
+
+        <a href="{% url 'work:faction' org_slug=organization.slug %}"
+           class="flex items-center gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
+            <div class="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                <i data-lucide="users" class="w-5 h-5 text-purple-600 dark:text-purple-400"></i>
+            </div>
+            <div>
+                <div class="font-medium text-gray-900 dark:text-white">Fraktionssitzung</div>
+                <div class="text-sm text-gray-500 dark:text-gray-400">Übersicht anzeigen</div>
+            </div>
+        </a>
+
+        <a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+           class="flex items-center gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
+            <div class="p-2 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg">
+                <i data-lucide="building-2" class="w-5 h-5 text-cyan-600 dark:text-cyan-400"></i>
+            </div>
+            <div>
+                <div class="font-medium text-gray-900 dark:text-white">Ratsinformation</div>
+                <div class="text-sm text-gray-500 dark:text-gray-400">RIS durchsuchen</div>
+            </div>
+        </a>
+
+        <a href="{% url 'work:support' org_slug=organization.slug %}"
+           class="flex items-center gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
+            <div class="p-2 bg-rose-100 dark:bg-rose-900/30 rounded-lg">
+                <i data-lucide="help-circle" class="w-5 h-5 text-rose-600 dark:text-rose-400"></i>
+            </div>
+            <div>
+                <div class="font-medium text-gray-900 dark:text-white">Support</div>
+                <div class="text-sm text-gray-500 dark:text-gray-400">Hilfe anfordern</div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<!-- Your Roles & Permissions Info -->
+<div class="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Deine Rollen</h2>
+    <div class="flex flex-wrap gap-2">
+        {% for role in membership.roles.all %}
+        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium"
+              style="background-color: {{ role.color }}20; color: {{ role.color }};">
+            {{ role.name }}
+        </span>
+        {% empty %}
+        <span class="text-gray-500 dark:text-gray-400">Keine Rollen zugewiesen.</span>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

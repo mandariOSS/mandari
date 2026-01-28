@@ -1,0 +1,82 @@
+{% if persons %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for person in persons %}
+        <a href="{% url 'insight_core:insight:person_detail' person.id %}"
+           class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-medium flex-shrink-0">
+                {% if person.given_name and person.family_name %}
+                    {{ person.given_name|slice:":1" }}{{ person.family_name|slice:":1" }}
+                {% else %}
+                    <i data-lucide="user" class="w-6 h-6"></i>
+                {% endif %}
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white truncate">
+                    {% if person.title %}{{ person.title }} {% endif %}{{ person.display_name }}
+                </p>
+                {% if person.email %}
+                <p class="text-sm text-gray-500 dark:text-gray-400 truncate">
+                    {{ person.email }}
+                </p>
+                {% endif %}
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if page_obj.has_other_pages %}
+<nav class="mt-6 flex justify-center">
+    <ul class="flex items-center gap-1">
+        {% if page_obj.has_previous %}
+        <li>
+            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}page={{ page_obj.previous_page_number }}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+            <li>
+                <span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span>
+            </li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+            <li>
+                <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}page={{ num }}"
+                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                    {{ num }}
+                </a>
+            </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+        <li>
+            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}page={{ page_obj.next_page_number }}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="user" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Personen gefunden</h3>
+    <p class="text-gray-500 dark:text-gray-400">
+        {% if request.GET.q %}
+            Ihre Suche ergab keine Treffer. Versuchen Sie einen anderen Suchbegriff.
+        {% else %}
+            Es sind noch keine Personen vorhanden.
+        {% endif %}
+    </p>
+</div>
+{% endif %}

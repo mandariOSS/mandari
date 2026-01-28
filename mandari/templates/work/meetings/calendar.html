@@ -1,0 +1,155 @@
+{% extends "work/base_work.html" %}
+{% load static %}
+
+{% block page_title %}Sitzungskalender{% endblock %}
+
+{% block header_title %}Sitzungskalender{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Alle Sitzungen in der Kalenderansicht</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:meetings' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+    <i data-lucide="list" class="w-4 h-4"></i>
+    Listenansicht
+</a>
+{% endblock %}
+
+{% block work_content %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+    <div id="calendar"></div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<!-- FullCalendar JS (lokal, DSGVO-konform) -->
+<script src="{% static 'vendor/fullcalendar/fullcalendar.min.js' %}"></script>
+<script src="{% static 'vendor/fullcalendar/de.min.js' %}"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const calendarEl = document.getElementById('calendar');
+    if (!calendarEl) return;
+
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        locale: 'de',
+        headerToolbar: {
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,listMonth'
+        },
+        events: '{% url "work:meetings_calendar_events" org_slug=organization.slug %}',
+        eventClick: function(info) {
+            if (info.event.url) {
+                window.location.href = info.event.url;
+                info.jsEvent.preventDefault();
+            }
+        },
+        eventDidMount: function(info) {
+            // Tooltip mit vollem Titel
+            if (info.event.extendedProps.fullTitle) {
+                info.el.setAttribute('title', info.event.extendedProps.fullTitle);
+            }
+        },
+        height: 'auto',
+        eventColor: '#6366f1',
+        eventTextColor: '#ffffff',
+        nowIndicator: true,
+        dayMaxEvents: 3,
+    });
+    calendar.render();
+
+    // Update calendar colors for dark mode
+    const updateCalendarTheme = () => {
+        const isDark = document.documentElement.classList.contains('dark');
+        calendarEl.style.setProperty('--fc-border-color', isDark ? '#374151' : '#e5e7eb');
+        calendarEl.style.setProperty('--fc-page-bg-color', isDark ? '#1f2937' : '#ffffff');
+        calendarEl.style.setProperty('--fc-neutral-bg-color', isDark ? '#374151' : '#f3f4f6');
+        calendarEl.style.setProperty('--fc-list-event-hover-bg-color', isDark ? '#374151' : '#f3f4f6');
+    };
+
+    updateCalendarTheme();
+
+    // Watch for dark mode changes
+    const observer = new MutationObserver(updateCalendarTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+});
+</script>
+
+<style>
+    .fc {
+        --fc-today-bg-color: rgba(99, 102, 241, 0.1);
+    }
+    .fc .fc-button-primary {
+        background-color: #6366f1;
+        border-color: #6366f1;
+    }
+    .fc .fc-button-primary:hover {
+        background-color: #4f46e5;
+        border-color: #4f46e5;
+    }
+    .fc .fc-button-primary:not(:disabled).fc-button-active,
+    .fc .fc-button-primary:not(:disabled):active {
+        background-color: #4338ca;
+        border-color: #4338ca;
+    }
+    .dark .fc-theme-standard td,
+    .dark .fc-theme-standard th {
+        border-color: #374151;
+    }
+    .dark .fc .fc-daygrid-day-number,
+    .dark .fc .fc-col-header-cell-cushion {
+        color: #d1d5db;
+    }
+
+    /* Fix for consistent event display */
+    .fc-event {
+        border-radius: 4px !important;
+        padding: 2px 4px !important;
+        font-size: 0.75rem !important;
+        line-height: 1.2 !important;
+        min-height: 22px !important;
+        max-height: 22px !important;
+        overflow: hidden !important;
+    }
+    .fc-event-title {
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        display: block !important;
+    }
+    .fc-daygrid-event {
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    .fc-daygrid-event-dot {
+        display: none !important;
+    }
+    .fc-daygrid-block-event .fc-event-title {
+        padding: 0 2px !important;
+    }
+    /* Consistent cell height */
+    .fc-daygrid-day-frame {
+        min-height: 100px !important;
+    }
+    /* Fix for month view events */
+    .fc-daygrid-day-events {
+        margin-top: 1px !important;
+    }
+    .fc-daygrid-event-harness {
+        margin-bottom: 1px !important;
+    }
+    /* Better readability */
+    .fc-event-main {
+        padding: 1px 3px !important;
+    }
+    /* Dark mode event colors */
+    .dark .fc-event {
+        background-color: #6366f1 !important;
+        border-color: #6366f1 !important;
+    }
+</style>
+{% endblock %}

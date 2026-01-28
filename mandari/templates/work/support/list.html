@@ -1,0 +1,214 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Support{% endblock %}
+
+{% block header_title %}Support{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Hilfe und Unterstützung</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:support_create' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+    <i data-lucide="plus" class="w-4 h-4"></i>
+    Neues Ticket
+</a>
+{% endblock %}
+
+{% block work_content %}
+<!-- Quick Help Cards -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <a href="{% url 'work:knowledge_base' org_slug=organization.slug %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-600 transition-colors group">
+        <div class="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg w-fit mb-4 group-hover:bg-blue-200 dark:group-hover:bg-blue-800/40 transition-colors">
+            <i data-lucide="book-open" class="w-6 h-6 text-blue-600 dark:text-blue-400"></i>
+        </div>
+        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Wissensdatenbank</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Anleitungen und Hilfestellungen für alle Funktionen.
+        </p>
+        <span class="text-sm text-primary-600 dark:text-primary-400 group-hover:underline">
+            Artikel durchsuchen
+        </span>
+    </a>
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg w-fit mb-4">
+            <i data-lucide="message-circle" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+        </div>
+        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Status</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            {% if ticket_stats.open > 0 %}
+            {{ ticket_stats.open }} offene{{ ticket_stats.open|pluralize }} Ticket{{ ticket_stats.open|pluralize }}
+            {% else %}
+            Keine offenen Tickets
+            {% endif %}
+        </p>
+        <div class="flex gap-4 text-sm">
+            <span class="text-amber-600">{{ ticket_stats.in_progress }} in Bearbeitung</span>
+            <span class="text-gray-400">{{ ticket_stats.resolved }} gelöst</span>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg w-fit mb-4">
+            <i data-lucide="mail" class="w-6 h-6 text-purple-600 dark:text-purple-400"></i>
+        </div>
+        <h3 class="font-medium text-gray-900 dark:text-white mb-2">Kontakt</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Direkter Kontakt zum Support-Team.
+        </p>
+        <a href="mailto:support@mandari.de" class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+            support@mandari.de
+        </a>
+    </div>
+</div>
+
+<!-- Featured Articles -->
+{% if featured_articles %}
+<div class="mb-8">
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Beliebte Artikel</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for article in featured_articles %}
+        <a href="{% url 'work:kb_article' org_slug=organization.slug category_slug=article.category.slug article_slug=article.slug %}"
+           class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
+            <div class="flex items-start gap-3">
+                <div class="p-2 bg-{{ article.category.color }}-100 dark:bg-{{ article.category.color }}-900/30 rounded-lg">
+                    <i data-lucide="{{ article.category.icon }}" class="w-4 h-4 text-{{ article.category.color }}-600 dark:text-{{ article.category.color }}-400"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ article.title }}</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ article.category.name }}</p>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Knowledge Base Categories -->
+{% if kb_categories %}
+<div class="mb-8">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Hilfethemen</h2>
+        <a href="{% url 'work:knowledge_base' org_slug=organization.slug %}"
+           class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+            Alle anzeigen
+        </a>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {% for category in kb_categories|slice:":8" %}
+        <a href="{% url 'work:kb_category' org_slug=organization.slug category_slug=category.slug %}"
+           class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:border-primary-300 dark:hover:border-primary-600 transition-colors text-center">
+            <div class="p-3 bg-{{ category.color }}-100 dark:bg-{{ category.color }}-900/30 rounded-lg w-fit mx-auto mb-3">
+                <i data-lucide="{{ category.icon }}" class="w-5 h-5 text-{{ category.color }}-600 dark:text-{{ category.color }}-400"></i>
+            </div>
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white">{{ category.name }}</h4>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ category.article_count_published }} Artikel</p>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Tickets Section -->
+<div>
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Meine Tickets</h2>
+
+        <!-- Status Filter -->
+        <div class="flex items-center gap-2">
+            <select onchange="window.location.href = '?status=' + this.value"
+                    class="text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5">
+                <option value="" {% if not status_filter %}selected{% endif %}>Alle Status</option>
+                {% for value, label in status_choices %}
+                <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    {% if tickets %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
+        {% for ticket in tickets %}
+        <a href="{% url 'work:support_detail' org_slug=organization.slug ticket_id=ticket.id %}"
+           class="flex items-center gap-4 p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+
+            <!-- Status indicator -->
+            <div class="flex-shrink-0">
+                {% if ticket.status == 'open' %}
+                <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+                {% elif ticket.status == 'in_progress' %}
+                <span class="w-3 h-3 rounded-full bg-amber-500"></span>
+                {% elif ticket.status == 'waiting' %}
+                <span class="w-3 h-3 rounded-full bg-purple-500"></span>
+                {% elif ticket.status == 'resolved' %}
+                <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                {% else %}
+                <span class="w-3 h-3 rounded-full bg-gray-400"></span>
+                {% endif %}
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                    <h3 class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ ticket.subject }}</h3>
+                    {% if ticket.priority == 'urgent' %}
+                    <span class="px-2 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded">Dringend</span>
+                    {% elif ticket.priority == 'high' %}
+                    <span class="px-2 py-0.5 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded">Hoch</span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-3 mt-1">
+                    <span class="text-xs text-gray-500 dark:text-gray-400">
+                        #{{ ticket.id.hex|slice:":8" }}
+                    </span>
+                    <span class="text-xs text-gray-400 dark:text-gray-500">
+                        {{ ticket.get_category_display }}
+                    </span>
+                    <span class="text-xs text-gray-400 dark:text-gray-500">
+                        {{ ticket.created_at|date:"d.m.Y H:i" }}
+                    </span>
+                </div>
+            </div>
+
+            <!-- Status badge -->
+            <div class="flex-shrink-0">
+                <span class="px-2.5 py-1 text-xs font-medium rounded-full
+                    {% if ticket.status == 'open' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
+                    {% elif ticket.status == 'in_progress' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
+                    {% elif ticket.status == 'waiting' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+                    {% elif ticket.status == 'resolved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
+                    {% else %}bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300{% endif %}">
+                    {{ ticket.get_status_display }}
+                </span>
+            </div>
+
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <!-- Empty State -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+        <div class="w-16 h-16 mx-auto mb-4 bg-rose-100 dark:bg-rose-900/30 rounded-full flex items-center justify-center">
+            <i data-lucide="ticket" class="w-8 h-8 text-rose-500 dark:text-rose-400"></i>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Tickets vorhanden</h3>
+        <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+            {% if status_filter %}
+            Keine Tickets mit diesem Status gefunden.
+            {% else %}
+            Sie haben noch keine Support-Anfragen gestellt.
+            {% endif %}
+        </p>
+        <a href="{% url 'work:support_create' org_slug=organization.slug %}"
+           class="inline-flex items-center gap-2 mt-6 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            Neues Ticket erstellen
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% load i18n %}
+<a href="{% url 'work:task_detail' org_slug=organization.slug task_id=task.id %}"
+   class="block bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:shadow-md transition-all cursor-move task-card border-l-4
+   {% if task.priority == 'urgent' %}border-l-red-500 hover:border-l-red-600
+   {% elif task.priority == 'high' %}border-l-orange-500 hover:border-l-orange-600
+   {% elif task.priority == 'medium' %}border-l-blue-500 hover:border-l-blue-600
+   {% else %}border-l-gray-300 dark:border-l-gray-600 hover:border-l-gray-400{% endif %}"
+   data-id="{{ task.id }}">
+
+    <!-- Title -->
+    <h4 class="text-sm font-medium text-gray-900 dark:text-white line-clamp-2 {% if task.is_completed %}line-through opacity-60{% endif %}">
+        {{ task.title|truncatechars:80 }}
+    </h4>
+
+    <!-- Description -->
+    {% if task.description %}
+    <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 mt-1 mb-2">
+        {{ task.description|truncatechars:60 }}
+    </p>
+    {% endif %}
+
+    <!-- Meta info -->
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+        <!-- Due date -->
+        {% if task.due_date %}
+        <span class="flex items-center gap-1
+            {% if task.is_overdue %}text-red-600 dark:text-red-400
+            {% else %}text-gray-500 dark:text-gray-400{% endif %}">
+            <i data-lucide="calendar" class="w-3 h-3"></i>
+            {{ task.due_date|date:"d.m." }}
+            {% if task.is_overdue %}
+            <i data-lucide="alert-circle" class="w-3 h-3"></i>
+            {% endif %}
+        </span>
+        {% endif %}
+
+        <!-- Assignee -->
+        {% if task.assigned_to %}
+        <span class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+            <i data-lucide="user" class="w-3 h-3"></i>
+            {{ task.assigned_to.user.get_display_name|truncatechars:15 }}
+        </span>
+        {% endif %}
+
+        <!-- Priority badge (for urgent/high) -->
+        {% if task.priority == 'urgent' %}
+        <span class="px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-[10px] font-medium">
+            Dringend
+        </span>
+        {% elif task.priority == 'high' %}
+        <span class="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded text-[10px] font-medium">
+            Hoch
+        </span>
+        {% endif %}
+
+        <!-- Related item indicator -->
+        {% if task.related_meeting or task.related_motion or task.related_faction_meeting %}
+        <span class="flex items-center gap-1 text-primary-600 dark:text-primary-400">
+            <i data-lucide="link" class="w-3 h-3"></i>
+        </span>
+        {% endif %}
+    </div>
+
+    <!-- Tags -->
+    {% if task.tags %}
+    <div class="flex flex-wrap gap-1 mt-2">
+        {% for tag in task.tags|slice:":3" %}
+        <span class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded text-[10px]">
+            {{ tag }}
+        </span>
+        {% endfor %}
+    </div>
+    {% endif %}
+</a>

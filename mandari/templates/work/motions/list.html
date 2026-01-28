@@ -1,0 +1,179 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Anträge & Vorgänge{% endblock %}
+
+{% block header_title %}Anträge & Vorgänge{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ stats.total }} Dokumente · {{ stats.draft }} Entwürfe</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:motion_trash' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+    <i data-lucide="trash-2" class="w-4 h-4"></i>
+    Papierkorb
+</a>
+<a href="{% url 'work:motion_create' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+    <i data-lucide="plus" class="w-4 h-4"></i>
+    Neues Dokument
+</a>
+{% endblock %}
+
+{% block work_content %}
+<!-- Filters -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
+    <form method="get" class="flex flex-wrap items-center gap-4">
+        <!-- Search -->
+        <div class="flex-1 min-w-[200px]">
+            <div class="relative">
+                <input type="text" name="q" value="{{ search_query|default:'' }}"
+                       placeholder="Dokument suchen..."
+                       class="w-full px-4 py-2.5 pl-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            </div>
+        </div>
+
+        <!-- Status Filter -->
+        <select name="status" onchange="this.form.submit()"
+                class="px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+            <option value="">Alle Status</option>
+            {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <!-- Type Filter -->
+        <select name="type" onchange="this.form.submit()"
+                class="px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+            <option value="">Alle Typen</option>
+            {% for value, label in type_choices %}
+            <option value="{{ value }}" {% if selected_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <!-- My Motions -->
+        <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" name="mine" value="1" {% if filter_mine %}checked{% endif %}
+                   onchange="this.form.submit()"
+                   class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+            <span class="text-sm text-gray-600 dark:text-gray-400">Nur meine</span>
+        </label>
+    </form>
+</div>
+
+<!-- Motions List -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="divide-y divide-gray-100 dark:divide-gray-700">
+        {% for motion in motions %}
+        <a href="{% url 'work:motion_detail' org_slug=organization.slug motion_id=motion.id %}"
+           class="block px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+            <div class="flex items-start gap-4">
+                <!-- Icon -->
+                <div class="flex-shrink-0 p-2 rounded-lg
+                    {% if motion.status == 'draft' %}bg-gray-100 dark:bg-gray-700
+                    {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30
+                    {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30
+                    {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30
+                    {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30
+                    {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30
+                    {% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                    <i data-lucide="{% if motion.motion_type == 'inquiry' %}help-circle{% elif motion.motion_type == 'amendment' %}edit{% else %}file-text{% endif %}"
+                       class="w-5 h-5
+                        {% if motion.status == 'draft' %}text-gray-500
+                        {% elif motion.status == 'review' %}text-amber-600 dark:text-amber-400
+                        {% elif motion.status == 'approved' %}text-green-600 dark:text-green-400
+                        {% elif motion.status == 'submitted' %}text-blue-600 dark:text-blue-400
+                        {% elif motion.status == 'completed' %}text-purple-600 dark:text-purple-400
+                        {% elif motion.status == 'rejected' %}text-red-600 dark:text-red-400
+                        {% else %}text-gray-500{% endif %}"></i>
+                </div>
+
+                <!-- Content -->
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-medium text-gray-900 dark:text-white truncate">{{ motion.title }}</h3>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 mt-1">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                            {% if motion.status == 'draft' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
+                            {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
+                            {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
+                            {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
+                            {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+                            {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
+                            {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                            {{ motion.get_status_display }}
+                        </span>
+                        <span class="text-xs text-gray-500">{{ motion.get_motion_type_display }}</span>
+                        <span class="text-xs text-gray-500">·</span>
+                        <span class="text-xs text-gray-500">{{ motion.author.user.get_display_name }}</span>
+                    </div>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Zuletzt bearbeitet {{ motion.updated_at|timesince }}
+                    </p>
+                </div>
+
+                <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+            </div>
+        </a>
+        {% empty %}
+        <div class="px-5 py-12 text-center">
+            <div class="w-16 h-16 mx-auto mb-4 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+                <i data-lucide="file-text" class="w-8 h-8 text-green-500 dark:text-green-400"></i>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Dokumente vorhanden</h3>
+            <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+                {% if search_query or selected_status or selected_type or filter_mine %}
+                Keine Dokumente mit diesen Filterkriterien gefunden.
+                {% else %}
+                Erstellen Sie Ihr erstes Dokument, um loszulegen.
+                {% endif %}
+            </p>
+            {% if not search_query and not selected_status and not selected_type and not filter_mine %}
+            <a href="{% url 'work:motion_create' org_slug=organization.slug %}"
+               class="inline-flex items-center gap-2 mt-6 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Neues Dokument erstellen
+            </a>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if motions.has_other_pages %}
+    <div class="px-5 py-4 border-t border-gray-200 dark:border-gray-700">
+        <div class="flex items-center justify-between">
+            <p class="text-sm text-gray-500">
+                Zeige {{ motions.start_index }}-{{ motions.end_index }} von {{ paginator.count }}
+            </p>
+            <nav class="flex items-center gap-1">
+                {% if motions.has_previous %}
+                <a href="?page={{ motions.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                </a>
+                {% endif %}
+
+                {% for num in motions.paginator.page_range %}
+                {% if motions.number == num %}
+                <span class="px-3 py-2 bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400 rounded-lg font-medium text-sm">{{ num }}</span>
+                {% elif num > motions.number|add:'-3' and num < motions.number|add:'3' %}
+                <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
+                   class="px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-sm">{{ num }}</a>
+                {% endif %}
+                {% endfor %}
+
+                {% if motions.has_next %}
+                <a href="?page={{ motions.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                </a>
+                {% endif %}
+            </nav>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

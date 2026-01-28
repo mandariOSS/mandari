@@ -1,0 +1,62 @@
+{% extends "base_ris.html" %}
+{% load static %}
+
+{% block title %}Gremien{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Gremien</h1>
+        <p class="text-gray-600 dark:text-gray-400">
+            {% if active_body %}
+                Alle Gremien der {{ active_body.name }}
+            {% else %}
+                Bitte wählen Sie eine Kommune aus
+            {% endif %}
+        </p>
+    </div>
+
+    <!-- Search -->
+    <div class="mb-6">
+        <div class="relative max-w-md">
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
+            <input type="search"
+                   id="search-orgs"
+                   name="q"
+                   value="{{ request.GET.q }}"
+                   placeholder="Gremium suchen..."
+                   hx-get="{% url 'insight_core:insight:organization_list' %}"
+                   hx-trigger="keyup changed delay:400ms, search"
+                   hx-target="#organizations-list"
+                   hx-swap="innerHTML"
+                   hx-indicator="#org-search-loading"
+                   hx-vals='{"tab": "{{ tab }}"}'
+                   class="w-full pl-10 pr-10 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            <div id="org-search-loading" class="htmx-indicator absolute right-3 top-1/2 -translate-y-1/2">
+                <svg class="animate-spin h-5 w-5 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
+        <a href="?tab=active{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
+           class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if tab == 'active' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
+            Aktiv ({{ active_count|default:0 }})
+        </a>
+        <a href="?tab=past{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
+           class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if tab == 'past' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
+            Vergangen ({{ past_count|default:0 }})
+        </a>
+    </div>
+
+    <!-- Organizations List Container -->
+    <div id="organizations-list">
+        {% include "partials/organization_list_items.html" %}
+    </div>
+</div>
+{% endblock %}

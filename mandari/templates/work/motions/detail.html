@@ -1,0 +1,461 @@
+{% extends "work/base_work.html" %}
+{% load humanize %}
+
+{% block page_title %}{{ motion.title }}{% endblock %}
+
+{% block header_title %}{{ motion.title }}{% endblock %}
+{% block header_subtitle %}
+<div class="flex flex-wrap items-center gap-2 mt-2">
+    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium
+        {% if motion.status == 'draft' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
+        {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
+        {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
+        {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
+        {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+        {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
+        {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+        {{ motion.get_status_display }}
+    </span>
+    <span class="text-sm text-gray-500 dark:text-gray-400">{{ motion.get_motion_type_display }}</span>
+    <span class="text-gray-300 dark:text-gray-600">·</span>
+    <span class="text-sm text-gray-500 dark:text-gray-400">von {{ motion.author.user.get_display_name }}</span>
+</div>
+{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-2">
+    {% if can_edit %}
+    <a href="{% url 'work:motion_edit' org_slug=organization.slug motion_id=motion.id %}"
+       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+        <i data-lucide="edit-2" class="w-4 h-4"></i>
+        Bearbeiten
+    </a>
+    {% endif %}
+    <div class="relative" x-data="{ open: false }">
+        <button @click="open = !open" @click.away="open = false"
+                class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+            <i data-lucide="more-vertical" class="w-5 h-5"></i>
+        </button>
+        <div x-show="open" x-transition
+             class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-10">
+            <a href="{% url 'work:motion_share' org_slug=organization.slug motion_id=motion.id %}"
+               class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                <i data-lucide="share-2" class="w-4 h-4"></i>
+                Teilen
+            </a>
+            <a href="{% url 'work:motion_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf"
+               class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                <i data-lucide="download" class="w-4 h-4"></i>
+                Als PDF exportieren
+            </a>
+            <hr class="my-1 border-gray-200 dark:border-gray-700">
+            <a href="{% url 'work:motions' org_slug=organization.slug %}"
+               class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                Zurück zur Liste
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block work_content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Main Content -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Summary -->
+        {% if motion.summary %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Zusammenfassung</h3>
+            <p class="text-gray-900 dark:text-white">{{ motion.summary }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Content -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Inhalt</h3>
+            <div class="prose prose-gray dark:prose-invert max-w-none motion-content">
+                {{ motion.content|safe|default:"<p class='text-gray-500 italic'>Kein Inhalt vorhanden.</p>" }}
+            </div>
+        </div>
+        <style>
+            /* Reset styles for content copied from external sources */
+            .motion-content * {
+                all: revert;
+            }
+            .motion-content {
+                font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                font-size: 1rem;
+                line-height: 1.75;
+                color: #374151;
+            }
+            .dark .motion-content {
+                color: #d1d5db;
+            }
+            .motion-content h1 {
+                font-size: 1.875rem;
+                font-weight: 700;
+                margin-top: 1.5rem;
+                margin-bottom: 0.75rem;
+                color: #111827;
+            }
+            .dark .motion-content h1 {
+                color: #f9fafb;
+            }
+            .motion-content h2 {
+                font-size: 1.5rem;
+                font-weight: 600;
+                margin-top: 1.5rem;
+                margin-bottom: 0.75rem;
+                color: #111827;
+            }
+            .dark .motion-content h2 {
+                color: #f9fafb;
+            }
+            .motion-content h3 {
+                font-size: 1.25rem;
+                font-weight: 600;
+                margin-top: 1.25rem;
+                margin-bottom: 0.5rem;
+                color: #111827;
+            }
+            .dark .motion-content h3 {
+                color: #f9fafb;
+            }
+            .motion-content p {
+                margin-top: 0.75rem;
+                margin-bottom: 0.75rem;
+            }
+            .motion-content ul, .motion-content ol {
+                padding-left: 1.5rem;
+                margin-top: 0.75rem;
+                margin-bottom: 0.75rem;
+            }
+            .motion-content ul {
+                list-style-type: disc;
+            }
+            .motion-content ol {
+                list-style-type: decimal;
+            }
+            .motion-content li {
+                margin-top: 0.25rem;
+                margin-bottom: 0.25rem;
+            }
+            .motion-content li > p {
+                margin-top: 0.25rem;
+                margin-bottom: 0.25rem;
+            }
+            .motion-content strong {
+                font-weight: 600;
+                color: #111827;
+            }
+            .dark .motion-content strong {
+                color: #f9fafb;
+            }
+            .motion-content blockquote {
+                border-left: 4px solid #6366f1;
+                padding-left: 1rem;
+                margin: 1rem 0;
+                color: #4b5563;
+                font-style: italic;
+            }
+            .dark .motion-content blockquote {
+                color: #9ca3af;
+                border-color: #818cf8;
+            }
+            .motion-content a {
+                color: #4f46e5;
+                text-decoration: underline;
+            }
+            .dark .motion-content a {
+                color: #818cf8;
+            }
+            /* Remove any nested article/div styling from external sources */
+            .motion-content article,
+            .motion-content > div,
+            .motion-content [class*="flex"],
+            .motion-content [class*="text-"] {
+                all: unset;
+                display: block;
+            }
+        </style>
+
+        <!-- Documents -->
+        {% if documents %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Anhänge</h3>
+            <ul class="divide-y divide-gray-100 dark:divide-gray-700">
+                {% for doc in documents %}
+                <li class="py-3 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                            <i data-lucide="file-text" class="w-5 h-5 text-gray-500"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-900 dark:text-white">{{ doc.filename }}</p>
+                            <p class="text-xs text-gray-500">{{ doc.file_size|filesizeformat }}</p>
+                        </div>
+                    </div>
+                    <a href="{{ doc.file.url }}" target="_blank"
+                       class="p-2 text-gray-500 hover:text-primary-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <!-- Comments -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+             x-data="{ newComment: '' }">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                Kommentare
+                <span class="text-sm font-normal text-gray-500">({{ comments.count }})</span>
+            </h3>
+
+            <!-- Comment Form -->
+            <form method="post" action="{% url 'work:motion_comment' org_slug=organization.slug motion_id=motion.id %}"
+                  class="mb-6">
+                {% csrf_token %}
+                <textarea name="content" rows="3" x-model="newComment" required
+                          class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+                          placeholder="Kommentar hinzufügen..."></textarea>
+                <div class="flex justify-end mt-2">
+                    <button type="submit" :disabled="!newComment.trim()"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i data-lucide="send" class="w-4 h-4"></i>
+                        Senden
+                    </button>
+                </div>
+            </form>
+
+            <!-- Comments List -->
+            <div class="space-y-4">
+                {% for comment in comments %}
+                <div class="flex gap-3" id="comment-{{ comment.id }}">
+                    <div class="flex-shrink-0 w-8 h-8 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
+                        <span class="text-sm font-medium text-primary-600 dark:text-primary-400">
+                            {{ comment.author.user.get_initials }}
+                        </span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2">
+                            <span class="font-medium text-sm text-gray-900 dark:text-white">
+                                {{ comment.author.user.get_display_name }}
+                            </span>
+                            <span class="text-xs text-gray-500">
+                                {{ comment.created_at|timesince }}
+                            </span>
+                        </div>
+                        {% if comment.selected_text %}
+                        <div class="mt-1 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border-l-2 border-amber-400 text-sm text-gray-600 dark:text-gray-400 italic">
+                            "{{ comment.selected_text|truncatewords:20 }}"
+                        </div>
+                        {% endif %}
+                        <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">{{ comment.content }}</p>
+
+                        <!-- Replies -->
+                        {% if comment.replies.all %}
+                        <div class="mt-3 ml-4 space-y-3 border-l-2 border-gray-100 dark:border-gray-700 pl-4">
+                            {% for reply in comment.replies.all %}
+                            <div class="flex gap-2">
+                                <div class="flex-shrink-0 w-6 h-6 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                                    <span class="text-xs font-medium text-gray-600 dark:text-gray-400">
+                                        {{ reply.author.user.get_initials }}
+                                    </span>
+                                </div>
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium text-xs text-gray-900 dark:text-white">
+                                            {{ reply.author.user.get_display_name }}
+                                        </span>
+                                        <span class="text-xs text-gray-500">
+                                            {{ reply.created_at|timesince }}
+                                        </span>
+                                    </div>
+                                    <p class="text-sm text-gray-700 dark:text-gray-300">{{ reply.content }}</p>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% empty %}
+                <p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                    Noch keine Kommentare vorhanden.
+                </p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-6">
+        <!-- Status Change -->
+        {% if can_edit %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+             x-data="{ showConfirm: false, newStatus: '' }">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Status ändern</h3>
+
+            <div class="space-y-2">
+                {% if motion.status == 'draft' %}
+                <button @click="newStatus = 'review'; showConfirm = true"
+                        class="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-300 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/30">
+                    <i data-lucide="eye" class="w-4 h-4"></i>
+                    Zur Prüfung einreichen
+                </button>
+                {% elif motion.status == 'review' %}
+                <button @click="newStatus = 'approved'; showConfirm = true"
+                        class="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-green-700 bg-green-50 dark:bg-green-900/20 dark:text-green-300 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30">
+                    <i data-lucide="check" class="w-4 h-4"></i>
+                    Genehmigen
+                </button>
+                <button @click="newStatus = 'rejected'; showConfirm = true"
+                        class="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-red-700 bg-red-50 dark:bg-red-900/20 dark:text-red-300 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                    Ablehnen
+                </button>
+                <button @click="newStatus = 'draft'; showConfirm = true"
+                        class="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 dark:bg-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                    Zurück zum Entwurf
+                </button>
+                {% elif motion.status == 'approved' %}
+                <button @click="newStatus = 'submitted'; showConfirm = true"
+                        class="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-blue-700 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30">
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                    Einreichen
+                </button>
+                {% elif motion.status == 'submitted' %}
+                <button @click="newStatus = 'completed'; showConfirm = true"
+                        class="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-purple-700 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-300 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30">
+                    <i data-lucide="check-circle" class="w-4 h-4"></i>
+                    Als erledigt markieren
+                </button>
+                {% endif %}
+            </div>
+
+            <!-- Confirmation Modal -->
+            <div x-show="showConfirm" x-transition
+                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="showConfirm = false">
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-sm mx-4">
+                    <h4 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Status ändern?</h4>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                        Möchten Sie den Status wirklich ändern?
+                    </p>
+                    <form method="post" action="{% url 'work:motion_status' org_slug=organization.slug motion_id=motion.id %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="status" :value="newStatus">
+                        <div class="flex justify-end gap-3">
+                            <button type="button" @click="showConfirm = false"
+                                    class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+                                Abbrechen
+                            </button>
+                            <button type="submit"
+                                    class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                                Bestätigen
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Meta Info -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Details</h3>
+
+            <dl class="space-y-3">
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Erstellt</dt>
+                    <dd class="text-sm text-gray-900 dark:text-white">{{ motion.created_at|date:"d.m.Y H:i" }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Zuletzt bearbeitet</dt>
+                    <dd class="text-sm text-gray-900 dark:text-white">{{ motion.updated_at|date:"d.m.Y H:i" }}</dd>
+                </div>
+                {% if motion.submitted_at %}
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Eingereicht</dt>
+                    <dd class="text-sm text-gray-900 dark:text-white">{{ motion.submitted_at|date:"d.m.Y H:i" }}</dd>
+                </div>
+                {% endif %}
+                {% if motion.template %}
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Vorlage</dt>
+                    <dd class="text-sm text-gray-900 dark:text-white">{{ motion.template.name }}</dd>
+                </div>
+                {% endif %}
+                {% if motion.related_meeting %}
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Bezug zu Sitzung</dt>
+                    <dd class="text-sm text-gray-900 dark:text-white">
+                        <a href="#" class="text-primary-600 hover:text-primary-700">
+                            {{ motion.related_meeting.name }}
+                        </a>
+                    </dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+
+        <!-- Version History -->
+        {% if revisions %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Versionen</h3>
+
+            <ul class="space-y-3">
+                {% for revision in revisions %}
+                <li class="flex items-start gap-3">
+                    <div class="flex-shrink-0 w-6 h-6 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                        <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ revision.version }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-gray-900 dark:text-white">
+                            {{ revision.change_summary|default:"Änderungen" }}
+                        </p>
+                        <p class="text-xs text-gray-500">
+                            {{ revision.changed_by.user.get_display_name }} · {{ revision.created_at|timesince }}
+                        </p>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <!-- Shares -->
+        {% if shares %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">Freigaben</h3>
+                <a href="{% url 'work:motion_share' org_slug=organization.slug motion_id=motion.id %}"
+                   class="text-sm text-primary-600 hover:text-primary-700">
+                    Verwalten
+                </a>
+            </div>
+
+            <ul class="space-y-2">
+                {% for share in shares %}
+                <li class="flex items-center gap-2 text-sm">
+                    <i data-lucide="{% if share.scope == 'user' %}user{% elif share.scope == 'role' %}shield{% else %}users{% endif %}"
+                       class="w-4 h-4 text-gray-400"></i>
+                    <span class="text-gray-900 dark:text-white">
+                        {% if share.scope == 'user' %}{{ share.user.email }}
+                        {% elif share.scope == 'role' %}{{ share.role.name }}
+                        {% elif share.scope == 'organization' %}Gesamte Organisation
+                        {% elif share.scope == 'party' %}{{ share.party_group.name }}
+                        {% endif %}
+                    </span>
+                    <span class="text-xs text-gray-500">({{ share.get_level_display }})</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

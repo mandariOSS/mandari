@@ -1,0 +1,237 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}{{ motion.title }} teilen{% endblock %}
+
+{% block header_title %}Antrag teilen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ motion.title }}</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:motion_detail' org_slug=organization.slug motion_id=motion.id %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Zurück zum Antrag
+</a>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-3xl space-y-6">
+    <!-- Share Form -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+         x-data="{ scope: 'user', showMessage: false }">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Neue Freigabe</h3>
+
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+
+            <!-- Scope Selection -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Freigabe für
+                </label>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <label class="relative cursor-pointer">
+                        <input type="radio" name="scope" value="user" x-model="scope" class="peer sr-only">
+                        <div class="p-3 border border-gray-200 dark:border-gray-700 rounded-lg text-center peer-checked:border-primary-500 peer-checked:bg-primary-50 dark:peer-checked:bg-primary-900/20 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                            <i data-lucide="user" class="w-5 h-5 mx-auto mb-1 text-gray-500 peer-checked:text-primary-600"></i>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Person</span>
+                        </div>
+                    </label>
+                    <label class="relative cursor-pointer">
+                        <input type="radio" name="scope" value="role" x-model="scope" class="peer sr-only">
+                        <div class="p-3 border border-gray-200 dark:border-gray-700 rounded-lg text-center peer-checked:border-primary-500 peer-checked:bg-primary-50 dark:peer-checked:bg-primary-900/20 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                            <i data-lucide="shield" class="w-5 h-5 mx-auto mb-1 text-gray-500 peer-checked:text-primary-600"></i>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Rolle</span>
+                        </div>
+                    </label>
+                    <label class="relative cursor-pointer">
+                        <input type="radio" name="scope" value="party" x-model="scope" class="peer sr-only">
+                        <div class="p-3 border border-gray-200 dark:border-gray-700 rounded-lg text-center peer-checked:border-primary-500 peer-checked:bg-primary-50 dark:peer-checked:bg-primary-900/20 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                            <i data-lucide="users" class="w-5 h-5 mx-auto mb-1 text-gray-500 peer-checked:text-primary-600"></i>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Fraktion</span>
+                        </div>
+                    </label>
+                    <label class="relative cursor-pointer">
+                        <input type="radio" name="scope" value="organization" x-model="scope" class="peer sr-only">
+                        <div class="p-3 border border-gray-200 dark:border-gray-700 rounded-lg text-center peer-checked:border-primary-500 peer-checked:bg-primary-50 dark:peer-checked:bg-primary-900/20 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                            <i data-lucide="building" class="w-5 h-5 mx-auto mb-1 text-gray-500 peer-checked:text-primary-600"></i>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Organisation</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- User Email (for scope=user) -->
+            <div x-show="scope === 'user'" x-transition>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    E-Mail-Adresse
+                </label>
+                <input type="email" name="email"
+                       class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                       placeholder="name@beispiel.de">
+            </div>
+
+            <!-- Role Selection (for scope=role) -->
+            <div x-show="scope === 'role'" x-transition>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Rolle auswählen
+                </label>
+                <select name="role"
+                        class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                    <option value="">Rolle auswählen...</option>
+                    <!-- Roles would be populated here -->
+                </select>
+            </div>
+
+            <!-- Party Group Selection (for scope=party) -->
+            <div x-show="scope === 'party'" x-transition>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Fraktion auswählen
+                </label>
+                <select name="party_group"
+                        class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                    <option value="">Fraktion auswählen...</option>
+                    <!-- Party groups would be populated here -->
+                </select>
+            </div>
+
+            <!-- Organization Info (for scope=organization) -->
+            <div x-show="scope === 'organization'" x-transition>
+                <div class="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                    <div class="flex gap-3">
+                        <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600 flex-shrink-0"></i>
+                        <div class="text-sm text-amber-700 dark:text-amber-300">
+                            <p class="font-medium">Achtung: Organisationsweite Freigabe</p>
+                            <p class="mt-1">Diese Freigabe macht den Antrag für alle Mitglieder von {{ organization.name }} sichtbar.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Access Level -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Zugriffsebene
+                </label>
+                <select name="level"
+                        class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                    <option value="view">Lesen</option>
+                    <option value="comment">Kommentieren</option>
+                    <option value="edit">Bearbeiten</option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500">
+                    Lesen = nur ansehen · Kommentieren = + Kommentare hinzufügen · Bearbeiten = volle Bearbeitung
+                </p>
+            </div>
+
+            <!-- Optional Message -->
+            <div>
+                <button type="button" @click="showMessage = !showMessage"
+                        class="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1">
+                    <i data-lucide="plus" class="w-4 h-4" x-show="!showMessage"></i>
+                    <i data-lucide="minus" class="w-4 h-4" x-show="showMessage"></i>
+                    <span x-text="showMessage ? 'Nachricht ausblenden' : 'Nachricht hinzufügen'"></span>
+                </button>
+                <div x-show="showMessage" x-transition class="mt-2">
+                    <textarea name="message" rows="3"
+                              class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                              placeholder="Optionale Nachricht an den Empfänger..."></textarea>
+                </div>
+            </div>
+
+            <!-- Submit -->
+            <div class="flex justify-end">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                    <i data-lucide="share-2" class="w-4 h-4"></i>
+                    Freigabe erstellen
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Existing Shares -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Aktuelle Freigaben</h3>
+
+        {% if shares %}
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700">
+            {% for share in shares %}
+            <li class="py-4 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 rounded-lg
+                        {% if share.scope == 'user' %}bg-blue-100 dark:bg-blue-900/30
+                        {% elif share.scope == 'role' %}bg-purple-100 dark:bg-purple-900/30
+                        {% elif share.scope == 'party' %}bg-green-100 dark:bg-green-900/30
+                        {% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                        <i data-lucide="{% if share.scope == 'user' %}user{% elif share.scope == 'role' %}shield{% elif share.scope == 'party' %}users{% else %}building{% endif %}"
+                           class="w-5 h-5
+                            {% if share.scope == 'user' %}text-blue-600 dark:text-blue-400
+                            {% elif share.scope == 'role' %}text-purple-600 dark:text-purple-400
+                            {% elif share.scope == 'party' %}text-green-600 dark:text-green-400
+                            {% else %}text-gray-600 dark:text-gray-400{% endif %}"></i>
+                    </div>
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white">
+                            {% if share.scope == 'user' %}{{ share.user.email }}
+                            {% elif share.scope == 'role' %}{{ share.role.name }}
+                            {% elif share.scope == 'party' %}{{ share.party_group.name }}
+                            {% else %}{{ organization.name }}{% endif %}
+                        </p>
+                        <div class="flex items-center gap-2 text-sm text-gray-500">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                {% if share.level == 'view' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
+                                {% elif share.level == 'comment' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
+                                {% else %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300{% endif %}">
+                                {{ share.get_level_display }}
+                            </span>
+                            <span>·</span>
+                            <span>{{ share.created_at|timesince }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" @click="if(confirm('Freigabe wirklich entfernen?')) { /* delete share */ }"
+                            class="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-center py-8">
+            <div class="w-12 h-12 mx-auto mb-4 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                <i data-lucide="share-2" class="w-6 h-6 text-gray-400"></i>
+            </div>
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+                Dieser Antrag wurde noch nicht geteilt.
+            </p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Share Link -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+         x-data="{ linkCopied: false }">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Direkter Link</h3>
+
+        <div class="flex items-center gap-2">
+            <input type="text" readonly
+                   value="{{ request.build_absolute_uri }}"
+                   class="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-600 dark:text-gray-400">
+            <button type="button"
+                    @click="navigator.clipboard.writeText('{{ request.build_absolute_uri }}'); linkCopied = true; setTimeout(() => linkCopied = false, 2000)"
+                    class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+                <i data-lucide="copy" class="w-4 h-4" x-show="!linkCopied"></i>
+                <i data-lucide="check" class="w-4 h-4 text-green-500" x-show="linkCopied"></i>
+                <span x-text="linkCopied ? 'Kopiert!' : 'Kopieren'"></span>
+            </button>
+        </div>
+        <p class="mt-2 text-xs text-gray-500">
+            Personen mit diesem Link und entsprechender Berechtigung können den Antrag ansehen.
+        </p>
+    </div>
+</div>
+{% endblock %}

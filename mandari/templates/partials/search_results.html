@@ -1,0 +1,86 @@
+{% if results %}
+<div class="space-y-3">
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        {{ total }} Ergebnis{% if total != 1 %}se{% endif %} für "<strong>{{ query }}</strong>"
+        {% if pages > 1 %}
+        <span class="ml-2">(Seite {{ page }} von {{ pages }})</span>
+        {% endif %}
+    </p>
+
+    {% for result in results %}
+    <a href="{{ result.url }}"
+       class="block p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all">
+        <div class="flex items-start gap-4">
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+                        {% if result.type == 'paper' %}bg-amber-100 dark:bg-amber-900/50{% endif %}
+                        {% if result.type == 'person' %}bg-green-100 dark:bg-green-900/50{% endif %}
+                        {% if result.type == 'organization' %}bg-blue-100 dark:bg-blue-900/50{% endif %}
+                        {% if result.type == 'meeting' %}bg-purple-100 dark:bg-purple-900/50{% endif %}
+                        {% if result.type == 'file' %}bg-rose-100 dark:bg-rose-900/50{% endif %}">
+                {% if result.type == 'paper' %}
+                    <i data-lucide="file-text" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+                {% elif result.type == 'person' %}
+                    <i data-lucide="user" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+                {% elif result.type == 'organization' %}
+                    <i data-lucide="users" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+                {% elif result.type == 'meeting' %}
+                    <i data-lucide="calendar" class="w-5 h-5 text-purple-600 dark:text-purple-400"></i>
+                {% elif result.type == 'file' %}
+                    <i data-lucide="file-search" class="w-5 h-5 text-rose-600 dark:text-rose-400"></i>
+                {% endif %}
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white truncate">
+                    {{ result.title }}
+                </p>
+                {% if result.subtitle %}
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                    {{ result.subtitle }}
+                </p>
+                {% endif %}
+                {% if result.text_preview %}
+                <p class="text-sm text-gray-600 dark:text-gray-400 mt-2 line-clamp-2">
+                    "...{{ result.text_preview }}..."
+                </p>
+                {% endif %}
+            </div>
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0
+                         {% if result.type == 'paper' %}bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-400{% endif %}
+                         {% if result.type == 'person' %}bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400{% endif %}
+                         {% if result.type == 'organization' %}bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-400{% endif %}
+                         {% if result.type == 'meeting' %}bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-400{% endif %}
+                         {% if result.type == 'file' %}bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-400{% endif %}">
+                {% if result.type == 'paper' %}Vorgang{% endif %}
+                {% if result.type == 'person' %}Person{% endif %}
+                {% if result.type == 'organization' %}Gremium{% endif %}
+                {% if result.type == 'meeting' %}Sitzung{% endif %}
+                {% if result.type == 'file' %}Dokument{% endif %}
+            </span>
+        </div>
+    </a>
+    {% endfor %}
+
+    {% if pages > 1 and page < pages %}
+    <!-- Load More Button -->
+    <div class="text-center pt-4">
+        <button hx-get="{% url 'insight_core:insight:search_results' %}?q={{ query }}&page={{ page|add:1 }}{% if search_type %}&type={{ search_type }}{% endif %}"
+                hx-target="#search-results"
+                hx-swap="innerHTML"
+                hx-indicator="#search-loading"
+                class="inline-flex items-center gap-2 px-6 py-3 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors">
+            <i data-lucide="chevron-down" class="w-4 h-4"></i>
+            Mehr laden
+        </button>
+    </div>
+    {% endif %}
+</div>
+{% elif query %}
+<div class="text-center py-12">
+    <i data-lucide="search-x" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Ergebnisse</h3>
+    <p class="text-gray-500 dark:text-gray-400">
+        Für "<strong>{{ query }}</strong>" wurden keine Ergebnisse gefunden.<br>
+        Versuchen Sie einen anderen Suchbegriff oder wählen Sie einen anderen Filter.
+    </p>
+</div>
+{% endif %}

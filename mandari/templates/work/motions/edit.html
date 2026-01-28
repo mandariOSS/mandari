@@ -1,0 +1,1082 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}{{ motion.title }}{% endblock %}
+
+{% load static %}
+{% block work_extra_head %}
+<script src="{% static 'vendor/tinymce/tinymce.min.js' %}"></script>
+<style>
+    /* Override page content padding for full-height editor */
+    .work-page-content {
+        padding: 0 !important;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+    }
+
+    /* Editor Layout */
+    .editor-wrapper {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+    }
+
+    .editor-layout {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 0;
+        flex: 1;
+        min-height: 0;
+    }
+
+    @media (max-width: 1280px) {
+        .editor-layout {
+            grid-template-columns: 1fr;
+        }
+        .ai-sidebar {
+            display: none;
+        }
+        .ai-sidebar.mobile-open {
+            display: flex;
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            max-width: 400px;
+            z-index: 50;
+        }
+    }
+
+    /* Editor Panel */
+    .editor-panel {
+        display: flex;
+        flex-direction: column;
+        background: white;
+        overflow: hidden;
+        min-height: 0;
+    }
+
+    .dark .editor-panel {
+        background: #111827;
+    }
+
+    /* Editor Content - TinyMCE */
+    .editor-container {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    #editor-container {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: white;
+    }
+
+    .dark #editor-container {
+        background: #111827;
+    }
+
+    /* TinyMCE iframe styling */
+    .tox-tinymce {
+        border: none !important;
+        flex: 1;
+    }
+
+    .tox .tox-edit-area__iframe {
+        background: white !important;
+    }
+
+    .dark .tox .tox-edit-area__iframe {
+        background: #111827 !important;
+    }
+
+    /* Hide TinyMCE toolbar - we use our own */
+    .tox .tox-toolbar-overlord,
+    .tox .tox-toolbar__primary,
+    .tox .tox-menubar,
+    .tox .tox-statusbar {
+        display: none !important;
+    }
+
+    .tox .tox-editor-header {
+        display: none !important;
+    }
+
+    #editor .ql-editor h1, #editor .ql-editor h2, #editor .ql-editor h3 {
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+        font-weight: 600;
+        line-height: 1.3;
+    }
+
+    #editor .ql-editor h1 { font-size: 1.75em; }
+    #editor .ql-editor h2 { font-size: 1.5em; }
+    #editor .ql-editor h3 { font-size: 1.25em; }
+
+    #editor .ql-editor ul, #editor .ql-editor ol {
+        padding-left: 1.5em;
+        margin: 0.75em 0;
+    }
+
+    #editor .ql-editor li {
+        margin: 0.25em 0;
+    }
+
+    #editor .ql-editor blockquote {
+        border-left: 3px solid #e5e7eb;
+        padding-left: 1em;
+        margin: 1em 0;
+        color: #6b7280;
+        font-style: italic;
+    }
+
+    .dark #editor .ql-editor blockquote {
+        border-color: #374151;
+        color: #9ca3af;
+    }
+
+    /* Hide default Quill toolbar */
+    .ql-toolbar {
+        display: none !important;
+    }
+
+    /* Quill container styling */
+    .ql-container {
+        border: none !important;
+        font-family: inherit;
+    }
+
+    /* AI Sidebar */
+    .ai-sidebar {
+        display: flex;
+        flex-direction: column;
+        background: #f9fafb;
+        border-left: 1px solid #e5e7eb;
+    }
+
+    .dark .ai-sidebar {
+        background: #0f172a;
+        border-color: #1e293b;
+    }
+
+    /* Chat Messages */
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .chat-message {
+        display: flex;
+        gap: 12px;
+        max-width: 100%;
+    }
+
+    .chat-message.user {
+        flex-direction: row-reverse;
+    }
+
+    .chat-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .chat-message.ai .chat-avatar {
+        background: linear-gradient(135deg, #7c3aed, #a855f7);
+        color: white;
+    }
+
+    .chat-message.user .chat-avatar {
+        background: #3b82f6;
+        color: white;
+    }
+
+    .chat-bubble {
+        padding: 12px 16px;
+        border-radius: 16px;
+        max-width: 85%;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .chat-message.ai .chat-bubble {
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px 16px 16px 4px;
+    }
+
+    .dark .chat-message.ai .chat-bubble {
+        background: #1e293b;
+        border-color: #334155;
+    }
+
+    .chat-message.user .chat-bubble {
+        background: #3b82f6;
+        color: white;
+        border-radius: 16px 16px 4px 16px;
+    }
+
+    /* Quick Actions */
+    .quick-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 12px 16px;
+        border-top: 1px solid #e5e7eb;
+        background: white;
+    }
+
+    .dark .quick-actions {
+        background: #111827;
+        border-color: #1e293b;
+    }
+
+    .quick-action-btn {
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 500;
+        background: #f3f4f6;
+        border-radius: 20px;
+        transition: all 0.15s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .quick-action-btn:hover {
+        background: #e5e7eb;
+    }
+
+    .dark .quick-action-btn {
+        background: #1e293b;
+        color: #d1d5db;
+    }
+
+    .dark .quick-action-btn:hover {
+        background: #334155;
+    }
+
+    /* Chat Input */
+    .chat-input-wrapper {
+        padding: 16px;
+        background: white;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .dark .chat-input-wrapper {
+        background: #111827;
+        border-color: #1e293b;
+    }
+</style>
+{% endblock %}
+
+{% block work_header %}
+<!-- Empty - custom header in work_content with Alpine scope -->
+{% endblock %}
+
+{% block work_content %}
+<div class="editor-wrapper" x-data="motionEditor()" x-init="init()">
+    <!-- Custom Header inside Alpine scope -->
+    <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex-shrink-0">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <a href="{% url 'work:motions' org_slug=organization.slug %}"
+                   class="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="arrow-left" class="w-5 h-5"></i>
+                </a>
+                <div>
+                    <input type="text" x-model="title" x-ref="titleInput"
+                           class="text-lg font-semibold bg-transparent border-none focus:ring-0 p-0 text-gray-900 dark:text-white w-full max-w-md"
+                           placeholder="Titel eingeben...">
+                    <div class="flex items-center gap-2 text-sm text-gray-500">
+                        <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">
+                            {{ motion.get_type_display }}
+                        </span>
+                        <span>·</span>
+                        <span>{{ motion.get_status_display }}</span>
+                        <span x-show="lastSaved" x-cloak class="flex items-center gap-1">
+                            <span>·</span>
+                            <i data-lucide="check-circle" class="w-3 h-3 text-green-500"></i>
+                            <span x-text="'Gespeichert ' + lastSaved"></span>
+                        </span>
+                        <span x-show="saveError" x-cloak class="flex items-center gap-1 text-red-500">
+                            <span>·</span>
+                            <i data-lucide="alert-circle" class="w-3 h-3"></i>
+                            <span>Fehler beim Speichern</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <!-- Mobile AI Toggle -->
+                <button type="button" @click="showMobileAI = !showMobileAI"
+                        class="xl:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-purple-600"></i>
+                </button>
+
+                <!-- Export PDF -->
+                <a href="{% url 'work:motion_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf"
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Als PDF exportieren">
+                    <i data-lucide="download" class="w-5 h-5"></i>
+                </a>
+
+                <a href="{% url 'work:motion_share' org_slug=organization.slug motion_id=motion.id %}"
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Teilen">
+                    <i data-lucide="share-2" class="w-5 h-5"></i>
+                </a>
+
+                <!-- Delete Button -->
+                <button type="button" @click="confirmDelete()"
+                        class="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-500 hover:text-red-600" title="Löschen">
+                    <i data-lucide="trash-2" class="w-5 h-5"></i>
+                </button>
+
+                <button type="button" @click="save()"
+                        :disabled="saving"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">
+                    <i data-lucide="save" class="w-4 h-4" x-show="!saving"></i>
+                    <svg x-show="saving" class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span x-text="saving ? 'Speichern...' : 'Speichern'"></span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Editor Layout -->
+    <div class="editor-layout">
+        <!-- Editor Panel -->
+        <div class="editor-panel">
+            <!-- Hidden form for CSRF -->
+            <form id="motion-form" method="post" class="hidden">
+                {% csrf_token %}
+            </form>
+
+            <!-- Toolbar -->
+            <div class="border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex flex-wrap items-center gap-1 bg-white dark:bg-gray-800 flex-shrink-0">
+                <!-- Text Formatting -->
+                <div class="flex items-center gap-0.5 pr-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" @click="formatBold()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.bold }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Fett (Strg+B)">
+                        <i data-lucide="bold" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" @click="formatItalic()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.italic }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Kursiv (Strg+I)">
+                        <i data-lucide="italic" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" @click="formatUnderline()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.underline }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Unterstrichen (Strg+U)">
+                        <i data-lucide="underline" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Headings -->
+                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" @click="formatHeading(1)"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.header === 1 }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Überschrift 1">
+                        <span class="text-xs font-bold">H1</span>
+                    </button>
+                    <button type="button" @click="formatHeading(2)"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.header === 2 }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Überschrift 2">
+                        <span class="text-xs font-bold">H2</span>
+                    </button>
+                    <button type="button" @click="formatHeading(3)"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.header === 3 }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Überschrift 3">
+                        <span class="text-xs font-bold">H3</span>
+                    </button>
+                </div>
+
+                <!-- Lists -->
+                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" @click="formatBulletList()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'bullet' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufzählung">
+                        <i data-lucide="list" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" @click="formatOrderedList()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'ordered' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Nummerierung">
+                        <i data-lucide="list-ordered" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Block -->
+                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" @click="formatBlockquote()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.blockquote }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Zitat">
+                        <i data-lucide="quote" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" @click="insertHorizontalRule()"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Trennlinie">
+                        <i data-lucide="minus" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Undo/Redo -->
+                <div class="flex items-center gap-0.5 px-2">
+                    <button type="button" @click="undo()"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Rückgängig (Strg+Z)">
+                        <i data-lucide="undo" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" @click="redo()"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Wiederholen (Strg+Y)">
+                        <i data-lucide="redo" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Word Count -->
+                <div class="ml-auto text-sm text-gray-500">
+                    <span x-text="wordCount"></span> Wörter
+                </div>
+            </div>
+
+            <!-- Editor Content -->
+            <div class="editor-container bg-gray-50 dark:bg-gray-900">
+                <div id="editor-container">
+                    <textarea id="editor">{{ motion_content|default:'' }}</textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Chatbot Sidebar -->
+        <div class="ai-sidebar" :class="{ 'mobile-open': showMobileAI }">
+            <!-- Header -->
+            <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-white"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white text-sm">KI-Assistent</h3>
+                        <p class="text-xs text-gray-500">Hilft beim Schreiben</p>
+                    </div>
+                </div>
+                <button type="button" @click="showMobileAI = false" class="xl:hidden p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Chat Messages -->
+            <div class="chat-messages" x-ref="chatMessages">
+                <!-- Welcome Message -->
+                <div class="chat-message ai">
+                    <div class="chat-avatar">
+                        <i data-lucide="sparkles" class="w-4 h-4"></i>
+                    </div>
+                    <div class="chat-bubble">
+                        <p>Hallo! Ich bin Ihr KI-Assistent. Ich kann Ihnen helfen:</p>
+                        <ul class="mt-2 space-y-1 text-sm">
+                            <li>• Texte verbessern und umformulieren</li>
+                            <li>• Stichpunkte ausformulieren</li>
+                            <li>• Formale Prüfung durchführen</li>
+                            <li>• Zusammenfassungen erstellen</li>
+                        </ul>
+                        <p class="mt-2 text-sm">Markieren Sie Text und fragen Sie mich, oder nutzen Sie die Schnellaktionen unten.</p>
+                    </div>
+                </div>
+
+                <!-- Dynamic Messages -->
+                <template x-for="(msg, index) in chatMessages" :key="index">
+                    <div class="chat-message" :class="msg.role">
+                        <div class="chat-avatar">
+                            <template x-if="msg.role === 'ai'">
+                                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                            </template>
+                            <template x-if="msg.role === 'user'">
+                                <span>Du</span>
+                            </template>
+                        </div>
+                        <div class="chat-bubble">
+                            <div x-html="msg.content"></div>
+                            <!-- Action Buttons for AI suggestions -->
+                            <template x-if="msg.role === 'ai' && msg.hasAction">
+                                <div class="mt-3 flex gap-2">
+                                    <button type="button" @click="applyAiContent(msg.actionContent)"
+                                            class="px-3 py-1.5 text-xs font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">
+                                        Übernehmen
+                                    </button>
+                                    <button type="button" @click="chatMessages.splice(index, 1)"
+                                            class="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+                                        Verwerfen
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Loading Indicator -->
+                <div x-show="aiLoading" class="chat-message ai">
+                    <div class="chat-avatar">
+                        <i data-lucide="sparkles" class="w-4 h-4"></i>
+                    </div>
+                    <div class="chat-bubble">
+                        <div class="flex items-center gap-2">
+                            <svg class="animate-spin h-4 w-4 text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span class="text-gray-600 dark:text-gray-400">Denke nach...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <button type="button" @click="aiAction('improve', 'Verbessere den markierten Text')" class="quick-action-btn">
+                    <i data-lucide="wand-2" class="w-3.5 h-3.5 text-purple-600"></i>
+                    Verbessern
+                </button>
+                <button type="button" @click="aiAction('expand')" class="quick-action-btn">
+                    <i data-lucide="maximize-2" class="w-3.5 h-3.5 text-blue-600"></i>
+                    Ausformulieren
+                </button>
+                <button type="button" @click="aiAction('check')" class="quick-action-btn">
+                    <i data-lucide="check-circle" class="w-3.5 h-3.5 text-green-600"></i>
+                    Pruefen
+                </button>
+                <button type="button" @click="aiAction('summary')" class="quick-action-btn">
+                    <i data-lucide="align-left" class="w-3.5 h-3.5 text-amber-600"></i>
+                    Zusammenfassen
+                </button>
+            </div>
+
+            <!-- AI Preview Panel (Full-screen overlay when active) -->
+            <div x-show="aiPreviewActive" x-cloak
+                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+                 @click.self="closeAiPreview()">
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden m-4 flex flex-col">
+                    <!-- Preview Header -->
+                    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center">
+                                <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-gray-900 dark:text-white">KI-Vorschlag</h3>
+                                <p class="text-sm text-gray-500">Pruefen Sie die vorgeschlagenen Aenderungen</p>
+                            </div>
+                        </div>
+                        <button type="button" @click="closeAiPreview()"
+                                class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <!-- Preview Content -->
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <!-- Toggle between Original/Suggested/Diff -->
+                        <div class="flex items-center gap-2 mb-4">
+                            <button type="button" @click="previewMode = 'suggested'"
+                                    :class="previewMode === 'suggested' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-gray-100 dark:bg-gray-700'"
+                                    class="px-3 py-1.5 text-sm font-medium rounded-lg">
+                                Vorschlag
+                            </button>
+                            <button type="button" @click="previewMode = 'original'"
+                                    :class="previewMode === 'original' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-gray-100 dark:bg-gray-700'"
+                                    class="px-3 py-1.5 text-sm font-medium rounded-lg">
+                                Original
+                            </button>
+                            <button type="button" @click="previewMode = 'diff'"
+                                    :class="previewMode === 'diff' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-gray-100 dark:bg-gray-700'"
+                                    class="px-3 py-1.5 text-sm font-medium rounded-lg">
+                                Vergleich
+                            </button>
+                        </div>
+
+                        <!-- Content Display -->
+                        <div class="prose dark:prose-invert max-w-none p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 min-h-[200px]">
+                            <template x-if="previewMode === 'suggested'">
+                                <div x-html="aiPreviewContent" class="whitespace-pre-wrap"></div>
+                            </template>
+                            <template x-if="previewMode === 'original'">
+                                <div x-html="aiOriginalContent" class="whitespace-pre-wrap"></div>
+                            </template>
+                            <template x-if="previewMode === 'diff'">
+                                <div>
+                                    <div class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded border-l-4 border-red-400">
+                                        <span class="text-xs font-medium text-red-600 dark:text-red-400 uppercase">Entfernt</span>
+                                        <div x-html="aiOriginalContent" class="mt-1 text-sm line-through opacity-70"></div>
+                                    </div>
+                                    <div class="p-3 bg-green-50 dark:bg-green-900/20 rounded border-l-4 border-green-400">
+                                        <span class="text-xs font-medium text-green-600 dark:text-green-400 uppercase">Hinzugefuegt</span>
+                                        <div x-html="aiPreviewContent" class="mt-1 text-sm"></div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- AI Action Info -->
+                        <p class="mt-4 text-sm text-gray-500">
+                            <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                            Alle KI-Aenderungen werden in der Versionshistorie protokolliert.
+                        </p>
+                    </div>
+
+                    <!-- Preview Actions -->
+                    <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                        <button type="button" @click="closeAiPreview()"
+                                class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                            Abbrechen
+                        </button>
+                        <button type="button" @click="applyAiPreview()"
+                                class="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg hover:from-purple-700 hover:to-purple-800 flex items-center gap-2">
+                            <i data-lucide="check" class="w-4 h-4"></i>
+                            Uebernehmen
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="chat-input-wrapper">
+                <div class="relative">
+                    <input type="text" x-model="userMessage"
+                           @keydown.enter="sendMessage()"
+                           placeholder="Fragen Sie mich etwas..."
+                           class="w-full px-4 py-3 pr-12 bg-gray-100 dark:bg-gray-800 border-0 rounded-xl text-sm focus:ring-2 focus:ring-purple-500">
+                    <button type="button" @click="sendMessage()"
+                            :disabled="!userMessage.trim() || aiLoading"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-purple-600 hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded-lg disabled:opacity-50">
+                        <i data-lucide="send" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile AI Overlay -->
+        <div x-show="showMobileAI" @click="showMobileAI = false"
+             class="xl:hidden fixed inset-0 bg-black/50 z-40"></div>
+    </div>
+</div>
+
+<script>
+function motionEditor() {
+    return {
+        editor: null,
+        title: '{{ motion.title|escapejs }}',
+        wordCount: 0,
+        lastSaved: null,
+        saveError: false,
+        saving: false,
+        showMobileAI: false,
+        aiLoading: false,
+        chatMessages: [],
+        userMessage: '',
+        // AI Preview Panel state
+        aiPreviewActive: false,
+        aiPreviewContent: '',
+        aiOriginalContent: '',
+        previewMode: 'suggested',
+        formats: {
+            bold: false,
+            italic: false,
+            underline: false,
+            header: false,
+            list: false,
+            blockquote: false
+        },
+        csrfToken: '{{ csrf_token }}',
+        motionId: '{{ motion.id }}',
+        motionType: '{{ motion.motion_type }}',
+
+        init() {
+            const self = this;
+
+            // Initialize TinyMCE editor
+            tinymce.init({
+                selector: '#editor',
+                height: '100%',
+                menubar: false,
+                toolbar: false,
+                statusbar: false,
+                plugins: 'lists link autolink',
+                language: 'de',
+                language_url: '{% static "vendor/tinymce/langs/de.js" %}',
+                content_style: `
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                        font-size: 16px;
+                        line-height: 1.7;
+                        padding: 40px;
+                        max-width: 800px;
+                        margin: 0 auto;
+                        color: #1f2937;
+                    }
+                    p { margin: 0.75em 0; }
+                    h1 { font-size: 1.875rem; font-weight: 700; margin: 1em 0 0.5em; }
+                    h2 { font-size: 1.5rem; font-weight: 600; margin: 1em 0 0.5em; }
+                    h3 { font-size: 1.25rem; font-weight: 600; margin: 1em 0 0.5em; }
+                    blockquote { border-left: 4px solid #6366f1; padding-left: 1em; margin: 1em 0; color: #4b5563; }
+                    ul, ol { padding-left: 1.5em; margin: 0.75em 0; }
+                    li { margin: 0.25em 0; }
+                `,
+                placeholder: 'Beginnen Sie hier mit dem Schreiben...',
+                branding: false,
+                promotion: false,
+                license_key: 'gpl',
+                setup: function(editor) {
+                    self.editor = editor;
+
+                    editor.on('init', function() {
+                        // Initial word count
+                        self.updateWordCount();
+                        lucide.createIcons();
+                    });
+
+                    editor.on('input change', function() {
+                        self.updateWordCount();
+                    });
+
+                    editor.on('NodeChange', function() {
+                        self.updateFormats();
+                    });
+
+                    // Keyboard shortcuts
+                    editor.addShortcut('ctrl+s', 'Save', function() {
+                        self.save();
+                    });
+                }
+            });
+
+            // Auto-save every 60 seconds
+            setInterval(() => this.autoSave(), 60000);
+
+            this.$nextTick(() => {
+                lucide.createIcons();
+            });
+        },
+
+        updateWordCount() {
+            if (!this.editor) return;
+            const text = this.editor.getContent({ format: 'text' }).trim();
+            this.wordCount = text ? text.split(/\s+/).length : 0;
+        },
+
+        updateFormats() {
+            if (!this.editor) return;
+            this.formats = {
+                bold: this.editor.queryCommandState('bold'),
+                italic: this.editor.queryCommandState('italic'),
+                underline: this.editor.queryCommandState('underline'),
+                header: this.getHeaderLevel(),
+                list: this.getListType(),
+                blockquote: this.editor.queryCommandState('blockquote')
+            };
+        },
+
+        getHeaderLevel() {
+            if (!this.editor) return false;
+            const node = this.editor.selection.getNode();
+            const block = this.editor.dom.getParent(node, 'h1,h2,h3');
+            if (block) {
+                return parseInt(block.tagName.charAt(1));
+            }
+            return false;
+        },
+
+        getListType() {
+            if (!this.editor) return false;
+            const node = this.editor.selection.getNode();
+            const ul = this.editor.dom.getParent(node, 'ul');
+            const ol = this.editor.dom.getParent(node, 'ol');
+            if (ul) return 'bullet';
+            if (ol) return 'ordered';
+            return false;
+        },
+
+        formatBold() {
+            this.editor.execCommand('Bold');
+            this.updateFormats();
+        },
+
+        formatItalic() {
+            this.editor.execCommand('Italic');
+            this.updateFormats();
+        },
+
+        formatUnderline() {
+            this.editor.execCommand('Underline');
+            this.updateFormats();
+        },
+
+        formatHeading(level) {
+            const currentLevel = this.getHeaderLevel();
+            if (currentLevel === level) {
+                this.editor.execCommand('FormatBlock', false, 'p');
+            } else {
+                this.editor.execCommand('FormatBlock', false, 'h' + level);
+            }
+            this.updateFormats();
+        },
+
+        formatBulletList() {
+            this.editor.execCommand('InsertUnorderedList');
+            this.updateFormats();
+        },
+
+        formatOrderedList() {
+            this.editor.execCommand('InsertOrderedList');
+            this.updateFormats();
+        },
+
+        formatBlockquote() {
+            const isBlockquote = this.editor.queryCommandState('blockquote');
+            if (isBlockquote) {
+                this.editor.execCommand('FormatBlock', false, 'p');
+            } else {
+                this.editor.execCommand('FormatBlock', false, 'blockquote');
+            }
+            this.updateFormats();
+        },
+
+        insertHorizontalRule() {
+            this.editor.execCommand('InsertHorizontalRule');
+        },
+
+        undo() {
+            this.editor.execCommand('Undo');
+        },
+
+        redo() {
+            this.editor.execCommand('Redo');
+        },
+
+        async save() {
+            if (this.saving) return;
+            this.saving = true;
+            this.saveError = false;
+
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('action', 'save');
+            formData.append('title', this.title);
+            formData.append('content', this.editor.getContent());
+            formData.append('motion_type', this.motionType);
+
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        this.lastSaved = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                        this.saveError = false;
+                    } else {
+                        this.saveError = true;
+                        console.error('Save failed:', data.error);
+                    }
+                } else {
+                    this.saveError = true;
+                    console.error('Save failed:', response.status);
+                }
+            } catch (error) {
+                this.saveError = true;
+                console.error('Save error:', error);
+            }
+
+            this.saving = false;
+        },
+
+        autoSave() {
+            if (!this.saving && this.editor) {
+                this.save();
+            }
+        },
+
+        async confirmDelete() {
+            if (!confirm('Möchten Sie dieses Dokument wirklich löschen?\n\nEs wird für 30 Tage im Papierkorb aufbewahrt.')) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('action', 'delete');
+
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    window.location.href = '{% url "work:motions" org_slug=organization.slug %}';
+                } else {
+                    alert('Fehler beim Löschen: ' + (data.error || 'Unbekannter Fehler'));
+                }
+            } catch (error) {
+                console.error('Delete error:', error);
+                alert('Fehler beim Löschen des Dokuments.');
+            }
+        },
+
+        sendMessage() {
+            if (!this.userMessage.trim() || this.aiLoading) return;
+
+            const msg = this.userMessage.trim();
+            this.chatMessages.push({ role: 'user', content: msg });
+            this.userMessage = '';
+
+            this.aiAction('improve', msg);
+        },
+
+        async aiAction(action, instruction = '') {
+            this.aiLoading = true;
+
+            // Scroll to bottom
+            this.$nextTick(() => {
+                const container = this.$refs.chatMessages;
+                if (container) container.scrollTop = container.scrollHeight;
+            });
+
+            const text = this.editor.getContent();
+
+            try {
+                const response = await fetch('{% url "work:motion_ai" org_slug=organization.slug %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: new URLSearchParams({
+                        action: action,
+                        text: text,
+                        instruction: instruction,
+                        motion_type: this.motionType
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    let content = '';
+                    let hasAction = false;
+                    let actionContent = null;
+
+                    if (data.content) {
+                        content = data.content.replace(/\n/g, '<br>');
+                        hasAction = true;
+                        actionContent = data.content;
+                    }
+
+                    if (data.suggestions && data.suggestions.length > 0) {
+                        content += '<ul class="mt-2 space-y-1">';
+                        data.suggestions.forEach(s => {
+                            content += `<li class="text-sm">• ${s}</li>`;
+                        });
+                        content += '</ul>';
+                    }
+
+                    if (!content) {
+                        content = 'Keine Vorschläge verfügbar.';
+                    }
+
+                    this.chatMessages.push({
+                        role: 'ai',
+                        content: content,
+                        hasAction: hasAction,
+                        actionContent: actionContent
+                    });
+                } else {
+                    this.chatMessages.push({
+                        role: 'ai',
+                        content: 'Entschuldigung, es ist ein Fehler aufgetreten: ' + (data.error || 'Unbekannter Fehler')
+                    });
+                }
+            } catch (error) {
+                console.error('AI error:', error);
+                this.chatMessages.push({
+                    role: 'ai',
+                    content: 'Entschuldigung, die Verbindung zum KI-Service ist fehlgeschlagen.'
+                });
+            }
+
+            this.aiLoading = false;
+
+            // Scroll to bottom and refresh icons
+            this.$nextTick(() => {
+                const container = this.$refs.chatMessages;
+                if (container) container.scrollTop = container.scrollHeight;
+                lucide.createIcons();
+            });
+        },
+
+        applyAiContent(content) {
+            // Show preview panel instead of applying directly
+            if (content && this.editor) {
+                this.aiOriginalContent = this.editor.getContent();
+                this.aiPreviewContent = content;
+                this.previewMode = 'suggested';
+                this.aiPreviewActive = true;
+                this.$nextTick(() => lucide.createIcons());
+            }
+        },
+
+        showAiPreview(originalContent, suggestedContent) {
+            this.aiOriginalContent = originalContent;
+            this.aiPreviewContent = suggestedContent;
+            this.previewMode = 'suggested';
+            this.aiPreviewActive = true;
+            this.$nextTick(() => lucide.createIcons());
+        },
+
+        closeAiPreview() {
+            this.aiPreviewActive = false;
+            this.aiPreviewContent = '';
+            this.aiOriginalContent = '';
+            this.previewMode = 'suggested';
+        },
+
+        applyAiPreview() {
+            if (this.aiPreviewContent && this.editor) {
+                this.editor.setContent(this.aiPreviewContent);
+                this.chatMessages.push({
+                    role: 'ai',
+                    content: 'Aenderungen wurden in den Editor uebernommen.'
+                });
+                this.closeAiPreview();
+                this.$nextTick(() => lucide.createIcons());
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

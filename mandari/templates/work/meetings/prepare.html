@@ -1,0 +1,1114 @@
+{% extends "work/base_work.html" %}
+{% load i18n %}
+
+{% block page_title %}Vorbereitung: {{ meeting.get_display_name|default:"Sitzung" }}{% endblock %}
+
+{% block header_title %}Sitzung vorbereiten{% endblock %}
+{% block header_subtitle %}
+{% if meeting %}
+<p class="work-page-subtitle">
+    <span class="font-medium">{{ meeting.committee_name }}</span> &middot;
+    {% if meeting.start %}{{ meeting.start|date:"d.m.Y H:i" }} Uhr{% endif %}
+</p>
+{% endif %}
+{% endblock %}
+
+{% block header_actions %}
+{% if meeting %}
+<div class="flex items-center gap-2">
+    <a href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}"
+       class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+        <i data-lucide="arrow-left" class="w-4 h-4 inline mr-1"></i>
+        Details
+    </a>
+    {% if preparation.is_prepared %}
+    <form method="post" class="inline">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="unmark_prepared">
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            Vorbereitet
+        </button>
+    </form>
+    {% else %}
+    <form method="post" class="inline">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="mark_prepared">
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+            <i data-lucide="check" class="w-4 h-4"></i>
+            Als vorbereitet markieren
+        </button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block work_extra_head %}
+<style>
+    /* Prevent sidebar from scrolling on this page */
+    aside.work-sidebar {
+        overflow: hidden !important;
+        overflow-x: hidden !important;
+        overflow-y: hidden !important;
+    }
+    aside.work-sidebar nav {
+        overflow: hidden !important;
+        overflow-x: hidden !important;
+        overflow-y: hidden !important;
+    }
+    aside.work-sidebar nav * {
+        max-width: 100%;
+    }
+</style>
+{% endblock %}
+
+{% block work_content %}
+
+{% if error %}
+<div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
+    <i data-lucide="alert-triangle" class="w-8 h-8 mx-auto mb-3 text-yellow-600 dark:text-yellow-400"></i>
+    <p class="text-yellow-700 dark:text-yellow-300 mb-4">{{ error }}</p>
+    <a href="{% url 'work:meetings' org_slug=organization.slug %}"
+       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i>
+        Zurück zur Übersicht
+    </a>
+</div>
+{% elif meeting %}
+<div x-data="preparationApp()" x-init="init()">
+    <!-- Mobile: Tab Navigation -->
+    <div class="lg:hidden flex border-b border-gray-200 dark:border-gray-700 mb-4 bg-white dark:bg-gray-800 rounded-t-xl">
+        <button @click="mobileView = 'agenda'"
+                :class="mobileView === 'agenda' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'"
+                class="flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors">
+            <i data-lucide="list" class="w-4 h-4 inline mr-1"></i>
+            Tagesordnung
+        </button>
+        <button @click="mobileView = 'edit'"
+                :class="mobileView === 'edit' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500'"
+                class="flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors">
+            <i data-lucide="edit-3" class="w-4 h-4 inline mr-1"></i>
+            Bearbeitung
+        </button>
+    </div>
+
+    <!-- Desktop: Two-column layout with INDEPENDENT scrolling -->
+    <div class="hidden lg:flex h-[calc(100vh-200px)] bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <!-- Left Column: Agenda - INDEPENDENT SCROLL -->
+        <div class="w-80 shrink-0 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex flex-col">
+            <!-- Header with info button -->
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-medium text-gray-900 dark:text-white truncate">{{ meeting.committee_name }}</h3>
+                        <p class="text-sm text-gray-500">{{ meeting.start|date:"d.m.Y" }} um {{ meeting.start|date:"H:i" }}</p>
+                    </div>
+                    <button @click="showLegend = true"
+                            class="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            title="Legende anzeigen">
+                        <i data-lucide="help-circle" class="w-5 h-5 text-gray-400"></i>
+                    </button>
+                </div>
+                <!-- Compact Stats -->
+                <div class="flex items-center gap-3 text-xs">
+                    <span class="text-gray-500">
+                        <span class="font-medium text-green-600 dark:text-green-400">{{ stats.positioned }}</span>/{{ stats.total_items }} bearbeitet
+                    </span>
+                    <span class="text-gray-400">|</span>
+                    <button @click="showSummary = true" class="text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1">
+                        <i data-lucide="list-checks" class="w-3 h-3"></i>
+                        Übersicht
+                    </button>
+                </div>
+            </div>
+
+            <!-- Agenda Items List -->
+            <div class="flex-1 overflow-y-auto p-2">
+                <template x-for="(item, index) in items" :key="item.id">
+                    <button @click="selectItem(item.id)"
+                            :class="selectedItemId === item.id ? 'bg-primary-100 dark:bg-primary-900/30 border-primary-400 dark:border-primary-600' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            class="w-full text-left p-3 rounded-lg border mb-2 transition-colors">
+                        <div class="flex items-center gap-2">
+                            <!-- Number with position indicator -->
+                            <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0"
+                                  :class="{
+                                      'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400': item.position === 'for',
+                                      'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400': item.position === 'against',
+                                      'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-400': item.position === 'abstain',
+                                      'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400': item.position === 'defer',
+                                      'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400': item.position === 'refer',
+                                      'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400': item.position === 'amended',
+                                      'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400': item.position === 'info',
+                                      'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400': item.position === 'open'
+                                  }"
+                                  x-text="item.number"></span>
+                            <!-- Name -->
+                            <span class="flex-1 text-sm text-gray-900 dark:text-white truncate" x-text="item.name"></span>
+                            <!-- Indicators -->
+                            <div class="flex items-center gap-1 flex-shrink-0">
+                                <template x-if="item.hasSpeechNote">
+                                    <i data-lucide="mic" class="w-3 h-3 text-blue-500"></i>
+                                </template>
+                                <template x-if="item.isFinal">
+                                    <i data-lucide="lock" class="w-3 h-3 text-green-500"></i>
+                                </template>
+                                <template x-if="item.notesCount > 0">
+                                    <span class="text-[10px] bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 px-1 rounded" x-text="item.notesCount"></span>
+                                </template>
+                            </div>
+                        </div>
+                    </button>
+                </template>
+
+                <!-- General Notes Button -->
+                <button @click="selectItem('general')"
+                        :class="selectedItemId === 'general' ? 'bg-primary-100 dark:bg-primary-900/30 border-primary-400' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                        class="w-full text-left p-3 rounded-lg border mb-2 transition-colors">
+                    <div class="flex items-center gap-2">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center bg-gray-100 dark:bg-gray-700">
+                            <i data-lucide="notebook" class="w-4 h-4 text-gray-400"></i>
+                        </span>
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Allgemeine Notizen</span>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Column: Editing Area - INDEPENDENT SCROLL -->
+        <div class="flex-1 overflow-y-auto">
+            <!-- No Selection State -->
+            <template x-if="!selectedItemId">
+                <div class="flex items-center justify-center h-full text-gray-500">
+                    <div class="text-center">
+                        <i data-lucide="mouse-pointer-click" class="w-12 h-12 mx-auto mb-4 opacity-30"></i>
+                        <p>Wählen Sie einen Tagesordnungspunkt aus</p>
+                    </div>
+                </div>
+            </template>
+
+            <!-- General Notes -->
+            <template x-if="selectedItemId === 'general'">
+                <div class="p-6">
+                    <h2 class="text-xl font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                        <i data-lucide="notebook" class="w-5 h-5 text-gray-400"></i>
+                        Allgemeine Notizen
+                    </h2>
+                    <form method="post" x-data="{ saving: false }" @submit="saving = true">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="save_notes">
+                        <textarea name="notes" rows="8"
+                                  class="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                  placeholder="Persönliche Notizen zur Sitzung...">{{ preparation.get_notes_decrypted }}</textarea>
+                        <div class="mt-3 flex justify-end">
+                            <button type="submit"
+                                    class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                                    :disabled="saving">
+                                <span x-show="!saving">Speichern</span>
+                                <span x-show="saving">Speichern...</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </template>
+
+            <!-- Selected Agenda Item -->
+            <template x-if="selectedItemId && selectedItemId !== 'general' && selectedItem">
+                <div class="p-6 space-y-6">
+                    <!-- Header with TOP Info -->
+                    <div>
+                        <div class="flex items-start gap-3 mb-3">
+                            <span class="px-3 py-1 text-sm font-bold rounded-lg bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
+                                  x-text="'TOP ' + selectedItem.number"></span>
+                            <h2 class="text-xl font-medium text-gray-900 dark:text-white flex-1" x-text="selectedItem.name"></h2>
+                        </div>
+
+                        <!-- Paper/Vorlage Details Card -->
+                        <template x-if="selectedItem.paper">
+                            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+                                <div class="flex items-start gap-3">
+                                    <div class="p-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+                                        <i data-lucide="file-text" class="w-6 h-6 text-blue-600 dark:text-blue-400"></i>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-1">Vorlage</p>
+                                        <h3 class="font-semibold text-gray-900 dark:text-white" x-text="selectedItem.paper.name"></h3>
+                                        <template x-if="selectedItem.paper.reference">
+                                            <p class="text-sm text-gray-500 mt-0.5" x-text="selectedItem.paper.reference"></p>
+                                        </template>
+                                        <template x-if="selectedItem.paper.paperType">
+                                            <span class="inline-block mt-2 px-2 py-0.5 text-xs font-medium rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400" x-text="selectedItem.paper.paperType"></span>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <!-- Consultation Info (Cross-Committee) -->
+                                <template x-if="selectedItem.paper.consultationCount > 1">
+                                    <div class="mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
+                                        <p class="text-xs text-blue-700 dark:text-blue-300 flex items-center gap-1">
+                                            <i data-lucide="git-branch" class="w-3 h-3"></i>
+                                            <span>Wird in <strong x-text="selectedItem.paper.consultationCount"></strong> Gremien beraten</span>
+                                        </p>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+
+                        <!-- Documents Section -->
+                        <div class="mt-4">
+                            <p class="text-xs font-medium text-gray-500 uppercase mb-2">Dokumente</p>
+                            <div class="space-y-2">
+                                <!-- OParl Files -->
+                                <template x-for="file in selectedItem.files" :key="file.url">
+                                    <a :href="file.url" target="_blank"
+                                       class="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-primary-300 hover:shadow-md transition-all group">
+                                        <div class="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                                            <i data-lucide="file-text" class="w-5 h-5 text-red-600 dark:text-red-400"></i>
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm font-medium text-gray-900 dark:text-white truncate" x-text="file.name"></p>
+                                            <p class="text-xs text-gray-500">Dokument öffnen</p>
+                                        </div>
+                                        <i data-lucide="external-link" class="w-4 h-4 text-gray-400"></i>
+                                    </a>
+                                </template>
+                                <!-- User-added Links -->
+                                <template x-for="link in selectedItem.documentLinks" :key="link.id">
+                                    <a :href="link.url" target="_blank"
+                                       class="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800 rounded-lg hover:border-blue-400 hover:shadow-md transition-all group">
+                                        <div class="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                            <i data-lucide="link" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm font-medium text-gray-900 dark:text-white truncate" x-text="link.title"></p>
+                                            <p class="text-xs text-blue-600">Externer Link</p>
+                                        </div>
+                                        <i data-lucide="external-link" class="w-4 h-4 text-gray-400"></i>
+                                    </a>
+                                </template>
+                                <!-- No documents message -->
+                                <template x-if="(!selectedItem.files || selectedItem.files.length === 0) && (!selectedItem.documentLinks || selectedItem.documentLinks.length === 0)">
+                                    <p class="text-sm text-gray-400 italic py-2">Keine Dokumente verfügbar</p>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Position Selection -->
+                    <div class="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-4">
+                        <p class="text-xs font-medium text-gray-500 uppercase mb-3">Meine Position</p>
+                        <div class="flex flex-wrap gap-2">
+                            {% for code, label in position_choices %}
+                            <button type="button"
+                                    @click="setPosition('{{ code }}')"
+                                    class="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+                                    :class="selectedItem.position === '{{ code }}' ?
+                                        '{% if code == 'for' %}bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400{% elif code == 'against' %}bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700 text-red-700 dark:text-red-400{% elif code == 'abstain' %}bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300{% elif code == 'defer' %}bg-purple-100 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-400{% elif code == 'refer' %}bg-indigo-100 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-400{% elif code == 'amended' %}bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400{% elif code == 'info' %}bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-400{% else %}bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400{% endif %}' :
+                                        'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                                {{ label }}
+                            </button>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Final position toggle -->
+                        <div class="mt-4 flex items-center gap-3">
+                            <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+                                <input type="checkbox" x-model="selectedItem.isFinal" @change="saveIsFinal()"
+                                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                                Position als endgültig markieren
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Private Notes -->
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 uppercase mb-2">Private Notizen</p>
+                        <textarea x-model="selectedItem.notes" @change="saveNotes()"
+                                  rows="3"
+                                  class="w-full px-4 py-3 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                  placeholder="Persönliche Notizen zu diesem TOP (nur für Sie sichtbar)..."></textarea>
+                    </div>
+
+                    <!-- Discussion Note -->
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 uppercase mb-2">Diskussionsnotiz <span class="font-normal">(für Fraktion sichtbar)</span></p>
+                        <textarea x-model="selectedItem.discussionNote" @change="saveDiscussionNote()"
+                                  rows="3"
+                                  class="w-full px-4 py-3 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                  placeholder="Notiz zur Fraktionsdiskussion..."></textarea>
+                    </div>
+
+                    <!-- Speech Notes (Collapsible) -->
+                    <div x-data="{ speechExpanded: false }" class="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                        <button @click="speechExpanded = !speechExpanded"
+                                class="w-full p-4 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900">
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                <i data-lucide="mic" class="w-4 h-4"></i>
+                                Redenotizen / Teleprompter
+                                <template x-if="selectedItem.hasSpeechNote">
+                                    <span class="px-1.5 py-0.5 text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">vorhanden</span>
+                                </template>
+                            </span>
+                            <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 transition-transform"
+                               :class="speechExpanded && 'rotate-180'"></i>
+                        </button>
+                        <div x-show="speechExpanded" x-collapse class="p-4 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <input type="text" x-model="selectedItem.speechTitle" @change="saveSpeechNote()"
+                                       class="flex-1 px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                       placeholder="Titel der Rede (optional)...">
+                                <a :href="getTeleprompterUrl()" target="_blank"
+                                   class="ml-2 px-3 py-2 text-xs text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg flex items-center gap-1"
+                                   x-show="selectedItem.hasSpeechNote">
+                                    <i data-lucide="presentation" class="w-3 h-3"></i>
+                                    Teleprompter
+                                </a>
+                            </div>
+
+                            <textarea x-model="selectedItem.speechContent" @change="saveSpeechNote()"
+                                      rows="6"
+                                      class="w-full px-3 py-2 text-sm font-mono bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                      placeholder="Redetext für den Teleprompter..."></textarea>
+
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-4">
+                                    <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                        <input type="number" x-model="selectedItem.speechDuration" @change="saveSpeechNote()"
+                                               min="0" max="3600"
+                                               class="w-20 px-2 py-1 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded">
+                                        Sekunden
+                                    </label>
+                                    <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+                                        <input type="checkbox" x-model="selectedItem.speechShared" @change="saveSpeechNote()"
+                                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                                        Mit Organisation teilen
+                                    </label>
+                                </div>
+                                <button type="button" @click="deleteSpeechNote()" x-show="selectedItem.hasSpeechNote"
+                                        class="text-xs text-red-600 hover:underline">
+                                    Löschen
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Comments Section (Live Updates) -->
+                    <div class="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                        <div class="p-4 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                <i data-lucide="message-circle" class="w-4 h-4"></i>
+                                Kommentare der Fraktion
+                            </span>
+                            <div class="flex items-center gap-2 text-xs text-gray-500">
+                                <span x-show="pollingActive" class="flex items-center gap-1">
+                                    <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                    Live
+                                </span>
+                                <button type="button" @click="loadComments()" class="text-primary-600 hover:underline flex items-center gap-1">
+                                    <i data-lucide="refresh-cw" class="w-3 h-3" :class="loadingComments && 'animate-spin'"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="p-4 max-h-64 overflow-y-auto">
+                            <!-- Comments list -->
+                            <div class="space-y-3" x-show="comments.length > 0">
+                                <template x-for="comment in comments" :key="comment.id">
+                                    <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                        <div class="flex items-start justify-between gap-2 mb-1">
+                                            <span class="text-sm font-medium text-gray-900 dark:text-white" x-text="comment.author"></span>
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-xs text-gray-500" x-text="comment.visibility_display"></span>
+                                                <template x-if="comment.is_decision">
+                                                    <span class="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">Beschluss</span>
+                                                </template>
+                                                <template x-if="comment.is_own">
+                                                    <button type="button" @click="deleteComment(comment.id)" class="text-gray-400 hover:text-red-500">
+                                                        <i data-lucide="x" class="w-3 h-3"></i>
+                                                    </button>
+                                                </template>
+                                            </div>
+                                        </div>
+                                        <p class="text-sm text-gray-600 dark:text-gray-400" x-text="comment.content"></p>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <div x-show="comments.length === 0" class="text-sm text-gray-500 text-center py-4">
+                                Noch keine Kommentare
+                            </div>
+                        </div>
+
+                        <!-- Add comment -->
+                        <div class="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                            <div class="flex gap-2 mb-2">
+                                <input type="text" x-model="newComment" @keydown.enter.prevent="addComment()"
+                                       class="flex-1 px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                       placeholder="Kommentar hinzufügen...">
+                                <select x-model="commentVisibility"
+                                        class="px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                    {% for code, label in visibility_choices %}
+                                    <option value="{{ code }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                    <input type="checkbox" x-model="commentIsDecision"
+                                           class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                                    Als Beschluss markieren
+                                </label>
+                                <button type="button" @click="addComment()"
+                                        class="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700"
+                                        :disabled="!newComment.trim()">
+                                    Senden
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Paper Comments Section (Cross-Committee) - Only shown when paper exists -->
+                    <template x-if="selectedItem.paper">
+                        <div class="border border-indigo-200 dark:border-indigo-800 rounded-xl overflow-hidden bg-indigo-50/50 dark:bg-indigo-900/10">
+                            <div class="p-4 bg-indigo-100/50 dark:bg-indigo-900/30 border-b border-indigo-200 dark:border-indigo-700 flex items-center justify-between">
+                                <span class="text-sm font-medium text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
+                                    <i data-lucide="git-branch" class="w-4 h-4"></i>
+                                    Gremienübergreifende Kommentare zur Vorlage
+                                </span>
+                                <button type="button" @click="loadPaperComments()" class="text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+                                    <i data-lucide="refresh-cw" class="w-3 h-3" :class="loadingPaperComments && 'animate-spin'"></i>
+                                </button>
+                            </div>
+
+                            <div class="p-4 max-h-64 overflow-y-auto">
+                                <!-- Paper Comments list -->
+                                <div class="space-y-3" x-show="paperComments.length > 0">
+                                    <template x-for="comment in paperComments" :key="comment.id">
+                                        <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-indigo-100 dark:border-indigo-900">
+                                            <div class="flex items-start justify-between gap-2 mb-1">
+                                                <div>
+                                                    <span class="text-sm font-medium text-gray-900 dark:text-white" x-text="comment.author"></span>
+                                                    <span class="text-xs text-indigo-600 dark:text-indigo-400 ml-1" x-text="'(' + comment.organization + ')'"></span>
+                                                </div>
+                                                <div class="flex items-center gap-2">
+                                                    <span class="text-xs text-gray-500" x-text="comment.visibility_display"></span>
+                                                    <template x-if="comment.is_recommendation">
+                                                        <span class="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">Empfehlung</span>
+                                                    </template>
+                                                    <template x-if="comment.is_own">
+                                                        <button type="button" @click="deletePaperComment(comment.id)" class="text-gray-400 hover:text-red-500">
+                                                            <i data-lucide="x" class="w-3 h-3"></i>
+                                                        </button>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                            <p class="text-sm text-gray-600 dark:text-gray-400" x-text="comment.content"></p>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <div x-show="paperComments.length === 0" class="text-sm text-indigo-600/70 dark:text-indigo-400/70 text-center py-4">
+                                    <i data-lucide="message-circle" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
+                                    <p>Keine gremienübergreifenden Kommentare</p>
+                                    <p class="text-xs mt-1">Teilen Sie Feedback zu dieser Vorlage mit anderen Gremien</p>
+                                </div>
+                            </div>
+
+                            <!-- Add paper comment -->
+                            <div class="p-4 border-t border-indigo-200 dark:border-indigo-700 bg-white dark:bg-gray-800">
+                                <div class="flex gap-2 mb-2">
+                                    <input type="text" x-model="newPaperComment" @keydown.enter.prevent="addPaperComment()"
+                                           class="flex-1 px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                           placeholder="Gremienübergreifenden Kommentar hinzufügen...">
+                                    <select x-model="paperCommentVisibility"
+                                            class="px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                        <option value="private">Nur ich</option>
+                                        <option value="organization">Meine Organisation</option>
+                                        <option value="consulting">Alle beratenden Gremien</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                        <input type="checkbox" x-model="paperCommentIsRecommendation"
+                                               class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                        Als Empfehlung markieren
+                                    </label>
+                                    <button type="button" @click="addPaperComment()"
+                                            class="px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+                                            :disabled="!newPaperComment.trim()">
+                                        Senden
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Mobile: Content Areas -->
+    <div class="lg:hidden">
+        <!-- Mobile Agenda -->
+        <div x-show="mobileView === 'agenda'" class="space-y-2 bg-white dark:bg-gray-800 rounded-b-xl p-4">
+            <template x-for="(item, index) in items" :key="item.id">
+                <button @click="selectItem(item.id); mobileView = 'edit'"
+                        class="w-full text-left p-3 rounded-lg border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    <div class="flex items-center gap-2">
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0"
+                              :class="{
+                                  'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400': item.position === 'for',
+                                  'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400': item.position === 'against',
+                                  'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-400': item.position === 'abstain',
+                                  'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400': item.position === 'defer',
+                                  'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400': item.position === 'refer',
+                                  'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400': item.position === 'amended',
+                                  'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400': item.position === 'info',
+                                  'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400': item.position === 'open'
+                              }"
+                              x-text="item.number"></span>
+                        <span class="flex-1 text-sm text-gray-900 dark:text-white truncate" x-text="item.name"></span>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <template x-if="item.hasSpeechNote">
+                                <i data-lucide="mic" class="w-3 h-3 text-blue-500"></i>
+                            </template>
+                            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400"></i>
+                        </div>
+                    </div>
+                </button>
+            </template>
+        </div>
+
+        <!-- Mobile Edit -->
+        <div x-show="mobileView === 'edit'" class="bg-white dark:bg-gray-800 rounded-b-xl p-4">
+            <template x-if="!selectedItemId">
+                <div class="text-center py-8 text-gray-500">
+                    <p>Wählen Sie einen Tagesordnungspunkt aus der Tagesordnung</p>
+                </div>
+            </template>
+
+            <template x-if="selectedItemId && selectedItemId !== 'general' && selectedItem">
+                <div class="space-y-4">
+                    <h2 class="text-lg font-medium text-gray-900 dark:text-white" x-text="selectedItem.name"></h2>
+
+                    <!-- Position Buttons -->
+                    <div class="flex flex-wrap gap-2">
+                        {% for code, label in position_choices %}
+                        <button type="button"
+                                @click="setPosition('{{ code }}')"
+                                class="px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+                                :class="selectedItem.position === '{{ code }}' ?
+                                    '{% if code == 'for' %}bg-green-100 border-green-300 text-green-700{% elif code == 'against' %}bg-red-100 border-red-300 text-red-700{% elif code == 'abstain' %}bg-gray-200 border-gray-300 text-gray-700{% elif code == 'defer' %}bg-purple-100 border-purple-300 text-purple-700{% elif code == 'refer' %}bg-indigo-100 border-indigo-300 text-indigo-700{% elif code == 'amended' %}bg-amber-100 border-amber-300 text-amber-700{% elif code == 'info' %}bg-blue-100 border-blue-300 text-blue-700{% else %}bg-gray-100 border-gray-300 text-gray-600{% endif %}' :
+                                    'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'">
+                            {{ label }}
+                        </button>
+                        {% endfor %}
+                    </div>
+
+                    <!-- Notes -->
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 uppercase mb-2">Private Notizen</p>
+                        <textarea x-model="selectedItem.notes" @change="saveNotes()"
+                                  rows="3"
+                                  class="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg"
+                                  placeholder="Persönliche Notizen..."></textarea>
+                    </div>
+
+                    <!-- Comments -->
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 uppercase mb-2 flex items-center justify-between">
+                            Kommentare
+                            <span x-show="pollingActive" class="text-green-500 font-normal">Live</span>
+                        </p>
+                        <div class="space-y-2 max-h-40 overflow-y-auto mb-2">
+                            <template x-for="comment in comments" :key="comment.id">
+                                <div class="p-2 bg-gray-50 dark:bg-gray-900 rounded text-sm">
+                                    <span class="font-medium" x-text="comment.author"></span>:
+                                    <span x-text="comment.content"></span>
+                                </div>
+                            </template>
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="text" x-model="newComment" @keydown.enter.prevent="addComment()"
+                                   class="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                                   placeholder="Kommentar...">
+                            <button @click="addComment()" class="px-3 py-2 bg-primary-600 text-white text-sm rounded-lg">
+                                <i data-lucide="send" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Legend Popup Modal -->
+    <div x-show="showLegend" x-cloak
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+         @click.self="showLegend = false"
+         @keydown.escape.window="showLegend = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-sm w-full"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100 scale-100"
+             x-transition:leave-end="opacity-0 scale-95">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-medium text-gray-900 dark:text-white">Positionen</h3>
+                <button @click="showLegend = false" class="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-400"></i>
+                </button>
+            </div>
+            <div class="space-y-3 text-sm">
+                <div class="flex items-center gap-3">
+                    <span class="w-4 h-4 bg-green-500 rounded-full"></span>
+                    <span class="text-gray-700 dark:text-gray-300">Zustimmung</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="w-4 h-4 bg-red-500 rounded-full"></span>
+                    <span class="text-gray-700 dark:text-gray-300">Ablehnung</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="w-4 h-4 bg-gray-400 rounded-full"></span>
+                    <span class="text-gray-700 dark:text-gray-300">Enthaltung</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="w-4 h-4 bg-purple-500 rounded-full"></span>
+                    <span class="text-gray-700 dark:text-gray-300">Vertagen</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="w-4 h-4 bg-indigo-500 rounded-full"></span>
+                    <span class="text-gray-700 dark:text-gray-300">Überweisen</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="w-4 h-4 bg-amber-500 rounded-full"></span>
+                    <span class="text-gray-700 dark:text-gray-300">Mit Änderungen</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="w-4 h-4 bg-blue-500 rounded-full"></span>
+                    <span class="text-gray-700 dark:text-gray-300">Zur Kenntnis</span>
+                </div>
+            </div>
+            <div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <p class="text-xs text-gray-500 mb-2">Indikatoren</p>
+                <div class="space-y-2 text-sm">
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="mic" class="w-4 h-4 text-blue-500"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Redebeitrag geplant</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="lock" class="w-4 h-4 text-green-500"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Position endgültig</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Modal -->
+    <div x-show="showSummary" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+         @click.self="showSummary = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+             @click.stop>
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800">
+                <h2 class="text-lg font-medium text-gray-900 dark:text-white">Zusammenfassung meiner Positionen</h2>
+                <button type="button" @click="showSummary = false" class="text-gray-400 hover:text-gray-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-4" id="summary-content"
+                 hx-get="{% url 'work:meeting_summary' org_slug=organization.slug meeting_id=meeting.id %}"
+                 hx-trigger="load">
+                <div class="text-center py-8 text-gray-500">
+                    <i data-lucide="loader-2" class="w-6 h-6 mx-auto mb-2 animate-spin"></i>
+                    Zusammenfassung wird geladen...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function preparationApp() {
+    return {
+        // State
+        items: {{ prepared_items_json|safe }},
+        selectedItemId: null,
+        selectedItem: null,
+        mobileView: 'agenda',
+        showLegend: false,
+        showSummary: false,
+
+        // TOP Comments (within organization)
+        comments: [],
+        newComment: '',
+        commentVisibility: 'organization',
+        commentIsDecision: false,
+        loadingComments: false,
+        pollingActive: false,
+        commentPollingInterval: null,
+
+        // Paper Comments (cross-committee)
+        paperComments: [],
+        newPaperComment: '',
+        paperCommentVisibility: 'consulting',
+        paperCommentIsRecommendation: false,
+        loadingPaperComments: false,
+
+        // URLs
+        orgSlug: '{{ organization.slug }}',
+        meetingId: '{{ meeting.id }}',
+        csrfToken: '{{ csrf_token }}',
+
+        init() {
+            // Debug: Log all items data
+            console.log('Prepare App Init - Items:', this.items);
+            console.log('First item files:', this.items[0]?.files);
+            console.log('First item paper:', this.items[0]?.paper);
+
+            // Select first item by default on desktop
+            if (window.innerWidth >= 1024 && this.items.length > 0) {
+                this.selectItem(this.items[0].id);
+            }
+
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', () => this.stopCommentPolling());
+        },
+
+        selectItem(itemId) {
+            this.selectedItemId = itemId;
+            if (itemId === 'general') {
+                this.selectedItem = null;
+                this.stopCommentPolling();
+                this.paperComments = [];
+            } else {
+                this.selectedItem = this.items.find(i => i.id === itemId);
+                console.log('Selected item:', this.selectedItem);
+                console.log('Files:', this.selectedItem?.files);
+                console.log('Paper:', this.selectedItem?.paper);
+                if (this.selectedItem) {
+                    this.loadComments();
+                    this.startCommentPolling();
+                    // Load paper comments if this item has a paper
+                    if (this.selectedItem.paper) {
+                        this.loadPaperComments();
+                    } else {
+                        this.paperComments = [];
+                    }
+                }
+            }
+        },
+
+        startCommentPolling() {
+            this.stopCommentPolling();
+            this.pollingActive = true;
+            this.commentPollingInterval = setInterval(() => {
+                if (this.selectedItemId && this.selectedItemId !== 'general') {
+                    this.loadComments();
+                }
+            }, 5000);
+        },
+
+        stopCommentPolling() {
+            if (this.commentPollingInterval) {
+                clearInterval(this.commentPollingInterval);
+                this.commentPollingInterval = null;
+            }
+            this.pollingActive = false;
+        },
+
+        async loadComments() {
+            if (!this.selectedItemId || this.selectedItemId === 'general') return;
+
+            this.loadingComments = true;
+            try {
+                const url = `/work/${this.orgSlug}/meetings/${this.meetingId}/notes/${this.selectedItemId}/`;
+                const response = await fetch(url);
+                const data = await response.json();
+                this.comments = data.notes || [];
+            } catch (error) {
+                console.error('Error loading comments:', error);
+            } finally {
+                this.loadingComments = false;
+            }
+        },
+
+        async addComment() {
+            if (!this.newComment.trim() || !this.selectedItemId) return;
+
+            try {
+                const url = `/work/${this.orgSlug}/meetings/${this.meetingId}/notes/${this.selectedItemId}/`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.csrfToken
+                    },
+                    body: JSON.stringify({
+                        content: this.newComment,
+                        visibility: this.commentVisibility,
+                        is_decision: this.commentIsDecision
+                    })
+                });
+
+                if (response.ok) {
+                    this.newComment = '';
+                    this.commentIsDecision = false;
+                    await this.loadComments();
+                }
+            } catch (error) {
+                console.error('Error adding comment:', error);
+            }
+        },
+
+        async deleteComment(commentId) {
+            if (!confirm('Kommentar wirklich löschen?')) return;
+
+            try {
+                const url = `/work/${this.orgSlug}/meetings/note/${commentId}/delete/`;
+                const response = await fetch(url, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': this.csrfToken }
+                });
+
+                if (response.ok) {
+                    await this.loadComments();
+                }
+            } catch (error) {
+                console.error('Error deleting comment:', error);
+            }
+        },
+
+        // Paper Comments (Cross-Committee)
+        async loadPaperComments() {
+            if (!this.selectedItem || !this.selectedItem.paper) return;
+
+            this.loadingPaperComments = true;
+            try {
+                const url = `/work/${this.orgSlug}/paper/${this.selectedItem.paper.id}/comments/`;
+                const response = await fetch(url);
+                const data = await response.json();
+                this.paperComments = data.comments || [];
+            } catch (error) {
+                console.error('Error loading paper comments:', error);
+            } finally {
+                this.loadingPaperComments = false;
+            }
+        },
+
+        async addPaperComment() {
+            if (!this.newPaperComment.trim() || !this.selectedItem || !this.selectedItem.paper) return;
+
+            try {
+                const url = `/work/${this.orgSlug}/paper/${this.selectedItem.paper.id}/comments/`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.csrfToken
+                    },
+                    body: JSON.stringify({
+                        content: this.newPaperComment,
+                        visibility: this.paperCommentVisibility,
+                        is_recommendation: this.paperCommentIsRecommendation
+                    })
+                });
+
+                if (response.ok) {
+                    this.newPaperComment = '';
+                    this.paperCommentIsRecommendation = false;
+                    await this.loadPaperComments();
+                }
+            } catch (error) {
+                console.error('Error adding paper comment:', error);
+            }
+        },
+
+        async deletePaperComment(commentId) {
+            if (!confirm('Kommentar wirklich löschen?')) return;
+
+            try {
+                const url = `/work/${this.orgSlug}/paper/comment/${commentId}/delete/`;
+                const response = await fetch(url, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': this.csrfToken }
+                });
+
+                if (response.ok) {
+                    await this.loadPaperComments();
+                }
+            } catch (error) {
+                console.error('Error deleting paper comment:', error);
+            }
+        },
+
+        async setPosition(pos) {
+            if (!this.selectedItem) return;
+            this.selectedItem.position = pos;
+
+            // Update in items array too
+            const item = this.items.find(i => i.id === this.selectedItemId);
+            if (item) item.position = pos;
+
+            await this.savePosition();
+        },
+
+        async savePosition() {
+            if (!this.selectedItem) return;
+
+            try {
+                const url = `/work/${this.orgSlug}/meetings/${this.meetingId}/position/${this.selectedItemId}/`;
+                await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.csrfToken
+                    },
+                    body: JSON.stringify({ position: this.selectedItem.position })
+                });
+            } catch (error) {
+                console.error('Error saving position:', error);
+            }
+        },
+
+        async saveNotes() {
+            if (!this.selectedItem) return;
+
+            try {
+                const url = `/work/${this.orgSlug}/meetings/${this.meetingId}/position/${this.selectedItemId}/`;
+                await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.csrfToken
+                    },
+                    body: JSON.stringify({ notes: this.selectedItem.notes })
+                });
+            } catch (error) {
+                console.error('Error saving notes:', error);
+            }
+        },
+
+        async saveDiscussionNote() {
+            if (!this.selectedItem) return;
+
+            try {
+                const url = `/work/${this.orgSlug}/meetings/${this.meetingId}/position/${this.selectedItemId}/`;
+                await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.csrfToken
+                    },
+                    body: JSON.stringify({ discussion_note: this.selectedItem.discussionNote })
+                });
+            } catch (error) {
+                console.error('Error saving discussion note:', error);
+            }
+        },
+
+        async saveIsFinal() {
+            if (!this.selectedItem) return;
+
+            // Update in items array
+            const item = this.items.find(i => i.id === this.selectedItemId);
+            if (item) item.isFinal = this.selectedItem.isFinal;
+
+            try {
+                const url = `/work/${this.orgSlug}/meetings/${this.meetingId}/position/${this.selectedItemId}/`;
+                await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.csrfToken
+                    },
+                    body: JSON.stringify({ is_final: this.selectedItem.isFinal })
+                });
+            } catch (error) {
+                console.error('Error saving is_final:', error);
+            }
+        },
+
+        async saveSpeechNote() {
+            if (!this.selectedItem) return;
+
+            try {
+                const url = `/work/${this.orgSlug}/meetings/${this.meetingId}/speech/${this.selectedItemId}/`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.csrfToken
+                    },
+                    body: JSON.stringify({
+                        title: this.selectedItem.speechTitle,
+                        content: this.selectedItem.speechContent,
+                        estimated_duration: this.selectedItem.speechDuration,
+                        is_shared: this.selectedItem.speechShared
+                    })
+                });
+
+                if (response.ok) {
+                    this.selectedItem.hasSpeechNote = true;
+                    const item = this.items.find(i => i.id === this.selectedItemId);
+                    if (item) item.hasSpeechNote = true;
+                }
+            } catch (error) {
+                console.error('Error saving speech note:', error);
+            }
+        },
+
+        async deleteSpeechNote() {
+            if (!confirm('Redenotizen wirklich löschen?')) return;
+            if (!this.selectedItem) return;
+
+            try {
+                const url = `/work/${this.orgSlug}/meetings/${this.meetingId}/speech/${this.selectedItemId}/`;
+                const response = await fetch(url, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': this.csrfToken }
+                });
+
+                if (response.ok) {
+                    this.selectedItem.speechTitle = '';
+                    this.selectedItem.speechContent = '';
+                    this.selectedItem.speechDuration = 0;
+                    this.selectedItem.speechShared = false;
+                    this.selectedItem.hasSpeechNote = false;
+
+                    const item = this.items.find(i => i.id === this.selectedItemId);
+                    if (item) item.hasSpeechNote = false;
+                }
+            } catch (error) {
+                console.error('Error deleting speech note:', error);
+            }
+        },
+
+        getTeleprompterUrl() {
+            return `/work/${this.orgSlug}/meetings/${this.meetingId}/teleprompter/${this.selectedItemId}/`;
+        }
+    }
+}
+</script>
+{% else %}
+<div class="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-6 text-center">
+    <i data-lucide="calendar-x" class="w-8 h-8 mx-auto mb-3 text-gray-400"></i>
+    <p class="text-gray-500 mb-4">Die Sitzung wurde nicht gefunden.</p>
+    <a href="{% url 'work:meetings' org_slug=organization.slug %}"
+       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i>
+        Zurück zur Übersicht
+    </a>
+</div>
+{% endif %}
+{% endblock %}

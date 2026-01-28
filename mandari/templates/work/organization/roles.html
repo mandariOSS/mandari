@@ -1,0 +1,72 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Rollen{% endblock %}
+
+{% block header_title %}Rollen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Rollen und Berechtigungen verwalten</p>
+{% endblock %}
+
+{% block work_content %}
+<!-- Navigation Tabs -->
+<div class="mb-8 border-b border-gray-200 dark:border-gray-700">
+    <nav class="flex gap-1 overflow-x-auto">
+        <a href="{% url 'work:organization' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Allgemein
+        </a>
+        {% if can_manage_faction %}
+        <a href="{% url 'work:organization_faction_settings' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Fraktionssitzungen
+        </a>
+        {% endif %}
+        <a href="{% url 'work:organization_documents' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Anträge & Vorgänge
+        </a>
+        <a href="{% url 'work:members' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Mitglieder
+        </a>
+        <a href="{% url 'work:roles' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 whitespace-nowrap">
+            Rollen
+        </a>
+    </nav>
+</div>
+
+<!-- Roles List -->
+<div class="space-y-4">
+    {% for role in organization.roles.all %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-4 h-4 rounded-full" style="background: {{ role.color|default:'#6b7280' }};"></div>
+                <div>
+                    <h3 class="font-medium text-gray-900 dark:text-white">{{ role.name }}</h3>
+                    <p class="text-sm text-gray-500">
+                        {% if role.is_admin %}Administrator{% else %}{{ role.permissions.count }} Berechtigungen{% endif %}
+                    </p>
+                </div>
+            </div>
+            {% if not role.is_system_role %}
+            <button class="text-gray-400 hover:text-gray-600">
+                <i data-lucide="more-vertical" class="w-5 h-5"></i>
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    {% empty %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+        <div class="w-16 h-16 mx-auto mb-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center">
+            <i data-lucide="shield" class="w-8 h-8 text-indigo-500 dark:text-indigo-400"></i>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Rollen vorhanden</h3>
+        <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+            Erstellen Sie Rollen, um Berechtigungen für Mitglieder zu definieren.
+        </p>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

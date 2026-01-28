@@ -1,0 +1,428 @@
+{% extends "base.html" %}
+
+{% block title %}Open Source | Mandari{% endblock %}
+
+{% block meta_description %}Mandari ist 100% Open Source unter AGPL-3.0 Lizenz. Alle drei Module - Insight, Work und Session - sind quelloffen und selbst hostbar.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="pt-16 pb-10 lg:pt-24 lg:pb-12 bg-gradient-to-br from-green-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 text-sm font-medium mb-6">
+            <i data-lucide="unlock" class="w-4 h-4"></i>
+            100% Open Source
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Freie Software für freie Demokratie
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mb-8">
+            Mandari ist vollständig quelloffen - <strong>alle drei Module</strong> (Insight, Work & Session) stehen unter der AGPL-3.0 Lizenz. Keine versteckten proprietären Teile, kein Vendor Lock-in.
+        </p>
+        <div class="flex flex-wrap gap-4">
+            <a href="https://github.com/mandari" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-6 py-3 bg-gray-900 dark:bg-white hover:bg-gray-800 dark:hover:bg-gray-100 text-white dark:text-gray-900 font-medium rounded-xl transition-colors">
+                <i data-lucide="github" class="w-5 h-5 mr-2"></i>
+                GitHub Repository
+            </a>
+            <a href="{% url 'insight_core:mitmachen' %}" class="inline-flex items-center gap-2 px-6 py-3 border-2 border-green-600 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 font-medium rounded-xl transition-colors">
+                <i data-lucide="heart" class="w-5 h-5"></i>
+                Mitmachen
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- License Banner -->
+<section class="py-8 bg-green-50 dark:bg-green-900/20 border-y border-green-200 dark:border-green-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-wrap items-center justify-center gap-8 lg:gap-16 text-center">
+            <div class="flex items-center gap-3">
+                <i data-lucide="scale" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>AGPL-3.0</strong> Lizenz</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <i data-lucide="server" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>Self-Hosting</strong> erlaubt</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <i data-lucide="git-fork" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>Forking</strong> erlaubt</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <i data-lucide="users" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>Community</strong>-getrieben</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Philosophy Section -->
+<section class="py-16 lg:py-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid lg:grid-cols-2 gap-12 items-center">
+            <div>
+                <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-6">Warum Open Source?</h2>
+                <p class="text-lg text-gray-600 dark:text-gray-300 mb-6">
+                    Wir glauben an <strong>Transparenz in der Demokratie</strong> - nicht nur bei Ratsinformationen, sondern auch bei der Software, die sie zugänglich macht.
+                </p>
+                <p class="text-lg text-gray-600 dark:text-gray-300 mb-6">
+                    Proprietäre RIS-Lösungen schaffen Abhängigkeiten. Daten liegen in geschlossenen Systemen, Wechsel sind teuer und aufwändig. Das wollen wir ändern.
+                </p>
+                <p class="text-lg text-gray-600 dark:text-gray-300">
+                    Mit Mandari behalten <strong>Kommunen die volle Kontrolle</strong> über ihre Daten und ihre Infrastruktur - unabhängig davon, ob sie selbst hosten oder unseren SaaS-Service nutzen.
+                </p>
+            </div>
+            <div class="bg-gray-900 rounded-2xl p-6 lg:p-8 text-white">
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <div class="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                    <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span class="ml-2 text-sm text-gray-400">AGPL-3.0 License</span>
+                </div>
+                <pre class="text-sm font-mono overflow-x-auto"><code class="text-green-400"># Clone the repository</code>
+<code class="text-gray-300">git clone https://github.com/mandari/mandari.git</code>
+<code class="text-gray-300">cd mandari</code>
+
+<code class="text-green-400"># Start with Docker</code>
+<code class="text-gray-300">docker-compose up -d</code>
+
+<code class="text-green-400"># Access your instance</code>
+<code class="text-gray-300">open http://localhost:8000</code></pre>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- All Modules Open Source -->
+<section class="py-16 lg:py-20 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">Alle Module sind Open Source</h2>
+            <p class="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+                Nicht nur Insight - das gesamte Mandari-Ökosystem ist quelloffen
+            </p>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            <!-- Insight -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 border-2 border-green-200 dark:border-green-800">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-xl flex items-center justify-center">
+                        <i data-lucide="eye" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white">Insight</h3>
+                        <span class="text-xs text-green-600 dark:text-green-400 font-medium">AGPL-3.0</span>
+                    </div>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 text-sm mb-4">
+                    Bürger*innen-Portal mit Suche, KI-Features und Kartenansicht.
+                </p>
+                <ul class="space-y-2 text-sm">
+                    <li class="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        OParl-Integration
+                    </li>
+                    <li class="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        Volltextsuche
+                    </li>
+                    <li class="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        KI-Zusammenfassungen
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Work -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 border-2 border-green-200 dark:border-green-800">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-xl flex items-center justify-center">
+                        <i data-lucide="briefcase" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white">Work</h3>
+                        <span class="text-xs text-green-600 dark:text-green-400 font-medium">AGPL-3.0</span>
+                    </div>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 text-sm mb-4">
+                    Fraktions-Plattform für Sitzungsvorbereitung und Kollaboration.
+                </p>
+                <ul class="space-y-2 text-sm">
+                    <li class="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        Team-Kollaboration
+                    </li>
+                    <li class="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        Antragsverwaltung
+                    </li>
+                    <li class="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        Interne Abstimmungen
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Session -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 border-2 border-green-200 dark:border-green-800">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-xl flex items-center justify-center">
+                        <i data-lucide="building-2" class="w-6 h-6 text-blue-600 dark:text-blue-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white">Session</h3>
+                        <span class="text-xs text-green-600 dark:text-green-400 font-medium">AGPL-3.0</span>
+                    </div>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 text-sm mb-4">
+                    Ratsinformationssystem für Kommunen mit OParl-Export.
+                </p>
+                <ul class="space-y-2 text-sm">
+                    <li class="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        Sitzungsmanagement
+                    </li>
+                    <li class="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        Vorlagenverwaltung
+                    </li>
+                    <li class="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        OParl-API
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Self-Hosting vs SaaS -->
+<section class="py-16 lg:py-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">Zwei Wege zu Mandari</h2>
+            <p class="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+                Selbst hosten oder unseren Service nutzen - Sie haben die Wahl
+            </p>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            <!-- Self-Hosting -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700">
+                <div class="flex items-center gap-4 mb-6">
+                    <div class="w-14 h-14 bg-gray-100 dark:bg-gray-700 rounded-xl flex items-center justify-center">
+                        <i data-lucide="server" class="w-7 h-7 text-gray-600 dark:text-gray-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900 dark:text-white">Self-Hosting</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Kostenlos, eigene Infrastruktur</p>
+                    </div>
+                </div>
+                <ul class="space-y-3 mb-6">
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Volle Kontrolle über Daten & Infrastruktur</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Kostenlos (nur eigene Serverkosten)</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Docker-basiertes Deployment</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Community-Support via GitHub</span>
+                    </li>
+                </ul>
+                <a href="https://github.com/mandari/mandari" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">
+                    <i data-lucide="github" class="w-5 h-5"></i>
+                    Dokumentation auf GitHub
+                </a>
+            </div>
+
+            <!-- SaaS -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border-2 border-primary-200 dark:border-primary-800">
+                <div class="flex items-center gap-4 mb-6">
+                    <div class="w-14 h-14 bg-primary-100 dark:bg-primary-900/50 rounded-xl flex items-center justify-center">
+                        <i data-lucide="cloud" class="w-7 h-7 text-primary-600 dark:text-primary-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900 dark:text-white">Managed Service</h3>
+                        <p class="text-sm text-primary-600 dark:text-primary-400">Wir kümmern uns um alles</p>
+                    </div>
+                </div>
+                <ul class="space-y-3 mb-6">
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Hosting in Deutschland (DSGVO)</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Automatische Updates & Backups</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Professioneller Support mit SLA</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Jederzeit Datenexport möglich</span>
+                    </li>
+                </ul>
+                <a href="{% url 'insight_core:preise' %}" class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium">
+                    <i data-lucide="credit-card" class="w-5 h-5"></i>
+                    Preise ansehen
+                </a>
+            </div>
+        </div>
+
+        <div class="mt-8 text-center">
+            <p class="text-gray-500 dark:text-gray-400">
+                <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                Beide Varianten nutzen exakt denselben Code - keine versteckten proprietären Features.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- Features Grid -->
+<section class="py-16 lg:py-20 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">Was Open Source bedeutet</h2>
+            <p class="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+                Echte Freiheit, echte Kontrolle
+            </p>
+        </div>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="eye" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Transparenz</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Der gesamte Code ist öffentlich. Keine versteckten Funktionen, keine Black Boxes, keine Hintertüren.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="git-fork" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Forking erlaubt</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Sie können den Code forken und anpassen. Bauen Sie Ihre eigene Version mit spezifischen Features.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="database" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Datenhoheit</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Ihre Daten gehören Ihnen. Export jederzeit in offenen Formaten (JSON, CSV, OParl).</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="users" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Community</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Entwickler*innen, Kommunen und Bürger*innen können Code beitragen und Features vorschlagen.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="unlock" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Kein Vendor Lock-in</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Wechseln Sie jederzeit den Anbieter oder hosten Sie selbst. Keine Abhängigkeiten.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="shield-check" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Sicherheit durch Offenheit</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Offener Code bedeutet: Jeder kann Sicherheitslücken finden und melden.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- AGPL-3.0 Explanation -->
+<section class="py-16 lg:py-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto">
+            <div class="text-center mb-8">
+                <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">AGPL-3.0 Lizenz</h2>
+                <p class="text-xl text-gray-600 dark:text-gray-300">
+                    Was bedeutet das für Sie?
+                </p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700">
+                <div class="space-y-6">
+                    <div class="flex items-start gap-4">
+                        <div class="w-10 h-10 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="check" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-900 dark:text-white mb-1">Sie dürfen...</h4>
+                            <ul class="text-gray-600 dark:text-gray-300 text-sm space-y-1">
+                                <li>Den Code frei nutzen, kopieren und verbreiten</li>
+                                <li>Den Code anpassen und eigene Versionen erstellen</li>
+                                <li>Mandari für kommerzielle Zwecke einsetzen</li>
+                                <li>Eigene Instanzen für Dritte betreiben</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-4">
+                        <div class="w-10 h-10 bg-amber-100 dark:bg-amber-900/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-900 dark:text-white mb-1">Unter der Bedingung...</h4>
+                            <ul class="text-gray-600 dark:text-gray-300 text-sm space-y-1">
+                                <li>Änderungen am Code müssen ebenfalls unter AGPL-3.0 veröffentlicht werden</li>
+                                <li>Nutzer*innen eines Netzwerk-Service müssen Zugang zum Quellcode erhalten</li>
+                                <li>Der Lizenzhinweis muss erhalten bleiben</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:underline">
+                        <i data-lucide="external-link" class="w-4 h-4"></i>
+                        Vollständiger Lizenztext (gnu.org)
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="py-16 lg:py-20 bg-gradient-to-br from-green-600 to-green-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto text-center">
+            <h2 class="text-3xl font-bold text-white mb-6">Machen Sie mit!</h2>
+            <p class="text-xl text-white/90 mb-10">
+                Ob als Entwickler*in, Kommune oder Bürger*in - Mandari lebt von der Community.
+                Melden Sie Bugs, schlagen Sie Features vor oder tragen Sie Code bei.
+            </p>
+            <div class="flex flex-wrap justify-center gap-4">
+                <a href="https://github.com/mandari" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-8 py-4 bg-white hover:bg-gray-100 text-green-700 font-medium rounded-xl transition-colors text-lg">
+                    <i data-lucide="github" class="w-5 h-5 mr-2"></i>
+                    GitHub Repository
+                </a>
+                <a href="{% url 'insight_core:mitmachen' %}" class="inline-flex items-center gap-2 px-8 py-4 bg-green-500 hover:bg-green-400 text-white font-medium rounded-xl transition-colors text-lg border border-white/20">
+                    <i data-lucide="heart" class="w-5 h-5"></i>
+                    Mitmachen
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

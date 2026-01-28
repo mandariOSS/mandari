@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Presse & Medien{% endblock %}
+
+{% block meta_description %}Pressematerialien, Logo-Downloads und Ansprechpartner für Journalisten. Mandari - Open Source Ratsinformationssystem.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="py-16 lg:py-24 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-6">
+            <i data-lucide="newspaper" class="w-4 h-4"></i>
+            Für Journalisten
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Presse & Medien
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+            Hier finden Sie alle Materialien für Ihre Berichterstattung über Mandari.
+            Logos, Fakten und Kontaktmöglichkeiten.
+        </p>
+    </div>
+</section>
+
+<!-- Quick Facts -->
+<section class="py-8 bg-white dark:bg-gray-800 border-y border-gray-200 dark:border-gray-700">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-6 text-center">Mandari in Kürze</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+            <div>
+                <div class="text-2xl font-bold text-primary-600 dark:text-primary-400">2024</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Gegründet</div>
+            </div>
+            <div>
+                <div class="text-2xl font-bold text-primary-600 dark:text-primary-400">100%</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Open Source</div>
+            </div>
+            <div>
+                <div class="text-2xl font-bold text-primary-600 dark:text-primary-400">AGPL-3.0</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Lizenz</div>
+            </div>
+            <div>
+                <div class="text-2xl font-bold text-primary-600 dark:text-primary-400">OParl</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Standard</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Über Mandari -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            <div>
+                <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-6">
+                    Über Mandari
+                </h2>
+                <div class="prose prose-lg dark:prose-invert">
+                    <p class="text-gray-600 dark:text-gray-300">
+                        <strong>Mandari</strong> ist eine Open-Source-Plattform für Ratsinformationssysteme (RIS),
+                        die kommunalpolitische Entscheidungen für Bürger*innen zugänglich macht.
+                    </p>
+                    <p class="text-gray-600 dark:text-gray-300">
+                        Die Plattform verbindet öffentliche Transparenz mit professionellen Workflows für Fraktionen
+                        und basiert vollständig auf offenen Standards. Durch die Nutzung des OParl-Standards können
+                        Daten aus bestehenden Ratsinformationssystemen automatisch importiert werden.
+                    </p>
+                    <p class="text-gray-600 dark:text-gray-300">
+                        Alle drei Module - <strong>Insight</strong> (Bürger-Portal), <strong>Work</strong> (Fraktions-Tool)
+                        und <strong>Session</strong> (Verwaltungs-Modul, in Entwicklung) - sind quelloffen unter der
+                        AGPL-3.0-Lizenz verfügbar.
+                    </p>
+                </div>
+            </div>
+            <div>
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Kernfeatures</h3>
+                <ul class="space-y-3">
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 shrink-0"></i>
+                        <span class="text-gray-600 dark:text-gray-300">KI-gestützte Zusammenfassungen von Ratsdokumenten</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 shrink-0"></i>
+                        <span class="text-gray-600 dark:text-gray-300">Volltext-Suche über alle Dokumente</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 shrink-0"></i>
+                        <span class="text-gray-600 dark:text-gray-300">Automatische OParl-Synchronisation</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 shrink-0"></i>
+                        <span class="text-gray-600 dark:text-gray-300">Barrierearmes Design für alle Nutzergruppen</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 shrink-0"></i>
+                        <span class="text-gray-600 dark:text-gray-300">DSGVO-konforme Datenverarbeitung</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 shrink-0"></i>
+                        <span class="text-gray-600 dark:text-gray-300">Self-Hosting möglich</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Logo Downloads -->
+<section class="py-16 lg:py-24 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+                Logo & Medienkit
+            </h2>
+            <p class="text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+                Laden Sie offizielle Logos und Grafiken für Ihre Berichterstattung herunter.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <!-- Logo Primary -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700">
+                <div class="aspect-video bg-gray-100 dark:bg-gray-700 rounded-xl flex items-center justify-center mb-6">
+                    <div class="flex items-center gap-3">
+                        <span class="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center text-2xl">
+                            &#127963;
+                        </span>
+                        <span class="font-bold text-2xl text-gray-900 dark:text-white">Mandari</span>
+                    </div>
+                </div>
+                <h3 class="font-bold text-gray-900 dark:text-white mb-2">Logo (Standard)</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Für helle Hintergründe</p>
+                <div class="flex gap-2">
+                    <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs text-gray-600 dark:text-gray-400">PNG</span>
+                    <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs text-gray-600 dark:text-gray-400">SVG</span>
+                </div>
+            </div>
+
+            <!-- Logo Dark -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700">
+                <div class="aspect-video bg-gray-900 rounded-xl flex items-center justify-center mb-6">
+                    <div class="flex items-center gap-3">
+                        <span class="w-12 h-12 bg-gradient-to-br from-primary-400 to-primary-600 rounded-xl flex items-center justify-center text-2xl">
+                            &#127963;
+                        </span>
+                        <span class="font-bold text-2xl text-white">Mandari</span>
+                    </div>
+                </div>
+                <h3 class="font-bold text-gray-900 dark:text-white mb-2">Logo (Dunkel)</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Für dunkle Hintergründe</p>
+                <div class="flex gap-2">
+                    <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs text-gray-600 dark:text-gray-400">PNG</span>
+                    <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs text-gray-600 dark:text-gray-400">SVG</span>
+                </div>
+            </div>
+
+            <!-- Icon Only -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700">
+                <div class="aspect-video bg-gray-100 dark:bg-gray-700 rounded-xl flex items-center justify-center mb-6">
+                    <span class="w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-700 rounded-2xl flex items-center justify-center text-3xl">
+                        &#127963;
+                    </span>
+                </div>
+                <h3 class="font-bold text-gray-900 dark:text-white mb-2">Icon</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Quadratisches Icon</p>
+                <div class="flex gap-2">
+                    <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs text-gray-600 dark:text-gray-400">PNG</span>
+                    <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs text-gray-600 dark:text-gray-400">SVG</span>
+                    <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs text-gray-600 dark:text-gray-400">ICO</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-8 text-center">
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Alle Logos stehen unter der gleichen Lizenz wie das Projekt (AGPL-3.0).
+            </p>
+            <a href="{% url 'insight_core:kontakt' %}"
+               class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:underline">
+                <i data-lucide="mail" class="w-4 h-4"></i>
+                Medienkit per E-Mail anfragen
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Pressekontakt -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+                    Pressekontakt
+                </h2>
+                <p class="text-gray-600 dark:text-gray-300">
+                    Für Presseanfragen, Interviews oder weitere Informationen stehen wir gerne zur Verfügung.
+                </p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="font-bold text-gray-900 dark:text-white mb-4">Ansprechpartner</h3>
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="w-14 h-14 bg-primary-100 dark:bg-primary-900/50 rounded-full flex items-center justify-center">
+                                <i data-lucide="user" class="w-7 h-7 text-primary-600 dark:text-primary-400"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-900 dark:text-white">Mandari Team</p>
+                                <p class="text-sm text-gray-600 dark:text-gray-400">Presse & Öffentlichkeitsarbeit</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-gray-900 dark:text-white mb-4">Kontakt</h3>
+                        <ul class="space-y-3">
+                            <li class="flex items-center gap-3 text-gray-600 dark:text-gray-300">
+                                <i data-lucide="mail" class="w-5 h-5 text-gray-400"></i>
+                                presse@mandari.de
+                            </li>
+                            <li class="flex items-center gap-3 text-gray-600 dark:text-gray-300">
+                                <i data-lucide="globe" class="w-5 h-5 text-gray-400"></i>
+                                mandari.de
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <hr class="my-6 border-gray-200 dark:border-gray-700">
+
+                <div class="flex flex-wrap gap-4 justify-center">
+                    <a href="{% url 'insight_core:kontakt' %}"
+                       class="inline-flex items-center px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl transition-colors">
+                        <i data-lucide="send" class="w-5 h-5 mr-2"></i>
+                        Presseanfrage senden
+                    </a>
+                    <a href="{% url 'insight_core:ueber_uns' %}"
+                       class="inline-flex items-center gap-2 px-6 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-medium rounded-xl transition-colors">
+                        <i data-lucide="info" class="w-5 h-5"></i>
+                        Mehr über Mandari
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Zitate für Presse -->
+<section class="py-16 lg:py-24 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+                Zitierfähige Aussagen
+            </h2>
+            <p class="text-gray-600 dark:text-gray-300">
+                Gerne können folgende Aussagen in Ihrer Berichterstattung verwendet werden.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700">
+                <i data-lucide="quote" class="w-10 h-10 text-primary-200 dark:text-primary-800 mb-4"></i>
+                <blockquote class="text-gray-700 dark:text-gray-300 mb-4">
+                    "Kommunalpolitik betrifft uns alle - von der Kita bis zur Straßenplanung.
+                    Mandari macht diese Entscheidungen für jeden zugänglich und verständlich."
+                </blockquote>
+                <cite class="text-sm text-gray-500 dark:text-gray-400">— Mandari Team</cite>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700">
+                <i data-lucide="quote" class="w-10 h-10 text-primary-200 dark:text-primary-800 mb-4"></i>
+                <blockquote class="text-gray-700 dark:text-gray-300 mb-4">
+                    "Als Open-Source-Projekt gehört Mandari der Gemeinschaft. Keine versteckten Kosten,
+                    kein Vendor Lock-in - nur transparente Demokratie."
+                </blockquote>
+                <cite class="text-sm text-gray-500 dark:text-gray-400">— Mandari Team</cite>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

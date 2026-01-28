@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}KI-Assistent{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" x-data="chatApp()">
+    <div class="max-w-4xl mx-auto">
+        <!-- Header -->
+        <div class="mb-8 text-center">
+            <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
+                <i data-lucide="message-circle" class="w-8 h-8 text-white"></i>
+            </div>
+            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">KI-Assistent</h1>
+            <p class="text-gray-600 dark:text-gray-400 max-w-xl mx-auto">
+                Stellen Sie Fragen zu kommunalpolitischen Themen und erhalten Sie verständliche Antworten.
+            </p>
+        </div>
+
+        <!-- GDPR Consent Modal -->
+        <template x-if="!hasConsent">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-8">
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="shield-alert" class="w-6 h-6 text-amber-600 dark:text-amber-400"></i>
+                </div>
+                <div>
+                    <h2 class="font-semibold text-gray-900 dark:text-white mb-2">Datenschutzhinweis</h2>
+                    <p class="text-gray-600 dark:text-gray-400 text-sm mb-4">
+                        Der KI-Assistent verwendet künstliche Intelligenz (Groq), um Ihre Fragen zu beantworten.
+                        Ihre Anfragen werden an externe Server übermittelt und dort verarbeitet.
+                        Mit der Nutzung stimmen Sie der Verarbeitung Ihrer Daten gemäß unserer
+                        <a href="{% url 'insight_core:datenschutz' %}" class="text-primary-600 dark:text-primary-400 hover:underline">Datenschutzerklärung</a> zu.
+                    </p>
+                    <div class="flex gap-3">
+                        <button @click="giveConsent()"
+                                class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+                            Ich stimme zu
+                        </button>
+                        <a href="{% url 'insight_core:home' %}"
+                           class="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-medium rounded-lg transition-colors">
+                            Abbrechen
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Chat Interface -->
+    <template x-if="hasConsent">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <!-- Messages -->
+            <div class="h-[500px] overflow-y-auto p-6 space-y-4" id="chat-messages">
+                <!-- Welcome Message -->
+                <template x-if="messages.length === 0">
+                    <div class="text-center py-8">
+                        <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center">
+                            <i data-lucide="sparkles" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                        </div>
+                        <p class="text-gray-600 dark:text-gray-400">
+                            Hallo! Ich bin Ihr KI-Assistent für kommunalpolitische Themen.<br>
+                            Wie kann ich Ihnen helfen?
+                        </p>
+                        <div class="mt-4 flex flex-wrap justify-center gap-2">
+                            <button @click="sendMessage('Was sind die wichtigsten aktuellen Themen?')"
+                                    class="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                                Aktuelle Themen
+                            </button>
+                            <button @click="sendMessage('Wie funktioniert der Stadtrat?')"
+                                    class="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                                Wie funktioniert der Stadtrat?
+                            </button>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Message List -->
+                <template x-for="(msg, index) in messages" :key="index">
+                    <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+                        <div :class="msg.role === 'user'
+                                     ? 'bg-primary-500 text-white rounded-2xl rounded-br-md px-4 py-3 max-w-[80%]'
+                                     : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-2xl rounded-bl-md px-4 py-3 max-w-[80%]'">
+                            <p class="whitespace-pre-wrap" x-text="msg.content"></p>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Loading -->
+                <template x-if="isLoading">
+                    <div class="flex justify-start">
+                        <div class="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-bl-md px-4 py-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Input -->
+            <div class="border-t border-gray-200 dark:border-gray-700 p-4">
+                <form @submit.prevent="sendMessage(input); input = ''" class="flex gap-3">
+                    <input type="text"
+                           x-model="input"
+                           placeholder="Ihre Frage eingeben..."
+                           :disabled="isLoading"
+                           class="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 border-0 rounded-xl text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500/20 outline-none disabled:opacity-50">
+                    <button type="submit"
+                            :disabled="!input.trim() || isLoading"
+                            class="px-4 py-3 bg-primary-500 hover:bg-primary-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-xl transition-colors disabled:cursor-not-allowed">
+                        <i data-lucide="send" class="w-5 h-5"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </template>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function chatApp() {
+    return {
+        hasConsent: localStorage.getItem('chat_consent') === 'true',
+        messages: [],
+        input: '',
+        isLoading: false,
+
+        giveConsent() {
+            localStorage.setItem('chat_consent', 'true');
+            this.hasConsent = true;
+
+            // Also set server-side session
+            fetch('{% url "insight_core:insight:chat_message" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ consent: true })
+            });
+        },
+
+        async sendMessage(content) {
+            if (!content.trim()) return;
+
+            // Add user message
+            this.messages.push({ role: 'user', content: content });
+            this.isLoading = true;
+
+            // Scroll to bottom
+            this.$nextTick(() => {
+                const container = document.getElementById('chat-messages');
+                container.scrollTop = container.scrollHeight;
+            });
+
+            try {
+                const response = await fetch('{% url "insight_core:insight:chat_message" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({ message: content })
+                });
+
+                const data = await response.json();
+
+                if (data.error === 'consent_required') {
+                    this.hasConsent = false;
+                    localStorage.removeItem('chat_consent');
+                    this.messages.pop(); // Remove user message
+                } else if (data.error) {
+                    this.messages.push({
+                        role: 'assistant',
+                        content: 'Entschuldigung, es ist ein Fehler aufgetreten: ' + data.error
+                    });
+                } else {
+                    this.messages.push({
+                        role: 'assistant',
+                        content: data.response
+                    });
+                }
+            } catch (error) {
+                this.messages.push({
+                    role: 'assistant',
+                    content: 'Entschuldigung, es ist ein Verbindungsfehler aufgetreten.'
+                });
+            } finally {
+                this.isLoading = false;
+
+                // Scroll to bottom
+                this.$nextTick(() => {
+                    const container = document.getElementById('chat-messages');
+                    container.scrollTop = container.scrollHeight;
+                    lucide.createIcons();
+                });
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

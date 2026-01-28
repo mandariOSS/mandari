@@ -1,0 +1,96 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Einstellungen{% endblock %}
+
+{% block header_title %}Einstellungen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ organization.name }} verwalten</p>
+{% endblock %}
+
+{% block work_content %}
+<!-- Navigation Tabs -->
+<div class="mb-8 border-b border-gray-200 dark:border-gray-700">
+    <nav class="flex gap-1 overflow-x-auto">
+        <a href="{% url 'work:organization' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 {% if active_tab == 'general' %}border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %} whitespace-nowrap">
+            Allgemein
+        </a>
+        {% if can_manage_faction %}
+        <a href="{% url 'work:organization_faction_settings' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 {% if active_tab == 'faction' %}border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %} whitespace-nowrap">
+            Fraktionssitzungen
+        </a>
+        {% endif %}
+        <a href="{% url 'work:organization_documents' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 {% if active_tab == 'documents' %}border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %} whitespace-nowrap">
+            Anträge & Vorgänge
+        </a>
+        <a href="{% url 'work:members' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 {% if active_tab == 'members' %}border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %} whitespace-nowrap">
+            Mitglieder
+        </a>
+        <a href="{% url 'work:roles' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 {% if active_tab == 'roles' %}border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %} whitespace-nowrap">
+            Rollen
+        </a>
+    </nav>
+</div>
+
+<!-- Settings Content -->
+<div class="space-y-6">
+    <!-- Organization Info -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Organisation</h3>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+                <input type="text" value="{{ organization.name }}" readonly
+                       class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                <textarea rows="3" readonly
+                          class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg">{{ organization.description }}</textarea>
+            </div>
+        </div>
+        <p class="mt-4 text-sm text-gray-500">
+            Kontaktieren Sie den Support, um Organisationsdaten zu ändern.
+        </p>
+    </div>
+
+    <!-- Members Overview -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white">Mitglieder</h3>
+            <a href="{% url 'work:members' org_slug=organization.slug %}" class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                Alle anzeigen
+            </a>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="text-3xl font-bold text-gray-900 dark:text-white">
+                {{ organization.memberships.count }}
+            </div>
+            <div class="text-sm text-gray-500">
+                aktive Mitglieder
+            </div>
+        </div>
+        <a href="{% url 'work:member_invite' org_slug=organization.slug %}"
+           class="inline-flex items-center gap-2 mt-4 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+            <i data-lucide="user-plus" class="w-4 h-4"></i>
+            Mitglied einladen
+        </a>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-900 p-6">
+        <h3 class="text-lg font-medium text-red-600 dark:text-red-400 mb-4">Gefahrenzone</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Diese Aktionen können nicht rückgängig gemacht werden.
+        </p>
+        <button disabled
+                class="px-4 py-2 text-sm font-medium text-red-600 border border-red-300 dark:border-red-800 rounded-lg opacity-50 cursor-not-allowed">
+            Organisation verlassen
+        </button>
+    </div>
+</div>
+{% endblock %}

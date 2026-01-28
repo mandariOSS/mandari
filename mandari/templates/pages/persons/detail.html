@@ -1,0 +1,136 @@
+{% extends "base_ris.html" %}
+{% load static %}
+
+{% block title %}{{ person.display_name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Breadcrumb -->
+    <nav class="mb-6">
+        <ol class="flex items-center gap-2 text-sm">
+            <li>
+                <a href="{% url 'insight_core:insight:person_list' %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                    Personen
+                </a>
+            </li>
+            <li class="text-gray-400">/</li>
+            <li class="text-gray-900 dark:text-white font-medium truncate">
+                {{ person.display_name }}
+            </li>
+        </ol>
+    </nav>
+
+    <div class="grid lg:grid-cols-3 gap-8">
+        <!-- Main Content -->
+        <div class="lg:col-span-2">
+            <!-- Header -->
+            <div class="flex items-start gap-4 mb-8">
+                <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
+                    {% if person.given_name and person.family_name %}
+                        {{ person.given_name|slice:":1" }}{{ person.family_name|slice:":1" }}
+                    {% else %}
+                        <i data-lucide="user" class="w-10 h-10"></i>
+                    {% endif %}
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">
+                        {% if person.title %}{{ person.title }} {% endif %}{{ person.display_name }}
+                    </h1>
+                    {% if person.gender %}
+                    <p class="text-gray-600 dark:text-gray-400">
+                        {{ person.gender }}
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Memberships -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h2 class="font-semibold text-gray-900 dark:text-white">
+                        Mitgliedschaften ({{ memberships|length }})
+                    </h2>
+                </div>
+
+                {% if memberships %}
+                <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                    {% for membership in memberships %}
+                    <a href="{% url 'insight_core:insight:organization_detail' membership.organization.id %}"
+                       class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                        <div class="w-10 h-10 rounded-lg bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="users" class="w-5 h-5 text-primary-600 dark:text-primary-400"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-medium text-gray-900 dark:text-white truncate">
+                                {{ membership.organization.name }}
+                            </p>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">
+                                {% if membership.role %}{{ membership.role }}{% endif %}
+                                {% if membership.start_date %}
+                                    &middot; seit {{ membership.start_date|date:"d.m.Y" }}
+                                {% endif %}
+                                {% if membership.end_date %}
+                                    bis {{ membership.end_date|date:"d.m.Y" }}
+                                {% endif %}
+                            </p>
+                        </div>
+                        {% if membership.is_active %}
+                        <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">
+                            Aktiv
+                        </span>
+                        {% endif %}
+                        <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400"></i>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                    Keine Mitgliedschaften gefunden
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="space-y-6">
+            <!-- Contact Card -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Kontakt</h3>
+                <dl class="space-y-4">
+                    {% if person.email %}
+                    <div>
+                        <dt class="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                            <i data-lucide="mail" class="w-4 h-4"></i> E-Mail
+                        </dt>
+                        <dd class="mt-1">
+                            <a href="mailto:{{ person.email }}"
+                               class="text-primary-600 dark:text-primary-400 hover:underline break-all">
+                                {{ person.email }}
+                            </a>
+                        </dd>
+                    </div>
+                    {% endif %}
+                    {% if person.phone %}
+                    <div>
+                        <dt class="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                            <i data-lucide="phone" class="w-4 h-4"></i> Telefon
+                        </dt>
+                        <dd class="mt-1">
+                            <a href="tel:{{ person.phone }}"
+                               class="text-primary-600 dark:text-primary-400 hover:underline">
+                                {{ person.phone }}
+                            </a>
+                        </dd>
+                    </div>
+                    {% endif %}
+                    {% if not person.email and not person.phone %}
+                    <p class="text-gray-500 dark:text-gray-400 text-sm">
+                        Keine Kontaktdaten verfügbar
+                    </p>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

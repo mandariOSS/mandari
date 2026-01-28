@@ -1,0 +1,153 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Vorgänge{% endblock %}
+
+{% block header_title %}Vorgänge{% endblock %}
+{% block header_subtitle %}
+{% if body %}
+<p class="work-page-subtitle">{{ body.get_display_name }} · {{ paginator.count }} Vorgänge</p>
+{% endif %}
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Zurück
+</a>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
+    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
+    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Keine Kommune verknüpft</h3>
+    <p class="text-amber-700 dark:text-amber-300">
+        Dieser Organisation ist noch keine Kommune zugewiesen.
+    </p>
+</div>
+{% else %}
+
+<!-- Search & Filters -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-6 mb-6">
+    <form method="get" class="flex flex-wrap gap-4">
+        <!-- Search -->
+        <div class="flex-1 min-w-[200px]">
+            <div class="relative">
+                <input type="text" name="q" value="{{ search_query|default:'' }}"
+                       placeholder="Suche nach Titel oder Aktenzeichen..."
+                       class="w-full px-4 py-2.5 pl-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-400">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            </div>
+        </div>
+
+        <!-- Type Filter -->
+        <div class="w-48">
+            <select name="type"
+                    class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 text-gray-900 dark:text-white">
+                <option value="">Alle Typen</option>
+                {% for type in paper_types %}
+                {% if type %}
+                <option value="{{ type }}" {% if selected_type == type %}selected{% endif %}>{{ type }}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Year Filter -->
+        <div class="w-36">
+            <select name="year"
+                    class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 text-gray-900 dark:text-white">
+                <option value="">Alle Jahre</option>
+                {% for year in years %}
+                <option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button type="submit"
+                class="px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
+            <i data-lucide="filter" class="w-4 h-4"></i>
+        </button>
+
+        {% if search_query or selected_type or selected_year %}
+        <a href="{% url 'work:ris_papers' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
+            Filter zurücksetzen
+        </a>
+        {% endif %}
+    </form>
+</div>
+
+<!-- Papers List -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 overflow-hidden">
+    <div class="divide-y divide-gray-100/80 dark:divide-gray-700/30">
+        {% for paper in papers %}
+        <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}"
+           class="block px-6 py-5 hover:bg-gray-50/50 dark:hover:bg-gray-750/50 transition-colors">
+            <div class="flex items-start gap-4">
+                <div class="flex-1 min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white">{{ paper.name }}</p>
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-gray-500 dark:text-gray-400">
+                        {% if paper.reference %}
+                        <span class="font-mono text-xs bg-gray-50 dark:bg-gray-700/30 px-1.5 py-0.5 rounded">{{ paper.reference }}</span>
+                        {% endif %}
+                        {% if paper.date %}
+                        <span>{{ paper.date|date:"d.m.Y" }}</span>
+                        {% endif %}
+                        {% if paper.paper_type %}
+                        <span class="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded text-xs">{{ paper.paper_type }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 flex-shrink-0 mt-1"></i>
+            </div>
+        </a>
+        {% empty %}
+        <div class="px-5 py-12 text-center">
+            <div class="w-16 h-16 mx-auto mb-4 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+                <i data-lucide="file-x" class="w-8 h-8 text-blue-500 dark:text-blue-400"></i>
+            </div>
+            <p class="text-lg font-medium text-gray-900 dark:text-white mb-1">Keine Vorgänge gefunden</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Versuche andere Suchbegriffe oder Filter.</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if papers.has_other_pages %}
+    <div class="px-6 py-4 border-t border-gray-100/80 dark:border-gray-700/30">
+        <div class="flex items-center justify-between">
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+                Zeige {{ papers.start_index }}-{{ papers.end_index }} von {{ paginator.count }}
+            </p>
+            <nav class="flex items-center gap-1">
+                {% if papers.has_previous %}
+                <a href="?page={{ papers.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400">
+                    <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                </a>
+                {% endif %}
+
+                {% for num in papers.paginator.page_range %}
+                {% if papers.number == num %}
+                <span class="px-3 py-2 bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 rounded-lg font-medium text-sm">{{ num }}</span>
+                {% elif num > papers.number|add:'-3' and num < papers.number|add:'3' %}
+                <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+                   class="px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-300">{{ num }}</a>
+                {% endif %}
+                {% endfor %}
+
+                {% if papers.has_next %}
+                <a href="?page={{ papers.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400">
+                    <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                </a>
+                {% endif %}
+            </nav>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ notification.title }}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
+            color: #1f2937;
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 0;
+        }
+        .wrapper {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .email-container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background-color: #4f46e5;
+            padding: 24px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #ffffff;
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 32px 24px;
+        }
+        .notification-type {
+            display: inline-block;
+            padding: 4px 12px;
+            background-color: #eef2ff;
+            color: #4f46e5;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 16px;
+        }
+        .notification-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+            margin: 0 0 12px 0;
+        }
+        .notification-message {
+            color: #4b5563;
+            margin: 0 0 24px 0;
+        }
+        .actor-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background-color: #f9fafb;
+            border-radius: 8px;
+            margin-bottom: 24px;
+        }
+        .actor-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6b7280;
+            font-weight: 600;
+        }
+        .actor-name {
+            font-weight: 500;
+            color: #111827;
+        }
+        .actor-role {
+            font-size: 14px;
+            color: #6b7280;
+        }
+        .cta-button {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #4f46e5;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        .cta-button:hover {
+            background-color: #4338ca;
+        }
+        .footer {
+            padding: 24px;
+            text-align: center;
+            border-top: 1px solid #e5e7eb;
+        }
+        .footer p {
+            margin: 0;
+            color: #9ca3af;
+            font-size: 12px;
+        }
+        .footer a {
+            color: #6b7280;
+            text-decoration: underline;
+        }
+        .muted {
+            color: #9ca3af;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="email-container">
+            <div class="header">
+                <h1>{{ site_name }}</h1>
+            </div>
+
+            <div class="content">
+                <span class="notification-type">{{ notification.get_notification_type_display }}</span>
+
+                <h2 class="notification-title">{{ notification.title }}</h2>
+
+                <p class="notification-message">{{ notification.message }}</p>
+
+                {% if actor %}
+                <div class="actor-info">
+                    <div class="actor-avatar">
+                        {{ actor.user.get_initials|default:actor.user.email|slice:":2"|upper }}
+                    </div>
+                    <div>
+                        <div class="actor-name">{{ actor.user.display_name|default:actor.user.email }}</div>
+                        <div class="actor-role">{{ actor.organization.name }}</div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if notification.link %}
+                <a href="{{ base_url }}{{ notification.link }}" class="cta-button">
+                    Details anzeigen
+                </a>
+                {% endif %}
+            </div>
+
+            <div class="footer">
+                <p>
+                    Du erhältst diese E-Mail, weil du Benachrichtigungen für {{ recipient.organization.name }} aktiviert hast.
+                    <br>
+                    <a href="{{ base_url }}/work/{{ recipient.organization.slug }}/notifications/preferences/">Einstellungen anpassen</a>
+                </p>
+            </div>
+        </div>
+
+        <p style="text-align: center; margin-top: 20px;" class="muted">
+            &copy; {{ site_name }} | Mandari Open Source
+        </p>
+    </div>
+</body>
+</html>

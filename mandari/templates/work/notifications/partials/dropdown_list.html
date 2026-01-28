@@ -1,0 +1,50 @@
+{% load humanize %}
+{% if notifications %}
+    {% for notification in notifications %}
+    <a href="{{ notification.link|default:'#' }}"
+       class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-0 {% if not notification.is_read %}bg-primary-50 dark:bg-primary-900/20{% endif %}"
+       hx-post="{% url 'work:notification_mark_read' org_slug=organization.slug notification_id=notification.id %}"
+       hx-swap="none">
+        <div class="flex gap-3">
+            <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center
+                        {% if notification.color == 'blue' %}bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400{% endif %}
+                        {% if notification.color == 'green' %}bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400{% endif %}
+                        {% if notification.color == 'red' %}bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-400{% endif %}
+                        {% if notification.color == 'purple' %}bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-400{% endif %}
+                        {% if notification.color == 'orange' %}bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-400{% endif %}
+                        {% if notification.color == 'yellow' %}bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-400{% endif %}
+                        {% if notification.color == 'indigo' %}bg-indigo-100 text-indigo-600 dark:bg-indigo-900 dark:text-indigo-400{% endif %}
+                        {% if notification.color == 'gray' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                <i data-lucide="{{ notification.icon }}" class="w-4 h-4"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {{ notification.title }}
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                    {{ notification.message }}
+                </p>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    {{ notification.created_at|naturaltime }}
+                    {% if notification.actor %}
+                    <span class="mx-1">&middot;</span>
+                    {{ notification.actor.user.display_name|default:notification.actor.user.email }}
+                    {% endif %}
+                </p>
+            </div>
+            {% if not notification.is_read %}
+            <div class="flex-shrink-0">
+                <span class="w-2 h-2 bg-primary-500 rounded-full inline-block"></span>
+            </div>
+            {% endif %}
+        </div>
+    </a>
+    {% endfor %}
+{% else %}
+    <div class="p-6 text-center">
+        <div class="w-12 h-12 mx-auto mb-3 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center">
+            <i data-lucide="bell-off" class="w-6 h-6 text-purple-400 dark:text-purple-500"></i>
+        </div>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Keine Benachrichtigungen</p>
+    </div>
+{% endif %}

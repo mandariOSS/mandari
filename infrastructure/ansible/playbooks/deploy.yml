@@ -1,0 +1,235 @@
+---
+# =============================================================================
+# Mandari 2.0 - Application Deployment Playbook
+# =============================================================================
+# This playbook deploys the Mandari application to the servers.
+# It handles:
+# - Environment configuration
+# - Docker image building/pulling
+# - Container orchestration
+# - Health checks
+# =============================================================================
+
+- name: Deploy Mandari Application
+  hosts: all_servers
+  become: yes
+  become_user: "{{ app_user }}"
+  gather_facts: yes
+
+  vars:
+    compose_file: "{{ 'docker-compose.master.yml' if postgres_role == 'primary' else 'docker-compose.slave.yml' }}"
+    deploy_timestamp: "{{ ansible_date_time.epoch }}"
+
+  handlers:
+    - name: restart containers
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        files:
+          - "{{ compose_file }}"
+        state: present
+        pull: always
+
+  pre_tasks:
+    - name: Check if .env file exists
+      stat:
+        path: "{{ app_dir }}/.env"
+      register: env_file
+
+    - name: Fail if .env file is missing
+      fail:
+        msg: "Environment file {{ app_dir }}/.env is missing. Please create it first."
+      when: not env_file.stat.exists
+
+  tasks:
+    # =========================================================================
+    # Prepare Deployment
+    # =========================================================================
+    - name: Create backup of current deployment
+      archive:
+        path: "{{ app_dir }}"
+        dest: "{{ app_dir }}/backups/deploy-{{ deploy_timestamp }}.tar.gz"
+        exclude_path:
+          - "{{ app_dir }}/backups"
+          - "{{ data_dir }}"
+      ignore_errors: yes
+
+    - name: Sync Docker Compose files
+      copy:
+        src: "{{ playbook_dir }}/../../docker/{{ item }}"
+        dest: "{{ app_dir }}/{{ item }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
+      loop:
+        - docker-compose.master.yml
+        - docker-compose.slave.yml
+        - Caddyfile
+
+    - name: Create Docker Compose symlink
+      file:
+        src: "{{ app_dir }}/{{ compose_file }}"
+        dest: "{{ app_dir }}/docker-compose.yml"
+        state: link
+        force: yes
+
+    # =========================================================================
+    # Build Images (if building locally)
+    # =========================================================================
+    - name: Check if we should build images locally
+      stat:
+        path: "{{ app_dir }}/apps"
+      register: apps_dir
+
+    - name: Build application images
+      when: apps_dir.stat.exists
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        files:
+          - "{{ compose_file }}"
+        build: always
+        services:
+          - api
+          - web-public
+          - web-work
+
+    # =========================================================================
+    # Deploy Containers
+    # =========================================================================
+    - name: Pull latest images
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        files:
+          - "{{ compose_file }}"
+        pull: always
+
+    - name: Start all containers
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        files:
+          - "{{ compose_file }}"
+        state: present
+      register: compose_result
+
+    - name: Display deployment result
+      debug:
+        msg: "Deployment completed. Containers: {{ compose_result.containers | map(attribute='Name') | list }}"
+
+    # =========================================================================
+    # Database Migrations (Primary only)
+    # =========================================================================
+    - name: Run database migrations
+      when: postgres_role == 'primary'
+      block:
+        - name: Wait for PostgreSQL to be ready
+          community.docker.docker_container_exec:
+            container: mandari-postgres
+            command: pg_isready -U mandari
+          register: pg_ready
+          retries: 30
+          delay: 2
+          until: pg_ready.rc == 0
+
+        - name: Run migrations
+          community.docker.docker_container_exec:
+            container: mandari-api
+            command: python manage.py migrate --noinput
+          register: migration_result
+
+        - name: Display migration result
+          debug:
+            msg: "{{ migration_result.stdout }}"
+
+    # =========================================================================
+    # Health Checks
+    # =========================================================================
+    - name: Wait for API health check
+      uri:
+        url: "http://localhost:8000/health"
+        method: GET
+        status_code: 200
+      register: api_health
+      retries: 30
+      delay: 5
+      until: api_health.status == 200
+
+    - name: Wait for Caddy health check
+      uri:
+        url: "http://localhost/health"
+        method: GET
+        status_code: 200
+      register: caddy_health
+      retries: 30
+      delay: 5
+      until: caddy_health.status == 200
+
+    # =========================================================================
+    # Cleanup
+    # =========================================================================
+    - name: Remove old Docker images
+      shell: docker image prune -f --filter "until=24h"
+      ignore_errors: yes
+
+    - name: Remove old backups (keep last 5)
+      shell: |
+        cd {{ app_dir }}/backups && \
+        ls -t deploy-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm --
+      ignore_errors: yes
+
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg: |
+          ==========================================
+          Deployment Complete!
+          ==========================================
+          Server: {{ inventory_hostname }}
+          Role: {{ postgres_role }}
+          Compose File: {{ compose_file }}
+          Timestamp: {{ deploy_timestamp }}
+          ==========================================
+
+# =============================================================================
+# Verify Deployment
+# =============================================================================
+- name: Verify Deployment
+  hosts: all_servers
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Check running containers
+      shell: docker ps --format "table {{'{{'}}.Names{{'}}'}}\t{{'{{'}}.Status{{'}}'}}\t{{'{{'}}.Ports{{'}}'}}"
+      register: docker_ps
+
+    - name: Display running containers
+      debug:
+        msg: "{{ docker_ps.stdout_lines }}"
+
+    - name: Check container health
+      shell: docker inspect --format='{{'{{'}}.State.Health.Status{{'}}'}}' {{ item }}
+      loop:
+        - mandari-postgres
+        - mandari-redis
+        - mandari-api
+      register: health_status
+      ignore_errors: yes
+
+    - name: Verify PostgreSQL replication (primary)
+      when: postgres_role == 'primary'
+      shell: docker exec mandari-postgres psql -U mandari -t -c "SELECT count(*) FROM pg_stat_replication;"
+      register: replication_count
+
+    - name: Display replication status (primary)
+      when: postgres_role == 'primary'
+      debug:
+        msg: "Connected replicas: {{ replication_count.stdout | trim }}"
+
+    - name: Verify PostgreSQL replication (replica)
+      when: postgres_role == 'replica'
+      shell: docker exec mandari-postgres psql -U mandari -t -c "SELECT pg_is_in_recovery();"
+      register: recovery_status
+
+    - name: Display recovery status (replica)
+      when: postgres_role == 'replica'
+      debug:
+        msg: "In recovery mode: {{ recovery_status.stdout | trim }}"

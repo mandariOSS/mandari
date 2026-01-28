@@ -1,0 +1,35 @@
+{% extends "accounts/base_auth.html" %}
+
+{% block title %}Abmelden{% endblock %}
+
+{% block header_title %}Abmelden{% endblock %}
+{% block header_subtitle %}Bist du sicher, dass du dich abmelden möchtest?{% endblock %}
+
+{% block content %}
+<div class="text-center mb-6">
+    <div class="mx-auto w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mb-4">
+        <svg class="w-8 h-8 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+        </svg>
+    </div>
+    <p class="text-gray-600 dark:text-gray-400">
+        Du wirst von deinem Konto abgemeldet und musst dich erneut anmelden, um fortzufahren.
+    </p>
+</div>
+
+<form method="post" class="space-y-4">
+    {% csrf_token %}
+
+    <button type="submit"
+            class="w-full py-3 px-4 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:focus:ring-offset-gray-800">
+        Ja, abmelden
+    </button>
+
+    <a href="javascript:history.back()"
+       class="block w-full py-3 px-4 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium text-center transition-colors">
+        Abbrechen
+    </a>
+</form>
+{% endblock %}
+
+{% block footer %}{% endblock %}

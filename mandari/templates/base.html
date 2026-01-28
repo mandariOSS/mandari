@@ -1,0 +1,169 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="de" class="scroll-smooth"
+      x-data="{ darkMode: localStorage.getItem('darkMode') === 'true' }"
+      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))"
+      :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{% block meta_description %}Mandari - Kommunalpolitische Transparenz{% endblock %}">
+    <meta name="theme-color" content="#4f46e5">
+
+    <title>{% block title %}Mandari{% endblock %} | Mandari Insight</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{% static 'images/favicon.png' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'images/favicon.ico' %}">
+
+    <!-- TailwindCSS (lokal kompiliert, DSGVO-konform) -->
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+    <!-- HTMX (lokal) -->
+    <script src="{% static 'vendor/htmx/htmx.min.js' %}"></script>
+
+    <!-- Alpine.js (lokal) -->
+    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
+
+    <!-- Lucide Icons (lokal) -->
+    <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>
+
+    <!-- Custom Styles -->
+    <style>
+        [x-cloak] { display: none !important; }
+
+        /* Loading indicator for HTMX */
+        .htmx-request .htmx-indicator {
+            display: inline-flex;
+        }
+        .htmx-indicator {
+            display: none;
+        }
+
+        /* Smooth transitions */
+        .htmx-swapping {
+            opacity: 0;
+            transition: opacity 0.2s ease-out;
+        }
+
+        /* Skip Link - WCAG 2.1 */
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #4f46e5;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            text-decoration: none;
+            font-weight: 500;
+            z-index: 9999;
+            transition: top 0.2s;
+        }
+        .skip-link:focus {
+            top: 1rem;
+            outline: 2px solid white;
+            outline-offset: 2px;
+        }
+
+        /* Focus visible styles - WCAG 2.1 */
+        :focus-visible {
+            outline: 2px solid #4f46e5;
+            outline-offset: 2px;
+        }
+        .dark :focus-visible {
+            outline-color: #818cf8;
+        }
+
+        /* Improved focus for buttons and links */
+        a:focus-visible,
+        button:focus-visible,
+        [role="button"]:focus-visible {
+            outline: 2px solid #4f46e5;
+            outline-offset: 2px;
+            border-radius: 0.25rem;
+        }
+        .dark a:focus-visible,
+        .dark button:focus-visible,
+        .dark [role="button"]:focus-visible {
+            outline-color: #818cf8;
+        }
+
+        /* Touch target minimum size - WCAG 2.1 AAA */
+        .touch-target {
+            min-width: 44px;
+            min-height: 44px;
+        }
+
+        /* Prevent horizontal overflow */
+        html, body {
+            overflow-x: hidden;
+            max-width: 100vw;
+        }
+
+        /* Word breaking for long content */
+        .break-anywhere {
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+    </style>
+
+    {% block extra_head %}{% endblock %}
+</head>
+
+<body class="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-x-hidden">
+    <!-- Skip Link for Accessibility - WCAG 2.1 AA -->
+    <a href="#main-content" class="skip-link">
+        Zum Hauptinhalt springen
+    </a>
+
+    <!-- Navigation -->
+    <header role="banner">
+        {% include "components/navbar.html" %}
+    </header>
+
+    <!-- Main Content -->
+    <main id="main-content" class="pt-16" role="main" tabindex="-1">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer role="contentinfo">
+        {% include "components/footer.html" %}
+    </footer>
+
+    <!-- Chatbot Popup (nur auf bestimmten Seiten) -->
+    {% block chatbot %}{% endblock %}
+
+    <!-- HTMX Configuration -->
+    <script>
+        document.body.addEventListener('htmx:configRequest', (event) => {
+            // CSRF Token für POST requests
+            event.detail.headers['X-CSRFToken'] = '{{ csrf_token }}';
+        });
+
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Re-initialize icons after HTMX swap
+        document.body.addEventListener('htmx:afterSwap', () => {
+            lucide.createIcons();
+        });
+
+        // Announce dynamic content changes for screen readers
+        document.body.addEventListener('htmx:afterSwap', (event) => {
+            const announcement = document.createElement('div');
+            announcement.setAttribute('role', 'status');
+            announcement.setAttribute('aria-live', 'polite');
+            announcement.setAttribute('aria-atomic', 'true');
+            announcement.className = 'sr-only';
+            announcement.textContent = 'Inhalt wurde aktualisiert';
+            document.body.appendChild(announcement);
+            setTimeout(() => announcement.remove(), 1000);
+        });
+    </script>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

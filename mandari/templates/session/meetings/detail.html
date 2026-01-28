@@ -1,0 +1,292 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}{{ meeting.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Sitzungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium truncate max-w-[200px]">{{ meeting.name }}</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid lg:grid-cols-3 gap-6">
+    <!-- Main Content -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Header Card -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-start gap-4 mb-4">
+                <div class="w-14 h-14 rounded-xl {% if meeting.cancelled %}bg-gray-100 dark:bg-gray-700{% else %}bg-blue-100 dark:bg-blue-900/50{% endif %} flex flex-col items-center justify-center {% if meeting.cancelled %}text-gray-500{% else %}text-blue-600 dark:text-blue-400{% endif %}">
+                    <span class="text-xs font-medium uppercase">{{ meeting.start|date:"M" }}</span>
+                    <span class="text-xl font-bold leading-none">{{ meeting.start|date:"d" }}</span>
+                </div>
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                        {% if meeting.cancelled %}
+                        <span class="px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
+                            Abgesagt
+                        </span>
+                        {% endif %}
+                        {% if not meeting.is_public %}
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
+                            <i data-lucide="lock" class="w-3 h-3"></i>
+                            Nicht öffentlich
+                        </span>
+                        {% endif %}
+                    </div>
+                    <h1 class="text-xl font-bold text-gray-900 dark:text-white {% if meeting.cancelled %}line-through{% endif %}">
+                        {{ meeting.name }}
+                    </h1>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        {{ meeting.organization.name }}
+                    </p>
+                </div>
+                {% if permission_checker.has_permission "edit_meetings" %}
+                <a href="{% url 'session:meeting_edit' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                   class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    <i data-lucide="edit" class="w-4 h-4"></i>
+                    Bearbeiten
+                </a>
+                {% endif %}
+            </div>
+
+            <!-- Quick Info -->
+            <div class="flex flex-wrap gap-4 text-sm">
+                <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <i data-lucide="clock" class="w-4 h-4"></i>
+                    {{ meeting.start|date:"d.m.Y" }} um {{ meeting.start|date:"H:i" }} Uhr
+                    {% if meeting.end %}- {{ meeting.end|date:"H:i" }} Uhr{% endif %}
+                </div>
+                {% if meeting.location %}
+                <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <i data-lucide="map-pin" class="w-4 h-4"></i>
+                    {{ meeting.location }}{% if meeting.room %}, {{ meeting.room }}{% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Agenda -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="list-ordered" class="w-5 h-5 text-blue-500"></i>
+                    Tagesordnung
+                </h2>
+                {% if permission_checker.has_permission "edit_meetings" %}
+                <button hx-get="{% url 'session:agenda_item_create' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                        hx-target="#agenda-form"
+                        hx-swap="innerHTML"
+                        class="text-sm text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    TOP hinzufügen
+                </button>
+                {% endif %}
+            </div>
+            <div id="agenda-form"></div>
+            <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for item in agenda_items %}
+                <div class="px-6 py-4">
+                    <div class="flex items-start gap-4">
+                        <span class="flex-shrink-0 w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-sm font-bold text-gray-600 dark:text-gray-400">
+                            {{ item.number }}
+                        </span>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1">
+                                <p class="font-medium text-gray-900 dark:text-white">{{ item.name }}</p>
+                                {% if not item.is_public %}
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
+                                    <i data-lucide="lock" class="w-3 h-3"></i>
+                                </span>
+                                {% endif %}
+                            </div>
+                            {% if item.paper %}
+                            <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=item.paper.id %}"
+                               class="inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                                <i data-lucide="file-text" class="w-4 h-4"></i>
+                                {{ item.paper.reference }}
+                            </a>
+                            {% endif %}
+                        </div>
+                        {% if item.vote_result != 'pending' %}
+                        <span class="flex-shrink-0 px-2 py-1 text-xs font-medium rounded-full
+                            {% if item.vote_result == 'approved' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                            {% elif item.vote_result == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+                            {% elif item.vote_result == 'deferred' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400
+                            {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                            {{ item.get_vote_result_display }}
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% empty %}
+                <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <i data-lucide="list" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                    <p>Keine Tagesordnungspunkte</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Attendance -->
+        {% if attendances %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="users" class="w-5 h-5 text-green-500"></i>
+                    Anwesenheit
+                </h2>
+            </div>
+            <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for attendance in attendances %}
+                <div class="px-6 py-3 flex items-center gap-4">
+                    <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
+                        {{ attendance.person.given_name|slice:":1" }}{{ attendance.person.family_name|slice:":1" }}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-medium text-gray-900 dark:text-white text-sm">
+                            {{ attendance.person.display_name }}
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            {{ attendance.get_role_display }}
+                        </p>
+                    </div>
+                    <span class="px-2 py-1 text-xs font-medium rounded-full
+                        {% if attendance.status == 'present' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                        {% elif attendance.status == 'absent' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+                        {% elif attendance.status == 'excused' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400
+                        {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                        {{ attendance.get_status_display }}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-6">
+        <!-- Status Card -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Details</h3>
+            <dl class="space-y-4 text-sm">
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Status</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium
+                            {% if meeting.meeting_state == 'draft' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400
+                            {% elif meeting.meeting_state == 'scheduled' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
+                            {% elif meeting.meeting_state == 'invitation_sent' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                            {% elif meeting.meeting_state == 'completed' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                            {{ meeting.get_meeting_state_display }}
+                        </span>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Gremium</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        <a href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=meeting.organization.id %}"
+                           class="text-primary-600 dark:text-primary-400 hover:underline">
+                            {{ meeting.organization.name }}
+                        </a>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Datum & Zeit</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        {{ meeting.start|date:"l, d. F Y" }}<br>
+                        {{ meeting.start|date:"H:i" }}{% if meeting.end %} - {{ meeting.end|date:"H:i" }}{% endif %} Uhr
+                    </dd>
+                </div>
+                {% if meeting.location %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Ort</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        {{ meeting.location }}<br>
+                        {% if meeting.room %}Raum: {{ meeting.room }}<br>{% endif %}
+                        {% if meeting.street_address %}{{ meeting.street_address }}<br>{% endif %}
+                        {% if meeting.postal_code or meeting.locality %}{{ meeting.postal_code }} {{ meeting.locality }}{% endif %}
+                    </dd>
+                </div>
+                {% endif %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Sichtbarkeit</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        {% if meeting.is_public %}
+                        <span class="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                            <i data-lucide="globe" class="w-4 h-4"></i>
+                            Öffentlich
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
+                            <i data-lucide="lock" class="w-4 h-4"></i>
+                            Nicht öffentlich
+                        </span>
+                        {% endif %}
+                    </dd>
+                </div>
+                {% if meeting.invitation_sent_at %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Einladung versandt</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        {{ meeting.invitation_sent_at|date:"d.m.Y H:i" }}
+                    </dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+
+        <!-- Protocol -->
+        {% if protocol %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <i data-lucide="file-text" class="w-5 h-5 text-purple-500"></i>
+                Protokoll
+            </h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                Status: <span class="font-medium">{{ protocol.get_status_display }}</span>
+            </p>
+            <a href="#" class="inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                <i data-lucide="eye" class="w-4 h-4"></i>
+                Protokoll anzeigen
+            </a>
+        </div>
+        {% endif %}
+
+        <!-- Files -->
+        {% if files %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="paperclip" class="w-5 h-5 text-gray-500"></i>
+                    Dateien ({{ files|length }})
+                </h3>
+            </div>
+            <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for file in files %}
+                <div class="px-6 py-3 flex items-center gap-3">
+                    <i data-lucide="file" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ file.name }}</p>
+                        <p class="text-xs text-gray-500">{{ file.size_human }}</p>
+                    </div>
+                    <a href="{{ file.file.url }}" target="_blank"
+                       class="text-primary-600 dark:text-primary-400 hover:underline text-sm">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

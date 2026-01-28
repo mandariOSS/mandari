@@ -1,0 +1,105 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}{% if is_new %}Neue Vorlage{% else %}{{ template.name }} bearbeiten{% endif %}{% endblock %}
+
+{% block header_title %}{% if is_new %}Neue Vorlage{% else %}{{ template.name }} bearbeiten{% endif %}{% endblock %}
+
+{% block work_content %}
+<div class="max-w-3xl">
+    <form method="post" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        {% csrf_token %}
+
+        <div class="space-y-6">
+            <!-- Name -->
+            <div>
+                <label for="id_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
+                {{ form.name }}
+            </div>
+
+            <!-- Description -->
+            <div>
+                <label for="id_description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                {{ form.description }}
+            </div>
+
+            <!-- Type & Letterhead -->
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label for="id_motion_type" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Dokumenttyp</label>
+                    {{ form.motion_type }}
+                    <p class="text-xs text-gray-500 mt-1">Nur für diesen Typ verfügbar (leer = alle)</p>
+                </div>
+                <div>
+                    <label for="id_letterhead" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Briefkopf</label>
+                    {{ form.letterhead }}
+                    <p class="text-xs text-gray-500 mt-1">Standard-Briefkopf für diese Vorlage</p>
+                </div>
+            </div>
+
+            <!-- Content Template -->
+            <div>
+                <label for="id_content_template" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Inhaltsvorlage</label>
+                {{ form.content_template }}
+                <p class="text-xs text-gray-500 mt-1">Vorausgefüllter Inhalt für neue Dokumente (HTML/Markdown)</p>
+            </div>
+
+            <!-- Structure Hints -->
+            <div>
+                <label for="id_structure_hints" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Strukturhinweise für KI</label>
+                {{ form.structure_hints }}
+                <p class="text-xs text-gray-500 mt-1">Hinweise für die KI-Unterstützung (z.B. Abschnitte, Formatierung)</p>
+            </div>
+
+            <!-- Signature Block -->
+            <div>
+                <label for="id_signature_block" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Signaturblock</label>
+                {{ form.signature_block }}
+            </div>
+
+            <!-- Settings -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Einstellungen</h3>
+
+                <div class="space-y-3">
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        {{ form.is_shared_party }}
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                            Partei-weit teilen
+                            <span class="block text-xs text-gray-500">Vorlage ist für alle Organisationen in der Parteigruppe verfügbar</span>
+                        </span>
+                    </label>
+
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        {{ form.is_default }}
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                            Standard-Vorlage
+                            <span class="block text-xs text-gray-500">Wird als Vorauswahl bei neuen Dokumenten verwendet</span>
+                        </span>
+                    </label>
+
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        {{ form.is_active }}
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                            Aktiv
+                            <span class="block text-xs text-gray-500">Inaktive Vorlagen werden nicht angezeigt</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center justify-between mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <a href="{% url 'work:motion_template_list' org_slug=organization.slug %}"
+               class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                Abbrechen
+            </a>
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                <i data-lucide="check" class="w-4 h-4"></i>
+                {% if is_new %}Vorlage erstellen{% else %}Speichern{% endif %}
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

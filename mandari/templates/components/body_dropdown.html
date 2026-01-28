@@ -1,0 +1,108 @@
+<!-- Body/Kommune Dropdown -->
+<div class="relative" x-data="{ isOpen: false }">
+    <button @click="isOpen = !isOpen"
+            @click.outside="isOpen = false"
+            @keydown.escape.prevent="isOpen = false"
+            class="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm touch-target"
+            :aria-expanded="isOpen.toString()"
+            aria-haspopup="listbox"
+            aria-label="Kommune auswählen">
+        <i data-lucide="map-pin" class="w-4 h-4 text-primary-500 shrink-0" aria-hidden="true"></i>
+        <span class="max-w-[100px] sm:max-w-[120px] truncate">
+            {% if show_all_bodies %}
+                Alle Kommunen
+            {% elif active_body %}
+                {{ active_body.get_display_name }}
+            {% else %}
+                Kommune wählen
+            {% endif %}
+        </span>
+        <i data-lucide="chevron-down"
+           class="w-4 h-4 text-gray-500 transition-transform shrink-0"
+           :class="{ 'rotate-180': isOpen }"
+           aria-hidden="true"></i>
+    </button>
+
+    <!-- Dropdown Menu -->
+    <div x-show="isOpen"
+         x-transition:enter="transition ease-out duration-100"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-75"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         class="absolute right-0 mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 max-h-[60vh] overflow-y-auto"
+         role="listbox"
+         aria-label="Liste der Kommunen"
+         x-cloak>
+        <div class="p-2">
+            <p class="px-3 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" id="body-dropdown-label">
+                Kommune auswählen
+            </p>
+
+            <!-- Alle Kommunen Option -->
+            <a href="{% url 'insight_core:insight:clear_body' %}"
+               role="option"
+               aria-selected="{% if show_all_bodies %}true{% else %}false{% endif %}"
+               class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors {% if show_all_bodies %}bg-primary-50 dark:bg-primary-900/30{% endif %}">
+                <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-gray-500 to-gray-600 flex items-center justify-center text-white text-sm font-medium shrink-0" aria-hidden="true">
+                    <i data-lucide="globe" class="w-4 h-4"></i>
+                </span>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                        Alle Kommunen
+                    </p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        Übersicht aller {{ available_bodies|length }} Kommunen
+                    </p>
+                </div>
+                {% if show_all_bodies %}
+                    <i data-lucide="check" class="w-4 h-4 text-primary-500 shrink-0" aria-hidden="true"></i>
+                    <span class="sr-only">(ausgewählt)</span>
+                {% endif %}
+            </a>
+
+            <div class="my-2 border-t border-gray-200 dark:border-gray-700"></div>
+
+            {% if available_bodies %}
+                {% for body in available_bodies %}
+                    <a href="{% url 'insight_core:insight:set_body' body.id %}"
+                       role="option"
+                       aria-selected="{% if active_body and body.id == active_body.id %}true{% else %}false{% endif %}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors {% if active_body and body.id == active_body.id %}bg-primary-50 dark:bg-primary-900/30{% endif %}">
+                        <!-- Logo oder Initialen -->
+                        <span class="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center shrink-0 {% if not body.logo %}bg-gradient-to-br from-primary-500 to-primary-600{% else %}bg-white dark:bg-gray-600{% endif %}" aria-hidden="true">
+                            {% if body.logo %}
+                            <img src="{{ body.logo.url }}"
+                                 alt=""
+                                 class="max-w-[85%] max-h-[85%] object-contain">
+                            {% else %}
+                            <span class="text-white text-sm font-medium">
+                                {{ body.get_initials }}
+                            </span>
+                            {% endif %}
+                        </span>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                {{ body.get_display_name }}
+                            </p>
+                            {% if body.name != body.get_display_name %}
+                                <p class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                    {{ body.name }}
+                                </p>
+                            {% endif %}
+                        </div>
+                        {% if active_body and body.id == active_body.id %}
+                            <i data-lucide="check" class="w-4 h-4 text-primary-500 shrink-0" aria-hidden="true"></i>
+                            <span class="sr-only">(ausgewählt)</span>
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            {% else %}
+                <p class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
+                    Keine Kommunen verfügbar
+                </p>
+            {% endif %}
+        </div>
+    </div>
+</div>

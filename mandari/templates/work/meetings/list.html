@@ -1,0 +1,262 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Meine Sitzungen{% endblock %}
+
+{% block header_title %}Meine Sitzungen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">
+    {% if view_mode == 'my' and has_assignments %}
+    Sitzungen Ihrer zugewiesenen Gremien
+    {% else %}
+    Alle Sitzungen der Gremien
+    {% endif %}
+</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:meetings_calendar' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+    <i data-lucide="calendar" class="w-4 h-4"></i>
+    Kalenderansicht
+</a>
+{% endblock %}
+
+{% block work_content %}
+<!-- View Mode Tabs -->
+{% if has_body %}
+<div class="mb-6 border-b border-gray-200 dark:border-gray-700">
+    <nav class="-mb-px flex gap-4">
+        <a href="?view=my&time={{ time_filter }}"
+           class="inline-flex items-center gap-2 py-3 px-1 border-b-2 font-medium text-sm transition-colors
+           {% if view_mode == 'my' %}
+           border-primary-500 text-primary-600 dark:text-primary-400
+           {% else %}
+           border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300
+           {% endif %}">
+            <i data-lucide="user" class="w-4 h-4"></i>
+            Meine Gremien
+            {% if assigned_committees %}
+            <span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 rounded-full">
+                {{ assigned_committees|length }}
+            </span>
+            {% endif %}
+        </a>
+        <a href="?view=all&time={{ time_filter }}"
+           class="inline-flex items-center gap-2 py-3 px-1 border-b-2 font-medium text-sm transition-colors
+           {% if view_mode == 'all' %}
+           border-primary-500 text-primary-600 dark:text-primary-400
+           {% else %}
+           border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300
+           {% endif %}">
+            <i data-lucide="building" class="w-4 h-4"></i>
+            Alle Sitzungen
+        </a>
+    </nav>
+</div>
+{% endif %}
+
+<!-- Assigned Committees Info (if no assignments) -->
+{% if has_body and not has_assignments and view_mode == 'my' %}
+<div class="mb-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+    <div class="flex items-start gap-3">
+        <div class="flex-shrink-0">
+            <i data-lucide="info" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+        </div>
+        <div>
+            <h4 class="font-medium text-amber-800 dark:text-amber-200">Keine Gremien zugewiesen</h4>
+            <p class="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                Ihnen wurden noch keine Gremien zugewiesen. Bitten Sie einen Administrator, Ihnen Gremien zuzuweisen,
+                oder wechseln Sie zur Ansicht "Alle Sitzungen".
+            </p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Filters -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
+    <form method="get" class="flex flex-wrap items-center gap-4">
+        <input type="hidden" name="view" value="{{ view_mode }}">
+
+        <div class="flex-1 min-w-[200px]">
+            <div class="relative">
+                <input type="text" name="q" value="{{ search_query }}"
+                       placeholder="Sitzungen durchsuchen..."
+                       class="w-full px-4 py-2.5 pl-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            </div>
+        </div>
+
+        {% if view_mode == 'all' %}
+        <select name="committee" onchange="this.form.submit()"
+                class="px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+            <option value="">Alle Gremien</option>
+            {% for committee in all_committees %}
+            <option value="{{ committee.id }}" {% if committee_filter == committee.id|stringformat:'s' %}selected{% endif %}>
+                {{ committee.name|truncatechars:40 }}
+            </option>
+            {% endfor %}
+        </select>
+        {% endif %}
+
+        <select name="time" onchange="this.form.submit()"
+                class="px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+            <option value="upcoming" {% if time_filter == 'upcoming' %}selected{% endif %}>Anstehend</option>
+            <option value="past" {% if time_filter == 'past' %}selected{% endif %}>Vergangen</option>
+            <option value="all" {% if time_filter == 'all' %}selected{% endif %}>Alle</option>
+        </select>
+    </form>
+</div>
+
+<!-- Meetings List -->
+<div class="space-y-4">
+    {% if not has_body %}
+    <!-- No OParl Body linked -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+        <div class="w-16 h-16 mx-auto mb-4 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
+            <i data-lucide="link-2-off" class="w-8 h-8 text-amber-600 dark:text-amber-400"></i>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Kommune verknüpft</h3>
+        <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+            Um Sitzungen anzuzeigen, muss Ihre Organisation mit einer Kommune im Ratsinformationssystem verknüpft werden.
+        </p>
+        <a href="{% url 'work:organization' org_slug=organization.slug %}"
+           class="inline-flex items-center gap-2 mt-6 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+            <i data-lucide="settings" class="w-4 h-4"></i>
+            Organisation einrichten
+        </a>
+    </div>
+
+    {% elif not meetings %}
+    <!-- No meetings found -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+        <div class="w-16 h-16 mx-auto mb-4 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+            <i data-lucide="calendar-x" class="w-8 h-8 text-blue-500 dark:text-blue-400"></i>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Sitzungen gefunden</h3>
+        <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+            {% if view_mode == 'my' and not has_assignments %}
+            Ihnen wurden noch keine Gremien zugewiesen.
+            {% elif time_filter == 'upcoming' %}
+            Es sind derzeit keine anstehenden Sitzungen vorhanden.
+            {% elif time_filter == 'past' %}
+            Es wurden keine vergangenen Sitzungen gefunden.
+            {% else %}
+            Es wurden keine Sitzungen gefunden, die Ihren Filterkriterien entsprechen.
+            {% endif %}
+        </p>
+        {% if view_mode == 'my' %}
+        <a href="?view=all&time={{ time_filter }}"
+           class="inline-flex items-center gap-2 mt-6 text-primary-600 dark:text-primary-400 hover:underline">
+            <i data-lucide="building" class="w-4 h-4"></i>
+            Alle Sitzungen anzeigen
+        </a>
+        {% else %}
+        <a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+           class="inline-flex items-center gap-2 mt-6 text-primary-600 dark:text-primary-400 hover:underline">
+            <i data-lucide="building-2" class="w-4 h-4"></i>
+            Ratsinformation durchsuchen
+        </a>
+        {% endif %}
+    </div>
+
+    {% else %}
+    <!-- Meeting Cards -->
+    {% for meeting in meetings %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
+        <div class="flex items-start gap-4">
+            <!-- Date badge -->
+            <div class="flex-shrink-0 w-16 text-center py-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div class="text-2xl font-bold text-gray-900 dark:text-white">
+                    {{ meeting.start|date:"d" }}
+                </div>
+                <div class="text-sm text-gray-500 uppercase">
+                    {{ meeting.start|date:"M" }}
+                </div>
+                <div class="text-xs text-gray-400 mt-1">
+                    {{ meeting.start|date:"H:i" }}
+                </div>
+            </div>
+
+            <!-- Meeting info -->
+            <div class="flex-1 min-w-0">
+                <!-- Committee Name (from raw_json) -->
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                    {{ meeting.committee_name|default:meeting.get_display_name }}
+                </h3>
+
+                <!-- Meeting name as subtitle -->
+                {% if meeting.name and meeting.name != meeting.committee_name %}
+                <p class="text-sm text-gray-600 dark:text-gray-300 mb-2">
+                    {{ meeting.name|truncatechars:80 }}
+                </p>
+                {% endif %}
+
+                <div class="flex items-center gap-3 flex-wrap mb-2">
+                    {% if meeting.user_prepared %}
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full">
+                        <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+                        Vorbereitet
+                    </span>
+                    {% endif %}
+
+                    {% if meeting.start < now %}
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full">
+                        Vergangen
+                    </span>
+                    {% endif %}
+                </div>
+
+                {% if meeting.location_name %}
+                <p class="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                    <i data-lucide="map-pin" class="w-3.5 h-3.5 flex-shrink-0"></i>
+                    {{ meeting.location_name }}
+                </p>
+                {% endif %}
+
+                <div class="flex items-center gap-4 mt-3 text-xs text-gray-500 dark:text-gray-400">
+                    {% if meeting.agenda_count %}
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="list-ordered" class="w-3.5 h-3.5"></i>
+                        {{ meeting.agenda_count }} Tagesordnungspunkt{% if meeting.agenda_count != 1 %}e{% endif %}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex-shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <a href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}"
+                   class="px-4 py-2 text-sm font-medium text-center text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                    <i data-lucide="eye" class="w-4 h-4 sm:hidden inline"></i>
+                    <span class="hidden sm:inline">Details</span>
+                </a>
+                <a href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=meeting.id %}"
+                   class="px-4 py-2 text-sm font-medium text-center text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors">
+                    <i data-lucide="edit-3" class="w-4 h-4 sm:hidden inline"></i>
+                    <span class="hidden sm:inline">Vorbereiten</span>
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+
+<!-- Assigned Committees List (sidebar info) -->
+{% if has_assignments and view_mode == 'my' %}
+<div class="mt-8 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+    <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <i data-lucide="users" class="w-4 h-4"></i>
+        Ihre zugewiesenen Gremien
+    </h3>
+    <div class="flex flex-wrap gap-2">
+        {% for committee in assigned_committees %}
+        <span class="px-3 py-1.5 text-sm bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 rounded-lg">
+            {{ committee.name }}
+        </span>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,260 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Ratsinformation{% endblock %}
+
+{% block header_title %}Ratsinformation{% endblock %}
+{% block header_subtitle %}
+{% if body %}
+<p class="work-page-subtitle">{{ body.get_display_name }}</p>
+{% else %}
+<p class="work-page-subtitle">Zugang zum Ratsinformationssystem</p>
+{% endif %}
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:ris_search' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+    <i data-lucide="search" class="w-4 h-4"></i>
+    <span>Suche</span>
+</a>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
+    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
+    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Keine Kommune verknüpft</h3>
+    <p class="text-amber-700 dark:text-amber-300">
+        Dieser Organisation ist noch keine Kommune zugewiesen. Ein Administrator kann dies in den Organisationseinstellungen ändern.
+    </p>
+</div>
+{% else %}
+
+<!-- Statistics Cards -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-5">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-blue-50/70 dark:bg-blue-900/20 rounded-lg">
+                <i data-lucide="file-text" class="w-5 h-5 text-blue-500 dark:text-blue-400"></i>
+            </div>
+            <div>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ stats.papers_total|default:0 }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Vorgänge gesamt</p>
+            </div>
+        </div>
+        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ stats.papers_this_year|default:0 }} dieses Jahr</p>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-5">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-green-50/70 dark:bg-green-900/20 rounded-lg">
+                <i data-lucide="calendar" class="w-5 h-5 text-green-500 dark:text-green-400"></i>
+            </div>
+            <div>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ stats.meetings_upcoming|default:0 }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Kommende Sitzungen</p>
+            </div>
+        </div>
+        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ stats.meetings_total|default:0 }} insgesamt</p>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-5">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-purple-50/70 dark:bg-purple-900/20 rounded-lg">
+                <i data-lucide="building-2" class="w-5 h-5 text-purple-500 dark:text-purple-400"></i>
+            </div>
+            <div>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ stats.organizations_active|default:0 }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Aktive Gremien</p>
+            </div>
+        </div>
+        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ stats.organizations_total|default:0 }} insgesamt</p>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-5">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-amber-50/70 dark:bg-amber-900/20 rounded-lg">
+                <i data-lucide="users" class="w-5 h-5 text-amber-500 dark:text-amber-400"></i>
+            </div>
+            <div>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ stats.persons_total|default:0 }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Personen</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Navigation -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+    <a href="{% url 'work:ris_papers' org_slug=organization.slug %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-5 hover:border-primary-200 dark:hover:border-primary-700 hover:shadow-sm transition-all group">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="p-2.5 bg-blue-50/70 dark:bg-blue-900/20 rounded-lg group-hover:bg-blue-100/70 dark:group-hover:bg-blue-800/30 transition-colors">
+                    <i data-lucide="file-text" class="w-5 h-5 text-blue-500 dark:text-blue-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Vorgänge</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Beschlussvorlagen & Anträge</p>
+                </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+        </div>
+    </a>
+
+    <a href="{% url 'work:ris_meetings' org_slug=organization.slug %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-5 hover:border-primary-200 dark:hover:border-primary-700 hover:shadow-sm transition-all group">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="p-2.5 bg-green-50/70 dark:bg-green-900/20 rounded-lg group-hover:bg-green-100/70 dark:group-hover:bg-green-800/30 transition-colors">
+                    <i data-lucide="calendar" class="w-5 h-5 text-green-500 dark:text-green-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Sitzungen</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Alle Gremiensitzungen</p>
+                </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+        </div>
+    </a>
+
+    <a href="{% url 'work:ris_organizations' org_slug=organization.slug %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-5 hover:border-primary-200 dark:hover:border-primary-700 hover:shadow-sm transition-all group">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="p-2.5 bg-purple-50/70 dark:bg-purple-900/20 rounded-lg group-hover:bg-purple-100/70 dark:group-hover:bg-purple-800/30 transition-colors">
+                    <i data-lucide="building-2" class="w-5 h-5 text-purple-500 dark:text-purple-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Gremien</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Ausschüsse, Fraktionen & Beiräte</p>
+                </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+        </div>
+    </a>
+
+    <a href="{% url 'work:ris_persons' org_slug=organization.slug %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-5 hover:border-primary-200 dark:hover:border-primary-700 hover:shadow-sm transition-all group">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="p-2.5 bg-amber-50/70 dark:bg-amber-900/20 rounded-lg group-hover:bg-amber-100/70 dark:group-hover:bg-amber-800/30 transition-colors">
+                    <i data-lucide="users" class="w-5 h-5 text-amber-500 dark:text-amber-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Personen</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Ratsmitglieder & Beteiligte</p>
+                </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+        </div>
+    </a>
+
+    <a href="{% url 'work:ris_map' org_slug=organization.slug %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-5 hover:border-primary-200 dark:hover:border-primary-700 hover:shadow-sm transition-all group">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="p-2.5 bg-red-50/70 dark:bg-red-900/20 rounded-lg group-hover:bg-red-100/70 dark:group-hover:bg-red-800/30 transition-colors">
+                    <i data-lucide="map" class="w-5 h-5 text-red-500 dark:text-red-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Karte</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Geo-lokalisierte Vorgänge</p>
+                </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+        </div>
+    </a>
+
+    <a href="{% url 'work:ris_search' org_slug=organization.slug %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-5 hover:border-primary-200 dark:hover:border-primary-700 hover:shadow-sm transition-all group">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="p-2.5 bg-gray-50 dark:bg-gray-700/50 rounded-lg group-hover:bg-gray-100 dark:group-hover:bg-gray-600/50 transition-colors">
+                    <i data-lucide="search" class="w-5 h-5 text-gray-500 dark:text-gray-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Suche</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Übergreifende Suche</p>
+                </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+        </div>
+    </a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Upcoming Meetings -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100/80 dark:border-gray-700/30 flex items-center justify-between">
+            <h2 class="font-semibold text-gray-900 dark:text-white">Kommende Sitzungen</h2>
+            <a href="{% url 'work:ris_meetings' org_slug=organization.slug %}?view=upcoming"
+               class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                Alle anzeigen
+            </a>
+        </div>
+        <div class="divide-y divide-gray-100/80 dark:divide-gray-700/30">
+            {% for meeting in upcoming_meetings %}
+            <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}"
+               class="block px-6 py-4 hover:bg-gray-50/50 dark:hover:bg-gray-750/50 transition-colors">
+                <div class="flex items-start gap-4">
+                    <div class="flex-shrink-0 w-14 py-2 text-center bg-primary-50/70 dark:bg-primary-900/20 rounded-lg">
+                        <div class="text-xl font-bold text-primary-600 dark:text-primary-400">{{ meeting.start|date:"d" }}</div>
+                        <div class="text-xs text-primary-500 dark:text-primary-400 uppercase">{{ meeting.start|date:"M" }}</div>
+                    </div>
+                    <div class="flex-1 min-w-0 py-1">
+                        <p class="font-medium text-gray-900 dark:text-white truncate">{{ meeting.get_display_name }}</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                            {{ meeting.start|date:"H:i" }} Uhr
+                            {% if meeting.location_name %} · {{ meeting.location_name }}{% endif %}
+                        </p>
+                    </div>
+                </div>
+            </a>
+            {% empty %}
+            <div class="px-6 py-10 text-center">
+                <div class="w-14 h-14 mx-auto mb-4 bg-green-50/70 dark:bg-green-900/20 rounded-full flex items-center justify-center">
+                    <i data-lucide="calendar-x" class="w-7 h-7 text-green-500 dark:text-green-400"></i>
+                </div>
+                <p class="text-gray-500 dark:text-gray-400">Keine kommenden Sitzungen</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Recent Papers -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100/80 dark:border-gray-700/30 flex items-center justify-between">
+            <h2 class="font-semibold text-gray-900 dark:text-white">Aktuelle Vorgänge</h2>
+            <a href="{% url 'work:ris_papers' org_slug=organization.slug %}"
+               class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                Alle anzeigen
+            </a>
+        </div>
+        <div class="divide-y divide-gray-100/80 dark:divide-gray-700/30">
+            {% for paper in recent_papers %}
+            <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}"
+               class="block px-6 py-4 hover:bg-gray-50/50 dark:hover:bg-gray-750/50 transition-colors">
+                <div class="flex-1 min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white line-clamp-2">{{ paper.name }}</p>
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-sm text-gray-500 dark:text-gray-400">
+                        {% if paper.reference %}<span class="font-mono text-xs bg-gray-50 dark:bg-gray-700/30 px-1.5 py-0.5 rounded">{{ paper.reference }}</span>{% endif %}
+                        {% if paper.date %}<span>{{ paper.date|date:"d.m.Y" }}</span>{% endif %}
+                        {% if paper.paper_type %}<span class="px-2 py-0.5 bg-blue-50/70 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded text-xs">{{ paper.paper_type }}</span>{% endif %}
+                    </div>
+                </div>
+            </a>
+            {% empty %}
+            <div class="px-6 py-10 text-center">
+                <div class="w-14 h-14 mx-auto mb-4 bg-blue-50/70 dark:bg-blue-900/20 rounded-full flex items-center justify-center">
+                    <i data-lucide="file-x" class="w-7 h-7 text-blue-500 dark:text-blue-400"></i>
+                </div>
+                <p class="text-gray-500 dark:text-gray-400">Keine Vorgänge vorhanden</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}

@@ -1,0 +1,119 @@
+# =============================================================================
+# Mandari 2.0 - Pull Request Checks
+# =============================================================================
+# Runs tests and linting on every PR
+# =============================================================================
+
+name: PR Check
+
+on:
+  pull_request:
+    branches:
+      - main
+      - production
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install linters
+        run: |
+          pip install ruff black isort
+
+      - name: Run Ruff
+        run: ruff check mandari/
+
+      - name: Check Black formatting
+        run: black --check mandari/
+
+      - name: Check import sorting
+        run: isort --check-only mandari/
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd mandari
+          pip install -r requirements.txt
+          pip install pytest pytest-django
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+          SECRET_KEY: test-secret-key
+          DEBUG: 'false'
+        run: |
+          cd mandari
+          python manage.py migrate --noinput
+          pytest -v
+
+  docker-build:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./mandari
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Ingestor image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/ingestor
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

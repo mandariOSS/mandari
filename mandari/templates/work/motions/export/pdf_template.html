@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 30mm 25mm 25mm 25mm;
+        }
+
+        body {
+            font-family: "Helvetica", "Arial", sans-serif;
+            font-size: 11pt;
+            line-height: 1.5;
+            color: #333;
+        }
+
+        .document-header {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #333;
+        }
+
+        .document-type {
+            font-size: 10pt;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .document-title {
+            font-size: 18pt;
+            font-weight: bold;
+            margin: 0;
+            color: #111;
+        }
+
+        .document-meta {
+            font-size: 9pt;
+            color: #666;
+            margin-top: 10px;
+        }
+
+        .document-content {
+            margin-top: 20px;
+        }
+
+        .document-content h1 {
+            font-size: 16pt;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .document-content h2 {
+            font-size: 14pt;
+            font-weight: bold;
+            margin-top: 18px;
+            margin-bottom: 8px;
+        }
+
+        .document-content h3 {
+            font-size: 12pt;
+            font-weight: bold;
+            margin-top: 15px;
+            margin-bottom: 6px;
+        }
+
+        .document-content p {
+            margin: 10px 0;
+            text-align: justify;
+        }
+
+        .document-content ul, .document-content ol {
+            margin: 10px 0;
+            padding-left: 25px;
+        }
+
+        .document-content li {
+            margin: 5px 0;
+        }
+
+        .document-content blockquote {
+            margin: 15px 0;
+            padding: 10px 20px;
+            border-left: 3px solid #ccc;
+            background: #f9f9f9;
+            font-style: italic;
+        }
+
+        .document-footer {
+            margin-top: 40px;
+            padding-top: 15px;
+            border-top: 1px solid #ddd;
+            font-size: 9pt;
+            color: #666;
+        }
+
+        .signature-block {
+            margin-top: 50px;
+        }
+
+        .signature-line {
+            border-top: 1px solid #333;
+            width: 200px;
+            margin-top: 40px;
+            padding-top: 5px;
+            font-size: 10pt;
+        }
+    </style>
+</head>
+<body>
+    <div class="document-header">
+        <div class="document-type">{{ document_type }}</div>
+        <h1 class="document-title">{{ title }}</h1>
+        <div class="document-meta">
+            {{ organization_name }} |
+            {% if author_name %}Erstellt von: {{ author_name }} | {% endif %}
+            Datum: {{ created_at|date:"d.m.Y" }}
+        </div>
+    </div>
+
+    <div class="document-content">
+        {{ content|safe }}
+    </div>
+
+    <div class="document-footer">
+        <p>Erstellt mit Mandari Work am {{ created_at|date:"d.m.Y" }} um {{ created_at|time:"H:i" }} Uhr</p>
+    </div>
+</body>
+</html>

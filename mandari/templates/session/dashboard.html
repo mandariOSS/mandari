@@ -1,0 +1,190 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block breadcrumb %}
+<h1 class="text-lg font-semibold text-gray-900 dark:text-white">Dashboard</h1>
+{% endblock %}
+
+{% block page_content %}
+<!-- Stats Grid -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <!-- Sitzungen -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
+                <i data-lucide="calendar" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+            </div>
+            <div>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ stats.meetings_upcoming }}</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Anstehende Sitzungen</p>
+            </div>
+        </div>
+        <p class="text-xs text-gray-400 dark:text-gray-500">{{ stats.meetings_total }} gesamt</p>
+    </div>
+
+    <!-- Vorlagen -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                <i data-lucide="file-text" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+            </div>
+            <div>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ stats.papers_draft }}</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Vorlagen in Bearbeitung</p>
+            </div>
+        </div>
+        <p class="text-xs text-gray-400 dark:text-gray-500">{{ stats.papers_total }} gesamt</p>
+    </div>
+
+    <!-- Anträge -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/50 flex items-center justify-center">
+                <i data-lucide="inbox" class="w-5 h-5 text-red-600 dark:text-red-400"></i>
+            </div>
+            <div>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ stats.applications_pending }}</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Offene Anträge</p>
+            </div>
+        </div>
+        <p class="text-xs text-gray-400 dark:text-gray-500">Von Fraktionen eingereicht</p>
+    </div>
+
+    <!-- Gremien/Personen -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div class="flex items-center gap-3 mb-2">
+            <div class="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/50 flex items-center justify-center">
+                <i data-lucide="users" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+            </div>
+            <div>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ stats.organizations_count }}</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Aktive Gremien</p>
+            </div>
+        </div>
+        <p class="text-xs text-gray-400 dark:text-gray-500">{{ stats.persons_count }} Personen</p>
+    </div>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-6">
+    <!-- Anstehende Sitzungen -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="calendar" class="w-5 h-5 text-blue-500"></i>
+                Anstehende Sitzungen
+            </h2>
+            <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}"
+               class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                Alle anzeigen
+            </a>
+        </div>
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for meeting in upcoming_meetings %}
+            <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+               class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <div class="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex flex-col items-center justify-center text-blue-600 dark:text-blue-400">
+                    <span class="text-xs font-medium">{{ meeting.start|date:"M" }}</span>
+                    <span class="text-lg font-bold leading-none">{{ meeting.start|date:"d" }}</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white truncate">{{ meeting.name }}</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                        {{ meeting.organization.name }} &middot; {{ meeting.start|date:"H:i" }} Uhr
+                    </p>
+                </div>
+                <span class="px-2 py-1 text-xs font-medium rounded-full {% if meeting.meeting_state == 'draft' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% elif meeting.meeting_state == 'scheduled' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400{% elif meeting.meeting_state == 'invitation_sent' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400{% endif %}">
+                    {{ meeting.get_meeting_state_display }}
+                </span>
+            </a>
+            {% empty %}
+            <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                <i data-lucide="calendar-off" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                <p>Keine anstehenden Sitzungen</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Neueste Vorlagen -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="file-text" class="w-5 h-5 text-amber-500"></i>
+                Neueste Vorlagen
+            </h2>
+            <a href="{% url 'session:papers' tenant_slug=tenant_slug %}"
+               class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                Alle anzeigen
+            </a>
+        </div>
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for paper in recent_papers %}
+            <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}"
+               class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <div class="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="file-text" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white truncate">{{ paper.name }}</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                        {{ paper.reference }} &middot; {{ paper.get_paper_type_display }}
+                    </p>
+                </div>
+                <span class="px-2 py-1 text-xs font-medium rounded-full {% if paper.status == 'draft' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% elif paper.status == 'review' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400{% elif paper.status == 'approved' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400{% endif %}">
+                    {{ paper.get_status_display }}
+                </span>
+            </a>
+            {% empty %}
+            <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                <i data-lucide="file-x" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                <p>Keine Vorlagen vorhanden</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Offene Anträge -->
+    {% if pending_applications %}
+    <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="inbox" class="w-5 h-5 text-red-500"></i>
+                Offene Anträge von Fraktionen
+            </h2>
+            <a href="{% url 'session:applications' tenant_slug=tenant_slug %}"
+               class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                Alle anzeigen
+            </a>
+        </div>
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for app in pending_applications %}
+            <a href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=app.id %}"
+               class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <div class="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/50 flex items-center justify-center flex-shrink-0">
+                    {% if app.is_urgent %}
+                    <i data-lucide="alert-triangle" class="w-5 h-5 text-red-600 dark:text-red-400"></i>
+                    {% else %}
+                    <i data-lucide="file-input" class="w-5 h-5 text-red-600 dark:text-red-400"></i>
+                    {% endif %}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white truncate">{{ app.title }}</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                        {{ app.reference }} &middot; {{ app.submitter_name }}
+                        {% if app.submitting_organization %} ({{ app.submitting_organization.name }}){% endif %}
+                    </p>
+                </div>
+                <div class="text-right flex-shrink-0">
+                    <span class="px-2 py-1 text-xs font-medium rounded-full {% if app.status == 'submitted' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400{% elif app.status == 'received' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400{% else %}bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-400{% endif %}">
+                        {{ app.get_status_display }}
+                    </span>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">{{ app.submitted_at|date:"d.m.Y" }}</p>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

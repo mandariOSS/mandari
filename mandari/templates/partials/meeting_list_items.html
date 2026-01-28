@@ -1,0 +1,105 @@
+{% if meetings %}
+<div class="space-y-3">
+    {% for meeting in meetings %}
+    <a href="{% url 'insight_core:insight:meeting_detail' meeting.id %}"
+       class="block p-5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all hover:shadow-lg">
+        <div class="flex items-start gap-4">
+            {% if meeting.start %}
+            <div class="flex-shrink-0 w-14 h-14 rounded-xl bg-primary-100 dark:bg-primary-900/50 flex flex-col items-center justify-center">
+                <span class="text-xs font-medium text-primary-600 dark:text-primary-400 uppercase">
+                    {{ meeting.start|date:"M" }}
+                </span>
+                <span class="text-xl font-bold text-primary-700 dark:text-primary-300">
+                    {{ meeting.start|date:"d" }}
+                </span>
+            </div>
+            {% else %}
+            <div class="flex-shrink-0 w-14 h-14 rounded-xl bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                <i data-lucide="calendar" class="w-6 h-6 text-gray-400"></i>
+            </div>
+            {% endif %}
+
+            <div class="flex-1 min-w-0">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <h3 class="font-semibold text-gray-900 dark:text-white mb-1 truncate">
+                            {{ meeting.get_display_name }}
+                        </h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            {% if meeting.start %}
+                                {{ meeting.start|date:"H:i" }} Uhr
+                            {% endif %}
+                            {% if meeting.location_name %}
+                                &middot; {{ meeting.location_name }}
+                            {% endif %}
+                        </p>
+                    </div>
+                    {% if meeting.cancelled %}
+                    <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-400 shrink-0">
+                        Abgesagt
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if page_obj.has_other_pages %}
+<nav class="mt-8 flex justify-center">
+    <ul class="flex items-center gap-1">
+        {% if page_obj.has_previous %}
+        <li>
+            <a href="?period={{ request.GET.period|default:'upcoming' }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}&page={{ page_obj.previous_page_number }}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+            <li>
+                <span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span>
+            </li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+            <li>
+                <a href="?period={{ request.GET.period|default:'upcoming' }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}&page={{ num }}"
+                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                    {{ num }}
+                </a>
+            </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+        <li>
+            <a href="?period={{ request.GET.period|default:'upcoming' }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}&page={{ page_obj.next_page_number }}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="calendar" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Sitzungen gefunden</h3>
+    <p class="text-gray-500 dark:text-gray-400">
+        {% if request.GET.q %}
+            Ihre Suche ergab keine Treffer. Versuchen Sie einen anderen Suchbegriff.
+        {% elif request.GET.period == 'upcoming' or not request.GET.period %}
+            Es sind keine kommenden Sitzungen geplant.
+        {% else %}
+            Es gibt keine Sitzungen in diesem Zeitraum.
+        {% endif %}
+    </p>
+</div>
+{% endif %}

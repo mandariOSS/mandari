@@ -1,0 +1,44 @@
+{% extends "errors/base_error.html" %}
+
+{% block title %}Ungültige Anfrage (400){% endblock %}
+
+{% block error_code %}400{% endblock %}
+
+{% block header_gradient %}from-yellow-500 to-amber-500{% endblock %}
+
+{% block error_title %}Ungültige Anfrage{% endblock %}
+
+{% block error_message %}
+Der Server konnte deine Anfrage nicht verstehen. Dies passiert häufig bei fehlerhaften Formulardaten oder ungültigen URLs.
+{% endblock %}
+
+{% block error_details %}
+<div class="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 text-left">
+    <p class="text-sm text-yellow-700 dark:text-yellow-400">
+        <strong>Mögliche Ursachen:</strong>
+    </p>
+    <ul class="mt-2 text-sm text-yellow-600 dark:text-yellow-400 space-y-1 list-disc list-inside">
+        <li>Ungültige oder fehlende Formulardaten</li>
+        <li>Veraltete Sitzung (bitte neu anmelden)</li>
+        <li>Beschädigte Cookies oder Cache</li>
+        <li>Fehlerhafte URL-Parameter</li>
+    </ul>
+</div>
+{% endblock %}
+
+{% block error_actions %}
+<a href="{% url 'accounts:login' %}"
+   class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
+    </svg>
+    Neu anmelden
+</a>
+<button onclick="history.back()"
+        class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+    </svg>
+    Zurück
+</button>
+{% endblock %}

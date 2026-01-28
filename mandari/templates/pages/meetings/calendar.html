@@ -1,0 +1,169 @@
+{% extends "base_ris.html" %}
+{% load static %}
+
+{% block title %}Kalender{% endblock %}
+
+{% block extra_head %}
+<!-- FullCalendar - CSS ist im JS Bundle enthalten -->
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Header -->
+    <div class="flex items-start justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Kalender</h1>
+            <p class="text-gray-600 dark:text-gray-400">
+                {% if active_body %}
+                    Sitzungskalender der {{ active_body.name }}
+                {% else %}
+                    Bitte wählen Sie eine Kommune aus
+                {% endif %}
+            </p>
+        </div>
+        <a href="{% url 'insight_core:insight:meeting_list' %}"
+           class="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-medium rounded-xl transition-colors">
+            <i data-lucide="list" class="w-5 h-5"></i>
+            Liste
+        </a>
+    </div>
+
+    <!-- Calendar Container -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+        <div id="calendar"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<!-- FullCalendar JS (lokal, DSGVO-konform) -->
+<script src="{% static 'vendor/fullcalendar/fullcalendar.min.js' %}"></script>
+<script src="{% static 'vendor/fullcalendar/de.min.js' %}"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const calendarEl = document.getElementById('calendar');
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        locale: 'de',
+        headerToolbar: {
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,listMonth'
+        },
+        events: '{% url "insight_core:insight:calendar_events" %}',
+        eventClick: function(info) {
+            if (info.event.url) {
+                window.location.href = info.event.url;
+                info.jsEvent.preventDefault();
+            }
+        },
+        eventDidMount: function(info) {
+            // Tooltip mit vollem Titel
+            if (info.event.extendedProps.fullTitle) {
+                info.el.setAttribute('title', info.event.extendedProps.fullTitle);
+            }
+        },
+        eventClassNames: function(arg) {
+            return ['cursor-pointer'];
+        },
+        height: 'auto',
+        eventColor: '#6366f1',
+        eventTextColor: '#ffffff',
+        nowIndicator: true,
+        dayMaxEvents: 3,
+    });
+    calendar.render();
+
+    // Update calendar colors for dark mode
+    const updateCalendarTheme = () => {
+        const isDark = document.documentElement.classList.contains('dark');
+        calendarEl.style.setProperty('--fc-border-color', isDark ? '#374151' : '#e5e7eb');
+        calendarEl.style.setProperty('--fc-page-bg-color', isDark ? '#1f2937' : '#ffffff');
+        calendarEl.style.setProperty('--fc-neutral-bg-color', isDark ? '#374151' : '#f3f4f6');
+        calendarEl.style.setProperty('--fc-list-event-hover-bg-color', isDark ? '#374151' : '#f3f4f6');
+    };
+
+    updateCalendarTheme();
+
+    // Watch for dark mode changes
+    const observer = new MutationObserver(updateCalendarTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+});
+</script>
+
+<style>
+    .fc {
+        --fc-today-bg-color: rgba(99, 102, 241, 0.1);
+    }
+    .fc .fc-button-primary {
+        background-color: #6366f1;
+        border-color: #6366f1;
+    }
+    .fc .fc-button-primary:hover {
+        background-color: #4f46e5;
+        border-color: #4f46e5;
+    }
+    .fc .fc-button-primary:not(:disabled).fc-button-active,
+    .fc .fc-button-primary:not(:disabled):active {
+        background-color: #4338ca;
+        border-color: #4338ca;
+    }
+    .dark .fc-theme-standard td,
+    .dark .fc-theme-standard th {
+        border-color: #374151;
+    }
+    .dark .fc .fc-daygrid-day-number,
+    .dark .fc .fc-col-header-cell-cushion {
+        color: #d1d5db;
+    }
+
+    /* Fix für konsistente Event-Darstellung */
+    .fc-event {
+        border-radius: 4px !important;
+        padding: 2px 4px !important;
+        font-size: 0.75rem !important;
+        line-height: 1.2 !important;
+        min-height: 22px !important;
+        max-height: 22px !important;
+        overflow: hidden !important;
+    }
+    .fc-event-title {
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        display: block !important;
+    }
+    .fc-daygrid-event {
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    .fc-daygrid-event-dot {
+        display: none !important;
+    }
+    .fc-daygrid-block-event .fc-event-title {
+        padding: 0 2px !important;
+    }
+    /* Konsistente Zellenhöhe */
+    .fc-daygrid-day-frame {
+        min-height: 100px !important;
+    }
+    /* Fix für Monatsansicht Events */
+    .fc-daygrid-day-events {
+        margin-top: 1px !important;
+    }
+    .fc-daygrid-event-harness {
+        margin-bottom: 1px !important;
+    }
+    /* Bessere Lesbarkeit */
+    .fc-event-main {
+        padding: 1px 3px !important;
+    }
+    /* Dark mode Event-Farben */
+    .dark .fc-event {
+        background-color: #6366f1 !important;
+        border-color: #6366f1 !important;
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,505 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Sicherheit{% endblock %}
+
+{% block header_title %}Sicherheit{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Sicherheitseinstellungen und Passwortverwaltung</p>
+{% endblock %}
+
+{% block work_content %}
+<!-- Navigation -->
+<div class="mb-8 border-b border-gray-200 dark:border-gray-700">
+    <nav class="flex gap-4">
+        <a href="{% url 'work:profile' org_slug=organization.slug %}" class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+            Profil
+        </a>
+        <a href="{% url 'work:security' org_slug=organization.slug %}" class="px-4 py-2 text-sm font-medium border-b-2 border-primary-500 text-primary-600 dark:text-primary-400">
+            Sicherheit
+        </a>
+    </nav>
+</div>
+
+<div class="max-w-2xl space-y-6" x-data="securitySettings()">
+    <!-- Messages -->
+    {% if messages %}
+    <div class="space-y-2">
+        {% for message in messages %}
+        <div class="p-4 rounded-lg {% if message.tags == 'success' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400{% elif message.tags == 'error' %}bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400{% else %}bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400{% endif %}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Password -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Passwort ändern</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Ändern Sie Ihr Passwort regelmäßig, um Ihr Konto zu schützen.
+        </p>
+
+        <form method="post" x-data="{ showPassword: false }" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="change_password">
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Aktuelles Passwort</label>
+                <input type="password" name="old_password" required
+                       class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Neues Passwort</label>
+                <div class="relative">
+                    <input :type="showPassword ? 'text' : 'password'" name="new_password" required
+                           x-model="newPassword"
+                           @input="checkPasswordStrength()"
+                           class="w-full px-4 py-2 pr-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                    <button type="button" @click="showPassword = !showPassword"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <i data-lucide="eye" x-show="!showPassword" class="w-4 h-4"></i>
+                        <i data-lucide="eye-off" x-show="showPassword" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Password strength indicator -->
+                <div class="mt-2" x-show="newPassword.length > 0">
+                    <div class="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div class="h-full transition-all duration-300 rounded-full"
+                             :class="{
+                                 'bg-red-500 w-1/5': passwordStrength.score === 0,
+                                 'bg-orange-500 w-2/5': passwordStrength.score === 1,
+                                 'bg-yellow-500 w-3/5': passwordStrength.score === 2,
+                                 'bg-lime-500 w-4/5': passwordStrength.score === 3,
+                                 'bg-green-500 w-full': passwordStrength.score === 4
+                             }"></div>
+                    </div>
+                    <p class="text-xs mt-1" :class="{
+                        'text-red-500': passwordStrength.score < 2,
+                        'text-yellow-500': passwordStrength.score === 2,
+                        'text-green-500': passwordStrength.score > 2
+                    }" x-text="passwordStrength.strength_label || 'Passwort eingeben'"></p>
+                    <ul class="mt-1 text-xs text-gray-500" x-show="passwordStrength.issues && passwordStrength.issues.length > 0">
+                        <template x-for="issue in passwordStrength.issues" :key="issue">
+                            <li class="text-red-500" x-text="issue"></li>
+                        </template>
+                    </ul>
+                </div>
+
+                <p class="text-xs text-gray-500 mt-1">
+                    Mind. {{ password_requirements.min_length }} Zeichen
+                    {% if password_requirements.require_uppercase %}, Großbuchstaben{% endif %}
+                    {% if password_requirements.require_lowercase %}, Kleinbuchstaben{% endif %}
+                    {% if password_requirements.require_digit %}, Zahlen{% endif %}
+                    {% if password_requirements.require_special %}, Sonderzeichen{% endif %}
+                </p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Passwort bestätigen</label>
+                <input type="password" name="confirm_password" required
+                       class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+            </div>
+
+            <button type="submit"
+                    class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                Passwort ändern
+            </button>
+        </form>
+    </div>
+
+    <!-- Two-Factor Authentication -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-1">Zwei-Faktor-Authentifizierung</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                    Zusätzliche Sicherheitsebene für Ihr Konto
+                </p>
+            </div>
+            {% if is_2fa_enabled %}
+            <span class="px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
+                Aktiviert
+            </span>
+            {% else %}
+            <span class="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">
+                Nicht aktiviert
+            </span>
+            {% endif %}
+        </div>
+
+        {% if is_2fa_enabled %}
+        <!-- 2FA is enabled -->
+        <div class="space-y-4">
+            <p class="text-sm text-green-600 dark:text-green-400 flex items-center gap-2">
+                <i data-lucide="shield-check" class="w-4 h-4"></i>
+                Ihr Konto ist durch 2FA geschützt.
+            </p>
+
+            <div class="flex flex-wrap gap-3">
+                <button type="button" @click="showBackupCodesModal = true"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+                    Backup-Codes anzeigen
+                </button>
+                <button type="button" @click="showDisable2faModal = true"
+                        class="px-4 py-2 text-sm font-medium text-red-600 border border-red-300 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
+                    2FA deaktivieren
+                </button>
+            </div>
+        </div>
+        {% else %}
+        <!-- 2FA is not enabled -->
+        <button type="button" @click="setup2fa()"
+                class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+            2FA einrichten
+        </button>
+        {% endif %}
+    </div>
+
+    <!-- Active Sessions -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Aktive Sitzungen</h3>
+
+        <div class="space-y-3">
+            {% for session in sessions %}
+            <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="{% if 'Mobile' in session.device_name or 'iPhone' in session.device_name or 'Android' in session.device_name %}smartphone{% else %}monitor{% endif %}" class="w-5 h-5 text-gray-400"></i>
+                    <div>
+                        <div class="text-sm font-medium text-gray-900 dark:text-white">
+                            {{ session.device_name|default:"Unbekanntes Gerät" }}
+                        </div>
+                        <div class="text-xs text-gray-500">
+                            {% if session.ip_address %}{{ session.ip_address }} · {% endif %}
+                            {% if session.is_current %}
+                            Jetzt aktiv
+                            {% else %}
+                            Zuletzt {{ session.last_activity|timesince }} aktiv
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    {% if session.is_current %}
+                    <span class="px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
+                        Aktuell
+                    </span>
+                    {% else %}
+                    <form method="post" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="revoke_session">
+                        <input type="hidden" name="session_key" value="{{ session.session_key }}">
+                        <button type="submit" class="text-red-600 hover:text-red-700 text-sm">
+                            Beenden
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% empty %}
+            <p class="text-sm text-gray-500 text-center py-4">Keine anderen Sitzungen gefunden.</p>
+            {% endfor %}
+        </div>
+
+        {% if sessions|length > 1 %}
+        <form method="post" class="mt-4">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="revoke_all_sessions">
+            <button type="submit"
+                    class="text-sm text-red-600 hover:text-red-700 hover:underline">
+                Alle anderen Sitzungen beenden
+            </button>
+        </form>
+        {% endif %}
+    </div>
+
+    <!-- Trusted Devices -->
+    {% if trusted_devices %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Vertrauenswürdige Geräte</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Diese Geräte müssen keinen 2FA-Code eingeben.
+        </p>
+
+        <div class="space-y-3">
+            {% for device in trusted_devices %}
+            <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="smartphone" class="w-5 h-5 text-gray-400"></i>
+                    <div>
+                        <div class="text-sm font-medium text-gray-900 dark:text-white">
+                            {{ device.device_name|default:"Unbekanntes Gerät" }}
+                        </div>
+                        <div class="text-xs text-gray-500">
+                            Hinzugefügt {{ device.created_at|date:"d.m.Y" }} ·
+                            Gültig bis {{ device.expires_at|date:"d.m.Y" }}
+                        </div>
+                    </div>
+                </div>
+                <form method="post" class="inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="remove_trusted_device">
+                    <input type="hidden" name="device_id" value="{{ device.id }}">
+                    <button type="submit" class="text-red-600 hover:text-red-700 text-sm">
+                        Entfernen
+                    </button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 2FA Setup Modal -->
+    <div x-show="showSetupModal" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+         @click.self="showSetupModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+             @click.stop>
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h2 class="text-lg font-medium text-gray-900 dark:text-white">2FA einrichten</h2>
+                <button type="button" @click="showSetupModal = false" class="text-gray-400 hover:text-gray-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="p-6">
+                <!-- Step 1: Scan QR -->
+                <div x-show="setupStep === 1">
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                        Scannen Sie den QR-Code mit Ihrer Authenticator-App (z.B. Google Authenticator, Authy).
+                    </p>
+
+                    <div class="bg-white p-4 rounded-lg mb-4 flex justify-center" x-show="setupData.qr_code">
+                        <img :src="'data:image/png;base64,' + setupData.qr_code" alt="QR Code" class="w-48 h-48">
+                    </div>
+
+                    <div class="text-center mb-4" x-show="!setupData.qr_code">
+                        <p class="text-sm text-gray-500 mb-2">Oder geben Sie den Code manuell ein:</p>
+                        <code class="px-3 py-2 bg-gray-100 dark:bg-gray-900 rounded text-sm font-mono" x-text="setupData.secret"></code>
+                    </div>
+
+                    <button type="button" @click="setupStep = 2"
+                            class="w-full px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                        Weiter
+                    </button>
+                </div>
+
+                <!-- Step 2: Verify -->
+                <div x-show="setupStep === 2">
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                        Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.
+                    </p>
+
+                    <form method="post" class="space-y-4">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="confirm_2fa">
+
+                        <div>
+                            <input type="text" name="code" required
+                                   pattern="[0-9]{6}"
+                                   maxlength="6"
+                                   placeholder="000000"
+                                   class="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                        </div>
+
+                        <button type="submit"
+                                class="w-full px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                            Aktivieren
+                        </button>
+                    </form>
+
+                    <button type="button" @click="setupStep = 1"
+                            class="w-full mt-2 text-sm text-gray-500 hover:text-gray-700">
+                        Zurück
+                    </button>
+                </div>
+
+                <!-- Step 3: Backup Codes -->
+                <div x-show="setupStep === 3">
+                    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-4">
+                        <p class="text-sm text-amber-700 dark:text-amber-400">
+                            <i data-lucide="alert-triangle" class="w-4 h-4 inline mr-1"></i>
+                            Speichern Sie diese Backup-Codes an einem sicheren Ort. Sie können verwendet werden, falls Sie keinen Zugriff auf Ihre Authenticator-App haben.
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 mb-4">
+                        <template x-for="code in setupData.backup_codes" :key="code">
+                            <code class="px-3 py-2 bg-gray-100 dark:bg-gray-900 rounded text-sm font-mono text-center" x-text="code"></code>
+                        </template>
+                    </div>
+
+                    <button type="button" @click="showSetupModal = false"
+                            class="w-full px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                        Fertig
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup Codes Modal -->
+    <div x-show="showBackupCodesModal" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+         @click.self="showBackupCodesModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h2 class="text-lg font-medium text-gray-900 dark:text-white">Backup-Codes</h2>
+                <button type="button" @click="showBackupCodesModal = false" class="text-gray-400 hover:text-gray-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="p-6">
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    Jeder Code kann nur einmal verwendet werden. Generieren Sie neue Codes, wenn Sie die meisten verbraucht haben.
+                </p>
+
+                <form method="post" class="space-y-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="regenerate_backup_codes">
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Passwort bestätigen
+                        </label>
+                        <input type="password" name="password" required
+                               class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                    </div>
+
+                    <button type="submit"
+                            class="w-full px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                        Neue Backup-Codes generieren
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Disable 2FA Modal -->
+    <div x-show="showDisable2faModal" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+         @click.self="showDisable2faModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h2 class="text-lg font-medium text-red-600 dark:text-red-400">2FA deaktivieren</h2>
+                <button type="button" @click="showDisable2faModal = false" class="text-gray-400 hover:text-gray-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="p-6">
+                <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-4">
+                    <p class="text-sm text-red-700 dark:text-red-400">
+                        <i data-lucide="alert-triangle" class="w-4 h-4 inline mr-1"></i>
+                        Das Deaktivieren von 2FA verringert die Sicherheit Ihres Kontos erheblich.
+                    </p>
+                </div>
+
+                <form method="post" class="space-y-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="disable_2fa">
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Passwort bestätigen
+                        </label>
+                        <input type="password" name="password" required
+                               class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                    </div>
+
+                    <button type="submit"
+                            class="w-full px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700">
+                        2FA deaktivieren
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function securitySettings() {
+    return {
+        newPassword: '',
+        passwordStrength: {},
+        showSetupModal: false,
+        showBackupCodesModal: false,
+        showDisable2faModal: false,
+        setupStep: 1,
+        setupData: {
+            qr_code: null,
+            secret: null,
+            backup_codes: []
+        },
+
+        async checkPasswordStrength() {
+            if (this.newPassword.length < 1) {
+                this.passwordStrength = {};
+                return;
+            }
+
+            // Simple client-side check
+            let score = 0;
+            let issues = [];
+
+            if (this.newPassword.length < {{ password_requirements.min_length }}) {
+                issues.push('Mindestens {{ password_requirements.min_length }} Zeichen erforderlich');
+            } else {
+                score += 1;
+            }
+
+            if (this.newPassword.length >= 12) score += 1;
+
+            if (/[A-Z]/.test(this.newPassword)) score += 0.5;
+            {% if password_requirements.require_uppercase %}
+            else issues.push('Mindestens ein Großbuchstabe erforderlich');
+            {% endif %}
+
+            if (/[a-z]/.test(this.newPassword)) score += 0.5;
+            {% if password_requirements.require_lowercase %}
+            else if (!/[a-z]/.test(this.newPassword)) issues.push('Mindestens ein Kleinbuchstabe erforderlich');
+            {% endif %}
+
+            if (/[0-9]/.test(this.newPassword)) score += 0.5;
+            {% if password_requirements.require_digit %}
+            else if (!/[0-9]/.test(this.newPassword)) issues.push('Mindestens eine Zahl erforderlich');
+            {% endif %}
+
+            if (/[^A-Za-z0-9]/.test(this.newPassword)) score += 0.5;
+
+            score = Math.min(Math.floor(score), 4);
+            const labels = ['Sehr schwach', 'Schwach', 'Mittel', 'Stark', 'Sehr stark'];
+
+            this.passwordStrength = {
+                score: score,
+                issues: issues,
+                strength_label: labels[score]
+            };
+        },
+
+        async setup2fa() {
+            this.setupStep = 1;
+            this.showSetupModal = true;
+
+            const response = await fetch('', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': '{{ csrf_token }}',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: 'action=setup_2fa'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.setupData = data;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

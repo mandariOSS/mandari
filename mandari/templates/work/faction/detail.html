@@ -1,0 +1,566 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}{{ meeting.title }}{% endblock %}
+
+{% block header_title %}{{ meeting.title }}{% endblock %}
+{% block header_subtitle %}
+<div class="flex flex-wrap items-center gap-2 mt-2">
+    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium
+        {% if meeting.status == 'draft' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
+        {% elif meeting.status == 'ongoing' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 animate-pulse
+        {% elif meeting.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+        {% elif meeting.status == 'cancelled' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
+        {% else %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300{% endif %}">
+        {% if meeting.status == 'ongoing' %}<span class="w-2 h-2 bg-green-500 rounded-full mr-1.5"></span>{% endif %}
+        {{ meeting.get_status_display }}
+    </span>
+    <span class="text-sm text-gray-500">
+        {{ meeting.start|date:"l, d. F Y" }} um {{ meeting.start|time:"H:i" }} Uhr
+        {% if meeting.location %} · {{ meeting.location }}{% endif %}
+    </span>
+</div>
+{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-2 flex-wrap">
+    {# Status-based Primary Actions #}
+    {% if meeting.status == 'ongoing' %}
+        <a href="{% url 'work:faction_protocol' org_slug=organization.slug meeting_id=meeting.id %}"
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+            <i data-lucide="file-text" class="w-4 h-4"></i>
+            Protokoll
+        </a>
+        <form method="post" class="inline" onsubmit="return confirm('Sitzung wirklich beenden?')">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="end_meeting">
+            <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100">
+                <i data-lucide="square" class="w-4 h-4"></i>
+                Beenden
+            </button>
+        </form>
+    {% elif can_start %}
+        <form method="post" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="start_meeting">
+            <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700">
+                <i data-lucide="play" class="w-4 h-4"></i>
+                Sitzung starten
+            </button>
+        </form>
+    {% elif meeting.status == 'draft' and can_edit %}
+        <form method="post" action="{% url 'work:faction_edit' org_slug=organization.slug meeting_id=meeting.id %}" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="status" value="planned">
+            <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+                <i data-lucide="calendar-check" class="w-4 h-4"></i>
+                Sitzung planen
+            </button>
+        </form>
+    {% endif %}
+
+    {# Always visible: Edit, Protocol, Delete #}
+    {% if can_edit %}
+        <a href="{% url 'work:faction_edit' org_slug=organization.slug meeting_id=meeting.id %}"
+           class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50">
+            <i data-lucide="edit" class="w-4 h-4"></i>
+            Bearbeiten
+        </a>
+    {% endif %}
+
+    {% if meeting.status != 'ongoing' %}
+        <a href="{% url 'work:faction_protocol' org_slug=organization.slug meeting_id=meeting.id %}"
+           class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50">
+            <i data-lucide="file-text" class="w-4 h-4"></i>
+            Protokoll
+        </a>
+    {% endif %}
+
+    {% if can_edit and meeting.status not in 'completed,cancelled' %}
+        <form method="post" class="inline" onsubmit="return confirm('Sitzung unwiderruflich loschen?')">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete">
+            <button type="submit" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-red-50">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+        </form>
+    {% endif %}
+
+    {% if meeting.is_virtual and meeting.video_link %}
+        <a href="{{ meeting.video_link }}" target="_blank"
+           class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100">
+            <i data-lucide="video" class="w-4 h-4"></i>
+            Beitreten
+        </a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block work_content %}
+<div x-data="factionMeeting()" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    {# ===== LEFT COLUMN: Agenda ===== #}
+    <div class="lg:col-span-2 space-y-4">
+
+        {# Meeting Info Bar #}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div class="flex flex-wrap items-center gap-4 text-sm">
+                    <span class="flex items-center gap-1.5 text-gray-600 dark:text-gray-400">
+                        <i data-lucide="hash" class="w-4 h-4"></i>
+                        Sitzung #{{ meeting.meeting_number|default:"—" }}
+                    </span>
+                    <span class="flex items-center gap-1.5 text-gray-600 dark:text-gray-400">
+                        <i data-lucide="calendar" class="w-4 h-4"></i>
+                        {{ meeting.start|date:"d.m.Y, H:i" }} Uhr
+                    </span>
+                    {% if meeting.location %}
+                    <span class="flex items-center gap-1.5 text-gray-600 dark:text-gray-400">
+                        <i data-lucide="map-pin" class="w-4 h-4"></i>
+                        {{ meeting.location }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if meeting.previous_meeting and not meeting.previous_meeting.protocol_approved %}
+            <div class="mt-3 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
+                <i data-lucide="alert-triangle" class="w-4 h-4 flex-shrink-0"></i>
+                <span>Protokoll der vorherigen Sitzung ({{ meeting.previous_meeting.start|date:"d.m.Y" }}) noch nicht genehmigt</span>
+            </div>
+            {% endif %}
+        </div>
+
+        {# ===== AGENDA SECTION ===== #}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="list-ordered" class="w-5 h-5 text-primary-600"></i>
+                    Tagesordnung
+                </h3>
+            </div>
+
+            <div class="divide-y divide-gray-100 dark:divide-gray-700">
+                {# Public Agenda Items #}
+                {% for item in public_agenda_items %}
+                {% include "work/faction/_agenda_item_row.html" with item=item can_edit=can_edit meeting=meeting is_first=forloop.first is_last=forloop.last item_count=public_agenda_items|length %}
+                {% empty %}
+                <div class="p-8 text-center text-gray-500">
+                    <i data-lucide="list" class="w-12 h-12 mx-auto mb-3 text-gray-300"></i>
+                    <p>Noch keine Tagesordnungspunkte</p>
+                </div>
+                {% endfor %}
+
+                {# Internal Section #}
+                {% if internal_agenda_items %}
+                <div class="p-3 bg-amber-50 dark:bg-amber-900/20 flex items-center gap-2">
+                    <i data-lucide="lock" class="w-4 h-4 text-amber-600"></i>
+                    <span class="text-sm font-semibold text-amber-700 dark:text-amber-400">Nicht-offentlicher Teil</span>
+                </div>
+                {% for item in internal_agenda_items %}
+                {% include "work/faction/_agenda_item_row.html" with item=item can_edit=can_edit meeting=meeting is_internal=True is_first=forloop.first is_last=forloop.last item_count=internal_agenda_items|length %}
+                {% endfor %}
+                {% endif %}
+            </div>
+
+            {# Add Agenda Item Buttons #}
+            {% if can_edit %}
+            <div class="p-4 border-t border-gray-200 dark:border-gray-700 grid grid-cols-2 gap-3">
+                <button @click="showAddModal('public')"
+                        class="py-3 text-sm font-medium text-primary-600 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 rounded-lg flex items-center justify-center gap-2">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    Offentlicher TOP
+                </button>
+                <button @click="showAddModal('internal')"
+                        class="py-3 text-sm font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 rounded-lg flex items-center justify-center gap-2">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    Nicht-offentlicher TOP
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ===== RIGHT COLUMN: Attendance & Actions ===== #}
+    <div class="space-y-4">
+
+        {# Attendance Management #}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="users" class="w-5 h-5 text-primary-600"></i>
+                    Anwesenheit
+                </h4>
+                {% if can_manage_attendance %}
+                <button @click="showAddAttendeeModal = true"
+                        class="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1">
+                    <i data-lucide="user-plus" class="w-3 h-3"></i>
+                    Gast hinzufugen
+                </button>
+                {% endif %}
+            </div>
+
+            {# Attendance Stats #}
+            <div class="p-4 grid grid-cols-4 gap-2 text-center text-xs border-b border-gray-100 dark:border-gray-700">
+                <div class="p-2 bg-green-50 dark:bg-green-900/20 rounded">
+                    <div class="text-lg font-bold text-green-600">{{ attendance_stats.present|default:0 }}</div>
+                    <div class="text-gray-500">Anwesend</div>
+                </div>
+                <div class="p-2 bg-gray-50 dark:bg-gray-900 rounded">
+                    <div class="text-lg font-bold text-gray-600">{{ attendance_stats.absent|default:0 }}</div>
+                    <div class="text-gray-500">Abwesend</div>
+                </div>
+                <div class="p-2 bg-amber-50 dark:bg-amber-900/20 rounded">
+                    <div class="text-lg font-bold text-amber-600">{{ attendance_stats.excused|default:0 }}</div>
+                    <div class="text-gray-500">Entsch.</div>
+                </div>
+                <div class="p-2 bg-blue-50 dark:bg-blue-900/20 rounded">
+                    <div class="text-lg font-bold text-blue-600">{{ attendances|length }}</div>
+                    <div class="text-gray-500">Gesamt</div>
+                </div>
+            </div>
+
+            {# Attendance List with Status Dropdowns #}
+            <div class="max-h-80 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
+                {% for attendance in attendances %}
+                <div class="p-3 flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0
+                            {% if attendance.is_guest %}bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400
+                            {% else %}bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400{% endif %}">
+                            {% if attendance.is_guest %}
+                                <i data-lucide="user" class="w-4 h-4"></i>
+                            {% elif attendance.membership %}
+                                {{ attendance.membership.user.first_name|slice:":1" }}{{ attendance.membership.user.last_name|slice:":1" }}
+                            {% else %}
+                                ?
+                            {% endif %}
+                        </div>
+                        <div class="truncate">
+                            <span class="text-sm text-gray-900 dark:text-white">
+                                {{ attendance.get_display_name }}
+                            </span>
+                            {% if attendance.is_guest %}
+                            <span class="text-xs text-gray-500 ml-1">(Gast)</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if can_manage_attendance %}
+                    <form method="post" action="{% url 'work:faction_attendance_status' org_slug=organization.slug meeting_id=meeting.id %}" class="flex-shrink-0">
+                        {% csrf_token %}
+                        <input type="hidden" name="attendance_id" value="{{ attendance.id }}">
+                        <select name="status" onchange="this.form.submit()"
+                                class="text-xs px-2 py-1 border rounded-lg
+                                    {% if attendance.status == 'present' %}bg-green-50 border-green-200 text-green-700
+                                    {% elif attendance.status == 'absent' %}bg-gray-50 border-gray-200 text-gray-700
+                                    {% elif attendance.status == 'excused' %}bg-amber-50 border-amber-200 text-amber-700
+                                    {% else %}bg-blue-50 border-blue-200 text-blue-700{% endif %}">
+                            <option value="invited" {% if attendance.status == 'invited' %}selected{% endif %}>Eingeladen</option>
+                            <option value="confirmed" {% if attendance.status == 'confirmed' %}selected{% endif %}>Zugesagt</option>
+                            <option value="present" {% if attendance.status == 'present' %}selected{% endif %}>Anwesend</option>
+                            <option value="absent" {% if attendance.status == 'absent' %}selected{% endif %}>Abwesend</option>
+                            <option value="excused" {% if attendance.status == 'excused' %}selected{% endif %}>Entschuldigt</option>
+                            <option value="declined" {% if attendance.status == 'declined' %}selected{% endif %}>Abgesagt</option>
+                        </select>
+                    </form>
+                    {% else %}
+                    <span class="text-xs px-2 py-1 rounded-lg
+                        {% if attendance.status == 'present' %}bg-green-100 text-green-700
+                        {% elif attendance.status == 'absent' %}bg-gray-100 text-gray-700
+                        {% elif attendance.status == 'excused' %}bg-amber-100 text-amber-700
+                        {% elif attendance.status == 'confirmed' %}bg-blue-100 text-blue-700
+                        {% else %}bg-gray-100 text-gray-600{% endif %}">
+                        {{ attendance.get_status_display }}
+                    </span>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <div class="p-4 text-center text-sm text-gray-500">
+                    Keine Teilnehmer eingetragen
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        {# RSVP for current user #}
+        {% if my_attendance and meeting.status in 'draft,planned,invited' %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Meine Teilnahme</h4>
+            {% if my_attendance.status == 'invited' %}
+            <form method="post" action="{% url 'work:faction_respond' org_slug=organization.slug meeting_id=meeting.id %}" class="flex gap-2">
+                {% csrf_token %}
+                <button type="submit" name="status" value="confirmed" class="flex-1 py-2 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100">
+                    Zusagen
+                </button>
+                <button type="submit" name="status" value="declined" class="flex-1 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100">
+                    Absagen
+                </button>
+            </form>
+            {% else %}
+            <div class="text-center">
+                <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm
+                    {% if my_attendance.status == 'confirmed' %}bg-green-100 text-green-700
+                    {% elif my_attendance.status == 'declined' %}bg-red-100 text-red-700
+                    {% else %}bg-gray-100 text-gray-700{% endif %}">
+                    {{ my_attendance.get_status_display }}
+                </span>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# Invite Button #}
+        {% if can_edit and not meeting.invitation_sent and meeting.status in 'draft,planned' %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">Einladungen versenden</h4>
+            <p class="text-xs text-gray-500 mb-3">E-Mail an alle {{ attendances|length }} Mitglieder senden.</p>
+            <form method="post" action="{% url 'work:faction_invite' org_slug=organization.slug meeting_id=meeting.id %}">
+                {% csrf_token %}
+                <button type="submit" class="w-full py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 flex items-center justify-center gap-2">
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                    Einladungen versenden
+                </button>
+            </form>
+        </div>
+        {% elif meeting.invitation_sent %}
+        <div class="bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4">
+            <div class="flex items-center gap-2 text-sm text-green-700 dark:text-green-300">
+                <i data-lucide="check-circle" class="w-4 h-4"></i>
+                <span>Einladungen versendet</span>
+            </div>
+            {% if meeting.invitation_sent_at %}
+            <p class="text-xs text-green-600 mt-1">{{ meeting.invitation_sent_at|date:"d.m.Y, H:i" }} Uhr</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# Protocol Panel (only during meeting) #}
+        {% if meeting.status == 'ongoing' %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-green-200 dark:border-green-800">
+            <div class="p-4 bg-green-50 dark:bg-green-900/20 rounded-t-xl border-b border-green-200 dark:border-green-800">
+                <h4 class="font-semibold text-green-800 dark:text-green-200 flex items-center gap-2">
+                    <i data-lucide="radio" class="w-5 h-5 animate-pulse"></i>
+                    Live-Protokoll
+                </h4>
+            </div>
+            <div class="p-4">
+                <a href="{% url 'work:faction_protocol' org_slug=organization.slug meeting_id=meeting.id %}"
+                   class="w-full py-3 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2">
+                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                    Protokoll offnen
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {# ===== MODALS ===== #}
+
+    {# Add/Edit Agenda Item Modal #}
+    <div x-show="showEditModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition>
+        <div class="flex items-center justify-center min-h-screen px-4 py-8">
+            <div class="fixed inset-0 bg-black/50" @click="showEditModal = false"></div>
+            <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full" @click.stop>
+                <form method="post" action="{% url 'work:faction_agenda' org_slug=organization.slug meeting_id=meeting.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" :value="editMode">
+                    <input type="hidden" name="item_id" :value="editItemId">
+                    <input type="hidden" name="parent_id" :value="editParentId">
+                    <input type="hidden" name="visibility" :value="editVisibility">
+
+                    <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white" x-text="modalTitle"></h3>
+                        <button type="button" @click="showEditModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <div class="p-4 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel <span class="text-red-500">*</span></label>
+                            <input type="text" name="title" x-model="editTitle" required
+                                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
+                                   placeholder="Titel des TOPs">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                            <textarea name="description" x-model="editDescription" rows="3"
+                                      class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg resize-none"
+                                      placeholder="Optionale Beschreibung..."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                        <button type="button" @click="showEditModal = false"
+                                class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                            Abbrechen
+                        </button>
+                        <button type="submit"
+                                class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                            Speichern
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# Add Guest/Attendee Modal #}
+    <div x-show="showAddAttendeeModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition>
+        <div class="flex items-center justify-center min-h-screen px-4 py-8">
+            <div class="fixed inset-0 bg-black/50" @click="showAddAttendeeModal = false"></div>
+            <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full" @click.stop>
+                <form method="post" action="{% url 'work:faction_add_attendee' org_slug=organization.slug meeting_id=meeting.id %}">
+                    {% csrf_token %}
+
+                    <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Teilnehmer hinzufugen</h3>
+                        <button type="button" @click="showAddAttendeeModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <div class="p-4 space-y-4">
+                        <div class="flex gap-4">
+                            <label class="flex items-center gap-2">
+                                <input type="radio" name="attendee_type" value="guest" x-model="attendeeType" class="text-primary-600">
+                                <span class="text-sm">Gast</span>
+                            </label>
+                            <label class="flex items-center gap-2">
+                                <input type="radio" name="attendee_type" value="member" x-model="attendeeType" class="text-primary-600">
+                                <span class="text-sm">Mitglied</span>
+                            </label>
+                        </div>
+
+                        <div x-show="attendeeType === 'guest'">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name des Gastes</label>
+                            <input type="text" name="guest_name"
+                                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
+                                   placeholder="Vor- und Nachname">
+                        </div>
+
+                        <div x-show="attendeeType === 'member'">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mitglied auswahlen</label>
+                            <select name="membership_id"
+                                    class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                <option value="">— Bitte wahlen —</option>
+                                {% for member in available_members %}
+                                <option value="{{ member.id }}">{{ member.user.get_display_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                            <select name="status"
+                                    class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                <option value="present">Anwesend</option>
+                                <option value="invited">Eingeladen</option>
+                                <option value="excused">Entschuldigt</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bemerkung (optional)</label>
+                            <input type="text" name="note"
+                                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
+                                   placeholder="z.B. Vertretung fur...">
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                        <button type="button" @click="showAddAttendeeModal = false"
+                                class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                            Abbrechen
+                        </button>
+                        <button type="submit"
+                                class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                            Hinzufugen
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function factionMeeting() {
+    return {
+        showEditModal: false,
+        showAddAttendeeModal: false,
+        editMode: 'add',
+        editItemId: '',
+        editTitle: '',
+        editDescription: '',
+        editParentId: '',
+        editVisibility: 'public',
+        attendeeType: 'guest',
+
+        get modalTitle() {
+            if (this.editMode === 'edit') return 'TOP bearbeiten';
+            if (this.editParentId) return 'Unterpunkt hinzufugen';
+            return this.editVisibility === 'internal' ? 'Nicht-offentlicher TOP' : 'Offentlicher TOP';
+        },
+
+        showAddModal(visibility) {
+            this.editMode = 'add';
+            this.editItemId = '';
+            this.editTitle = '';
+            this.editDescription = '';
+            this.editParentId = '';
+            this.editVisibility = visibility;
+            this.showEditModal = true;
+        },
+
+        addSubItem(parentId, visibility) {
+            this.editMode = 'add';
+            this.editItemId = '';
+            this.editTitle = '';
+            this.editDescription = '';
+            this.editParentId = parentId;
+            this.editVisibility = visibility || 'public';
+            this.showEditModal = true;
+        },
+
+        editItem(id, title, description) {
+            this.editMode = 'edit';
+            this.editItemId = id;
+            this.editTitle = title;
+            this.editDescription = description || '';
+            this.editParentId = '';
+            this.showEditModal = true;
+        },
+
+        deleteItem(id) {
+            if (confirm('TOP wirklich loschen?')) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '{% url "work:faction_agenda" org_slug=organization.slug meeting_id=meeting.id %}';
+                form.innerHTML = `
+                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="item_id" value="${id}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        },
+
+        moveItem(id, direction) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '{% url "work:faction_agenda" org_slug=organization.slug meeting_id=meeting.id %}';
+            form.innerHTML = `
+                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="move">
+                <input type="hidden" name="item_id" value="${id}">
+                <input type="hidden" name="direction" value="${direction}">
+            `;
+            document.body.appendChild(form);
+            form.submit();
+        }
+    }
+}
+</script>
+{% endblock %}

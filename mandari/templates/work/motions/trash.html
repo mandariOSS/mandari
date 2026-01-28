@@ -1,0 +1,292 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Papierkorb{% endblock %}
+
+{% block header_title %}Papierkorb{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ trash_count }} gelöschte Dokumente</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:motions' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Zurück zu Dokumenten
+</a>
+{% if trash_count > 0 %}
+<button onclick="emptyTrash()"
+        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700">
+    <i data-lucide="trash-2" class="w-4 h-4"></i>
+    Papierkorb leeren
+</button>
+{% endif %}
+{% endblock %}
+
+{% block work_content %}
+<!-- Search -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
+    <form method="get" class="flex items-center gap-4">
+        <div class="flex-1">
+            <div class="relative">
+                <input type="text" name="q" value="{{ search_query|default:'' }}"
+                       placeholder="Im Papierkorb suchen..."
+                       class="w-full px-4 py-2.5 pl-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            </div>
+        </div>
+        <button type="submit"
+                class="px-4 py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+            Suchen
+        </button>
+    </form>
+</div>
+
+<!-- Trash List -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="divide-y divide-gray-100 dark:divide-gray-700">
+        {% for motion in motions %}
+        <div class="px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+            <div class="flex items-start gap-4">
+                <!-- Icon -->
+                <div class="flex-shrink-0 p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
+                    <i data-lucide="trash" class="w-5 h-5 text-red-600 dark:text-red-400"></i>
+                </div>
+
+                <!-- Content -->
+                <div class="flex-1 min-w-0">
+                    <h3 class="font-medium text-gray-900 dark:text-white truncate">{{ motion.title }}</h3>
+                    <div class="flex flex-wrap items-center gap-2 mt-1">
+                        <span class="text-xs text-gray-500">{{ motion.get_motion_type_display }}</span>
+                        <span class="text-xs text-gray-500">·</span>
+                        <span class="text-xs text-gray-500">{{ motion.author.user.get_display_name }}</span>
+                    </div>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Gelöscht {{ motion.deleted_at|timesince }}
+                    </p>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <button onclick="restoreMotion('{{ motion.id }}')"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors">
+                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                        Wiederherstellen
+                    </button>
+                    <button onclick="permanentlyDelete('{{ motion.id }}', '{{ motion.title|escapejs }}')"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 dark:bg-red-900/30 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                        Endgültig löschen
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="px-5 py-12 text-center">
+            <div class="w-16 h-16 mx-auto mb-4 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center">
+                <i data-lucide="trash-2" class="w-8 h-8 text-slate-400 dark:text-slate-500"></i>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Papierkorb ist leer</h3>
+            <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+                {% if search_query %}
+                Keine gelöschten Dokumente mit diesen Suchbegriffen gefunden.
+                {% else %}
+                Keine gelöschten Dokumente vorhanden.
+                {% endif %}
+            </p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if motions.has_other_pages %}
+    <div class="px-5 py-4 border-t border-gray-200 dark:border-gray-700">
+        <div class="flex items-center justify-between">
+            <p class="text-sm text-gray-500">
+                Zeige {{ motions.start_index }}-{{ motions.end_index }} von {{ paginator.count }}
+            </p>
+            <nav class="flex items-center gap-1">
+                {% if motions.has_previous %}
+                <a href="?page={{ motions.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}"
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                </a>
+                {% endif %}
+
+                {% for num in motions.paginator.page_range %}
+                {% if motions.number == num %}
+                <span class="px-3 py-2 bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400 rounded-lg font-medium text-sm">{{ num }}</span>
+                {% elif num > motions.number|add:'-3' and num < motions.number|add:'3' %}
+                <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}"
+                   class="px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-sm">{{ num }}</a>
+                {% endif %}
+                {% endfor %}
+
+                {% if motions.has_next %}
+                <a href="?page={{ motions.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}"
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                </a>
+                {% endif %}
+            </nav>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Confirmation Modal -->
+<div id="confirmModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
+        <h3 id="confirmTitle" class="text-lg font-semibold text-gray-900 dark:text-white mb-2"></h3>
+        <p id="confirmMessage" class="text-gray-600 dark:text-gray-400 mb-6"></p>
+        <div class="flex justify-end gap-3">
+            <button onclick="closeModal()"
+                    class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600">
+                Abbrechen
+            </button>
+            <button id="confirmAction"
+                    class="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 dark:bg-red-700 text-white hover:bg-red-700 dark:hover:bg-red-600">
+                Bestätigen
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+const csrfToken = '{{ csrf_token }}';
+const orgSlug = '{{ organization.slug }}';
+
+function showModal(title, message, onConfirm, isGreen = false) {
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMessage').textContent = message;
+    const confirmBtn = document.getElementById('confirmAction');
+    // Reset classes and apply correct color scheme
+    confirmBtn.className = 'px-4 py-2 text-sm font-medium rounded-lg text-white hover:opacity-90';
+    if (isGreen) {
+        confirmBtn.classList.add('bg-green-600', 'dark:bg-green-700');
+    } else {
+        confirmBtn.classList.add('bg-red-600', 'dark:bg-red-700');
+    }
+    confirmBtn.onclick = () => {
+        onConfirm();
+        closeModal();
+    };
+    document.getElementById('confirmModal').classList.remove('hidden');
+    document.getElementById('confirmModal').classList.add('flex');
+}
+
+function closeModal() {
+    document.getElementById('confirmModal').classList.add('hidden');
+    document.getElementById('confirmModal').classList.remove('flex');
+}
+
+function restoreMotion(motionId) {
+    showModal(
+        'Dokument wiederherstellen?',
+        'Das Dokument wird als Entwurf wiederhergestellt.',
+        () => {
+            fetch(`/work/${orgSlug}/motions/${motionId}/restore/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Fehler: ' + (data.error || 'Unbekannter Fehler'));
+                }
+            })
+            .catch(err => {
+                console.error('Restore error:', err);
+                alert('Fehler beim Wiederherstellen: ' + err.message);
+            });
+        },
+        true
+    );
+}
+
+function permanentlyDelete(motionId, title) {
+    showModal(
+        'Endgültig löschen?',
+        `"${title}" wird unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.`,
+        () => {
+            fetch(`/work/${orgSlug}/motions/${motionId}/permanent-delete/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Fehler: ' + (data.error || 'Unbekannter Fehler'));
+                }
+            })
+            .catch(err => {
+                console.error('Delete error:', err);
+                alert('Fehler beim Löschen: ' + err.message);
+            });
+        }
+    );
+}
+
+function emptyTrash() {
+    showModal(
+        'Papierkorb leeren?',
+        'Alle {{ trash_count }} Dokumente werden unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.',
+        () => {
+            fetch(`/work/${orgSlug}/motions/trash/empty/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Fehler: ' + (data.error || 'Unbekannter Fehler'));
+                }
+            })
+            .catch(err => {
+                console.error('Empty trash error:', err);
+                alert('Fehler beim Leeren: ' + err.message);
+            });
+        }
+    );
+}
+
+// Close modal on escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModal();
+});
+
+// Close modal on backdrop click
+document.getElementById('confirmModal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeModal();
+});
+</script>
+{% endblock %}

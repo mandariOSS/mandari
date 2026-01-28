@@ -1,0 +1,650 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="de" class="scroll-smooth"
+      x-data="{ darkMode: localStorage.getItem('darkMode') === 'true' }"
+      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))"
+      :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Mandari Work - {{ organization.name }}">
+    <meta name="theme-color" content="{{ organization.primary_color|default:'#4f46e5' }}">
+    <meta name="robots" content="noindex, nofollow">
+
+    <title>{% block page_title %}Work{% endblock %} | {{ organization.name }}</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{% static 'images/favicon.png' %}">
+
+    <!-- TailwindCSS -->
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+    <!-- HTMX -->
+    <script src="{% static 'vendor/htmx/htmx.min.js' %}"></script>
+
+    <!-- Alpine.js -->
+    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
+
+    <!-- Lucide Icons -->
+    <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>
+
+    <!-- Real-time Notifications -->
+    <script src="{% static 'js/notifications.js' %}"></script>
+
+    <style>
+        [x-cloak] { display: none !important; }
+
+        /* Organization Color Variables */
+        :root {
+            --org-color: {{ organization.primary_color|default:'#4f46e5' }};
+            --org-color-light: {{ organization.primary_color|default:'#4f46e5' }}15;
+            --org-color-dark: {{ organization.primary_color|default:'#4f46e5' }}30;
+            --org-color-text: {{ organization.primary_color|default:'#4f46e5' }};
+        }
+
+        /* Work Portal Layout */
+        .work-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .work-sidebar {
+            width: 260px;
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 40;
+            transition: transform 0.2s ease;
+            overflow: hidden;
+        }
+
+        .dark .work-sidebar {
+            background: #111827;
+            border-color: #374151;
+        }
+
+        /* Mobile sidebar */
+        @media (max-width: 1024px) {
+            .work-sidebar {
+                transform: translateX(-100%);
+            }
+            .work-sidebar.open {
+                transform: translateX(0);
+            }
+            .work-sidebar-overlay {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.5);
+                z-index: 30;
+            }
+            .work-sidebar-overlay.open {
+                display: block;
+            }
+        }
+
+        /* Main Content */
+        .work-main {
+            flex: 1;
+            margin-left: 260px;
+            background: #f9fafb;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dark .work-main {
+            background: #0f172a;
+        }
+
+        @media (max-width: 1024px) {
+            .work-main {
+                margin-left: 0;
+            }
+        }
+
+        /* Sidebar Navigation */
+        .work-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            color: #4b5563;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 8px;
+            margin: 2px 8px;
+            transition: all 0.15s ease;
+        }
+
+        .work-nav-item:hover {
+            background: #f3f4f6;
+            color: #111827;
+        }
+
+        .work-nav-item.active {
+            background: var(--org-color-light, #eef2ff);
+            color: var(--org-color, #4f46e5);
+            border-left: 3px solid var(--org-color, #4f46e5);
+            padding-left: 13px;
+        }
+
+        .dark .work-nav-item {
+            color: #9ca3af;
+        }
+
+        .dark .work-nav-item:hover {
+            background: #1f2937;
+            color: #f3f4f6;
+        }
+
+        .dark .work-nav-item.active {
+            background: var(--org-color-dark, #312e81);
+            color: var(--org-color-text, #a5b4fc);
+            border-left: 3px solid var(--org-color, #4f46e5);
+            padding-left: 13px;
+        }
+
+        .work-nav-item i {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
+        /* Sidebar Section */
+        .work-nav-section {
+            padding: 16px 16px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #9ca3af;
+        }
+
+        /* Organization Header in Sidebar */
+        .work-org-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .dark .work-org-header {
+            border-color: #374151;
+        }
+
+        .work-org-logo {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            background: #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: #6b7280;
+            flex-shrink: 0;
+        }
+
+        .work-org-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .work-org-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .work-org-name {
+            font-weight: 600;
+            font-size: 14px;
+            color: #111827;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .dark .work-org-name {
+            color: #f3f4f6;
+        }
+
+        .work-org-type {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .dark .work-org-type {
+            color: #9ca3af;
+        }
+
+        /* Page Header */
+        .work-page-header {
+            padding: 20px 32px;
+            background: linear-gradient(to right, white, #f8fafc);
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .dark .work-page-header {
+            background: linear-gradient(to right, #111827, #1e293b);
+            border-color: #374151;
+        }
+
+        .work-page-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #111827;
+            margin: 0;
+        }
+
+        .dark .work-page-title {
+            color: #f3f4f6;
+        }
+
+        .work-page-subtitle {
+            font-size: 14px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        .dark .work-page-subtitle {
+            color: #9ca3af;
+        }
+
+        /* Page Content */
+        .work-page-content {
+            padding: 24px 32px;
+            flex: 1;
+        }
+
+        @media (max-width: 640px) {
+            .work-page-header,
+            .work-page-content {
+                padding: 16px;
+            }
+        }
+
+        /* Top bar */
+        .work-topbar {
+            height: 56px;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+
+        .dark .work-topbar {
+            background: #111827;
+            border-color: #374151;
+        }
+    </style>
+    {% block work_extra_head %}{% endblock %}
+</head>
+
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-org-slug="{{ organization.slug }}">
+    <div class="work-layout" x-data="{ sidebarOpen: false }">
+        <!-- Mobile Sidebar Overlay -->
+        <div class="work-sidebar-overlay"
+             :class="{ 'open': sidebarOpen }"
+             @click="sidebarOpen = false"></div>
+
+        <!-- Sidebar -->
+        <aside class="work-sidebar" :class="{ 'open': sidebarOpen }">
+            <!-- Organization Header -->
+            <div class="work-org-header">
+                <a href="/" class="work-org-logo" style="{% if organization.primary_color %}background: {{ organization.primary_color }}20; color: {{ organization.primary_color }};{% endif %}">
+                    {% if organization.logo %}
+                        <img src="{{ organization.logo.url }}" alt="{{ organization.name }}">
+                    {% else %}
+                        {{ organization.name|slice:":2"|upper }}
+                    {% endif %}
+                </a>
+                <div class="work-org-info">
+                    <div class="work-org-name">{{ organization.name }}</div>
+                    {% if organization.party_group %}
+                    <div class="work-org-type">{{ organization.party_group.name }}</div>
+                    {% elif organization.body %}
+                    <div class="work-org-type">{{ organization.body.name }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 py-4 overflow-y-auto">
+                <!-- Hauptbereich -->
+                <a href="{% url 'work:dashboard' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_nav == 'dashboard' %}active{% endif %}">
+                    <i data-lucide="layout-dashboard"></i>
+                    Dashboard
+                </a>
+
+                <div class="work-nav-section">Arbeit</div>
+
+                <a href="{% url 'work:meetings' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_nav == 'meetings' %}active{% endif %}">
+                    <i data-lucide="calendar"></i>
+                    Meine Sitzungen
+                </a>
+
+                <a href="{% url 'work:motions' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_nav == 'motions' %}active{% endif %}">
+                    <i data-lucide="file-text"></i>
+                    Anträge & Vorgänge
+                </a>
+
+                <a href="{% url 'work:faction' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_nav == 'faction' %}active{% endif %}">
+                    <i data-lucide="users"></i>
+                    Fraktionssitzungen
+                </a>
+
+                <a href="{% url 'work:tasks' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_nav == 'tasks' %}active{% endif %}">
+                    <i data-lucide="check-square"></i>
+                    Aufgaben
+                </a>
+
+                <div class="work-nav-section">RIS</div>
+
+                <!-- RIS with collapsible sub-menu -->
+                <div x-data="{ expanded: {% if active_nav == 'ris' %}true{% else %}false{% endif %} }">
+                    <button @click="expanded = !expanded"
+                            class="work-nav-item w-full justify-between {% if active_nav == 'ris' %}active{% endif %}">
+                        <span class="flex items-center gap-3">
+                            <i data-lucide="building-2"></i>
+                            Ratsinformation
+                        </span>
+                        <i data-lucide="chevron-down" class="w-4 h-4 transition-transform duration-200" :class="expanded ? 'rotate-180' : ''"></i>
+                    </button>
+                    <div x-show="expanded"
+                         x-transition:enter="transition ease-out duration-200"
+                         x-transition:enter-start="opacity-0 -translate-y-2"
+                         x-transition:enter-end="opacity-100 translate-y-0"
+                         x-transition:leave="transition ease-in duration-150"
+                         x-transition:leave-start="opacity-100 translate-y-0"
+                         x-transition:leave-end="opacity-0 -translate-y-2"
+                         class="ml-4 mt-1 space-y-1 border-l-2 border-gray-200 dark:border-gray-700 pl-2">
+                        <a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+                           class="work-nav-item text-sm {% if active_subnav == 'ris_overview' %}active{% endif %}">
+                            <i data-lucide="layout-grid" class="w-4 h-4"></i>
+                            Übersicht
+                        </a>
+                        <a href="{% url 'work:ris_meetings' org_slug=organization.slug %}"
+                           class="work-nav-item text-sm {% if active_subnav == 'ris_meetings' %}active{% endif %}">
+                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                            Sitzungen
+                        </a>
+                        <a href="{% url 'work:ris_papers' org_slug=organization.slug %}"
+                           class="work-nav-item text-sm {% if active_subnav == 'ris_papers' %}active{% endif %}">
+                            <i data-lucide="file-text" class="w-4 h-4"></i>
+                            Vorgänge
+                        </a>
+                        <a href="{% url 'work:ris_organizations' org_slug=organization.slug %}"
+                           class="work-nav-item text-sm {% if active_subnav == 'ris_organizations' %}active{% endif %}">
+                            <i data-lucide="building" class="w-4 h-4"></i>
+                            Gremien
+                        </a>
+                        <a href="{% url 'work:ris_persons' org_slug=organization.slug %}"
+                           class="work-nav-item text-sm {% if active_subnav == 'ris_persons' %}active{% endif %}">
+                            <i data-lucide="users" class="w-4 h-4"></i>
+                            Personen
+                        </a>
+                        <a href="{% url 'work:ris_search' org_slug=organization.slug %}"
+                           class="work-nav-item text-sm {% if active_subnav == 'ris_search' %}active{% endif %}">
+                            <i data-lucide="search" class="w-4 h-4"></i>
+                            Suche
+                        </a>
+                    </div>
+                </div>
+
+                <div class="work-nav-section">Verwaltung</div>
+
+                <a href="{% url 'work:organization' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_nav == 'organization' %}active{% endif %}">
+                    <i data-lucide="settings"></i>
+                    Einstellungen
+                </a>
+
+                <a href="{% url 'work:support' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_nav == 'support' %}active{% endif %}">
+                    <i data-lucide="help-circle"></i>
+                    Support
+                </a>
+            </nav>
+
+            <!-- User Info (Bottom) -->
+            <div class="border-t border-gray-200 dark:border-gray-700 p-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center text-primary-600 dark:text-primary-400 font-medium text-sm">
+                        {% if request.user.get_initials %}{{ request.user.get_initials }}{% else %}{{ request.user.email|slice:":2"|upper }}{% endif %}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {% if request.user.display_name %}{{ request.user.display_name }}{% else %}{{ request.user.email }}{% endif %}
+                        </div>
+                        <div class="text-xs text-gray-500 truncate">
+                            {% for role in membership.roles.all|slice:":2" %}
+                                {{ role.name }}{% if not forloop.last %}, {% endif %}
+                            {% empty %}
+                                Mitglied
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="work-main">
+            <!-- Top Bar -->
+            <div class="work-topbar">
+                <div class="flex items-center gap-4">
+                    <!-- Mobile menu button -->
+                    <button @click="sidebarOpen = !sidebarOpen"
+                            class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+                        <i data-lucide="menu" class="w-5 h-5"></i>
+                    </button>
+
+                    <!-- Breadcrumb / Title for mobile -->
+                    <span class="lg:hidden font-medium">{{ organization.name }}</span>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <!-- Dark Mode Toggle -->
+                    <button @click="darkMode = !darkMode"
+                            class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                            title="Dunkelmodus umschalten">
+                        <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
+                        <i data-lucide="moon" class="w-5 h-5 dark:hidden"></i>
+                    </button>
+
+                    <!-- Notifications -->
+                    <div x-data="{
+                        open: false,
+                        unreadCount: 0,
+                        notifications: [],
+                        loading: false,
+                        init() {
+                            this.fetchCount();
+                            // Poll for new notifications every 60 seconds
+                            setInterval(() => this.fetchCount(), 60000);
+                        },
+                        async fetchCount() {
+                            try {
+                                const response = await fetch('{% url 'work:notification_count' org_slug=organization.slug %}');
+                                const data = await response.json();
+                                this.unreadCount = data.count;
+                            } catch (e) {
+                                console.error('Failed to fetch notification count:', e);
+                            }
+                        },
+                        async fetchNotifications() {
+                            if (this.loading) return;
+                            this.loading = true;
+                            try {
+                                const response = await fetch('{% url 'work:notifications_partial' org_slug=organization.slug %}');
+                                const data = await response.json();
+                                this.$refs.notificationList.innerHTML = data.html;
+                                this.unreadCount = data.unread_count;
+                                lucide.createIcons();
+                            } catch (e) {
+                                console.error('Failed to fetch notifications:', e);
+                            }
+                            this.loading = false;
+                        },
+                        async markAllRead() {
+                            try {
+                                const response = await fetch('{% url 'work:notifications_mark_all_read' org_slug=organization.slug %}', {
+                                    method: 'POST',
+                                    headers: {
+                                        'X-CSRFToken': '{{ csrf_token }}',
+                                        'Content-Type': 'application/json'
+                                    }
+                                });
+                                if (response.ok) {
+                                    this.unreadCount = 0;
+                                    this.fetchNotifications();
+                                }
+                            } catch (e) {
+                                console.error('Failed to mark all as read:', e);
+                            }
+                        }
+                    }" class="relative">
+                        <button @click="open = !open; if(open) fetchNotifications()"
+                                class="relative p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                                title="Benachrichtigungen">
+                            <i data-lucide="bell" class="w-5 h-5"></i>
+                            <span x-show="unreadCount > 0"
+                                  x-text="unreadCount > 99 ? '99+' : unreadCount"
+                                  class="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full px-1">
+                            </span>
+                        </button>
+
+                        <div x-show="open"
+                             @click.outside="open = false"
+                             x-cloak
+                             class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
+                            <!-- Header -->
+                            <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                                <h3 class="font-semibold text-sm">Benachrichtigungen</h3>
+                                <div class="flex items-center gap-2">
+                                    <button @click="markAllRead()"
+                                            x-show="unreadCount > 0"
+                                            class="text-xs text-primary-600 dark:text-primary-400 hover:underline">
+                                        Alle gelesen
+                                    </button>
+                                    <a href="{% url 'work:notifications' org_slug=organization.slug %}"
+                                       class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                                        <i data-lucide="settings" class="w-4 h-4"></i>
+                                    </a>
+                                </div>
+                            </div>
+
+                            <!-- Notification List -->
+                            <div x-ref="notificationList" class="max-h-96 overflow-y-auto">
+                                <div class="p-4 text-center text-sm text-gray-500" x-show="loading">
+                                    <i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto mb-2"></i>
+                                    Lade...
+                                </div>
+                                <div class="p-4 text-center text-sm text-gray-500" x-show="!loading && !$refs.notificationList?.innerHTML?.trim()">
+                                    Keine Benachrichtigungen
+                                </div>
+                            </div>
+
+                            <!-- Footer -->
+                            <div class="px-4 py-2 border-t border-gray-200 dark:border-gray-700 text-center">
+                                <a href="{% url 'work:notifications' org_slug=organization.slug %}"
+                                   class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                                    Alle anzeigen
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- User Menu -->
+                    <div x-data="{ open: false }" class="relative">
+                        <button @click="open = !open"
+                                class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+                            <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center text-primary-600 dark:text-primary-400 font-medium text-sm">
+                                {% if request.user.get_initials %}{{ request.user.get_initials }}{% else %}{{ request.user.email|slice:":2"|upper }}{% endif %}
+                            </div>
+                            <i data-lucide="chevron-down" class="w-4 h-4 hidden sm:block"></i>
+                        </button>
+
+                        <div x-show="open"
+                             @click.outside="open = false"
+                             x-cloak
+                             class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+                            <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+                                <div class="font-medium text-sm">{% if request.user.display_name %}{{ request.user.display_name }}{% else %}{{ request.user.email }}{% endif %}</div>
+                                <div class="text-xs text-gray-500">{{ request.user.email }}</div>
+                            </div>
+                            <a href="{% url 'work:profile' org_slug=organization.slug %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <i data-lucide="user" class="w-4 h-4 inline mr-2"></i>
+                                Profil
+                            </a>
+                            <a href="{% url 'work:security' org_slug=organization.slug %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <i data-lucide="shield" class="w-4 h-4 inline mr-2"></i>
+                                Sicherheit
+                            </a>
+                            <hr class="my-1 border-gray-200 dark:border-gray-700">
+                            <a href="{% url 'admin:logout' %}" class="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <i data-lucide="log-out" class="w-4 h-4 inline mr-2"></i>
+                                Abmelden
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page Header -->
+            {% block work_header %}
+            <header class="work-page-header">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="work-page-title">{% block header_title %}{% endblock %}</h1>
+                        {% block header_subtitle %}{% endblock %}
+                    </div>
+                    <div class="flex items-center gap-3">
+                        {% block header_actions %}{% endblock %}
+                    </div>
+                </div>
+            </header>
+            {% endblock %}
+
+            <!-- Page Content -->
+            <div class="work-page-content">
+                {% block work_content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <!-- HTMX Configuration -->
+    <script>
+        document.body.addEventListener('htmx:configRequest', (event) => {
+            event.detail.headers['X-CSRFToken'] = '{{ csrf_token }}';
+        });
+
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Re-initialize icons after HTMX swap
+        document.body.addEventListener('htmx:afterSwap', () => {
+            lucide.createIcons();
+        });
+    </script>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

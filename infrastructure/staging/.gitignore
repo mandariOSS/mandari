@@ -1,0 +1,27 @@
+# =============================================================================
+# Staging Environment - Git Ignore
+# =============================================================================
+# IMPORTANT: This directory contains sensitive staging data!
+# =============================================================================
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# SSL Certificates
+certbot/
+nginx/certs/
+*.pem
+*.key
+*.crt
+
+# Database dumps
+*.sql
+*.dump
+init-db/*.sql
+init-db/*.json
+!init-db/README.md
+
+# Backups
+backup*.sql

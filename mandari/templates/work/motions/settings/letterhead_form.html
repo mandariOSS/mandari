@@ -1,0 +1,137 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}{% if is_new %}Neuer Briefkopf{% else %}{{ letterhead.name }} bearbeiten{% endif %}{% endblock %}
+
+{% block header_title %}{% if is_new %}Neuer Briefkopf{% else %}{{ letterhead.name }} bearbeiten{% endif %}{% endblock %}
+
+{% block work_content %}
+<div class="max-w-2xl">
+    <form method="post" enctype="multipart/form-data" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        {% csrf_token %}
+
+        <div class="space-y-6">
+            <!-- Name -->
+            <div>
+                <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
+                <input type="text" id="name" name="name" required
+                       value="{% if letterhead %}{{ letterhead.name }}{% endif %}"
+                       class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                       placeholder="z.B. Offizieller Briefkopf, Interne Mitteilung">
+            </div>
+
+            <!-- Description -->
+            <div>
+                <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                <textarea id="description" name="description" rows="2"
+                          class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          placeholder="Kurze Beschreibung des Briefkopfs">{% if letterhead %}{{ letterhead.description }}{% endif %}</textarea>
+            </div>
+
+            <!-- PDF File -->
+            <div>
+                <label for="pdf_file" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    PDF-Datei {% if is_new %}*{% endif %}
+                </label>
+                {% if letterhead and letterhead.pdf_file %}
+                <div class="mb-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="file" class="w-4 h-4 text-gray-400"></i>
+                        <span class="text-sm text-gray-700 dark:text-gray-300">{{ letterhead.pdf_file.name }}</span>
+                    </div>
+                    <a href="{{ letterhead.pdf_file.url }}" target="_blank" class="text-sm text-primary-600 hover:underline">Anzeigen</a>
+                </div>
+                <p class="text-xs text-gray-500 mb-2">Laden Sie eine neue Datei hoch, um die bestehende zu ersetzen:</p>
+                {% endif %}
+                <input type="file" id="pdf_file" name="pdf_file" accept=".pdf"
+                       {% if is_new %}required{% endif %}
+                       class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100">
+                <p class="text-xs text-gray-500 mt-1">Nur PDF-Dateien, max. 10MB. Das PDF dient als Hintergrund für exportierte Dokumente.</p>
+            </div>
+
+            <!-- Content Margins -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Textbereich (Ränder in mm)</h3>
+                <div class="grid grid-cols-4 gap-4">
+                    <div>
+                        <label for="content_margin_top" class="block text-xs text-gray-500 mb-1">Oben</label>
+                        <input type="number" id="content_margin_top" name="content_margin_top" min="0" max="200"
+                               value="{% if letterhead %}{{ letterhead.content_margin_top }}{% else %}60{% endif %}"
+                               class="block w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
+                    </div>
+                    <div>
+                        <label for="content_margin_left" class="block text-xs text-gray-500 mb-1">Links</label>
+                        <input type="number" id="content_margin_left" name="content_margin_left" min="0" max="100"
+                               value="{% if letterhead %}{{ letterhead.content_margin_left }}{% else %}25{% endif %}"
+                               class="block w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
+                    </div>
+                    <div>
+                        <label for="content_margin_right" class="block text-xs text-gray-500 mb-1">Rechts</label>
+                        <input type="number" id="content_margin_right" name="content_margin_right" min="0" max="100"
+                               value="{% if letterhead %}{{ letterhead.content_margin_right }}{% else %}20{% endif %}"
+                               class="block w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
+                    </div>
+                    <div>
+                        <label for="content_margin_bottom" class="block text-xs text-gray-500 mb-1">Unten</label>
+                        <input type="number" id="content_margin_bottom" name="content_margin_bottom" min="0" max="100"
+                               value="{% if letterhead %}{{ letterhead.content_margin_bottom }}{% else %}30{% endif %}"
+                               class="block w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Der Textbereich beginnt nach dem oberen Rand und endet vor dem unteren Rand.</p>
+            </div>
+
+            <!-- Font Settings -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Schrifteinstellungen</h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="font_family" class="block text-xs text-gray-500 mb-1">Schriftart</label>
+                        <select id="font_family" name="font_family"
+                                class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+                            {% with current_font=letterhead.font_family|default:"Arial" %}
+                            <option value="Arial" {% if current_font == "Arial" %}selected{% endif %}>Arial</option>
+                            <option value="Helvetica" {% if current_font == "Helvetica" %}selected{% endif %}>Helvetica</option>
+                            <option value="Times New Roman" {% if current_font == "Times New Roman" %}selected{% endif %}>Times New Roman</option>
+                            <option value="Georgia" {% if current_font == "Georgia" %}selected{% endif %}>Georgia</option>
+                            <option value="Calibri" {% if current_font == "Calibri" %}selected{% endif %}>Calibri</option>
+                            {% endwith %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="font_size" class="block text-xs text-gray-500 mb-1">Schriftgröße (pt)</label>
+                        <input type="number" id="font_size" name="font_size" min="8" max="24"
+                               value="{% if letterhead %}{{ letterhead.font_size }}{% else %}11{% endif %}"
+                               class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Default Setting -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="is_default"
+                           {% if letterhead.is_default %}checked{% endif %}
+                           class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                    <span class="text-sm text-gray-700 dark:text-gray-300">
+                        Standard-Briefkopf
+                        <span class="block text-xs text-gray-500">Wird als Vorauswahl für neue Dokumente verwendet</span>
+                    </span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center justify-between mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <a href="{% url 'work:letterhead_list' org_slug=organization.slug %}"
+               class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                Abbrechen
+            </a>
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                <i data-lucide="check" class="w-4 h-4"></i>
+                {% if is_new %}Briefkopf erstellen{% else %}Speichern{% endif %}
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

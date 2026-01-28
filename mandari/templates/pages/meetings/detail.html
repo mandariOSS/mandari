@@ -1,0 +1,379 @@
+{% extends "base_ris.html" %}
+{% load static %}
+
+{% block title %}{{ meeting.get_display_name }}{% endblock %}
+
+{% block extra_head %}
+{% if location_coordinates %}
+<!-- Leaflet (lokal, DSGVO-konform) -->
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}" />
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<style>
+    #location-map {
+        border-radius: 0 0 0.75rem 0.75rem;
+    }
+
+    .leaflet-control-zoom {
+        border: none !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+        border-radius: 10px !important;
+        overflow: hidden;
+    }
+
+    .leaflet-control-zoom a {
+        background: white !important;
+        color: #374151 !important;
+        border: none !important;
+        width: 32px !important;
+        height: 32px !important;
+        line-height: 32px !important;
+        font-size: 16px !important;
+    }
+
+    .leaflet-control-zoom a:hover {
+        background: #f3f4f6 !important;
+    }
+
+    .dark .leaflet-control-zoom a {
+        background: #374151 !important;
+        color: #f3f4f6 !important;
+    }
+
+    .leaflet-control-attribution {
+        background: rgba(255, 255, 255, 0.9) !important;
+        padding: 2px 6px !important;
+        border-radius: 6px !important;
+        font-size: 9px !important;
+    }
+
+    .dark .leaflet-control-attribution {
+        background: rgba(31, 41, 55, 0.9) !important;
+        color: #9ca3af !important;
+    }
+
+    .leaflet-popup-content-wrapper {
+        border-radius: 12px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .leaflet-popup-content {
+        margin: 0;
+    }
+
+    .dark .leaflet-popup-content-wrapper {
+        background: #1f2937;
+        color: #f3f4f6;
+    }
+
+    .dark .leaflet-popup-tip {
+        background: #1f2937;
+    }
+
+    .location-marker {
+        background: transparent !important;
+        border: none !important;
+    }
+
+    .marker-pin {
+        width: 32px;
+        height: 32px;
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        border-radius: 50% 50% 50% 0;
+        transform: rotate(-45deg);
+        position: relative;
+        box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+    }
+
+    .marker-pin::after {
+        content: '';
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        background: white;
+        border-radius: 50%;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+</style>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Breadcrumb -->
+    <nav class="mb-6" aria-label="Breadcrumb">
+        <ol class="flex items-center gap-2 text-sm">
+            <li>
+                <a href="{% url 'insight_core:insight:meeting_list' %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                    Sitzungen
+                </a>
+            </li>
+            <li class="text-gray-400" aria-hidden="true">/</li>
+            <li class="text-gray-900 dark:text-white font-medium truncate">
+                {{ meeting.get_display_name|truncatechars:50 }}
+            </li>
+        </ol>
+    </nav>
+
+    <div class="grid lg:grid-cols-3 gap-8">
+        <!-- Main Content -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Header -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4 mb-4">
+                    {% if meeting.start %}
+                    <div class="flex-shrink-0 w-16 h-16 rounded-xl bg-primary-100 dark:bg-primary-900/50 flex flex-col items-center justify-center">
+                        <span class="text-xs font-medium text-primary-600 dark:text-primary-400 uppercase">
+                            {{ meeting.start|date:"M" }}
+                        </span>
+                        <span class="text-2xl font-bold text-primary-700 dark:text-primary-300">
+                            {{ meeting.start|date:"d" }}
+                        </span>
+                    </div>
+                    {% endif %}
+                    <div class="min-w-0 flex-1">
+                        <h1 class="text-xl font-bold text-gray-900 dark:text-white mb-1">
+                            {{ meeting.get_display_name }}
+                        </h1>
+                        <p class="text-gray-600 dark:text-gray-400">
+                            {% if meeting.start %}
+                                {{ meeting.start|date:"l, d. F Y" }}
+                                um {{ meeting.start|date:"H:i" }} Uhr
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                    {% if meeting.cancelled %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-400">
+                        <i data-lucide="x-circle" class="w-4 h-4 mr-1"></i>
+                        Abgesagt
+                    </span>
+                    {% endif %}
+                    {% if meeting.meeting_state %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
+                        {{ meeting.meeting_state }}
+                    </span>
+                    {% endif %}
+                    {% if meeting.location_name %}
+                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
+                        <i data-lucide="map-pin" class="w-4 h-4"></i>
+                        {{ meeting.location_name }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Agenda Items -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <h2 class="font-semibold text-gray-900 dark:text-white">
+                        Tagesordnung ({{ agenda_items|length }})
+                    </h2>
+                </div>
+
+                {% if agenda_items %}
+                <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                    {% for item in agenda_items %}
+                    {% with item_number=item.number|default:"" %}
+                    {% with is_subitem=item_number|slice:":1" %}
+                    <div class="px-6 py-4 {% if '.' in item_number %}bg-gray-50/50 dark:bg-gray-700/20{% endif %}">
+                        <div class="flex items-start gap-4 {% if '.' in item_number %}ml-6{% endif %}">
+                            <span class="flex-shrink-0 {% if '.' in item_number %}w-10 h-6 text-xs{% else %}w-8 h-8 text-sm{% endif %} rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center font-medium text-gray-600 dark:text-gray-400">
+                                {{ item.number|default:forloop.counter }}
+                            </span>
+                            <div class="flex-1 min-w-0">
+                                <p class="{% if '.' in item_number %}text-sm{% else %}font-medium{% endif %} text-gray-900 dark:text-white">
+                                    {{ item.name|default:"Tagesordnungspunkt" }}
+                                </p>
+                                {% if item.result %}
+                                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                    <span class="font-medium">Ergebnis:</span> {{ item.result }}
+                                </p>
+                                {% endif %}
+                                {% if item.resolution_text %}
+                                <div class="mt-2 p-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg text-sm text-gray-700 dark:text-gray-300">
+                                    {{ item.resolution_text }}
+                                </div>
+                                {% endif %}
+                                {% with papers=item.get_papers %}
+                                {% if papers %}
+                                <div class="mt-3 space-y-2">
+                                    {% for paper in papers %}
+                                    <a href="{% url 'insight_core:insight:paper_detail' paper.pk %}"
+                                       class="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group">
+                                        <span class="flex-shrink-0 w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                                            <i data-lucide="file-text" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                                        </span>
+                                        <div class="min-w-0 flex-1">
+                                            <p class="text-sm font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">
+                                                {{ paper.name|default:"Vorgang"|truncatechars:80 }}
+                                            </p>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                                {% if paper.reference %}{{ paper.reference }} · {% endif %}
+                                                {% if paper.paper_type %}{{ paper.paper_type }}{% endif %}
+                                            </p>
+                                        </div>
+                                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400 group-hover:text-primary-500 flex-shrink-0 mt-2"></i>
+                                    </a>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                                {% endwith %}
+                                {% if not item.public %}
+                                <span class="inline-flex items-center mt-2 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400">
+                                    <i data-lucide="lock" class="w-3 h-3 mr-1"></i>
+                                    Nicht-öffentlich
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endwith %}
+                    {% endwith %}
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <i data-lucide="list" class="w-10 h-10 mx-auto mb-3 opacity-50"></i>
+                    <p>Keine Tagesordnungspunkte vorhanden</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="space-y-6">
+            <!-- Organizations / Gremien -->
+            {% if meeting.organizations.exists %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                    <i data-lucide="building-2" class="w-4 h-4 text-primary-500"></i>
+                    Gremien
+                </h3>
+                <ul class="space-y-2">
+                    {% for org in meeting.organizations.all %}
+                    <li>
+                        <a href="{% url 'insight_core:insight:organization_detail' org.pk %}"
+                           class="flex items-start gap-3 p-2 -mx-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                            <span class="w-8 h-8 rounded-lg bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <i data-lucide="users" class="w-4 h-4 text-primary-600 dark:text-primary-400"></i>
+                            </span>
+                            <span class="text-gray-900 dark:text-white font-medium text-sm leading-tight">
+                                {{ org.name }}
+                            </span>
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <!-- Location Map -->
+            {% if location_coordinates %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                        <i data-lucide="map" class="w-4 h-4 text-primary-500"></i>
+                        Veranstaltungsort
+                    </h3>
+                    {% if meeting.location_name %}
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ meeting.location_name }}</p>
+                    {% endif %}
+                </div>
+                <div id="location-map" class="h-64 w-full"></div>
+            </div>
+            {% endif %}
+
+            <!-- Info Card -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Details</h3>
+                <dl class="space-y-4">
+                    {% if meeting.start %}
+                    <div>
+                        <dt class="text-sm text-gray-500 dark:text-gray-400">Beginn</dt>
+                        <dd class="font-medium text-gray-900 dark:text-white">
+                            {{ meeting.start|date:"d.m.Y H:i" }} Uhr
+                        </dd>
+                    </div>
+                    {% endif %}
+                    {% if meeting.end %}
+                    <div>
+                        <dt class="text-sm text-gray-500 dark:text-gray-400">Ende</dt>
+                        <dd class="font-medium text-gray-900 dark:text-white">
+                            {{ meeting.end|date:"d.m.Y H:i" }} Uhr
+                        </dd>
+                    </div>
+                    {% endif %}
+                    {% if meeting.location_name %}
+                    <div>
+                        <dt class="text-sm text-gray-500 dark:text-gray-400">Ort</dt>
+                        <dd class="font-medium text-gray-900 dark:text-white">{{ meeting.location_name }}</dd>
+                    </div>
+                    {% endif %}
+                    {% if meeting.location_address %}
+                    <div>
+                        <dt class="text-sm text-gray-500 dark:text-gray-400">Adresse</dt>
+                        <dd class="text-gray-700 dark:text-gray-300">{{ meeting.location_address }}</dd>
+                    </div>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if location_coordinates %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const lat = {{ location_coordinates.lat }};
+    const lng = {{ location_coordinates.lng }};
+
+    // Leaflet Karte initialisieren
+    const map = L.map('location-map', {
+        zoomControl: true,
+        scrollWheelZoom: false,
+        doubleClickZoom: true
+    }).setView([lat, lng], 16);
+
+    // Lokaler Tile-Proxy (100% DSGVO-konform)
+    L.tileLayer('{% url "insight_core:insight:tile_proxy" z=0 x=0 y=0 %}'.replace('/0/0/0', '/{z}/{x}/{y}'), {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19
+    }).addTo(map);
+
+    // Custom Marker Icon
+    const customIcon = L.divIcon({
+        className: 'location-marker',
+        html: '<div class="marker-pin"></div>',
+        iconSize: [32, 40],
+        iconAnchor: [16, 40],
+        popupAnchor: [0, -40]
+    });
+
+    // Marker mit Popup
+    const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
+    marker.bindPopup(`
+        <div class="p-3">
+            <div class="flex items-center gap-2 mb-2">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-100 to-purple-100 dark:from-primary-900/50 dark:to-purple-900/50 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                </div>
+                <p class="font-semibold text-gray-900 dark:text-white text-sm">{{ meeting.location_name|escapejs }}</p>
+            </div>
+            {% if meeting.location_address %}
+            <p class="text-xs text-gray-500 dark:text-gray-400 pl-10">{{ meeting.location_address|escapejs }}</p>
+            {% endif %}
+        </div>
+    `, { maxWidth: 280 }).openPopup();
+});
+</script>
+{% endif %}
+{% endblock %}

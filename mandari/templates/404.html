@@ -1,0 +1,63 @@
+{% extends "errors/base_error.html" %}
+
+{% block title %}Seite nicht gefunden (404){% endblock %}
+
+{% block error_code %}404{% endblock %}
+
+{% block header_gradient %}from-amber-500 to-orange-500{% endblock %}
+
+{% block error_title %}Seite nicht gefunden{% endblock %}
+
+{% block error_message %}
+Die angeforderte Seite konnte leider nicht gefunden werden. Möglicherweise wurde sie verschoben, gelöscht oder die URL ist falsch.
+{% endblock %}
+
+{% block error_details %}
+<div class="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4">
+    <p class="text-sm text-amber-700 dark:text-amber-400">
+        <strong>Gesuchte URL:</strong><br>
+        <code class="text-xs bg-amber-100 dark:bg-amber-900/40 px-2 py-1 rounded mt-1 inline-block break-all">{{ request.path }}</code>
+    </p>
+</div>
+
+<div class="mt-4 text-left">
+    <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Das könntest du versuchen:</p>
+    <ul class="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+        <li class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            URL auf Tippfehler überprüfen
+        </li>
+        <li class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            Die Suchfunktion nutzen
+        </li>
+        <li class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            Von der Startseite aus navigieren
+        </li>
+    </ul>
+</div>
+{% endblock %}
+
+{% block error_actions %}
+<a href="/"
+   class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+    </svg>
+    Zur Startseite
+</a>
+<a href="/suche/"
+   class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+    </svg>
+    Suchen
+</a>
+{% endblock %}

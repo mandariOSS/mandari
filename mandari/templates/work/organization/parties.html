@@ -1,0 +1,172 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Ratsfraktionen{% endblock %}
+
+{% block header_title %}Einstellungen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Ratsfraktionen und Koalitionskonfiguration</p>
+{% endblock %}
+
+{% block work_content %}
+<!-- Navigation Tabs -->
+<div class="mb-8 border-b border-gray-200 dark:border-gray-700">
+    <nav class="flex gap-1 overflow-x-auto">
+        <a href="{% url 'work:organization' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Allgemein
+        </a>
+        <a href="{% url 'work:organization_faction_settings' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Fraktionssitzungen
+        </a>
+        <a href="{% url 'work:organization_documents' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Anträge & Vorgänge
+        </a>
+        <a href="{% url 'work:council_parties' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 whitespace-nowrap">
+            Ratsfraktionen
+        </a>
+        <a href="{% url 'work:members' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Mitglieder
+        </a>
+        <a href="{% url 'work:roles' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Rollen
+        </a>
+    </nav>
+</div>
+
+<div class="space-y-8">
+    <!-- Organization Email Settings -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">E-Mail-Einstellungen</h3>
+
+        <form method="post" action="" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_org_settings">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Verwaltungs-E-Mail
+                    </label>
+                    <input type="email" name="administration_email" value="{{ administration_email }}"
+                           placeholder="verwaltung@stadt.de"
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    <p class="mt-1 text-sm text-gray-500">Standard-Empfänger für eingereichte Anträge</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Koalitionsname
+                    </label>
+                    <input type="text" name="coalition_name" value="{{ coalition_name }}"
+                           placeholder="z.B. Ampel, Rot-Grün"
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    <p class="mt-1 text-sm text-gray-500">Name der aktuellen Koalition (optional)</p>
+                </div>
+            </div>
+
+            <div class="flex justify-end">
+                <button type="submit"
+                        class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 focus:ring-2 focus:ring-primary-500">
+                    Speichern
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Coalition Partners -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                    Koalitionspartner
+                    {% if coalition_name %}
+                    <span class="ml-2 px-2 py-0.5 text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 rounded-full">
+                        {{ coalition_name }}
+                    </span>
+                    {% endif %}
+                </h3>
+                <p class="text-sm text-gray-500 mt-1">Diese Fraktionen erhalten Anträge zur Koalitionsabstimmung</p>
+            </div>
+        </div>
+
+        {% if coalition_parties %}
+        <div class="space-y-2">
+            {% for party in coalition_parties %}
+            <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                <div class="flex items-center gap-3">
+                    <div class="w-3 h-3 rounded-full" style="background-color: {{ party.color }}"></div>
+                    <div>
+                        <span class="font-medium text-gray-900 dark:text-white">{{ party.name }}</span>
+                        <span class="text-sm text-gray-500 ml-2">({{ party.short_name }})</span>
+                    </div>
+                    {% if party.email %}
+                    <span class="text-sm text-gray-500">
+                        <i data-lucide="mail" class="w-4 h-4 inline"></i>
+                        {{ party.email }}
+                    </span>
+                    {% endif %}
+                </div>
+                <a href="{% url 'work:council_party_edit' org_slug=organization.slug party_id=party.id %}"
+                   class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                    Bearbeiten
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-gray-500 text-center py-4">Keine Koalitionspartner konfiguriert</p>
+        {% endif %}
+    </div>
+
+    <!-- Other Parties -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">Weitere Ratsfraktionen</h3>
+                <p class="text-sm text-gray-500 mt-1">Alle Fraktionen im Rat (auch Opposition)</p>
+            </div>
+            <a href="{% url 'work:council_party_create' org_slug=organization.slug %}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Fraktion hinzufuegen
+            </a>
+        </div>
+
+        {% if other_parties %}
+        <div class="space-y-2">
+            {% for party in other_parties %}
+            <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg {% if not party.is_active %}opacity-50{% endif %}">
+                <div class="flex items-center gap-3">
+                    <div class="w-3 h-3 rounded-full" style="background-color: {{ party.color }}"></div>
+                    <div>
+                        <span class="font-medium text-gray-900 dark:text-white">{{ party.name }}</span>
+                        <span class="text-sm text-gray-500 ml-2">({{ party.short_name }})</span>
+                        {% if not party.is_active %}
+                        <span class="ml-2 px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">Inaktiv</span>
+                        {% endif %}
+                    </div>
+                    {% if party.email %}
+                    <span class="text-sm text-gray-500">
+                        <i data-lucide="mail" class="w-4 h-4 inline"></i>
+                        {{ party.email }}
+                    </span>
+                    {% endif %}
+                </div>
+                <a href="{% url 'work:council_party_edit' org_slug=organization.slug party_id=party.id %}"
+                   class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                    Bearbeiten
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-gray-500 text-center py-4">Keine weiteren Fraktionen konfiguriert</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

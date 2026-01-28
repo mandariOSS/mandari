@@ -1,0 +1,166 @@
+---
+# =============================================================================
+# Mandari 2.0 - Rollback Playbook
+# =============================================================================
+# This playbook rolls back to a previous deployment.
+# Usage: ansible-playbook rollback.yml -e "backup_file=deploy-1234567890.tar.gz"
+# =============================================================================
+
+- name: Rollback Mandari Deployment
+  hosts: all_servers
+  become: yes
+  become_user: "{{ app_user }}"
+  gather_facts: yes
+
+  vars:
+    backup_dir: "{{ app_dir }}/backups"
+    compose_file: "{{ 'docker-compose.master.yml' if postgres_role == 'primary' else 'docker-compose.slave.yml' }}"
+
+  pre_tasks:
+    - name: Check if backup file is specified
+      fail:
+        msg: "Please specify backup_file variable. Example: -e 'backup_file=deploy-1234567890.tar.gz'"
+      when: backup_file is not defined
+
+    - name: Check if backup exists
+      stat:
+        path: "{{ backup_dir }}/{{ backup_file }}"
+      register: backup_stat
+
+    - name: Fail if backup doesn't exist
+      fail:
+        msg: "Backup file {{ backup_dir }}/{{ backup_file }} does not exist"
+      when: not backup_stat.stat.exists
+
+  tasks:
+    # =========================================================================
+    # Stop Current Deployment
+    # =========================================================================
+    - name: Stop current containers
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        files:
+          - "{{ compose_file }}"
+        state: absent
+      ignore_errors: yes
+
+    # =========================================================================
+    # Restore Backup
+    # =========================================================================
+    - name: Create temporary restore directory
+      tempfile:
+        state: directory
+        prefix: mandari_restore_
+      register: restore_dir
+
+    - name: Extract backup
+      unarchive:
+        src: "{{ backup_dir }}/{{ backup_file }}"
+        dest: "{{ restore_dir.path }}"
+        remote_src: yes
+
+    - name: Backup current .env file
+      copy:
+        src: "{{ app_dir }}/.env"
+        dest: "{{ restore_dir.path }}/.env.current"
+        remote_src: yes
+      ignore_errors: yes
+
+    - name: Restore Docker Compose files
+      copy:
+        src: "{{ restore_dir.path }}/opt/mandari/{{ item }}"
+        dest: "{{ app_dir }}/{{ item }}"
+        remote_src: yes
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
+      loop:
+        - docker-compose.master.yml
+        - docker-compose.slave.yml
+        - Caddyfile
+
+    - name: Restore .env file (keep current)
+      copy:
+        src: "{{ restore_dir.path }}/.env.current"
+        dest: "{{ app_dir }}/.env"
+        remote_src: yes
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0600'
+      when: restore_dir.path + '/.env.current' is file
+      ignore_errors: yes
+
+    # =========================================================================
+    # Restart Containers
+    # =========================================================================
+    - name: Recreate Docker Compose symlink
+      file:
+        src: "{{ app_dir }}/{{ compose_file }}"
+        dest: "{{ app_dir }}/docker-compose.yml"
+        state: link
+        force: yes
+
+    - name: Start containers with restored configuration
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        files:
+          - "{{ compose_file }}"
+        state: present
+
+    # =========================================================================
+    # Cleanup
+    # =========================================================================
+    - name: Remove temporary restore directory
+      file:
+        path: "{{ restore_dir.path }}"
+        state: absent
+
+    # =========================================================================
+    # Health Checks
+    # =========================================================================
+    - name: Wait for API health check
+      uri:
+        url: "http://localhost:8000/health"
+        method: GET
+        status_code: 200
+      register: api_health
+      retries: 30
+      delay: 5
+      until: api_health.status == 200
+
+  post_tasks:
+    - name: Display rollback summary
+      debug:
+        msg: |
+          ==========================================
+          Rollback Complete!
+          ==========================================
+          Server: {{ inventory_hostname }}
+          Restored from: {{ backup_file }}
+          ==========================================
+
+# =============================================================================
+# List Available Backups
+# =============================================================================
+- name: List Available Backups
+  hosts: all_servers
+  become: yes
+  gather_facts: no
+  tags:
+    - list
+    - never
+
+  tasks:
+    - name: Find available backups
+      find:
+        paths: "{{ app_dir }}/backups"
+        patterns: "deploy-*.tar.gz"
+      register: backups
+
+    - name: Display available backups
+      debug:
+        msg: |
+          Available backups:
+          {% for backup in backups.files | sort(attribute='mtime', reverse=true) %}
+          - {{ backup.path | basename }} ({{ backup.mtime | int | strftime('%Y-%m-%d %H:%M:%S') }})
+          {% endfor %}

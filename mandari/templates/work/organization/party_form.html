@@ -1,0 +1,159 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}{% if is_edit %}{{ party.name }} bearbeiten{% else %}Fraktion hinzufuegen{% endif %}{% endblock %}
+
+{% block header_title %}{% if is_edit %}Fraktion bearbeiten{% else %}Neue Fraktion{% endif %}{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">
+    {% if is_edit %}{{ party.name }} bearbeiten{% else %}Neue Ratsfraktion hinzufuegen{% endif %}
+</p>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-2xl">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <form method="post" action="" class="space-y-6">
+            {% csrf_token %}
+
+            <!-- Basic Info -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Name <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" name="name" value="{{ party.name|default:'' }}" required
+                           placeholder="z.B. SPD-Fraktion"
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Kurzname <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" name="short_name" value="{{ party.short_name|default:'' }}" required
+                           placeholder="z.B. SPD" maxlength="20"
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                </div>
+            </div>
+
+            <!-- Contact Info -->
+            <div class="space-y-4">
+                <h4 class="font-medium text-gray-900 dark:text-white">Kontaktdaten</h4>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        E-Mail
+                    </label>
+                    <input type="email" name="email" value="{{ party.email|default:'' }}"
+                           placeholder="fraktion@example.de"
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    <p class="mt-1 text-sm text-gray-500">E-Mail fuer Antragsversand</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Ansprechpartner
+                        </label>
+                        <input type="text" name="contact_name" value="{{ party.contact_name|default:'' }}"
+                               placeholder="Max Mustermann"
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Telefon
+                        </label>
+                        <input type="text" name="contact_phone" value="{{ party.contact_phone|default:'' }}"
+                               placeholder="+49 123 456789"
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Appearance & Coalition -->
+            <div class="space-y-4">
+                <h4 class="font-medium text-gray-900 dark:text-white">Erscheinung & Koalition</h4>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Farbe
+                        </label>
+                        <div class="flex items-center gap-2">
+                            <input type="color" name="color" value="{{ party.color|default:'#6b7280' }}"
+                                   class="w-12 h-10 p-1 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
+                            <input type="text" value="{{ party.color|default:'#6b7280' }}" readonly
+                                   class="flex-1 px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-500">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Reihenfolge in Koalition
+                        </label>
+                        <input type="number" name="coalition_order" value="{{ party.coalition_order|default:0 }}"
+                               min="0" max="100"
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+                </div>
+
+                <div class="flex items-start gap-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                    <input type="checkbox" name="is_coalition_member" id="is_coalition_member"
+                           {% if party.is_coalition_member %}checked{% endif %}
+                           class="mt-1 w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
+                    <div>
+                        <label for="is_coalition_member" class="font-medium text-gray-900 dark:text-white cursor-pointer">
+                            Koalitionspartner
+                        </label>
+                        <p class="text-sm text-gray-500">Diese Fraktion erhaelt Antraege zur Koalitionsabstimmung</p>
+                    </div>
+                </div>
+
+                {% if is_edit %}
+                <div class="flex items-start gap-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                    <input type="checkbox" name="is_active" id="is_active"
+                           {% if party.is_active %}checked{% endif %}
+                           class="mt-1 w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
+                    <div>
+                        <label for="is_active" class="font-medium text-gray-900 dark:text-white cursor-pointer">
+                            Aktiv
+                        </label>
+                        <p class="text-sm text-gray-500">Inaktive Fraktionen werden nicht zur Auswahl angezeigt</p>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
+                <a href="{% url 'work:council_parties' org_slug=organization.slug %}"
+                   class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                    Abbrechen
+                </a>
+
+                <div class="flex items-center gap-3">
+                    {% if is_edit %}
+                    <button type="submit" name="action" value="delete"
+                            onclick="return confirm('Fraktion wirklich loeschen?')"
+                            class="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
+                        Loeschen
+                    </button>
+                    {% endif %}
+                    <button type="submit"
+                            class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 focus:ring-2 focus:ring-primary-500">
+                        {% if is_edit %}Speichern{% else %}Hinzufuegen{% endif %}
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Update color text input when color picker changes
+    document.querySelector('input[type="color"]').addEventListener('input', function(e) {
+        e.target.nextElementSibling.value = e.target.value;
+    });
+</script>
+{% endblock %}

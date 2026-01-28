@@ -1,0 +1,147 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}{% if is_new %}Neuer Dokumenttyp{% else %}{{ motion_type.name }} bearbeiten{% endif %}{% endblock %}
+
+{% block header_title %}{% if is_new %}Neuer Dokumenttyp{% else %}{{ motion_type.name }} bearbeiten{% endif %}{% endblock %}
+
+{% block work_content %}
+<div class="max-w-2xl">
+    <form method="post" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        {% csrf_token %}
+
+        <div class="space-y-6">
+            <!-- Name -->
+            <div>
+                <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
+                <input type="text" id="name" name="name" required
+                       value="{% if motion_type %}{{ motion_type.name }}{% endif %}"
+                       class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                       placeholder="z.B. Antrag, Anfrage, Stellungnahme">
+            </div>
+
+            <!-- Slug -->
+            <div>
+                <label for="slug" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kurzname *</label>
+                <input type="text" id="slug" name="slug" required
+                       value="{% if motion_type %}{{ motion_type.slug }}{% endif %}"
+                       class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                       placeholder="z.B. antrag, anfrage">
+                <p class="text-xs text-gray-500 mt-1">Nur Kleinbuchstaben und Bindestriche</p>
+            </div>
+
+            <!-- Description -->
+            <div>
+                <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                <textarea id="description" name="description" rows="2"
+                          class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          placeholder="Kurze Beschreibung des Dokumenttyps">{% if motion_type %}{{ motion_type.description }}{% endif %}</textarea>
+            </div>
+
+            <!-- Icon & Color -->
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label for="icon" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Icon</label>
+                    <select id="icon" name="icon"
+                            class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                        {% with current_icon=motion_type.icon|default:"file-text" %}
+                        <option value="file-text" {% if current_icon == "file-text" %}selected{% endif %}>📄 Dokument</option>
+                        <option value="help-circle" {% if current_icon == "help-circle" %}selected{% endif %}>❓ Anfrage</option>
+                        <option value="edit" {% if current_icon == "edit" %}selected{% endif %}>✏️ Änderung</option>
+                        <option value="message-square" {% if current_icon == "message-square" %}selected{% endif %}>💬 Stellungnahme</option>
+                        <option value="megaphone" {% if current_icon == "megaphone" %}selected{% endif %}>📢 Presse</option>
+                        <option value="clipboard-list" {% if current_icon == "clipboard-list" %}selected{% endif %}>📋 Protokoll</option>
+                        <option value="scale" {% if current_icon == "scale" %}selected{% endif %}>⚖️ Beschluss</option>
+                        <option value="book-open" {% if current_icon == "book-open" %}selected{% endif %}>📖 Bericht</option>
+                        {% endwith %}
+                    </select>
+                </div>
+                <div>
+                    <label for="color" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Farbe</label>
+                    <select id="color" name="color"
+                            class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                        {% with current_color=motion_type.color|default:"blue" %}
+                        <option value="blue" {% if current_color == "blue" %}selected{% endif %}>🔵 Blau</option>
+                        <option value="green" {% if current_color == "green" %}selected{% endif %}>🟢 Grün</option>
+                        <option value="amber" {% if current_color == "amber" %}selected{% endif %}>🟡 Gelb</option>
+                        <option value="red" {% if current_color == "red" %}selected{% endif %}>🔴 Rot</option>
+                        <option value="purple" {% if current_color == "purple" %}selected{% endif %}>🟣 Lila</option>
+                        <option value="pink" {% if current_color == "pink" %}selected{% endif %}>🩷 Pink</option>
+                        <option value="gray" {% if current_color == "gray" %}selected{% endif %}>⚫ Grau</option>
+                        <option value="teal" {% if current_color == "teal" %}selected{% endif %}>🩵 Türkis</option>
+                        {% endwith %}
+                    </select>
+                </div>
+            </div>
+
+            <!-- Workflow Settings -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Workflow-Einstellungen</h3>
+
+                <div class="space-y-3">
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" name="requires_approval"
+                               {% if motion_type.requires_approval or is_new %}checked{% endif %}
+                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                            Freigabe erforderlich
+                            <span class="block text-xs text-gray-500">Dokument muss vor Einreichung freigegeben werden</span>
+                        </span>
+                    </label>
+
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" name="is_submittable"
+                               {% if motion_type.is_submittable or is_new %}checked{% endif %}
+                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                            Einreichbar
+                            <span class="block text-xs text-gray-500">Kann offiziell an Gremien eingereicht werden</span>
+                        </span>
+                    </label>
+
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" name="is_default"
+                               {% if motion_type.is_default %}checked{% endif %}
+                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                            Standard-Typ
+                            <span class="block text-xs text-gray-500">Wird als Vorauswahl bei neuen Dokumenten verwendet</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center justify-between mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <a href="{% url 'work:motion_type_list' org_slug=organization.slug %}"
+               class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                Abbrechen
+            </a>
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                <i data-lucide="check" class="w-4 h-4"></i>
+                {% if is_new %}Typ erstellen{% else %}Speichern{% endif %}
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+// Auto-generate slug from name
+document.getElementById('name').addEventListener('input', function() {
+    const slugInput = document.getElementById('slug');
+    if (!slugInput.dataset.modified) {
+        slugInput.value = this.value
+            .toLowerCase()
+            .replace(/[äöüß]/g, function(match) {
+                return {ä:'ae',ö:'oe',ü:'ue',ß:'ss'}[match];
+            })
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '');
+    }
+});
+document.getElementById('slug').addEventListener('input', function() {
+    this.dataset.modified = 'true';
+});
+</script>
+{% endblock %}

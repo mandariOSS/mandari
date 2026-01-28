@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Mitmachen - Projekt unterstützen{% endblock %}
+
+{% block meta_description %}Unterstützen Sie Mandari: Code beitragen, Bugs melden, übersetzen oder spenden. Gemeinsam für mehr Transparenz in der Kommunalpolitik.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="py-16 lg:py-24 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-6">
+            <i data-lucide="heart" class="w-4 h-4"></i>
+            Open Source Community
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Mitmachen
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+            Mandari ist ein Community-Projekt. Jeder Beitrag zählt -
+            ob Code, Feedback, Übersetzungen oder finanzielle Unterstützung.
+        </p>
+    </div>
+</section>
+
+<!-- Contribution Methods -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+
+            <!-- Code Beitragen -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
+                <div class="w-14 h-14 bg-purple-100 dark:bg-purple-900/50 rounded-xl flex items-center justify-center mb-6">
+                    <i data-lucide="code-2" class="w-7 h-7 text-purple-600 dark:text-purple-400"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Code beitragen</h3>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    Fork das Repository, implementiere neue Features oder behebe Bugs.
+                    Wir freuen uns über jeden Pull Request!
+                </p>
+                <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        Django / Python Backend
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        TailwindCSS / HTMX Frontend
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        PostgreSQL / Meilisearch
+                    </li>
+                </ul>
+                <a href="https://github.com/mandari/mandari" target="_blank" rel="noopener noreferrer"
+                   class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium hover:underline">
+                    GitHub Repository
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                </a>
+            </div>
+
+            <!-- Bugs melden -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
+                <div class="w-14 h-14 bg-red-100 dark:bg-red-900/50 rounded-xl flex items-center justify-center mb-6">
+                    <i data-lucide="bug" class="w-7 h-7 text-red-600 dark:text-red-400"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Bugs melden</h3>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    Haben Sie einen Fehler gefunden? Erstellen Sie ein Issue auf GitHub.
+                    Detaillierte Beschreibungen helfen uns bei der schnellen Behebung.
+                </p>
+                <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="info" class="w-4 h-4 text-blue-500"></i>
+                        Reproduktionsschritte angeben
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="info" class="w-4 h-4 text-blue-500"></i>
+                        Browser/System nennen
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="info" class="w-4 h-4 text-blue-500"></i>
+                        Screenshots beifügen
+                    </li>
+                </ul>
+                <a href="https://github.com/mandari/mandari/issues/new" target="_blank" rel="noopener noreferrer"
+                   class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium hover:underline">
+                    Issue erstellen
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                </a>
+            </div>
+
+            <!-- Übersetzen -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
+                <div class="w-14 h-14 bg-blue-100 dark:bg-blue-900/50 rounded-xl flex items-center justify-center mb-6">
+                    <i data-lucide="languages" class="w-7 h-7 text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Übersetzen</h3>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    Helfen Sie, Mandari in weitere Sprachen zu übersetzen.
+                    Aktuell ist die Plattform auf Deutsch verfügbar.
+                </p>
+                <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="check-circle" class="w-4 h-4 text-green-500"></i>
+                        Deutsch (vollständig)
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="circle-dashed" class="w-4 h-4 text-gray-400"></i>
+                        Englisch (in Planung)
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="circle-dashed" class="w-4 h-4 text-gray-400"></i>
+                        Weitere Sprachen willkommen
+                    </li>
+                </ul>
+                <a href="{% url 'insight_core:kontakt' %}"
+                   class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium hover:underline">
+                    Kontakt aufnehmen
+                    <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </a>
+            </div>
+
+            <!-- Dokumentation -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
+                <div class="w-14 h-14 bg-green-100 dark:bg-green-900/50 rounded-xl flex items-center justify-center mb-6">
+                    <i data-lucide="book-open" class="w-7 h-7 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Dokumentation</h3>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    Verbessern Sie die Dokumentation, schreiben Sie Tutorials
+                    oder erstellen Sie Anleitungen für Self-Hosting.
+                </p>
+                <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="file-text" class="w-4 h-4 text-gray-500"></i>
+                        README verbessern
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="file-text" class="w-4 h-4 text-gray-500"></i>
+                        API-Dokumentation
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="file-text" class="w-4 h-4 text-gray-500"></i>
+                        Deployment-Guides
+                    </li>
+                </ul>
+                <a href="https://github.com/mandari/mandari/wiki" target="_blank" rel="noopener noreferrer"
+                   class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium hover:underline">
+                    Wiki bearbeiten
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                </a>
+            </div>
+
+            <!-- Testen -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
+                <div class="w-14 h-14 bg-amber-100 dark:bg-amber-900/50 rounded-xl flex items-center justify-center mb-6">
+                    <i data-lucide="flask-conical" class="w-7 h-7 text-amber-600 dark:text-amber-400"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Beta testen</h3>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    Testen Sie neue Features und geben Sie Feedback.
+                    Frühe Tester helfen uns, die Software zu verbessern.
+                </p>
+                <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
+                        Früher Zugang zu Features
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
+                        Direkter Draht zum Team
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
+                        Einfluss auf Entwicklung
+                    </li>
+                </ul>
+                <a href="{% url 'insight_core:kontakt' %}"
+                   class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium hover:underline">
+                    Als Beta-Tester anmelden
+                    <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </a>
+            </div>
+
+            <!-- Spenden -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow">
+                <div class="w-14 h-14 bg-pink-100 dark:bg-pink-900/50 rounded-xl flex items-center justify-center mb-6">
+                    <i data-lucide="heart-handshake" class="w-7 h-7 text-pink-600 dark:text-pink-400"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Finanziell unterstützen</h3>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    Spenden helfen uns, Hosting-Kosten zu decken und
+                    mehr Zeit in die Entwicklung zu investieren.
+                </p>
+                <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="server" class="w-4 h-4 text-gray-500"></i>
+                        Hosting & Infrastruktur
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="clock" class="w-4 h-4 text-gray-500"></i>
+                        Entwicklungszeit
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="shield" class="w-4 h-4 text-gray-500"></i>
+                        Security Audits
+                    </li>
+                </ul>
+                <a href="https://github.com/sponsors/mandari" target="_blank" rel="noopener noreferrer"
+                   class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium hover:underline">
+                    GitHub Sponsors
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Community Stats -->
+<section class="py-16 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+                Die Mandari Community
+            </h2>
+            <p class="text-gray-600 dark:text-gray-300">
+                Gemeinsam für mehr Transparenz in der Kommunalpolitik
+            </p>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 text-center border border-gray-200 dark:border-gray-700">
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400 mb-1">100%</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Open Source</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 text-center border border-gray-200 dark:border-gray-700">
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400 mb-1">AGPL-3.0</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Lizenz</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 text-center border border-gray-200 dark:border-gray-700">
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400 mb-1">OParl</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Standard</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 text-center border border-gray-200 dark:border-gray-700">
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400 mb-1">Python</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Django</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="bg-gradient-to-br from-primary-500 to-primary-700 rounded-3xl p-8 lg:p-12 text-center">
+            <h2 class="text-2xl lg:text-3xl font-bold text-white mb-4">
+                Bereit mitzumachen?
+            </h2>
+            <p class="text-primary-100 mb-8 max-w-2xl mx-auto">
+                Egal ob Sie Entwickler, Designer, Übersetzer oder einfach nur begeisterter Nutzer sind -
+                wir freuen uns auf Ihre Unterstützung!
+            </p>
+            <div class="flex flex-wrap justify-center gap-4">
+                <a href="https://github.com/mandari" target="_blank" rel="noopener noreferrer"
+                   class="inline-flex items-center gap-2 px-6 py-3 bg-white text-primary-700 font-medium rounded-xl hover:bg-gray-100 transition-colors">
+                    <i data-lucide="github" class="w-5 h-5"></i>
+                    Auf GitHub starten
+                </a>
+                <a href="{% url 'insight_core:kontakt' %}"
+                   class="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white font-medium rounded-xl hover:bg-primary-800 transition-colors border border-white/20">
+                    <i data-lucide="mail" class="w-5 h-5"></i>
+                    Kontakt aufnehmen
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

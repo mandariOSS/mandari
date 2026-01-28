@@ -1,0 +1,39 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block form_after %}
+{{ block.super }}
+
+{% if show_reply_form %}
+<div class="ticket-reply-form">
+    <h2>
+        <span style="font-size: 24px;">💬</span> Antwort verfassen
+    </h2>
+    <form method="post" action="{{ reply_url }}">
+        {% csrf_token %}
+        <div style="margin-bottom: 16px;">
+            <label for="reply_content" style="display: block; margin-bottom: 8px; font-weight: 600;">
+                Nachricht an den Kunden:
+            </label>
+            <textarea
+                id="reply_content"
+                name="reply_content"
+                rows="8"
+                class="ticket-reply-textarea"
+                placeholder="Geben Sie hier Ihre Antwort ein..."></textarea>
+        </div>
+        <div class="ticket-reply-actions">
+            <label for="is_internal" class="ticket-internal-checkbox">
+                <input type="checkbox" name="is_internal" id="is_internal">
+                <span>
+                    <strong>Interne Notiz</strong> (nicht sichtbar für den Kunden)
+                </span>
+            </label>
+            <button type="submit" class="ticket-reply-submit">
+                ✉️ Antwort senden
+            </button>
+        </div>
+    </form>
+</div>
+{% endif %}
+{% endblock form_after %}

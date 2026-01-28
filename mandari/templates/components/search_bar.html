@@ -1,0 +1,52 @@
+<!-- Search Bar Component -->
+<div class="relative w-full" x-data="{ isOpen: false, query: '' }" role="search">
+    <div class="relative">
+        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" aria-hidden="true"></i>
+        <label for="global-search" class="sr-only">Suche in Ratsinformationen</label>
+        <input type="search"
+               id="global-search"
+               name="q"
+               x-model="query"
+               @focus="isOpen = true"
+               @click.outside="isOpen = false"
+               @keydown.escape="isOpen = false"
+               @keydown.enter="if(query.length >= 2) window.location.href = '{% url 'insight_core:insight:search' %}?q=' + encodeURIComponent(query)"
+               hx-get="{% url 'insight_core:insight:search_results' %}"
+               hx-trigger="keyup changed delay:300ms"
+               hx-target="#search-dropdown"
+               hx-indicator="#search-spinner"
+               placeholder="Suchen..."
+               autocomplete="off"
+               aria-describedby="search-hint"
+               :aria-expanded="isOpen && query.length >= 2 ? 'true' : 'false'"
+               aria-controls="search-dropdown"
+               aria-autocomplete="list"
+               class="w-full pl-10 pr-10 py-2.5 bg-gray-100 dark:bg-gray-800 border border-transparent focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 outline-none transition-colors">
+        <span id="search-hint" class="sr-only">Mindestens 2 Zeichen eingeben. Drücken Sie Enter für vollständige Suche.</span>
+
+        <!-- Loading Spinner -->
+        <div id="search-spinner" class="htmx-indicator absolute right-3 top-1/2 -translate-y-1/2" aria-label="Suche läuft" role="status">
+            <svg class="animate-spin h-4 w-4 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="sr-only">Suche läuft...</span>
+        </div>
+    </div>
+
+    <!-- Dropdown Results -->
+    <div id="search-dropdown"
+         x-show="isOpen && query.length >= 2"
+         x-transition:enter="transition ease-out duration-100"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-75"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         class="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 max-h-[60vh] overflow-y-auto"
+         role="listbox"
+         aria-label="Suchergebnisse"
+         x-cloak>
+        <!-- Results will be loaded here via HTMX -->
+    </div>
+</div>

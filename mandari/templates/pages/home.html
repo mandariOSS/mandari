@@ -1,0 +1,452 @@
+{% extends "base.html" %}
+{% load static humanize %}
+
+{% block title %}Startseite{% endblock %}
+
+{% block meta_description %}Mandari macht Kommunalpolitik transparent. Durchsuchen Sie Ratsinformationen, Sitzungen und Vorlagen mit KI-Unterstützung.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="relative py-20 px-4 sm:px-6 lg:px-8 overflow-hidden">
+    <!-- Background Glow -->
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-gradient-radial from-primary-500/20 to-transparent opacity-30 dark:opacity-20"></div>
+    </div>
+
+    <div class="relative max-w-4xl mx-auto text-center">
+        <!-- Badge -->
+        <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-6">
+            <i data-lucide="zap" class="w-4 h-4"></i>
+            KI-gestützte Transparenz
+        </div>
+
+        <!-- Title -->
+        <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 dark:text-white mb-6 leading-tight">
+            Kommunalpolitik
+            <span class="bg-gradient-to-r from-primary-500 to-primary-700 bg-clip-text text-transparent">
+                transparent
+            </span>
+            gemacht
+        </h1>
+
+        <!-- Subtitle -->
+        <p class="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto mb-8">
+            Durchsuchen Sie Ratsinformationen, Sitzungen und Vorlagen aus Ihrer Kommune.
+            Mit KI-Zusammenfassungen und interaktiven Karten.
+        </p>
+
+        <!-- Search Form -->
+        <form action="{% url 'insight_core:insight:search' %}" method="get" class="max-w-2xl mx-auto mb-6">
+            <div class="flex gap-3 sm:flex-row flex-col">
+                <div class="flex-1 relative">
+                    <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
+                    <input type="search"
+                           name="q"
+                           placeholder="Suchen Sie nach Themen, Vorlagen oder Personen..."
+                           class="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none transition-all">
+                </div>
+                <button type="submit"
+                        class="px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white font-medium rounded-xl transition-all shadow-lg shadow-primary-500/25 hover:shadow-primary-500/40">
+                    Suchen
+                </button>
+            </div>
+        </form>
+
+        <!-- Search Examples -->
+        <div class="flex flex-wrap justify-center gap-2 text-sm">
+            <span class="text-gray-500 dark:text-gray-400">Beispiele:</span>
+            <a href="{% url 'insight_core:insight:search' %}?q=Radwege"
+               class="px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                Radwege
+            </a>
+            <a href="{% url 'insight_core:insight:search' %}?q=Klimaschutz"
+               class="px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                Klimaschutz
+            </a>
+            <a href="{% url 'insight_core:insight:search' %}?q=Schulen"
+               class="px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                Schulen
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Stats Section -->
+{% if stats %}
+<section class="py-8 px-4 sm:px-6 lg:px-8 border-y border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto">
+        {% if all_bodies_mode %}
+        <!-- Alle Kommunen Übersicht -->
+        <div class="text-center mb-6">
+            <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium">
+                <i data-lucide="globe" class="w-4 h-4"></i>
+                Alle Kommunen
+            </span>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-8 text-center">
+            <div>
+                <p class="text-3xl font-bold bg-gradient-to-r from-primary-500 to-primary-700 bg-clip-text text-transparent">
+                    {{ stats.bodies|intcomma }}
+                </p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Kommunen</p>
+            </div>
+            <!-- Interaktive Stats mit Tooltip -->
+            <div x-data="{ showTooltip: false }"
+                 @mouseenter="showTooltip = true"
+                 @mouseleave="showTooltip = false"
+                 class="relative cursor-pointer">
+                <p class="text-3xl font-bold text-gray-400 dark:text-gray-500">
+                    {{ stats.organizations|intcomma }}
+                </p>
+                <p class="text-sm text-gray-400 dark:text-gray-500">Gremien</p>
+                <!-- Tooltip -->
+                <div x-show="showTooltip"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     class="absolute z-10 left-1/2 -translate-x-1/2 top-full mt-2 px-3 py-2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg whitespace-nowrap">
+                    <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
+                    Bitte Kommune auswählen
+                    <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45"></div>
+                </div>
+            </div>
+            <div x-data="{ showTooltip: false }"
+                 @mouseenter="showTooltip = true"
+                 @mouseleave="showTooltip = false"
+                 class="relative cursor-pointer">
+                <p class="text-3xl font-bold text-gray-400 dark:text-gray-500">
+                    {{ stats.persons|intcomma }}
+                </p>
+                <p class="text-sm text-gray-400 dark:text-gray-500">Personen</p>
+                <div x-show="showTooltip"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     class="absolute z-10 left-1/2 -translate-x-1/2 top-full mt-2 px-3 py-2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg whitespace-nowrap">
+                    <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
+                    Bitte Kommune auswählen
+                    <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45"></div>
+                </div>
+            </div>
+            <div x-data="{ showTooltip: false }"
+                 @mouseenter="showTooltip = true"
+                 @mouseleave="showTooltip = false"
+                 class="relative cursor-pointer">
+                <p class="text-3xl font-bold text-gray-400 dark:text-gray-500">
+                    {{ stats.papers|intcomma }}
+                </p>
+                <p class="text-sm text-gray-400 dark:text-gray-500">Vorgänge</p>
+                <div x-show="showTooltip"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     class="absolute z-10 left-1/2 -translate-x-1/2 top-full mt-2 px-3 py-2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg whitespace-nowrap">
+                    <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
+                    Bitte Kommune auswählen
+                    <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45"></div>
+                </div>
+            </div>
+            <div x-data="{ showTooltip: false }"
+                 @mouseenter="showTooltip = true"
+                 @mouseleave="showTooltip = false"
+                 class="relative cursor-pointer">
+                <p class="text-3xl font-bold text-gray-400 dark:text-gray-500">
+                    {{ stats.meetings|intcomma }}
+                </p>
+                <p class="text-sm text-gray-400 dark:text-gray-500">Sitzungen</p>
+                <div x-show="showTooltip"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     class="absolute z-10 left-1/2 -translate-x-1/2 top-full mt-2 px-3 py-2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg shadow-lg whitespace-nowrap">
+                    <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
+                    Bitte Kommune auswählen
+                    <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45"></div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <!-- Einzelne Kommune -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+            <div>
+                <p class="text-3xl font-bold bg-gradient-to-r from-primary-500 to-primary-700 bg-clip-text text-transparent">
+                    {{ stats.organizations|intcomma }}
+                </p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Gremien</p>
+            </div>
+            <div>
+                <p class="text-3xl font-bold bg-gradient-to-r from-primary-500 to-primary-700 bg-clip-text text-transparent">
+                    {{ stats.persons|intcomma }}
+                </p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Personen</p>
+            </div>
+            <div>
+                <p class="text-3xl font-bold bg-gradient-to-r from-primary-500 to-primary-700 bg-clip-text text-transparent">
+                    {{ stats.papers|intcomma }}
+                </p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Vorgänge</p>
+            </div>
+            <div>
+                <p class="text-3xl font-bold bg-gradient-to-r from-primary-500 to-primary-700 bg-clip-text text-transparent">
+                    {{ stats.meetings|intcomma }}
+                </p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Sitzungen</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
+<!-- Features Section -->
+<section class="py-16 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-7xl mx-auto">
+        <div class="text-center mb-12">
+            <span class="inline-block px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-sm font-medium mb-4">
+                Funktionen
+            </span>
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-3">
+                Alles für Ihre Kommune
+            </h2>
+            <p class="text-gray-600 dark:text-gray-400">
+                Modernste Werkzeuge für kommunalpolitische Transparenz
+            </p>
+        </div>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <!-- Feature 1: Search -->
+            <a href="{% url 'insight_core:insight:search' %}"
+               class="group p-6 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all hover:-translate-y-1 hover:shadow-xl">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-4">
+                    <i data-lucide="search" class="w-6 h-6"></i>
+                </div>
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Intelligente Suche</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    Durchsuchen Sie alle Vorlagen, Sitzungen und Beschlüsse mit KI-unterstützter Suche.
+                </p>
+                <span class="inline-flex items-center gap-1 text-sm font-medium text-primary-600 dark:text-primary-400 group-hover:gap-2 transition-all">
+                    Erkunden <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </span>
+            </a>
+
+            <!-- Feature 2: Chat -->
+            <a href="{% url 'insight_core:insight:chat' %}"
+               class="group p-6 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all hover:-translate-y-1 hover:shadow-xl">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-4">
+                    <i data-lucide="message-circle" class="w-6 h-6"></i>
+                </div>
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-2">KI-Assistent</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    Stellen Sie Fragen zu kommunalpolitischen Themen und erhalten Sie verständliche Antworten.
+                </p>
+                <span class="inline-flex items-center gap-1 text-sm font-medium text-primary-600 dark:text-primary-400 group-hover:gap-2 transition-all">
+                    Erkunden <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </span>
+            </a>
+
+            <!-- Feature 3: Map -->
+            <a href="{% url 'insight_core:insight:map' %}"
+               class="group p-6 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all hover:-translate-y-1 hover:shadow-xl">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-4">
+                    <i data-lucide="map" class="w-6 h-6"></i>
+                </div>
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Interaktive Karte</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    Sehen Sie, welche Vorlagen und Beschlüsse Ihr Stadtviertel betreffen.
+                </p>
+                <span class="inline-flex items-center gap-1 text-sm font-medium text-primary-600 dark:text-primary-400 group-hover:gap-2 transition-all">
+                    Erkunden <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </span>
+            </a>
+
+            <!-- Feature 4: Organizations -->
+            <a href="{% url 'insight_core:insight:organization_list' %}"
+               class="group p-6 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all hover:-translate-y-1 hover:shadow-xl">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-4">
+                    <i data-lucide="users" class="w-6 h-6"></i>
+                </div>
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Personen & Gremien</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    Erkunden Sie Ratsmitglieder, Ausschüsse und deren Abstimmungsverhalten.
+                </p>
+                <span class="inline-flex items-center gap-1 text-sm font-medium text-primary-600 dark:text-primary-400 group-hover:gap-2 transition-all">
+                    Erkunden <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </span>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Upcoming Meetings & Recent Papers -->
+<section class="py-16 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto">
+        {% if all_bodies_mode %}
+        <!-- Alle Kommunen Modus: Hinweis zur Kommune-Auswahl -->
+        <div class="text-center py-12">
+            <div class="w-16 h-16 mx-auto rounded-full bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center mb-6">
+                <i data-lucide="building-2" class="w-8 h-8 text-primary-600 dark:text-primary-400"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+                Kommune auswählen
+            </h2>
+            <p class="text-gray-600 dark:text-gray-400 max-w-md mx-auto mb-6">
+                Um Sitzungen, Vorgänge und weitere Details zu sehen, wählen Sie bitte eine Kommune aus.
+            </p>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 max-w-4xl mx-auto">
+                {% for body in available_bodies %}
+                <a href="{% url 'insight_core:insight:set_body' body.id %}"
+                   class="group flex flex-col items-center p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-lg hover:-translate-y-1 transition-all"
+                   x-data
+                   @click="$dispatch('body-selected', { id: '{{ body.id }}' })">
+                    <!-- Logo oder Initialen -->
+                    <div class="w-16 h-16 mb-3 rounded-xl overflow-hidden flex items-center justify-center {% if not body.logo %}bg-gradient-to-br from-primary-500 to-primary-600{% endif %} shadow-md group-hover:shadow-lg transition-shadow bg-white dark:bg-gray-700">
+                        {% if body.logo %}
+                        <img src="{{ body.logo.url }}"
+                             alt="{{ body.get_display_name }}"
+                             class="max-w-[90%] max-h-[90%] object-contain">
+                        {% else %}
+                        <span class="text-xl font-bold text-white">
+                            {{ body.get_initials }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    <!-- Name -->
+                    <span class="text-sm font-medium text-gray-900 dark:text-white text-center group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                        {{ body.get_display_name }}
+                    </span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="grid lg:grid-cols-2 gap-8">
+            <!-- Upcoming Meetings -->
+            {% if upcoming_meetings %}
+            <div>
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-bold text-gray-900 dark:text-white">Nächste Sitzungen</h2>
+                    <a href="{% url 'insight_core:insight:meeting_list' %}"
+                       class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                        Alle anzeigen
+                    </a>
+                </div>
+                <div class="space-y-3">
+                    {% for meeting in upcoming_meetings %}
+                    <a href="{% url 'insight_core:insight:meeting_detail' meeting.id %}"
+                       class="block p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-colors">
+                        <div class="flex items-start gap-4">
+                            <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-primary-100 dark:bg-primary-900/50 flex flex-col items-center justify-center">
+                                <span class="text-xs font-medium text-primary-600 dark:text-primary-400">
+                                    {{ meeting.start|date:"M" }}
+                                </span>
+                                <span class="text-lg font-bold text-primary-700 dark:text-primary-300">
+                                    {{ meeting.start|date:"d" }}
+                                </span>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-gray-900 dark:text-white truncate">
+                                    {{ meeting.name|default:"Sitzung" }}
+                                </p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">
+                                    {{ meeting.start|date:"H:i" }} Uhr
+                                    {% if meeting.location_name %} &middot; {{ meeting.location_name }}{% endif %}
+                                </p>
+                            </div>
+                            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400"></i>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Recent Papers -->
+            {% if recent_papers %}
+            <div>
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-bold text-gray-900 dark:text-white">Neueste Vorgänge</h2>
+                    <a href="{% url 'insight_core:insight:paper_list' %}"
+                       class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                        Alle anzeigen
+                    </a>
+                </div>
+                <div class="space-y-3">
+                    {% for paper in recent_papers %}
+                    <a href="{% url 'insight_core:insight:paper_detail' paper.id %}"
+                       class="block p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-colors">
+                        <div class="flex items-start gap-4">
+                            <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                                <i data-lucide="file-text" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-gray-900 dark:text-white truncate">
+                                    {{ paper.name|default:"Vorgang" }}
+                                </p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">
+                                    {% if paper.reference %}{{ paper.reference }} &middot; {% endif %}
+                                    {{ paper.date|date:"d.m.Y"|default:"" }}
+                                </p>
+                            </div>
+                            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400"></i>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- About Section -->
+<section class="py-16 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-4xl mx-auto text-center">
+        <span class="inline-block px-3 py-1 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-4">
+            Über Mandari
+        </span>
+        <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+            Demokratie braucht Transparenz
+        </h2>
+        <p class="text-lg text-gray-600 dark:text-gray-400 mb-8">
+            Mandari ist eine Open-Source-Plattform für kommunalpolitische Transparenz.
+            Wir machen Ratsinformationssysteme zugänglich, verständlich und durchsuchbar -
+            für alle Bürger:innen.
+        </p>
+
+        <div class="grid sm:grid-cols-3 gap-6 mb-8">
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-xl">
+                <div class="w-10 h-10 mx-auto rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-3">
+                    <i data-lucide="cpu" class="w-5 h-5"></i>
+                </div>
+                <h3 class="font-medium text-gray-900 dark:text-white mb-1">KI-Zusammenfassungen</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Komplexe Vorlagen verständlich erklärt</p>
+            </div>
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-xl">
+                <div class="w-10 h-10 mx-auto rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-3">
+                    <i data-lucide="map" class="w-5 h-5"></i>
+                </div>
+                <h3 class="font-medium text-gray-900 dark:text-white mb-1">Interaktive Karten</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Sehen Sie, was in Ihrer Nachbarschaft passiert</p>
+            </div>
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-xl">
+                <div class="w-10 h-10 mx-auto rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white mb-3">
+                    <i data-lucide="github" class="w-5 h-5"></i>
+                </div>
+                <h3 class="font-medium text-gray-900 dark:text-white mb-1">Open Source</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Transparent, nachvollziehbar, gemeinschaftlich</p>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap justify-center gap-4">
+            <a href="https://github.com/mandari"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium rounded-xl hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors">
+                <i data-lucide="github" class="w-5 h-5"></i>
+                Auf GitHub ansehen
+            </a>
+        </div>
+    </div>
+</section>
+{% endblock %}

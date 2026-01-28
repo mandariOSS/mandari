@@ -1,0 +1,167 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Fraktionssitzungs-Einstellungen{% endblock %}
+
+{% block header_title %}Fraktionssitzungen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Einstellungen für Fraktionssitzungen</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:faction' org_slug=organization.slug %}"
+   class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+    <i data-lucide="arrow-left" class="w-4 h-4 inline mr-1"></i>
+    Zurück
+</a>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-3xl">
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+
+        <!-- Auto-create approval item -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-start gap-4">
+                <div class="flex items-center h-6">
+                    <input type="checkbox" id="auto_create_approval_item" name="auto_create_approval_item"
+                           {% if faction_settings.auto_create_approval_item %}checked{% endif %}
+                           class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                </div>
+                <div class="flex-1">
+                    <label for="auto_create_approval_item" class="block text-base font-medium text-gray-900 dark:text-white">
+                        Automatischen ersten Tagesordnungspunkt erstellen
+                    </label>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Bei jeder neuen Sitzung wird automatisch ein TOP 1 für die Genehmigung der Tagesordnung
+                        und des Protokolls der letzten Sitzung erstellt. Dieser TOP wird mit der vorherigen Sitzung
+                        verknüpft und ermöglicht einen revisionssicheren Workflow.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Title templates -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Titel für den ersten TOP</h3>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Titel mit vorheriger Sitzung
+                    </label>
+                    <input type="text" name="first_agenda_title_with_previous"
+                           value="{{ faction_settings.first_agenda_title_with_previous }}"
+                           class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                           placeholder="Genehmigung der Tagesordnung und des Protokolls der Sitzung vom {datum_letzte_sitzung}">
+                    <p class="text-xs text-gray-500 mt-1">
+                        Wird verwendet, wenn eine vorherige Sitzung existiert.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Titel ohne vorherige Sitzung
+                    </label>
+                    <input type="text" name="first_agenda_title_no_previous"
+                           value="{{ faction_settings.first_agenda_title_no_previous }}"
+                           class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                           placeholder="Genehmigung der Tagesordnung">
+                    <p class="text-xs text-gray-500 mt-1">
+                        Wird verwendet, wenn es die erste Sitzung ist oder keine vorherige existiert.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Beschreibung (optional)
+                    </label>
+                    <textarea name="first_agenda_description" rows="2"
+                              class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                              placeholder="Optionale Beschreibung für den ersten TOP...">{{ faction_settings.first_agenda_description }}</textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Placeholders reference -->
+        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-6">
+            <h3 class="text-base font-medium text-blue-800 dark:text-blue-300 mb-3 flex items-center gap-2">
+                <i data-lucide="info" class="w-5 h-5"></i>
+                Verfügbare Platzhalter
+            </h3>
+            <p class="text-sm text-blue-700 dark:text-blue-400 mb-3">
+                Sie können folgende Platzhalter im Titel und in der Beschreibung verwenden:
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {% for placeholder, description in placeholders %}
+                <div class="flex items-start gap-2 text-sm">
+                    <code class="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 rounded font-mono text-xs">{{ placeholder }}</code>
+                    <span class="text-blue-700 dark:text-blue-400">{{ description }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Example preview -->
+        <div class="bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-base font-medium text-gray-900 dark:text-white mb-3">Vorschau</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                So würde der erste TOP bei einer Sitzung am 15.02.2026 aussehen (mit vorheriger Sitzung am 01.02.2026):
+            </p>
+            <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div class="flex items-start gap-3">
+                    <span class="flex-shrink-0 w-8 h-8 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center text-sm font-medium text-primary-600 dark:text-primary-400">
+                        1
+                    </span>
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white" id="preview-title">
+                            {{ faction_settings.first_agenda_title_with_previous|default:"Genehmigung der Tagesordnung und des Protokolls der Sitzung vom {datum_letzte_sitzung}" }}
+                        </p>
+                        {% if faction_settings.first_agenda_description %}
+                        <p class="text-sm text-gray-500 mt-1">{{ faction_settings.first_agenda_description }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Save button -->
+        <div class="flex items-center justify-between pt-4">
+            <a href="{% url 'work:faction' org_slug=organization.slug %}"
+               class="text-sm text-gray-500 hover:text-gray-700">
+                Abbrechen
+            </a>
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                Einstellungen speichern
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+// Live preview update
+document.addEventListener('DOMContentLoaded', function() {
+    const titleInput = document.querySelector('input[name="first_agenda_title_with_previous"]');
+    const previewTitle = document.getElementById('preview-title');
+
+    if (titleInput && previewTitle) {
+        function updatePreview() {
+            let title = titleInput.value || 'Genehmigung der Tagesordnung und des Protokolls der Sitzung vom {datum_letzte_sitzung}';
+            // Replace placeholders with example values
+            title = title.replace('{datum_letzte_sitzung}', '01.02.2026');
+            title = title.replace('{titel_letzte_sitzung}', 'Fraktionssitzung Februar');
+            title = title.replace('{nr_letzte_sitzung}', '12');
+            title = title.replace('{datum}', '15.02.2026');
+            title = title.replace('{titel}', 'Fraktionssitzung März');
+            title = title.replace('{nr}', '13');
+            previewTitle.textContent = title;
+        }
+
+        titleInput.addEventListener('input', updatePreview);
+        updatePreview();
+    }
+});
+</script>
+{% endblock %}

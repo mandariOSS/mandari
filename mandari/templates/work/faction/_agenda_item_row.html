@@ -1,0 +1,119 @@
+{# Agenda Item Row - used in detail.html #}
+{# Variables: item, can_edit, meeting, is_first, is_last, is_internal, item_count #}
+
+<div class="agenda-item p-4 {% if is_internal %}bg-amber-50/50 dark:bg-amber-900/10{% endif %}" data-id="{{ item.id }}">
+    <div class="flex items-start gap-3">
+        {# Move buttons (left side) #}
+        {% if can_edit and not item.is_approval_item %}
+        <div class="flex flex-col gap-0.5 flex-shrink-0">
+            <button @click="moveItem('{{ item.id }}', 'up')"
+                    class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                    {% if is_first %}disabled{% endif %}
+                    title="Nach oben">
+                <i data-lucide="chevron-up" class="w-4 h-4"></i>
+            </button>
+            <button @click="moveItem('{{ item.id }}', 'down')"
+                    class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                    {% if is_last %}disabled{% endif %}
+                    title="Nach unten">
+                <i data-lucide="chevron-down" class="w-4 h-4"></i>
+            </button>
+        </div>
+        {% endif %}
+
+        {# Number Badge #}
+        <span class="flex-shrink-0 min-w-[2.5rem] h-10 px-3
+            {% if item.is_approval_item %}bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400
+            {% elif is_internal %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400
+            {% else %}bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400{% endif %}
+            rounded-lg flex items-center justify-center text-sm font-semibold">
+            {{ item.number }}
+        </span>
+
+        {# Content #}
+        <div class="flex-1 min-w-0">
+            <div class="flex items-start justify-between gap-3">
+                <div class="flex-1">
+                    <p class="font-medium text-gray-900 dark:text-white">
+                        {{ item.title }}
+                    </p>
+                    {% if item.is_approval_item and item.approves_meeting %}
+                    <p class="text-xs text-purple-600 dark:text-purple-400 mt-0.5">
+                        Genehmigt: {{ item.approves_meeting.title }} ({{ item.approves_meeting.start|date:"d.m.Y" }})
+                    </p>
+                    {% endif %}
+                    {% with desc=item.get_description_decrypted %}
+                    {% if desc %}
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ desc|truncatewords:30 }}</p>
+                    {% endif %}
+                    {% endwith %}
+                </div>
+
+                {# Action Buttons (always visible) #}
+                {% if can_edit and not item.is_approval_item %}
+                <div class="flex items-center gap-1 flex-shrink-0">
+                    <button @click="addSubItem('{{ item.id }}', '{% if is_internal %}internal{% else %}public{% endif %}')"
+                            class="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg"
+                            title="Unterpunkt hinzufugen">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                    </button>
+                    <button @click="editItem('{{ item.id }}', '{{ item.title|escapejs }}', '{{ item.get_description_decrypted|default:""|escapejs }}')"
+                            class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                            title="Bearbeiten">
+                        <i data-lucide="edit-2" class="w-4 h-4"></i>
+                    </button>
+                    <button @click="deleteItem('{{ item.id }}')"
+                            class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                            title="Loschen">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+
+            {# Decision Badge #}
+            {% if item.has_decision %}
+            <div class="mt-2 inline-flex items-center gap-1.5 px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded text-xs">
+                <i data-lucide="check-circle" class="w-3 h-3"></i>
+                Beschluss: {{ item.votes_for }}/{{ item.votes_against }}/{{ item.votes_abstain }}
+            </div>
+            {% endif %}
+
+            {# Sub-items #}
+            {% for child in item.children.all %}
+            <div class="mt-2 ml-4 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border-l-2 {% if is_internal %}border-amber-300{% else %}border-primary-300{% endif %}">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex items-start gap-2 flex-1 min-w-0">
+                        <span class="flex-shrink-0 px-2 py-0.5 text-xs font-medium rounded
+                            {% if is_internal %}bg-amber-100 text-amber-700{% else %}bg-gray-200 text-gray-600{% endif %}">
+                            {{ child.number }}
+                        </span>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm text-gray-800 dark:text-gray-200">{{ child.title }}</p>
+                            {% with desc=child.get_description_decrypted %}
+                            {% if desc %}
+                            <p class="text-xs text-gray-500 mt-0.5">{{ desc|truncatewords:20 }}</p>
+                            {% endif %}
+                            {% endwith %}
+                        </div>
+                    </div>
+                    {% if can_edit %}
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                        <button @click="editItem('{{ child.id }}', '{{ child.title|escapejs }}', '{{ child.get_description_decrypted|default:""|escapejs }}')"
+                                class="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                title="Bearbeiten">
+                            <i data-lucide="edit-2" class="w-3 h-3"></i>
+                        </button>
+                        <button @click="deleteItem('{{ child.id }}')"
+                                class="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                title="Loschen">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>

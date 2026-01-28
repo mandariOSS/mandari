@@ -1,0 +1,213 @@
+{% extends "base_ris.html" %}
+{% load static %}
+
+{% block title %}{{ paper.reference|default:paper.name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Breadcrumb -->
+    <nav class="mb-6">
+        <ol class="flex items-center gap-2 text-sm">
+            <li>
+                <a href="{% url 'insight_core:insight:paper_list' %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                    Vorgänge
+                </a>
+            </li>
+            <li class="text-gray-400">/</li>
+            <li class="text-gray-900 dark:text-white font-medium truncate">
+                {{ paper.reference|default:paper.name|truncatechars:50 }}
+            </li>
+        </ol>
+    </nav>
+
+    <div class="grid lg:grid-cols-3 gap-8">
+        <!-- Main Content -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Header -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4 mb-4">
+                    <div class="w-14 h-14 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="file-text" class="w-7 h-7 text-amber-600 dark:text-amber-400"></i>
+                    </div>
+                    <div>
+                        {% if paper.reference %}
+                        <p class="text-sm font-mono text-gray-500 dark:text-gray-400 mb-1">{{ paper.reference }}</p>
+                        {% endif %}
+                        <h1 class="text-xl font-bold text-gray-900 dark:text-white">
+                            {{ paper.name|default:"Vorgang" }}
+                        </h1>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                    {% if paper.paper_type %}
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-400">
+                        {{ paper.paper_type }}
+                    </span>
+                    {% endif %}
+                    {% if paper.date %}
+                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
+                        <i data-lucide="calendar" class="w-4 h-4"></i>
+                        {{ paper.date|date:"d.m.Y" }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- AI Summary -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                        <i data-lucide="sparkles" class="w-5 h-5 text-primary-500"></i>
+                        KI-Zusammenfassung
+                    </h2>
+                </div>
+                <div id="paper-summary" class="px-6 py-4">
+                    {% if paper.summary %}
+                        <p class="text-gray-700 dark:text-gray-300">{{ paper.summary }}</p>
+                    {% else %}
+                        <button hx-get="{% url 'insight_core:insight:paper_summary' paper.id %}"
+                                hx-target="#paper-summary"
+                                hx-swap="innerHTML"
+                                class="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i>
+                            Zusammenfassung generieren
+                        </button>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                            Klicken Sie, um eine KI-Zusammenfassung dieses Vorgangs zu erstellen.
+                        </p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Files & Raw Text Tabs -->
+            {% if files %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+                 x-data="{ activeTab: 'files' }">
+                <!-- Tab Navigation -->
+                <div class="flex border-b border-gray-200 dark:border-gray-700">
+                    <button @click="activeTab = 'files'"
+                            :class="activeTab === 'files' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'"
+                            class="px-6 py-4 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2">
+                        <i data-lucide="files" class="w-4 h-4"></i>
+                        Dokumente ({{ files|length }})
+                    </button>
+                    {% if files_with_text %}
+                    <button @click="activeTab = 'text'"
+                            :class="activeTab === 'text' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'"
+                            class="px-6 py-4 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2">
+                        <i data-lucide="file-text" class="w-4 h-4"></i>
+                        Rohtext ({{ files_with_text|length }})
+                    </button>
+                    {% endif %}
+                </div>
+
+                <!-- Files Tab Content -->
+                <div x-show="activeTab === 'files'" class="divide-y divide-gray-200 dark:divide-gray-700">
+                    {% for file in files %}
+                    <div class="px-6 py-4">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                                {% if 'pdf' in file.mime_type|default:'' %}
+                                    <i data-lucide="file-text" class="w-5 h-5 text-red-500"></i>
+                                {% else %}
+                                    <i data-lucide="file" class="w-5 h-5 text-gray-500"></i>
+                                {% endif %}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-gray-900 dark:text-white truncate">
+                                    {{ file.name|default:file.file_name }}
+                                </p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">
+                                    {% if file.size %}{{ file.size_human }}{% endif %}
+                                    {% if file.mime_type %}&middot; {{ file.mime_type }}{% endif %}
+                                </p>
+                            </div>
+                            {% if file.download_url or file.access_url %}
+                            <a href="{{ file.download_url|default:file.access_url }}"
+                               target="_blank"
+                               rel="noopener noreferrer"
+                               class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg transition-colors">
+                                <i data-lucide="download" class="w-4 h-4"></i>
+                                Öffnen
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Raw Text Tab Content -->
+                {% if files_with_text %}
+                <div x-show="activeTab === 'text'" x-cloak class="divide-y divide-gray-200 dark:divide-gray-700">
+                    {% for file in files_with_text %}
+                    <div class="px-6 py-4" x-data="{ expanded: false }">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/50 flex items-center justify-center flex-shrink-0">
+                                    <i data-lucide="file-text" class="w-4 h-4 text-rose-600 dark:text-rose-400"></i>
+                                </div>
+                                <div>
+                                    <p class="font-medium text-gray-900 dark:text-white text-sm">
+                                        {{ file.name|default:file.file_name }}
+                                    </p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                                        {{ file.text_content|length|floatformat:0 }} Zeichen
+                                    </p>
+                                </div>
+                            </div>
+                            <button @click="expanded = !expanded"
+                                    class="text-sm text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1">
+                                <span x-text="expanded ? 'Einklappen' : 'Anzeigen'"></span>
+                                <i data-lucide="chevron-down" class="w-4 h-4 transition-transform" :class="expanded && 'rotate-180'"></i>
+                            </button>
+                        </div>
+                        <div x-show="expanded" x-collapse>
+                            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-96 overflow-y-auto">
+                                <pre class="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-mono leading-relaxed">{{ file.text_content }}</pre>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Sidebar -->
+        <div class="space-y-6">
+            <!-- Info Card -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Details</h3>
+                <dl class="space-y-4">
+                    {% if paper.reference %}
+                    <div>
+                        <dt class="text-sm text-gray-500 dark:text-gray-400">Aktenzeichen</dt>
+                        <dd class="font-mono font-medium text-gray-900 dark:text-white">{{ paper.reference }}</dd>
+                    </div>
+                    {% endif %}
+                    {% if paper.paper_type %}
+                    <div>
+                        <dt class="text-sm text-gray-500 dark:text-gray-400">Typ</dt>
+                        <dd class="font-medium text-gray-900 dark:text-white">{{ paper.paper_type }}</dd>
+                    </div>
+                    {% endif %}
+                    {% if paper.date %}
+                    <div>
+                        <dt class="text-sm text-gray-500 dark:text-gray-400">Datum</dt>
+                        <dd class="font-medium text-gray-900 dark:text-white">{{ paper.date|date:"d.m.Y" }}</dd>
+                    </div>
+                    {% endif %}
+                    {% if paper.oparl_created %}
+                    <div>
+                        <dt class="text-sm text-gray-500 dark:text-gray-400">Erstellt</dt>
+                        <dd class="font-medium text-gray-900 dark:text-white">{{ paper.oparl_created|date:"d.m.Y H:i" }}</dd>
+                    </div>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

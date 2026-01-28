@@ -1,0 +1,248 @@
+{% extends "work/base_work.html" %}
+{% load i18n %}
+
+{% block page_title %}{{ meeting.committee_name|default:meeting.get_display_name|default:"Sitzung" }}{% endblock %}
+
+{% block header_title %}{{ meeting.committee_name|default:meeting.get_display_name|default:"Sitzungsdetails" }}{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">
+    {% if meeting.name and meeting.name != meeting.committee_name %}{{ meeting.name }} &middot; {% endif %}
+    {% if meeting.start %}{{ meeting.start|date:"l, d. F Y" }} um {{ meeting.start|date:"H:i" }} Uhr{% endif %}
+    {% if meeting.location_name %} &middot; {{ meeting.location_name }}{% endif %}
+</p>
+{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-2">
+    <a href="{% url 'work:meetings' org_slug=organization.slug %}"
+       class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+        <i data-lucide="arrow-left" class="w-4 h-4 inline mr-1"></i>
+        Zurück
+    </a>
+    {% if meeting %}
+    <a href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=meeting.id %}"
+       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+        <i data-lucide="edit-3" class="w-4 h-4"></i>
+        Vorbereiten
+    </a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block work_content %}
+{% if error %}
+<div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
+    <i data-lucide="alert-triangle" class="w-8 h-8 mx-auto mb-3 text-yellow-600 dark:text-yellow-400"></i>
+    <p class="text-yellow-700 dark:text-yellow-300 mb-4">{{ error }}</p>
+    <a href="{% url 'work:meetings' org_slug=organization.slug %}"
+       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i>
+        Zurück zur Übersicht
+    </a>
+</div>
+{% elif meeting %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Main content -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Preparation status -->
+        {% if preparation %}
+        <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 flex items-center gap-3">
+            <div class="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg flex-shrink-0">
+                <i data-lucide="check-circle" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+            </div>
+            <div>
+                <p class="font-medium text-green-800 dark:text-green-200">
+                    {% if preparation.is_prepared %}
+                    Vorbereitung abgeschlossen
+                    {% else %}
+                    Vorbereitung begonnen
+                    {% endif %}
+                </p>
+                <p class="text-sm text-green-600 dark:text-green-400">
+                    {% if preparation.prepared_at %}
+                    Abgeschlossen am {{ preparation.prepared_at|date:"d.m.Y H:i" }}
+                    {% else %}
+                    Zuletzt bearbeitet am {{ preparation.updated_at|date:"d.m.Y H:i" }}
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Agenda items -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="text-lg font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="list-ordered" class="w-5 h-5 text-gray-400"></i>
+                    Tagesordnung
+                </h2>
+            </div>
+
+            {% if agenda_items %}
+            <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for item in agenda_items %}
+                <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    <div class="flex items-start gap-3">
+                        <span class="flex-shrink-0 w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
+                            {{ item.number|default:forloop.counter }}
+                        </span>
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-medium text-gray-900 dark:text-white">
+                                {{ item.name|default:"Ohne Titel" }}
+                            </h3>
+
+                            {% if item.primary_paper %}
+                            <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=item.primary_paper.id %}"
+                               class="inline-flex items-center gap-1 mt-1 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                                <i data-lucide="file-text" class="w-3 h-3"></i>
+                                {{ item.primary_paper.name|truncatechars:60 }}
+                            </a>
+                            {% endif %}
+
+                            {% if item.result %}
+                            <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                                <span class="font-medium">Ergebnis:</span> {{ item.result }}
+                            </p>
+                            {% endif %}
+
+                            {% if item.primary_paper.files.exists %}
+                            <div class="mt-2 flex flex-wrap gap-2">
+                                {% for file in item.primary_paper.files.all|slice:":3" %}
+                                <a href="{{ file.access_url }}" target="_blank"
+                                   class="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded hover:bg-gray-200 dark:hover:bg-gray-600">
+                                    <i data-lucide="file" class="w-3 h-3"></i>
+                                    {{ file.name|truncatechars:30 }}
+                                </a>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        {% if item.public == False %}
+                        <span class="flex-shrink-0 px-2 py-1 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">
+                            Nicht öffentlich
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="p-8 text-center text-gray-500">
+                <i data-lucide="list" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                <p>Keine Tagesordnungspunkte vorhanden</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-6">
+        <!-- Meeting info -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+                Sitzungsdetails
+            </h3>
+
+            <dl class="space-y-4">
+                <div>
+                    <dt class="text-sm text-gray-500 dark:text-gray-400">Datum & Zeit</dt>
+                    <dd class="text-sm font-medium text-gray-900 dark:text-white mt-1">
+                        {{ meeting.start|date:"d.m.Y" }} um {{ meeting.start|date:"H:i" }} Uhr
+                        {% if meeting.end %}
+                        <br><span class="text-gray-500 font-normal">bis {{ meeting.end|date:"H:i" }} Uhr</span>
+                        {% endif %}
+                    </dd>
+                </div>
+
+                {% if meeting.location_name %}
+                <div>
+                    <dt class="text-sm text-gray-500 dark:text-gray-400">Ort</dt>
+                    <dd class="text-sm font-medium text-gray-900 dark:text-white mt-1">
+                        {{ meeting.location_name }}
+                        {% if meeting.location_street %}
+                        <br><span class="text-gray-500 font-normal">{{ meeting.location_street }}</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                {% endif %}
+
+                {% if meeting.committee_name %}
+                <div>
+                    <dt class="text-sm text-gray-500 dark:text-gray-400">Gremium</dt>
+                    <dd class="mt-1">
+                        <span class="text-sm font-medium text-gray-900 dark:text-white">
+                            {{ meeting.committee_name }}
+                        </span>
+                    </dd>
+                </div>
+                {% endif %}
+
+                <div>
+                    <dt class="text-sm text-gray-500 dark:text-gray-400">Status</dt>
+                    <dd class="text-sm font-medium mt-1">
+                        {% if is_upcoming %}
+                        <span class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                            <i data-lucide="clock" class="w-4 h-4"></i>
+                            Anstehend
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 text-gray-500">
+                            <i data-lucide="check-circle" class="w-4 h-4"></i>
+                            Abgeschlossen
+                        </span>
+                        {% endif %}
+                    </dd>
+                </div>
+            </dl>
+        </div>
+
+
+        <!-- Quick actions -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+                Aktionen
+            </h3>
+
+            <div class="space-y-2">
+                <a href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=meeting.id %}"
+                   class="flex items-center gap-3 p-2 -mx-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
+                    <i data-lucide="edit-3" class="w-4 h-4"></i>
+                    <span class="text-sm">Sitzung vorbereiten</span>
+                </a>
+
+                <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}"
+                   class="flex items-center gap-3 p-2 -mx-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                    <span class="text-sm">Im RIS anzeigen</span>
+                </a>
+
+                {% if meeting.invitation %}
+                <a href="{{ meeting.invitation }}" target="_blank"
+                   class="flex items-center gap-3 p-2 -mx-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
+                    <i data-lucide="mail" class="w-4 h-4"></i>
+                    <span class="text-sm">Einladung öffnen</span>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+    <div class="w-16 h-16 mx-auto mb-4 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+        <i data-lucide="alert-triangle" class="w-8 h-8 text-red-600 dark:text-red-400"></i>
+    </div>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Sitzung nicht gefunden</h3>
+    <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+        Die angeforderte Sitzung konnte nicht gefunden werden oder Sie haben keinen Zugriff darauf.
+    </p>
+    <a href="{% url 'work:meetings' org_slug=organization.slug %}"
+       class="inline-flex items-center gap-2 mt-6 text-primary-600 dark:text-primary-400 hover:underline">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i>
+        Zurück zur Übersicht
+    </a>
+</div>
+{% endif %}
+{% endblock %}

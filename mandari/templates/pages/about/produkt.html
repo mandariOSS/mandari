@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+
+{% block title %}Produkt - Mandari Insight, Work & Session{% endblock %}
+
+{% block meta_description %}Mandari: Drei Open-Source-Module für kommunale Transparenz - Insight für Bürger, Work für Fraktionen, Session für Verwaltungen. Offenes Ökosystem ohne Vendor Lock-in.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="pt-16 pb-10 lg:pt-24 lg:pb-12 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 text-sm font-medium mb-6">
+            <i data-lucide="unlock" class="w-4 h-4"></i>
+            Offenes Ökosystem - 100% Open Source
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Drei Säulen für bessere Ratsarbeit
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mb-8">
+            Mandari verbindet öffentliche Transparenz mit professionellen Workflows.
+            <strong>Kein Vendor Lock-in</strong> - Ihre Daten gehören Ihnen.
+        </p>
+        <div class="flex flex-wrap gap-4">
+            <a href="{% url 'insight_core:kontakt' %}" class="inline-flex items-center px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl transition-colors">
+                Demo anfragen
+            </a>
+            <a href="{% url 'insight_core:preise' %}" class="inline-flex items-center gap-2 px-6 py-3 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white font-medium rounded-xl transition-colors">
+                <i data-lucide="credit-card" class="w-5 h-5"></i>
+                Preise ansehen
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Open Ecosystem Banner -->
+<section class="py-8 bg-green-50 dark:bg-green-900/20 border-y border-green-200 dark:border-green-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-wrap items-center justify-center gap-8 lg:gap-16 text-center">
+            <div class="flex items-center gap-3">
+                <i data-lucide="database" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>Datenexport</strong> jederzeit</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <i data-lucide="code" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>Offene API</strong> für alle</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <i data-lucide="file-json" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>OParl-Standard</strong> Import & Export</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <i data-lucide="github" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>Open Source</strong> AGPL-3.0</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Three Pillars Section -->
+<section class="py-16 lg:py-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+            <!-- Mandari Insight -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl border-2 border-green-200 dark:border-green-800 p-8 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-green-100 dark:bg-green-900/30 rounded-bl-full -mr-8 -mt-8"></div>
+                <div class="relative">
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <span class="inline-block px-3 py-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 text-sm font-medium rounded-full">
+                            Kostenlos
+                        </span>
+                        <span class="inline-block px-3 py-1 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-sm font-medium rounded-full">
+                            Beta
+                        </span>
+                    </div>
+                    <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Mandari Insight</h3>
+                    <p class="text-sm text-green-600 dark:text-green-400 font-medium mb-4">Bürger*innen-Portal</p>
+                    <p class="text-gray-600 dark:text-gray-300 mb-6">
+                        Transparenter Zugang zu Ratsinformationen - kostenlos, ohne Anmeldung, ohne Tracker.
+                    </p>
+                    <ul class="space-y-3 mb-6">
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Einblick in Anträge & Beschlüsse</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">KI-Zusammenfassungen & Chatbot</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Volltextsuche über alle Dokumente</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Geografische Einordnung (Karte)</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Abstimmungsverhalten einsehen</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Kontakt zu Politiker*innen</span>
+                        </li>
+                    </ul>
+                    <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            <strong>Für:</strong> Bürger*innen, Journalist*innen, Initiativen, Forschung
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mandari Work -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl border-2 border-primary-200 dark:border-primary-800 p-8 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-primary-100 dark:bg-primary-900/30 rounded-bl-full -mr-8 -mt-8"></div>
+                <div class="relative">
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <span class="inline-block px-3 py-1 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium rounded-full">
+                            ab 29,90 €/Monat
+                        </span>
+                        <span class="inline-block px-3 py-1 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-sm font-medium rounded-full">
+                            Beta
+                        </span>
+                    </div>
+                    <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Mandari Work</h3>
+                    <p class="text-sm text-primary-600 dark:text-primary-400 font-medium mb-4">Fraktions-Plattform</p>
+                    <p class="text-gray-600 dark:text-gray-300 mb-6">
+                        Professionelle Kollaboration für das gesamte Team - mit oder ohne eigenem RIS.
+                    </p>
+                    <ul class="space-y-3 mb-6">
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Sitzungsvorbereitung</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Interne Abstimmungen</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Antragsdatenbank & Vorlagen</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Terminplanung & Fraktionssitzungen</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Kommentare & Notizen</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">KI-gestützte Recherche</span>
+                        </li>
+                    </ul>
+                    <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            <strong>Für:</strong> Fraktionen, Gruppen, Einzelmandatsträger*innen<br>
+                            <span class="text-xs">(inkl. Büro & sachkundige Bürger*innen)</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mandari Session -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl border-2 border-blue-200 dark:border-blue-800 p-8 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-blue-100 dark:bg-blue-900/30 rounded-bl-full -mr-8 -mt-8"></div>
+                <div class="relative">
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <span class="inline-block px-3 py-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-sm font-medium rounded-full">
+                            Auf Anfrage
+                        </span>
+                        <span class="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium rounded-full">
+                            In Entwicklung
+                        </span>
+                    </div>
+                    <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Mandari Session</h3>
+                    <p class="text-sm text-blue-600 dark:text-blue-400 font-medium mb-4">Ratsinformationssystem</p>
+                    <p class="text-gray-600 dark:text-gray-300 mb-6">
+                        Vollständiges Sitzungsmanagement mit OParl-Export - die offene RIS-Alternative.
+                    </p>
+                    <ul class="space-y-3 mb-6">
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Sitzungsplanung & Tagesordnung</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Einladungen (digital & print)</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Vorlagen- & Datenpflege</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Protokollierung</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">Sitzungsgeld & Aufwandsentschädigung</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0"></i>
+                            <span class="text-gray-700 dark:text-gray-300">OParl-Export (maschinenlesbar)</span>
+                        </li>
+                    </ul>
+                    <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            <strong>Für:</strong> Kommunen, Kreise, Verbände
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Two Use Cases for Work -->
+<section class="py-16 lg:py-20 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-4">
+                <i data-lucide="git-branch" class="w-4 h-4"></i>
+                Flexibel einsetzbar
+            </span>
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">Mandari Work: Zwei Einsatzszenarien</h2>
+            <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+                Egal ob Ihre Kommune Mandari Session nutzt oder ein anderes RIS - Mandari Work funktioniert immer.
+            </p>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            <!-- Case 1: With Session -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border-2 border-blue-200 dark:border-blue-800">
+                <div class="flex items-center gap-4 mb-6">
+                    <div class="w-14 h-14 bg-blue-100 dark:bg-blue-900/50 rounded-xl flex items-center justify-center">
+                        <i data-lucide="link" class="w-7 h-7 text-blue-600 dark:text-blue-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900 dark:text-white">Mit Mandari Session</h3>
+                        <p class="text-sm text-blue-600 dark:text-blue-400 font-medium">Volle Integration</p>
+                    </div>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    Wenn Ihre Kommune Mandari Session als RIS nutzt, profitieren Sie von nahtloser Integration:
+                </p>
+                <ul class="space-y-3 mb-6">
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="zap" class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Echtzeit-Synchronisation aller Daten</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="zap" class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300"><strong>Nicht-öffentliche Vorlagen</strong> automatisch verfügbar</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="zap" class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Direkte Antragseinreichung</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="zap" class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Ein Ökosystem, ein Login</span>
+                    </li>
+                </ul>
+                <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <p class="text-sm text-blue-700 dark:text-blue-300">
+                        <i data-lucide="star" class="w-4 h-4 inline mr-1"></i>
+                        <strong>Empfohlen</strong> für maximale Effizienz
+                    </p>
+                </div>
+            </div>
+
+            <!-- Case 2: External RIS with OParl -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border border-gray-200 dark:border-gray-700">
+                <div class="flex items-center gap-4 mb-6">
+                    <div class="w-14 h-14 bg-green-100 dark:bg-green-900/50 rounded-xl flex items-center justify-center">
+                        <i data-lucide="plug" class="w-7 h-7 text-green-600 dark:text-green-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900 dark:text-white">Mit externem RIS</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Via OParl-Schnittstelle</p>
+                    </div>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    Ihre Kommune nutzt ALLRIS, regisafe, Somacos oder ein anderes RIS mit OParl? Kein Problem:
+                </p>
+                <ul class="space-y-3 mb-6">
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Automatischer Import öffentlicher Daten</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Alle Work-Features nutzbar</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Unabhängig vom RIS-Anbieter</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Kein Wechsel des RIS nötig</span>
+                    </li>
+                </ul>
+                <div class="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                    <p class="text-sm text-amber-700 dark:text-amber-300">
+                        <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                        <strong>Hinweis:</strong> Nicht-öffentliche Vorlagen können manuell hochgeladen werden
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-8 text-center">
+            <p class="text-gray-500 dark:text-gray-400">
+                <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                Über 100 Kommunen bieten bereits eine OParl-Schnittstelle an.
+                <a href="https://oparl.org" target="_blank" rel="noopener noreferrer" class="text-primary-600 dark:text-primary-400 hover:underline">Mehr erfahren →</a>
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- OParl & API Section -->
+<section class="py-12 bg-white dark:bg-gray-800 border-y border-gray-200 dark:border-gray-700">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid md:grid-cols-2 gap-8 items-center">
+            <div>
+                <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-4">
+                    <i data-lucide="git-pull-request" class="w-4 h-4"></i>
+                    Contributing to OParl
+                </span>
+                <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+                    OParl-kompatibel + Erweiterungen
+                </h3>
+                <p class="text-gray-600 dark:text-gray-300 mb-4">
+                    Mandari Session bietet eine <strong>vollständig OParl-konforme API</strong> - plus eigene Erweiterungen für moderne Anforderungen wie KI-Zusammenfassungen und erweiterte Suchfunktionen.
+                </p>
+                <p class="text-gray-600 dark:text-gray-300">
+                    Wir setzen uns aktiv dafür ein, unsere Erweiterungen in den <strong>OParl-Standard einzubringen</strong>. So profitiert die gesamte Community von neuen Features - nicht nur Mandari-Nutzer*innen.
+                </p>
+            </div>
+            <div class="flex flex-wrap gap-4 justify-center md:justify-end">
+                <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 text-center min-w-[140px]">
+                    <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mx-auto mb-2">
+                        <i data-lucide="check-square" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                    </div>
+                    <p class="font-semibold text-gray-900 dark:text-white">OParl 1.1</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Vollständig konform</p>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 text-center min-w-[140px]">
+                    <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mx-auto mb-2">
+                        <i data-lucide="puzzle" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                    </div>
+                    <p class="font-semibold text-gray-900 dark:text-white">Erweiterungen</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Für moderne Features</p>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 text-center min-w-[140px]">
+                    <div class="w-12 h-12 bg-purple-100 dark:bg-purple-900/50 rounded-lg flex items-center justify-center mx-auto mb-2">
+                        <i data-lucide="heart-handshake" class="w-6 h-6 text-purple-600 dark:text-purple-400"></i>
+                    </div>
+                    <p class="font-semibold text-gray-900 dark:text-white">Contributing</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Zum OParl-Standard</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Features Grid -->
+<section class="py-16 lg:py-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">Alle Features im Überblick</h2>
+            <p class="text-xl text-gray-600 dark:text-gray-300">Moderne Technologie für bessere Demokratie</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="search" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Intelligente Suche</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Volltextsuche über alle Sitzungen, Vorlagen und Dokumente - Ergebnisse in Millisekunden.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="sparkles" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">KI-Zusammenfassungen</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Komplexe Vorlagen in Sekunden verstehen. Optional, datenschutzkonform, transparent.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="map-pin" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Kartenansicht</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Geografische Darstellung von Anträgen und Projekten - sehen Sie, was in Ihrer Nachbarschaft passiert.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="vote" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Abstimmungsverhalten</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Transparent nachvollziehen, wie Ihre Vertreter*innen abstimmen.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="users" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Team-Kollaboration</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Gemeinsam Sitzungen vorbereiten, Notizen teilen und Abstimmungen koordinieren.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="shield" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">DSGVO-konform</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Hosting in Deutschland, keine Tracker, verschlüsselte Übertragung.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Open Ecosystem Detail -->
+<section class="py-16 lg:py-20 bg-gradient-to-br from-green-50 to-white dark:from-green-900/20 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid lg:grid-cols-2 gap-12 items-center">
+            <div>
+                <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 text-sm font-medium mb-6">
+                    <i data-lucide="unlock" class="w-4 h-4"></i>
+                    Kein Vendor Lock-in
+                </span>
+                <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-6">
+                    Ihre Daten gehören Ihnen
+                </h2>
+                <p class="text-lg text-gray-600 dark:text-gray-300 mb-8">
+                    Anders als proprietäre RIS-Lösungen setzen wir auf ein <strong>offenes Ökosystem</strong>.
+                    Alle Daten können jederzeit exportiert werden - maschinenlesbar und vollständig.
+                </p>
+                <ul class="space-y-4">
+                    <li class="flex items-start gap-4">
+                        <div class="w-10 h-10 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="download" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-900 dark:text-white">Vollständiger Datenexport</h4>
+                            <p class="text-sm text-gray-600 dark:text-gray-300">JSON, CSV, OParl - Sie wählen das Format.</p>
+                        </div>
+                    </li>
+                    <li class="flex items-start gap-4">
+                        <div class="w-10 h-10 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="code-2" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-900 dark:text-white">Offene REST-API</h4>
+                            <p class="text-sm text-gray-600 dark:text-gray-300">Dokumentierte API für eigene Integrationen.</p>
+                        </div>
+                    </li>
+                    <li class="flex items-start gap-4">
+                        <div class="w-10 h-10 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="refresh-cw" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-900 dark:text-white">OParl-Standard</h4>
+                            <p class="text-sm text-gray-600 dark:text-gray-300">Import und Export im offenen Standard.</p>
+                        </div>
+                    </li>
+                    <li class="flex items-start gap-4">
+                        <div class="w-10 h-10 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="github" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-900 dark:text-white">100% Open Source</h4>
+                            <p class="text-sm text-gray-600 dark:text-gray-300">AGPL-3.0 Lizenz - volle Kontrolle.</p>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            <div class="bg-gray-900 rounded-2xl p-6 lg:p-8 text-white">
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <div class="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                    <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span class="ml-2 text-sm text-gray-400">API-Beispiel</span>
+                </div>
+                <pre class="text-sm font-mono overflow-x-auto"><code class="text-green-400"># Alle Sitzungen exportieren</code>
+<code class="text-gray-300">curl https://api.mandari.de/v1/meetings \</code>
+<code class="text-gray-300">  -H "Authorization: Bearer $TOKEN"</code>
+
+<code class="text-green-400"># OParl-Export</code>
+<code class="text-gray-300">curl https://api.mandari.de/oparl/body/1</code>
+
+<code class="text-green-400"># Vollständiger Daten-Export</code>
+<code class="text-gray-300">curl https://api.mandari.de/v1/export \</code>
+<code class="text-gray-300">  -o kommune-backup.json</code></pre>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="py-16 lg:py-20 bg-gradient-to-br from-primary-600 to-primary-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto text-center">
+            <h2 class="text-3xl font-bold text-white mb-6">Überzeugen Sie sich selbst</h2>
+            <p class="text-xl text-white/90 mb-10">
+                Vereinbaren Sie eine kostenlose Demo und sehen Sie Mandari in Aktion.
+                Alle Produkte sind zu 100% Open Source - ohne Vendor Lock-in.
+            </p>
+            <div class="flex flex-wrap justify-center gap-4">
+                <a href="{% url 'insight_core:kontakt' %}" class="inline-flex items-center px-8 py-4 bg-white hover:bg-gray-100 text-primary-700 font-medium rounded-xl transition-colors text-lg">
+                    Jetzt Demo anfragen
+                </a>
+                <a href="{% url 'insight_core:open_source' %}" class="inline-flex items-center gap-2 px-8 py-4 bg-primary-500 hover:bg-primary-400 text-white font-medium rounded-xl transition-colors text-lg border border-white/20">
+                    <i data-lucide="github" class="w-5 h-5"></i>
+                    Open Source
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

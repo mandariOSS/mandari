@@ -1,0 +1,69 @@
+{% extends "errors/base_error.html" %}
+
+{% block title %}Zugriff verweigert (403){% endblock %}
+
+{% block error_code %}403{% endblock %}
+
+{% block header_gradient %}from-red-500 to-orange-500{% endblock %}
+
+{% block error_title %}Zugriff verweigert{% endblock %}
+
+{% block error_message %}
+Du hast keine Berechtigung, diese Seite aufzurufen. Dies kann folgende Gründe haben:
+{% endblock %}
+
+{% block error_details %}
+<div class="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 text-left">
+    <ul class="text-sm text-red-700 dark:text-red-400 space-y-2">
+        <li class="flex items-start gap-2">
+            <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m0 0v2m0-2h2m-2 0H9m3-4V8m0 0V6m0 2h2m-2 0H9"></path>
+            </svg>
+            Du bist nicht in der Organisation Mitglied
+        </li>
+        <li class="flex items-start gap-2">
+            <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m0 0v2m0-2h2m-2 0H9m3-4V8m0 0V6m0 2h2m-2 0H9"></path>
+            </svg>
+            Dir fehlt die erforderliche Berechtigung
+        </li>
+        <li class="flex items-start gap-2">
+            <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m0 0v2m0-2h2m-2 0H9m3-4V8m0 0V6m0 2h2m-2 0H9"></path>
+            </svg>
+            Dein Konto wurde deaktiviert
+        </li>
+    </ul>
+</div>
+{% endblock %}
+
+{% block error_actions %}
+{% if user.is_authenticated %}
+<a href="/work/"
+   class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+    </svg>
+    Meine Organisationen
+</a>
+{% else %}
+<a href="{% url 'accounts:login' %}?next={{ request.path }}"
+   class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
+    </svg>
+    Anmelden
+</a>
+{% endif %}
+<button onclick="history.back()"
+        class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+    </svg>
+    Zurück
+</button>
+{% endblock %}
+
+{% block help_text %}
+Falls du der Meinung bist, dass dies ein Fehler ist, <a href="/kontakt/" class="text-white/80 hover:text-white underline">kontaktiere uns</a>.
+{% endblock %}

@@ -1,0 +1,124 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="de" class="h-full"
+      x-data="{ darkMode: localStorage.getItem('darkMode') === 'true' }"
+      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))"
+      :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>{% block title %}Fehler{% endblock %} | Mandari</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{% static 'images/favicon.png' %}">
+
+    <!-- TailwindCSS -->
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+    <!-- Alpine.js -->
+    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
+
+    <style>
+        [x-cloak] { display: none !important; }
+
+        .error-gradient {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+        }
+
+        .dark .error-gradient {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
+        }
+
+        .floating {
+            animation: floating 3s ease-in-out infinite;
+        }
+
+        @keyframes floating {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .pulse-slow {
+            animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="h-full error-gradient">
+    <div class="min-h-full flex flex-col items-center justify-center px-4 py-12">
+        <!-- Error Content -->
+        <div class="w-full max-w-lg text-center">
+            <!-- Error Icon/Number -->
+            <div class="floating mb-8">
+                {% block error_visual %}
+                <div class="text-9xl font-black text-white/20 select-none">
+                    {% block error_code %}???{% endblock %}
+                </div>
+                {% endblock %}
+            </div>
+
+            <!-- Error Card -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden">
+                <!-- Header -->
+                <div class="px-8 py-6 bg-gradient-to-r {% block header_gradient %}from-indigo-500 to-purple-600{% endblock %}">
+                    <h1 class="text-2xl font-bold text-white">
+                        {% block error_title %}Ein Fehler ist aufgetreten{% endblock %}
+                    </h1>
+                </div>
+
+                <!-- Body -->
+                <div class="px-8 py-8">
+                    <p class="text-gray-600 dark:text-gray-400 mb-6">
+                        {% block error_message %}
+                        Etwas ist schiefgelaufen. Bitte versuche es erneut.
+                        {% endblock %}
+                    </p>
+
+                    {% block error_details %}{% endblock %}
+
+                    <!-- Actions -->
+                    <div class="flex flex-col sm:flex-row gap-3 justify-center mt-8">
+                        {% block error_actions %}
+                        <a href="/"
+                           class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                            </svg>
+                            Zur Startseite
+                        </a>
+                        <button onclick="history.back()"
+                                class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                            </svg>
+                            Zurück
+                        </button>
+                        {% endblock %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Help Link -->
+            <p class="mt-6 text-sm text-white/60">
+                {% block help_text %}
+                Brauchst du Hilfe? <a href="/kontakt/" class="text-white/80 hover:text-white underline">Kontaktiere uns</a>
+                {% endblock %}
+            </p>
+        </div>
+
+        <!-- Dark Mode Toggle -->
+        <div class="fixed bottom-4 right-4">
+            <button @click="darkMode = !darkMode"
+                    class="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+                    title="Dark Mode umschalten">
+                <svg x-show="!darkMode" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                </svg>
+                <svg x-show="darkMode" x-cloak class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+</body>
+</html>

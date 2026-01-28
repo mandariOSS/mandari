@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="de" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Einladung annehmen | Mandari Work</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+</head>
+<body class="h-full bg-gray-50 dark:bg-gray-900">
+    <div class="min-h-full flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div class="sm:mx-auto sm:w-full sm:max-w-md">
+            <!-- Logo/Header -->
+            <div class="text-center">
+                {% if organization.logo %}
+                <img src="{{ organization.logo.url }}" alt="{{ organization.name }}" class="mx-auto h-16 w-auto">
+                {% else %}
+                <div class="mx-auto w-16 h-16 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+                    <svg class="w-8 h-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                    </svg>
+                </div>
+                {% endif %}
+                <h2 class="mt-6 text-2xl font-bold text-gray-900 dark:text-white">
+                    Einladung zu {{ organization.name }}
+                </h2>
+            </div>
+        </div>
+
+        <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+            <div class="bg-white dark:bg-gray-800 py-8 px-4 shadow sm:rounded-xl sm:px-10">
+                <!-- Invitation Details -->
+                <div class="mb-6">
+                    <p class="text-gray-600 dark:text-gray-300 text-center">
+                        <strong>{{ invitation.invited_by.get_full_name|default:invitation.invited_by.email }}</strong>
+                        hat Sie eingeladen, der Organisation beizutreten.
+                    </p>
+
+                    {% if invitation.message %}
+                    <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Nachricht:</p>
+                        <p class="text-gray-700 dark:text-gray-300 italic">"{{ invitation.message }}"</p>
+                    </div>
+                    {% endif %}
+
+                    {% if invitation.roles.exists %}
+                    <div class="mt-4">
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Zugewiesene Rollen:</p>
+                        <div class="flex flex-wrap gap-2">
+                            {% for role in invitation.roles.all %}
+                            <span class="px-3 py-1 text-sm rounded-full" style="background-color: {{ role.color }}20; color: {{ role.color }}">
+                                {{ role.name }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- User Info -->
+                <div class="mb-6 p-4 bg-primary-50 dark:bg-primary-900/20 rounded-lg">
+                    <p class="text-sm text-gray-600 dark:text-gray-300">
+                        Sie sind angemeldet als:
+                    </p>
+                    <p class="font-medium text-gray-900 dark:text-white">
+                        {{ request.user.get_full_name|default:request.user.email }}
+                    </p>
+                    <p class="text-sm text-gray-500">{{ request.user.email }}</p>
+                </div>
+
+                <!-- Accept Form -->
+                <form method="post">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                        Einladung annehmen
+                    </button>
+                </form>
+
+                <div class="mt-4 text-center">
+                    <a href="{% url 'accounts:login' %}" class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                        Abbrechen
+                    </a>
+                </div>
+
+                <!-- Info -->
+                <div class="mt-6 text-center text-sm text-gray-500">
+                    <p>Nach der Annahme werden Sie automatisch zu {{ organization.name }} weitergeleitet.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

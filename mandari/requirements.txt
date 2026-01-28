@@ -1,0 +1,44 @@
+# Mandari Django Requirements
+# Generated from pyproject.toml for Docker builds
+
+# Django 6.0
+django>=6.0
+django-htmx>=1.19.0
+django-unfold>=0.40.0
+whitenoise>=6.7.0
+
+# Database
+psycopg[binary]>=3.2.0
+dj-database-url>=2.2.0
+
+# Cache & Sessions
+redis>=5.2.0
+django-redis>=5.4.0
+
+# Environment
+python-dotenv>=1.0.0
+
+# Search
+meilisearch>=0.31.0
+
+# AI
+groq>=0.11.0
+httpx>=0.28.0
+
+# Utilities
+python-dateutil>=2.9.0
+pillow>=10.0.0
+markdown>=3.7
+cryptography>=44.0.0
+
+# Document extraction (OCR)
+PyPDF2>=3.0.0
+pytesseract>=0.3.10
+pdf2image>=1.16.0
+
+# PDF generation
+xhtml2pdf>=0.2.11
+reportlab>=4.0.0
+
+# Production server
+gunicorn>=23.0.0

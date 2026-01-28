@@ -1,0 +1,290 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Ticket #{{ ticket.id.hex|slice:":8" }}{% endblock %}
+
+{% block header_title %}{{ ticket.subject }}{% endblock %}
+{% block header_subtitle %}
+<div class="flex items-center gap-3 mt-2">
+    <span class="text-gray-500 dark:text-gray-400">#{{ ticket.id.hex|slice:":8" }}</span>
+    <span class="px-2.5 py-1 text-xs font-medium rounded-full
+        {% if ticket.status == 'open' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
+        {% elif ticket.status == 'in_progress' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
+        {% elif ticket.status == 'waiting' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+        {% elif ticket.status == 'resolved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
+        {% else %}bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300{% endif %}">
+        {{ ticket.get_status_display }}
+    </span>
+    {% if ticket.priority == 'urgent' %}
+    <span class="px-2 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded">Dringend</span>
+    {% elif ticket.priority == 'high' %}
+    <span class="px-2 py-0.5 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded">Hoch</span>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block header_actions %}
+{% if ticket.status in 'open,in_progress,waiting' %}
+<form method="post" class="inline">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="close">
+    <button type="submit"
+            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+        <i data-lucide="check-circle" class="w-4 h-4"></i>
+        Ticket schließen
+    </button>
+</form>
+{% elif ticket.status in 'resolved,closed' %}
+<form method="post" class="inline">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="reopen">
+    <button type="submit"
+            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+        Wieder öffnen
+    </button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block work_content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- Main Content -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Original Description -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-start gap-4">
+                <div class="flex-shrink-0 w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
+                    <span class="text-sm font-medium text-primary-700 dark:text-primary-300">
+                        {{ ticket.created_by.user.first_name|first|upper }}{{ ticket.created_by.user.last_name|first|upper }}
+                    </span>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-medium text-gray-900 dark:text-white">
+                            {{ ticket.created_by.user.get_full_name|default:ticket.created_by.user.email }}
+                        </h3>
+                        <time class="text-xs text-gray-500 dark:text-gray-400">
+                            {{ ticket.created_at|date:"d.m.Y H:i" }}
+                        </time>
+                    </div>
+                    <div class="mt-3 prose prose-sm dark:prose-invert max-w-none">
+                        <p class="text-gray-700 dark:text-gray-300 whitespace-pre-line">{{ ticket.description }}</p>
+                    </div>
+
+                    <!-- Initial Attachments -->
+                    {% if attachments %}
+                    <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <h4 class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Anhänge</h4>
+                        <div class="flex flex-wrap gap-2">
+                            {% for attachment in attachments %}
+                            <a href="{{ attachment.file.url }}"
+                               target="_blank"
+                               class="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                                {% if 'image' in attachment.mime_type %}
+                                <i data-lucide="image" class="w-4 h-4 text-blue-500"></i>
+                                {% elif 'pdf' in attachment.mime_type %}
+                                <i data-lucide="file-text" class="w-4 h-4 text-red-500"></i>
+                                {% else %}
+                                <i data-lucide="file" class="w-4 h-4 text-gray-500"></i>
+                                {% endif %}
+                                <span class="text-sm text-gray-700 dark:text-gray-300 max-w-[150px] truncate">{{ attachment.filename }}</span>
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Message Thread (HTMX auto-refresh) -->
+        <div id="message-thread"
+             hx-get="{% url 'work:support_messages_partial' org_slug=organization.slug ticket_id=ticket.id %}?count={{ messages|length }}"
+             hx-trigger="every 5s"
+             hx-swap="innerHTML"
+             hx-target="#message-thread-content">
+
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">
+                    Nachrichtenverlauf
+                </h3>
+                <span class="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    Live-Updates aktiv
+                </span>
+            </div>
+
+            <div id="message-thread-content">
+                {% include "work/support/partials/message_thread.html" %}
+            </div>
+        </div>
+
+        <!-- Reply Form -->
+        {% if ticket.status not in 'closed' %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-4">Antworten</h3>
+            <form method="post" enctype="multipart/form-data" x-data="{ files: [] }">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reply">
+
+                <textarea name="content"
+                          rows="4"
+                          required
+                          class="w-full px-4 py-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          placeholder="Ihre Nachricht..."></textarea>
+
+                <div class="mt-4 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <label class="inline-flex items-center gap-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors">
+                            <i data-lucide="paperclip" class="w-4 h-4"></i>
+                            <span>Datei anhängen</span>
+                            <input type="file"
+                                   name="attachments"
+                                   multiple
+                                   accept="image/*,.pdf,.doc,.docx,.txt"
+                                   class="hidden"
+                                   @change="files = Array.from($event.target.files)">
+                        </label>
+                        <template x-if="files.length > 0">
+                            <span class="text-xs text-gray-500" x-text="files.length + ' Datei(en) ausgewählt'"></span>
+                        </template>
+                    </div>
+                    <button type="submit"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                        <i data-lucide="send" class="w-4 h-4"></i>
+                        Senden
+                    </button>
+                </div>
+            </form>
+        </div>
+        {% else %}
+        <div class="bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-center">
+            <i data-lucide="check-circle" class="w-8 h-8 mx-auto text-green-500 mb-3"></i>
+            <p class="text-gray-600 dark:text-gray-400">
+                Dieses Ticket wurde geschlossen.
+            </p>
+            <form method="post" class="mt-4">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reopen">
+                <button type="submit"
+                        class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                    Ticket wieder öffnen um zu antworten
+                </button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-6">
+        <!-- Ticket Info -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-4">Ticket-Details</h3>
+            <dl class="space-y-3">
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Status</dt>
+                    <dd class="mt-1">
+                        <span class="px-2.5 py-1 text-xs font-medium rounded-full
+                            {% if ticket.status == 'open' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
+                            {% elif ticket.status == 'in_progress' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
+                            {% elif ticket.status == 'waiting' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+                            {% elif ticket.status == 'resolved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
+                            {% else %}bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300{% endif %}">
+                            {{ ticket.get_status_display }}
+                        </span>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Kategorie</dt>
+                    <dd class="text-sm text-gray-900 dark:text-white mt-1">{{ ticket.get_category_display }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Priorität</dt>
+                    <dd class="mt-1">
+                        {% if ticket.priority == 'urgent' %}
+                        <span class="px-2 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded">Dringend</span>
+                        {% elif ticket.priority == 'high' %}
+                        <span class="px-2 py-0.5 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded">Hoch</span>
+                        {% elif ticket.priority == 'normal' %}
+                        <span class="text-sm text-gray-900 dark:text-white">Normal</span>
+                        {% else %}
+                        <span class="text-sm text-gray-500 dark:text-gray-400">Niedrig</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Erstellt am</dt>
+                    <dd class="text-sm text-gray-900 dark:text-white mt-1">{{ ticket.created_at|date:"d.m.Y H:i" }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Letzte Aktualisierung</dt>
+                    <dd class="text-sm text-gray-900 dark:text-white mt-1">{{ ticket.updated_at|date:"d.m.Y H:i" }}</dd>
+                </div>
+                {% if ticket.resolved_at %}
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Gelöst am</dt>
+                    <dd class="text-sm text-gray-900 dark:text-white mt-1">{{ ticket.resolved_at|date:"d.m.Y H:i" }}</dd>
+                </div>
+                {% endif %}
+                {% if ticket.assigned_to %}
+                <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">Zugewiesen an</dt>
+                    <dd class="text-sm text-gray-900 dark:text-white mt-1">{{ ticket.assigned_to.get_full_name|default:"Support-Team" }}</dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+
+        <!-- Quick Links -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Hilfe</h3>
+            <div class="space-y-2">
+                <a href="{% url 'work:knowledge_base' org_slug=organization.slug %}"
+                   class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+                    <i data-lucide="book-open" class="w-4 h-4"></i>
+                    Wissensdatenbank
+                </a>
+                <a href="{% url 'work:support' org_slug=organization.slug %}"
+                   class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+                    <i data-lucide="list" class="w-4 h-4"></i>
+                    Alle Tickets
+                </a>
+                <a href="{% url 'work:support_create' org_slug=organization.slug %}"
+                   class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    Neues Ticket erstellen
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Reinitialize Lucide icons after HTMX content swap
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'message-thread-content') {
+            lucide.createIcons();
+        }
+    });
+
+    // Update message count in HTMX request URL after swap
+    document.body.addEventListener('htmx:afterRequest', function(evt) {
+        if (evt.detail.target.id === 'message-thread-content') {
+            const xhr = evt.detail.xhr;
+            if (xhr.status === 200) {
+                const newCount = xhr.getResponseHeader('X-Message-Count');
+                if (newCount) {
+                    const trigger = document.getElementById('message-thread');
+                    if (trigger) {
+                        const url = new URL(trigger.getAttribute('hx-get'), window.location.origin);
+                        url.searchParams.set('count', newCount);
+                        trigger.setAttribute('hx-get', url.pathname + url.search);
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

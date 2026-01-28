@@ -1,0 +1,229 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}{{ article.title }}{% endblock %}
+
+{% block header_title %}{{ article.title }}{% endblock %}
+
+{% block work_content %}
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+    <!-- Main Content -->
+    <div class="lg:col-span-3">
+        <!-- Breadcrumb -->
+        <nav class="mb-6">
+            <ol class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
+                <li>
+                    <a href="{% url 'work:knowledge_base' org_slug=organization.slug %}" class="hover:text-primary-600 dark:hover:text-primary-400">
+                        Wissensdatenbank
+                    </a>
+                </li>
+                <li>
+                    <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                </li>
+                <li>
+                    <a href="{% url 'work:kb_category' org_slug=organization.slug category_slug=article.category.slug %}" class="hover:text-primary-600 dark:hover:text-primary-400">
+                        {{ article.category.name }}
+                    </a>
+                </li>
+                <li>
+                    <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                </li>
+                <li class="text-gray-900 dark:text-white font-medium truncate max-w-[200px]">{{ article.title }}</li>
+            </ol>
+        </nav>
+
+        <!-- Article Content -->
+        <article class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8">
+            <!-- Title & Meta -->
+            <header class="mb-8 pb-6 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center gap-3 mb-4">
+                    <span class="px-3 py-1 text-xs font-medium bg-{{ article.category.color }}-100 dark:bg-{{ article.category.color }}-900/30 text-{{ article.category.color }}-700 dark:text-{{ article.category.color }}-300 rounded-full">
+                        {{ article.category.name }}
+                    </span>
+                    {% if article.is_featured %}
+                    <span class="px-3 py-1 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">
+                        Empfohlen
+                    </span>
+                    {% endif %}
+                </div>
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ article.title }}</h1>
+                {% if article.excerpt %}
+                <p class="text-lg text-gray-600 dark:text-gray-400 mt-3">{{ article.excerpt }}</p>
+                {% endif %}
+                <div class="flex items-center gap-4 mt-4 text-sm text-gray-500 dark:text-gray-400">
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="calendar" class="w-4 h-4"></i>
+                        {{ article.published_at|date:"d.m.Y"|default:article.created_at|date:"d.m.Y" }}
+                    </span>
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="eye" class="w-4 h-4"></i>
+                        {{ article.views_count }} Aufrufe
+                    </span>
+                    {% if article.author %}
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="user" class="w-4 h-4"></i>
+                        {{ article.author.get_full_name|default:"Mandari Team" }}
+                    </span>
+                    {% endif %}
+                </div>
+            </header>
+
+            <!-- Article Body -->
+            <div class="prose prose-sm dark:prose-invert max-w-none">
+                {{ article_html|safe }}
+            </div>
+
+            <!-- Tags -->
+            {% if article.get_tags_list %}
+            <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Tags:</span>
+                    {% for tag in article.get_tags_list %}
+                    <a href="{% url 'work:knowledge_base' org_slug=organization.slug %}?q={{ tag }}"
+                       class="px-2.5 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600">
+                        {{ tag }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </article>
+
+        <!-- Feedback Section -->
+        <div class="mt-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+             x-data="feedbackWidget()">
+            <div class="text-center" x-show="!submitted">
+                <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-3">War dieser Artikel hilfreich?</h3>
+                <div class="flex items-center justify-center gap-3">
+                    <button @click="submitFeedback(true)"
+                            :class="{ 'bg-green-100 dark:bg-green-900/30 border-green-500': selected === true }"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors">
+                        <i data-lucide="thumbs-up" class="w-4 h-4"></i>
+                        Ja
+                    </button>
+                    <button @click="submitFeedback(false)"
+                            :class="{ 'bg-red-100 dark:bg-red-900/30 border-red-500': selected === false }"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                        <i data-lucide="thumbs-down" class="w-4 h-4"></i>
+                        Nein
+                    </button>
+                </div>
+                {% if article.helpful_percentage is not None %}
+                <p class="text-xs text-gray-400 mt-3">{{ article.helpful_percentage }}% fanden das hilfreich</p>
+                {% endif %}
+            </div>
+
+            <div x-show="submitted" class="text-center">
+                <div class="w-12 h-12 mx-auto mb-3 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+                    <i data-lucide="check" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-sm font-medium text-gray-900 dark:text-white">Vielen Dank für Ihr Feedback!</h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Ihr Feedback hilft uns, unsere Inhalte zu verbessern.</p>
+            </div>
+        </div>
+
+        <!-- Related Articles -->
+        {% if related_articles %}
+        <div class="mt-6">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-4">Verwandte Artikel</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {% for related in related_articles %}
+                <a href="{% url 'work:kb_article' org_slug=organization.slug category_slug=related.category.slug article_slug=related.slug %}"
+                   class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white">{{ related.title }}</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{{ related.excerpt }}</p>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-6">
+        <!-- Quick Actions -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Aktionen</h3>
+            <div class="space-y-2">
+                <button onclick="window.print()"
+                        class="flex items-center gap-2 w-full text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 py-1">
+                    <i data-lucide="printer" class="w-4 h-4"></i>
+                    Drucken
+                </button>
+                <button onclick="navigator.share?.({title: '{{ article.title }}', url: window.location.href}) || navigator.clipboard.writeText(window.location.href)"
+                        class="flex items-center gap-2 w-full text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 py-1">
+                    <i data-lucide="share-2" class="w-4 h-4"></i>
+                    Teilen
+                </button>
+            </div>
+        </div>
+
+        <!-- Category Info -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Kategorie</h3>
+            <a href="{% url 'work:kb_category' org_slug=organization.slug category_slug=article.category.slug %}"
+               class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                <div class="p-2 bg-{{ article.category.color }}-100 dark:bg-{{ article.category.color }}-900/30 rounded-lg">
+                    <i data-lucide="{{ article.category.icon }}" class="w-4 h-4 text-{{ article.category.color }}-600 dark:text-{{ article.category.color }}-400"></i>
+                </div>
+                <div>
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white">{{ article.category.name }}</h4>
+                    <p class="text-xs text-gray-500">{{ article.category.article_count }} Artikel</p>
+                </div>
+            </a>
+        </div>
+
+        <!-- Need More Help -->
+        <div class="bg-gradient-to-br from-primary-50 to-primary-100 dark:from-primary-900/20 dark:to-primary-800/20 rounded-xl border border-primary-200 dark:border-primary-800 p-5">
+            <h3 class="text-sm font-semibold text-primary-900 dark:text-primary-100 mb-2">Noch Fragen?</h3>
+            <p class="text-xs text-primary-700 dark:text-primary-300 mb-4">
+                Unser Support-Team hilft Ihnen gerne weiter.
+            </p>
+            <a href="{% url 'work:support_create' org_slug=organization.slug %}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 w-full justify-center">
+                <i data-lucide="message-circle" class="w-4 h-4"></i>
+                Support kontaktieren
+            </a>
+        </div>
+
+        <!-- Back to Knowledge Base -->
+        <a href="{% url 'work:knowledge_base' org_slug=organization.slug %}"
+           class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+            Zurück zur Wissensdatenbank
+        </a>
+    </div>
+</div>
+
+<script>
+function feedbackWidget() {
+    return {
+        submitted: {% if user_feedback %}true{% else %}false{% endif %},
+        selected: {% if user_feedback %}{{ user_feedback.is_helpful|yesno:"true,false" }}{% else %}null{% endif %},
+
+        async submitFeedback(isHelpful) {
+            this.selected = isHelpful;
+
+            const formData = new FormData();
+            formData.append('is_helpful', isHelpful ? 'true' : 'false');
+            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+            try {
+                const response = await fetch('{% url "work:kb_article_feedback" org_slug=organization.slug article_id=article.id %}', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                if (response.ok) {
+                    this.submitted = true;
+                }
+            } catch (error) {
+                console.error('Feedback error:', error);
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

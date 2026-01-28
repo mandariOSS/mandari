@@ -1,0 +1,136 @@
+{% if meeting and preparation %}
+<div class="space-y-6">
+    <!-- Positions by type -->
+    {% if positions_by_type.for %}
+    <div>
+        <h4 class="flex items-center gap-2 text-sm font-medium text-green-700 dark:text-green-400 mb-2">
+            <span class="w-3 h-3 bg-green-500 rounded-full"></span>
+            Zustimmung ({{ positions_by_type.for|length }})
+        </h4>
+        <ul class="space-y-1">
+            {% for pos in positions_by_type.for %}
+            <li class="text-sm text-gray-700 dark:text-gray-300 pl-5">
+                <span class="font-medium">{{ pos.agenda_item.number }}.</span>
+                {{ pos.agenda_item.name|truncatechars:60 }}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if positions_by_type.against %}
+    <div>
+        <h4 class="flex items-center gap-2 text-sm font-medium text-red-700 dark:text-red-400 mb-2">
+            <span class="w-3 h-3 bg-red-500 rounded-full"></span>
+            Ablehnung ({{ positions_by_type.against|length }})
+        </h4>
+        <ul class="space-y-1">
+            {% for pos in positions_by_type.against %}
+            <li class="text-sm text-gray-700 dark:text-gray-300 pl-5">
+                <span class="font-medium">{{ pos.agenda_item.number }}.</span>
+                {{ pos.agenda_item.name|truncatechars:60 }}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if positions_by_type.abstain %}
+    <div>
+        <h4 class="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+            <span class="w-3 h-3 bg-gray-400 rounded-full"></span>
+            Enthaltung ({{ positions_by_type.abstain|length }})
+        </h4>
+        <ul class="space-y-1">
+            {% for pos in positions_by_type.abstain %}
+            <li class="text-sm text-gray-700 dark:text-gray-300 pl-5">
+                <span class="font-medium">{{ pos.agenda_item.number }}.</span>
+                {{ pos.agenda_item.name|truncatechars:60 }}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if positions_by_type.discuss %}
+    <div>
+        <h4 class="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400 mb-2">
+            <span class="w-3 h-3 bg-amber-500 rounded-full"></span>
+            Diskussionsbedarf ({{ positions_by_type.discuss|length }})
+        </h4>
+        <ul class="space-y-1">
+            {% for pos in positions_by_type.discuss %}
+            <li class="text-sm text-gray-700 dark:text-gray-300 pl-5">
+                <span class="font-medium">{{ pos.agenda_item.number }}.</span>
+                {{ pos.agenda_item.name|truncatechars:60 }}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if positions_by_type.defer %}
+    <div>
+        <h4 class="flex items-center gap-2 text-sm font-medium text-purple-700 dark:text-purple-400 mb-2">
+            <span class="w-3 h-3 bg-purple-500 rounded-full"></span>
+            Vertagen ({{ positions_by_type.defer|length }})
+        </h4>
+        <ul class="space-y-1">
+            {% for pos in positions_by_type.defer %}
+            <li class="text-sm text-gray-700 dark:text-gray-300 pl-5">
+                <span class="font-medium">{{ pos.agenda_item.number }}.</span>
+                {{ pos.agenda_item.name|truncatechars:60 }}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if not positions_by_type.for and not positions_by_type.against and not positions_by_type.abstain and not positions_by_type.discuss and not positions_by_type.defer %}
+    <div class="text-center py-4 text-gray-500">
+        <i data-lucide="clipboard-list" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+        <p>Noch keine Positionen festgelegt</p>
+    </div>
+    {% endif %}
+
+    <!-- Speeches -->
+    {% if speeches %}
+    <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+        <h4 class="flex items-center gap-2 text-sm font-medium text-blue-700 dark:text-blue-400 mb-3">
+            <i data-lucide="mic" class="w-4 h-4"></i>
+            Geplante Redebeiträge ({{ speeches|length }})
+        </h4>
+        <div class="space-y-3">
+            {% for pos in speeches %}
+            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-3">
+                <p class="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                    {{ pos.agenda_item.number }}. {{ pos.agenda_item.name|truncatechars:50 }}
+                </p>
+                <p class="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-line">{{ pos.speech_notes }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- General notes -->
+    {% with notes=preparation.get_notes_decrypted %}
+    {% if notes %}
+    <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+        <h4 class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <i data-lucide="notebook" class="w-4 h-4"></i>
+            Allgemeine Notizen
+        </h4>
+        <p class="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-line bg-gray-50 dark:bg-gray-900 rounded-lg p-3">
+            {{ notes }}
+        </p>
+    </div>
+    {% endif %}
+    {% endwith %}
+</div>
+{% else %}
+<div class="text-center py-8 text-gray-500">
+    <i data-lucide="alert-circle" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+    <p>Zusammenfassung nicht verfügbar</p>
+</div>
+{% endif %}

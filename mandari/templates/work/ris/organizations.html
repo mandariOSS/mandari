@@ -1,0 +1,129 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Gremien{% endblock %}
+
+{% block header_title %}Gremien{% endblock %}
+{% block header_subtitle %}
+{% if body %}
+<p class="work-page-subtitle">{{ body.get_display_name }}</p>
+{% endif %}
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Zurück
+</a>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
+    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
+    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Keine Kommune verknüpft</h3>
+    <p class="text-amber-700 dark:text-amber-300">
+        Dieser Organisation ist noch keine Kommune zugewiesen.
+    </p>
+</div>
+{% else %}
+
+<!-- Filters -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-6 mb-6">
+    <form method="get" class="flex flex-wrap items-center gap-4">
+        <!-- Type Filter -->
+        <div class="w-48">
+            <select name="type" onchange="this.form.submit()"
+                    class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 text-gray-900 dark:text-white">
+                <option value="">Alle Typen</option>
+                {% for type in org_types %}
+                {% if type %}
+                <option value="{{ type }}" {% if selected_type == type %}selected{% endif %}>{{ type }}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Show Inactive -->
+        <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" name="inactive" value="1" {% if show_inactive %}checked{% endif %}
+                   onchange="this.form.submit()"
+                   class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 bg-gray-50 dark:bg-gray-900">
+            <span class="text-sm text-gray-600 dark:text-gray-400">Inaktive anzeigen</span>
+        </label>
+    </form>
+</div>
+
+<!-- Organizations Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% for org in organizations %}
+    <a href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=org.id %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700/50 p-5 hover:border-primary-200 dark:hover:border-primary-700 hover:shadow-sm transition-all">
+        <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 p-2.5 bg-purple-50/70 dark:bg-purple-900/20 rounded-lg">
+                <i data-lucide="building-2" class="w-5 h-5 text-purple-500 dark:text-purple-400"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="font-semibold text-gray-900 dark:text-white {% if not org.is_active %}opacity-60{% endif %}">
+                    {{ org.short_name|default:org.name }}
+                </p>
+                {% if org.short_name and org.name != org.short_name %}
+                <p class="text-sm text-gray-500 dark:text-gray-400 truncate">{{ org.name }}</p>
+                {% endif %}
+                <div class="flex flex-wrap items-center gap-2 mt-2">
+                    {% if org.organization_type %}
+                    <span class="px-2 py-0.5 bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400 rounded text-xs">{{ org.organization_type }}</span>
+                    {% endif %}
+                    {% if org.member_count %}
+                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ org.member_count }} Mitglieder</span>
+                    {% endif %}
+                    {% if not org.is_active %}
+                    <span class="px-2 py-0.5 bg-gray-50 dark:bg-gray-700/50 text-gray-400 rounded text-xs">Inaktiv</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </a>
+    {% empty %}
+    <div class="col-span-full">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-5 py-12 text-center">
+            <div class="w-16 h-16 mx-auto mb-4 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center">
+                <i data-lucide="building-2" class="w-8 h-8 text-purple-500 dark:text-purple-400"></i>
+            </div>
+            <p class="text-lg font-medium text-gray-900 dark:text-white mb-1">Keine Gremien gefunden</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Versuche andere Filter.</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if organizations.has_other_pages %}
+<div class="mt-6 flex items-center justify-center gap-1">
+    {% if organizations.has_previous %}
+    <a href="?page={{ organizations.previous_page_number }}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if show_inactive %}&inactive=1{% endif %}"
+       class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+        <i data-lucide="chevron-left" class="w-5 h-5"></i>
+    </a>
+    {% endif %}
+
+    {% for num in organizations.paginator.page_range %}
+    {% if organizations.number == num %}
+    <span class="px-3 py-2 bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400 rounded-lg font-medium text-sm">{{ num }}</span>
+    {% elif num > organizations.number|add:'-3' and num < organizations.number|add:'3' %}
+    <a href="?page={{ num }}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if show_inactive %}&inactive=1{% endif %}"
+       class="px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-sm">{{ num }}</a>
+    {% endif %}
+    {% endfor %}
+
+    {% if organizations.has_next %}
+    <a href="?page={{ organizations.next_page_number }}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if show_inactive %}&inactive=1{% endif %}"
+       class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+        <i data-lucide="chevron-right" class="w-5 h-5"></i>
+    </a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

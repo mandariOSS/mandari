@@ -1,0 +1,245 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Neue Fraktionssitzung{% endblock %}
+
+{% block header_title %}Neue Fraktionssitzung{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Eine neue Fraktionssitzung planen</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:faction' org_slug=organization.slug %}"
+   class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+    <i data-lucide="arrow-left" class="w-4 h-4 inline mr-1"></i>
+    Zurück
+</a>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-3xl" x-data="{ isVirtual: false, useSchedule: false }">
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+
+        <!-- From Schedule -->
+        {% if schedules %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                    <i data-lucide="calendar-clock" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">Aus Sitzungsplan erstellen</h3>
+                    <p class="text-sm text-gray-500">Schnelle Erstellung basierend auf wiederkehrenden Terminen</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 mb-4">
+                <input type="checkbox" id="use_schedule" x-model="useSchedule"
+                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                <label for="use_schedule" class="text-sm text-gray-700 dark:text-gray-300">
+                    Vorlage aus Sitzungsplan verwenden
+                </label>
+            </div>
+
+            <div x-show="useSchedule" x-transition class="space-y-3">
+                {% for schedule in schedules %}
+                <label class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800">
+                    <input type="radio" name="schedule_id" value="{{ schedule.id }}"
+                           class="text-primary-600 border-gray-300 focus:ring-primary-500">
+                    <div class="flex-1">
+                        <p class="font-medium text-gray-900 dark:text-white">{{ schedule.name }}</p>
+                        <p class="text-sm text-gray-500">
+                            {{ schedule.get_weekday_display }}, {{ schedule.time|time:"H:i" }} Uhr
+                            {% if schedule.location %} · {{ schedule.location }}{% endif %}
+                        </p>
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Basic Details -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Sitzungsdetails</h3>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Titel <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" name="title" required
+                           value="{{ form.title.value|default:'' }}"
+                           class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                           placeholder="z.B. Fraktionssitzung Februar 2024">
+                    {% if form.title.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.title.errors.0 }}</p>
+                    {% endif %}
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Datum <span class="text-red-500">*</span>
+                        </label>
+                        <input type="date" name="start_date" required
+                               value="{{ form.start.value|date:'Y-m-d'|default:'' }}"
+                               class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Uhrzeit <span class="text-red-500">*</span>
+                        </label>
+                        <input type="time" name="start_time" required
+                               value="{{ form.start.value|time:'H:i'|default:'18:00' }}"
+                               class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                    <textarea name="description" rows="3"
+                              class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                              placeholder="Optionale Hinweise zur Sitzung...">{{ form.description.value|default:'' }}</textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Location -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Ort</h3>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Physischer Ort</label>
+                    <input type="text" name="location"
+                           value="{{ form.location.value|default:'' }}"
+                           class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                           placeholder="z.B. Fraktionsbüro, Rathaus Raum 203">
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="is_virtual" name="is_virtual" x-model="isVirtual"
+                           class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                    <label for="is_virtual" class="text-sm text-gray-700 dark:text-gray-300">
+                        Online-Teilnahme möglich
+                    </label>
+                </div>
+
+                <div x-show="isVirtual" x-transition>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Video-Link</label>
+                    <input type="url" name="video_link"
+                           value="{{ form.video_link.value|default:'' }}"
+                           class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                           placeholder="https://meet.example.com/...">
+                    <p class="mt-1 text-xs text-gray-500">Link für Zoom, Teams, Jitsi oder andere Videokonferenz-Dienste</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Initial Agenda -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+             x-data="{
+                 publicItems: [],
+                 internalItems: []
+             }">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Tagesordnung (optional)</h3>
+            <p class="text-sm text-gray-500 mb-4">Sie können die Tagesordnung auch später bearbeiten.</p>
+
+            <!-- Auto-generated TOP 1 info -->
+            <div class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <div class="flex items-start gap-2">
+                    <i data-lucide="info" class="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5"></i>
+                    <div class="text-sm text-blue-700 dark:text-blue-300">
+                        <strong>TOP 1</strong> (Genehmigung der Tagesordnung und ggf. des Protokolls der letzten Sitzung) wird automatisch erstellt.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Public Section -->
+            <div class="mb-6">
+                <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                    <i data-lucide="users" class="w-4 h-4 text-primary-600"></i>
+                    Öffentlicher Teil
+                </h4>
+                <div class="space-y-2">
+                    <template x-for="(item, index) in publicItems" :key="'public-' + index">
+                        <div class="flex items-center gap-2">
+                            <!-- Start numbering at 2 since TOP 1 is auto-created -->
+                            <span class="w-8 h-8 flex-shrink-0 bg-primary-50 dark:bg-primary-900/20 rounded-lg flex items-center justify-center text-sm font-medium text-primary-600 dark:text-primary-400"
+                                  x-text="index + 2"></span>
+                            <input type="text" :name="'agenda_' + index"
+                                   x-model="item.title"
+                                   class="flex-1 px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                   placeholder="Tagesordnungspunkt...">
+                            <button type="button" @click="publicItems.splice(index, 1)"
+                                    class="p-2 text-gray-400 hover:text-red-500">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </template>
+                    <p x-show="publicItems.length === 0" class="text-sm text-gray-500 text-center py-2">
+                        Noch keine weiteren öffentlichen Punkte (TOP 1 wird automatisch erstellt)
+                    </p>
+                </div>
+                <button type="button" @click="publicItems.push({ title: '' })"
+                        class="mt-3 text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    Weiteren öffentlichen Punkt hinzufügen (TOP 2+)</button>
+            </div>
+
+            <!-- Internal Section -->
+            <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                <h4 class="text-sm font-semibold text-amber-700 dark:text-amber-400 mb-3 flex items-center gap-2">
+                    <i data-lucide="lock" class="w-4 h-4"></i>
+                    Nicht-öffentlicher Teil
+                </h4>
+                <div class="space-y-2">
+                    <template x-for="(item, index) in internalItems" :key="'internal-' + index">
+                        <div class="flex items-center gap-2">
+                            <span class="w-8 h-8 flex-shrink-0 bg-amber-50 dark:bg-amber-900/20 rounded-lg flex items-center justify-center text-sm font-medium text-amber-700 dark:text-amber-400"
+                                  x-text="'NÖ ' + (index + 1)"></span>
+                            <input type="hidden" :name="'agenda_visibility_' + (publicItems.length + index)" value="internal">
+                            <input type="text" :name="'agenda_' + (publicItems.length + index)"
+                                   x-model="item.title"
+                                   class="flex-1 px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg focus:ring-2 focus:ring-amber-500"
+                                   placeholder="Nicht-öffentlicher Punkt...">
+                            <button type="button" @click="internalItems.splice(index, 1)"
+                                    class="p-2 text-gray-400 hover:text-red-500">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </template>
+                    <p x-show="internalItems.length === 0" class="text-sm text-gray-500 text-center py-2">
+                        Noch keine nicht-öffentlichen Punkte
+                    </p>
+                </div>
+                <button type="button" @click="internalItems.push({ title: '' })"
+                        class="mt-3 text-sm text-amber-600 hover:text-amber-700 flex items-center gap-1">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    Nicht-öffentlichen Punkt hinzufügen
+                </button>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center justify-between">
+            <a href="{% url 'work:faction' org_slug=organization.slug %}"
+               class="text-sm text-gray-500 hover:text-gray-700">
+                Abbrechen
+            </a>
+            <div class="flex gap-3">
+                <button type="submit" name="save_draft" value="1"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                    Als Entwurf speichern
+                </button>
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                    <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+                    Sitzung erstellen
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

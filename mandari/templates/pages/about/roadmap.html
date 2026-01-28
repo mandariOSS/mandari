@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+
+{% block title %}Roadmap - Meilensteine & Zukunftsplanung{% endblock %}
+
+{% block meta_description %}Die Mandari Roadmap: Erreichte Meilensteine und geplante Features. Transparent und offen - wie alles bei Mandari.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="py-16 lg:py-24 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-6">
+            <i data-lucide="map" class="w-4 h-4"></i>
+            Transparente Entwicklung
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Roadmap
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+            Wohin geht die Reise? Hier finden Sie unsere erreichten Meilensteine
+            und die geplanten nächsten Schritte.
+        </p>
+    </div>
+</section>
+
+<!-- Current Status -->
+<section class="py-8 bg-amber-50 dark:bg-amber-900/20 border-y border-amber-200 dark:border-amber-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-wrap items-center justify-center gap-6 text-center">
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 bg-amber-500 rounded-full animate-pulse"></span>
+                <span class="text-gray-700 dark:text-gray-300 font-medium">Aktueller Status: <strong>Public Beta</strong></span>
+            </div>
+            <span class="text-gray-400">|</span>
+            <a href="{% url 'insight_core:releases' %}" class="text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1">
+                <i data-lucide="tag" class="w-4 h-4"></i>
+                Aktuelle Version: v0.9.0
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Timeline -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        <!-- Erreichte Meilensteine -->
+        <div class="mb-16">
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-3">
+                <i data-lucide="check-circle-2" class="w-7 h-7 text-green-500"></i>
+                Erreichte Meilensteine
+            </h2>
+
+            <div class="space-y-6">
+                <!-- Q4 2024 -->
+                <div class="relative pl-8 border-l-2 border-green-300 dark:border-green-700">
+                    <div class="absolute -left-2.5 top-0 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                        <i data-lucide="check" class="w-3 h-3 text-white"></i>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                        <span class="text-sm text-green-600 dark:text-green-400 font-medium">Q4 2024</span>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white mt-1 mb-3">Projekt-Start & Grundlagen</h3>
+                        <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="check" class="w-4 h-4 text-green-500 mt-0.5 shrink-0"></i>
+                                OParl-Ingestor für automatische Daten-Synchronisation
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="check" class="w-4 h-4 text-green-500 mt-0.5 shrink-0"></i>
+                                Django-basiertes Frontend mit TailwindCSS
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="check" class="w-4 h-4 text-green-500 mt-0.5 shrink-0"></i>
+                                Erste Kommune angebunden (Münster)
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Q1 2025 -->
+                <div class="relative pl-8 border-l-2 border-green-300 dark:border-green-700">
+                    <div class="absolute -left-2.5 top-0 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                        <i data-lucide="check" class="w-3 h-3 text-white"></i>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                        <span class="text-sm text-green-600 dark:text-green-400 font-medium">Q1 2025</span>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white mt-1 mb-3">Insight Modul & KI-Features</h3>
+                        <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="check" class="w-4 h-4 text-green-500 mt-0.5 shrink-0"></i>
+                                Vollständiges Bürger-Portal (Insight)
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="check" class="w-4 h-4 text-green-500 mt-0.5 shrink-0"></i>
+                                KI-Zusammenfassungen für Vorgänge
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="check" class="w-4 h-4 text-green-500 mt-0.5 shrink-0"></i>
+                                Meilisearch Volltextsuche
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="check" class="w-4 h-4 text-green-500 mt-0.5 shrink-0"></i>
+                                Weitere Kommunen (Köln, Aachen, Bonn)
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- In Arbeit -->
+        <div class="mb-16">
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-3">
+                <i data-lucide="loader" class="w-7 h-7 text-amber-500 animate-spin"></i>
+                In Arbeit
+            </h2>
+
+            <div class="space-y-6">
+                <!-- Aktuell -->
+                <div class="relative pl-8 border-l-2 border-amber-300 dark:border-amber-700">
+                    <div class="absolute -left-2.5 top-0 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
+                        <i data-lucide="more-horizontal" class="w-3 h-3 text-white"></i>
+                    </div>
+                    <div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-6 border border-amber-200 dark:border-amber-800">
+                        <span class="text-sm text-amber-600 dark:text-amber-400 font-medium">Aktuell</span>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white mt-1 mb-3">Public Beta & Stabilisierung</h3>
+                        <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle-dot" class="w-4 h-4 text-amber-500 mt-0.5 shrink-0"></i>
+                                Staging-Umgebung (mandari.dev)
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle-dot" class="w-4 h-4 text-amber-500 mt-0.5 shrink-0"></i>
+                                Marketing-Website & Dokumentation
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle-dot" class="w-4 h-4 text-amber-500 mt-0.5 shrink-0"></i>
+                                Bug-Fixes & Performance-Optimierung
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Geplant -->
+        <div>
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-3">
+                <i data-lucide="calendar" class="w-7 h-7 text-gray-400"></i>
+                Geplant
+            </h2>
+
+            <div class="space-y-6">
+                <!-- Q2 2025 -->
+                <div class="relative pl-8 border-l-2 border-gray-200 dark:border-gray-700">
+                    <div class="absolute -left-2.5 top-0 w-5 h-5 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
+                    <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                        <span class="text-sm text-gray-500 dark:text-gray-400 font-medium">Q2 2025</span>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white mt-1 mb-3">Work Modul (Fraktionen)</h3>
+                        <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle" class="w-4 h-4 text-gray-400 mt-0.5 shrink-0"></i>
+                                Fraktions-Dashboard mit Sitzungsvorbereitung
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle" class="w-4 h-4 text-gray-400 mt-0.5 shrink-0"></i>
+                                Kommentar- und Notizfunktionen
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle" class="w-4 h-4 text-gray-400 mt-0.5 shrink-0"></i>
+                                Team-Kollaboration
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Q3 2025 -->
+                <div class="relative pl-8 border-l-2 border-gray-200 dark:border-gray-700">
+                    <div class="absolute -left-2.5 top-0 w-5 h-5 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
+                    <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                        <span class="text-sm text-gray-500 dark:text-gray-400 font-medium">Q3 2025</span>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white mt-1 mb-3">Erweiterungen & Integrationen</h3>
+                        <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle" class="w-4 h-4 text-gray-400 mt-0.5 shrink-0"></i>
+                                Benachrichtigungen & Alerts
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle" class="w-4 h-4 text-gray-400 mt-0.5 shrink-0"></i>
+                                Erweiterte KI-Features (Chat mit Dokumenten)
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle" class="w-4 h-4 text-gray-400 mt-0.5 shrink-0"></i>
+                                API für externe Anwendungen
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Zukunft -->
+                <div class="relative pl-8 border-l-2 border-gray-200 dark:border-gray-700">
+                    <div class="absolute -left-2.5 top-0 w-5 h-5 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
+                    <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                        <span class="text-sm text-gray-500 dark:text-gray-400 font-medium">Zukunft</span>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white mt-1 mb-3">Session Modul (Verwaltungen)</h3>
+                        <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle" class="w-4 h-4 text-gray-400 mt-0.5 shrink-0"></i>
+                                Sitzungsmanagement für Verwaltungen
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle" class="w-4 h-4 text-gray-400 mt-0.5 shrink-0"></i>
+                                Protokollerstellung
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <i data-lucide="circle" class="w-4 h-4 text-gray-400 mt-0.5 shrink-0"></i>
+                                OParl-Export für andere Systeme
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA -->
+<section class="py-16 lg:py-24 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+            Feature-Wünsche?
+        </h2>
+        <p class="text-gray-600 dark:text-gray-300 mb-8 max-w-2xl mx-auto">
+            Mandari wird von der Community mitgestaltet. Teilen Sie uns Ihre Ideen mit
+            oder stimmen Sie auf GitHub für Features ab.
+        </p>
+        <div class="flex flex-wrap justify-center gap-4">
+            <a href="https://github.com/mandari/mandari/issues" target="_blank" rel="noopener noreferrer"
+               class="inline-flex items-center px-6 py-3 bg-gray-900 dark:bg-white hover:bg-gray-800 dark:hover:bg-gray-100 text-white dark:text-gray-900 font-medium rounded-xl transition-colors">
+                <i data-lucide="github" class="w-5 h-5 mr-2"></i>
+                GitHub Issues
+            </a>
+            <a href="{% url 'insight_core:releases' %}"
+               class="inline-flex items-center gap-2 px-6 py-3 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-700 font-medium rounded-xl transition-colors">
+                <i data-lucide="tag" class="w-5 h-5"></i>
+                Alle Releases
+            </a>
+        </div>
+    </div>
+</section>
+{% endblock %}

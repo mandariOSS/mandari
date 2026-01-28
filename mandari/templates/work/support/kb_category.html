@@ -1,0 +1,122 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}{{ category.name }}{% endblock %}
+
+{% block header_title %}{{ category.name }}{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ category.description|default:"" }}</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:knowledge_base' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Alle Themen
+</a>
+{% endblock %}
+
+{% block work_content %}
+<!-- Breadcrumb -->
+<nav class="mb-6">
+    <ol class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+        <li>
+            <a href="{% url 'work:knowledge_base' org_slug=organization.slug %}" class="hover:text-primary-600 dark:hover:text-primary-400">
+                Wissensdatenbank
+            </a>
+        </li>
+        <li>
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+        </li>
+        <li class="text-gray-900 dark:text-white font-medium">{{ category.name }}</li>
+    </ol>
+</nav>
+
+<!-- Category Header -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-8">
+    <div class="flex items-center gap-4">
+        <div class="p-4 bg-{{ category.color }}-100 dark:bg-{{ category.color }}-900/30 rounded-xl">
+            <i data-lucide="{{ category.icon }}" class="w-8 h-8 text-{{ category.color }}-600 dark:text-{{ category.color }}-400"></i>
+        </div>
+        <div>
+            <h1 class="text-xl font-semibold text-gray-900 dark:text-white">{{ category.name }}</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ articles|length }} Artikel</p>
+        </div>
+    </div>
+</div>
+
+<!-- Articles List -->
+{% if articles %}
+<div class="space-y-4">
+    {% for article in articles %}
+    <a href="{% url 'work:kb_article' org_slug=organization.slug category_slug=category.slug article_slug=article.slug %}"
+       class="block bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-md transition-all">
+        <div class="flex items-start gap-4">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                    <h3 class="text-base font-medium text-gray-900 dark:text-white">{{ article.title }}</h3>
+                    {% if article.is_featured %}
+                    <span class="px-2 py-0.5 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded">Empfohlen</span>
+                    {% endif %}
+                </div>
+                {% if article.excerpt %}
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-2 line-clamp-2">{{ article.excerpt }}</p>
+                {% endif %}
+                <div class="flex items-center gap-4 mt-3 text-xs text-gray-400 dark:text-gray-500">
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="eye" class="w-3 h-3"></i>
+                        {{ article.views_count }} Aufrufe
+                    </span>
+                    {% if article.helpful_percentage is not None %}
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="thumbs-up" class="w-3 h-3"></i>
+                        {{ article.helpful_percentage }}% hilfreich
+                    </span>
+                    {% endif %}
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="calendar" class="w-3 h-3"></i>
+                        {{ article.published_at|date:"d.m.Y"|default:article.created_at|date:"d.m.Y" }}
+                    </span>
+                </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400 flex-shrink-0 mt-1"></i>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+    <div class="w-16 h-16 mx-auto mb-4 bg-teal-100 dark:bg-teal-900/30 rounded-full flex items-center justify-center">
+        <i data-lucide="file-text" class="w-8 h-8 text-teal-500 dark:text-teal-400"></i>
+    </div>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Artikel vorhanden</h3>
+    <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+        In dieser Kategorie wurden noch keine Artikel veröffentlicht.
+    </p>
+    <a href="{% url 'work:support_create' org_slug=organization.slug %}"
+       class="inline-flex items-center gap-2 mt-6 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+        Support kontaktieren
+    </a>
+</div>
+{% endif %}
+
+<!-- Quick Support -->
+<div class="mt-8 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-6">
+    <div class="flex items-start gap-4">
+        <div class="p-3 bg-blue-200 dark:bg-blue-800/50 rounded-lg">
+            <i data-lucide="help-circle" class="w-6 h-6 text-blue-700 dark:text-blue-300"></i>
+        </div>
+        <div class="flex-1">
+            <h3 class="font-medium text-blue-900 dark:text-blue-100">Nicht gefunden, wonach Sie suchen?</h3>
+            <p class="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                Unser Support-Team hilft Ihnen gerne weiter.
+            </p>
+        </div>
+        <a href="{% url 'work:support_create' org_slug=organization.slug %}"
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-300 bg-white dark:bg-blue-900/50 border border-blue-300 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-800/50">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            Ticket erstellen
+        </a>
+    </div>
+</div>
+{% endblock %}

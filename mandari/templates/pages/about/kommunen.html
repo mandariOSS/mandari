@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}Kommunen - Angebundene Städte{% endblock %}
+
+{% block meta_description %}Übersicht aller an Mandari angebundenen Kommunen. {{ stats.bodies }} Städte mit {{ stats.papers|default:0 }} Vorgängen und {{ stats.meetings|default:0 }} Sitzungen.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="py-16 lg:py-24 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 text-sm font-medium mb-6">
+            <i data-lucide="map-pin" class="w-4 h-4"></i>
+            {{ stats.bodies }} Kommune{{ stats.bodies|pluralize:"n" }} angebunden
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Kommunen auf Mandari
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+            Diese Städte und Gemeinden stellen ihre Ratsinformationen bereits über Mandari bereit.
+            Finden Sie Ihre Kommune oder helfen Sie uns, weitere anzubinden.
+        </p>
+    </div>
+</section>
+
+<!-- Stats Banner -->
+<section class="py-8 bg-white dark:bg-gray-800 border-y border-gray-200 dark:border-gray-700">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-8 text-center">
+            <div>
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">{{ stats.bodies }}</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Kommunen</div>
+            </div>
+            <div>
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">{{ stats.organizations|default:0 }}</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Gremien</div>
+            </div>
+            <div>
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">{{ stats.persons|default:0 }}</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Personen</div>
+            </div>
+            <div>
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">{{ stats.meetings|default:0 }}</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Sitzungen</div>
+            </div>
+            <div>
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">{{ stats.papers|default:0 }}</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Vorgänge</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Kommunen Liste -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+                Alle Kommunen
+            </h2>
+            <p class="text-gray-600 dark:text-gray-300">
+                Klicken Sie auf eine Kommune, um deren Ratsinformationen zu erkunden.
+            </p>
+        </div>
+
+        {% if bodies %}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {% for body in bodies %}
+            <a href="{% url 'insight_core:insight:portal_home' %}?body={{ body.id }}"
+               class="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200 dark:border-gray-700 hover:shadow-lg hover:border-primary-300 dark:hover:border-primary-600 transition-all group">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 bg-primary-100 dark:bg-primary-900/50 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-primary-200 dark:group-hover:bg-primary-800/50 transition-colors">
+                        <i data-lucide="landmark" class="w-7 h-7 text-primary-600 dark:text-primary-400"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                            {{ body.name }}
+                        </h3>
+                        {% if body.short_name and body.short_name != body.name %}
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">{{ body.short_name }}</p>
+                        {% endif %}
+                        {% if body.website %}
+                        <p class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ body.website }}</p>
+                        {% endif %}
+                    </div>
+                    <i data-lucide="arrow-right" class="w-5 h-5 text-gray-400 group-hover:text-primary-500 transition-colors shrink-0"></i>
+                </div>
+
+                <!-- Status Badge -->
+                <div class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="inline-flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                            <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                            Live
+                        </span>
+                        <span class="text-gray-500 dark:text-gray-400">
+                            OParl-Sync aktiv
+                        </span>
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-12">
+            <div class="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i data-lucide="map-pin-off" class="w-8 h-8 text-gray-400"></i>
+            </div>
+            <p class="text-gray-600 dark:text-gray-400">
+                Noch keine Kommunen angebunden.
+            </p>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- CTA: Kommune hinzufügen -->
+<section class="py-16 lg:py-24 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <div class="w-16 h-16 bg-primary-100 dark:bg-primary-900/50 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <i data-lucide="plus-circle" class="w-8 h-8 text-primary-600 dark:text-primary-400"></i>
+        </div>
+        <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+            Ihre Kommune fehlt?
+        </h2>
+        <p class="text-gray-600 dark:text-gray-300 mb-8 max-w-2xl mx-auto">
+            Wenn Ihre Stadt oder Gemeinde einen OParl-kompatiblen Ratsinformationssystem betreibt,
+            können wir sie einfach anbinden. Kontaktieren Sie uns!
+        </p>
+        <div class="flex flex-wrap justify-center gap-4">
+            <a href="{% url 'insight_core:kontakt' %}"
+               class="inline-flex items-center px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl transition-colors">
+                <i data-lucide="mail" class="w-5 h-5 mr-2"></i>
+                Kommune anfragen
+            </a>
+            <a href="{% url 'insight_core:faq' %}#oparl"
+               class="inline-flex items-center gap-2 px-6 py-3 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-700 font-medium rounded-xl transition-colors">
+                <i data-lucide="help-circle" class="w-5 h-5"></i>
+                Was ist OParl?
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Info: OParl -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 lg:p-12 border border-gray-200 dark:border-gray-700">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+                <div>
+                    <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-sm font-medium mb-4">
+                        <i data-lucide="info" class="w-4 h-4"></i>
+                        Technischer Hintergrund
+                    </span>
+                    <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+                        OParl - Der offene Standard
+                    </h3>
+                    <p class="text-gray-600 dark:text-gray-300 mb-4">
+                        Mandari nutzt den <strong>OParl-Standard</strong> zur Anbindung von Ratsinformationssystemen.
+                        OParl ist ein offener, herstellerunabhängiger Standard für den Zugriff auf
+                        parlamentarische Informationssysteme.
+                    </p>
+                    <p class="text-gray-600 dark:text-gray-300">
+                        Viele Kommunen in Deutschland nutzen bereits RIS-Systeme, die OParl unterstützen.
+                        Die Anbindung erfolgt automatisch - ohne manuellen Aufwand für die Kommune.
+                    </p>
+                </div>
+                <div class="flex flex-col gap-4">
+                    <div class="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                        <i data-lucide="check-circle" class="w-6 h-6 text-green-500 shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Automatische Synchronisation</span>
+                    </div>
+                    <div class="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                        <i data-lucide="check-circle" class="w-6 h-6 text-green-500 shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Kein manueller Aufwand</span>
+                    </div>
+                    <div class="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                        <i data-lucide="check-circle" class="w-6 h-6 text-green-500 shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Herstellerunabhängig</span>
+                    </div>
+                    <div class="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                        <i data-lucide="check-circle" class="w-6 h-6 text-green-500 shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Offener Standard</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,193 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}{% if object %}Sitzung bearbeiten{% else %}Neue Sitzung{% endif %}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Sitzungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">
+        {% if object %}{{ object.name|truncatechars:30 }}{% else %}Neue Sitzung{% endif %}
+    </span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-3xl mx-auto">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h1 class="text-xl font-bold text-gray-900 dark:text-white">
+                {% if object %}Sitzung bearbeiten{% else %}Neue Sitzung erstellen{% endif %}
+            </h1>
+        </div>
+
+        <form method="post" class="p-6 space-y-6">
+            {% csrf_token %}
+
+            <!-- Name -->
+            <div>
+                <label for="id_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Name der Sitzung *
+                </label>
+                <input type="text" name="name" id="id_name"
+                       value="{{ form.name.value|default:'' }}"
+                       required
+                       class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                       placeholder="z.B. 42. Sitzung des Hauptausschusses">
+                {% if form.name.errors %}
+                <p class="mt-1 text-sm text-red-600">{{ form.name.errors.0 }}</p>
+                {% endif %}
+            </div>
+
+            <!-- Organization -->
+            <div>
+                <label for="id_organization" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Gremium *
+                </label>
+                <select name="organization" id="id_organization" required
+                        class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    <option value="">Bitte wählen...</option>
+                    {% for org in form.organization.field.queryset %}
+                    <option value="{{ org.id }}" {% if form.organization.value == org.id|stringformat:"s" %}selected{% endif %}>
+                        {{ org.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                {% if form.organization.errors %}
+                <p class="mt-1 text-sm text-red-600">{{ form.organization.errors.0 }}</p>
+                {% endif %}
+            </div>
+
+            <!-- Date/Time -->
+            <div class="grid sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="id_start" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Beginn *
+                    </label>
+                    <input type="datetime-local" name="start" id="id_start"
+                           value="{{ form.start.value|date:'Y-m-d\TH:i'|default:'' }}"
+                           required
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    {% if form.start.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.start.errors.0 }}</p>
+                    {% endif %}
+                </div>
+                <div>
+                    <label for="id_end" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Ende
+                    </label>
+                    <input type="datetime-local" name="end" id="id_end"
+                           value="{{ form.end.value|date:'Y-m-d\TH:i'|default:'' }}"
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    {% if form.end.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.end.errors.0 }}</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Location -->
+            <div class="grid sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="id_location" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Ort
+                    </label>
+                    <input type="text" name="location" id="id_location"
+                           value="{{ form.location.value|default:'' }}"
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                           placeholder="z.B. Rathaus">
+                </div>
+                <div>
+                    <label for="id_room" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Raum
+                    </label>
+                    <input type="text" name="room" id="id_room"
+                           value="{{ form.room.value|default:'' }}"
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                           placeholder="z.B. Sitzungssaal 1">
+                </div>
+            </div>
+
+            <!-- Visibility -->
+            <div>
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" name="is_public" id="id_is_public"
+                           {% if form.is_public.value %}checked{% endif %}
+                           class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                    <label for="id_is_public" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Öffentliche Sitzung
+                    </label>
+                </div>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 ml-7">
+                    Öffentliche Sitzungen werden über die OParl-API veröffentlicht.
+                </p>
+            </div>
+
+            {% if object %}
+            <!-- Status (only for editing) -->
+            <div>
+                <label for="id_meeting_state" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Status
+                </label>
+                <select name="meeting_state" id="id_meeting_state"
+                        class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    {% for value, label in form.meeting_state.field.choices %}
+                    <option value="{{ value }}" {% if form.meeting_state.value == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Cancellation -->
+            <div class="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                <div class="flex items-center gap-3 mb-3">
+                    <input type="checkbox" name="cancelled" id="id_cancelled"
+                           {% if form.cancelled.value %}checked{% endif %}
+                           class="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500">
+                    <label for="id_cancelled" class="text-sm font-medium text-red-700 dark:text-red-400">
+                        Sitzung absagen
+                    </label>
+                </div>
+                <div>
+                    <label for="id_cancellation_reason" class="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                        Absagegrund
+                    </label>
+                    <textarea name="cancellation_reason" id="id_cancellation_reason" rows="2"
+                              class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                              placeholder="Grund für die Absage...">{{ form.cancellation_reason.value|default:'' }}</textarea>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Invitation Text -->
+            <div>
+                <label for="id_invitation_text" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Einladungstext
+                </label>
+                <textarea name="invitation_text" id="id_invitation_text" rows="4"
+                          class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          placeholder="Optionaler Text für die Einladung...">{{ form.invitation_text.value|default:'' }}</textarea>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <a href="{% if object %}{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=object.id %}{% else %}{% url 'session:meetings' tenant_slug=tenant_slug %}{% endif %}"
+                   class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
+                    Abbrechen
+                </a>
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                    <i data-lucide="save" class="w-5 h-5"></i>
+                    {% if object %}Speichern{% else %}Erstellen{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

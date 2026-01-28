@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Einladung zur Fraktionssitzung</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            border-bottom: 2px solid #4f46e5;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            color: #4f46e5;
+            margin: 0;
+            font-size: 24px;
+        }
+        .org-name {
+            color: #6b7280;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .meeting-card {
+            background-color: #f9fafb;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .meeting-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #111827;
+            margin: 0 0 15px 0;
+        }
+        .meeting-info {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .meeting-info li {
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+        }
+        .meeting-info li:last-child {
+            border-bottom: none;
+        }
+        .meeting-info strong {
+            min-width: 100px;
+            color: #374151;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 500;
+            margin: 5px;
+        }
+        .btn-primary {
+            background-color: #4f46e5;
+            color: white;
+        }
+        .btn-secondary {
+            background-color: #e5e7eb;
+            color: #374151;
+        }
+        .cta-section {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .video-link {
+            background-color: #dbeafe;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .video-link a {
+            color: #1d4ed8;
+            font-weight: 500;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            color: #6b7280;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Einladung zur Fraktionssitzung</h1>
+        <p class="org-name">{{ organization.name }}</p>
+    </div>
+
+    <p>Hallo {{ user.first_name|default:user.email }},</p>
+    <p>du bist herzlich zur folgenden Sitzung eingeladen:</p>
+
+    <div class="meeting-card">
+        <h2 class="meeting-title">{{ meeting.title }}</h2>
+        <ul class="meeting-info">
+            <li>
+                <strong>Datum:</strong>
+                <span>{{ meeting.start|date:"l, d. F Y" }}</span>
+            </li>
+            <li>
+                <strong>Uhrzeit:</strong>
+                <span>{{ meeting.start|time:"H:i" }} Uhr</span>
+            </li>
+            {% if meeting.location %}
+            <li>
+                <strong>Ort:</strong>
+                <span>{{ meeting.location }}</span>
+            </li>
+            {% endif %}
+            {% if meeting.is_virtual %}
+            <li>
+                <strong>Format:</strong>
+                <span>Online-Sitzung</span>
+            </li>
+            {% endif %}
+        </ul>
+
+        {% if meeting.video_link %}
+        <div class="video-link">
+            <strong>Video-Link:</strong><br>
+            <a href="{{ meeting.video_link }}">{{ meeting.video_link }}</a>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if meeting.description %}
+    <p><strong>Hinweise:</strong></p>
+    <p>{{ meeting.description }}</p>
+    {% endif %}
+
+    <p>Bitte gib uns Bescheid, ob du teilnehmen kannst.</p>
+
+    <div class="footer">
+        <p>Diese E-Mail wurde automatisch von {{ organization.name }} versendet.</p>
+    </div>
+</body>
+</html>

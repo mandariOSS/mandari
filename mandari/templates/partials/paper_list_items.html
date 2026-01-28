@@ -1,0 +1,91 @@
+{% if papers %}
+<div class="space-y-3" role="list" aria-label="Liste der Vorgänge">
+    {% for paper in papers %}
+    <a href="{% url 'insight_core:insight:paper_detail' paper.id %}"
+       class="block p-4 sm:p-5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all hover:shadow-lg"
+       role="listitem">
+        <div class="flex items-start gap-3 sm:gap-4">
+            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <i data-lucide="file-text" class="w-5 h-5 sm:w-6 sm:h-6 text-amber-600 dark:text-amber-400"></i>
+            </div>
+            <div class="flex-1 min-w-0 overflow-hidden">
+                <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-4">
+                    <div class="min-w-0 flex-1">
+                        <h3 class="font-semibold text-gray-900 dark:text-white mb-1 break-words">
+                            {{ paper.name|default:"Vorgang"|truncatewords:15 }}
+                        </h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 truncate">
+                            {% if paper.reference %}
+                                <span class="font-mono">{{ paper.reference }}</span>
+                            {% endif %}
+                            {% if paper.paper_type %}
+                                {% if paper.reference %} &middot; {% endif %}
+                                {{ paper.paper_type }}
+                            {% endif %}
+                        </p>
+                    </div>
+                    {% if paper.date %}
+                    <time datetime="{{ paper.date|date:'Y-m-d' }}" class="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap shrink-0">
+                        {{ paper.date|date:"d.m.Y" }}
+                    </time>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if page_obj.has_other_pages %}
+<nav class="mt-8 flex justify-center">
+    <ul class="flex items-center gap-1">
+        {% if page_obj.has_previous %}
+        <li>
+            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.type %}type={{ request.GET.type }}&{% endif %}page={{ page_obj.previous_page_number }}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+            <li>
+                <span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span>
+            </li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+            <li>
+                <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.type %}type={{ request.GET.type }}&{% endif %}page={{ num }}"
+                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                    {{ num }}
+                </a>
+            </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+        <li>
+            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.type %}type={{ request.GET.type }}&{% endif %}page={{ page_obj.next_page_number }}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="file-text" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Vorgänge gefunden</h3>
+    <p class="text-gray-500 dark:text-gray-400">
+        {% if request.GET.q or request.GET.type %}
+            Ihre Suche ergab keine Treffer. Versuchen Sie andere Filterkriterien.
+        {% else %}
+            Es sind noch keine Vorgänge vorhanden.
+        {% endif %}
+    </p>
+</div>
+{% endif %}

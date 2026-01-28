@@ -1,0 +1,136 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Personen{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Personen</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<!-- Header -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Personen</h1>
+</div>
+
+<!-- Filters -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
+    <form method="get" class="flex flex-wrap items-end gap-4">
+        <!-- Search -->
+        <div class="flex-1 min-w-[200px]">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Suche</label>
+            <div class="relative">
+                <input type="text" name="q" value="{{ request.GET.q }}"
+                       placeholder="Person suchen..."
+                       class="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <i data-lucide="search" class="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+            </div>
+        </div>
+
+        <!-- Active filter -->
+        <div class="flex items-center gap-2">
+            <input type="checkbox" name="active" value="0" id="show_inactive"
+                   {% if request.GET.active == "0" %}checked{% endif %}
+                   class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+            <label for="show_inactive" class="text-sm text-gray-700 dark:text-gray-300">Inaktive anzeigen</label>
+        </div>
+
+        <!-- Submit -->
+        <button type="submit"
+                class="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors">
+            Filtern
+        </button>
+    </form>
+</div>
+
+<!-- Person List -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for person in persons %}
+        <a href="{% url 'session:person_detail' tenant_slug=tenant_slug person_id=person.id %}"
+           class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            <!-- Avatar -->
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-medium flex-shrink-0">
+                {{ person.given_name|slice:":1" }}{{ person.family_name|slice:":1" }}
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white">
+                    {% if person.title %}{{ person.title }} {% endif %}{{ person.given_name }} {{ person.family_name }}
+                </p>
+                {% if person.email %}
+                <p class="text-sm text-gray-500 dark:text-gray-400 truncate">{{ person.email }}</p>
+                {% endif %}
+            </div>
+
+            <!-- Status -->
+            {% if not person.is_active %}
+            <span class="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                Inaktiv
+            </span>
+            {% endif %}
+
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+        </a>
+        {% empty %}
+        <div class="px-6 py-12 text-center">
+            <i data-lucide="user" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Personen gefunden</h3>
+            <p class="text-gray-500 dark:text-gray-400">
+                {% if request.GET.q %}
+                    Ihre Suche ergab keine Treffer.
+                {% else %}
+                    Es sind noch keine Personen vorhanden.
+                {% endif %}
+            </p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if page_obj.has_other_pages %}
+<nav class="mt-6 flex justify-center">
+    <ul class="flex items-center gap-1">
+        {% if page_obj.has_previous %}
+        <li>
+            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.active %}active={{ request.GET.active }}&{% endif %}page={{ page_obj.previous_page_number }}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+            <li>
+                <span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span>
+            </li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+            <li>
+                <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.active %}active={{ request.GET.active }}&{% endif %}page={{ num }}"
+                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                    {{ num }}
+                </a>
+            </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+        <li>
+            <a href="?{% if request.GET.q %}q={{ request.GET.q }}&{% endif %}{% if request.GET.active %}active={{ request.GET.active }}&{% endif %}page={{ page_obj.next_page_number }}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

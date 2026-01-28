@@ -1,0 +1,77 @@
+[project]
+name = "mandari"
+version = "2.0.0"
+description = "Mandari Insight - Kommunalpolitische Transparenz"
+readme = "README.md"
+license = { text = "AGPL-3.0" }
+requires-python = ">=3.12"
+authors = [{ name = "Mandari Contributors" }]
+
+dependencies = [
+    # Django 6.0 (released Dec 2025)
+    "django>=6.0",
+    "django-htmx>=1.19.0",
+    "whitenoise>=6.7.0",
+
+    # Database
+    "psycopg[binary]>=3.2.0",
+    "dj-database-url>=2.2.0",
+
+    # Cache & Sessions
+    "redis>=5.2.0",
+    "django-redis>=5.4.0",
+
+    # Environment
+    "python-dotenv>=1.0.0",
+
+    # Search
+    "meilisearch>=0.31.0",
+
+    # AI
+    "groq>=0.11.0",
+    "httpx>=0.28.0",
+
+    # Django 6.0 has built-in background tasks - no Celery needed!
+
+    # Utilities
+    "python-dateutil>=2.9.0",
+    "pillow>=10.0.0",  # For ImageField (logos)
+    "markdown>=3.7",  # For markdownify template filter
+
+    # Production server
+    "gunicorn>=23.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-django>=4.9.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "django-stubs>=6.0.0",  # Django 6.0 compatible
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "DJ"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "mandari.settings"
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main"]
+strict = true
+
+[tool.django-stubs]
+django_settings_module = "mandari.settings"

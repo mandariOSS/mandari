@@ -1,0 +1,219 @@
+<!-- Chatbot Support Popup -->
+<div x-data="chatbotPopup()" class="fixed bottom-4 right-4 z-50">
+    <!-- Chat Window -->
+    <div x-show="isOpen"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+         x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+         x-transition:leave-end="opacity-0 scale-95 translate-y-4"
+         class="mb-4 w-80 sm:w-96 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+         x-cloak>
+
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-primary-600 to-primary-700 px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-white"></i>
+                </div>
+                <div>
+                    <h3 class="text-white font-medium text-sm">KI-Assistent</h3>
+                    <p class="text-white/70 text-xs">Fragen zu Ratsinformationen</p>
+                </div>
+            </div>
+            <button @click="isOpen = false" class="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+                <i data-lucide="x" class="w-5 h-5 text-white"></i>
+            </button>
+        </div>
+
+        <!-- Consent Screen -->
+        <template x-if="!hasConsent">
+            <div class="p-4">
+                <div class="flex items-start gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="shield-alert" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-medium text-gray-900 dark:text-white text-sm mb-1">Datenschutzhinweis</h4>
+                        <p class="text-gray-600 dark:text-gray-400 text-xs leading-relaxed">
+                            Der KI-Assistent nutzt externe KI-Dienste. Ihre Anfragen werden verarbeitet und nicht gespeichert.
+                            <a href="{% url 'insight_core:datenschutz' %}" target="_blank" class="text-primary-600 dark:text-primary-400 hover:underline">Mehr erfahren</a>
+                        </p>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button @click="giveConsent()"
+                            class="flex-1 px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors">
+                        Zustimmen
+                    </button>
+                    <button @click="isOpen = false"
+                            class="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg transition-colors">
+                        Schließen
+                    </button>
+                </div>
+            </div>
+        </template>
+
+        <!-- Chat Interface -->
+        <template x-if="hasConsent">
+            <div>
+                <!-- Messages -->
+                <div class="h-72 overflow-y-auto p-4 space-y-3" id="chatbot-popup-messages">
+                    <!-- Welcome Message -->
+                    <template x-if="messages.length === 0">
+                        <div class="text-center py-4">
+                            <p class="text-gray-600 dark:text-gray-400 text-sm mb-3">
+                                Wie kann ich Ihnen helfen?
+                            </p>
+                            <div class="flex flex-wrap justify-center gap-2">
+                                <button @click="sendMessage('Was bedeutet dieser Vorgang?')"
+                                        class="px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                                    Vorgang erklären
+                                </button>
+                                <button @click="sendMessage('Wie funktioniert der Stadtrat?')"
+                                        class="px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                                    Stadtrat erklärt
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Message List -->
+                    <template x-for="(msg, index) in messages" :key="index">
+                        <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+                            <div :class="msg.role === 'user'
+                                         ? 'bg-primary-600 text-white rounded-2xl rounded-br-sm px-3 py-2 max-w-[85%]'
+                                         : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-2xl rounded-bl-sm px-3 py-2 max-w-[85%]'">
+                                <p class="text-sm whitespace-pre-wrap" x-text="msg.content"></p>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Loading -->
+                    <template x-if="isLoading">
+                        <div class="flex justify-start">
+                            <div class="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-bl-sm px-3 py-2">
+                                <div class="flex items-center gap-1.5">
+                                    <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></div>
+                                    <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                                    <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Input -->
+                <div class="border-t border-gray-200 dark:border-gray-700 p-3">
+                    <form @submit.prevent="sendMessage(input); input = ''" class="flex gap-2">
+                        <input type="text"
+                               x-model="input"
+                               placeholder="Frage stellen..."
+                               :disabled="isLoading"
+                               class="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 border-0 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500/20 outline-none disabled:opacity-50">
+                        <button type="submit"
+                                :disabled="!input.trim() || isLoading"
+                                class="px-3 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg transition-colors disabled:cursor-not-allowed">
+                            <i data-lucide="send" class="w-4 h-4"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Toggle Button -->
+    <button @click="isOpen = !isOpen"
+            class="group w-14 h-14 bg-gradient-to-br from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center"
+            :class="{ 'ring-4 ring-primary-500/30': isOpen }">
+        <i x-show="!isOpen" data-lucide="message-circle" class="w-6 h-6 group-hover:scale-110 transition-transform"></i>
+        <i x-show="isOpen" data-lucide="chevron-down" class="w-6 h-6"></i>
+    </button>
+</div>
+
+<script>
+function chatbotPopup() {
+    return {
+        isOpen: false,
+        hasConsent: localStorage.getItem('chat_consent') === 'true',
+        messages: [],
+        input: '',
+        isLoading: false,
+
+        giveConsent() {
+            localStorage.setItem('chat_consent', 'true');
+            this.hasConsent = true;
+
+            // Set server-side session
+            fetch('{% url "insight_core:insight:chat_message" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ consent: true })
+            });
+
+            // Reinitialize icons
+            this.$nextTick(() => lucide.createIcons());
+        },
+
+        async sendMessage(content) {
+            if (!content.trim()) return;
+
+            // Add user message
+            this.messages.push({ role: 'user', content: content });
+            this.isLoading = true;
+
+            // Scroll to bottom
+            this.$nextTick(() => {
+                const container = document.getElementById('chatbot-popup-messages');
+                if (container) container.scrollTop = container.scrollHeight;
+            });
+
+            try {
+                const response = await fetch('{% url "insight_core:insight:chat_message" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({ message: content })
+                });
+
+                const data = await response.json();
+
+                if (data.error === 'consent_required') {
+                    this.hasConsent = false;
+                    localStorage.removeItem('chat_consent');
+                    this.messages.pop();
+                } else if (data.error) {
+                    this.messages.push({
+                        role: 'assistant',
+                        content: 'Entschuldigung, es ist ein Fehler aufgetreten: ' + data.error
+                    });
+                } else {
+                    this.messages.push({
+                        role: 'assistant',
+                        content: data.response
+                    });
+                }
+            } catch (error) {
+                this.messages.push({
+                    role: 'assistant',
+                    content: 'Entschuldigung, es ist ein Verbindungsfehler aufgetreten.'
+                });
+            } finally {
+                this.isLoading = false;
+
+                this.$nextTick(() => {
+                    const container = document.getElementById('chatbot-popup-messages');
+                    if (container) container.scrollTop = container.scrollHeight;
+                    lucide.createIcons();
+                });
+            }
+        }
+    }
+}
+</script>

@@ -1,0 +1,336 @@
+# =============================================================================
+# Mandari 2.0 - CI/CD Pipeline
+# =============================================================================
+# Automatisches Deployment bei Push auf main/production Branch
+#
+# Workflow:
+# 1. Build & Test
+# 2. Build Docker Images
+# 3. Push to Registry
+# 4. Deploy to Servers via Ansible
+# =============================================================================
+
+name: Deploy Mandari
+
+on:
+  push:
+    branches:
+      - main
+      - production
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - staging
+          - production
+      skip_tests:
+        description: 'Skip tests'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/mandari
+
+jobs:
+  # ===========================================================================
+  # Test
+  # ===========================================================================
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_tests }}
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd mandari
+          pip install -r requirements.txt
+          pip install pytest pytest-django pytest-cov
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+          SECRET_KEY: test-secret-key-for-ci
+          DEBUG: 'false'
+        run: |
+          cd mandari
+          python manage.py migrate --noinput
+          pytest --cov=. --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./mandari/coverage.xml
+          fail_ci_if_error: false
+
+  # ===========================================================================
+  # Build Docker Images
+  # ===========================================================================
+  build:
+    name: Build Images
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+
+    strategy:
+      matrix:
+        include:
+          - context: ./mandari
+            image: api
+          - context: ./apps/ingestor
+            image: ingestor
+          # Uncomment when frontend apps exist:
+          # - context: ./apps/web-public
+          #   image: web-public
+          # - context: ./apps/web-work
+          #   image: web-work
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            GIT_SHA=${{ github.sha }}
+
+  # ===========================================================================
+  # Deploy to Production
+  # ===========================================================================
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'
+
+    environment:
+      name: ${{ inputs.environment || 'production' }}
+      url: https://mandari.de
+
+    concurrency:
+      group: deploy-${{ inputs.environment || 'production' }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Ansible
+        run: |
+          pip install ansible ansible-lint
+          ansible-galaxy install -r infrastructure/ansible/requirements.yml
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.MASTER_IP }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.SLAVE_IP }} >> ~/.ssh/known_hosts
+
+      - name: Create Ansible inventory
+        run: |
+          cat > infrastructure/ansible/inventory/production.yml << EOF
+          all:
+            vars:
+              ansible_user: root
+              ansible_python_interpreter: /usr/bin/python3
+              app_name: mandari
+              app_user: deploy
+              app_dir: /opt/mandari
+              data_dir: /mnt/data
+              image_tag: ${{ needs.build.outputs.image_tag || github.sha }}
+              docker_registry: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}
+
+            children:
+              master:
+                hosts:
+                  mandari-master:
+                    ansible_host: ${{ secrets.MASTER_IP }}
+                    private_ip: 10.0.1.10
+                    postgres_role: primary
+                    redis_role: master
+                    run_ingestor: true
+
+              slave:
+                hosts:
+                  mandari-slave:
+                    ansible_host: ${{ secrets.SLAVE_IP }}
+                    private_ip: 10.0.1.11
+                    postgres_role: replica
+                    redis_role: replica
+                    run_ingestor: false
+
+              all_servers:
+                children:
+                  master:
+                  slave:
+          EOF
+
+      - name: Create environment file
+        run: |
+          cat > infrastructure/docker/.env << EOF
+          SITE_URL=${{ secrets.SITE_URL }}
+          SECRET_KEY=${{ secrets.SECRET_KEY }}
+          ENCRYPTION_MASTER_KEY=${{ secrets.ENCRYPTION_MASTER_KEY }}
+          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+          REPLICATION_PASSWORD=${{ secrets.REPLICATION_PASSWORD }}
+          MEILISEARCH_KEY=${{ secrets.MEILISEARCH_KEY }}
+          REDIS_MAXMEMORY=512mb
+          MASTER_PRIVATE_IP=10.0.1.10
+          DATA_DIR=/mnt/data
+          DOCKER_REGISTRY=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}
+          IMAGE_TAG=${{ needs.build.outputs.image_tag || github.sha }}
+          EOF
+
+      - name: Deploy with Ansible
+        working-directory: infrastructure/ansible
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: 'false'
+        run: |
+          ansible-playbook -i inventory/production.yml playbooks/deploy.yml
+
+      - name: Health check
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 30
+
+          # Check health endpoint
+          for i in {1..10}; do
+            if curl -sf https://mandari.de/health > /dev/null; then
+              echo "✅ Health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 10
+          done
+
+          echo "❌ Health check failed!"
+          exit 1
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number || 1,
+              body: '❌ Deployment failed! Check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})'
+            })
+
+  # ===========================================================================
+  # Post-Deploy Tasks
+  # ===========================================================================
+  post-deploy:
+    name: Post-Deploy
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: success()
+
+    steps:
+      - name: Create deployment record
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: context.payload.deployment?.id || 0,
+              state: 'success',
+              environment_url: 'https://mandari.de',
+              description: 'Deployment successful'
+            });
+
+      - name: Notify success
+        run: |
+          echo "🚀 Deployment successful!"
+          echo "Version: ${{ github.sha }}"
+          echo "URL: https://mandari.de"

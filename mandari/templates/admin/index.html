@@ -1,0 +1,344 @@
+{% extends "unfold/layouts/base_simple.html" %}
+
+{% load i18n unfold static %}
+
+{% block breadcrumbs %}{% endblock %}
+
+{% block title %}
+    Dashboard | Mandari Admin
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-8">
+    <!-- Header -->
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+                Dashboard
+            </h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">
+                Willkommen bei Mandari Admin - Kommunalpolitische Transparenz
+            </p>
+        </div>
+    </div>
+
+    <!-- Haupt-Statistiken -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {% component "unfold/components/card.html" with class="text-center" %}
+            <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
+                {{ stats.bodies }}
+            </div>
+            <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Kommunen
+            </div>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with class="text-center" %}
+            <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
+                {{ stats.papers }}
+            </div>
+            <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Vorgange
+            </div>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with class="text-center" %}
+            <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
+                {{ stats.meetings }}
+            </div>
+            <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Sitzungen
+            </div>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with class="text-center" %}
+            <div class="text-3xl font-bold text-primary-600 dark:text-primary-400">
+                {{ stats.persons }}
+            </div>
+            <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Personen
+            </div>
+        {% endcomponent %}
+    </div>
+
+    <!-- Detail-Statistiken -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- OParl Daten -->
+        {% component "unfold/components/card.html" %}
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                OParl Datenbestand
+            </h2>
+            <div class="space-y-3">
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span class="text-gray-600 dark:text-gray-400">Quellen (aktiv)</span>
+                    <span class="font-medium text-gray-900 dark:text-white">{{ stats.sources_active }} / {{ stats.sources }}</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span class="text-gray-600 dark:text-gray-400">Kommunen</span>
+                    <span class="font-medium text-gray-900 dark:text-white">{{ stats.bodies }}</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span class="text-gray-600 dark:text-gray-400">Gremien</span>
+                    <span class="font-medium text-gray-900 dark:text-white">{{ stats.organizations }}</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span class="text-gray-600 dark:text-gray-400">Personen</span>
+                    <span class="font-medium text-gray-900 dark:text-white">{{ stats.persons }}</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span class="text-gray-600 dark:text-gray-400">Mitgliedschaften</span>
+                    <span class="font-medium text-gray-900 dark:text-white">{{ stats.memberships }}</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span class="text-gray-600 dark:text-gray-400">Sitzungen</span>
+                    <span class="font-medium text-gray-900 dark:text-white">{{ stats.meetings }}</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span class="text-gray-600 dark:text-gray-400">Vorgange</span>
+                    <span class="font-medium text-gray-900 dark:text-white">{{ stats.papers }}</span>
+                </div>
+                <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span class="text-gray-600 dark:text-gray-400">Tagesordnungspunkte</span>
+                    <span class="font-medium text-gray-900 dark:text-white">{{ stats.agenda_items }}</span>
+                </div>
+                <div class="flex justify-between items-center py-2">
+                    <span class="text-gray-600 dark:text-gray-400">Dateien</span>
+                    <span class="font-medium text-gray-900 dark:text-white">{{ stats.files }}</span>
+                </div>
+            </div>
+        {% endcomponent %}
+
+        <!-- Content & Aktivitat -->
+        <div class="flex flex-col gap-6">
+            {% component "unfold/components/card.html" %}
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    Content
+                </h2>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                        <span class="text-gray-600 dark:text-gray-400">Blog-Artikel</span>
+                        <span class="font-medium text-gray-900 dark:text-white">
+                            {{ content_stats.blog_published }} / {{ content_stats.blog_posts }}
+                            <span class="text-xs text-gray-400">(veroffentlicht)</span>
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-center py-2">
+                        <span class="text-gray-600 dark:text-gray-400">Releases</span>
+                        <span class="font-medium text-gray-900 dark:text-white">
+                            {{ content_stats.releases_published }} / {{ content_stats.releases }}
+                            <span class="text-xs text-gray-400">(veroffentlicht)</span>
+                        </span>
+                    </div>
+                </div>
+            {% endcomponent %}
+
+            {% component "unfold/components/card.html" %}
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    Aktivitat (letzte 7 Tage)
+                </h2>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+                        <span class="text-gray-600 dark:text-gray-400">Neue Vorgange</span>
+                        <span class="font-medium text-green-600 dark:text-green-400">+{{ stats.papers_recent }}</span>
+                    </div>
+                    <div class="flex justify-between items-center py-2">
+                        <span class="text-gray-600 dark:text-gray-400">Anstehende Sitzungen</span>
+                        <span class="font-medium text-blue-600 dark:text-blue-400">{{ stats.meetings_upcoming }}</span>
+                    </div>
+                </div>
+            {% endcomponent %}
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {% component "unfold/components/card.html" %}
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Vorgänge & Sitzungen (12 Monate)
+            </h2>
+            <div style="height: 250px;">
+                <canvas id="activityChart"></canvas>
+            </div>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" %}
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Vorgänge nach Kommune
+            </h2>
+            <div style="height: 250px;">
+                <canvas id="bodyChart"></canvas>
+            </div>
+        {% endcomponent %}
+    </div>
+
+    <!-- Listen -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Anstehende Sitzungen -->
+        {% component "unfold/components/card.html" %}
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Nächste Sitzungen
+            </h2>
+            {% if upcoming_meetings %}
+            <div class="space-y-2">
+                {% for meeting in upcoming_meetings %}
+                <a href="{% url 'admin:insight_core_oparlmeeting_change' meeting.pk %}"
+                   class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                    <div>
+                        <div class="font-medium text-gray-900 dark:text-white text-sm">
+                            {{ meeting.name|truncatechars:50 }}
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">
+                            {{ meeting.body.get_display_name }}
+                        </div>
+                    </div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">
+                        {{ meeting.start|date:"d.m.Y H:i" }}
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-gray-500 dark:text-gray-400 text-sm">
+                Keine anstehenden Sitzungen.
+            </p>
+            {% endif %}
+        {% endcomponent %}
+
+        <!-- Sync-Status mit Aktionen -->
+        {% component "unfold/components/card.html" %}
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                    Sync-Status
+                </h2>
+                <a href="{% url 'admin:insight_core_oparlsource_changelist' %}"
+                   class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400">
+                    Alle anzeigen →
+                </a>
+            </div>
+            {% if recent_sources %}
+            <div class="space-y-2">
+                {% for source in recent_sources %}
+                <div class="flex items-center justify-between p-3 rounded-lg bg-gray-100 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600">
+                    <div class="flex items-center gap-3">
+                        {% if source.last_sync %}
+                            {% with hours=source.hours_since_sync %}
+                            {% if hours < 0.5 %}
+                            <span class="w-3 h-3 rounded-full bg-green-500 shadow-sm shadow-green-500/50"></span>
+                            {% elif hours < 2 %}
+                            <span class="w-3 h-3 rounded-full bg-lime-500 shadow-sm shadow-lime-500/50"></span>
+                            {% elif hours < 24 %}
+                            <span class="w-3 h-3 rounded-full bg-yellow-500 shadow-sm shadow-yellow-500/50"></span>
+                            {% else %}
+                            <span class="w-3 h-3 rounded-full bg-red-500 shadow-sm shadow-red-500/50"></span>
+                            {% endif %}
+                            {% endwith %}
+                        {% else %}
+                        <span class="w-3 h-3 rounded-full bg-red-500 shadow-sm shadow-red-500/50"></span>
+                        {% endif %}
+                        <a href="{% url 'admin:insight_core_oparlsource_change' source.pk %}"
+                           class="font-medium text-gray-900 dark:text-gray-100 text-sm hover:text-primary-600 dark:hover:text-primary-400">
+                            {{ source.name }}
+                        </a>
+                    </div>
+                    <div class="text-xs text-gray-600 dark:text-gray-300">
+                        {% if source.last_sync %}
+                            {{ source.last_sync|timesince }} her
+                        {% else %}
+                            <span class="text-red-600 dark:text-red-400">Nie synchronisiert</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-gray-500 dark:text-gray-400 text-sm">
+                Keine OParl-Quellen konfiguriert.
+            </p>
+            {% endif %}
+        {% endcomponent %}
+    </div>
+</div>
+
+<!-- Chart.js -->
+<script src="{% static 'vendor/chartjs/chart.min.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const isDark = document.documentElement.classList.contains('dark');
+    const gridColor = isDark ? '#374151' : '#e5e7eb';
+    const textColor = isDark ? '#9ca3af' : '#6b7280';
+
+    // Activity Chart
+    const activityCtx = document.getElementById('activityChart');
+    if (activityCtx) {
+        new Chart(activityCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ chart_months|default:"[]"|safe }},
+                datasets: [
+                    {
+                        label: 'Vorgänge',
+                        data: {{ chart_papers|default:"[]"|safe }},
+                        backgroundColor: 'rgba(99, 102, 241, 0.8)',
+                        borderRadius: 4
+                    },
+                    {
+                        label: 'Sitzungen',
+                        data: {{ chart_meetings|default:"[]"|safe }},
+                        backgroundColor: 'rgba(168, 85, 247, 0.8)',
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: textColor },
+                        grid: { color: gridColor }
+                    },
+                    x: {
+                        ticks: { color: textColor },
+                        grid: { display: false }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { color: textColor } }
+                }
+            }
+        });
+    }
+
+    // Body Chart
+    const bodyCtx = document.getElementById('bodyChart');
+    if (bodyCtx) {
+        new Chart(bodyCtx, {
+            type: 'doughnut',
+            data: {
+                labels: {{ papers_by_body_labels|default:"[]"|safe }},
+                datasets: [{
+                    data: {{ papers_by_body_data|default:"[]"|safe }},
+                    backgroundColor: [
+                        '#6366f1', '#a855f7', '#10b981', '#f59e0b', '#ef4444',
+                        '#6b7280', '#ec4899', '#22d3ee', '#84cc16', '#fb923c'
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { color: textColor, boxWidth: 12, padding: 8 }
+                    }
+                }
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

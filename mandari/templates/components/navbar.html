@@ -1,0 +1,456 @@
+{% load static %}
+<!-- Navigation Bar -->
+<nav class="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-lg border-b border-gray-200 dark:border-gray-800"
+     x-data="{ mobileMenuOpen: false }"
+     aria-label="Hauptnavigation">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center h-16">
+            <!-- Left Section: Logo -->
+            <div class="flex-1 flex items-center">
+                <a href="{% if is_portal %}{% url 'insight_core:insight:portal_home' %}{% else %}{% url 'insight_core:home' %}{% endif %}"
+                   class="flex items-center gap-2 shrink-0"
+                   aria-label="{% if is_portal %}Mandari Insight Startseite{% else %}Mandari Startseite{% endif %}">
+                    <span class="w-9 h-9 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center text-lg" aria-hidden="true">
+                        &#127963;
+                    </span>
+                    <span class="font-bold text-lg text-gray-900 dark:text-white hidden sm:inline">
+                        Mandari{% if is_portal %} <span class="text-primary-500">Insight</span>{% endif %}
+                    </span>
+                </a>
+            </div>
+
+            {% if is_portal %}
+            <!-- ================================================================ -->
+            <!-- PORTAL NAVIGATION (RIS) - Desktop -->
+            <!-- ================================================================ -->
+            <nav class="hidden lg:flex items-center gap-1" aria-label="Portal-Navigation">
+                <a href="{% url 'insight_core:insight:meeting_list' %}"
+                   class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors">
+                    Sitzungen
+                </a>
+                <a href="{% url 'insight_core:insight:paper_list' %}"
+                   class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors">
+                    Vorgänge
+                </a>
+                <a href="{% url 'insight_core:insight:organization_list' %}"
+                   class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors">
+                    Gremien
+                </a>
+                <a href="{% url 'insight_core:insight:person_list' %}"
+                   class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors">
+                    Personen
+                </a>
+                <a href="{% url 'insight_core:insight:search' %}"
+                   class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors flex items-center gap-1">
+                    <i data-lucide="search" class="w-4 h-4" aria-hidden="true"></i>
+                    <span>Suche</span>
+                </a>
+            </nav>
+
+            <!-- Portal: Search Bar (Desktop) -->
+            <div class="hidden md:flex flex-1 max-w-xs lg:max-w-sm mx-4">
+                {% include "components/search_bar.html" %}
+            </div>
+
+            {% else %}
+            <!-- ================================================================ -->
+            <!-- MARKETING NAVIGATION (Landingpage) - Desktop -->
+            <!-- ================================================================ -->
+            <nav class="hidden lg:flex items-center gap-1" aria-label="Hauptmenü">
+                <!-- Produkt Dropdown -->
+                <div class="relative" x-data="{ open: false }">
+                    <button @click="open = !open"
+                            @click.outside="open = false"
+                            @keydown.escape.prevent="open = false"
+                            class="flex items-center gap-1 px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors"
+                            :aria-expanded="open.toString()"
+                            aria-haspopup="true">
+                        <span>Produkt</span>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform" :class="open ? 'rotate-180' : ''" aria-hidden="true"></i>
+                    </button>
+                    <div x-show="open"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         class="absolute left-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50"
+                         role="menu"
+                         x-cloak>
+                        <a href="{% url 'insight_core:produkt' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="layers" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Funktionen</span>
+                        </a>
+                        <a href="{% url 'insight_core:loesungen' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="users" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Zielgruppen</span>
+                        </a>
+                        <a href="{% url 'insight_core:kommunen' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="map-pin" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Kommunen</span>
+                        </a>
+                        <a href="{% url 'insight_core:sicherheit' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="shield" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Sicherheit</span>
+                        </a>
+                        <a href="{% url 'insight_core:open_source' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="github" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Open Source</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Preise -->
+                <a href="{% url 'insight_core:preise' %}"
+                   class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors">
+                    Preise
+                </a>
+
+                <!-- Über uns Dropdown -->
+                <div class="relative" x-data="{ open: false }">
+                    <button @click="open = !open"
+                            @click.outside="open = false"
+                            @keydown.escape.prevent="open = false"
+                            class="flex items-center gap-1 px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors"
+                            :aria-expanded="open.toString()"
+                            aria-haspopup="true">
+                        <span>Über uns</span>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform" :class="open ? 'rotate-180' : ''" aria-hidden="true"></i>
+                    </button>
+                    <div x-show="open"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         class="absolute left-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50"
+                         role="menu"
+                         x-cloak>
+                        <a href="{% url 'insight_core:ueber_uns' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="compass" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Mission & Werte</span>
+                        </a>
+                        <a href="{% url 'insight_core:team' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="heart" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Team</span>
+                        </a>
+                        <a href="{% url 'insight_core:partner' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="handshake" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Partner</span>
+                        </a>
+                        <a href="{% url 'insight_core:mitmachen' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="git-pull-request" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Mitmachen</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Ressourcen Dropdown -->
+                <div class="relative" x-data="{ open: false }">
+                    <button @click="open = !open"
+                            @click.outside="open = false"
+                            @keydown.escape.prevent="open = false"
+                            class="flex items-center gap-1 px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors"
+                            :aria-expanded="open.toString()"
+                            aria-haspopup="true">
+                        <span>Ressourcen</span>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform" :class="open ? 'rotate-180' : ''" aria-hidden="true"></i>
+                    </button>
+                    <div x-show="open"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         class="absolute left-0 mt-1 w-44 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50"
+                         role="menu"
+                         x-cloak>
+                        <a href="{% url 'insight_core:blog' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="newspaper" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Blog</span>
+                        </a>
+                        <a href="{% url 'insight_core:releases' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="tag" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Releases</span>
+                        </a>
+                        <a href="{% url 'insight_core:roadmap' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="map" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Roadmap</span>
+                        </a>
+                        <a href="{% url 'insight_core:faq' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="help-circle" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>FAQ</span>
+                        </a>
+                        <a href="{% url 'insight_core:presse' %}" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="megaphone" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Presse</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Kontakt -->
+                <a href="{% url 'insight_core:kontakt' %}"
+                   class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors">
+                    Kontakt
+                </a>
+            </nav>
+            {% endif %}
+
+            <!-- Right Section: Actions (flex-1 für symmetrische Zentrierung) -->
+            <div class="flex-1 flex items-center justify-end gap-2">
+                {% if is_portal %}
+                <!-- Portal: Body Dropdown -->
+                <div class="hidden sm:block">
+                    {% include "components/body_dropdown.html" %}
+                </div>
+                {% endif %}
+
+                <!-- Context Toggle Button -->
+                {% if is_portal %}
+                <a href="{% url 'insight_core:home' %}"
+                   class="hidden md:inline-flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-lg transition-colors"
+                   aria-label="Zur Mandari Website wechseln">
+                    <i data-lucide="globe" class="w-4 h-4" aria-hidden="true"></i>
+                    <span class="hidden lg:inline">mandari.de</span>
+                </a>
+                {% else %}
+                <a href="{% url 'insight_core:insight:portal_home' %}"
+                   class="hidden md:inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors">
+                    <i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>
+                    <span>Insight öffnen</span>
+                </a>
+                {% endif %}
+
+                <!-- Dark Mode Toggle -->
+                <button @click="darkMode = !darkMode"
+                        class="p-2.5 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target flex items-center justify-center"
+                        :aria-label="darkMode ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'"
+                        :aria-pressed="darkMode.toString()">
+                    <i x-show="!darkMode" data-lucide="moon" class="w-5 h-5" aria-hidden="true"></i>
+                    <i x-show="darkMode" data-lucide="sun" class="w-5 h-5" aria-hidden="true"></i>
+                </button>
+
+                <!-- Mobile Menu Button -->
+                <button @click="mobileMenuOpen = !mobileMenuOpen"
+                        class="lg:hidden p-2.5 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target flex items-center justify-center"
+                        :aria-expanded="mobileMenuOpen.toString()"
+                        aria-controls="mobile-menu"
+                        aria-label="Hauptmenü">
+                    <i x-show="!mobileMenuOpen" data-lucide="menu" class="w-6 h-6" aria-hidden="true"></i>
+                    <i x-show="mobileMenuOpen" data-lucide="x" class="w-6 h-6" aria-hidden="true"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Menu -->
+    <div x-show="mobileMenuOpen"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 -translate-y-4"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 translate-y-0"
+         x-transition:leave-end="opacity-0 -translate-y-4"
+         class="lg:hidden bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 max-h-[calc(100vh-4rem)] overflow-y-auto"
+         id="mobile-menu"
+         role="navigation"
+         aria-label="Mobiles Menü"
+         x-cloak>
+        <div class="px-4 py-4 space-y-2">
+
+            {% if is_portal %}
+            <!-- ================================================================ -->
+            <!-- MOBILE: PORTAL NAVIGATION -->
+            <!-- ================================================================ -->
+            <!-- Mobile Search -->
+            <div class="pb-3">
+                {% include "components/search_bar.html" %}
+            </div>
+
+            <!-- Mobile Body Dropdown -->
+            <div class="sm:hidden pb-3">
+                {% include "components/body_dropdown.html" %}
+            </div>
+
+            <!-- Context Switch -->
+            <a href="{% url 'insight_core:home' %}"
+               @click="mobileMenuOpen = false"
+               class="flex items-center gap-3 px-4 py-3 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-medium touch-target">
+                <i data-lucide="globe" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                <span>mandari.de</span>
+                <i data-lucide="arrow-right" class="w-4 h-4 ml-auto text-gray-400" aria-hidden="true"></i>
+            </a>
+
+            <hr class="border-gray-200 dark:border-gray-700" role="separator">
+
+            <!-- RIS Navigation -->
+            <div class="py-2" role="group" aria-labelledby="mobile-nav-ris">
+                <p id="mobile-nav-ris" class="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Ratsinformationen</p>
+                <a href="{% url 'insight_core:insight:meeting_list' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="calendar" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Sitzungen</span>
+                </a>
+                <a href="{% url 'insight_core:insight:paper_list' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="file-text" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Vorgänge</span>
+                </a>
+                <a href="{% url 'insight_core:insight:organization_list' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="building-2" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Gremien</span>
+                </a>
+                <a href="{% url 'insight_core:insight:person_list' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="user" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Personen</span>
+                </a>
+                <a href="{% url 'insight_core:insight:search' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="search" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Suche</span>
+                </a>
+            </div>
+
+            {% else %}
+            <!-- ================================================================ -->
+            <!-- MOBILE: MARKETING NAVIGATION -->
+            <!-- ================================================================ -->
+            <!-- Context Switch -->
+            <a href="{% url 'insight_core:insight:portal_home' %}"
+               @click="mobileMenuOpen = false"
+               class="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary-600 text-white font-medium touch-target">
+                <i data-lucide="eye" class="w-5 h-5" aria-hidden="true"></i>
+                <span>Insight öffnen</span>
+                <i data-lucide="arrow-right" class="w-4 h-4 ml-auto opacity-70" aria-hidden="true"></i>
+            </a>
+
+            <hr class="border-gray-200 dark:border-gray-700" role="separator">
+
+            <!-- Produkt Section -->
+            <div class="py-2" role="group" aria-labelledby="mobile-nav-product">
+                <p id="mobile-nav-product" class="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Produkt</p>
+                <a href="{% url 'insight_core:produkt' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="layers" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Funktionen</span>
+                </a>
+                <a href="{% url 'insight_core:loesungen' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="users" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Zielgruppen</span>
+                </a>
+                <a href="{% url 'insight_core:kommunen' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="map-pin" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Kommunen</span>
+                </a>
+                <a href="{% url 'insight_core:sicherheit' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="shield" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Sicherheit</span>
+                </a>
+                <a href="{% url 'insight_core:open_source' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="github" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Open Source</span>
+                </a>
+                <a href="{% url 'insight_core:preise' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="credit-card" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Preise</span>
+                </a>
+            </div>
+
+            <hr class="border-gray-200 dark:border-gray-700" role="separator">
+
+            <!-- Über uns Section -->
+            <div class="py-2" role="group" aria-labelledby="mobile-nav-about">
+                <p id="mobile-nav-about" class="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Über uns</p>
+                <a href="{% url 'insight_core:ueber_uns' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="compass" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Mission & Werte</span>
+                </a>
+                <a href="{% url 'insight_core:team' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="heart" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Team</span>
+                </a>
+                <a href="{% url 'insight_core:partner' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="handshake" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Partner</span>
+                </a>
+                <a href="{% url 'insight_core:mitmachen' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="git-pull-request" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Mitmachen</span>
+                </a>
+            </div>
+
+            <hr class="border-gray-200 dark:border-gray-700" role="separator">
+
+            <!-- Ressourcen Section -->
+            <div class="py-2" role="group" aria-labelledby="mobile-nav-resources">
+                <p id="mobile-nav-resources" class="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Ressourcen</p>
+                <a href="{% url 'insight_core:blog' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="newspaper" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Blog</span>
+                </a>
+                <a href="{% url 'insight_core:releases' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="tag" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Releases</span>
+                </a>
+                <a href="{% url 'insight_core:roadmap' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="map" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Roadmap</span>
+                </a>
+                <a href="{% url 'insight_core:faq' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="help-circle" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>FAQ</span>
+                </a>
+                <a href="{% url 'insight_core:presse' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="megaphone" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Presse</span>
+                </a>
+                <a href="{% url 'insight_core:kontakt' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="mail" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Kontakt</span>
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</nav>

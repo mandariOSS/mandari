@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% load markdownify %}
+
+{% block title %}Releases - Versionshistorie{% endblock %}
+
+{% block meta_description %}Mandari Releases und Changelog: Neue Features, Bugfixes und Verbesserungen in jeder Version.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="py-16 lg:py-24 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-6">
+            <i data-lucide="package" class="w-4 h-4"></i>
+            Changelog
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Releases
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+            Verfolgen Sie die Entwicklung von Mandari. Alle wichtigen Updates,
+            neue Features und Bugfixes auf einen Blick.
+        </p>
+    </div>
+</section>
+
+<!-- Current Version Banner -->
+{% if latest_release %}
+<section class="py-8 bg-amber-50 dark:bg-amber-900/20 border-y border-amber-200 dark:border-amber-800">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-center gap-4 flex-wrap">
+            <span class="inline-flex items-center gap-2 px-3 py-1 {{ latest_release.badge_color }} rounded-full text-sm font-medium">
+                <i data-lucide="{% if latest_release.release_type == 'major' %}star{% elif latest_release.release_type == 'minor' %}zap{% else %}wrench{% endif %}" class="w-4 h-4"></i>
+                {{ latest_release.get_release_type_display }}
+            </span>
+            <span class="text-gray-600 dark:text-gray-300">
+                Aktuelle Version: <strong class="text-gray-900 dark:text-white">v{{ latest_release.version }}</strong>
+            </span>
+            {% if latest_release.github_url %}
+            <a href="{{ latest_release.github_url }}" target="_blank" rel="noopener noreferrer"
+               class="inline-flex items-center gap-1 text-primary-600 dark:text-primary-400 text-sm hover:underline">
+                Auf GitHub ansehen
+                <i data-lucide="external-link" class="w-3 h-3"></i>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% else %}
+<section class="py-8 bg-amber-50 dark:bg-amber-900/20 border-y border-amber-200 dark:border-amber-800">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-center gap-4 flex-wrap">
+            <span class="inline-flex items-center gap-2 px-3 py-1 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded-full text-sm font-medium">
+                <i data-lucide="flask-conical" class="w-4 h-4"></i>
+                Beta-Phase
+            </span>
+            <span class="text-gray-600 dark:text-gray-300">
+                Aktuelle Version: <strong class="text-gray-900 dark:text-white">0.9.0-beta</strong>
+            </span>
+            <a href="https://github.com/mandari/mandari/releases" target="_blank" rel="noopener noreferrer"
+               class="inline-flex items-center gap-1 text-primary-600 dark:text-primary-400 text-sm hover:underline">
+                Alle Releases auf GitHub
+                <i data-lucide="external-link" class="w-3 h-3"></i>
+            </a>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Release Timeline -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        {% if releases %}
+        <!-- Dynamic Releases from Database -->
+        {% for release in releases %}
+        <div id="v{{ release.version }}" class="relative pl-8 pb-12 border-l-2 {% if forloop.first %}border-primary-500{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+            {% if forloop.first %}
+            <div class="absolute -left-3 top-0 w-6 h-6 bg-primary-500 rounded-full flex items-center justify-center">
+                <i data-lucide="star" class="w-3 h-3 text-white"></i>
+            </div>
+            {% else %}
+            <div class="absolute -left-2 top-0 w-4 h-4 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
+            {% endif %}
+            <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 ml-4">
+                <div class="flex items-start justify-between flex-wrap gap-4 mb-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900 dark:text-white">
+                            v{{ release.version }} - {{ release.title }}
+                        </h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">{{ release.release_date|date:"F Y" }}</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        {% if release.breaking_changes %}
+                        <span class="inline-flex items-center gap-1 px-2 py-1 bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 text-xs font-medium rounded">
+                            <i data-lucide="alert-triangle" class="w-3 h-3"></i>
+                            Breaking
+                        </span>
+                        {% endif %}
+                        {% if forloop.first %}
+                        <span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 text-xs font-medium rounded">
+                            <i data-lucide="circle" class="w-2 h-2 fill-current"></i>
+                            Aktuell
+                        </span>
+                        {% endif %}
+                        <span class="inline-flex items-center gap-1 px-2 py-1 {{ release.badge_color }} text-xs font-medium rounded">
+                            {{ release.get_release_type_display }}
+                        </span>
+                    </div>
+                </div>
+                <div class="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-300">
+                    {{ release.content|markdownify }}
+                </div>
+                {% if release.github_url %}
+                <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <a href="{{ release.github_url }}" target="_blank" rel="noopener noreferrer"
+                       class="inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                        <i data-lucide="github" class="w-4 h-4"></i>
+                        GitHub Release
+                        <i data-lucide="external-link" class="w-3 h-3"></i>
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+
+        {% else %}
+        <!-- Static Fallback Content -->
+        <!-- Version 0.9.0 -->
+        <div class="relative pl-8 pb-12 border-l-2 border-primary-500">
+            <div class="absolute -left-3 top-0 w-6 h-6 bg-primary-500 rounded-full flex items-center justify-center">
+                <i data-lucide="star" class="w-3 h-3 text-white"></i>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 ml-4">
+                <div class="flex items-start justify-between flex-wrap gap-4 mb-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900 dark:text-white">Version 0.9.0-beta</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Januar 2026</p>
+                    </div>
+                    <span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 text-xs font-medium rounded">
+                        <i data-lucide="circle" class="w-2 h-2 fill-current"></i>
+                        Aktuell
+                    </span>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 mb-4">
+                    Große Architektur-Migration zu reinem Python-Stack mit Django 6.0.
+                </p>
+                <div class="space-y-3">
+                    <div>
+                        <h4 class="text-sm font-semibold text-green-600 dark:text-green-400 mb-2 flex items-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            Neu
+                        </h4>
+                        <ul class="text-sm text-gray-600 dark:text-gray-300 space-y-1 ml-6">
+                            <li>Django 6.0 als Haupt-Framework</li>
+                            <li>Server-Side Rendering mit HTMX</li>
+                            <li>Alpine.js für Interaktivität</li>
+                            <li>Neue Produktseiten (Preise, Team, FAQ)</li>
+                            <li>Multi-Kommune-Support</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-2">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                            Verbessert
+                        </h4>
+                        <ul class="text-sm text-gray-600 dark:text-gray-300 space-y-1 ml-6">
+                            <li>OParl-Sync mit HTTP-Redirect-Support</li>
+                            <li>Performance-Optimierungen bei großen Datenmengen</li>
+                            <li>Responsives Design überarbeitet</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Earlier versions info -->
+        <div class="relative pl-8 border-l-2 border-gray-300 dark:border-gray-700">
+            <div class="absolute -left-2 top-0 w-4 h-4 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
+            <div class="ml-4 py-4">
+                <p class="text-gray-500 dark:text-gray-400 text-sm">
+                    Weitere Releases werden bald hier angezeigt. Frühere Versionen finden Sie im
+                    <a href="https://github.com/mandari/mandari/releases" target="_blank" rel="noopener noreferrer"
+                       class="text-primary-600 dark:text-primary-400 hover:underline">
+                        GitHub Repository
+                    </a>
+                </p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Roadmap Preview -->
+<section class="py-16 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+                Ausblick
+            </h2>
+            <p class="text-gray-600 dark:text-gray-300">
+                Was als Nächstes kommt
+            </p>
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-2">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="flex items-center gap-3 mb-3">
+                    <span class="w-8 h-8 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center">
+                        <i data-lucide="target" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+                    </span>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Version 1.0</h3>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">
+                    Stabiler Release mit vollständiger Dokumentation, API-Stabilität und Enterprise-Features.
+                </p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="flex items-center gap-3 mb-3">
+                    <span class="w-8 h-8 bg-purple-100 dark:bg-purple-900/50 rounded-lg flex items-center justify-center">
+                        <i data-lucide="calendar-check" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
+                    </span>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Mandari Session</h3>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">
+                    Vollständiges Sitzungsmanagement für Verwaltungen - von der Einladung bis zum Protokoll.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Subscribe CTA -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+            Bleiben Sie auf dem Laufenden
+        </h2>
+        <p class="text-gray-600 dark:text-gray-300 mb-8">
+            Verfolgen Sie die Entwicklung auf GitHub oder folgen Sie uns für Updates.
+        </p>
+        <div class="flex flex-wrap justify-center gap-4">
+            <a href="https://github.com/mandari/mandari/releases.atom" target="_blank" rel="noopener noreferrer"
+               class="inline-flex items-center gap-2 px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors">
+                <i data-lucide="rss" class="w-5 h-5"></i>
+                RSS Feed
+            </a>
+            <a href="https://github.com/mandari/mandari" target="_blank" rel="noopener noreferrer"
+               class="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 dark:bg-white hover:bg-gray-800 dark:hover:bg-gray-100 text-white dark:text-gray-900 font-medium rounded-xl transition-colors">
+                <i data-lucide="github" class="w-5 h-5"></i>
+                Watch on GitHub
+            </a>
+        </div>
+    </div>
+</section>
+{% endblock %}

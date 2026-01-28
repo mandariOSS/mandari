@@ -1,0 +1,196 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Mitglieder{% endblock %}
+
+{% block header_title %}Mitglieder{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ members.count }} aktive Mitglieder in {{ organization.name }}</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:member_invite' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+    <i data-lucide="user-plus" class="w-4 h-4"></i>
+    Einladen
+</a>
+{% endblock %}
+
+{% block work_content %}
+<!-- Navigation Tabs -->
+<div class="mb-8 border-b border-gray-200 dark:border-gray-700">
+    <nav class="flex gap-1 overflow-x-auto">
+        <a href="{% url 'work:organization' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Allgemein
+        </a>
+        {% if can_manage_faction %}
+        <a href="{% url 'work:organization_faction_settings' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Fraktionssitzungen
+        </a>
+        {% endif %}
+        <a href="{% url 'work:organization_documents' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Anträge & Vorgänge
+        </a>
+        <a href="{% url 'work:members' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 whitespace-nowrap">
+            Mitglieder
+        </a>
+        <a href="{% url 'work:roles' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Rollen
+        </a>
+    </nav>
+</div>
+
+<!-- Pending Invitations -->
+{% if pending_invitations %}
+<div class="mb-6 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800">
+    <div class="px-6 py-4 border-b border-amber-200 dark:border-amber-800">
+        <h3 class="font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-2">
+            <i data-lucide="mail" class="w-5 h-5"></i>
+            Ausstehende Einladungen ({{ pending_invitations.count }})
+        </h3>
+    </div>
+    <div class="divide-y divide-amber-200 dark:divide-amber-800">
+        {% for invitation in pending_invitations %}
+        <div class="px-6 py-4 flex items-center justify-between">
+            <div>
+                <p class="font-medium text-gray-900 dark:text-white">{{ invitation.email }}</p>
+                <p class="text-sm text-gray-500">
+                    Eingeladen von {{ invitation.invited_by.get_full_name|default:invitation.invited_by.email }}
+                    am {{ invitation.created_at|date:"d.m.Y" }}
+                    · Gültig bis {{ invitation.expires_at|date:"d.m.Y" }}
+                </p>
+                {% if invitation.roles.exists %}
+                <div class="flex flex-wrap gap-1 mt-1">
+                    {% for role in invitation.roles.all %}
+                    <span class="px-2 py-0.5 text-xs rounded-full" style="background-color: {{ role.color }}20; color: {{ role.color }}">
+                        {{ role.name }}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-2">
+                <form method="post" action="{% url 'work:invitation_resend' org_slug=organization.slug invitation_id=invitation.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg" title="Erneut senden">
+                        <i data-lucide="send" class="w-4 h-4"></i>
+                    </button>
+                </form>
+                <form method="post" action="{% url 'work:invitation_cancel' org_slug=organization.slug invitation_id=invitation.id %}"
+                      onsubmit="return confirm('Einladung wirklich zurückziehen?')">
+                    {% csrf_token %}
+                    <button type="submit" class="p-2 text-gray-500 hover:text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg" title="Zurückziehen">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Active Members List -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 class="font-semibold text-gray-900 dark:text-white">Aktive Mitglieder</h3>
+    </div>
+
+    {% if members %}
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for member in members %}
+        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}"
+           class="px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            <div class="flex items-center gap-4">
+                <!-- Avatar -->
+                <div class="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold">
+                    {% if member.user.avatar %}
+                    <img src="{{ member.user.avatar.url }}" alt="" class="w-10 h-10 rounded-full object-cover">
+                    {% else %}
+                    {{ member.user.first_name|slice:":1"|upper|default:member.user.email|slice:":1"|upper }}
+                    {% endif %}
+                </div>
+
+                <div>
+                    <p class="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                        {{ member.user.get_full_name|default:member.user.email }}
+                        {% if organization.owner == member.user %}
+                        <span class="px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">
+                            Eigentümer
+                        </span>
+                        {% endif %}
+                    </p>
+                    <p class="text-sm text-gray-500">{{ member.user.email }}</p>
+
+                    <!-- Roles -->
+                    {% if member.roles.exists %}
+                    <div class="flex flex-wrap gap-1 mt-1">
+                        {% for role in member.roles.all %}
+                        <span class="px-2 py-0.5 text-xs rounded-full" style="background-color: {{ role.color }}20; color: {{ role.color }}">
+                            {{ role.name }}
+                        </span>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-xs text-gray-400 mt-1">Keine Rollen zugewiesen</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 text-gray-400">
+                <span class="text-sm">Beigetreten {{ member.joined_at|date:"d.m.Y" }}</span>
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="p-12 text-center">
+        <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+            <i data-lucide="users" class="w-8 h-8 text-gray-400"></i>
+        </div>
+        <p class="text-gray-500 dark:text-gray-400 mb-4">Noch keine Mitglieder vorhanden.</p>
+        <a href="{% url 'work:member_invite' org_slug=organization.slug %}"
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+            <i data-lucide="user-plus" class="w-4 h-4"></i>
+            Erstes Mitglied einladen
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Inactive Members -->
+{% if inactive_members %}
+<div class="mt-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h3 class="font-semibold text-gray-500 dark:text-gray-400">Deaktivierte Mitglieder ({{ inactive_members.count }})</h3>
+    </div>
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for member in inactive_members %}
+        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}"
+           class="px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors opacity-60">
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400 font-semibold">
+                    {{ member.user.first_name|slice:":1"|upper|default:member.user.email|slice:":1"|upper }}
+                </div>
+                <div>
+                    <p class="font-medium text-gray-600 dark:text-gray-400">
+                        {{ member.user.get_full_name|default:member.user.email }}
+                    </p>
+                    <p class="text-sm text-gray-400">{{ member.user.email }}</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 text-gray-400">
+                <span class="text-sm">Deaktiviert</span>
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

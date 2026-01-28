@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ motion.title }}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #1f2937;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: white;
+            padding: 24px;
+            border-radius: 8px 8px 0 0;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+        }
+        .header .org-name {
+            margin-top: 8px;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .content {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-top: none;
+            padding: 24px;
+            border-radius: 0 0 8px 8px;
+        }
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .meta-item {
+            font-size: 14px;
+        }
+        .meta-item strong {
+            color: #6b7280;
+            font-weight: 500;
+        }
+        .custom-message {
+            background: #f9fafb;
+            border-left: 4px solid #6366f1;
+            padding: 16px;
+            margin: 20px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .custom-message p {
+            margin: 0;
+        }
+        .motion-content {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f9fafb;
+            border-radius: 8px;
+            white-space: pre-wrap;
+        }
+        .footer {
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #6366f1;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            margin-top: 16px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 4px;
+            background: #e0e7ff;
+            color: #4338ca;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{{ motion.title }}</h1>
+        <div class="org-name">{{ organization.name }}</div>
+    </div>
+
+    <div class="content">
+        <div class="meta">
+            <div class="meta-item">
+                <strong>Typ:</strong><br>
+                <span class="badge">{{ motion.get_type_display }}</span>
+            </div>
+            <div class="meta-item">
+                <strong>Status:</strong><br>
+                {{ motion.get_status_display }}
+            </div>
+            <div class="meta-item">
+                <strong>Autor:</strong><br>
+                {% if motion.author %}{{ motion.author.user.get_full_name|default:motion.author.user.email }}{% else %}Unbekannt{% endif %}
+            </div>
+            <div class="meta-item">
+                <strong>Erstellt:</strong><br>
+                {{ motion.created_at|date:"d.m.Y" }}
+            </div>
+        </div>
+
+        {% if party_name %}
+        <p>
+            <strong>An:</strong> {{ party_name }}
+        </p>
+        {% endif %}
+
+        {% if custom_message %}
+        <div class="custom-message">
+            <p>{{ custom_message }}</p>
+        </div>
+        {% endif %}
+
+        {% if motion.summary %}
+        <h3>Zusammenfassung</h3>
+        <p>{{ motion.summary }}</p>
+        {% endif %}
+
+        <h3>Inhalt</h3>
+        <div class="motion-content">
+            {{ motion.content|default:"Kein Inhalt"|safe }}
+        </div>
+
+        <p style="margin-top: 24px; font-size: 14px; color: #6b7280;">
+            Das vollständige Dokument finden Sie im PDF-Anhang dieser E-Mail.
+        </p>
+    </div>
+
+    <div class="footer">
+        <p>
+            Diese E-Mail wurde automatisch von <strong>Mandari</strong> versendet.<br>
+            {{ organization.name }}
+            {% if organization.contact_email %} | {{ organization.contact_email }}{% endif %}
+            {% if organization.website %} | {{ organization.website }}{% endif %}
+        </p>
+    </div>
+</body>
+</html>

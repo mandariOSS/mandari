@@ -1,0 +1,91 @@
+{% extends "base_ris.html" %}
+{% load static %}
+
+{% block title %}Suche{% if query %}: {{ query }}{% endif %}{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Suche</h1>
+        <p class="text-gray-600 dark:text-gray-400">
+            Durchsuchen Sie alle Daten
+            {% if active_body %}der {{ active_body.name }}{% endif %}
+        </p>
+    </div>
+
+    <!-- Search Form -->
+    <div class="mb-6">
+        <div class="relative">
+            <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
+            <input type="search"
+                   name="q"
+                   id="search-input"
+                   value="{{ query }}"
+                   placeholder="Suchen Sie nach Themen, Vorlagen, Personen..."
+                   autocomplete="off"
+                   hx-get="{% url 'insight_core:insight:search_results' %}"
+                   hx-trigger="keyup changed delay:300ms, search"
+                   hx-target="#search-results"
+                   hx-indicator="#search-loading"
+                   hx-include="#search-type-filter"
+                   class="w-full pl-12 pr-12 py-4 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-lg text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none transition-all">
+
+            <!-- Loading indicator -->
+            <div id="search-loading" class="htmx-indicator absolute right-4 top-1/2 -translate-y-1/2">
+                <svg class="animate-spin h-5 w-5 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- Type Filter -->
+    <div class="mb-6">
+        <div class="flex flex-wrap gap-2">
+            {% for type_key, type_label in available_types %}
+            <label class="inline-flex items-center">
+                <input type="radio"
+                       name="type"
+                       id="search-type-filter"
+                       value="{{ type_key }}"
+                       {% if search_type == type_key %}checked{% endif %}
+                       hx-get="{% url 'insight_core:insight:search_results' %}"
+                       hx-trigger="change"
+                       hx-target="#search-results"
+                       hx-indicator="#search-loading"
+                       hx-include="#search-input"
+                       class="sr-only peer">
+                <span class="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-all
+                            peer-checked:bg-primary-500 peer-checked:text-white
+                            bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300
+                            hover:bg-gray-200 dark:hover:bg-gray-700">
+                    {% if type_key == 'paper' %}<i data-lucide="file-text" class="w-4 h-4 inline mr-1.5"></i>{% endif %}
+                    {% if type_key == 'meeting' %}<i data-lucide="calendar" class="w-4 h-4 inline mr-1.5"></i>{% endif %}
+                    {% if type_key == 'person' %}<i data-lucide="user" class="w-4 h-4 inline mr-1.5"></i>{% endif %}
+                    {% if type_key == 'organization' %}<i data-lucide="users" class="w-4 h-4 inline mr-1.5"></i>{% endif %}
+                    {% if type_key == 'file' %}<i data-lucide="file-search" class="w-4 h-4 inline mr-1.5"></i>{% endif %}
+                    {{ type_label }}
+                </span>
+            </label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Search Results -->
+    <div id="search-results">
+        {% if query %}
+            {% include "partials/search_results.html" %}
+        {% else %}
+            <div class="text-center py-12">
+                <i data-lucide="search" class="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4"></i>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Suche starten</h3>
+                <p class="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+                    Geben Sie einen Suchbegriff ein, um Vorgänge, Personen, Gremien, Sitzungen und Dokumenteninhalte zu finden.
+                </p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

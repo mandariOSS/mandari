@@ -1,0 +1,32 @@
+# =============================================================================
+# Mandari 2.0 - Terraform Variables
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in your values
+# NEVER commit terraform.tfvars to version control!
+# =============================================================================
+
+# Hetzner Cloud API Token (get from https://console.hetzner.cloud)
+hcloud_token = "your-hetzner-api-token"
+
+# Path to your SSH public key
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+
+# Server type (see https://www.hetzner.com/cloud)
+# cx31  = 2 vCPU,  8GB RAM,  80GB SSD (~€15.59/month)
+# cx41  = 4 vCPU, 16GB RAM, 160GB SSD (~€29.51/month)
+# cx51  = 8 vCPU, 32GB RAM, 240GB SSD (~€58.11/month)
+server_type = "cx31"
+
+# Load balancer type
+# lb11 = 25 connections/s,  5TB traffic (~€5.39/month)
+# lb21 = 250 connections/s, 10TB traffic (~€15.59/month)
+load_balancer_type = "lb11"
+
+# Data volume size in GB
+volume_size = 50
+
+# Environment
+environment = "production"
+
+# Domain names for SSL certificate
+domain_names = ["mandari.de"]

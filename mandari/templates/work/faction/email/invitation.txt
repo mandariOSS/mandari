@@ -1,0 +1,28 @@
+Einladung zur Fraktionssitzung
+==============================
+
+{{ organization.name }}
+
+Hallo {{ user.first_name|default:user.email }},
+
+du bist herzlich zur folgenden Sitzung eingeladen:
+
+{{ meeting.title }}
+-------------------
+
+Datum:   {{ meeting.start|date:"l, d. F Y" }}
+Uhrzeit: {{ meeting.start|time:"H:i" }} Uhr
+{% if meeting.location %}Ort:     {{ meeting.location }}{% endif %}
+{% if meeting.is_virtual %}Format:  Online-Sitzung{% endif %}
+{% if meeting.video_link %}
+Video-Link: {{ meeting.video_link }}
+{% endif %}
+{% if meeting.description %}
+Hinweise:
+{{ meeting.description }}
+{% endif %}
+
+Bitte gib uns Bescheid, ob du teilnehmen kannst.
+
+---
+Diese E-Mail wurde automatisch von {{ organization.name }} versendet.

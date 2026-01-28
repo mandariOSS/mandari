@@ -1,0 +1,30 @@
+# Django specific
+*.pyc
+__pycache__/
+db.sqlite3
+*.sqlite3
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Static files (collected)
+staticfiles/
+
+# Media files (user uploads)
+media/
+
+# Local settings
+local_settings.py
+
+# Logs
+*.log
+logs/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Node
+node_modules/

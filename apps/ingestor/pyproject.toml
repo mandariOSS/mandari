@@ -1,0 +1,54 @@
+[project]
+name = "mandari-ingestor"
+version = "0.1.0"
+description = "Mandari OParl Ingestor - Sync service for OParl data"
+readme = "README.md"
+license = { text = "AGPL-3.0" }
+requires-python = ">=3.12"
+authors = [{ name = "Mandari Contributors" }]
+
+dependencies = [
+    "httpx>=0.28.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "sqlalchemy>=2.0.36",
+    "asyncpg>=0.30.0",
+    "redis>=5.2.0",
+    "typer>=0.15.0",
+    "rich>=13.9.0",
+    "apscheduler>=3.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[project.scripts]
+mandari-ingestor = "src.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true

@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block title %}Blog - Neuigkeiten und Einblicke{% endblock %}
+
+{% block meta_description %}Der Mandari Blog: Neuigkeiten zur Entwicklung, Einblicke in kommunale Transparenz und Open Government.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="py-16 lg:py-24 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-6">
+            <i data-lucide="newspaper" class="w-4 h-4"></i>
+            Neuigkeiten
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Blog
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+            Neuigkeiten zur Entwicklung, Einblicke in kommunale Transparenz
+            und Gedanken zu Open Government.
+        </p>
+    </div>
+</section>
+
+{% if has_any_posts or is_filtering %}
+<!-- Kategorie Filter -->
+<section class="py-8 border-b border-gray-200 dark:border-gray-700">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <!-- Kategorien -->
+            <div class="flex flex-wrap gap-2">
+                <a href="{% url 'insight_core:blog' %}"
+                   class="px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                          {% if not current_category %}bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700{% endif %}">
+                    Alle
+                </a>
+                {% for value, label in categories %}
+                <a href="{% url 'insight_core:blog' %}?category={{ value }}"
+                   class="px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                          {% if current_category == value %}bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700{% endif %}">
+                    {{ label }}
+                </a>
+                {% endfor %}
+            </div>
+
+            <!-- Suche -->
+            <form action="{% url 'insight_core:blog' %}" method="get" class="flex gap-2">
+                {% if current_category %}
+                <input type="hidden" name="category" value="{{ current_category }}">
+                {% endif %}
+                <input type="text"
+                       name="q"
+                       value="{{ search_query }}"
+                       placeholder="Blog durchsuchen..."
+                       class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <button type="submit"
+                        class="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors">
+                    <i data-lucide="search" class="w-4 h-4"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+</section>
+
+<!-- Featured Post -->
+{% if featured_post and not search_query and not current_category %}
+<section class="py-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <a href="{% url 'insight_core:blog_detail' slug=featured_post.slug %}"
+           class="block bg-white dark:bg-gray-800 rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-shadow group">
+            <div class="grid md:grid-cols-2 gap-0">
+                {% if featured_post.featured_image %}
+                <div class="aspect-video md:aspect-auto md:h-full">
+                    <img src="{{ featured_post.featured_image.url }}"
+                         alt="{{ featured_post.image_alt|default:featured_post.title }}"
+                         class="w-full h-full object-cover">
+                </div>
+                {% else %}
+                <div class="aspect-video md:aspect-auto md:h-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center">
+                    <i data-lucide="newspaper" class="w-24 h-24 text-white/30"></i>
+                </div>
+                {% endif %}
+                <div class="p-8 lg:p-12 flex flex-col justify-center">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="px-3 py-1 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-xs font-medium">
+                            {{ featured_post.get_category_display }}
+                        </span>
+                        <span class="text-gray-500 dark:text-gray-400 text-sm">
+                            {{ featured_post.published_at|date:"d. F Y" }}
+                        </span>
+                    </div>
+                    <h2 class="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mb-4 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                        {{ featured_post.title }}
+                    </h2>
+                    <p class="text-gray-600 dark:text-gray-300 mb-6 line-clamp-3">
+                        {{ featured_post.excerpt }}
+                    </p>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                                <i data-lucide="user" class="w-5 h-5 text-gray-500 dark:text-gray-400"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-900 dark:text-white">
+                                    {{ featured_post.author.get_full_name|default:featured_post.author.username }}
+                                </p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">
+                                    {{ featured_post.reading_time }} Min. Lesezeit
+                                </p>
+                            </div>
+                        </div>
+                        <span class="text-primary-600 dark:text-primary-400 font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
+                            Weiterlesen
+                            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+</section>
+{% endif %}
+
+<!-- Blog Posts Grid -->
+<section class="py-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {% if search_query %}
+        <p class="text-gray-600 dark:text-gray-300 mb-8">
+            {{ posts|length }} Ergebnis{% if posts|length != 1 %}se{% endif %} für "{{ search_query }}"
+        </p>
+        {% endif %}
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {% for post in posts %}
+            {% if not featured_post or post.pk != featured_post.pk or search_query or current_category %}
+            <article class="bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow group">
+                <a href="{% url 'insight_core:blog_detail' slug=post.slug %}" class="block">
+                    {% if post.featured_image %}
+                    <div class="aspect-video">
+                        <img src="{{ post.featured_image.url }}"
+                             alt="{{ post.image_alt|default:post.title }}"
+                             class="w-full h-full object-cover">
+                    </div>
+                    {% else %}
+                    <div class="aspect-video bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
+                        <i data-lucide="file-text" class="w-12 h-12 text-gray-300 dark:text-gray-600"></i>
+                    </div>
+                    {% endif %}
+                    <div class="p-6">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="px-2.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium">
+                                {{ post.get_category_display }}
+                            </span>
+                            <span class="text-gray-400 dark:text-gray-500 text-xs">
+                                {{ post.published_at|date:"d.m.Y" }}
+                            </span>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors line-clamp-2">
+                            {{ post.title }}
+                        </h3>
+                        <p class="text-gray-600 dark:text-gray-300 text-sm line-clamp-3 mb-4">
+                            {{ post.excerpt }}
+                        </p>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">
+                                {{ post.reading_time }} Min.
+                            </span>
+                            <span class="text-primary-600 dark:text-primary-400 font-medium">
+                                Lesen &rarr;
+                            </span>
+                        </div>
+                    </div>
+                </a>
+            </article>
+            {% endif %}
+            {% empty %}
+            <div class="col-span-full text-center py-16">
+                <div class="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full mx-auto mb-6 flex items-center justify-center">
+                    <i data-lucide="file-search" class="w-10 h-10 text-gray-400 dark:text-gray-500"></i>
+                </div>
+                <h3 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                    Keine Artikel gefunden
+                </h3>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    {% if current_category %}
+                    In der Kategorie "{{ current_category }}" gibt es noch keine Artikel.
+                    {% elif search_query %}
+                    Für "{{ search_query }}" wurden keine Artikel gefunden.
+                    {% else %}
+                    Es wurden keine passenden Artikel gefunden.
+                    {% endif %}
+                </p>
+                <a href="{% url 'insight_core:blog' %}"
+                   class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                    Alle Artikel anzeigen
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% else %}
+<!-- Coming Soon (nur wenn überhaupt keine Posts existieren) -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-12 border border-gray-200 dark:border-gray-700 text-center">
+            <div class="w-24 h-24 bg-primary-100 dark:bg-primary-900/50 rounded-full mx-auto mb-8 flex items-center justify-center">
+                <i data-lucide="pen-line" class="w-12 h-12 text-primary-600 dark:text-primary-400"></i>
+            </div>
+
+            <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-sm font-medium mb-6">
+                <i data-lucide="construction" class="w-4 h-4"></i>
+                In Arbeit
+            </span>
+
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+                Der Blog kommt bald!
+            </h2>
+
+            <p class="text-gray-600 dark:text-gray-300 mb-8 max-w-2xl mx-auto">
+                Wir arbeiten gerade an unserem Blog. Hier werden Sie bald Artikel
+                zu Themen wie Open Government, kommunaler Transparenz und unserer
+                Entwicklungsarbeit finden.
+            </p>
+
+            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-6 mb-8 max-w-xl mx-auto">
+                <h3 class="font-medium text-gray-900 dark:text-white mb-4">
+                    Geplante Themen:
+                </h3>
+                <ul class="text-left text-gray-600 dark:text-gray-300 space-y-2">
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                        <span>Einblicke in die Entwicklung von Mandari</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                        <span>Best Practices für kommunale Transparenz</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                        <span>Interviews mit Nutzer*innen und Partnern</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                        <span>Technische Deep-Dives</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="flex flex-wrap justify-center gap-4">
+                <a href="https://github.com/mandari" target="_blank" rel="noopener noreferrer"
+                   class="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 dark:bg-white hover:bg-gray-800 dark:hover:bg-gray-100 text-white dark:text-gray-900 font-medium rounded-xl transition-colors">
+                    <i data-lucide="github" class="w-5 h-5"></i>
+                    GitHub folgen
+                </a>
+                <a href="{% url 'insight_core:releases' %}"
+                   class="inline-flex items-center gap-2 px-6 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-medium rounded-xl transition-colors">
+                    <i data-lucide="package" class="w-5 h-5"></i>
+                    Releases ansehen
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
+{% endblock %}

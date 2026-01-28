@@ -1,0 +1,76 @@
+{% extends "errors/base_error.html" %}
+
+{% block title %}Serverfehler (500){% endblock %}
+
+{% block error_code %}500{% endblock %}
+
+{% block header_gradient %}from-red-600 to-red-800{% endblock %}
+
+{% block error_title %}Interner Serverfehler{% endblock %}
+
+{% block error_message %}
+Ein unerwarteter Fehler ist aufgetreten. Unser Team wurde automatisch benachrichtigt und arbeitet an einer Lösung.
+{% endblock %}
+
+{% block error_details %}
+<div class="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 text-left">
+    <div class="flex items-start gap-3">
+        <div class="flex-shrink-0">
+            <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+            </svg>
+        </div>
+        <div>
+            <p class="text-sm font-medium text-red-800 dark:text-red-300">Was ist passiert?</p>
+            <p class="mt-1 text-sm text-red-700 dark:text-red-400">
+                Der Server konnte deine Anfrage nicht verarbeiten. Dies ist ein technisches Problem auf unserer Seite.
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="mt-4 text-left">
+    <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Was du tun kannst:</p>
+    <ul class="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+        <li class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+            Seite neu laden (F5)
+        </li>
+        <li class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            Einige Minuten warten und erneut versuchen
+        </li>
+        <li class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+            </svg>
+            Problem melden falls es weiterhin besteht
+        </li>
+    </ul>
+</div>
+{% endblock %}
+
+{% block error_actions %}
+<button onclick="location.reload()"
+        class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+    </svg>
+    Seite neu laden
+</button>
+<a href="/"
+   class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+    </svg>
+    Zur Startseite
+</a>
+{% endblock %}
+
+{% block help_text %}
+Fehler-ID: {{ request_id|default:"Nicht verfügbar" }} &middot; <a href="/kontakt/" class="text-white/80 hover:text-white underline">Problem melden</a>
+{% endblock %}

@@ -1,0 +1,257 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Anträge & Vorgänge - Einstellungen{% endblock %}
+
+{% block header_title %}Einstellungen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ organization.name }} verwalten</p>
+{% endblock %}
+
+{% block work_content %}
+<!-- Navigation Tabs -->
+<div class="mb-8 border-b border-gray-200 dark:border-gray-700">
+    <nav class="flex gap-1 overflow-x-auto">
+        <a href="{% url 'work:organization' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Allgemein
+        </a>
+        {% if can_manage_faction %}
+        <a href="{% url 'work:organization_faction_settings' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Fraktionssitzungen
+        </a>
+        {% endif %}
+        <a href="{% url 'work:organization_documents' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 whitespace-nowrap">
+            Anträge & Vorgänge
+        </a>
+        <a href="{% url 'work:members' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Mitglieder
+        </a>
+        <a href="{% url 'work:roles' org_slug=organization.slug %}"
+           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+            Rollen
+        </a>
+    </nav>
+</div>
+
+<!-- Document Settings Content -->
+<div class="space-y-6">
+    <!-- Document Types -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">Dokumenttypen</h3>
+                <p class="text-sm text-gray-500 mt-1">Definieren Sie verschiedene Typen von Anträgen und Vorgängen</p>
+            </div>
+            <a href="{% url 'work:motion_type_create' org_slug=organization.slug %}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Neuer Typ
+            </a>
+        </div>
+
+        {% if motion_types %}
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for type in motion_types %}
+            <div class="py-3 flex items-center justify-between {% if forloop.first %}pt-0{% endif %}">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-{{ type.color }}-100 dark:bg-{{ type.color }}-900/30 rounded-lg">
+                        <i data-lucide="{{ type.icon }}" class="w-5 h-5 text-{{ type.color }}-600 dark:text-{{ type.color }}-400"></i>
+                    </div>
+                    <div>
+                        <div class="font-medium text-gray-900 dark:text-white">{{ type.name }}</div>
+                        {% if type.description %}
+                        <div class="text-sm text-gray-500">{{ type.description|truncatewords:10 }}</div>
+                        {% endif %}
+                    </div>
+                    {% if type.is_default %}
+                    <span class="px-2 py-0.5 text-xs font-medium bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400 rounded-full">
+                        Standard
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-2">
+                    <a href="{% url 'work:motion_type_edit' org_slug=organization.slug type_id=type.id %}"
+                       class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <i data-lucide="pencil" class="w-4 h-4"></i>
+                    </a>
+                    <form method="post" action="{% url 'work:motion_type_delete' org_slug=organization.slug type_id=type.id %}"
+                          class="inline"
+                          onsubmit="return confirm('Diesen Dokumenttyp wirklich löschen?')">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-8">
+            <i data-lucide="file-type" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600"></i>
+            <p class="mt-2 text-sm text-gray-500">Noch keine Dokumenttypen definiert</p>
+            <a href="{% url 'work:motion_type_create' org_slug=organization.slug %}"
+               class="mt-4 inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Ersten Typ erstellen
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Templates -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">Vorlagen</h3>
+                <p class="text-sm text-gray-500 mt-1">Vorgefertigte Inhalte und Strukturen für neue Dokumente</p>
+            </div>
+            <a href="{% url 'work:motion_template_create' org_slug=organization.slug %}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Neue Vorlage
+            </a>
+        </div>
+
+        {% if templates %}
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for template in templates %}
+            <div class="py-3 flex items-center justify-between {% if forloop.first %}pt-0{% endif %}">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                        <i data-lucide="file-text" class="w-5 h-5 text-gray-600 dark:text-gray-400"></i>
+                    </div>
+                    <div>
+                        <div class="font-medium text-gray-900 dark:text-white">{{ template.name }}</div>
+                        <div class="text-sm text-gray-500">
+                            {% if template.motion_type %}
+                            {{ template.motion_type.name }}
+                            {% else %}
+                            Alle Typen
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% if template.is_default %}
+                    <span class="px-2 py-0.5 text-xs font-medium bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400 rounded-full">
+                        Standard
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-2">
+                    <a href="{% url 'work:motion_template_edit' org_slug=organization.slug template_id=template.id %}"
+                       class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <i data-lucide="pencil" class="w-4 h-4"></i>
+                    </a>
+                    <form method="post" action="{% url 'work:motion_template_delete' org_slug=organization.slug template_id=template.id %}"
+                          class="inline"
+                          onsubmit="return confirm('Diese Vorlage wirklich löschen?')">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-8">
+            <i data-lucide="file-text" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600"></i>
+            <p class="mt-2 text-sm text-gray-500">Noch keine Vorlagen erstellt</p>
+            <a href="{% url 'work:motion_template_create' org_slug=organization.slug %}"
+               class="mt-4 inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Erste Vorlage erstellen
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Letterheads -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">Briefköpfe</h3>
+                <p class="text-sm text-gray-500 mt-1">PDF-Hintergründe für den Export von Dokumenten</p>
+            </div>
+            <a href="{% url 'work:letterhead_create' org_slug=organization.slug %}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Neuer Briefkopf
+            </a>
+        </div>
+
+        {% if letterheads %}
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for letterhead in letterheads %}
+            <div class="py-3 flex items-center justify-between {% if forloop.first %}pt-0{% endif %}">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                        <i data-lucide="file-image" class="w-5 h-5 text-gray-600 dark:text-gray-400"></i>
+                    </div>
+                    <div>
+                        <div class="font-medium text-gray-900 dark:text-white">{{ letterhead.name }}</div>
+                        {% if letterhead.description %}
+                        <div class="text-sm text-gray-500">{{ letterhead.description|truncatewords:10 }}</div>
+                        {% endif %}
+                    </div>
+                    {% if letterhead.is_default %}
+                    <span class="px-2 py-0.5 text-xs font-medium bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400 rounded-full">
+                        Standard
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-2">
+                    <a href="{% url 'work:letterhead_edit' org_slug=organization.slug letterhead_id=letterhead.id %}"
+                       class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <i data-lucide="pencil" class="w-4 h-4"></i>
+                    </a>
+                    <form method="post" action="{% url 'work:letterhead_delete' org_slug=organization.slug letterhead_id=letterhead.id %}"
+                          class="inline"
+                          onsubmit="return confirm('Diesen Briefkopf wirklich löschen?')">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-8">
+            <i data-lucide="file-image" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600"></i>
+            <p class="mt-2 text-sm text-gray-500">Noch keine Briefköpfe hochgeladen</p>
+            <a href="{% url 'work:letterhead_create' org_slug=organization.slug %}"
+               class="mt-4 inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Ersten Briefkopf hochladen
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Info Box -->
+    <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-6">
+        <div class="flex items-start gap-4">
+            <div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                <i data-lucide="info" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+            </div>
+            <div>
+                <h4 class="font-medium text-blue-900 dark:text-blue-100">Hinweis zu Dokumenteinstellungen</h4>
+                <p class="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    Diese Einstellungen definieren, wie neue Anträge und Vorgänge in Ihrer Organisation erstellt werden können.
+                    Dokumenttypen bestimmen die Kategorisierung, Vorlagen bieten vorgefertigte Inhalte und Briefköpfe
+                    werden beim PDF-Export als Hintergrund verwendet.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

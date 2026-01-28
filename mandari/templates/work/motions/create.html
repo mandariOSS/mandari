@@ -1,0 +1,203 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Neues Dokument{% endblock %}
+
+{% block header_title %}Neues Dokument{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Schritt 1: Grunddaten festlegen</p>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-2xl mx-auto">
+    <form method="post" class="space-y-6" x-data="createMotion()" x-init="init()">
+        {% csrf_token %}
+
+        <!-- Progress Indicator -->
+        <div class="flex items-center justify-center gap-4 mb-8">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-full bg-primary-600 text-white flex items-center justify-center text-sm font-medium">1</div>
+                <span class="text-sm font-medium text-gray-900 dark:text-white">Grunddaten</span>
+            </div>
+            <div class="w-16 h-0.5 bg-gray-200 dark:bg-gray-700"></div>
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">2</div>
+                <span class="text-sm text-gray-500 dark:text-gray-400">Inhalt bearbeiten</span>
+            </div>
+        </div>
+
+        <!-- Document Type Selection -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Dokumenttyp</h3>
+
+            <div class="mb-4">
+                <label for="document_type" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Art des Dokuments <span class="text-red-500">*</span>
+                </label>
+                {% if document_types %}
+                <select id="document_type" name="document_type" x-model="documentType" @change="filterTemplates()"
+                        class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                    {% for type in document_types %}
+                    <option value="{{ type.id }}" {% if type.is_default %}selected{% endif %}
+                            data-color="{{ type.color }}" data-icon="{{ type.icon }}">
+                        {{ type.name }}{% if type.description %} - {{ type.description|truncatewords:8 }}{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                {% else %}
+                <!-- Fallback to legacy types if no custom types defined -->
+                <select id="motion_type" name="motion_type" x-model="legacyType"
+                        class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                    <option value="motion">Antrag</option>
+                    <option value="inquiry">Anfrage</option>
+                    <option value="statement">Stellungnahme</option>
+                    <option value="amendment">Änderungsantrag</option>
+                </select>
+                {% endif %}
+                <p class="mt-1 text-xs text-gray-500">Bestimmt die Kategorie und Formatierung des Dokuments.</p>
+            </div>
+        </div>
+
+        <!-- Basic Information -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Grundinformationen</h3>
+
+            <!-- Title -->
+            <div class="mb-4">
+                <label for="title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Titel <span class="text-red-500">*</span>
+                </label>
+                <input type="text" id="title" name="title" required autofocus
+                       x-model="title"
+                       class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                       placeholder="Aussagekräftiger Titel für Ihr Dokument">
+            </div>
+
+            <!-- Template Selection -->
+            <div class="mb-4">
+                <label for="template" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Vorlage
+                </label>
+                <select id="template" name="template" x-model="selectedTemplate"
+                        class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                    <option value="">Keine Vorlage (leer beginnen)</option>
+                    <template x-for="tpl in filteredTemplates" :key="tpl.id">
+                        <option :value="tpl.id" :selected="tpl.is_default" x-text="tpl.name"></option>
+                    </template>
+                </select>
+                <p class="mt-1 text-xs text-gray-500">Vorlagen enthalten vorgefertigte Inhalte und Strukturhinweise.</p>
+            </div>
+
+            <!-- Letterhead Selection -->
+            {% if letterheads %}
+            <div class="mb-4">
+                <label for="letterhead" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Briefkopf für Export
+                </label>
+                <select id="letterhead" name="letterhead"
+                        class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                    <option value="">Kein Briefkopf</option>
+                    {% for letterhead in letterheads %}
+                    <option value="{{ letterhead.id }}" {% if letterhead.is_default %}selected{% endif %}>
+                        {{ letterhead.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <p class="mt-1 text-xs text-gray-500">Wird beim PDF-Export als Hintergrund verwendet.</p>
+            </div>
+            {% endif %}
+
+            <!-- Summary (Optional) -->
+            <div>
+                <label for="summary" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Kurzbeschreibung (optional)
+                </label>
+                <textarea id="summary" name="summary" rows="2"
+                          class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          placeholder="Kurze öffentliche Zusammenfassung"></textarea>
+                <p class="mt-1 text-xs text-gray-500">Diese Zusammenfassung kann öffentlich sichtbar sein.</p>
+            </div>
+        </div>
+
+        <!-- AI Assistant Info -->
+        {% if ai_available %}
+        <div class="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl border border-purple-200 dark:border-purple-800 p-6">
+            <div class="flex items-start gap-4">
+                <div class="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                    <i data-lucide="sparkles" class="w-6 h-6 text-purple-600 dark:text-purple-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-medium text-purple-900 dark:text-purple-100">KI-Assistent verfügbar</h3>
+                    <p class="text-sm text-purple-700 dark:text-purple-300 mt-1">
+                        Im nächsten Schritt steht Ihnen ein KI-Assistent zur Seite, der Ihnen beim Formulieren,
+                        Verbessern und formalen Prüfen Ihrer Texte hilft.
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Actions -->
+        <div class="flex items-center justify-between pt-4">
+            <a href="{% url 'work:motions' org_slug=organization.slug %}"
+               class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                Abbrechen
+            </a>
+
+            <button type="submit"
+                    :disabled="!title.trim()"
+                    :class="{ 'opacity-50 cursor-not-allowed': !title.trim() }"
+                    class="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                Weiter zum Editor
+                <i data-lucide="arrow-right" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+function createMotion() {
+    const allTemplates = [
+        {% for template in templates %}
+        {
+            id: '{{ template.id }}',
+            name: '{{ template.name|escapejs }}',
+            motion_type_id: {% if template.motion_type %}'{{ template.motion_type.id }}'{% else %}null{% endif %},
+            is_default: {{ template.is_default|yesno:"true,false" }}
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    return {
+        documentType: '{% for type in document_types %}{% if type.is_default %}{{ type.id }}{% endif %}{% endfor %}',
+        legacyType: 'motion',
+        title: '',
+        selectedTemplate: '',
+        allTemplates: allTemplates,
+
+        get filteredTemplates() {
+            if (!this.documentType) {
+                return this.allTemplates;
+            }
+            return this.allTemplates.filter(tpl =>
+                !tpl.motion_type_id || tpl.motion_type_id === this.documentType
+            );
+        },
+
+        filterTemplates() {
+            // Reset template selection when document type changes
+            const filtered = this.filteredTemplates;
+            const defaultTpl = filtered.find(t => t.is_default);
+            this.selectedTemplate = defaultTpl ? defaultTpl.id : '';
+        },
+
+        init() {
+            // Set initial template if there's a default
+            const defaultTpl = this.filteredTemplates.find(t => t.is_default);
+            if (defaultTpl) {
+                this.selectedTemplate = defaultTpl.id;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

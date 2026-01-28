@@ -1,0 +1,45 @@
+# =============================================================================
+# Mandari Infrastructure - Git Ignore
+# =============================================================================
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/.terraform.lock.hcl
+terraform/terraform.tfvars
+terraform/*.auto.tfvars
+terraform/tfplan
+
+# Ansible
+ansible/*.retry
+ansible/inventory/*.yml
+!ansible/inventory/production.yml.example
+
+# Docker
+docker/.env
+docker/.env.*
+!docker/.env.example
+
+# Secrets
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+.secrets/
+
+# Infrastructure state
+.infra_outputs
+
+# Logs
+*.log
+logs/
+
+# Backups
+backups/
+
+# OS files
+.DS_Store
+Thumbs.db

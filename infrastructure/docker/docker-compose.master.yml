@@ -1,0 +1,277 @@
+# =============================================================================
+# Mandari 2.0 - Docker Compose (Master/Primary)
+# =============================================================================
+# This configuration runs on the master server with:
+# - PostgreSQL as PRIMARY (accepts writes)
+# - Redis as MASTER
+# - Ingestor service (only runs on master)
+# =============================================================================
+
+name: mandari
+
+services:
+  # ===========================================================================
+  # Reverse Proxy
+  # ===========================================================================
+  caddy:
+    image: caddy:2-alpine
+    container_name: mandari-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - mandari-network
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ===========================================================================
+  # Database (PRIMARY)
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: mandari-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mandari}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-mandari}
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/postgresql.conf"
+    volumes:
+      - ${DATA_DIR:-/mnt/data}/postgres:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./postgres/init-replication.sql:/docker-entrypoint-initdb.d/init-replication.sql:ro
+    networks:
+      - mandari-network
+    ports:
+      - "5432:5432"  # Exposed for replication from slave
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mandari} -d ${POSTGRES_DB:-mandari}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ===========================================================================
+  # Connection Pooler
+  # ===========================================================================
+  pgbouncer:
+    image: edoburu/pgbouncer:1.21.0-p0
+    container_name: mandari-pgbouncer
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 50
+      MIN_POOL_SIZE: 10
+      RESERVE_POOL_SIZE: 10
+      SERVER_RESET_QUERY: DISCARD ALL
+      AUTH_TYPE: scram-sha-256
+    networks:
+      - mandari-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================================================
+  # Cache (MASTER)
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: mandari-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory ${REDIS_MAXMEMORY:-512mb}
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 300
+      --bind 0.0.0.0
+      --protected-mode no
+    volumes:
+      - ${DATA_DIR:-/mnt/data}/redis:/data
+    networks:
+      - mandari-network
+    ports:
+      - "6379:6379"  # Exposed for replication from slave
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================================================
+  # Search Engine
+  # ===========================================================================
+  meilisearch:
+    image: getmeili/meilisearch:v1.6
+    container_name: mandari-meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILISEARCH_KEY}
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_HTTP_PAYLOAD_SIZE_LIMIT: 104857600
+    volumes:
+      - ${DATA_DIR:-/mnt/data}/meilisearch:/meili_data
+    networks:
+      - mandari-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:7700/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ===========================================================================
+  # API Backend
+  # ===========================================================================
+  api:
+    image: ${DOCKER_REGISTRY:-ghcr.io/mandari}/api:${IMAGE_TAG:-latest}
+    container_name: mandari-api
+    restart: unless-stopped
+    environment:
+      # Database
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@pgbouncer:6432/${POSTGRES_DB:-mandari}
+      # Cache
+      REDIS_URL: redis://redis:6379
+      # Search
+      MEILISEARCH_URL: http://meilisearch:7700
+      MEILISEARCH_KEY: ${MEILISEARCH_KEY}
+      # App
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: "false"
+      ENVIRONMENT: production
+      SITE_URL: ${SITE_URL:-https://mandari.de}
+      # Encryption
+      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY}
+    networks:
+      - mandari-network
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ===========================================================================
+  # Ingestor (ONLY ON MASTER!)
+  # ===========================================================================
+  ingestor:
+    image: ${DOCKER_REGISTRY:-ghcr.io/mandari}/ingestor:${IMAGE_TAG:-latest}
+    container_name: mandari-ingestor
+    restart: unless-stopped
+    command: >
+      python -m src.main daemon
+      --interval ${INGESTOR_INTERVAL:-10}
+      --full-sync-hour ${INGESTOR_FULL_SYNC_HOUR:-3}
+      --concurrent ${INGESTOR_CONCURRENT:-20}
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@pgbouncer:6432/${POSTGRES_DB:-mandari}
+      REDIS_URL: redis://redis:6379
+      MEILISEARCH_URL: http://meilisearch:7700
+      MEILISEARCH_KEY: ${MEILISEARCH_KEY}
+    volumes:
+      - ${DATA_DIR:-/mnt/data}/ingestor:/app/data
+    networks:
+      - mandari-network
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # ===========================================================================
+  # Public Frontend
+  # ===========================================================================
+  web-public:
+    image: ${DOCKER_REGISTRY:-ghcr.io/mandari}/web-public:${IMAGE_TAG:-latest}
+    container_name: mandari-web-public
+    restart: unless-stopped
+    environment:
+      ORIGIN: ${SITE_URL:-https://mandari.de}
+      API_URL: http://api:8000
+    networks:
+      - mandari-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================================================
+  # Work Portal Frontend
+  # ===========================================================================
+  web-work:
+    image: ${DOCKER_REGISTRY:-ghcr.io/mandari}/web-work:${IMAGE_TAG:-latest}
+    container_name: mandari-web-work
+    restart: unless-stopped
+    environment:
+      ORIGIN: ${SITE_URL:-https://mandari.de}
+      API_URL: http://api:8000
+      BASE_PATH: /work
+    networks:
+      - mandari-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  caddy_data:
+  caddy_config:
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  mandari-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
