@@ -112,6 +112,7 @@ jobs:
         run: |
           cd mandari
           python manage.py migrate --noinput
+          python manage.py collectstatic --noinput
           pytest --cov=. --cov-report=xml
 
       - name: Upload coverage

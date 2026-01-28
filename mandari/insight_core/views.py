@@ -129,6 +129,8 @@ class PortalHomeView(TemplateView):
 
 def set_body(request, body_id):
     """Setzt die aktive Kommune und leitet zur Portal-Homepage weiter."""
+    from urllib.parse import urlparse
+
     try:
         body = OParlBody.objects.get(id=body_id)
         request.session["active_body_id"] = str(body.id)
@@ -136,8 +138,20 @@ def set_body(request, body_id):
         pass
 
     # Zurück zur vorherigen Seite oder Portal-Homepage
-    referer = request.META.get("HTTP_REFERER", "/insight/")
-    return redirect(referer)
+    # SECURITY: Validate referer to prevent Open Redirect attacks
+    referer = request.META.get("HTTP_REFERER", "")
+    safe_redirect = "/insight/"
+
+    if referer:
+        parsed = urlparse(referer)
+        # Only allow same-host redirects (empty netloc = relative URL, or matching host)
+        if not parsed.netloc or parsed.netloc == request.get_host():
+            # Use only the path (and query) to prevent scheme manipulation
+            safe_redirect = parsed.path
+            if parsed.query:
+                safe_redirect += "?" + parsed.query
+
+    return redirect(safe_redirect)
 
 
 def clear_body(request):
