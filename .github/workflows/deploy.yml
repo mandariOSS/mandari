@@ -261,7 +261,7 @@ jobs:
                 hosts:
                   mandari-master:
                     ansible_host: ${{ secrets.MASTER_IP }}
-                    private_ip: 10.0.1.10
+                    private_ip: 10.0.0.3
                     postgres_role: primary
                     redis_role: master
                     run_ingestor: true
@@ -270,7 +270,7 @@ jobs:
                 hosts:
                   mandari-slave:
                     ansible_host: ${{ secrets.SLAVE_IP }}
-                    private_ip: 10.0.1.11
+                    private_ip: 10.0.0.4
                     postgres_role: replica
                     redis_role: replica
                     run_ingestor: false
@@ -284,16 +284,16 @@ jobs:
       - name: Create environment file
         run: |
           cat > infrastructure/docker/.env << EOF
+          DOMAIN=mandari.de
           SITE_URL=${{ secrets.SITE_URL }}
           SECRET_KEY=${{ secrets.SECRET_KEY }}
           ENCRYPTION_MASTER_KEY=${{ secrets.ENCRYPTION_MASTER_KEY }}
-          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+          POSTGRES_USER=${{ secrets.POSTGRES_USER || 'mandari' }}
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
-          REPLICATION_PASSWORD=${{ secrets.REPLICATION_PASSWORD }}
+          POSTGRES_DB=${{ secrets.POSTGRES_DB || 'mandari' }}
           MEILISEARCH_KEY=${{ secrets.MEILISEARCH_KEY }}
           REDIS_MAXMEMORY=512mb
-          MASTER_PRIVATE_IP=10.0.1.10
+          MASTER_PRIVATE_IP=10.0.0.3
           DATA_DIR=/mnt/data
           DOCKER_REGISTRY=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}
           IMAGE_TAG=${{ needs.build.outputs.image_tag || github.sha }}

@@ -13,12 +13,11 @@
 - name: Deploy Mandari Application
   hosts: all_servers
   become: yes
-  become_user: "{{ app_user }}"
   gather_facts: yes
 
   vars:
     compose_file: "{{ 'docker-compose.master.yml' if postgres_role == 'primary' else 'docker-compose.slave.yml' }}"
-    deploy_timestamp: "{{ ansible_date_time.epoch }}"
+    deploy_timestamp: "{{ ansible_facts['date_time']['epoch'] }}"
 
   handlers:
     - name: restart containers
@@ -28,17 +27,6 @@
           - "{{ compose_file }}"
         state: present
         pull: always
-
-  pre_tasks:
-    - name: Check if .env file exists
-      stat:
-        path: "{{ app_dir }}/.env"
-      register: env_file
-
-    - name: Fail if .env file is missing
-      fail:
-        msg: "Environment file {{ app_dir }}/.env is missing. Please create it first."
-      when: not env_file.stat.exists
 
   tasks:
     # =========================================================================
@@ -53,6 +41,19 @@
           - "{{ data_dir }}"
       ignore_errors: yes
 
+    - name: Ensure app directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+      loop:
+        - "{{ app_dir }}"
+        - "{{ app_dir }}/backups"
+        - "{{ app_dir }}/logs"
+        - "{{ app_dir }}/config"
+
     - name: Sync Docker Compose files
       copy:
         src: "{{ playbook_dir }}/../../docker/{{ item }}"
@@ -64,6 +65,14 @@
         - docker-compose.master.yml
         - docker-compose.slave.yml
         - Caddyfile
+
+    - name: Sync environment file
+      copy:
+        src: "{{ playbook_dir }}/../../docker/.env"
+        dest: "{{ app_dir }}/.env"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0600'
 
     - name: Create Docker Compose symlink
       file:

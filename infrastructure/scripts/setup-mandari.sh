@@ -162,7 +162,7 @@ setup_server_base() {
 
     info "Verzeichnisse erstellen..."
     ssh_cmd "$host" '
-        mkdir -p /opt/mandari/{config,data}
+        mkdir -p /opt/mandari/{config,data,backups,logs}
         mkdir -p /opt/mandari/data/{postgres,redis,meilisearch,media,caddy}
         chown -R deploy:deploy /opt/mandari
     '
@@ -528,7 +528,8 @@ ${DOMAIN} {
     redir https://${DOMAIN}{uri} permanent
 }
 EOF
-    scp_to "$caddyfile" "$host" "/opt/mandari/config/Caddyfile"
+    # Caddyfile in root dir (where docker-compose expects it)
+    scp_to "$caddyfile" "$host" "/opt/mandari/Caddyfile"
     rm "$caddyfile"
 
     # .env Datei
@@ -538,7 +539,9 @@ EOF
 # Generated: $(date)
 
 DOMAIN=${DOMAIN}
+POSTGRES_USER=mandari
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+POSTGRES_DB=mandari
 SECRET_KEY=${SECRET_KEY}
 ENCRYPTION_MASTER_KEY=${ENCRYPTION_MASTER_KEY}
 MEILISEARCH_KEY=${MEILISEARCH_KEY}
@@ -547,7 +550,9 @@ EOF
     scp_to "$envfile" "$host" "/opt/mandari/.env"
     rm "$envfile"
 
-    ssh_cmd "$host" "chmod 600 /opt/mandari/.env"
+    # Set proper ownership so deploy user can read it
+    ssh_cmd "$host" "chown deploy:deploy /opt/mandari/.env && chmod 600 /opt/mandari/.env"
+    ssh_cmd "$host" "chown deploy:deploy /opt/mandari/Caddyfile"
 
     log "Konfigurationsdateien für $name erstellt!"
 }

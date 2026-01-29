@@ -1,19 +1,22 @@
 # =============================================================================
-# Mandari 2.0 - Caddy Configuration
+# Mandari 2.0 - Caddy Configuration (E2E Encryption)
 # =============================================================================
-# This Caddyfile configures Caddy as a reverse proxy for Mandari services.
-# When behind the Hetzner Load Balancer (which handles TLS), Caddy runs on
-# port 80 only. For direct access (dev/staging), Caddy handles TLS itself.
+# This Caddyfile configures Caddy with TLS termination at the backend.
+# The Hetzner Load Balancer operates in TCP passthrough mode.
 # =============================================================================
 
 {
-    # Global options
-    admin off
+    # Let's Encrypt email for certificate notifications
+    email admin@mandari.de
 
-    # Performance tuning
+    # Accept ProxyProtocol from Hetzner Load Balancer
     servers {
-        protocol {
-            experimental_http3
+        listener_wrappers {
+            proxy_protocol {
+                timeout 5s
+                allow 10.0.0.0/16
+            }
+            tls
         }
     }
 
@@ -25,27 +28,19 @@
 }
 
 # =============================================================================
-# Main Site (behind Load Balancer - HTTP only)
+# HTTPS - Main Site (Caddy handles TLS)
 # =============================================================================
-:80 {
-    # Logging
-    log {
-        output stdout
-        format json
-    }
-
+{$DOMAIN:mandari.de} {
     # Compression
     encode gzip zstd
 
     # Security headers
     header {
-        # Security
         X-Content-Type-Options "nosniff"
         X-Frame-Options "SAMEORIGIN"
         X-XSS-Protection "1; mode=block"
         Referrer-Policy "strict-origin-when-cross-origin"
-
-        # Remove server identification
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         -Server
 
         # Cache control for static assets
@@ -61,25 +56,20 @@
         respond "OK" 200
     }
 
+    handle /health/ {
+        respond "OK" 200
+    }
+
     # API routes
     handle /api/* {
         reverse_proxy api:8000 {
-            # Health checks
-            health_uri /health
-            health_interval 30s
-            health_timeout 10s
-
-            # Headers
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
 
-            # Timeouts
             transport http {
                 dial_timeout 10s
                 response_header_timeout 120s
-                read_timeout 120s
-                write_timeout 120s
             }
         }
     }
@@ -104,7 +94,7 @@
 
     # Work Portal
     handle /work/* {
-        reverse_proxy web-work:3000 {
+        reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
@@ -138,7 +128,7 @@
         }
     }
 
-    # WebSocket support (for HTMX, etc.)
+    # WebSocket support
     handle /ws/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
@@ -151,27 +141,25 @@
 
     # Public Portal (default - catch all)
     handle {
-        reverse_proxy web-public:3000 {
+        reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
         }
     }
+
+    # Logging
+    log {
+        output file /data/access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+    }
 }
 
 # =============================================================================
-# Direct HTTPS Access (for development/staging without LB)
+# HTTP -> HTTPS Redirect
 # =============================================================================
-# Uncomment this section if you want Caddy to handle TLS directly
-# (e.g., for staging environment without load balancer)
-
-# {$SITE_URL:localhost} {
-#     # Automatic TLS
-#     tls {
-#         # Email for Let's Encrypt notifications
-#         email {$ADMIN_EMAIL:admin@mandari.de}
-#     }
-#
-#     # Import the same handlers as :80
-#     import site_handlers
-# }
+:80 {
+    redir https://{$DOMAIN:mandari.de}{uri} permanent
+}
