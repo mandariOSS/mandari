@@ -41,12 +41,12 @@ except Exception as e:
 echo "Collecting static files..."
 python manage.py collectstatic --noinput
 
-# Wait for database before running migrations
+# Wait for database
 wait_for_db
 
-# Run migrations if needed
-echo "Running database migrations..."
-python manage.py migrate --noinput
+# NOTE: Migrations are handled by Ansible on PRIMARY only
+# This avoids race conditions and duplicate migration runs
+# See: infrastructure/ansible/playbooks/deploy.yml
 
 # Start gunicorn
 echo "Starting gunicorn..."

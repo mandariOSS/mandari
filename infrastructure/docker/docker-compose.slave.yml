@@ -81,27 +81,6 @@ services:
       start_period: 30s
 
   # ===========================================================================
-  # Connection Pooler
-  # ===========================================================================
-  pgbouncer:
-    image: edoburu/pgbouncer:1.21.0-p0
-    container_name: mandari-pgbouncer
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
-      POOL_MODE: transaction
-      MAX_CLIENT_CONN: 1000
-      DEFAULT_POOL_SIZE: 50
-      MIN_POOL_SIZE: 10
-      RESERVE_POOL_SIZE: 10
-      SERVER_RESET_QUERY: DISCARD ALL
-    networks:
-      - mandari-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  # ===========================================================================
   # Cache (REPLICA)
   # ===========================================================================
   redis:

@@ -118,36 +118,25 @@
       ignore_errors: yes
 
     # =========================================================================
-    # PostgreSQL Initialization Fix
+    # PostgreSQL Initialization Fix (ONE-TIME)
     # =========================================================================
-    # If postgres data exists but database doesn't, we need to reinitialize
+    # Force reinitialize PostgreSQL to fix pg_hba.conf and create database
+    # Set force_postgres_reinit: false after first successful deployment
     - name: Check if PostgreSQL data directory has data
       stat:
         path: "{{ data_dir }}/postgres/PG_VERSION"
       register: pg_data_exists
 
-    - name: Test database connection (check if mandari DB exists)
-      shell: |
-        docker exec mandari-postgres psql -U postgres -d mandari -c "SELECT 1" 2>&1 || echo "DB_NOT_FOUND"
-      register: db_test
-      ignore_errors: yes
-      when: pg_data_exists.stat.exists
-
-    - name: Debug - Show database test result
-      debug:
-        msg: "DB test result: {{ db_test.stdout | default('not run') }}"
-      when: pg_data_exists.stat.exists
-
     - name: Stop all containers for PostgreSQL reinitialization
       shell: |
         cd {{ app_dir }} && docker compose -f {{ compose_file }} down 2>/dev/null || true
-      when: pg_data_exists.stat.exists and ('DB_NOT_FOUND' in db_test.stdout or 'does not exist' in db_test.stdout)
+      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(true))
 
     - name: Clear PostgreSQL data for reinitialization
       file:
         path: "{{ data_dir }}/postgres"
         state: absent
-      when: pg_data_exists.stat.exists and ('DB_NOT_FOUND' in db_test.stdout or 'does not exist' in db_test.stdout)
+      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(true))
 
     - name: Recreate PostgreSQL data directory
       file:
@@ -156,12 +145,12 @@
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: '0755'
-      when: pg_data_exists.stat.exists and ('DB_NOT_FOUND' in db_test.stdout or 'does not exist' in db_test.stdout)
+      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(true))
 
     - name: Log PostgreSQL reinitialization
       debug:
-        msg: "PostgreSQL data cleared and will be reinitialized with correct settings"
-      when: pg_data_exists.stat.exists and ('DB_NOT_FOUND' in db_test.stdout or 'does not exist' in db_test.stdout)
+        msg: "PostgreSQL data cleared - will reinitialize with correct pg_hba.conf and create mandari database"
+      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(true))
 
     - name: Start all containers
       community.docker.docker_compose_v2:
@@ -176,16 +165,6 @@
     - name: Wait for containers to stabilize
       pause:
         seconds: 15
-
-    - name: Get pgbouncer logs (for debugging)
-      shell: docker logs mandari-pgbouncer --tail 50 2>&1
-      register: pgbouncer_logs
-      ignore_errors: yes
-
-    - name: Display pgbouncer logs
-      debug:
-        msg: "{{ pgbouncer_logs.stdout_lines }}"
-      when: pgbouncer_logs.stdout_lines is defined
 
     - name: Get API container logs (for debugging)
       shell: docker logs mandari-api --tail 100 2>&1
@@ -233,7 +212,7 @@
         - name: Run migrations
           community.docker.docker_container_exec:
             container: mandari-api
-            command: python manage.py migrate --noinput
+            command: python manage.py migrate --noinput --fake-initial
           register: migration_result
 
         - name: Display migration result
