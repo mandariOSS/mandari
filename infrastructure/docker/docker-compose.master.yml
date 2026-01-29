@@ -221,7 +221,7 @@ services:
       - mandari-network
     depends_on:
       pgbouncer:
-        condition: service_healthy
+        condition: service_started
       redis:
         condition: service_healthy
     deploy:
