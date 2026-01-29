@@ -200,6 +200,7 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./data/caddy:/data
@@ -349,6 +350,7 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./data/caddy:/data
@@ -461,17 +463,29 @@ create_configs() {
 
     section "Konfigurationsdateien für $name"
 
-    # Caddyfile - HTTP only (TLS termination at Hetzner Load Balancer)
+    # Caddyfile - End-to-End TLS mit TCP Passthrough am Load Balancer
+    # Caddy holt automatisch Let's Encrypt Zertifikate
+    # ProxyProtocol für echte Client-IPs (Hetzner LB TCP-Modus)
     local caddyfile=$(mktemp)
     cat > "$caddyfile" << EOF
 {
-    # Kein automatisches HTTPS - Load Balancer macht TLS Termination
-    auto_https off
+    email admin@${DOMAIN}
+
+    servers {
+        # ProxyProtocol von Hetzner Load Balancer akzeptieren
+        listener_wrappers {
+            proxy_protocol {
+                timeout 5s
+                allow 10.0.0.0/16
+            }
+            tls
+        }
+    }
 }
 
-# Alle Anfragen kommen vom Load Balancer als HTTP
-:80 {
-    # Health Check Endpoint für Load Balancer
+# HTTPS - Caddy holt automatisch Let's Encrypt Zertifikat
+${DOMAIN} {
+    # Health Check Endpoint
     handle /health {
         respond "OK" 200
     }
@@ -482,13 +496,19 @@ create_configs() {
 
     # Alles andere an Django API weiterleiten
     handle {
-        reverse_proxy api:8000
+        reverse_proxy api:8000 {
+            # Echte Client-IP an Django weitergeben
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
 
         header {
             X-Content-Type-Options nosniff
             X-Frame-Options SAMEORIGIN
             Referrer-Policy strict-origin-when-cross-origin
-            X-Forwarded-Proto https
+            Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+            X-XSS-Protection "1; mode=block"
             -Server
         }
 
@@ -501,6 +521,11 @@ create_configs() {
             roll_keep 5
         }
     }
+}
+
+# HTTP -> HTTPS Redirect (falls jemand direkt auf Server zugreift)
+:80 {
+    redir https://${DOMAIN}{uri} permanent
 }
 EOF
     scp_to "$caddyfile" "$host" "/opt/mandari/config/Caddyfile"
