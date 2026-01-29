@@ -1,26 +1,84 @@
 # Mandari
 
-**Open-Source-Plattform für kommunalpolitische Transparenz**
+**Open-Source-Plattform für kommunalpolitische Transparenz in Deutschland**
 
-Mandari ermöglicht Bürger:innen, politischen Organisationen und Verwaltungen den Zugang zu und die Arbeit mit kommunalpolitischen Daten basierend auf dem [OParl-Standard](https://oparl.org).
+Mandari ermöglicht Bürger:innen, politischen Organisationen und Verwaltungen den Zugang zu kommunalpolitischen Daten basierend auf dem [OParl-Standard](https://oparl.org).
 
-## Die Drei Säulen
+## Architektur
 
-| Säule | Beschreibung | Status |
-|-------|--------------|--------|
+```
+                         ┌─────────────────────────────────┐
+                         │       Load Balancer             │
+                         │       (mandari.de)              │
+                         └─────────────┬───────────────────┘
+                                       │
+                    ┌──────────────────┴──────────────────┐
+                    │                                     │
+                    ▼                                     ▼
+         ┌───────────────────┐              ┌───────────────────┐
+         │      Master       │              │       Slave       │
+         │                   │              │                   │
+         │  • Caddy          │              │  • Caddy          │
+         │  • Django API     │              │  • Django API     │
+         │  • PostgreSQL     │              │  • PostgreSQL     │
+         │  • Redis          │              │  • Redis          │
+         │  • Meilisearch    │              │  • Meilisearch    │
+         │  • Ingestor       │              │                   │
+         └───────────────────┘              └───────────────────┘
+```
+
+## Technologie-Stack
+
+| Bereich | Technologie |
+|---------|-------------|
+| Backend | Django 6.0 (Python 3.12+) |
+| Frontend | Django Templates + HTMX + Alpine.js |
+| CSS | Tailwind CSS |
+| Datenbank | PostgreSQL 16 |
+| Cache | Redis 7 |
+| Suche | Meilisearch |
+| Reverse Proxy | Caddy |
+| Container | Docker + Docker Compose |
+| CI/CD | GitHub Actions |
+
+## Die Drei Portale
+
+| Portal | Beschreibung | Status |
+|--------|--------------|--------|
 | **Public** | Transparenzportal für Bürger:innen | In Entwicklung |
-| **Work** | Portal für Parteien & Fraktionen | In Entwicklung |
-| **Admin** | Vollständiges RIS für Verwaltungen | Geplant |
+| **Work** | Arbeitsbereich für Fraktionen & Parteien | In Entwicklung |
+| **Session** | Ratsinformationssystem für Verwaltungen | Geplant |
 
-## Schnellstart
+## Projektstruktur
+
+```
+mandari2.0/
+├── mandari/                    # Django Hauptprojekt
+│   ├── apps/                   # Django Apps
+│   │   ├── accounts/           # Authentifizierung & 2FA
+│   │   ├── common/             # Shared Utilities
+│   │   ├── session/            # Verwaltungs-RIS
+│   │   ├── tenants/            # Multi-Tenant & RBAC
+│   │   └── work/               # Fraktions-Arbeitsbereich
+│   ├── insight_core/           # OParl-Datenmodelle
+│   ├── insight_sync/           # OParl-Synchronisation
+│   ├── insight_search/         # Suchfunktionalität
+│   └── insight_ai/             # KI-Pipelines
+├── apps/
+│   └── ingestor/               # Standalone OParl-Ingestor
+├── infrastructure/
+│   ├── scripts/                # Setup & Deployment Scripts
+│   └── docker/                 # Docker Compose Configs
+└── docs/                       # Dokumentation
+```
+
+## Schnellstart (Entwicklung)
 
 ### Voraussetzungen
 
 - Python 3.12+
-- Node.js 22+
 - Docker & Docker Compose
 - [uv](https://github.com/astral-sh/uv) (Python Package Manager)
-- [pnpm](https://pnpm.io/) (Node Package Manager)
 
 ### 1. Repository klonen
 
@@ -32,113 +90,171 @@ cd mandari
 ### 2. Infrastruktur starten
 
 ```bash
-# Startet PostgreSQL, Redis und Meilisearch
 docker compose -f infrastructure/docker/docker-compose.dev.yml up -d
 ```
 
-### 3. Backend starten
+### 3. Django Backend starten
 
 ```bash
-cd apps/api
-cp ../../.env.example .env
+cd mandari
+cp .env.example .env
 uv sync
-uv run uvicorn src.main:app --reload
+uv run python manage.py migrate
+uv run python manage.py setup_roles
+uv run python manage.py runserver
 ```
 
-API verfügbar unter: http://localhost:8000/docs
-
-### 4. Frontend starten
-
-```bash
-# Public Frontend (Port 3000)
-cd apps/web-public
-pnpm install
-pnpm dev
-
-# Work Frontend (Port 3001)
-cd apps/web-work
-pnpm install
-pnpm dev
-```
-
-### 5. OParl-Daten synchronisieren
+### 4. OParl-Daten synchronisieren
 
 ```bash
 cd apps/ingestor
 uv sync
-uv run python -m src.main add-source --url "https://example.oparl.org/oparl/v1"
-uv run python -m src.main sync --all
+uv run python -m src.main sync --full
 ```
 
-## Projektstruktur
+## Production Deployment
 
+### Voraussetzungen
+
+- 2x Hetzner VMs (Ubuntu 24.04)
+- 1x Hetzner Load Balancer
+- Domain mit DNS auf Load Balancer IP
+- SSH-Zugang zu beiden Servern
+
+### 1. Server einrichten
+
+```bash
+cd infrastructure/scripts
+chmod +x setup-mandari.sh
+./setup-mandari.sh
 ```
-mandari/
-├── apps/
-│   ├── api/              # FastAPI Backend
-│   ├── ingestor/         # OParl Synchronisation
-│   ├── web-public/       # Bürger:innen-Portal (SvelteKit)
-│   ├── web-work/         # Organisations-Portal (SvelteKit)
-│   └── web-admin/        # Verwaltungs-RIS (geplant)
-├── packages/
-│   └── shared-python/    # Gemeinsamer Python-Code
-├── infrastructure/
-│   └── docker/           # Docker Compose Konfiguration
-├── docs/                 # Dokumentation
-└── _old/                 # Alter Code (nur Referenz)
+
+Das Script:
+- Installiert Docker auf beiden Servern
+- Konfiguriert Caddy, PostgreSQL, Redis, Meilisearch
+- Generiert sichere Passwörter
+- Erstellt alle Konfigurationsdateien
+
+### 2. GitHub Secrets einrichten
+
+Nach dem Setup werden alle benötigten Secrets angezeigt.
+
+Gehe zu: `Repository Settings → Secrets and variables → Actions`
+
+**Secrets hinzufügen:**
+
+| Secret | Beschreibung |
+|--------|--------------|
+| `MASTER_IP` | Public IP des Master-Servers |
+| `SLAVE_IP` | Public IP des Slave-Servers |
+| `SSH_PRIVATE_KEY` | Inhalt von `~/.ssh/id_hetzner` |
+| `POSTGRES_PASSWORD` | Vom Script generiert |
+| `SECRET_KEY` | Vom Script generiert |
+| `ENCRYPTION_MASTER_KEY` | Vom Script generiert |
+| `MEILISEARCH_KEY` | Vom Script generiert |
+| `SITE_URL` | `https://mandari.de` |
+
+**Variable hinzufügen:**
+
+| Variable | Wert |
+|----------|------|
+| `DEPLOYMENT_ENABLED` | `true` |
+
+### 3. Deployment auslösen
+
+```bash
+git push origin main
 ```
 
-## Dokumentation
+Oder manuell: `Actions → Deploy Mandari → Run workflow`
 
-- [Architektur](docs/ARCHITECTURE.md) - Systemarchitektur und Design-Entscheidungen
-- [Entwicklung](docs/DEVELOPMENT.md) - Setup und Entwickler-Guide
-- [API](docs/API.md) - API-Dokumentation
-- [OParl](docs/OPARL.md) - OParl-Spezifikation und Mapping
+### Nützliche Befehle
 
-## Technologie-Stack
+```bash
+# Status prüfen
+ssh root@MASTER_IP 'cd /opt/mandari && docker compose ps'
 
-| Bereich | Technologie |
-|---------|-------------|
-| Backend | FastAPI (Python 3.12+) |
-| Frontend | SvelteKit 2.0 |
-| Datenbank | PostgreSQL 16 |
-| Cache | Redis 7 |
-| Suche | Meilisearch |
-| AI | Groq / OpenAI |
+# Logs anzeigen
+ssh root@MASTER_IP 'cd /opt/mandari && docker compose logs -f api'
+
+# Django Shell
+ssh root@MASTER_IP 'docker exec -it mandari-api python manage.py shell'
+
+# Datenbank-Backup
+ssh root@MASTER_IP 'docker exec mandari-postgres pg_dump -U mandari mandari > backup.sql'
+```
+
+## OParl Ingestor
+
+Der Ingestor synchronisiert OParl-Daten von deutschen Ratsinformationssystemen.
+
+### Features
+
+- **Inkrementelle Syncs** - Nur geänderte Daten (alle 15 Min)
+- **Full Syncs** - Komplette Synchronisation (täglich 3 Uhr)
+- **Redis Event Emission** - Real-time Events für neue Sitzungen/Vorlagen
+- **Prometheus Metrics** - Monitoring auf Port 9090
+- **Circuit Breaker** - Automatische Fehlertoleranz
+
+### Befehle
+
+```bash
+cd apps/ingestor
+
+# Einmalige Synchronisation
+uv run python -m src.main sync --full
+
+# Daemon-Modus (für Production)
+uv run python -m src.main daemon --interval 15 --metrics-port 9090
+
+# Status anzeigen
+uv run python -m src.main status
+
+# Metriken anzeigen
+uv run python -m src.main metrics
+```
 
 ## Features
 
-### Säule 1: Public (Transparenz)
+### Portal: Public (Transparenz)
 
 - OParl-Daten durchsuchen (Sitzungen, Vorlagen, Personen)
 - Volltextsuche über alle Dokumente
-- KI-Chatbot für Fragen zu kommunalen Themen
-- Fragen an Politiker:innen stellen (wie AbgeordnetenWatch)
-- Benachrichtigungen für neue Vorlagen
+- KI-Zusammenfassungen von Vorlagen
+- Kartenansicht mit Geo-Referenzen
 
-### Säule 2: Work (Organisationen)
+### Portal: Work (Organisationen)
 
-- Antragsdatenbank für Fraktionen
 - Fraktionssitzungen planen und dokumentieren
-- Notizen und Kommentare zu Tagesordnungspunkten
-- Abstimmungsprotokolle
-- Mitgliederverwaltung
-- Erinnerungen und Benachrichtigungen
+- Notizen zu Tagesordnungspunkten
+- Anträge erstellen und verwalten
+- Aufgabenverwaltung
+- Mitgliederverwaltung mit RBAC
+- Verschlüsselte sensible Daten (AES-256)
 
-### Säule 3: Admin (Verwaltung) - Geplant
+### Portal: Session (Verwaltung) - Geplant
 
 - Vollständiges Ratsinformationssystem
 - Sitzungsmanagement
-- Aufwandsentschädigungen
 - Vorlagen und Anträge erstellen
+- Aufwandsentschädigungen
+
+## Sicherheit
+
+- **Multi-Tenant Isolation** - Strikte Datentrennung pro Organisation
+- **RBAC** - 50+ feingranulare Berechtigungen
+- **2FA** - TOTP-basierte Zwei-Faktor-Authentifizierung
+- **Verschlüsselung** - AES-256-GCM für sensible Daten
+- **Rate Limiting** - Schutz vor Brute-Force
+- **Audit Trail** - Vollständige Nachverfolgbarkeit
 
 ## Mitwirken
 
-Wir freuen uns über Beiträge! Bitte lies unseren [Contributing Guide](CONTRIBUTING.md).
+Wir freuen uns über Beiträge! Siehe [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Lizenz
 
-Dieses Projekt steht unter der [AGPL-3.0 Lizenz](LICENSE).
+[AGPL-3.0](LICENSE)
 
 ## Links
 
