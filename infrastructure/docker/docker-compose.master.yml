@@ -156,7 +156,9 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: "false"
       ENVIRONMENT: production
-      SITE_URL: ${SITE_URL:-https://mandari.de}
+      SITE_URL: ${SITE_URL}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
       # Encryption
       ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY}
     networks:

@@ -30,10 +30,11 @@ SECRET_KEY = os.environ.get(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "True").lower() in ("true", "1", "yes")
 
+# Allowed hosts from environment
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 # Site URL for emails and external links
-SITE_URL = os.environ.get("SITE_URL", "https://mandari.de")
+SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
 
 # Auto-add domain from SITE_URL to ALLOWED_HOSTS
 from urllib.parse import urlparse
@@ -41,16 +42,7 @@ _site_domain = urlparse(SITE_URL).netloc
 if _site_domain and _site_domain not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(_site_domain)
 
-# Always allow production domains
-for domain in ["mandari.de", "volt.mandari.de", "www.mandari.de"]:
-    if domain not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append(domain)
-
-# Allow local network access (development)
-if DEBUG:
-    ALLOWED_HOSTS.extend(["192.168.178.30", "192.168.178.1"])
-
-# CSRF trusted origins (for staging/production)
+# CSRF trusted origins from environment
 CSRF_TRUSTED_ORIGINS = os.environ.get(
     "CSRF_TRUSTED_ORIGINS",
     "http://localhost:8000,http://127.0.0.1:8000"
@@ -59,11 +51,6 @@ CSRF_TRUSTED_ORIGINS = os.environ.get(
 # Auto-add SITE_URL to CSRF trusted origins
 if SITE_URL not in CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS.append(SITE_URL)
-
-# Add production CSRF origins
-for origin in ["https://mandari.de", "https://volt.mandari.de", "https://www.mandari.de"]:
-    if origin not in CSRF_TRUSTED_ORIGINS:
-        CSRF_TRUSTED_ORIGINS.append(origin)
 
 
 # Application definition

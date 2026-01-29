@@ -288,6 +288,8 @@ jobs:
           cat > infrastructure/docker/.env << EOF
           DOMAIN=mandari.de
           SITE_URL=${{ secrets.SITE_URL }}
+          ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
+          CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }}
           SECRET_KEY=${{ secrets.SECRET_KEY }}
           ENCRYPTION_MASTER_KEY=${{ secrets.ENCRYPTION_MASTER_KEY }}
           POSTGRES_USER=${{ secrets.POSTGRES_USER || 'mandari' }}
