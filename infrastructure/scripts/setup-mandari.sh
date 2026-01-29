@@ -48,7 +48,8 @@ DOMAIN="mandari.de"
 
 # SSH Einstellungen
 SSH_USER="root"
-SSH_KEY="${HOME}/.ssh/id_ed25519"
+# Passe diesen Pfad an deinen SSH-Key an:
+SSH_KEY="${HOME}/.ssh/id_hetzner"
 SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=15 -o BatchMode=yes"
 
 # =============================================================================
@@ -199,7 +200,6 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./data/caddy:/data
@@ -349,7 +349,6 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./data/caddy:/data
@@ -462,25 +461,39 @@ create_configs() {
 
     section "Konfigurationsdateien für $name"
 
-    # Caddyfile
+    # Caddyfile - HTTP only (TLS termination at Hetzner Load Balancer)
     local caddyfile=$(mktemp)
     cat > "$caddyfile" << EOF
 {
-    email admin@${DOMAIN}
-    acme_ca https://acme-v02.api.letsencrypt.org/directory
+    # Kein automatisches HTTPS - Load Balancer macht TLS Termination
+    auto_https off
 }
 
-${DOMAIN} {
-    reverse_proxy api:8000
-
-    header {
-        X-Content-Type-Options nosniff
-        X-Frame-Options SAMEORIGIN
-        Referrer-Policy strict-origin-when-cross-origin
-        -Server
+# Alle Anfragen kommen vom Load Balancer als HTTP
+:80 {
+    # Health Check Endpoint für Load Balancer
+    handle /health {
+        respond "OK" 200
     }
 
-    encode gzip
+    handle /health/ {
+        respond "OK" 200
+    }
+
+    # Alles andere an Django API weiterleiten
+    handle {
+        reverse_proxy api:8000
+
+        header {
+            X-Content-Type-Options nosniff
+            X-Frame-Options SAMEORIGIN
+            Referrer-Policy strict-origin-when-cross-origin
+            X-Forwarded-Proto https
+            -Server
+        }
+
+        encode gzip
+    }
 
     log {
         output file /data/access.log {
@@ -488,15 +501,6 @@ ${DOMAIN} {
             roll_keep 5
         }
     }
-}
-
-# Health Check für Load Balancer
-:80 {
-    @health path /health
-    respond @health "OK" 200
-
-    # Redirect alles andere zu HTTPS
-    redir https://{host}{uri} permanent
 }
 EOF
     scp_to "$caddyfile" "$host" "/opt/mandari/config/Caddyfile"

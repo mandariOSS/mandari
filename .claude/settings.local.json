@@ -100,7 +100,18 @@
       "Bash(D:)",
       "Bash(git init:*)",
       "Bash(git remote add:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial commit: Mandari 2.0 - Open Source RIS Platform\n\nMandari is an open-source platform for municipal political transparency \nin Germany, based on the OParl standard for council information systems.\n\nFeatures:\n- Django 6.0 backend with FastAPI microservices\n- Multi-tenant architecture with RBAC \\(50+ permissions\\)\n- OParl data synchronization\n- Work Portal for political organizations\n- High-availability infrastructure setup \\(Terraform/Ansible\\)\n\nInfrastructure:\n- Terraform configs for Hetzner Cloud\n- Ansible playbooks for server configuration\n- Docker Compose for container orchestration\n- GitHub Actions CI/CD pipeline\n- PostgreSQL streaming replication setup\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nCI: Add system dependencies for pycairo/cairo\n\npycairo requires libcairo2-dev and related libraries to be installed\nbefore pip can build the package. Added apt-get install step to both\ndeploy.yml and pr-check.yml workflows.\n\nSystem dependencies added:\n- libcairo2-dev \\(for pycairo\\)\n- libpango1.0-dev \\(for text rendering\\)\n- libgdk-pixbuf2.0-dev \\(for image handling\\)\n- libffi-dev \\(for cffi\\)\n- shared-mime-info \\(for file type detection\\)\n- poppler-utils \\(for pdf2image\\)\n- tesseract-ocr + tesseract-ocr-deu \\(for OCR\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)",
+      "Bash(git rm:*)",
+      "Bash(xargs -0 git rm --cached --)",
+      "Bash(git restore:*)",
+      "WebFetch(domain:xn--grn-5qa.name)",
+      "WebFetch(domain:codeberg.org)",
+      "WebFetch(domain:docs.hetzner.com)"
     ]
   }
 }
