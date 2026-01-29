@@ -79,6 +79,7 @@
         - docker-compose.master.yml
         - docker-compose.slave.yml
         - Caddyfile
+        - pg_hba.conf
 
     - name: Sync environment file
       copy:

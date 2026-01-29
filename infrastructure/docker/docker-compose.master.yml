@@ -47,6 +47,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-mandari}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-mandari}
+      # Allow password auth from Docker network (fixes pg_hba.conf "no encryption" error)
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
     command:
       - "postgres"
       # Replication settings for PRIMARY
@@ -68,8 +70,12 @@ services:
       # Allow replication connections from private network
       - "-c"
       - "listen_addresses=*"
+      # Use custom pg_hba.conf for Docker network authentication
+      - "-c"
+      - "hba_file=/etc/postgresql/pg_hba.conf"
     volumes:
       - ${DATA_DIR:-/mnt/data}/postgres:/var/lib/postgresql/data
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     networks:
       - mandari-network
     ports:
