@@ -128,7 +128,17 @@
 
     - name: Wait for containers to stabilize
       pause:
-        seconds: 10
+        seconds: 15
+
+    - name: Get pgbouncer logs (for debugging)
+      shell: docker logs mandari-pgbouncer --tail 50 2>&1
+      register: pgbouncer_logs
+      ignore_errors: yes
+
+    - name: Display pgbouncer logs
+      debug:
+        msg: "{{ pgbouncer_logs.stdout_lines }}"
+      when: pgbouncer_logs.stdout_lines is defined
 
     - name: Get API container logs (for debugging)
       shell: docker logs mandari-api --tail 100 2>&1

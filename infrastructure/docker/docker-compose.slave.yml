@@ -150,10 +150,8 @@ services:
     container_name: mandari-api
     restart: unless-stopped
     environment:
-      # Database - connects to local replica for reads
-      # NOTE: Writes will still go through, but they'll be forwarded to primary
-      # For strict read-only, use a read replica connection string
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@pgbouncer:6432/${POSTGRES_DB:-mandari}
+      # Database - connects to local postgres (direct connection)
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
       # For writes, connect to master
       DATABASE_URL_PRIMARY: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${MASTER_PRIVATE_IP:-10.0.1.10}:5432/${POSTGRES_DB:-mandari}
       # Cache
@@ -173,8 +171,8 @@ services:
     networks:
       - mandari-network
     depends_on:
-      pgbouncer:
-        condition: service_started
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       meilisearch:
