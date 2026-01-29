@@ -197,41 +197,10 @@ services:
   # duplicate ingestion and write conflicts.
 
   # ===========================================================================
-  # Public Frontend
+  # Frontend Services (Django serves everything via HTMX)
   # ===========================================================================
-  web-public:
-    image: ${DOCKER_REGISTRY:-ghcr.io/mandarioss/mandari}-web-public:${IMAGE_TAG:-latest}
-    container_name: mandari-web-public
-    restart: unless-stopped
-    environment:
-      ORIGIN: ${SITE_URL:-https://mandari.de}
-      API_URL: http://api:8000
-    networks:
-      - mandari-network
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # ===========================================================================
-  # Work Portal Frontend
-  # ===========================================================================
-  web-work:
-    image: ${DOCKER_REGISTRY:-ghcr.io/mandarioss/mandari}-web-work:${IMAGE_TAG:-latest}
-    container_name: mandari-web-work
-    restart: unless-stopped
-    environment:
-      ORIGIN: ${SITE_URL:-https://mandari.de}
-      API_URL: http://api:8000
-      BASE_PATH: /work
-    networks:
-      - mandari-network
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+  # NOTE: Mandari uses Django Templates + HTMX, not separate frontend apps.
+  # All routes are served by the 'api' service (Django).
 
 # =============================================================================
 # Volumes
