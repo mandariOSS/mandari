@@ -30,26 +30,29 @@ SECRET_KEY = os.environ.get(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "True").lower() in ("true", "1", "yes")
 
-# Allowed hosts from environment
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
-
 # Site URL for emails and external links
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
 
-# Auto-add domain from SITE_URL to ALLOWED_HOSTS
+# Parse domain from SITE_URL
 from urllib.parse import urlparse
 _site_domain = urlparse(SITE_URL).netloc
+
+# Allowed hosts from environment (filter empty strings)
+_allowed_hosts_env = os.environ.get("ALLOWED_HOSTS", "")
+ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_env.split(",") if h.strip()]
+
+# Ensure we always have localhost for health checks + domain from SITE_URL
+if "localhost" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("localhost")
 if _site_domain and _site_domain not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(_site_domain)
 
-# CSRF trusted origins from environment
-CSRF_TRUSTED_ORIGINS = os.environ.get(
-    "CSRF_TRUSTED_ORIGINS",
-    "http://localhost:8000,http://127.0.0.1:8000"
-).split(",")
+# CSRF trusted origins from environment (filter empty strings)
+_csrf_env = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_env.split(",") if o.strip()]
 
-# Auto-add SITE_URL to CSRF trusted origins
-if SITE_URL not in CSRF_TRUSTED_ORIGINS:
+# Ensure SITE_URL is always in CSRF trusted origins
+if SITE_URL and SITE_URL not in CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS.append(SITE_URL)
 
 
