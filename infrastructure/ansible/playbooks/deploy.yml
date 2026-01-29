@@ -126,21 +126,28 @@
         path: "{{ data_dir }}/postgres/PG_VERSION"
       register: pg_data_exists
 
-    - name: Check if mandari database exists (if postgres is running)
-      shell: docker exec mandari-postgres psql -U {{ postgres_user | default('mandari') }} -lqt 2>/dev/null | grep -w mandari || true
-      register: db_exists_check
+    - name: Test database connection (check if mandari DB exists)
+      shell: |
+        docker exec mandari-postgres psql -U postgres -d mandari -c "SELECT 1" 2>&1 || echo "DB_NOT_FOUND"
+      register: db_test
       ignore_errors: yes
       when: pg_data_exists.stat.exists
 
-    - name: Stop PostgreSQL container for reinitialization
-      shell: docker stop mandari-postgres 2>/dev/null || true
-      when: pg_data_exists.stat.exists and (db_exists_check.stdout | default('') | trim == '')
+    - name: Debug - Show database test result
+      debug:
+        msg: "DB test result: {{ db_test.stdout | default('not run') }}"
+      when: pg_data_exists.stat.exists
+
+    - name: Stop all containers for PostgreSQL reinitialization
+      shell: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} down 2>/dev/null || true
+      when: pg_data_exists.stat.exists and ('DB_NOT_FOUND' in db_test.stdout or 'does not exist' in db_test.stdout)
 
     - name: Clear PostgreSQL data for reinitialization
       file:
         path: "{{ data_dir }}/postgres"
         state: absent
-      when: pg_data_exists.stat.exists and (db_exists_check.stdout | default('') | trim == '')
+      when: pg_data_exists.stat.exists and ('DB_NOT_FOUND' in db_test.stdout or 'does not exist' in db_test.stdout)
 
     - name: Recreate PostgreSQL data directory
       file:
@@ -149,7 +156,12 @@
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: '0755'
-      when: pg_data_exists.stat.exists and (db_exists_check.stdout | default('') | trim == '')
+      when: pg_data_exists.stat.exists and ('DB_NOT_FOUND' in db_test.stdout or 'does not exist' in db_test.stdout)
+
+    - name: Log PostgreSQL reinitialization
+      debug:
+        msg: "PostgreSQL data cleared and will be reinitialized with correct settings"
+      when: pg_data_exists.stat.exists and ('DB_NOT_FOUND' in db_test.stdout or 'does not exist' in db_test.stdout)
 
     - name: Start all containers
       community.docker.docker_compose_v2:
