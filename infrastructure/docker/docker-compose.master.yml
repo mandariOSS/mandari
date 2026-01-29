@@ -148,7 +148,7 @@ services:
   # API Backend
   # ===========================================================================
   api:
-    image: ${DOCKER_REGISTRY:-ghcr.io/mandarioss/mandari}-api:${IMAGE_TAG:-latest}
+    image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
     container_name: mandari-api
     restart: unless-stopped
     environment:
@@ -194,7 +194,7 @@ services:
   # Ingestor (ONLY ON MASTER!)
   # ===========================================================================
   ingestor:
-    image: ${DOCKER_REGISTRY:-ghcr.io/mandarioss/mandari}-ingestor:${IMAGE_TAG:-latest}
+    image: ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest}
     container_name: mandari-ingestor
     restart: unless-stopped
     command: >

@@ -38,8 +38,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Docker image names must be lowercase - force lowercase conversion
-  IMAGE_PREFIX: mandarioss/mandari
+  # Docker images: ghcr.io/mandarioss/mandari, ghcr.io/mandarioss/ingestor
+  IMAGE_OWNER: mandarioss
 
 jobs:
   # ===========================================================================
@@ -142,14 +142,9 @@ jobs:
       matrix:
         include:
           - context: ./mandari
-            image: api
+            image: mandari       # ghcr.io/mandarioss/mandari
           - context: ./apps/ingestor
-            image: ingestor
-          # Uncomment when frontend apps exist:
-          # - context: ./apps/web-public
-          #   image: web-public
-          # - context: ./apps/web-work
-          #   image: web-work
+            image: ingestor      # ghcr.io/mandarioss/ingestor
 
     steps:
       - name: Checkout
@@ -169,7 +164,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ matrix.image }}
           tags: |
             type=sha,prefix=
             type=ref,event=branch
@@ -296,7 +291,6 @@ jobs:
           REDIS_MAXMEMORY=512mb
           MASTER_PRIVATE_IP=10.0.0.3
           DATA_DIR=/mnt/data
-          DOCKER_REGISTRY=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}
           IMAGE_TAG=${{ needs.build.outputs.image_tag || github.sha }}
           EOF
 
