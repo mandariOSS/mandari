@@ -212,6 +212,12 @@ jobs:
             echo "Set DEPLOYMENT_ENABLED=true in repository variables when ready."
             exit 1
           fi
+          if [ -z "${{ secrets.GHCR_TOKEN }}" ]; then
+            echo "⚠️ Warning: GHCR_TOKEN not set!"
+            echo "If packages are private, you need a Personal Access Token with read:packages scope."
+            echo "Create one at: https://github.com/settings/tokens/new?scopes=read:packages"
+            echo "Then add it as GHCR_TOKEN secret in repository settings."
+          fi
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -250,7 +256,7 @@ jobs:
               app_dir: /opt/mandari
               data_dir: /mnt/data
               image_tag: ${{ needs.build.outputs.image_tag || github.sha }}
-              docker_registry: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}
+              docker_registry: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}
 
             children:
               master:
@@ -298,8 +304,15 @@ jobs:
         working-directory: infrastructure/ansible
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'false'
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
-          ansible-playbook -i inventory/production.yml playbooks/deploy.yml
+          # Build extra-vars for Ansible
+          EXTRA_VARS=""
+          if [ -n "$GHCR_TOKEN" ]; then
+            EXTRA_VARS="ghcr_username=${{ github.repository_owner }} ghcr_token=${GHCR_TOKEN}"
+          fi
+          ansible-playbook -i inventory/production.yml playbooks/deploy.yml \
+            ${EXTRA_VARS:+--extra-vars "$EXTRA_VARS"}
 
       - name: Health check
         run: |

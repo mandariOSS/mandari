@@ -99,11 +99,27 @@ Gehe zu: `Repository Settings → Secrets and variables → Actions`
 | `MASTER_IP` | IP des Master-Servers (46.225.61.128) |
 | `SLAVE_IP` | IP des Slave-Servers (46.225.58.145) |
 | `SSH_PRIVATE_KEY` | Inhalt von `~/.ssh/id_hetzner` |
+| `GHCR_TOKEN` | GitHub Personal Access Token (siehe unten) |
 | `POSTGRES_PASSWORD` | (vom Script generiert) |
 | `SECRET_KEY` | (vom Script generiert) |
 | `ENCRYPTION_MASTER_KEY` | (vom Script generiert) |
 | `MEILISEARCH_KEY` | (vom Script generiert) |
 | `SITE_URL` | `https://mandari.de` |
+
+**GHCR_TOKEN erstellen:**
+
+Der GHCR_TOKEN ermöglicht den Servern, Docker-Images aus dem GitHub Container Registry zu laden.
+
+1. Gehe zu: https://github.com/settings/tokens/new
+2. Wähle: **"Generate new token (classic)"**
+3. Setze:
+   - Note: `mandari-deployment`
+   - Expiration: `No expiration` (oder nach Bedarf)
+   - Scopes: Nur `read:packages` ✅
+4. Klicke "Generate token"
+5. Kopiere den Token und füge ihn als `GHCR_TOKEN` Secret hinzu
+
+**Alternativ:** Wenn die Packages öffentlich sind, ist kein Token erforderlich.
 
 **Variable hinzufügen:**
 

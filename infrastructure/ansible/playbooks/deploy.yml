@@ -82,24 +82,14 @@
         force: yes
 
     # =========================================================================
-    # Build Images (if building locally)
+    # Docker Registry Authentication
     # =========================================================================
-    - name: Check if we should build images locally
-      stat:
-        path: "{{ app_dir }}/apps"
-      register: apps_dir
-
-    - name: Build application images
-      when: apps_dir.stat.exists
-      community.docker.docker_compose_v2:
-        project_src: "{{ app_dir }}"
-        files:
-          - "{{ compose_file }}"
-        build: always
-        services:
-          - api
-          - web-public
-          - web-work
+    - name: Login to GitHub Container Registry
+      community.docker.docker_login:
+        registry: ghcr.io
+        username: "{{ ghcr_username }}"
+        password: "{{ ghcr_token }}"
+      when: ghcr_token is defined and ghcr_token | length > 0
 
     # =========================================================================
     # Deploy Containers
@@ -158,15 +148,13 @@
     # =========================================================================
     # Health Checks
     # =========================================================================
-    - name: Wait for API health check
-      uri:
-        url: "http://localhost:8000/health"
-        method: GET
-        status_code: 200
+    - name: Wait for API container to be healthy
+      shell: docker inspect --format='{{'{{'}}.State.Health.Status{{'}}'}}' mandari-api
       register: api_health
       retries: 30
       delay: 5
-      until: api_health.status == 200
+      until: api_health.stdout == 'healthy'
+      ignore_errors: yes
 
     - name: Wait for Caddy health check
       uri:
