@@ -54,6 +54,20 @@
         - "{{ app_dir }}/logs"
         - "{{ app_dir }}/config"
 
+    - name: Ensure data directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+      loop:
+        - "{{ data_dir }}"
+        - "{{ data_dir }}/postgres"
+        - "{{ data_dir }}/redis"
+        - "{{ data_dir }}/meilisearch"
+        - "{{ data_dir }}/ingestor"
+
     - name: Sync Docker Compose files
       copy:
         src: "{{ playbook_dir }}/../../docker/{{ item }}"
