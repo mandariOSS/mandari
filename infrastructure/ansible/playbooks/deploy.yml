@@ -117,6 +117,40 @@
         pull: always
       ignore_errors: yes
 
+    # =========================================================================
+    # PostgreSQL Initialization Fix
+    # =========================================================================
+    # If postgres data exists but database doesn't, we need to reinitialize
+    - name: Check if PostgreSQL data directory has data
+      stat:
+        path: "{{ data_dir }}/postgres/PG_VERSION"
+      register: pg_data_exists
+
+    - name: Check if mandari database exists (if postgres is running)
+      shell: docker exec mandari-postgres psql -U {{ postgres_user | default('mandari') }} -lqt 2>/dev/null | grep -w mandari || true
+      register: db_exists_check
+      ignore_errors: yes
+      when: pg_data_exists.stat.exists
+
+    - name: Stop PostgreSQL container for reinitialization
+      shell: docker stop mandari-postgres 2>/dev/null || true
+      when: pg_data_exists.stat.exists and (db_exists_check.stdout | default('') | trim == '')
+
+    - name: Clear PostgreSQL data for reinitialization
+      file:
+        path: "{{ data_dir }}/postgres"
+        state: absent
+      when: pg_data_exists.stat.exists and (db_exists_check.stdout | default('') | trim == '')
+
+    - name: Recreate PostgreSQL data directory
+      file:
+        path: "{{ data_dir }}/postgres"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+      when: pg_data_exists.stat.exists and (db_exists_check.stdout | default('') | trim == '')
+
     - name: Start all containers
       community.docker.docker_compose_v2:
         project_src: "{{ app_dir }}"
