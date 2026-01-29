@@ -148,6 +148,60 @@
           debug:
             msg: "{{ migration_result.stdout }}"
 
+        - name: Setup Django roles and permissions
+          community.docker.docker_container_exec:
+            container: mandari-api
+            command: python manage.py setup_roles
+          register: roles_result
+          ignore_errors: yes
+
+    # =========================================================================
+    # Initialize OParl Sources (Primary only, first deployment)
+    # =========================================================================
+    - name: Initialize OParl sources
+      when: postgres_role == 'primary'
+      block:
+        - name: Check if sources already exist
+          community.docker.docker_container_exec:
+            container: mandari-api
+            command: python manage.py shell -c "from insight_core.models import OParlSource; print(OParlSource.objects.count())"
+          register: source_count
+          ignore_errors: yes
+
+        - name: Import OParl sources (inactive by default)
+          community.docker.docker_container_exec:
+            container: mandari-api
+            command: python manage.py import_oparl_sources
+          when: source_count.stdout | default('0') | trim == '0'
+          register: import_result
+          ignore_errors: yes
+
+        - name: Activate default sources (major cities only)
+          community.docker.docker_container_exec:
+            container: mandari-api
+            command: >
+              python manage.py shell -c "
+              from insight_core.models import OParlSource;
+              default_sources = [
+                'https://buergerinfo.stadt-koeln.de/oparl/system',
+                'https://www.bonn.sitzung-online.de/public/oparl/system',
+                'https://ris-oparl.itk-rheinland.de/Oparl/system',
+                'https://oparl.stadt-muenster.de/system',
+                'https://oparl.dresden.de/system',
+                'https://ratsinformation.leipzig.de/allris_leipzig_public/oparl/system',
+              ];
+              activated = OParlSource.objects.filter(url__in=default_sources).update(is_active=True);
+              print(f'Activated {activated} default sources')
+              "
+          when: source_count.stdout | default('0') | trim == '0'
+          register: activate_result
+          ignore_errors: yes
+
+        - name: Display import result
+          debug:
+            msg: "{{ import_result.stdout | default('') }} | {{ activate_result.stdout | default('skipped') }}"
+          when: import_result is defined or activate_result is defined
+
     # =========================================================================
     # Health Checks
     # =========================================================================
