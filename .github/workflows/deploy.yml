@@ -38,7 +38,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/mandari
+  # Docker image names must be lowercase - force lowercase conversion
+  IMAGE_PREFIX: mandarioss/mandari
 
 jobs:
   # ===========================================================================

@@ -148,7 +148,7 @@ services:
   # API Backend
   # ===========================================================================
   api:
-    image: ${DOCKER_REGISTRY:-ghcr.io/mandari}/api:${IMAGE_TAG:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/mandarioss/mandari}-api:${IMAGE_TAG:-latest}
     container_name: mandari-api
     restart: unless-stopped
     environment:
@@ -194,7 +194,7 @@ services:
   # Ingestor (ONLY ON MASTER!)
   # ===========================================================================
   ingestor:
-    image: ${DOCKER_REGISTRY:-ghcr.io/mandari}/ingestor:${IMAGE_TAG:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/mandarioss/mandari}-ingestor:${IMAGE_TAG:-latest}
     container_name: mandari-ingestor
     restart: unless-stopped
     command: >
@@ -226,7 +226,7 @@ services:
   # Public Frontend
   # ===========================================================================
   web-public:
-    image: ${DOCKER_REGISTRY:-ghcr.io/mandari}/web-public:${IMAGE_TAG:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/mandarioss/mandari}-web-public:${IMAGE_TAG:-latest}
     container_name: mandari-web-public
     restart: unless-stopped
     environment:
@@ -244,7 +244,7 @@ services:
   # Work Portal Frontend
   # ===========================================================================
   web-work:
-    image: ${DOCKER_REGISTRY:-ghcr.io/mandari}/web-work:${IMAGE_TAG:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/mandarioss/mandari}-web-work:${IMAGE_TAG:-latest}
     container_name: mandari-web-work
     restart: unless-stopped
     environment:
