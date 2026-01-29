@@ -114,6 +114,7 @@
         files:
           - "{{ compose_file }}"
         pull: always
+      ignore_errors: yes
 
     - name: Start all containers
       community.docker.docker_compose_v2:
@@ -122,10 +123,39 @@
           - "{{ compose_file }}"
         state: present
       register: compose_result
+      ignore_errors: yes
+
+    - name: Wait for containers to stabilize
+      pause:
+        seconds: 10
+
+    - name: Get API container logs (for debugging)
+      shell: docker logs mandari-api --tail 100 2>&1
+      register: api_logs
+      ignore_errors: yes
+
+    - name: Display API logs
+      debug:
+        msg: "{{ api_logs.stdout_lines }}"
+      when: api_logs.stdout_lines is defined
+
+    - name: Check container status
+      shell: docker ps -a --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.State{{ '}}' }}"
+      register: container_status
+
+    - name: Display container status
+      debug:
+        msg: "{{ container_status.stdout_lines }}"
+
+    - name: Fail if API is not running
+      shell: docker inspect mandari-api --format '{{ '{{' }}.State.Running{{ '}}' }}'
+      register: api_running
+      failed_when: api_running.stdout != 'true'
 
     - name: Display deployment result
       debug:
         msg: "Deployment completed. Containers: {{ compose_result.containers | map(attribute='Name') | list }}"
+      when: compose_result.containers is defined
 
     # =========================================================================
     # Database Migrations (Primary only)

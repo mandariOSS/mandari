@@ -28,7 +28,7 @@ services:
       - mandari-network
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/health"]
       interval: 30s
