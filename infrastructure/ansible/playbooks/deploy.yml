@@ -122,6 +122,7 @@
         files:
           - "{{ compose_file }}"
         state: present
+        recreate: always
       register: compose_result
       ignore_errors: yes
 
