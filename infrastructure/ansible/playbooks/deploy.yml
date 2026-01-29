@@ -107,14 +107,21 @@
       when: ghcr_token is defined and ghcr_token | length > 0
 
     # =========================================================================
+    # Stop Existing Containers (Clean Slate)
+    # =========================================================================
+    - name: Stop all existing containers before deployment
+      shell: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} down --remove-orphans 2>/dev/null || true
+        # Force remove any leftover mandari containers (including orphans)
+        docker ps -a --filter "name=mandari-" -q | xargs -r docker rm -f 2>/dev/null || true
+      ignore_errors: yes
+
+    # =========================================================================
     # Deploy Containers
     # =========================================================================
     - name: Pull latest images
-      community.docker.docker_compose_v2:
-        project_src: "{{ app_dir }}"
-        files:
-          - "{{ compose_file }}"
-        pull: always
+      shell: |
+        cd {{ app_dir }} && docker compose -f {{ compose_file }} pull
       ignore_errors: yes
 
     # =========================================================================
@@ -127,9 +134,10 @@
         path: "{{ data_dir }}/postgres/PG_VERSION"
       register: pg_data_exists
 
-    - name: Stop all containers for PostgreSQL reinitialization
+    - name: Ensure containers stopped for PostgreSQL reinitialization
       shell: |
-        cd {{ app_dir }} && docker compose -f {{ compose_file }} down 2>/dev/null || true
+        # Double-check all containers are stopped
+        docker ps -a --filter "name=mandari-" -q | xargs -r docker rm -f 2>/dev/null || true
       when: pg_data_exists.stat.exists and (force_postgres_reinit | default(true))
 
     - name: Clear PostgreSQL data for reinitialization
@@ -159,6 +167,7 @@
           - "{{ compose_file }}"
         state: present
         recreate: always
+        remove_orphans: true
       register: compose_result
       ignore_errors: yes
 
@@ -209,10 +218,30 @@
           delay: 2
           until: pg_ready.rc == 0
 
-        - name: Run migrations
+        - name: Check if database has existing tables
+          shell: |
+            docker exec mandari-postgres psql -U mandari -d mandari -t -c \
+              "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';"
+          register: table_count
+          ignore_errors: yes
+
+        - name: Display existing table count
+          debug:
+            msg: "Existing tables in database: {{ table_count.stdout | default('0') | trim }}"
+
+        - name: Run migrations (fresh database)
           community.docker.docker_container_exec:
             container: mandari-api
-            command: python manage.py migrate --noinput --fake-initial
+            command: python manage.py migrate --noinput
+          when: (table_count.stdout | default('0') | trim | int) == 0
+
+        - name: Run migrations (existing tables - fake all)
+          shell: |
+            # Tables exist but no migration records - fake all migrations
+            docker exec mandari-api python manage.py migrate --fake --noinput
+          when: (table_count.stdout | default('0') | trim | int) > 0
+          register: fake_migration_result
+          ignore_errors: yes
           register: migration_result
 
         - name: Display migration result
