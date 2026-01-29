@@ -35,6 +35,11 @@ on:
         required: false
         default: false
         type: boolean
+      force_db_reinit:
+        description: 'Force PostgreSQL reinitialization (DELETES ALL DATA!)'
+        required: false
+        default: false
+        type: boolean
 
 env:
   REGISTRY: ghcr.io
@@ -312,6 +317,10 @@ jobs:
           EXTRA_VARS=""
           if [ -n "$GHCR_TOKEN" ]; then
             EXTRA_VARS="ghcr_username=${{ github.repository_owner }} ghcr_token=${GHCR_TOKEN}"
+          fi
+          # Add force_postgres_reinit if requested
+          if [ "${{ inputs.force_db_reinit }}" = "true" ]; then
+            EXTRA_VARS="$EXTRA_VARS force_postgres_reinit=true"
           fi
           ansible-playbook -i inventory/production.yml playbooks/deploy.yml \
             ${EXTRA_VARS:+--extra-vars "$EXTRA_VARS"}
