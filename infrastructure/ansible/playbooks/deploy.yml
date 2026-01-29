@@ -218,30 +218,21 @@
           delay: 2
           until: pg_ready.rc == 0
 
-        - name: Check if database has existing tables
+        - name: Check if django_migrations table exists and has records
           shell: |
             docker exec mandari-postgres psql -U mandari -d mandari -t -c \
-              "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';"
-          register: table_count
+              "SELECT COUNT(*) FROM django_migrations;" 2>/dev/null || echo "0"
+          register: migration_count
           ignore_errors: yes
 
-        - name: Display existing table count
+        - name: Display migration status
           debug:
-            msg: "Existing tables in database: {{ table_count.stdout | default('0') | trim }}"
+            msg: "Existing migrations in database: {{ migration_count.stdout | default('0') | trim }}"
 
-        - name: Run migrations (fresh database)
+        - name: Run migrations
           community.docker.docker_container_exec:
             container: mandari-api
             command: python manage.py migrate --noinput
-          when: (table_count.stdout | default('0') | trim | int) == 0
-
-        - name: Run migrations (existing tables - fake all)
-          shell: |
-            # Tables exist but no migration records - fake all migrations
-            docker exec mandari-api python manage.py migrate --fake --noinput
-          when: (table_count.stdout | default('0') | trim | int) > 0
-          register: fake_migration_result
-          ignore_errors: yes
           register: migration_result
 
         - name: Display migration result
