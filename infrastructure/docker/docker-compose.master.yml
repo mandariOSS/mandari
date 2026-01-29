@@ -49,13 +49,27 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-mandari}
     command:
       - "postgres"
+      # Replication settings for PRIMARY
       - "-c"
-      - "config_file=/etc/postgresql/postgresql.conf"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=3"
+      - "-c"
+      - "max_replication_slots=3"
+      - "-c"
+      - "hot_standby=on"
+      # Performance tuning
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=16MB"
+      # Allow replication connections from private network
+      - "-c"
+      - "listen_addresses=*"
     volumes:
       - ${DATA_DIR:-/mnt/data}/postgres:/var/lib/postgresql/data
-      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
-      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
-      - ./postgres/init-replication.sql:/docker-entrypoint-initdb.d/init-replication.sql:ro
     networks:
       - mandari-network
     ports:

@@ -39,6 +39,8 @@ services:
   # ===========================================================================
   # Database (REPLICA)
   # ===========================================================================
+  # NOTE: Initial replication setup must be done manually via pg_basebackup
+  # See: infrastructure/ansible/playbooks/postgres-setup.yml
   postgres:
     image: postgres:16-alpine
     container_name: mandari-postgres
@@ -49,12 +51,20 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-mandari}
     command:
       - "postgres"
+      # Replica settings
       - "-c"
-      - "config_file=/etc/postgresql/postgresql.conf"
+      - "hot_standby=on"
+      # Performance tuning
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "listen_addresses=*"
     volumes:
       - ${DATA_DIR:-/mnt/data}/postgres:/var/lib/postgresql/data
-      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
-      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     networks:
       - mandari-network
     healthcheck:

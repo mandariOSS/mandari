@@ -111,7 +111,9 @@
       "Bash(git restore:*)",
       "WebFetch(domain:xn--grn-5qa.name)",
       "WebFetch(domain:codeberg.org)",
-      "WebFetch(domain:docs.hetzner.com)"
+      "WebFetch(domain:docs.hetzner.com)",
+      "WebFetch(domain:paymenter.org)",
+      "WebFetch(domain:docs.mailcow.email)"
     ]
   }
 }
