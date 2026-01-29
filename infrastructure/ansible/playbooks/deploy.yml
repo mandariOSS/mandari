@@ -128,7 +128,7 @@
     # PostgreSQL Initialization Fix (ONE-TIME)
     # =========================================================================
     # Force reinitialize PostgreSQL to fix pg_hba.conf and create database
-    # Set force_postgres_reinit: false after first successful deployment
+    # Set force_postgres_reinit: true via extra-vars to force database reinitialization
     - name: Check if PostgreSQL data directory has data
       stat:
         path: "{{ data_dir }}/postgres/PG_VERSION"
@@ -138,13 +138,13 @@
       shell: |
         # Double-check all containers are stopped
         docker ps -a --filter "name=mandari-" -q | xargs -r docker rm -f 2>/dev/null || true
-      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(true))
+      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(false))
 
     - name: Clear PostgreSQL data for reinitialization
       file:
         path: "{{ data_dir }}/postgres"
         state: absent
-      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(true))
+      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(false))
 
     - name: Recreate PostgreSQL data directory
       file:
@@ -153,12 +153,12 @@
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: '0755'
-      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(true))
+      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(false))
 
     - name: Log PostgreSQL reinitialization
       debug:
         msg: "PostgreSQL data cleared - will reinitialize with correct pg_hba.conf and create mandari database"
-      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(true))
+      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(false))
 
     - name: Start all containers
       community.docker.docker_compose_v2:
