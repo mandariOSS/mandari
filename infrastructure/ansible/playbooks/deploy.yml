@@ -261,18 +261,20 @@
     - name: Run database migrations using temporary container
       shell: |
         cd {{ app_dir }}
-        # Source the .env file for variables
-        set -a && source .env && set +a
+        # Load environment variables from .env file (POSIX compatible)
+        export $(grep -v '^#' .env | xargs)
         # Get the network name
         NETWORK_NAME="{{ docker_network.stdout | default('mandari_mandari-network') }}"
-        # Run migrations using the API image with sync psycopg driver
+        # Run migrations using the API image
         docker run --rm \
           --network "$NETWORK_NAME" \
+          --env-file .env \
           -e DATABASE_URL="postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@mandari-postgres:5432/${POSTGRES_DB:-mandari}" \
-          -e SECRET_KEY="${SECRET_KEY}" \
           -e ALLOWED_HOSTS="localhost" \
           ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest} \
           python manage.py migrate --noinput
+      args:
+        executable: /bin/bash
       register: migration_result
       retries: 3
       delay: 10
@@ -285,15 +287,17 @@
     - name: Setup Django roles and permissions
       shell: |
         cd {{ app_dir }}
-        set -a && source .env && set +a
+        export $(grep -v '^#' .env | xargs)
         NETWORK_NAME="{{ docker_network.stdout | default('mandari_mandari-network') }}"
         docker run --rm \
           --network "$NETWORK_NAME" \
+          --env-file .env \
           -e DATABASE_URL="postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@mandari-postgres:5432/${POSTGRES_DB:-mandari}" \
-          -e SECRET_KEY="${SECRET_KEY}" \
           -e ALLOWED_HOSTS="localhost" \
           ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest} \
           python manage.py setup_roles
+      args:
+        executable: /bin/bash
       ignore_errors: yes
 
     # =========================================================================
