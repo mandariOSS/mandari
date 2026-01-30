@@ -22,6 +22,21 @@
 }
 
 # =============================================================================
+# Localhost Health Check (for Docker/internal monitoring on HTTP)
+# =============================================================================
+http://localhost {
+    handle /health {
+        respond "OK" 200
+    }
+    handle /health/ {
+        respond "OK" 200
+    }
+    handle {
+        respond "Not Found" 404
+    }
+}
+
+# =============================================================================
 # Main Site - HTTPS with automatic TLS
 # =============================================================================
 {$DOMAIN:mandari.de} {
