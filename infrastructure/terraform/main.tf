@@ -220,23 +220,20 @@ resource "hcloud_load_balancer_target" "slave" {
 # Load Balancer Services
 # =============================================================================
 
-# HTTP Service (redirects to HTTPS)
+# HTTP Service - TCP Passthrough (for ACME HTTP-01 challenges)
+# Must be TCP so Caddy can handle Let's Encrypt challenges directly
 resource "hcloud_load_balancer_service" "http" {
   load_balancer_id = hcloud_load_balancer.mandari.id
-  protocol         = "http"
+  protocol         = "tcp"
   listen_port      = 80
   destination_port = 80
 
   health_check {
-    protocol = "http"
+    protocol = "tcp"
     port     = 80
     interval = 10
     timeout  = 5
     retries  = 3
-    http {
-      path         = "/health"
-      status_codes = ["2??", "3??"]
-    }
   }
 }
 
