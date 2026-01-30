@@ -224,7 +224,80 @@
       ignore_errors: yes
 
     # =========================================================================
-    # Start Containers
+    # Start Infrastructure Containers (Database, Cache, Search)
+    # =========================================================================
+    - name: Start infrastructure containers only (postgres, redis, meilisearch)
+      shell: |
+        cd {{ app_dir }}
+        docker compose -f {{ compose_file }} up -d postgres redis meilisearch
+      register: infra_start
+
+    - name: Wait for PostgreSQL to be healthy
+      shell: |
+        for i in {1..60}; do
+          docker exec mandari-postgres pg_isready -U ${POSTGRES_USER:-mandari} && exit 0
+          sleep 2
+        done
+        exit 1
+      environment:
+        POSTGRES_USER: "{{ lookup('env', 'POSTGRES_USER') | default('mandari', true) }}"
+      register: pg_ready
+      retries: 3
+      delay: 5
+      until: pg_ready.rc == 0
+
+    - name: Wait for PostgreSQL to fully initialize
+      pause:
+        seconds: 5
+
+    # =========================================================================
+    # Run Migrations BEFORE starting API (prevents race condition)
+    # =========================================================================
+    - name: Get Docker network name
+      shell: docker network ls --filter name=mandari --format '{{ '{{' }}.Name{{ '}}' }}' | grep -E 'mandari.*network' | head -1
+      register: docker_network
+      changed_when: false
+
+    - name: Run database migrations using temporary container
+      shell: |
+        cd {{ app_dir }}
+        # Source the .env file for variables
+        set -a && source .env && set +a
+        # Get the network name
+        NETWORK_NAME="{{ docker_network.stdout | default('mandari_mandari-network') }}"
+        # Run migrations using the API image with sync psycopg driver
+        docker run --rm \
+          --network "$NETWORK_NAME" \
+          -e DATABASE_URL="postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@mandari-postgres:5432/${POSTGRES_DB:-mandari}" \
+          -e SECRET_KEY="${SECRET_KEY}" \
+          -e ALLOWED_HOSTS="localhost" \
+          ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest} \
+          python manage.py migrate --noinput
+      register: migration_result
+      retries: 3
+      delay: 10
+      until: migration_result.rc == 0
+
+    - name: Display migration result
+      debug:
+        msg: "{{ migration_result.stdout_lines | default(['Migrations completed']) }}"
+
+    - name: Setup Django roles and permissions
+      shell: |
+        cd {{ app_dir }}
+        set -a && source .env && set +a
+        NETWORK_NAME="{{ docker_network.stdout | default('mandari_mandari-network') }}"
+        docker run --rm \
+          --network "$NETWORK_NAME" \
+          -e DATABASE_URL="postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@mandari-postgres:5432/${POSTGRES_DB:-mandari}" \
+          -e SECRET_KEY="${SECRET_KEY}" \
+          -e ALLOWED_HOSTS="localhost" \
+          ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest} \
+          python manage.py setup_roles
+      ignore_errors: yes
+
+    # =========================================================================
+    # Now Start All Containers (API, Ingestor, Caddy)
     # =========================================================================
     - name: Start all containers
       community.docker.docker_compose_v2:
@@ -235,44 +308,6 @@
         recreate: always
         remove_orphans: true
       register: compose_result
-
-    - name: Wait for PostgreSQL to be healthy
-      shell: |
-        for i in {1..30}; do
-          docker exec mandari-postgres pg_isready -U mandari && exit 0
-          sleep 2
-        done
-        exit 1
-      register: pg_ready
-      retries: 3
-      delay: 5
-      until: pg_ready.rc == 0
-
-    - name: Wait for API to start
-      pause:
-        seconds: 10
-
-    # =========================================================================
-    # Run Migrations (Master Only)
-    # =========================================================================
-    - name: Run database migrations
-      community.docker.docker_container_exec:
-        container: mandari-api
-        command: python manage.py migrate --noinput
-      register: migration_result
-      retries: 3
-      delay: 10
-      until: migration_result.rc == 0
-
-    - name: Display migration result
-      debug:
-        msg: "{{ migration_result.stdout }}"
-
-    - name: Setup Django roles and permissions
-      community.docker.docker_container_exec:
-        container: mandari-api
-        command: python manage.py setup_roles
-      ignore_errors: yes
 
     # =========================================================================
     # Health Check
