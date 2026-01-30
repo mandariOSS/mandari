@@ -3,6 +3,11 @@
 # =============================================================================
 # TLS is handled by Caddy with automatic Let's Encrypt certificates.
 # The Load Balancer uses TCP passthrough (no TLS termination).
+#
+# Caddy automatically:
+# - Obtains and renews TLS certificates via Let's Encrypt
+# - Handles ACME HTTP-01 challenges on port 80
+# - Redirects HTTP to HTTPS
 # =============================================================================
 
 {
@@ -17,7 +22,7 @@
 }
 
 # =============================================================================
-# HTTPS - Main Site (Caddy handles TLS via Let's Encrypt)
+# Main Site - HTTPS with automatic TLS
 # =============================================================================
 {$DOMAIN:mandari.de} {
     # Compression
@@ -40,7 +45,7 @@
         }
     }
 
-    # Health check endpoint (for Load Balancer - responds on HTTPS)
+    # Health check endpoint (responds on both HTTP and HTTPS)
     handle /health {
         respond "OK" 200
     }
@@ -53,7 +58,6 @@
     handle /api/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
 
             transport http {
@@ -67,7 +71,6 @@
     handle /admin/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
         }
     }
@@ -76,7 +79,6 @@
     handle /accounts/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
         }
     }
@@ -85,7 +87,6 @@
     handle /work/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
         }
     }
@@ -94,7 +95,6 @@
     handle /session/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
         }
     }
@@ -103,7 +103,6 @@
     handle /static/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
         }
     }
@@ -112,7 +111,6 @@
     handle /media/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
         }
     }
@@ -121,7 +119,6 @@
     handle /ws/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
             header_up Connection {header.Connection}
             header_up Upgrade {header.Upgrade}
@@ -132,7 +129,6 @@
     handle {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-Proto {scheme}
             header_up Host {host}
         }
     }
@@ -143,23 +139,5 @@
             roll_size 10mb
             roll_keep 5
         }
-    }
-}
-
-# =============================================================================
-# HTTP -> HTTPS Redirect (with health check for internal monitoring)
-# =============================================================================
-:80 {
-    # Health check endpoint for internal/LB monitoring
-    handle /health {
-        respond "OK" 200
-    }
-    handle /health/ {
-        respond "OK" 200
-    }
-
-    # Redirect everything else to HTTPS
-    handle {
-        redir https://{host}{uri} permanent
     }
 }
