@@ -240,40 +240,21 @@ resource "hcloud_load_balancer_service" "http" {
   }
 }
 
-# HTTPS Service with managed certificate
+# HTTPS Service - TCP Passthrough (E2E Encryption)
+# Load Balancer forwards raw TCP to Caddy, which handles TLS with Let's Encrypt
 resource "hcloud_load_balancer_service" "https" {
   load_balancer_id = hcloud_load_balancer.mandari.id
-  protocol         = "https"
+  protocol         = "tcp"
   listen_port      = 443
-  destination_port = 80 # TLS termination at LB, forward to Caddy on port 80
-
-  http {
-    certificates    = [hcloud_managed_certificate.mandari.id]
-    sticky_sessions = true
-    cookie_name     = "MANDARI_LB"
-    cookie_lifetime = 300
-  }
+  destination_port = 443
 
   health_check {
-    protocol = "http"
-    port     = 80
+    protocol = "tcp"
+    port     = 443
     interval = 10
     timeout  = 5
     retries  = 3
-    http {
-      path         = "/health"
-      status_codes = ["2??", "3??"]
-    }
   }
-}
-
-# =============================================================================
-# Managed Certificate
-# =============================================================================
-
-resource "hcloud_managed_certificate" "mandari" {
-  name         = "mandari-cert"
-  domain_names = var.domain_names
 }
 
 # =============================================================================

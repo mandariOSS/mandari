@@ -1,24 +1,13 @@
 # =============================================================================
 # Mandari 2.0 - Caddy Configuration (E2E Encryption)
 # =============================================================================
-# This Caddyfile configures Caddy with TLS termination at the backend.
-# The Hetzner Load Balancer operates in TCP passthrough mode.
+# TLS is handled by Caddy with automatic Let's Encrypt certificates.
+# The Load Balancer uses TCP passthrough (no TLS termination).
 # =============================================================================
 
 {
     # Let's Encrypt email for certificate notifications
     email admin@mandari.de
-
-    # Accept ProxyProtocol from Hetzner Load Balancer
-    servers {
-        listener_wrappers {
-            proxy_protocol {
-                timeout 5s
-                allow 10.0.0.0/16
-            }
-            tls
-        }
-    }
 
     # Logging
     log {
@@ -28,7 +17,7 @@
 }
 
 # =============================================================================
-# HTTPS - Main Site (Caddy handles TLS)
+# HTTPS - Main Site (Caddy handles TLS via Let's Encrypt)
 # =============================================================================
 {$DOMAIN:mandari.de} {
     # Compression
@@ -51,7 +40,7 @@
         }
     }
 
-    # Health check endpoint (for Load Balancer)
+    # Health check endpoint (for Load Balancer - responds on HTTPS)
     handle /health {
         respond "OK" 200
     }
@@ -64,8 +53,8 @@
     handle /api/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
 
             transport http {
                 dial_timeout 10s
@@ -78,8 +67,8 @@
     handle /admin/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
         }
     }
 
@@ -87,8 +76,8 @@
     handle /accounts/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
         }
     }
 
@@ -96,8 +85,8 @@
     handle /work/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
         }
     }
 
@@ -105,8 +94,8 @@
     handle /session/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
         }
     }
 
@@ -114,8 +103,8 @@
     handle /static/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
         }
     }
 
@@ -123,8 +112,8 @@
     handle /media/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
         }
     }
 
@@ -132,10 +121,10 @@
     handle /ws/* {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
-            header_up Connection {>Connection}
-            header_up Upgrade {>Upgrade}
+            header_up Host {host}
+            header_up Connection {header.Connection}
+            header_up Upgrade {header.Upgrade}
         }
     }
 
@@ -143,8 +132,8 @@
     handle {
         reverse_proxy api:8000 {
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
+            header_up Host {host}
         }
     }
 
@@ -158,10 +147,10 @@
 }
 
 # =============================================================================
-# HTTP -> HTTPS Redirect (with health check for internal use)
+# HTTP -> HTTPS Redirect (with health check for internal monitoring)
 # =============================================================================
 :80 {
-    # Health check endpoint for internal monitoring (no redirect)
+    # Health check endpoint for internal/LB monitoring
     handle /health {
         respond "OK" 200
     }
@@ -171,6 +160,6 @@
 
     # Redirect everything else to HTTPS
     handle {
-        redir https://{$DOMAIN:mandari.de}{uri} permanent
+        redir https://{host}{uri} permanent
     }
 }

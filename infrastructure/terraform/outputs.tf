@@ -90,18 +90,10 @@ output "slave_volume_linux_device" {
 }
 
 # =============================================================================
-# Certificate Outputs
+# Certificate Info
 # =============================================================================
-
-output "certificate_id" {
-  description = "ID of the managed certificate"
-  value       = hcloud_managed_certificate.mandari.id
-}
-
-output "certificate_domain_names" {
-  description = "Domain names of the managed certificate"
-  value       = hcloud_managed_certificate.mandari.domain_names
-}
+# Note: TLS certificates are managed by Caddy via Let's Encrypt
+# The Load Balancer uses TCP passthrough for end-to-end encryption
 
 # =============================================================================
 # Connection Info (for Ansible)
