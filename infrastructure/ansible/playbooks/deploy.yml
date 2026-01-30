@@ -2,46 +2,34 @@
 # =============================================================================
 # Mandari 2.0 - Application Deployment Playbook
 # =============================================================================
-# This playbook deploys the Mandari application to the servers.
-# It handles:
-# - Environment configuration
-# - Docker image building/pulling
-# - Container orchestration
-# - Health checks
+# IMPORTANT: Master is deployed FIRST, then Slave
+# This ensures migrations run before slave connects to master DB
 # =============================================================================
 
-- name: Deploy Mandari Application
-  hosts: all_servers
+# =============================================================================
+# PHASE 1: Deploy Master (Primary)
+# =============================================================================
+- name: Deploy Master Server
+  hosts: master
   become: yes
   gather_facts: yes
+  serial: 1
 
   vars:
-    compose_file: "{{ 'docker-compose.master.yml' if postgres_role == 'primary' else 'docker-compose.slave.yml' }}"
+    compose_file: "docker-compose.master.yml"
     deploy_timestamp: "{{ ansible_facts['date_time']['epoch'] }}"
-
-  handlers:
-    - name: restart containers
-      community.docker.docker_compose_v2:
-        project_src: "{{ app_dir }}"
-        files:
-          - "{{ compose_file }}"
-        state: present
-        pull: always
 
   tasks:
     # =========================================================================
-    # Prepare Deployment
+    # Cleanup & Prepare
     # =========================================================================
-    - name: Create backup of current deployment
-      archive:
-        path: "{{ app_dir }}"
-        dest: "{{ app_dir }}/backups/deploy-{{ deploy_timestamp }}.tar.gz"
-        exclude_path:
-          - "{{ app_dir }}/backups"
-          - "{{ data_dir }}"
+    - name: Stop all existing containers
+      shell: |
+        cd {{ app_dir }} && docker compose down --remove-orphans -v 2>/dev/null || true
+        docker ps -a --filter "name=mandari-" -q | xargs -r docker rm -f 2>/dev/null || true
       ignore_errors: yes
 
-    - name: Ensure app directories exist
+    - name: Ensure directories exist
       file:
         path: "{{ item }}"
         state: directory
@@ -51,17 +39,6 @@
       loop:
         - "{{ app_dir }}"
         - "{{ app_dir }}/backups"
-        - "{{ app_dir }}/logs"
-        - "{{ app_dir }}/config"
-
-    - name: Ensure data directories exist
-      file:
-        path: "{{ item }}"
-        state: directory
-        owner: "{{ app_user }}"
-        group: "{{ app_user }}"
-        mode: '0755'
-      loop:
         - "{{ data_dir }}"
         - "{{ data_dir }}/postgres"
         - "{{ data_dir }}/redis"
@@ -97,54 +74,18 @@
         force: yes
 
     # =========================================================================
-    # Docker Registry Authentication
+    # PostgreSQL Reinitialization (if requested)
     # =========================================================================
-    - name: Login to GitHub Container Registry
-      community.docker.docker_login:
-        registry: ghcr.io
-        username: "{{ ghcr_username }}"
-        password: "{{ ghcr_token }}"
-      when: ghcr_token is defined and ghcr_token | length > 0
-
-    # =========================================================================
-    # Stop Existing Containers (Clean Slate)
-    # =========================================================================
-    - name: Stop all existing containers before deployment
-      shell: |
-        cd {{ app_dir }} && docker compose -f {{ compose_file }} down --remove-orphans 2>/dev/null || true
-        # Force remove any leftover mandari containers (including orphans)
-        docker ps -a --filter "name=mandari-" -q | xargs -r docker rm -f 2>/dev/null || true
-      ignore_errors: yes
-
-    # =========================================================================
-    # Deploy Containers
-    # =========================================================================
-    - name: Pull latest images
-      shell: |
-        cd {{ app_dir }} && docker compose -f {{ compose_file }} pull
-      ignore_errors: yes
-
-    # =========================================================================
-    # PostgreSQL Initialization Fix (ONE-TIME)
-    # =========================================================================
-    # Force reinitialize PostgreSQL to fix pg_hba.conf and create database
-    # Set force_postgres_reinit: true via extra-vars to force database reinitialization
-    - name: Check if PostgreSQL data directory has data
+    - name: Check if PostgreSQL needs reinitialization
       stat:
         path: "{{ data_dir }}/postgres/PG_VERSION"
       register: pg_data_exists
-
-    - name: Ensure containers stopped for PostgreSQL reinitialization
-      shell: |
-        # Double-check all containers are stopped
-        docker ps -a --filter "name=mandari-" -q | xargs -r docker rm -f 2>/dev/null || true
-      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(false) | bool)
 
     - name: Clear PostgreSQL data for reinitialization
       file:
         path: "{{ data_dir }}/postgres"
         state: absent
-      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(false) | bool)
+      when: force_postgres_reinit | default(false) | bool
 
     - name: Recreate PostgreSQL data directory
       file:
@@ -153,13 +94,25 @@
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: '0755'
-      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(false) | bool)
+      when: force_postgres_reinit | default(false) | bool
 
-    - name: Log PostgreSQL reinitialization
-      debug:
-        msg: "PostgreSQL data cleared - will reinitialize with correct pg_hba.conf and create mandari database"
-      when: pg_data_exists.stat.exists and (force_postgres_reinit | default(false) | bool)
+    # =========================================================================
+    # Docker Registry & Pull
+    # =========================================================================
+    - name: Login to GitHub Container Registry
+      community.docker.docker_login:
+        registry: ghcr.io
+        username: "{{ ghcr_username }}"
+        password: "{{ ghcr_token }}"
+      when: ghcr_token is defined and ghcr_token | length > 0
 
+    - name: Pull latest images
+      shell: cd {{ app_dir }} && docker compose -f {{ compose_file }} pull
+      ignore_errors: yes
+
+    # =========================================================================
+    # Start Containers
+    # =========================================================================
     - name: Start all containers
       community.docker.docker_compose_v2:
         project_src: "{{ app_dir }}"
@@ -169,132 +122,186 @@
         recreate: always
         remove_orphans: true
       register: compose_result
-      ignore_errors: yes
 
-    - name: Wait for containers to stabilize
+    - name: Wait for PostgreSQL to be healthy
+      shell: |
+        for i in {1..30}; do
+          docker exec mandari-postgres pg_isready -U mandari && exit 0
+          sleep 2
+        done
+        exit 1
+      register: pg_ready
+      retries: 3
+      delay: 5
+      until: pg_ready.rc == 0
+
+    - name: Wait for API to start
       pause:
-        seconds: 15
-
-    - name: Get API container logs (for debugging)
-      shell: docker logs mandari-api --tail 100 2>&1
-      register: api_logs
-      ignore_errors: yes
-
-    - name: Display API logs
-      debug:
-        msg: "{{ api_logs.stdout_lines }}"
-      when: api_logs.stdout_lines is defined
-
-    - name: Check container status
-      shell: docker ps -a --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.State{{ '}}' }}"
-      register: container_status
-
-    - name: Display container status
-      debug:
-        msg: "{{ container_status.stdout_lines }}"
-
-    - name: Fail if API is not running
-      shell: docker inspect mandari-api --format '{{ '{{' }}.State.Running{{ '}}' }}'
-      register: api_running
-      failed_when: api_running.stdout != 'true'
-
-    - name: Display deployment result
-      debug:
-        msg: "Deployment completed. Containers: {{ compose_result.containers | map(attribute='Name') | list }}"
-      when: compose_result.containers is defined
+        seconds: 10
 
     # =========================================================================
-    # Database Migrations (Primary only)
+    # Run Migrations (Master Only)
     # =========================================================================
     - name: Run database migrations
-      when: postgres_role == 'primary'
-      block:
-        - name: Wait for PostgreSQL to be ready
-          community.docker.docker_container_exec:
-            container: mandari-postgres
-            command: pg_isready -U mandari
-          register: pg_ready
-          retries: 30
-          delay: 2
-          until: pg_ready.rc == 0
+      community.docker.docker_container_exec:
+        container: mandari-api
+        command: python manage.py migrate --noinput
+      register: migration_result
+      retries: 3
+      delay: 10
+      until: migration_result.rc == 0
 
-        - name: Check if django_migrations table exists and has records
-          shell: |
-            docker exec mandari-postgres psql -U mandari -d mandari -t -c \
-              "SELECT COUNT(*) FROM django_migrations;" 2>/dev/null || echo "0"
-          register: migration_count
-          ignore_errors: yes
+    - name: Display migration result
+      debug:
+        msg: "{{ migration_result.stdout }}"
 
-        - name: Display migration status
-          debug:
-            msg: "Existing migrations in database: {{ migration_count.stdout | default('0') | trim }}"
-
-        - name: Run migrations
-          community.docker.docker_container_exec:
-            container: mandari-api
-            command: python manage.py migrate --noinput
-          register: migration_result
-
-        - name: Display migration result
-          debug:
-            msg: "{{ migration_result.stdout }}"
-
-        - name: Setup Django roles and permissions
-          community.docker.docker_container_exec:
-            container: mandari-api
-            command: python manage.py setup_roles
-          register: roles_result
-          ignore_errors: yes
+    - name: Setup Django roles and permissions
+      community.docker.docker_container_exec:
+        container: mandari-api
+        command: python manage.py setup_roles
+      ignore_errors: yes
 
     # =========================================================================
-    # Health Checks
+    # Health Check
     # =========================================================================
-    - name: Wait for API container to be healthy
-      shell: docker inspect --format='{{'{{'}}.State.Health.Status{{'}}'}}' mandari-api
+    - name: Wait for API to be healthy
+      shell: docker inspect --format='{{.State.Health.Status}}' mandari-api
+      register: api_health
+      retries: 30
+      delay: 5
+      until: api_health.stdout == 'healthy'
+
+    - name: Master deployment complete
+      debug:
+        msg: "✅ Master deployment complete. Migrations applied."
+
+# =============================================================================
+# PHASE 2: Deploy Slave (Replica) - AFTER Master is ready
+# =============================================================================
+- name: Deploy Slave Server
+  hosts: slave
+  become: yes
+  gather_facts: yes
+  serial: 1
+
+  vars:
+    compose_file: "docker-compose.slave.yml"
+    deploy_timestamp: "{{ ansible_facts['date_time']['epoch'] }}"
+
+  tasks:
+    # =========================================================================
+    # Cleanup & Prepare
+    # =========================================================================
+    - name: Stop all existing containers
+      shell: |
+        cd {{ app_dir }} && docker compose down --remove-orphans -v 2>/dev/null || true
+        docker ps -a --filter "name=mandari-" -q | xargs -r docker rm -f 2>/dev/null || true
+      ignore_errors: yes
+
+    - name: Ensure directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+      loop:
+        - "{{ app_dir }}"
+        - "{{ app_dir }}/backups"
+        - "{{ data_dir }}"
+        - "{{ data_dir }}/postgres"
+        - "{{ data_dir }}/redis"
+        - "{{ data_dir }}/meilisearch"
+
+    - name: Sync Docker Compose files
+      copy:
+        src: "{{ playbook_dir }}/../../docker/{{ item }}"
+        dest: "{{ app_dir }}/{{ item }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
+      loop:
+        - docker-compose.master.yml
+        - docker-compose.slave.yml
+        - Caddyfile
+        - pg_hba.conf
+
+    - name: Sync environment file
+      copy:
+        src: "{{ playbook_dir }}/../../docker/.env"
+        dest: "{{ app_dir }}/.env"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0600'
+
+    - name: Create Docker Compose symlink
+      file:
+        src: "{{ app_dir }}/{{ compose_file }}"
+        dest: "{{ app_dir }}/docker-compose.yml"
+        state: link
+        force: yes
+
+    # =========================================================================
+    # PostgreSQL Reinitialization (if requested)
+    # =========================================================================
+    - name: Clear PostgreSQL data for reinitialization
+      file:
+        path: "{{ data_dir }}/postgres"
+        state: absent
+      when: force_postgres_reinit | default(false) | bool
+
+    - name: Recreate PostgreSQL data directory
+      file:
+        path: "{{ data_dir }}/postgres"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+      when: force_postgres_reinit | default(false) | bool
+
+    # =========================================================================
+    # Docker Registry & Pull
+    # =========================================================================
+    - name: Login to GitHub Container Registry
+      community.docker.docker_login:
+        registry: ghcr.io
+        username: "{{ ghcr_username }}"
+        password: "{{ ghcr_token }}"
+      when: ghcr_token is defined and ghcr_token | length > 0
+
+    - name: Pull latest images
+      shell: cd {{ app_dir }} && docker compose -f {{ compose_file }} pull
+      ignore_errors: yes
+
+    # =========================================================================
+    # Start Containers
+    # =========================================================================
+    - name: Start all containers
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        files:
+          - "{{ compose_file }}"
+        state: present
+        recreate: always
+        remove_orphans: true
+
+    # =========================================================================
+    # Health Check
+    # =========================================================================
+    - name: Wait for API to be healthy
+      shell: docker inspect --format='{{.State.Health.Status}}' mandari-api
       register: api_health
       retries: 30
       delay: 5
       until: api_health.stdout == 'healthy'
       ignore_errors: yes
 
-    - name: Wait for Caddy health check
-      uri:
-        url: "http://localhost/health"
-        method: GET
-        status_code: 200
-      register: caddy_health
-      retries: 30
-      delay: 5
-      until: caddy_health.status == 200
-
-    # =========================================================================
-    # Cleanup
-    # =========================================================================
-    - name: Remove old Docker images
-      shell: docker image prune -f --filter "until=24h"
-      ignore_errors: yes
-
-    - name: Remove old backups (keep last 5)
-      shell: |
-        cd {{ app_dir }}/backups && \
-        ls -t deploy-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm --
-      ignore_errors: yes
-
-  post_tasks:
-    - name: Display deployment summary
+    - name: Slave deployment complete
       debug:
-        msg: |
-          ==========================================
-          Deployment Complete!
-          ==========================================
-          Server: {{ inventory_hostname }}
-          Role: {{ postgres_role }}
-          Compose File: {{ compose_file }}
-          Timestamp: {{ deploy_timestamp }}
-          ==========================================
+        msg: "✅ Slave deployment complete."
 
 # =============================================================================
-# Verify Deployment
+# PHASE 3: Final Verification
 # =============================================================================
 - name: Verify Deployment
   hosts: all_servers
@@ -303,38 +310,31 @@
 
   tasks:
     - name: Check running containers
-      shell: docker ps --format "table {{'{{'}}.Names{{'}}'}}\t{{'{{'}}.Status{{'}}'}}\t{{'{{'}}.Ports{{'}}'}}"
+      shell: docker ps --format "table {{'{{'}}.Names{{'}}'}}\\t{{'{{'}}.Status{{'}}'}}\\t{{'{{'}}.Ports{{'}}'}}"
       register: docker_ps
 
     - name: Display running containers
       debug:
         msg: "{{ docker_ps.stdout_lines }}"
 
-    - name: Check container health
-      shell: docker inspect --format='{{'{{'}}.State.Health.Status{{'}}'}}' {{ item }}
-      loop:
-        - mandari-postgres
-        - mandari-redis
-        - mandari-api
-      register: health_status
+    - name: Final health check
+      uri:
+        url: "http://localhost/health"
+        method: GET
+        status_code: 200
+      register: health_check
+      retries: 5
+      delay: 5
+      until: health_check.status == 200
       ignore_errors: yes
 
-    - name: Verify PostgreSQL replication (primary)
-      when: postgres_role == 'primary'
-      shell: docker exec mandari-postgres psql -U mandari -t -c "SELECT count(*) FROM pg_stat_replication;"
-      register: replication_count
-
-    - name: Display replication status (primary)
-      when: postgres_role == 'primary'
+    - name: Deployment summary
       debug:
-        msg: "Connected replicas: {{ replication_count.stdout | trim }}"
-
-    - name: Verify PostgreSQL replication (replica)
-      when: postgres_role == 'replica'
-      shell: docker exec mandari-postgres psql -U mandari -t -c "SELECT pg_is_in_recovery();"
-      register: recovery_status
-
-    - name: Display recovery status (replica)
-      when: postgres_role == 'replica'
-      debug:
-        msg: "In recovery mode: {{ recovery_status.stdout | trim }}"
+        msg: |
+          ==========================================
+          Deployment Complete!
+          ==========================================
+          Server: {{ inventory_hostname }}
+          Role: {{ postgres_role }}
+          Health: {{ 'OK' if health_check.status == 200 else 'FAILED' }}
+          ==========================================
