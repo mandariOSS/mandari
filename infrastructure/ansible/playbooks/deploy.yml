@@ -150,11 +150,11 @@
 
   tasks:
     # =========================================================================
-    # Cleanup & Prepare
+    # Cleanup & Prepare (preserve volumes for SSL cert cache)
     # =========================================================================
-    - name: Stop all existing containers
+    - name: Stop all existing containers (preserve volumes)
       shell: |
-        cd {{ app_dir }} && docker compose down --remove-orphans -v 2>/dev/null || true
+        cd {{ app_dir }} && docker compose down --remove-orphans 2>/dev/null || true
         docker ps -a --filter "name=mandari-" -q | xargs -r docker rm -f 2>/dev/null || true
       ignore_errors: yes
 
@@ -335,9 +335,123 @@
       delay: 5
       until: api_health.stdout == 'healthy'
 
+    # =========================================================================
+    # Wait for SSL Certificate and Export for Slave
+    # =========================================================================
+    - name: Wait for Caddy to obtain SSL certificate
+      shell: |
+        for i in {1..60}; do
+          # Check if certificate exists in Caddy's data volume
+          if docker exec mandari-caddy ls /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mandari.de/mandari.de.crt 2>/dev/null; then
+            echo "Certificate found"
+            exit 0
+          fi
+          echo "Waiting for certificate... attempt $i"
+          sleep 10
+        done
+        echo "Certificate not found after 10 minutes"
+        exit 1
+      register: cert_wait
+      retries: 2
+      delay: 30
+      until: cert_wait.rc == 0
+
+    - name: Create temporary directory for certificate export
+      file:
+        path: /tmp/caddy-certs
+        state: directory
+        mode: '0700'
+
+    - name: Export Caddy certificate data from Docker volume
+      shell: |
+        docker run --rm \
+          -v mandari_caddy_data:/data:ro \
+          -v /tmp/caddy-certs:/backup \
+          alpine:latest \
+          sh -c "cp -r /data/caddy /backup/ 2>/dev/null || true"
+      register: cert_export
+
+    - name: Verify certificate export
+      stat:
+        path: /tmp/caddy-certs/caddy
+      register: cert_exported
+
+    - name: Fail if certificate export failed
+      fail:
+        msg: "Failed to export Caddy certificates from Master"
+      when: not cert_exported.stat.exists
+
     - name: Master deployment complete
       debug:
-        msg: "✅ Master deployment complete. Migrations applied."
+        msg: "✅ Master deployment complete. Migrations applied. SSL certificate exported."
+
+# =============================================================================
+# PHASE 1.5: Transfer SSL Certificates from Master to Slave
+# =============================================================================
+- name: Transfer SSL Certificates
+  hosts: master
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Archive certificate data on Master
+      archive:
+        path: /tmp/caddy-certs/caddy
+        dest: /tmp/caddy-certs.tar.gz
+        format: gz
+
+    - name: Fetch certificate archive from Master to Ansible controller
+      fetch:
+        src: /tmp/caddy-certs.tar.gz
+        dest: /tmp/caddy-certs-transfer/
+        flat: yes
+
+    - name: Clean up temporary files on Master
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/caddy-certs
+        - /tmp/caddy-certs.tar.gz
+
+- name: Copy SSL Certificates to Slave
+  hosts: slave
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Create certificate directory on Slave
+      file:
+        path: /tmp/caddy-certs
+        state: directory
+        mode: '0700'
+
+    - name: Copy certificate archive to Slave
+      copy:
+        src: /tmp/caddy-certs-transfer/caddy-certs.tar.gz
+        dest: /tmp/caddy-certs.tar.gz
+        mode: '0600'
+
+    - name: Extract certificate archive on Slave
+      unarchive:
+        src: /tmp/caddy-certs.tar.gz
+        dest: /tmp/caddy-certs/
+        remote_src: yes
+
+    - name: Verify certificate extracted on Slave
+      stat:
+        path: /tmp/caddy-certs/caddy
+      register: slave_cert_check
+
+    - name: Certificates transferred
+      debug:
+        msg: "✅ SSL certificates transferred to Slave"
+      when: slave_cert_check.stat.exists
+
+    - name: Clean up archive on Slave
+      file:
+        path: /tmp/caddy-certs.tar.gz
+        state: absent
 
 # =============================================================================
 # PHASE 2: Deploy Slave (Replica) - AFTER Master is ready
@@ -354,11 +468,11 @@
 
   tasks:
     # =========================================================================
-    # Cleanup & Prepare
+    # Cleanup & Prepare (WITHOUT removing volumes - we need caddy_data!)
     # =========================================================================
-    - name: Stop all existing containers
+    - name: Stop all existing containers (preserve volumes for SSL cert)
       shell: |
-        cd {{ app_dir }} && docker compose down --remove-orphans -v 2>/dev/null || true
+        cd {{ app_dir }} && docker compose down --remove-orphans 2>/dev/null || true
         docker ps -a --filter "name=mandari-" -q | xargs -r docker rm -f 2>/dev/null || true
       ignore_errors: yes
 
@@ -435,6 +549,48 @@
       register: caddy_build
 
     # =========================================================================
+    # Import SSL Certificates from Master (only if transferred)
+    # =========================================================================
+    - name: Check if certificate data exists
+      stat:
+        path: /tmp/caddy-certs/caddy
+      register: slave_certs
+
+    - name: Create Caddy data volume if not exists
+      shell: docker volume create mandari_caddy_data
+      ignore_errors: yes
+      when: slave_certs.stat.exists
+
+    - name: Import SSL certificates into Caddy volume
+      shell: |
+        docker run --rm \
+          -v mandari_caddy_data:/data \
+          -v /tmp/caddy-certs:/backup:ro \
+          alpine:latest \
+          sh -c "mkdir -p /data && cp -r /backup/caddy /data/ 2>/dev/null || true"
+      when: slave_certs.stat.exists
+      register: cert_import
+
+    - name: Verify certificate import
+      shell: |
+        docker run --rm \
+          -v mandari_caddy_data:/data:ro \
+          alpine:latest \
+          ls -la /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mandari.de/ 2>/dev/null || echo "No certificates yet"
+      register: cert_verify
+      when: slave_certs.stat.exists
+
+    - name: Display certificate import status
+      debug:
+        msg: "Certificate import result: {{ cert_verify.stdout_lines | default(['No output']) }}"
+      when: slave_certs.stat.exists
+
+    - name: Clean up temporary certificate directory on Slave
+      file:
+        path: /tmp/caddy-certs
+        state: absent
+
+    # =========================================================================
     # Start Containers
     # =========================================================================
     - name: Start all containers
@@ -499,3 +655,18 @@
           Role: {{ postgres_role }}
           Health: {{ 'OK' if health_check.status == 200 else 'FAILED' }}
           ==========================================
+
+# =============================================================================
+# PHASE 4: Cleanup on Ansible Controller
+# =============================================================================
+- name: Cleanup Ansible Controller
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: Remove temporary certificate transfer directory
+      file:
+        path: /tmp/caddy-certs-transfer
+        state: absent
+      ignore_errors: yes
