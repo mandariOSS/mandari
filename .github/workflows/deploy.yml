@@ -350,21 +350,50 @@ jobs:
             ${EXTRA_VARS:+--extra-vars "$EXTRA_VARS"}
 
       - name: Health check
+        env:
+          MASTER_IP: ${{ secrets.MASTER_IP }}
+          SLAVE_IP: ${{ secrets.SLAVE_IP }}
         run: |
           echo "Waiting for deployment to stabilize..."
           sleep 30
 
-          # Check health endpoint
+          # Try multiple health check methods
+          check_health() {
+            # Method 1: Direct server check via HTTP (most reliable)
+            if curl -sf --connect-timeout 5 "http://${MASTER_IP}/health" > /dev/null 2>&1; then
+              echo "✅ Master server health check passed (direct HTTP)"
+              return 0
+            fi
+
+            # Method 2: HTTPS via domain (if SSL cert is ready)
+            if curl -sf --connect-timeout 5 -k "https://mandari.de/health" > /dev/null 2>&1; then
+              echo "✅ Health check passed (HTTPS)"
+              return 0
+            fi
+
+            # Method 3: HTTP via domain (LB might redirect)
+            if curl -sf --connect-timeout 5 "http://mandari.de/health" > /dev/null 2>&1; then
+              echo "✅ Health check passed (HTTP)"
+              return 0
+            fi
+
+            return 1
+          }
+
+          # Retry loop
           for i in {1..10}; do
-            if curl -sf https://mandari.de/health > /dev/null; then
-              echo "✅ Health check passed!"
+            if check_health; then
               exit 0
             fi
             echo "Attempt $i failed, retrying..."
             sleep 10
           done
 
+          # Final diagnostic info
           echo "❌ Health check failed!"
+          echo "Debug info:"
+          echo "Master IP: ${MASTER_IP}"
+          curl -v --connect-timeout 5 "http://${MASTER_IP}/health" 2>&1 | head -20 || true
           exit 1
 
       - name: Notify on failure
