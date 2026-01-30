@@ -75,11 +75,11 @@ variable "network_zone" {
 variable "master_private_ip" {
   description = "Private IP for master server"
   type        = string
-  default     = "10.0.1.10"
+  default     = "10.0.0.3"
 }
 
 variable "slave_private_ip" {
   description = "Private IP for slave server"
   type        = string
-  default     = "10.0.1.11"
+  default     = "10.0.0.4"
 }

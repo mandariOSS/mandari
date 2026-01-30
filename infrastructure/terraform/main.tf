@@ -35,7 +35,7 @@ resource "hcloud_network_subnet" "mandari" {
   network_id   = hcloud_network.mandari.id
   type         = "cloud"
   network_zone = "eu-central"
-  ip_range     = "10.0.1.0/24"
+  ip_range     = "10.0.0.0/24"
 }
 
 # =============================================================================
@@ -134,7 +134,7 @@ resource "hcloud_server" "master" {
 
   network {
     network_id = hcloud_network.mandari.id
-    ip         = "10.0.1.10"
+    ip         = "10.0.0.3"
   }
 
   depends_on = [hcloud_network_subnet.mandari]
@@ -165,7 +165,7 @@ resource "hcloud_server" "slave" {
 
   network {
     network_id = hcloud_network.mandari.id
-    ip         = "10.0.1.11"
+    ip         = "10.0.0.4"
   }
 
   depends_on = [hcloud_network_subnet.mandari]
@@ -189,7 +189,7 @@ resource "hcloud_load_balancer" "mandari" {
 resource "hcloud_load_balancer_network" "mandari" {
   load_balancer_id = hcloud_load_balancer.mandari.id
   network_id       = hcloud_network.mandari.id
-  ip               = "10.0.1.1"
+  ip               = "10.0.0.2"
 
   depends_on = [hcloud_network_subnet.mandari]
 }

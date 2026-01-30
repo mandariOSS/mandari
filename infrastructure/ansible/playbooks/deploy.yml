@@ -4,7 +4,136 @@
 # =============================================================================
 # IMPORTANT: Master is deployed FIRST, then Slave
 # This ensures migrations run before slave connects to master DB
+#
+# This playbook is SELF-CONTAINED and includes:
+# - Docker installation (if not present)
+# - User creation (if not present)
+# - Directory setup
+# - Container deployment
 # =============================================================================
+
+# =============================================================================
+# PHASE 0: Bootstrap All Servers (Docker, Users, Directories)
+# =============================================================================
+- name: Bootstrap Servers
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    # =========================================================================
+    # Install Docker (if not present)
+    # =========================================================================
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_check
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Install Docker dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - python3-pip
+          - python3-docker
+        state: present
+        update_cache: yes
+      when: docker_check.rc != 0
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      when: docker_check.rc != 0
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      when: docker_check.rc != 0
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+      when: docker_check.rc != 0
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    # =========================================================================
+    # Create deploy user (if not present)
+    # =========================================================================
+    - name: Check if deploy user exists
+      getent:
+        database: passwd
+        key: "{{ app_user }}"
+      register: user_check
+      ignore_errors: yes
+
+    - name: Create deploy user
+      user:
+        name: "{{ app_user }}"
+        groups: docker
+        shell: /bin/bash
+        create_home: yes
+        state: present
+      when: user_check.failed | default(false)
+
+    - name: Add deploy user to docker group (ensure)
+      user:
+        name: "{{ app_user }}"
+        groups: docker
+        append: yes
+
+    # =========================================================================
+    # Create directories (as root, then chown)
+    # =========================================================================
+    - name: Create application directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ app_dir }}"
+        - "{{ app_dir }}/backups"
+        - "{{ app_dir }}/scripts"
+        - "{{ data_dir }}"
+        - "{{ data_dir }}/postgres"
+        - "{{ data_dir }}/redis"
+        - "{{ data_dir }}/meilisearch"
+
+    - name: Create ingestor data directory (master only)
+      file:
+        path: "{{ data_dir }}/ingestor"
+        state: directory
+        mode: '0755'
+      when: run_ingestor | default(false)
+
+    - name: Set directory ownership
+      file:
+        path: "{{ item }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        recurse: no
+      loop:
+        - "{{ app_dir }}"
+        - "{{ app_dir }}/backups"
+        - "{{ app_dir }}/scripts"
+      ignore_errors: yes
 
 # =============================================================================
 # PHASE 1: Deploy Master (Primary)
@@ -28,22 +157,6 @@
         cd {{ app_dir }} && docker compose down --remove-orphans -v 2>/dev/null || true
         docker ps -a --filter "name=mandari-" -q | xargs -r docker rm -f 2>/dev/null || true
       ignore_errors: yes
-
-    - name: Ensure directories exist
-      file:
-        path: "{{ item }}"
-        state: directory
-        owner: "{{ app_user }}"
-        group: "{{ app_user }}"
-        mode: '0755'
-      loop:
-        - "{{ app_dir }}"
-        - "{{ app_dir }}/backups"
-        - "{{ data_dir }}"
-        - "{{ data_dir }}/postgres"
-        - "{{ data_dir }}/redis"
-        - "{{ data_dir }}/meilisearch"
-        - "{{ data_dir }}/ingestor"
 
     - name: Sync Docker Compose files
       copy:
@@ -197,21 +310,6 @@
         cd {{ app_dir }} && docker compose down --remove-orphans -v 2>/dev/null || true
         docker ps -a --filter "name=mandari-" -q | xargs -r docker rm -f 2>/dev/null || true
       ignore_errors: yes
-
-    - name: Ensure directories exist
-      file:
-        path: "{{ item }}"
-        state: directory
-        owner: "{{ app_user }}"
-        group: "{{ app_user }}"
-        mode: '0755'
-      loop:
-        - "{{ app_dir }}"
-        - "{{ app_dir }}/backups"
-        - "{{ data_dir }}"
-        - "{{ data_dir }}/postgres"
-        - "{{ data_dir }}/redis"
-        - "{{ data_dir }}/meilisearch"
 
     - name: Sync Docker Compose files
       copy:

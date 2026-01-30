@@ -19,10 +19,10 @@ all:
     app_dir: /opt/mandari
     data_dir: /mnt/data
 
-    # Network settings
-    private_network_cidr: "10.0.1.0/24"
-    master_private_ip: "10.0.1.10"
-    slave_private_ip: "10.0.1.11"
+    # Network settings (Hetzner private network: 10.0.0.0/16)
+    private_network_cidr: "10.0.0.0/16"
+    master_private_ip: "10.0.0.3"
+    slave_private_ip: "10.0.0.4"
 
     # Docker settings
     docker_compose_version: "2.24.0"
@@ -45,7 +45,7 @@ all:
       hosts:
         mandari-master:
           ansible_host: "{{ lookup('env', 'MASTER_IP') | default('CHANGE_ME', true) }}"
-          private_ip: "10.0.1.10"
+          private_ip: "10.0.0.3"
           postgres_role: primary
           redis_role: master
           run_ingestor: true
@@ -54,7 +54,7 @@ all:
       hosts:
         mandari-slave:
           ansible_host: "{{ lookup('env', 'SLAVE_IP') | default('CHANGE_ME', true) }}"
-          private_ip: "10.0.1.11"
+          private_ip: "10.0.0.4"
           postgres_role: replica
           redis_role: replica
           run_ingestor: false

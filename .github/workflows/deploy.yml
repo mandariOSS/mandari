@@ -256,6 +256,7 @@ jobs:
             vars:
               ansible_user: root
               ansible_python_interpreter: /usr/bin/python3
+              ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
               app_name: mandari
               app_user: deploy
               app_dir: /opt/mandari
@@ -263,12 +264,23 @@ jobs:
               image_tag: ${{ needs.build.outputs.image_tag || github.sha }}
               docker_registry: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}
 
+              # Network settings (Hetzner private network: 10.0.0.0/16)
+              private_network_cidr: "10.0.0.0/16"
+              master_private_ip: "10.0.0.3"
+              slave_private_ip: "10.0.0.4"
+
+              # PostgreSQL settings
+              postgres_version: "16"
+              postgres_max_connections: "200"
+              postgres_shared_buffers: "2GB"
+              postgres_effective_cache_size: "6GB"
+
             children:
               master:
                 hosts:
                   mandari-master:
                     ansible_host: ${{ secrets.MASTER_IP }}
-                    private_ip: 10.0.0.3
+                    private_ip: "10.0.0.3"
                     postgres_role: primary
                     redis_role: master
                     run_ingestor: true
@@ -277,7 +289,7 @@ jobs:
                 hosts:
                   mandari-slave:
                     ansible_host: ${{ secrets.SLAVE_IP }}
-                    private_ip: 10.0.0.4
+                    private_ip: "10.0.0.4"
                     postgres_role: replica
                     redis_role: replica
                     run_ingestor: false
@@ -291,18 +303,30 @@ jobs:
       - name: Create environment file
         run: |
           cat > infrastructure/docker/.env << EOF
+          # Domain & URLs
           DOMAIN=mandari.de
           SITE_URL=${{ secrets.SITE_URL }}
           ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
           CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }}
+
+          # Security
           SECRET_KEY=${{ secrets.SECRET_KEY }}
           ENCRYPTION_MASTER_KEY=${{ secrets.ENCRYPTION_MASTER_KEY }}
+
+          # Database
           POSTGRES_USER=${{ secrets.POSTGRES_USER || 'mandari' }}
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB=${{ secrets.POSTGRES_DB || 'mandari' }}
+          REPLICATION_PASSWORD=${{ secrets.REPLICATION_PASSWORD || secrets.POSTGRES_PASSWORD }}
+
+          # Services
           MEILISEARCH_KEY=${{ secrets.MEILISEARCH_KEY }}
           REDIS_MAXMEMORY=512mb
+
+          # Network (Hetzner private network: 10.0.0.0/16)
           MASTER_PRIVATE_IP=10.0.0.3
+
+          # Directories & Images
           DATA_DIR=/mnt/data
           IMAGE_TAG=${{ needs.build.outputs.image_tag || github.sha }}
           EOF

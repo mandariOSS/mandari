@@ -93,7 +93,7 @@ services:
       --maxmemory ${REDIS_MAXMEMORY:-512mb}
       --maxmemory-policy allkeys-lru
       --tcp-keepalive 300
-      --replicaof ${MASTER_PRIVATE_IP:-10.0.1.10} 6379
+      --replicaof ${MASTER_PRIVATE_IP:-10.0.0.3} 6379
     volumes:
       - ${DATA_DIR:-/mnt/data}/redis:/data
     networks:
@@ -138,7 +138,7 @@ services:
       # Database - connects to local postgres (direct connection)
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
       # For writes, connect to master
-      DATABASE_URL_PRIMARY: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${MASTER_PRIVATE_IP:-10.0.1.10}:5432/${POSTGRES_DB:-mandari}
+      DATABASE_URL_PRIMARY: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${MASTER_PRIVATE_IP:-10.0.0.3}:5432/${POSTGRES_DB:-mandari}
       # Cache
       REDIS_URL: redis://redis:6379
       # Search

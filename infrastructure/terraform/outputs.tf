@@ -111,10 +111,10 @@ output "ansible_inventory" {
   description = "Ansible inventory snippet"
   value = <<-EOT
     [master]
-    mandari-master ansible_host=${hcloud_server.master.ipv4_address} private_ip=10.0.1.10
+    mandari-master ansible_host=${hcloud_server.master.ipv4_address} private_ip=10.0.0.3
 
     [slave]
-    mandari-slave ansible_host=${hcloud_server.slave.ipv4_address} private_ip=10.0.1.11
+    mandari-slave ansible_host=${hcloud_server.slave.ipv4_address} private_ip=10.0.0.4
 
     [all:vars]
     ansible_user=root
@@ -136,13 +136,13 @@ output "deployment_summary" {
     }
     master = {
       ip         = hcloud_server.master.ipv4_address
-      private_ip = "10.0.1.10"
+      private_ip = "10.0.0.3"
       location   = hcloud_server.master.location
       type       = hcloud_server.master.server_type
     }
     slave = {
       ip         = hcloud_server.slave.ipv4_address
-      private_ip = "10.0.1.11"
+      private_ip = "10.0.0.4"
       location   = hcloud_server.slave.location
       type       = hcloud_server.slave.server_type
     }
