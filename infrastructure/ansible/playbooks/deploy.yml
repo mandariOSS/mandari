@@ -171,6 +171,14 @@
         - Caddyfile
         - pg_hba.conf
 
+    - name: Sync Caddy Dockerfile directory
+      copy:
+        src: "{{ playbook_dir }}/../../docker/caddy/"
+        dest: "{{ app_dir }}/caddy/"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
+
     - name: Sync environment file
       copy:
         src: "{{ playbook_dir }}/../../docker/.env"
@@ -219,9 +227,13 @@
         password: "{{ ghcr_token }}"
       when: ghcr_token is defined and ghcr_token | length > 0
 
-    - name: Pull latest images
-      shell: cd {{ app_dir }} && docker compose -f {{ compose_file }} pull
+    - name: Pull latest images (excluding locally built images)
+      shell: cd {{ app_dir }} && docker compose -f {{ compose_file }} pull --ignore-buildable
       ignore_errors: yes
+
+    - name: Build custom Caddy image with Hetzner DNS plugin
+      shell: cd {{ app_dir }} && docker compose -f {{ compose_file }} build caddy
+      register: caddy_build
 
     # =========================================================================
     # Start Infrastructure Containers (Database, Cache, Search)
@@ -363,6 +375,14 @@
         - Caddyfile
         - pg_hba.conf
 
+    - name: Sync Caddy Dockerfile directory
+      copy:
+        src: "{{ playbook_dir }}/../../docker/caddy/"
+        dest: "{{ app_dir }}/caddy/"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
+
     - name: Sync environment file
       copy:
         src: "{{ playbook_dir }}/../../docker/.env"
@@ -406,9 +426,13 @@
         password: "{{ ghcr_token }}"
       when: ghcr_token is defined and ghcr_token | length > 0
 
-    - name: Pull latest images
-      shell: cd {{ app_dir }} && docker compose -f {{ compose_file }} pull
+    - name: Pull latest images (excluding locally built images)
+      shell: cd {{ app_dir }} && docker compose -f {{ compose_file }} pull --ignore-buildable
       ignore_errors: yes
+
+    - name: Build custom Caddy image with Hetzner DNS plugin
+      shell: cd {{ app_dir }} && docker compose -f {{ compose_file }} build caddy
+      register: caddy_build
 
     # =========================================================================
     # Start Containers

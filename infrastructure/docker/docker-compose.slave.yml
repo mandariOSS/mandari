@@ -11,15 +11,21 @@ name: mandari
 
 services:
   # ===========================================================================
-  # Reverse Proxy
+  # Reverse Proxy (Custom Caddy with Hetzner DNS plugin for DNS-01 challenge)
   # ===========================================================================
   caddy:
-    image: caddy:2-alpine
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
+    image: mandari-caddy:latest
     container_name: mandari-caddy
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      HETZNER_DNS_API_TOKEN: ${HETZNER_DNS_API_TOKEN}
+      DOMAIN: ${DOMAIN:-mandari.de}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -34,7 +40,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
 
   # ===========================================================================
   # Database (REPLICA)

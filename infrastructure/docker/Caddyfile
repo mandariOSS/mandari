@@ -4,15 +4,18 @@
 # TLS is handled by Caddy with automatic Let's Encrypt certificates.
 # The Load Balancer uses TCP passthrough (no TLS termination).
 #
-# Caddy automatically:
-# - Obtains and renews TLS certificates via Let's Encrypt
-# - Handles ACME HTTP-01 challenges on port 80
-# - Redirects HTTP to HTTPS
+# Using DNS-01 challenge via Hetzner DNS API:
+# - Works behind Load Balancers with multiple backend servers
+# - No need for HTTP-01/TLS-ALPN-01 challenges
+# - Requires HETZNER_DNS_API_TOKEN environment variable
 # =============================================================================
 
 {
     # Let's Encrypt email for certificate notifications
     email admin@mandari.de
+
+    # Use DNS-01 challenge via Hetzner DNS
+    acme_dns hetzner {$HETZNER_DNS_API_TOKEN}
 
     # Logging
     log {
