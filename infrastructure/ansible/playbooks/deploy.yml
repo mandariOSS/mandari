@@ -339,18 +339,14 @@
     # Wait for SSL Certificate and Export for Slave
     # =========================================================================
     - name: Wait for Caddy to obtain SSL certificate
-      shell: |
-        for i in {1..60}; do
-          # Check if certificate exists in Caddy's data volume
-          if docker exec mandari-caddy ls /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mandari.de/mandari.de.crt 2>/dev/null; then
-            echo "Certificate found"
-            exit 0
-          fi
-          echo "Waiting for certificate... attempt $i"
-          sleep 10
-        done
-        echo "Certificate not found after 10 minutes"
-        exit 1
+      shell: >-
+        for i in $(seq 1 60); do
+        if docker exec mandari-caddy ls /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mandari.de/mandari.de.crt 2>/dev/null; then
+        echo "Certificate found"; exit 0; fi;
+        echo "Waiting for certificate... attempt $i"; sleep 10; done;
+        echo "Certificate not found after 10 minutes"; exit 1
+      args:
+        executable: /bin/bash
       register: cert_wait
       retries: 2
       delay: 30
@@ -363,12 +359,12 @@
         mode: '0700'
 
     - name: Export Caddy certificate data from Docker volume
-      shell: |
-        docker run --rm \
-          -v mandari_caddy_data:/data:ro \
-          -v /tmp/caddy-certs:/backup \
-          alpine:latest \
-          sh -c "cp -r /data/caddy /backup/ 2>/dev/null || true"
+      shell: >-
+        docker run --rm
+        -v mandari_caddy_data:/data:ro
+        -v /tmp/caddy-certs:/backup
+        alpine:latest
+        sh -c "cp -r /data/caddy /backup/ 2>/dev/null || true"
       register: cert_export
 
     - name: Verify certificate export
@@ -562,21 +558,21 @@
       when: slave_certs.stat.exists
 
     - name: Import SSL certificates into Caddy volume
-      shell: |
-        docker run --rm \
-          -v mandari_caddy_data:/data \
-          -v /tmp/caddy-certs:/backup:ro \
-          alpine:latest \
-          sh -c "mkdir -p /data && cp -r /backup/caddy /data/ 2>/dev/null || true"
+      shell: >-
+        docker run --rm
+        -v mandari_caddy_data:/data
+        -v /tmp/caddy-certs:/backup:ro
+        alpine:latest
+        sh -c "mkdir -p /data && cp -r /backup/caddy /data/ 2>/dev/null || true"
       when: slave_certs.stat.exists
       register: cert_import
 
     - name: Verify certificate import
-      shell: |
-        docker run --rm \
-          -v mandari_caddy_data:/data:ro \
-          alpine:latest \
-          ls -la /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mandari.de/ 2>/dev/null || echo "No certificates yet"
+      shell: >-
+        docker run --rm
+        -v mandari_caddy_data:/data:ro
+        alpine:latest
+        ls -la /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mandari.de/ 2>/dev/null || echo "No certificates yet"
       register: cert_verify
       when: slave_certs.stat.exists
 
