@@ -116,7 +116,9 @@
       "WebFetch(domain:docs.mailcow.email)",
       "WebFetch(domain:community.hetzner.com)",
       "Bash(xcopy:*)",
-      "Bash(robocopy:*)"
+      "Bash(robocopy:*)",
+      "Bash(if exist mandari-simple rmdir /s /q mandari-simple)",
+      "Bash(git clone:*)"
     ]
   }
 }

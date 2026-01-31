@@ -1,10 +1,14 @@
 # =============================================================================
 # Mandari - Release Workflow
 # =============================================================================
-# Builds and publishes Docker images to GitHub Container Registry
+# Builds and publishes Docker images to Docker Hub
 # Triggered on:
 #   - Published releases (tags)
 #   - Manual dispatch
+#
+# Required Secrets:
+#   - DOCKERHUB_USERNAME: Docker Hub username
+#   - DOCKERHUB_TOKEN: Docker Hub access token
 # =============================================================================
 
 name: Release
@@ -20,7 +24,6 @@ on:
         default: 'latest'
 
 env:
-  REGISTRY: ghcr.io
   IMAGE_NAME_API: mandarioss/mandari
   IMAGE_NAME_INGESTOR: mandarioss/ingestor
 
@@ -31,9 +34,6 @@ jobs:
   build:
     name: Build and Push
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
 
     steps:
       - name: Checkout repository
@@ -45,12 +45,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Container Registry
+      - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract version tag
         id: version
@@ -73,8 +72,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}:${{ steps.version.outputs.tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}:latest
+            ${{ env.IMAGE_NAME_API }}:${{ steps.version.outputs.tag }}
+            ${{ env.IMAGE_NAME_API }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
@@ -90,8 +89,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_INGESTOR }}:${{ steps.version.outputs.tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_INGESTOR }}:latest
+            ${{ env.IMAGE_NAME_INGESTOR }}:${{ steps.version.outputs.tag }}
+            ${{ env.IMAGE_NAME_INGESTOR }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
@@ -125,26 +124,29 @@ jobs:
 
             \`\`\`bash
             # Pull the images
-            docker pull ghcr.io/mandarioss/mandari:${tag}
-            docker pull ghcr.io/mandarioss/ingestor:${tag}
+            docker pull mandarioss/mandari:${tag}
+            docker pull mandarioss/ingestor:${tag}
 
             # Or use 'latest'
-            docker pull ghcr.io/mandarioss/mandari:latest
-            docker pull ghcr.io/mandarioss/ingestor:latest
+            docker pull mandarioss/mandari:latest
+            docker pull mandarioss/ingestor:latest
             \`\`\`
 
             ## Quick Start
 
             \`\`\`bash
-            # Clone and install
+            # Option 1: Full clone with installer
             git clone https://github.com/mandariOSS/mandari.git
             cd mandari
-
-            # Set version in .env
-            echo "IMAGE_TAG=${tag}" >> .env
-
-            # Run installer
             ./install.sh
+
+            # Option 2: Download only
+            mkdir mandari && cd mandari
+            curl -LO https://raw.githubusercontent.com/mandariOSS/mandari/main/docker-compose.yml
+            curl -LO https://raw.githubusercontent.com/mandariOSS/mandari/main/Caddyfile
+            curl -Lo .env https://raw.githubusercontent.com/mandariOSS/mandari/main/.env.example
+            # Edit .env, then:
+            docker compose up -d
             \`\`\`
             `;
 

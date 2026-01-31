@@ -3,11 +3,20 @@
 # =============================================================================
 # Documentation: https://github.com/mandariOSS/mandari
 #
-# Quick Start:
-#   ./install.sh              # Interactive installer (recommended)
-#   - OR -
-#   cp .env.example .env      # Copy and edit configuration
-#   docker compose up -d      # Start all services
+# Quick Start (choose one):
+#
+#   Option 1 - Full Clone:
+#     git clone https://github.com/mandariOSS/mandari.git && cd mandari
+#     ./install.sh
+#
+#   Option 2 - Download Only:
+#     mkdir mandari && cd mandari
+#     curl -LO https://raw.githubusercontent.com/mandariOSS/mandari/main/docker-compose.yml
+#     curl -LO https://raw.githubusercontent.com/mandariOSS/mandari/main/Caddyfile
+#     curl -Lo .env https://raw.githubusercontent.com/mandariOSS/mandari/main/.env.example
+#     # Edit .env with your settings, then:
+#     docker compose up -d
+#
 # =============================================================================
 
 name: mandari
@@ -110,7 +119,7 @@ services:
   # Django API Backend
   # ===========================================================================
   api:
-    image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
+    image: mandarioss/mandari:${IMAGE_TAG:-latest}
     container_name: mandari-api
     restart: unless-stopped
     environment:
@@ -151,7 +160,7 @@ services:
   # OParl Ingestor (Data Synchronization)
   # ===========================================================================
   ingestor:
-    image: ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest}
+    image: mandarioss/ingestor:${IMAGE_TAG:-latest}
     container_name: mandari-ingestor
     restart: unless-stopped
     command: >
