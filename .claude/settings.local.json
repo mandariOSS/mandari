@@ -118,7 +118,8 @@
       "Bash(xcopy:*)",
       "Bash(robocopy:*)",
       "Bash(if exist mandari-simple rmdir /s /q mandari-simple)",
-      "Bash(git clone:*)"
+      "Bash(git clone:*)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

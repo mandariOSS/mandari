@@ -1,306 +1,129 @@
-# Mandari
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="Mandari" width="120" />
+</p>
 
-**Open-Source-Plattform für kommunalpolitische Transparenz in Deutschland**
+<h1 align="center">Mandari</h1>
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://github.com/mandariOSS/mandari/pkgs/container/mandari)
+<p align="center">
+  <strong>Open-Source-Plattform für kommunalpolitische Transparenz</strong><br>
+  Macht Kommunalpolitik transparent, verständlich und zugänglich.
+</p>
 
-Mandari macht Kommunalpolitik transparent, verständlich und zugänglich. Wir glauben: **Demokratie braucht Transparenz** - und die Werkzeuge dafür sollten allen zur Verfügung stehen.
+<p align="center">
+  <a href="https://github.com/mandariOSS/mandari/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License" />
+  </a>
+  <a href="https://github.com/mandariOSS/mandari/releases">
+    <img src="https://img.shields.io/github/v/release/mandariOSS/mandari?include_prereleases" alt="Release" />
+  </a>
+  <a href="https://github.com/mandariOSS/mandari/actions/workflows/pr-check.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/mandariOSS/mandari/pr-check.yml?label=tests" alt="Tests" />
+  </a>
+  <a href="https://github.com/mandariOSS/mandari/stargazers">
+    <img src="https://img.shields.io/github/stars/mandariOSS/mandari?style=flat" alt="Stars" />
+  </a>
+</p>
 
-Kommunalpolitik betrifft uns alle unmittelbar - von der Kita-Planung über die Verkehrsführung bis zur Stadtentwicklung. Doch allzu oft sind diese wichtigen Entscheidungsprozesse für Bürger:innen schwer nachvollziehbar. Das wollen wir ändern.
+<p align="center">
+  <a href="https://docs.mandari.de">Dokumentation</a> •
+  <a href="#installation">Installation</a> •
+  <a href="https://github.com/mandariOSS/mandari/discussions">Diskussionen</a> •
+  <a href="CONTRIBUTING.md">Mitwirken</a>
+</p>
 
-## Quick Start (Community Edition)
+---
 
-```bash
-# Clone repository
-git clone https://github.com/mandariOSS/mandari.git
-cd mandari
+## Über Mandari
 
-# Run interactive installer
-./install.sh
-```
-
-The installer guides you through configuration and starts all services automatically.
-
-**Requirements**: Linux server with Docker & Docker Compose
-
-See [Installation Guide](docs/installation.md) for details.
-
-## Die Drei Säulen
-
-Mandari besteht aus drei Modulen - alle 100% Open Source unter AGPL-3.0:
-
-### Mandari Insight - Bürger:innen-Portal
-
-**Kostenlos, ohne Anmeldung, ohne Tracker**
-
-Das Transparenzportal für alle. Bürger:innen, Journalist:innen und Initiativen können Ratsinformationen durchsuchen, verstehen und nachverfolgen.
-
-- Volltextsuche über alle Sitzungen, Vorlagen und Dokumente
-- KI-Zusammenfassungen komplexer Vorlagen
-- Interaktiver KI-Chatbot für Fragen
-- Kartenansicht - was passiert in meiner Nachbarschaft?
-- Abstimmungsverhalten von Politiker:innen einsehen
-- Keine Cookies, kein Tracking, kein Login erforderlich
-
-### Mandari Work - Fraktions-Plattform
-
-**Professionelle Ratsarbeit für Teams**
-
-Das Kollaborationstool für Fraktionen, Gruppen und Einzelmandatsträger:innen. Effiziente Sitzungsvorbereitung, Teamabstimmung und Wissensmanagement.
-
-- Persönliche Dashboards mit anstehenden Sitzungen
-- Fraktionssitzungen planen und dokumentieren
-- Notizen und Kommentare zu Tagesordnungspunkten teilen
-- Interne Abstimmungen vor Gremiensitzungen
-- Antragsdatenbank mit Vorlagen und Versionierung
-- KI-gestützte Recherche und Zusammenfassungen
-- Aufgabenverwaltung und Erinnerungen
-- Rollenbasierte Berechtigungen (50+ feingranulare Rechte)
-- Verschlüsselte sensible Daten (AES-256-GCM)
-
-### Mandari Session - Ratsinformationssystem
-
-**Das offene RIS für Verwaltungen** *(In Entwicklung)*
-
-Vollständiges Sitzungsmanagement mit OParl-Export - die Open-Source-Alternative zu proprietären RIS-Lösungen.
-
-- Sitzungsplanung und Tagesordnungserstellung
-- Automatischer Einladungsversand
-- Vorlagen- und Dokumentenverwaltung
-- Protokollierung und Beschlussverfolgung
-- Sitzungsgeld und Aufwandsentschädigung
-- OParl-Export für maximale Transparenz
-
-## Warum Mandari?
-
-### Kein Vendor Lock-in
-
-Anders als proprietäre RIS-Lösungen setzen wir auf ein **offenes Ökosystem**:
-
-- **Vollständiger Datenexport** jederzeit (JSON, CSV, OParl)
-- **Offene REST-API** für eigene Integrationen
-- **OParl-Standard** für Import und Export
-- **100% Open Source** - der Code gehört der Gemeinschaft
-
-### OParl-kompatibel
-
-Mandari basiert auf dem [OParl-Standard](https://oparl.org) - dem deutschen Standard für offene Ratsinformationssysteme. Über 100 Kommunen bieten bereits OParl-Schnittstellen an, darunter:
-
-- ALLRIS
-- regisafe
-- Somacos
-- SessionNet
-- und viele mehr
-
-Mandari Work funktioniert mit jedem RIS, das OParl unterstützt - Sie müssen nicht wechseln.
-
-### Für wen wir arbeiten
-
-Mandari richtet sich an **demokratische politische Akteur:innen**:
-
-| Zielgruppe | Produkt | Beschreibung |
-|------------|---------|--------------|
-| **Bürger:innen** | Insight | Kostenloser Zugang zu Ratsinformationen |
-| **Fraktionen & Parteien** | Work | Professionelle Kollaboration |
-| **Verwaltungen** | Session | Vollständiges Sitzungsmanagement |
-| **Journalist:innen** | Insight | Recherche-Tool für Lokalpolitik |
-| **Forschung** | API | Maschinenlesbare Daten |
-
-Wir verstehen uns als Teil der demokratischen Zivilgesellschaft und behalten uns vor, mit wem wir zusammenarbeiten.
-
-## Architektur
-
-```
-                         ┌─────────────────────────────────┐
-                         │       Load Balancer             │
-                         │       (mandari.de)              │
-                         └─────────────┬───────────────────┘
-                                       │
-                    ┌──────────────────┴──────────────────┐
-                    │                                     │
-                    ▼                                     ▼
-         ┌───────────────────┐              ┌───────────────────┐
-         │      Master       │              │       Slave       │
-         │                   │              │                   │
-         │  • Caddy          │              │  • Caddy          │
-         │  • Django API     │              │  • Django API     │
-         │  • PostgreSQL     │              │  • PostgreSQL     │
-         │  • Redis          │              │  • Redis          │
-         │  • Meilisearch    │              │  • Meilisearch    │
-         │  • Ingestor       │              │                   │
-         └───────────────────┘              └───────────────────┘
-```
-
-## Technologie-Stack
-
-| Bereich | Technologie |
-|---------|-------------|
-| Backend | Django 6.0 (Python 3.12+) |
-| Frontend | Django Templates + HTMX + Alpine.js |
-| CSS | Tailwind CSS |
-| Datenbank | PostgreSQL 16 |
-| Cache | Redis 7 |
-| Suche | Meilisearch |
-| Reverse Proxy | Caddy |
-| Container | Docker + Docker Compose |
-| CI/CD | GitHub Actions |
-| KI | Groq / OpenAI (optional) |
-
-## Projektstruktur
-
-```
-mandari2.0/
-├── mandari/                    # Django Hauptprojekt
-│   ├── apps/                   # Django Apps
-│   │   ├── accounts/           # Authentifizierung & 2FA
-│   │   ├── common/             # Shared Utilities & Encryption
-│   │   ├── session/            # Verwaltungs-RIS (Session)
-│   │   ├── tenants/            # Multi-Tenant & RBAC
-│   │   └── work/               # Fraktions-Arbeitsbereich
-│   │       ├── dashboard/      # Übersicht
-│   │       ├── faction/        # Fraktionssitzungen
-│   │       ├── meetings/       # RIS-Sitzungsvorbereitung
-│   │       ├── motions/        # Anträge
-│   │       ├── tasks/          # Aufgaben
-│   │       └── ris/            # RIS-Datenansicht
-│   ├── insight_core/           # OParl-Datenmodelle
-│   ├── insight_sync/           # OParl-Synchronisation
-│   ├── insight_search/         # Suchfunktionalität
-│   └── insight_ai/             # KI-Pipelines
-├── apps/
-│   └── ingestor/               # Standalone OParl-Ingestor
-├── infrastructure/
-│   ├── scripts/                # Setup & Deployment Scripts
-│   └── docker/                 # Docker Compose Configs
-└── docs/                       # Dokumentation
-```
-
-## Installation
-
-### Community Edition (Single Server)
-
-For a single-server deployment:
-
-```bash
-git clone https://github.com/mandariOSS/mandari.git
-cd mandari
-./install.sh
-```
-
-**Requirements**:
-- Linux server (Ubuntu 22.04+ recommended)
-- Docker & Docker Compose
-- Domain with DNS pointing to server (for HTTPS)
-
-See [Installation Guide](docs/installation.md) for detailed instructions.
-
-### Development Setup
-
-For local development:
-
-```bash
-# Start infrastructure services
-docker compose -f infrastructure/docker/docker-compose.dev.yml up -d
-
-# Setup Django backend
-cd mandari
-cp .env.example .env
-uv sync
-uv run python manage.py migrate
-uv run python manage.py setup_roles
-uv run python manage.py runserver
-
-# In another terminal: Sync OParl data
-cd apps/ingestor
-uv sync
-uv run python -m src.main sync --full
-```
-
-**Requirements**:
-- Python 3.12+
-- Docker & Docker Compose
-- [uv](https://github.com/astral-sh/uv) (Python Package Manager)
-
-See [Development Guide](docs/development.md) for details.
-
-### Management Commands
-
-```bash
-# View service status
-docker compose ps
-
-# View logs
-docker compose logs -f api
-
-# Create backup
-./backup.sh
-
-# Update to latest version
-./update.sh
-
-# Django shell
-docker exec -it mandari-api python manage.py shell
-```
-
-## OParl Ingestor
-
-Der Ingestor synchronisiert OParl-Daten von deutschen Ratsinformationssystemen.
+Mandari ist eine Open-Source-Plattform, die Ratsinformationen aus deutschen Kommunen zugänglich macht. Basierend auf dem [OParl-Standard](https://oparl.org) funktioniert Mandari mit über 100 Ratsinformationssystemen.
 
 ### Features
 
-- **Inkrementelle Syncs** - Nur geänderte Daten (alle 15 Min)
-- **Full Syncs** - Komplette Synchronisation (täglich 3 Uhr)
-- **Redis Event Emission** - Real-time Events für neue Sitzungen/Vorlagen
-- **Prometheus Metrics** - Monitoring auf Port 9090
-- **Circuit Breaker** - Automatische Fehlertoleranz bei API-Ausfällen
+- **OParl-kompatibel** — Funktioniert mit ALLRIS, regisafe, SessionNet u.v.m.
+- **Volltextsuche** — Durchsuche Sitzungen, Vorlagen und Dokumente
+- **Self-Hosted** — Volle Kontrolle über deine Daten
+- **Multi-Tenant** — Mehrere Organisationen in einer Instanz
+- **Verschlüsselung** — AES-256 für sensible Daten
+- **Automatische Updates** — OParl-Sync läuft im Hintergrund
 
-### Befehle
+## Installation
+
+### Voraussetzungen
+
+- Linux Server (Ubuntu 22.04+)
+- Docker & Docker Compose
+- Domain mit DNS-Eintrag
+
+### Quick Start
 
 ```bash
-cd apps/ingestor
-
-# Einmalige Synchronisation
-uv run python -m src.main sync --full
-
-# Daemon-Modus (für Production)
-uv run python -m src.main daemon --interval 15 --metrics-port 9090
-
-# Status anzeigen
-uv run python -m src.main status
+git clone https://github.com/mandariOSS/mandari.git
+cd mandari
+./install.sh
 ```
 
-## Sicherheit
+### Oder nur Docker Compose
 
-- **Multi-Tenant Isolation** - Strikte Datentrennung pro Organisation
-- **RBAC** - 50+ feingranulare Berechtigungen in 14 Kategorien
-- **2FA** - TOTP-basierte Zwei-Faktor-Authentifizierung
-- **Verschlüsselung** - AES-256-GCM für sensible Daten (tenant-spezifische Keys)
-- **Rate Limiting** - Schutz vor Brute-Force (5 Versuche/15 Min)
-- **Audit Trail** - Vollständige Nachverfolgbarkeit
-- **DSGVO-konform** - Hosting in Deutschland, keine Tracker
+```bash
+mkdir mandari && cd mandari
+curl -LO https://raw.githubusercontent.com/mandariOSS/mandari/main/docker-compose.yml
+curl -LO https://raw.githubusercontent.com/mandariOSS/mandari/main/Caddyfile
+curl -Lo .env https://raw.githubusercontent.com/mandariOSS/mandari/main/.env.example
+nano .env  # Konfiguration anpassen
+docker compose up -d
+```
 
-## Unsere Werte
+Detaillierte Anleitung: [docs/installation.md](docs/installation.md)
 
-- **Transparenz** - Offene Prozesse, nachvollziehbare Entscheidungen
-- **Teilhabe** - Politische Beteiligung für alle
-- **Offenheit** - 100% Open Source, kein Vendor Lock-in
-- **Datenschutz** - DSGVO-konform, minimale Datenerhebung
-- **Inklusion** - Barrierefreies Design (WCAG 2.1 AA)
-- **Vielfalt** - Gendergerechte Sprache, offene Community
+## Dokumentation
+
+| Dokument | Beschreibung |
+|----------|--------------|
+| [Installation](docs/installation.md) | Server-Setup und Deployment |
+| [Konfiguration](docs/configuration.md) | Einstellungen und Optionen |
+| [Updates](docs/upgrading.md) | Auf neue Version aktualisieren |
+| [Backup](docs/backup-restore.md) | Datensicherung |
+
+## Technologie
+
+| Komponente | Technologie |
+|------------|-------------|
+| Backend | Django 6.0, Python 3.12+ |
+| Frontend | HTMX, Alpine.js, Tailwind |
+| Datenbank | PostgreSQL 16 |
+| Suche | Meilisearch |
+| Cache | Redis 7 |
+| Proxy | Caddy |
 
 ## Mitwirken
 
-Wir freuen uns über Beiträge! Mandari lebt von Menschen, die unsere Werte teilen - ob als Entwickler:in, Kommune oder Unterstützer:in.
+Beiträge sind willkommen! Bitte lies zuerst:
 
-Siehe [CONTRIBUTING.md](CONTRIBUTING.md) für Details.
+- [Contributing Guidelines](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+
+### Möglichkeiten
+
+- 🐛 [Bug melden](https://github.com/mandariOSS/mandari/issues/new?template=bug_report.md)
+- 💡 [Feature vorschlagen](https://github.com/mandariOSS/mandari/issues/new?template=feature_request.md)
+- 📖 Dokumentation verbessern
+- 🌍 Übersetzungen hinzufügen
+
+## Sicherheit
+
+Sicherheitslücken bitte **nicht** öffentlich melden. Siehe [SECURITY.md](SECURITY.md) für den Prozess zur verantwortungsvollen Offenlegung.
 
 ## Lizenz
 
-[AGPL-3.0](LICENSE) - Der gesamte Quellcode ist frei verfügbar. Sie können Mandari selbst hosten oder unseren Managed Service nutzen.
+[AGPL-3.0](LICENSE) — Du kannst Mandari frei nutzen, modifizieren und verteilen, solange Änderungen ebenfalls unter AGPL-3.0 veröffentlicht werden.
 
-## Links
+## Danksagung
 
-- [OParl-Spezifikation](https://oparl.org/spezifikation/)
-- [OParl-Endpunkte](https://dev.oparl.org/api/bodies)
-- [GitHub Repository](https://github.com/mandari-oss/mandari)
+- [OParl](https://oparl.org) — Standard für offene Ratsinformationssysteme
+- Alle [Contributors](https://github.com/mandariOSS/mandari/graphs/contributors)
+
+---
+
+<p align="center">
+  <sub>Mit ❤️ für Demokratie und Transparenz</sub>
+</p>

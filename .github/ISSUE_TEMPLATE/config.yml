@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Frage stellen
+    url: https://github.com/mandariOSS/mandari/discussions/new?category=q-a
+    about: Nutze Discussions für Fragen
+  - name: Idee diskutieren
+    url: https://github.com/mandariOSS/mandari/discussions/new?category=ideas
+    about: Diskutiere neue Ideen mit der Community
+  - name: Sicherheitslücke melden
+    url: https://github.com/mandariOSS/mandari/security/policy
+    about: Bitte melde Sicherheitslücken privat
