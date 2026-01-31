@@ -17,6 +17,7 @@
 #     # Edit .env with your settings, then:
 #     docker compose up -d
 #
+# Docker Images: ghcr.io/mandarioss/mandari (GitHub Container Registry)
 # =============================================================================
 
 name: mandari
@@ -119,7 +120,7 @@ services:
   # Django API Backend
   # ===========================================================================
   api:
-    image: mandarioss/mandari:${IMAGE_TAG:-latest}
+    image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
     container_name: mandari-api
     restart: unless-stopped
     environment:
@@ -160,7 +161,7 @@ services:
   # OParl Ingestor (Data Synchronization)
   # ===========================================================================
   ingestor:
-    image: mandarioss/ingestor:${IMAGE_TAG:-latest}
+    image: ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest}
     container_name: mandari-ingestor
     restart: unless-stopped
     command: >
