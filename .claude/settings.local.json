@@ -113,7 +113,10 @@
       "WebFetch(domain:codeberg.org)",
       "WebFetch(domain:docs.hetzner.com)",
       "WebFetch(domain:paymenter.org)",
-      "WebFetch(domain:docs.mailcow.email)"
+      "WebFetch(domain:docs.mailcow.email)",
+      "WebFetch(domain:community.hetzner.com)",
+      "Bash(xcopy:*)",
+      "Bash(robocopy:*)"
     ]
   }
 }

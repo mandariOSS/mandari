@@ -1,0 +1,184 @@
+# =============================================================================
+# Mandari - Release Workflow
+# =============================================================================
+# Builds and publishes Docker images to GitHub Container Registry
+# Triggered on:
+#   - Published releases (tags)
+#   - Manual dispatch
+# =============================================================================
+
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to build (e.g., v1.0.0, latest)'
+        required: true
+        default: 'latest'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_API: mandarioss/mandari
+  IMAGE_NAME_INGESTOR: mandarioss/ingestor
+
+jobs:
+  # ===========================================================================
+  # Build and Push Docker Images
+  # ===========================================================================
+  build:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="latest"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Building with tag: $TAG"
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./mandari
+          file: ./mandari/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}:${{ steps.version.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=https://github.com/mandariOSS/mandari
+            org.opencontainers.image.description=Mandari API - Open-Source Platform for Municipal Political Transparency
+            org.opencontainers.image.licenses=AGPL-3.0
+
+      - name: Build and push Ingestor image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/ingestor
+          file: ./apps/ingestor/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_INGESTOR }}:${{ steps.version.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_INGESTOR }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=https://github.com/mandariOSS/mandari
+            org.opencontainers.image.description=Mandari OParl Ingestor - Data Synchronization Service
+            org.opencontainers.image.licenses=AGPL-3.0
+
+  # ===========================================================================
+  # Update Release Notes
+  # ===========================================================================
+  update-release:
+    name: Update Release Notes
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Update release with image info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const release = context.payload.release;
+            const tag = release.tag_name;
+
+            const imageInfo = `
+
+            ## Docker Images
+
+            \`\`\`bash
+            # Pull the images
+            docker pull ghcr.io/mandarioss/mandari:${tag}
+            docker pull ghcr.io/mandarioss/ingestor:${tag}
+
+            # Or use 'latest'
+            docker pull ghcr.io/mandarioss/mandari:latest
+            docker pull ghcr.io/mandarioss/ingestor:latest
+            \`\`\`
+
+            ## Quick Start
+
+            \`\`\`bash
+            # Clone and install
+            git clone https://github.com/mandariOSS/mandari.git
+            cd mandari
+
+            # Set version in .env
+            echo "IMAGE_TAG=${tag}" >> .env
+
+            # Run installer
+            ./install.sh
+            \`\`\`
+            `;
+
+            // Append image info to existing body
+            const newBody = (release.body || '') + imageInfo;
+
+            await github.rest.repos.updateRelease({
+              owner,
+              repo,
+              release_id: release.id,
+              body: newBody
+            });
+
+  # ===========================================================================
+  # Notify on Failure
+  # ===========================================================================
+  notify-failure:
+    name: Notify on Failure
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: failure()
+
+    steps:
+      - name: Create issue on failure
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            await github.rest.issues.create({
+              owner,
+              repo,
+              title: `Release build failed for ${context.sha.substring(0, 7)}`,
+              body: `The release workflow failed. Please check the [workflow run](${runUrl}) for details.`,
+              labels: ['bug', 'ci']
+            });

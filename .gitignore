@@ -3,6 +3,21 @@
 # =============================================================================
 
 # =============================================================================
+# ENTERPRISE / PRIVATE DEPLOYMENT (excluded from public repo)
+# =============================================================================
+# The .enterprise/ directory contains private deployment configurations
+# (Ansible, Terraform, HA setup) that are not part of the Community Edition
+.enterprise/
+
+# GitHub Actions deploy workflow (private repo only)
+# pr-check.yml is kept public for testing
+.github/workflows/deploy.yml
+
+# AI context files (internal use)
+# CLAUDE.md
+# AGENTS.md
+
+# =============================================================================
 # SECRETS & SENSITIVE DATA (CRITICAL!)
 # =============================================================================
 

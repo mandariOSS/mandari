@@ -2,9 +2,29 @@
 
 **Open-Source-Plattform für kommunalpolitische Transparenz in Deutschland**
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://github.com/mandariOSS/mandari/pkgs/container/mandari)
+
 Mandari macht Kommunalpolitik transparent, verständlich und zugänglich. Wir glauben: **Demokratie braucht Transparenz** - und die Werkzeuge dafür sollten allen zur Verfügung stehen.
 
 Kommunalpolitik betrifft uns alle unmittelbar - von der Kita-Planung über die Verkehrsführung bis zur Stadtentwicklung. Doch allzu oft sind diese wichtigen Entscheidungsprozesse für Bürger:innen schwer nachvollziehbar. Das wollen wir ändern.
+
+## Quick Start (Community Edition)
+
+```bash
+# Clone repository
+git clone https://github.com/mandariOSS/mandari.git
+cd mandari
+
+# Run interactive installer
+./install.sh
+```
+
+The installer guides you through configuration and starts all services automatically.
+
+**Requirements**: Linux server with Docker & Docker Compose
+
+See [Installation Guide](docs/installation.md) for details.
 
 ## Die Drei Säulen
 
@@ -156,116 +176,71 @@ mandari2.0/
 └── docs/                       # Dokumentation
 ```
 
-## Schnellstart (Entwicklung)
+## Installation
 
-### Voraussetzungen
+### Community Edition (Single Server)
 
-- Python 3.12+
-- Docker & Docker Compose
-- [uv](https://github.com/astral-sh/uv) (Python Package Manager)
-
-### 1. Repository klonen
+For a single-server deployment:
 
 ```bash
-git clone https://github.com/mandari-oss/mandari.git
+git clone https://github.com/mandariOSS/mandari.git
 cd mandari
+./install.sh
 ```
 
-### 2. Infrastruktur starten
+**Requirements**:
+- Linux server (Ubuntu 22.04+ recommended)
+- Docker & Docker Compose
+- Domain with DNS pointing to server (for HTTPS)
+
+See [Installation Guide](docs/installation.md) for detailed instructions.
+
+### Development Setup
+
+For local development:
 
 ```bash
+# Start infrastructure services
 docker compose -f infrastructure/docker/docker-compose.dev.yml up -d
-```
 
-### 3. Django Backend starten
-
-```bash
+# Setup Django backend
 cd mandari
 cp .env.example .env
 uv sync
 uv run python manage.py migrate
 uv run python manage.py setup_roles
 uv run python manage.py runserver
-```
 
-### 4. OParl-Daten synchronisieren
-
-```bash
+# In another terminal: Sync OParl data
 cd apps/ingestor
 uv sync
 uv run python -m src.main sync --full
 ```
 
-## Production Deployment
+**Requirements**:
+- Python 3.12+
+- Docker & Docker Compose
+- [uv](https://github.com/astral-sh/uv) (Python Package Manager)
 
-### Voraussetzungen
+See [Development Guide](docs/development.md) for details.
 
-- 2x Hetzner VMs (Ubuntu 24.04)
-- 1x Hetzner Load Balancer
-- Domain mit DNS auf Load Balancer IP
-- SSH-Zugang zu beiden Servern
-
-### 1. Server einrichten
+### Management Commands
 
 ```bash
-cd infrastructure/scripts
-chmod +x setup-mandari.sh
-./setup-mandari.sh
-```
+# View service status
+docker compose ps
 
-Das Script:
-- Installiert Docker auf beiden Servern
-- Konfiguriert Caddy, PostgreSQL, Redis, Meilisearch
-- Generiert sichere Passwörter
-- Erstellt alle Konfigurationsdateien
+# View logs
+docker compose logs -f api
 
-### 2. GitHub Secrets einrichten
+# Create backup
+./backup.sh
 
-Nach dem Setup werden alle benötigten Secrets angezeigt.
+# Update to latest version
+./update.sh
 
-Gehe zu: `Repository Settings → Secrets and variables → Actions`
-
-**Secrets hinzufügen:**
-
-| Secret | Beschreibung |
-|--------|--------------|
-| `MASTER_IP` | Public IP des Master-Servers |
-| `SLAVE_IP` | Public IP des Slave-Servers |
-| `SSH_PRIVATE_KEY` | Inhalt von `~/.ssh/id_hetzner` |
-| `POSTGRES_PASSWORD` | Vom Script generiert |
-| `SECRET_KEY` | Vom Script generiert |
-| `ENCRYPTION_MASTER_KEY` | Vom Script generiert |
-| `MEILISEARCH_KEY` | Vom Script generiert |
-| `SITE_URL` | `https://mandari.de` |
-
-**Variable hinzufügen:**
-
-| Variable | Wert |
-|----------|------|
-| `DEPLOYMENT_ENABLED` | `true` |
-
-### 3. Deployment auslösen
-
-```bash
-git push origin main
-```
-
-Oder manuell: `Actions → Deploy Mandari → Run workflow`
-
-### Nützliche Befehle
-
-```bash
-# Status prüfen
-ssh root@MASTER_IP 'cd /opt/mandari && docker compose ps'
-
-# Logs anzeigen
-ssh root@MASTER_IP 'cd /opt/mandari && docker compose logs -f api'
-
-# Django Shell
-ssh root@MASTER_IP 'docker exec -it mandari-api python manage.py shell'
-
-# Datenbank-Backup
-ssh root@MASTER_IP 'docker exec mandari-postgres pg_dump -U mandari mandari > backup.sql'
+# Django shell
+docker exec -it mandari-api python manage.py shell
 ```
 
 ## OParl Ingestor

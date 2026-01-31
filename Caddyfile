@@ -1,0 +1,147 @@
+# =============================================================================
+# Mandari - Community Edition Caddyfile
+# =============================================================================
+# Automatic HTTPS via Let's Encrypt (HTTP-01 Challenge)
+#
+# Requirements:
+#   - Port 80 and 443 must be open and accessible from the internet
+#   - Domain must point to this server's IP
+#   - For localhost: HTTPS is disabled, uses HTTP only
+# =============================================================================
+
+{
+	# Email for Let's Encrypt certificate notifications
+	email {$EMAIL:admin@example.com}
+}
+
+# =============================================================================
+# Health Check Endpoint (for Docker/internal monitoring)
+# =============================================================================
+http://localhost {
+	handle /health {
+		respond "OK" 200
+	}
+	handle /health/ {
+		respond "OK" 200
+	}
+	handle {
+		respond "Not Found" 404
+	}
+}
+
+# =============================================================================
+# Main Site - HTTPS with automatic TLS
+# =============================================================================
+{$DOMAIN:localhost} {
+	# Compression
+	encode gzip zstd
+
+	# Security headers
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# Health check endpoint
+	handle /health {
+		respond "OK" 200
+	}
+	handle /health/ {
+		respond "OK" 200
+	}
+
+	# API routes
+	handle /api/* {
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Host {host}
+		}
+	}
+
+	# Admin routes
+	handle /admin/* {
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Host {host}
+		}
+	}
+
+	# Accounts routes (authentication)
+	handle /accounts/* {
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Host {host}
+		}
+	}
+
+	# Work Portal
+	handle /work/* {
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Host {host}
+		}
+	}
+
+	# Session RIS
+	handle /session/* {
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Host {host}
+		}
+	}
+
+	# Static files (Django)
+	handle /static/* {
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Host {host}
+		}
+	}
+
+	# Media files (uploaded content)
+	handle /media/* {
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Host {host}
+		}
+	}
+
+	# WebSocket support
+	handle /ws/* {
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Host {host}
+			header_up Connection {header.Connection}
+			header_up Upgrade {header.Upgrade}
+		}
+	}
+
+	# Public Portal (default - catch all)
+	handle {
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Host {host}
+		}
+	}
+
+	# Access logging
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+}

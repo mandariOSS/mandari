@@ -1,0 +1,205 @@
+# =============================================================================
+# Mandari - Community Edition (Single Server)
+# =============================================================================
+# Documentation: https://github.com/mandariOSS/mandari
+#
+# Quick Start:
+#   ./install.sh              # Interactive installer (recommended)
+#   - OR -
+#   cp .env.example .env      # Copy and edit configuration
+#   docker compose up -d      # Start all services
+# =============================================================================
+
+name: mandari
+
+services:
+  # ===========================================================================
+  # Reverse Proxy with automatic SSL (Let's Encrypt)
+  # ===========================================================================
+  caddy:
+    image: caddy:2-alpine
+    container_name: mandari-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    networks:
+      - mandari
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ===========================================================================
+  # PostgreSQL Database
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: mandari-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mandari}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+      POSTGRES_DB: ${POSTGRES_DB:-mandari}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mandari
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mandari}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================================================
+  # Redis Cache
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: mandari-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory ${REDIS_MAXMEMORY:-256mb}
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - mandari
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================================================
+  # Meilisearch (Full-text search)
+  # ===========================================================================
+  meilisearch:
+    image: getmeili/meilisearch:v1.6
+    container_name: mandari-meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILISEARCH_KEY:?Meilisearch key required}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meilisearch_data:/meili_data
+    networks:
+      - mandari
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:7700/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ===========================================================================
+  # Django API Backend
+  # ===========================================================================
+  api:
+    image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
+    container_name: mandari-api
+    restart: unless-stopped
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
+      # Cache
+      REDIS_URL: redis://redis:6379
+      # Search
+      MEILISEARCH_URL: http://meilisearch:7700
+      MEILISEARCH_KEY: ${MEILISEARCH_KEY}
+      # Security
+      SECRET_KEY: ${SECRET_KEY:?Django secret key required}
+      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:?Encryption key required}
+      # Application
+      DEBUG: "false"
+      ALLOWED_HOSTS: ${DOMAIN:-localhost}
+      CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
+      SITE_URL: https://${DOMAIN:-localhost}
+      # Timezone
+      TZ: ${TZ:-Europe/Berlin}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    networks:
+      - mandari
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ===========================================================================
+  # OParl Ingestor (Data Synchronization)
+  # ===========================================================================
+  ingestor:
+    image: ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest}
+    container_name: mandari-ingestor
+    restart: unless-stopped
+    command: >
+      python -m src.main daemon
+      --interval ${INGESTOR_INTERVAL:-15}
+      --full-sync-hour ${INGESTOR_FULL_SYNC_HOUR:-3}
+      --concurrent ${INGESTOR_CONCURRENT:-10}
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
+      REDIS_URL: redis://redis:6379
+      MEILISEARCH_URL: http://meilisearch:7700
+      MEILISEARCH_KEY: ${MEILISEARCH_KEY}
+      TZ: ${TZ:-Europe/Berlin}
+    volumes:
+      - ingestor_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mandari
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+# =============================================================================
+# Volumes (Persistent Data)
+# =============================================================================
+volumes:
+  postgres_data:
+    name: mandari_postgres_data
+  redis_data:
+    name: mandari_redis_data
+  meilisearch_data:
+    name: mandari_meilisearch_data
+  ingestor_data:
+    name: mandari_ingestor_data
+  caddy_data:
+    name: mandari_caddy_data
+  caddy_config:
+    name: mandari_caddy_config
+
+# =============================================================================
+# Network
+# =============================================================================
+networks:
+  mandari:
+    driver: bridge
