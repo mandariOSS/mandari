@@ -339,6 +339,10 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: 'false'
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          # Database credentials for Ansible lookup('env', ...) functions
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER || 'mandari' }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB || 'mandari' }}
         run: |
           # Build extra-vars for Ansible
           EXTRA_VARS=""
