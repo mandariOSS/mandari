@@ -139,6 +139,8 @@ services:
       ALLOWED_HOSTS: ${DOMAIN:-localhost}
       CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
       SITE_URL: https://${DOMAIN:-localhost}
+      # AI (optional)
+      NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
       # Timezone
       TZ: ${TZ:-Europe/Berlin}
     depends_on:

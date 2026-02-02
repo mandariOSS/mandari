@@ -323,6 +323,9 @@ jobs:
           MEILISEARCH_KEY=${{ secrets.MEILISEARCH_KEY }}
           REDIS_MAXMEMORY=512mb
 
+          # AI (optional)
+          NEBIUS_API_KEY=${{ secrets.NEBIUS_API_KEY }}
+
           # Hetzner DNS (for Let's Encrypt DNS-01 challenge)
           HETZNER_DNS_API_TOKEN=${{ secrets.HETZNER_DNS_API_TOKEN }}
 

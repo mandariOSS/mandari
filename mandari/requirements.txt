@@ -23,6 +23,7 @@ meilisearch>=0.31.0
 
 # AI
 groq>=0.11.0
+openai>=1.0.0
 httpx>=0.28.0
 
 # Utilities

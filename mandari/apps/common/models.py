@@ -80,6 +80,16 @@ class SiteSettings(models.Model):
     )
 
     # ==========================================================================
+    # AI API Settings
+    # ==========================================================================
+    nebius_api_key = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Nebius API Key",
+        help_text="API Key für Nebius TokenFactory (KI-Zusammenfassungen)"
+    )
+
+    # ==========================================================================
     # General Settings
     # ==========================================================================
     site_name = models.CharField(
@@ -138,6 +148,24 @@ class SiteSettings(models.Model):
             settings, _ = cls.objects.get_or_create(pk=1)
             cache.set(cls.CACHE_KEY, settings, cls.CACHE_TIMEOUT)
         return settings
+
+    @classmethod
+    def get_nebius_api_key(cls) -> str:
+        """
+        Get Nebius API key.
+
+        Priority: Environment variable > SiteSettings
+        """
+        import os
+
+        # Check environment variable first
+        env_key = os.environ.get("NEBIUS_API_KEY", "").strip()
+        if env_key:
+            return env_key
+
+        # Fallback to SiteSettings
+        site_settings = cls.get_settings()
+        return site_settings.nebius_api_key or ""
 
     @classmethod
     def get_email_config(cls) -> dict:

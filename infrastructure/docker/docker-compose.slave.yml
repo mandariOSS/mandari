@@ -183,6 +183,8 @@ services:
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
       # Encryption
       ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY}
+      # AI (optional)
+      NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
       # Server role
       SERVER_ROLE: standby
     networks:

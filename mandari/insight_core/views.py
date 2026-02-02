@@ -428,24 +428,60 @@ def paper_summary(request, pk):
     """
     HTMX Endpoint für KI-Zusammenfassung eines Vorgangs.
 
-    Nutzt gecachte Zusammenfassung oder generiert neue via Groq.
+    Nutzt gecachte Zusammenfassung oder generiert neue via Nebius AI.
     """
     paper = get_object_or_404(OParlPaper, pk=pk)
 
-    # Prüfe ob bereits Zusammenfassung vorhanden
+    # Return cached summary if available
     if paper.summary:
         return render(request, "partials/paper_summary.html", {
             "paper": paper,
             "summary": paper.summary,
         })
 
-    # TODO: KI-Zusammenfassung generieren via insight_ai
-    # Für jetzt: Placeholder
-    return render(request, "partials/paper_summary.html", {
-        "paper": paper,
-        "summary": None,
-        "error": "KI-Zusammenfassung ist noch nicht konfiguriert.",
-    })
+    # Generate new summary
+    try:
+        from insight_ai.services.summarizer import (
+            SummaryService,
+            NoTextContentError,
+            APINotConfiguredError,
+            SummaryError,
+        )
+
+        service = SummaryService()
+        summary = service.generate_summary(paper)
+
+        return render(request, "partials/paper_summary.html", {
+            "paper": paper,
+            "summary": summary,
+        })
+
+    except NoTextContentError as e:
+        return render(request, "partials/paper_summary.html", {
+            "paper": paper,
+            "error": str(e),
+        })
+
+    except APINotConfiguredError as e:
+        return render(request, "partials/paper_summary.html", {
+            "paper": paper,
+            "error": str(e),
+        })
+
+    except SummaryError as e:
+        return render(request, "partials/paper_summary.html", {
+            "paper": paper,
+            "error": str(e),
+        })
+
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.exception(f"Unexpected error in paper_summary: {e}")
+        return render(request, "partials/paper_summary.html", {
+            "paper": paper,
+            "error": f"Unerwarteter Fehler: {str(e)}",
+        })
 
 
 # =============================================================================
