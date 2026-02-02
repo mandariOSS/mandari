@@ -102,7 +102,7 @@
                             </div>
                             <div>
                                 <p class="text-sm font-medium text-gray-900 dark:text-white">
-                                    {{ featured_post.author.get_full_name|default:featured_post.author.username }}
+                                    {% if featured_post.author %}{{ featured_post.author.get_full_name|default:featured_post.author.username }}{% else %}Mandari Team{% endif %}
                                 </p>
                                 <p class="text-xs text-gray-500 dark:text-gray-400">
                                     {{ featured_post.reading_time }} Min. Lesezeit
