@@ -362,39 +362,6 @@
       until: api_health.stdout == 'healthy'
 
     # =========================================================================
-    # Initial OParl Sync (background - don't block deployment)
-    # =========================================================================
-    - name: Trigger initial OParl sync (runs in background)
-      shell: |
-        cd {{ app_dir }}
-        # Run initial sync in background - don't wait for completion
-        docker exec -d mandari-ingestor python -m src.main sync --all
-      ignore_errors: yes
-
-    # =========================================================================
-    # Setup Text Extraction Cron Job
-    # =========================================================================
-    - name: Create text extraction script
-      copy:
-        dest: "{{ app_dir }}/scripts/extract-texts.sh"
-        content: |
-          #!/bin/bash
-          # Extract text from PDFs for AI summaries
-          cd {{ app_dir }}
-          docker exec mandari-web python manage.py extract_texts --batch-size 20 --workers 2 --limit 100 2>&1 | logger -t mandari-extract
-        mode: '0755'
-        owner: root
-        group: root
-
-    - name: Setup hourly text extraction cron job
-      cron:
-        name: "Mandari text extraction from PDFs"
-        minute: "30"
-        hour: "*"
-        job: "{{ app_dir }}/scripts/extract-texts.sh"
-        state: present
-
-    # =========================================================================
     # Wait for SSL Certificate and Export for Slave
     # =========================================================================
     - name: Wait for Caddy to obtain SSL certificate
