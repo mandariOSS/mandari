@@ -127,4 +127,5 @@ urlpatterns = [
     path("kommunen/", views.KommunenView.as_view(), name="kommunen"),
     path("roadmap/", views.RoadmapView.as_view(), name="roadmap"),
     path("presse/", views.PresseView.as_view(), name="presse"),
+    path("danksagungen/", views.DanksagungenView.as_view(), name="danksagungen"),
 ]

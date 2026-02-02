@@ -1,0 +1,626 @@
+{% extends "base.html" %}
+
+{% block title %}Danksagungen & Abhängigkeiten | Mandari{% endblock %}
+
+{% block meta_description %}Mandari basiert auf vielen großartigen Open-Source-Projekten. Hier listen wir alle Bibliotheken, Frameworks und Inspirationsquellen auf.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="pt-16 pb-10 lg:pt-24 lg:pb-12 bg-gradient-to-br from-amber-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-sm font-medium mb-6">
+            <i data-lucide="heart" class="w-4 h-4"></i>
+            Open Source Community
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Danksagungen & Abhängigkeiten
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mb-8">
+            Mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der
+            Open-Source-Community wäre dieses Projekt nicht möglich. Hier listen wir alle
+            Projekte auf, die Mandari möglich machen.
+        </p>
+        <div class="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+            <span class="flex items-center gap-2">
+                <i data-lucide="package" class="w-4 h-4"></i>
+                50+ Abhängigkeiten
+            </span>
+            <span class="flex items-center gap-2">
+                <i data-lucide="scale" class="w-4 h-4"></i>
+                Lizenz-konform
+            </span>
+        </div>
+    </div>
+</section>
+
+<!-- Core Technologies -->
+<section class="py-16 lg:py-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-3">
+            <span class="w-10 h-10 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center">
+                <i data-lucide="cpu" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+            </span>
+            Kern-Technologien
+        </h2>
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Python -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🐍</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white">Python 3.12+</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Programmiersprache</p>
+                        <a href="https://python.org" target="_blank" rel="noopener noreferrer"
+                           class="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                            python.org
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                        <span class="ml-2 text-xs text-gray-400">PSF License</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Django -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🎸</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white">Django 6.0</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Web-Framework</p>
+                        <a href="https://djangoproject.com" target="_blank" rel="noopener noreferrer"
+                           class="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                            djangoproject.com
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                        <span class="ml-2 text-xs text-gray-400">BSD-3-Clause</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PostgreSQL -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🐘</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white">PostgreSQL 16</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Relationale Datenbank</p>
+                        <a href="https://postgresql.org" target="_blank" rel="noopener noreferrer"
+                           class="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                            postgresql.org
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                        <span class="ml-2 text-xs text-gray-400">PostgreSQL License</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Redis -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">⚡</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white">Redis 7</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">In-Memory Cache</p>
+                        <a href="https://redis.io" target="_blank" rel="noopener noreferrer"
+                           class="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                            redis.io
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                        <span class="ml-2 text-xs text-gray-400">BSD-3-Clause</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Meilisearch -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🔍</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white">Meilisearch</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Volltextsuche</p>
+                        <a href="https://meilisearch.com" target="_blank" rel="noopener noreferrer"
+                           class="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                            meilisearch.com
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                        <span class="ml-2 text-xs text-gray-400">MIT License</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Docker -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-sky-100 dark:bg-sky-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🐳</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white">Docker</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Container-Plattform</p>
+                        <a href="https://docker.com" target="_blank" rel="noopener noreferrer"
+                           class="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                            docker.com
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                        <span class="ml-2 text-xs text-gray-400">Apache 2.0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Frontend Libraries -->
+<section class="py-16 lg:py-20 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-3">
+            <span class="w-10 h-10 bg-purple-100 dark:bg-purple-900/50 rounded-lg flex items-center justify-center">
+                <i data-lucide="palette" class="w-5 h-5 text-purple-600 dark:text-purple-400"></i>
+            </span>
+            Frontend & UI
+        </h2>
+        <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- HTMX -->
+            <a href="https://htmx.org" target="_blank" rel="noopener noreferrer"
+               class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-shadow group">
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="text-xl">🔄</span>
+                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600">HTMX</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Hypermedia-Framework für dynamische UIs</p>
+                <span class="text-xs text-gray-400 mt-2 block">BSD-2-Clause</span>
+            </a>
+
+            <!-- Alpine.js -->
+            <a href="https://alpinejs.dev" target="_blank" rel="noopener noreferrer"
+               class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-shadow group">
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="text-xl">🏔️</span>
+                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600">Alpine.js</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Leichtgewichtiges JS-Framework</p>
+                <span class="text-xs text-gray-400 mt-2 block">MIT License</span>
+            </a>
+
+            <!-- Tailwind CSS -->
+            <a href="https://tailwindcss.com" target="_blank" rel="noopener noreferrer"
+               class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-shadow group">
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="text-xl">🎨</span>
+                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600">Tailwind CSS</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Utility-First CSS Framework</p>
+                <span class="text-xs text-gray-400 mt-2 block">MIT License</span>
+            </a>
+
+            <!-- Lucide Icons -->
+            <a href="https://lucide.dev" target="_blank" rel="noopener noreferrer"
+               class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-shadow group">
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="text-xl">✨</span>
+                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600">Lucide Icons</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Schöne Open-Source Icons</p>
+                <span class="text-xs text-gray-400 mt-2 block">ISC License</span>
+            </a>
+
+            <!-- MapLibre -->
+            <a href="https://maplibre.org" target="_blank" rel="noopener noreferrer"
+               class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-shadow group">
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="text-xl">🗺️</span>
+                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600">MapLibre GL</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Open-Source Kartenbibliothek</p>
+                <span class="text-xs text-gray-400 mt-2 block">BSD-3-Clause</span>
+            </a>
+
+            <!-- Chart.js -->
+            <a href="https://chartjs.org" target="_blank" rel="noopener noreferrer"
+               class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-shadow group">
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="text-xl">📊</span>
+                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600">Chart.js</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Diagramme & Visualisierungen</p>
+                <span class="text-xs text-gray-400 mt-2 block">MIT License</span>
+            </a>
+
+            <!-- FullCalendar -->
+            <a href="https://fullcalendar.io" target="_blank" rel="noopener noreferrer"
+               class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-shadow group">
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="text-xl">📅</span>
+                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600">FullCalendar</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Kalender-Komponente</p>
+                <span class="text-xs text-gray-400 mt-2 block">MIT License</span>
+            </a>
+
+            <!-- EasyMDE -->
+            <a href="https://github.com/Ionaru/easy-markdown-editor" target="_blank" rel="noopener noreferrer"
+               class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-shadow group">
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="text-xl">📝</span>
+                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600">EasyMDE</h3>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Markdown-Editor</p>
+                <span class="text-xs text-gray-400 mt-2 block">MIT License</span>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Python Libraries -->
+<section class="py-16 lg:py-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-3">
+            <span class="w-10 h-10 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center">
+                <i data-lucide="box" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+            </span>
+            Python-Bibliotheken
+        </h2>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-gray-50 dark:bg-gray-900">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Paket</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell">Verwendung</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden md:table-cell">Lizenz</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-6 py-4">
+                            <a href="https://pypi.org/project/django-htmx/" target="_blank" rel="noopener noreferrer" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">django-htmx</a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">HTMX-Integration für Django</td>
+                        <td class="px-6 py-4 text-xs text-gray-400 hidden md:table-cell">MIT</td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-6 py-4">
+                            <a href="https://github.com/unfoldadmin/django-unfold" target="_blank" rel="noopener noreferrer" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">django-unfold</a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">Modernes Admin-Theme</td>
+                        <td class="px-6 py-4 text-xs text-gray-400 hidden md:table-cell">MIT</td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-6 py-4">
+                            <a href="https://whitenoise.readthedocs.io/" target="_blank" rel="noopener noreferrer" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">whitenoise</a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">Static File Serving</td>
+                        <td class="px-6 py-4 text-xs text-gray-400 hidden md:table-cell">MIT</td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-6 py-4">
+                            <a href="https://www.psycopg.org/psycopg3/" target="_blank" rel="noopener noreferrer" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">psycopg</a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">PostgreSQL-Adapter</td>
+                        <td class="px-6 py-4 text-xs text-gray-400 hidden md:table-cell">LGPL</td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-6 py-4">
+                            <a href="https://github.com/meilisearch/meilisearch-python" target="_blank" rel="noopener noreferrer" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">meilisearch</a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">Meilisearch Python Client</td>
+                        <td class="px-6 py-4 text-xs text-gray-400 hidden md:table-cell">MIT</td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-6 py-4">
+                            <a href="https://pillow.readthedocs.io/" target="_blank" rel="noopener noreferrer" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">Pillow</a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">Bildverarbeitung</td>
+                        <td class="px-6 py-4 text-xs text-gray-400 hidden md:table-cell">HPND</td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-6 py-4">
+                            <a href="https://cryptography.io/" target="_blank" rel="noopener noreferrer" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">cryptography</a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">Verschlüsselung (AES-256-GCM)</td>
+                        <td class="px-6 py-4 text-xs text-gray-400 hidden md:table-cell">BSD/Apache 2.0</td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-6 py-4">
+                            <a href="https://github.com/tesseract-ocr/tesseract" target="_blank" rel="noopener noreferrer" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">pytesseract</a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">OCR für PDFs</td>
+                        <td class="px-6 py-4 text-xs text-gray-400 hidden md:table-cell">Apache 2.0</td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-6 py-4">
+                            <a href="https://github.com/xhtml2pdf/xhtml2pdf" target="_blank" rel="noopener noreferrer" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">xhtml2pdf</a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">PDF-Generierung</td>
+                        <td class="px-6 py-4 text-xs text-gray-400 hidden md:table-cell">Apache 2.0</td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-6 py-4">
+                            <a href="https://gunicorn.org/" target="_blank" rel="noopener noreferrer" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">Gunicorn</a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 hidden sm:table-cell">WSGI Server</td>
+                        <td class="px-6 py-4 text-xs text-gray-400 hidden md:table-cell">MIT</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-4">
+            Vollständige Liste aller Abhängigkeiten:
+            <a href="https://github.com/mandariOSS/mandari/blob/main/mandari/requirements.txt" target="_blank" rel="noopener noreferrer"
+               class="text-primary-600 dark:text-primary-400 hover:underline">requirements.txt</a>
+        </p>
+    </div>
+</section>
+
+<!-- Infrastructure -->
+<section class="py-16 lg:py-20 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-3">
+            <span class="w-10 h-10 bg-orange-100 dark:bg-orange-900/50 rounded-lg flex items-center justify-center">
+                <i data-lucide="server" class="w-5 h-5 text-orange-600 dark:text-orange-400"></i>
+            </span>
+            Infrastruktur
+        </h2>
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Caddy -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-teal-100 dark:bg-teal-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🔒</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white">Caddy</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Reverse Proxy mit automatischem TLS</p>
+                        <a href="https://caddyserver.com" target="_blank" rel="noopener noreferrer"
+                           class="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                            caddyserver.com
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                        <span class="ml-2 text-xs text-gray-400">Apache 2.0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Let's Encrypt -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🔐</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white">Let's Encrypt</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Kostenlose SSL-Zertifikate</p>
+                        <a href="https://letsencrypt.org" target="_blank" rel="noopener noreferrer"
+                           class="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                            letsencrypt.org
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OpenStreetMap -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🌍</span>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white">OpenStreetMap</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Kartendaten</p>
+                        <a href="https://openstreetmap.org" target="_blank" rel="noopener noreferrer"
+                           class="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                            openstreetmap.org
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                        <span class="ml-2 text-xs text-gray-400">ODbL</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Standards & Specifications -->
+<section class="py-16 lg:py-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-3">
+            <span class="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg flex items-center justify-center">
+                <i data-lucide="file-check" class="w-5 h-5 text-indigo-600 dark:text-indigo-400"></i>
+            </span>
+            Standards & Spezifikationen
+        </h2>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8">
+            <div class="flex items-start gap-6">
+                <div class="w-20 h-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center flex-shrink-0">
+                    <span class="text-4xl text-white font-bold">O</span>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">OParl 1.1</h3>
+                    <p class="text-gray-600 dark:text-gray-300 mb-4">
+                        Mandari implementiert den deutschen <strong>OParl-Standard</strong> für offene Ratsinformationssysteme.
+                        OParl definiert eine einheitliche API für den anonymen, lesenden Zugriff auf öffentliche parlamentarische Daten.
+                    </p>
+                    <div class="flex flex-wrap gap-4">
+                        <a href="https://oparl.org" target="_blank" rel="noopener noreferrer"
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-lg hover:bg-indigo-200 dark:hover:bg-indigo-900 transition-colors">
+                            <i data-lucide="globe" class="w-4 h-4"></i>
+                            oparl.org
+                        </a>
+                        <a href="https://oparl.org/spezifikation/online-ansicht/" target="_blank" rel="noopener noreferrer"
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            <i data-lucide="book-open" class="w-4 h-4"></i>
+                            Spezifikation lesen
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Inspirations -->
+<section class="py-16 lg:py-20 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-3">
+            <span class="w-10 h-10 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center">
+                <i data-lucide="lightbulb" class="w-5 h-5 text-primary-600 dark:text-primary-400"></i>
+            </span>
+            Inspirationen & verwandte Projekte
+        </h2>
+        <p class="text-gray-600 dark:text-gray-300 mb-8 max-w-3xl">
+            Mandari ist nicht allein. Es gibt eine lebendige Community von Projekten, die sich für
+            Transparenz in der Kommunalpolitik einsetzen. Diese Projekte haben uns inspiriert:
+        </p>
+        <div class="grid md:grid-cols-2 gap-6">
+            <!-- Politik bei uns -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🏛️</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                            <h3 class="font-bold text-gray-900 dark:text-white">Politik bei uns</h3>
+                            <span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded">eingestellt</span>
+                        </div>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                            Pionier der deutschen RIS-Transparenz. Ursprünglich gestartet von Marian Steinbach als "Offenes Köln",
+                            später von der Open Knowledge Foundation Deutschland weiterentwickelt. <strong>Unsere wichtigste Inspiration.</strong>
+                        </p>
+                        <div class="flex flex-wrap gap-3">
+                            <a href="https://github.com/okfde/politik-bei-uns-web" target="_blank" rel="noopener noreferrer"
+                               class="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                                <i data-lucide="github" class="w-3 h-3"></i>
+                                GitHub
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Meine Stadt Transparent -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 bg-green-100 dark:bg-green-900/30 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🔍</span>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                            <h3 class="font-bold text-gray-900 dark:text-white">Meine Stadt Transparent</h3>
+                            <span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded">eingestellt</span>
+                        </div>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                            Nachfolger von "München Transparent". Open-Source RIS-Frontend gefördert vom Prototype Fund.
+                            Entwickelt von Tobias Hößl, Bernd Oswald und Konstantin Schütze.
+                        </p>
+                        <div class="flex flex-wrap gap-3">
+                            <a href="https://github.com/meine-stadt-transparent/meine-stadt-transparent" target="_blank" rel="noopener noreferrer"
+                               class="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                                <i data-lucide="github" class="w-3 h-3"></i>
+                                GitHub
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Abgeordnetenwatch -->
+            <a href="https://abgeordnetenwatch.de" target="_blank" rel="noopener noreferrer"
+               class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow group">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 bg-red-100 dark:bg-red-900/30 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">👁️</span>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="font-bold text-gray-900 dark:text-white group-hover:text-primary-600 mb-1">Abgeordnetenwatch</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                            Non-Profit Plattform für politische Transparenz auf Bundes- und Landesebene.
+                            Ermöglicht Bürgern, Abgeordnete öffentlich zu befragen und deren Abstimmungsverhalten einzusehen.
+                        </p>
+                        <span class="text-xs text-primary-600 dark:text-primary-400 inline-flex items-center gap-1">
+                            abgeordnetenwatch.de
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </span>
+                    </div>
+                </div>
+            </a>
+
+            <!-- KRAken -->
+            <a href="https://pypi.org/project/stadt-bonn-oparl/" target="_blank" rel="noopener noreferrer"
+               class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow group">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 bg-orange-100 dark:bg-orange-900/30 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🐙</span>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="font-bold text-gray-900 dark:text-white group-hover:text-primary-600 mb-1">KRAken</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                            Kommunaler Recherche-Assistent für die Stadt Bonn. Vollständige KI-Pipeline von OParl-Download
+                            über PDF-Konvertierung bis zur semantischen Vektorsuche. Ein Projekt von Mach!Den!Staat!
+                        </p>
+                        <span class="text-xs text-primary-600 dark:text-primary-400 inline-flex items-center gap-1">
+                            PyPI (stadt-bonn-oparl)
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </span>
+                    </div>
+                </div>
+            </a>
+
+            <!-- RATISA -->
+            <a href="https://github.com/ErtanOz/RATISA_Koeln-Ratinformation-System-Assistent" target="_blank" rel="noopener noreferrer"
+               class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow group">
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 bg-purple-100 dark:bg-purple-900/30 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <span class="text-2xl">🤖</span>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="font-bold text-gray-900 dark:text-white group-hover:text-primary-600 mb-1">RATISA</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                            KI-gestütztes Web-Interface für das Kölner Ratsinformationssystem.
+                            Natural Language Search, Dokumenten-Zusammenfassung mit Gemini AI und MCP-Server.
+                        </p>
+                        <span class="text-xs text-primary-600 dark:text-primary-400 inline-flex items-center gap-1">
+                            <i data-lucide="github" class="w-3 h-3"></i>
+                            GitHub
+                        </span>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- License Note -->
+<section class="py-12 border-t border-gray-200 dark:border-gray-700">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6">
+            <div class="flex items-start gap-4">
+                <i data-lucide="info" class="w-6 h-6 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"></i>
+                <div>
+                    <h3 class="font-semibold text-amber-800 dark:text-amber-200 mb-2">Hinweis zu Lizenzen</h3>
+                    <p class="text-sm text-amber-700 dark:text-amber-300 mb-3">
+                        Mandari selbst steht unter der <strong>AGPL-3.0 Lizenz</strong>.
+                        Die hier aufgeführten Abhängigkeiten haben ihre eigenen Lizenzen (MIT, BSD, Apache, etc.),
+                        die alle mit der AGPL kompatibel sind und kommerzielle Nutzung erlauben.
+                    </p>
+                    <a href="https://github.com/mandariOSS/mandari/blob/main/DEPENDENCIES.md" target="_blank" rel="noopener noreferrer"
+                       class="text-sm text-amber-800 dark:text-amber-200 font-medium hover:underline inline-flex items-center gap-1">
+                        Vollständige Lizenzübersicht auf GitHub
+                        <i data-lucide="external-link" class="w-3 h-3"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

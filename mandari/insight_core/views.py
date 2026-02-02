@@ -1174,3 +1174,8 @@ class RoadmapView(TemplateView):
 class PresseView(TemplateView):
     """Presse & Medien - Ressourcen für Journalisten."""
     template_name = "pages/about/presse.html"
+
+
+class DanksagungenView(TemplateView):
+    """Danksagungen & Abhängigkeiten - Transparenz über verwendete Projekte."""
+    template_name = "pages/about/danksagungen.html"
