@@ -415,8 +415,24 @@ class OParlFile(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
+
+    # OParl relationships (must match ingestor schema)
+    body = models.ForeignKey(
+        OParlBody,
+        on_delete=models.CASCADE,
+        related_name="files",
+        blank=True,
+        null=True
+    )
     paper = models.ForeignKey(
         OParlPaper,
+        on_delete=models.CASCADE,
+        related_name="files",
+        blank=True,
+        null=True
+    )
+    meeting = models.ForeignKey(
+        OParlMeeting,
         on_delete=models.CASCADE,
         related_name="files",
         blank=True,
@@ -429,10 +445,12 @@ class OParlFile(models.Model):
     size = models.BigIntegerField(blank=True, null=True)
     access_url = models.URLField(max_length=1000, blank=True, null=True)
     download_url = models.URLField(max_length=1000, blank=True, null=True)
+    file_date = models.DateTimeField(blank=True, null=True)
 
     # Lokale Speicherung
     local_path = models.TextField(blank=True, null=True)
     text_content = models.TextField(blank=True, null=True)
+    sha256_hash = models.CharField(max_length=64, blank=True, null=True)
 
     # OParl-Zeitstempel
     oparl_created = models.DateTimeField(blank=True, null=True)
