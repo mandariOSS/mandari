@@ -3,6 +3,7 @@
 Summary service for OParl documents.
 
 Generates AI-powered multi-perspective summaries of municipal documents.
+Includes on-demand text extraction from PDFs if text_content is not available.
 """
 
 import logging
@@ -13,7 +14,7 @@ from insight_ai.providers.base import ChatMessage
 from .prompts import PAPER_SUMMARY_SYSTEM_PROMPT, build_paper_summary_user_prompt
 
 if TYPE_CHECKING:
-    from insight_core.models import OParlPaper
+    from insight_core.models import OParlPaper, OParlFile
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +34,17 @@ class APINotConfiguredError(SummaryError):
     pass
 
 
+class TextExtractionError(SummaryError):
+    """Raised when text extraction fails."""
+    pass
+
+
 class SummaryService:
     """
     Service for generating AI summaries of OParl documents.
 
     Uses Nebius TokenFactory with Kimi K2 Thinking model.
+    Automatically extracts text from PDFs on-demand if needed.
     """
 
     def __init__(self, provider=None):
@@ -53,6 +60,8 @@ class SummaryService:
         """
         Generate a summary for an OParl paper.
 
+        Automatically extracts text from files if not already available.
+
         Args:
             paper: OParlPaper instance to summarize
             save: Whether to save the summary to the paper
@@ -61,7 +70,7 @@ class SummaryService:
             Generated summary text
 
         Raises:
-            NoTextContentError: If no text content is available
+            NoTextContentError: If no text content is available after extraction
             APINotConfiguredError: If the API is not configured
             SummaryError: For other generation errors
         """
@@ -72,13 +81,13 @@ class SummaryService:
                 "als Umgebungsvariable oder in den Systemeinstellungen."
             )
 
-        # Collect text content from all files
-        text_content = self._collect_text_content(paper)
+        # Collect text content from all files (with on-demand extraction)
+        text_content = self._collect_text_content_with_extraction(paper)
 
         if not text_content:
             raise NoTextContentError(
                 "Keine Textinhalte verfügbar. Das Dokument enthält keine "
-                "extrahierten Texte aus den angehängten Dateien."
+                "Dateien oder die Textextraktion ist fehlgeschlagen."
             )
 
         # Build prompts
@@ -128,9 +137,96 @@ class SummaryService:
             logger.exception(f"Summary generation failed for paper {paper.id}: {e}")
             raise SummaryError(f"Fehler bei der Zusammenfassung: {str(e)}") from e
 
+    def _collect_text_content_with_extraction(self, paper: "OParlPaper") -> str:
+        """
+        Collect text content from all files, extracting on-demand if needed.
+
+        If a file doesn't have text_content, attempts to download and extract it.
+
+        Args:
+            paper: OParlPaper instance
+
+        Returns:
+            Combined text content from all files
+        """
+        texts = []
+        files_to_extract = []
+
+        # First pass: collect existing text and identify files needing extraction
+        for file in paper.files.all():
+            if file.text_content and file.text_content.strip():
+                file_name = file.name or file.file_name or "Dokument"
+                texts.append(f"### {file_name}\n{file.text_content.strip()}")
+            elif file.download_url or file.access_url:
+                files_to_extract.append(file)
+
+        # Second pass: extract text from files that need it
+        if files_to_extract and not texts:
+            logger.info(f"Extracting text from {len(files_to_extract)} files on-demand")
+            for file in files_to_extract:
+                extracted_text = self._extract_text_from_file(file)
+                if extracted_text:
+                    file_name = file.name or file.file_name or "Dokument"
+                    texts.append(f"### {file_name}\n{extracted_text}")
+
+        return "\n\n---\n\n".join(texts)
+
+    def _extract_text_from_file(self, file: "OParlFile") -> str:
+        """
+        Extract text from a single file on-demand.
+
+        Downloads the file and extracts text using OCR if needed.
+        Saves the extracted text to the file object.
+
+        Args:
+            file: OParlFile instance
+
+        Returns:
+            Extracted text or empty string on failure
+        """
+        from insight_core.services.document_extraction import (
+            download_and_extract,
+            DocumentDownloadError,
+        )
+
+        url = file.download_url or file.access_url
+        if not url:
+            logger.warning(f"File {file.id} has no download URL")
+            return ""
+
+        try:
+            logger.info(f"Extracting text from file {file.id}: {url}")
+
+            result = download_and_extract(
+                url=url,
+                mime_type=file.mime_type,
+                original_name=file.file_name or file.name or "",
+                timeout=120.0,
+            )
+
+            if result.text and result.text.strip():
+                # Save extracted text to file for future use
+                file.text_content = result.text
+                file.save(update_fields=["text_content"])
+                logger.info(
+                    f"Extracted {len(result.text)} chars from file {file.id} "
+                    f"(OCR: {result.ocr_performed})"
+                )
+                return result.text
+
+            logger.warning(f"No text extracted from file {file.id}")
+            return ""
+
+        except DocumentDownloadError as e:
+            logger.warning(f"Failed to download file {file.id}: {e}")
+            return ""
+        except Exception as e:
+            logger.exception(f"Failed to extract text from file {file.id}: {e}")
+            return ""
+
     def _collect_text_content(self, paper: "OParlPaper") -> str:
         """
-        Collect text content from all files attached to a paper.
+        Collect existing text content from all files (no extraction).
 
         Args:
             paper: OParlPaper instance
@@ -142,7 +238,6 @@ class SummaryService:
 
         for file in paper.files.all():
             if file.text_content and file.text_content.strip():
-                # Add file name as header
                 file_name = file.name or file.file_name or "Dokument"
                 texts.append(f"### {file_name}\n{file.text_content.strip()}")
 
