@@ -42,6 +42,9 @@
 
             <!-- Alle Kommunen Option -->
             <a href="{% url 'insight_core:insight:clear_body' %}"
+               hx-get="{% url 'insight_core:insight:clear_body' %}"
+               hx-push-url="false"
+               @click="isOpen = false"
                role="option"
                aria-selected="{% if show_all_bodies %}true{% else %}false{% endif %}"
                class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors {% if show_all_bodies %}bg-primary-50 dark:bg-primary-900/30{% endif %}">
@@ -67,6 +70,9 @@
             {% if available_bodies %}
                 {% for body in available_bodies %}
                     <a href="{% url 'insight_core:insight:set_body' body.id %}"
+                       hx-get="{% url 'insight_core:insight:set_body' body.id %}"
+                       hx-push-url="false"
+                       @click="isOpen = false"
                        role="option"
                        aria-selected="{% if active_body and body.id == active_body.id %}true{% else %}false{% endif %}"
                        class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors {% if active_body and body.id == active_body.id %}bg-primary-50 dark:bg-primary-900/30{% endif %}">

@@ -134,6 +134,9 @@ def set_body(request, body_id):
     try:
         body = OParlBody.objects.get(id=body_id)
         request.session["active_body_id"] = str(body.id)
+        # Explicitly mark session as modified and save to ensure persistence
+        request.session.modified = True
+        request.session.save()
     except OParlBody.DoesNotExist:
         pass
 
@@ -141,20 +144,43 @@ def set_body(request, body_id):
     default_redirect = "/insight/"
     referer = request.META.get("HTTP_REFERER", "")
 
+    # For HTMX requests, use HX-Redirect header for reliable navigation
+    is_htmx = request.headers.get("HX-Request") == "true"
+
     if referer and url_has_allowed_host_and_scheme(
         referer,
         allowed_hosts={request.get_host()},
         require_https=request.is_secure(),
     ):
-        return redirect(referer)
+        redirect_url = referer
+    else:
+        redirect_url = default_redirect
 
-    return redirect(default_redirect)
+    if is_htmx:
+        response = HttpResponse(status=200)
+        response["HX-Redirect"] = redirect_url
+        return response
+
+    return redirect(redirect_url)
 
 
 def clear_body(request):
     """Setzt auf 'Alle Kommunen' Modus und leitet zur Portal-Homepage weiter."""
     request.session["active_body_id"] = "all"
-    return redirect("/insight/")
+    # Explicitly mark session as modified and save to ensure persistence
+    request.session.modified = True
+    request.session.save()
+
+    # For HTMX requests, use HX-Redirect header
+    is_htmx = request.headers.get("HX-Request") == "true"
+    redirect_url = "/insight/"
+
+    if is_htmx:
+        response = HttpResponse(status=200)
+        response["HX-Redirect"] = redirect_url
+        return response
+
+    return redirect(redirect_url)
 
 
 # =============================================================================

@@ -126,7 +126,7 @@ class OParlClient:
             ),
             headers={
                 "Accept": "application/json",
-                "User-Agent": "Mandari-Ingestor/2.0 (https://github.com/mandari)",
+                "User-Agent": "Mandari-Ingestor/2.0 (https://github.com/mandariOSS/mandari)",
             },
             follow_redirects=True,  # Follow HTTP 301/302 redirects
         )

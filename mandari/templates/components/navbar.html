@@ -217,6 +217,13 @@
                     <span class="hidden lg:inline">mandari.de</span>
                 </a>
                 {% else %}
+                <!-- Work Portal Login Button -->
+                <a href="{% url 'accounts:login' %}"
+                   class="hidden md:inline-flex items-center gap-2 px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white text-sm font-medium transition-colors"
+                   aria-label="Zum Work-Portal anmelden">
+                    <i data-lucide="log-in" class="w-4 h-4" aria-hidden="true"></i>
+                    <span>Anmelden</span>
+                </a>
                 <a href="{% url 'insight_core:insight:portal_home' %}"
                    class="hidden md:inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors">
                     <i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>
@@ -332,6 +339,15 @@
                 <i data-lucide="eye" class="w-5 h-5" aria-hidden="true"></i>
                 <span>Insight öffnen</span>
                 <i data-lucide="arrow-right" class="w-4 h-4 ml-auto opacity-70" aria-hidden="true"></i>
+            </a>
+
+            <!-- Work Portal Login -->
+            <a href="{% url 'accounts:login' %}"
+               @click="mobileMenuOpen = false"
+               class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                <i data-lucide="log-in" class="w-5 h-5 text-gray-500" aria-hidden="true"></i>
+                <span>Anmelden</span>
+                <span class="ml-auto text-xs text-gray-400">Work-Portal</span>
             </a>
 
             <hr class="border-gray-200 dark:border-gray-700" role="separator">

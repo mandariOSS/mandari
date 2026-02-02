@@ -40,6 +40,41 @@ http://localhost {
 }
 
 # =============================================================================
+# Organization Subdomains (e.g., volt.mandari.de)
+# =============================================================================
+# Wildcard subdomain support - proxies to Django which handles the redirect
+# DNS-01 challenge allows wildcard certificates
+*.{$DOMAIN:mandari.de} {
+    # Compression
+    encode gzip zstd
+
+    # Security headers
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        -Server
+    }
+
+    # Proxy everything to Django - middleware handles redirect
+    reverse_proxy mandari-web:8000 {
+        header_up X-Real-IP {remote_host}
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+    }
+
+    # Logging
+    log {
+        output file /data/subdomain-access.log {
+            roll_size 10mb
+            roll_keep 3
+        }
+    }
+}
+
+# =============================================================================
 # Main Site - HTTPS with automatic TLS
 # =============================================================================
 {$DOMAIN:mandari.de} {
