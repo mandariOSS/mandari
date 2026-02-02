@@ -207,7 +207,7 @@ EOF
     # Step 2: Stop application writes
     log "Stopping API container to prevent new writes..."
     ssh -o StrictHostKeyChecking=no root@$MASTER_IP \
-        "docker compose -f /opt/mandari/docker-compose.yml stop api ingestor"
+        "docker compose -f /opt/mandari/docker-compose.yml stop mandari-web ingestor"
 
     # Step 3: Wait for final sync
     log "Waiting for final WAL sync..."

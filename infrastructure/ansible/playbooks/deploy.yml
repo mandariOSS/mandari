@@ -329,7 +329,7 @@
     # Health Check
     # =========================================================================
     - name: Wait for API to be healthy
-      shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' mandari-api
+      shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' mandari-web
       register: api_health
       retries: 30
       delay: 5
@@ -674,7 +674,7 @@
     # Health Check
     # =========================================================================
     - name: Wait for API to be healthy
-      shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' mandari-api
+      shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' mandari-web
       register: api_health
       retries: 30
       delay: 5

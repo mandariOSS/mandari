@@ -1,17 +1,24 @@
 # =============================================================================
-# Mandari 2.0 - Docker Compose (Master/Primary)
+# Mandari 2.0 - Docker Compose (Server 1 / Primary)
 # =============================================================================
-# This configuration runs on the master server with:
-# - PostgreSQL as PRIMARY (accepts writes)
-# - Redis as MASTER
-# - Ingestor service (only runs on master)
+# HIGH AVAILABILITY CONFIGURATION - PRIMARY SERVER
+#
+# Services:
+# - mandari-web: Django SaaS Application
+# - postgres: PostgreSQL PRIMARY (accepts writes)
+# - redis: Redis MASTER
+# - meilisearch: Search Engine
+# - ingestor: OParl Sync (only on primary)
+# - caddy: HTTPS Reverse Proxy
+#
+# Failover: If this server fails, Server 2 can be promoted to primary
 # =============================================================================
 
 name: mandari
 
 services:
   # ===========================================================================
-  # Reverse Proxy (Custom Caddy with Hetzner DNS plugin for DNS-01 challenge)
+  # Reverse Proxy (Caddy with Hetzner DNS plugin)
   # ===========================================================================
   caddy:
     build:
@@ -33,7 +40,7 @@ services:
     networks:
       - mandari-network
     depends_on:
-      api:
+      mandari-web:
         condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/health"]
@@ -43,7 +50,7 @@ services:
       start_period: 30s
 
   # ===========================================================================
-  # Database (PRIMARY)
+  # PostgreSQL (PRIMARY)
   # ===========================================================================
   postgres:
     image: postgres:16-alpine
@@ -53,7 +60,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-mandari}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-mandari}
-      # Allow password auth from Docker network (fixes pg_hba.conf "no encryption" error)
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
     command:
       - "postgres"
@@ -61,11 +67,13 @@ services:
       - "-c"
       - "wal_level=replica"
       - "-c"
-      - "max_wal_senders=3"
+      - "max_wal_senders=5"
       - "-c"
-      - "max_replication_slots=3"
+      - "max_replication_slots=5"
       - "-c"
       - "hot_standby=on"
+      - "-c"
+      - "synchronous_commit=on"
       # Performance tuning
       - "-c"
       - "shared_buffers=256MB"
@@ -73,10 +81,11 @@ services:
       - "effective_cache_size=1GB"
       - "-c"
       - "work_mem=16MB"
-      # Allow replication connections from private network
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      # Network
       - "-c"
       - "listen_addresses=*"
-      # Use custom pg_hba.conf for Docker network authentication
       - "-c"
       - "hba_file=/etc/postgresql/pg_hba.conf"
     volumes:
@@ -85,7 +94,7 @@ services:
     networks:
       - mandari-network
     ports:
-      - "5432:5432"  # Exposed for replication from slave
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mandari} -d ${POSTGRES_DB:-mandari}"]
       interval: 10s
@@ -94,7 +103,7 @@ services:
       start_period: 30s
 
   # ===========================================================================
-  # Cache (MASTER)
+  # Redis (MASTER)
   # ===========================================================================
   redis:
     image: redis:7-alpine
@@ -113,7 +122,7 @@ services:
     networks:
       - mandari-network
     ports:
-      - "6379:6379"  # Exposed for replication from slave
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -121,7 +130,7 @@ services:
       retries: 5
 
   # ===========================================================================
-  # Search Engine
+  # Meilisearch (Search Engine)
   # ===========================================================================
   meilisearch:
     image: getmeili/meilisearch:v1.6
@@ -144,21 +153,21 @@ services:
       start_period: 30s
 
   # ===========================================================================
-  # API Backend
+  # Mandari Web Application (Django SaaS)
   # ===========================================================================
-  api:
+  mandari-web:
     image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
-    container_name: mandari-api
+    container_name: mandari-web
     restart: unless-stopped
     environment:
-      # Database (direct connection - pgbouncer can be added later for connection pooling)
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
+      # Database - local primary
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
       # Cache
       REDIS_URL: redis://redis:6379
       # Search
       MEILISEARCH_URL: http://meilisearch:7700
       MEILISEARCH_KEY: ${MEILISEARCH_KEY}
-      # App
+      # Application
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: "false"
       ENVIRONMENT: production
@@ -167,6 +176,8 @@ services:
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
       # Encryption
       ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY}
+      # Server role
+      SERVER_ROLE: primary
     networks:
       - mandari-network
     depends_on:
@@ -192,7 +203,7 @@ services:
           memory: 512M
 
   # ===========================================================================
-  # Ingestor (ONLY ON MASTER!)
+  # Ingestor (OParl Sync - ONLY ON PRIMARY)
   # ===========================================================================
   ingestor:
     image: ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest}
@@ -204,7 +215,7 @@ services:
       --full-sync-hour ${INGESTOR_FULL_SYNC_HOUR:-3}
       --concurrent ${INGESTOR_CONCURRENT:-20}
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://redis:6379
       MEILISEARCH_URL: http://meilisearch:7700
       MEILISEARCH_KEY: ${MEILISEARCH_KEY}
@@ -222,13 +233,6 @@ services:
         limits:
           cpus: '1'
           memory: 1G
-
-  # ===========================================================================
-  # Frontend Services (Django serves everything via HTMX)
-  # ===========================================================================
-  # NOTE: Mandari uses Django Templates + HTMX, not separate frontend apps.
-  # All routes are served by the 'api' service (Django).
-  # Uncomment web-public/web-work when separate frontend apps are built.
 
 # =============================================================================
 # Volumes
