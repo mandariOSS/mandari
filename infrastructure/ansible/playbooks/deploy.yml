@@ -112,17 +112,9 @@
         - "{{ app_dir }}/backups"
         - "{{ app_dir }}/scripts"
         - "{{ data_dir }}"
-        - "{{ data_dir }}/meilisearch"
-
-    - name: Create PostgreSQL and Redis data directories (master only)
-      file:
-        path: "{{ item }}"
-        state: directory
-        mode: '0755'
-      loop:
         - "{{ data_dir }}/postgres"
         - "{{ data_dir }}/redis"
-      when: postgres_role == 'primary'
+        - "{{ data_dir }}/meilisearch"
 
     - name: Create ingestor data directory (master only)
       file:
@@ -542,8 +534,69 @@
         force: yes
 
     # =========================================================================
-    # NOTE: No local PostgreSQL on Slave - it uses Master's database
+    # PostgreSQL Replica Initialization
     # =========================================================================
+    - name: Create PostgreSQL and Redis data directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ data_dir }}/postgres"
+        - "{{ data_dir }}/redis"
+
+    - name: Check if PostgreSQL replica is already initialized
+      stat:
+        path: "{{ data_dir }}/postgres/standby.signal"
+      register: standby_signal
+
+    - name: Check if PostgreSQL data directory has data
+      find:
+        paths: "{{ data_dir }}/postgres"
+        patterns: "PG_VERSION"
+      register: pg_version_file
+
+    - name: Initialize PostgreSQL replica via pg_basebackup
+      shell: |
+        # Stop any existing postgres container
+        docker stop mandari-postgres 2>/dev/null || true
+        docker rm mandari-postgres 2>/dev/null || true
+
+        # Clear data directory if it exists but is incomplete
+        rm -rf {{ data_dir }}/postgres/* 2>/dev/null || true
+
+        # Run pg_basebackup from master
+        docker run --rm \
+          --network host \
+          -v {{ data_dir }}/postgres:/var/lib/postgresql/data \
+          -e PGPASSWORD="{{ lookup('env', 'POSTGRES_PASSWORD') }}" \
+          postgres:16-alpine \
+          pg_basebackup \
+            -h {{ master_private_ip | default('10.0.0.3') }} \
+            -p 5432 \
+            -U {{ lookup('env', 'POSTGRES_USER') | default('mandari', true) }} \
+            -D /var/lib/postgresql/data \
+            -Fp \
+            -Xs \
+            -P \
+            -R
+
+        # Create standby.signal (PostgreSQL 12+ requirement)
+        touch {{ data_dir }}/postgres/standby.signal
+
+        # Set permissions for postgres user in container (uid 999)
+        chown -R 999:999 {{ data_dir }}/postgres
+      args:
+        executable: /bin/bash
+      when: not standby_signal.stat.exists or pg_version_file.matched == 0
+      register: replica_init
+      retries: 2
+      delay: 10
+      until: replica_init.rc == 0
+
+    - name: Display replica initialization result
+      debug:
+        msg: "{{ 'PostgreSQL replica initialized successfully' if replica_init.changed else 'PostgreSQL replica already initialized' }}"
 
     # =========================================================================
     # Docker Registry & Pull
@@ -628,13 +681,37 @@
       until: api_health.stdout == 'healthy'
       ignore_errors: yes
 
+    # =========================================================================
+    # Verify Replication Status
+    # =========================================================================
+    - name: Wait for PostgreSQL replica to be healthy
+      shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' mandari-postgres
+      register: pg_health
+      retries: 30
+      delay: 5
+      until: pg_health.stdout == 'healthy'
+      ignore_errors: yes
+
+    - name: Verify PostgreSQL is in recovery mode (replica)
+      shell: docker exec mandari-postgres psql -U {{ lookup('env', 'POSTGRES_USER') | default('mandari', true) }} -tAc "SELECT pg_is_in_recovery();"
+      register: recovery_mode
+      retries: 5
+      delay: 5
+      until: recovery_mode.stdout | trim == 't'
+      ignore_errors: yes
+
+    - name: Display replication status
+      debug:
+        msg: "PostgreSQL replica status: {{ 'REPLICATING' if recovery_mode.stdout | trim == 't' else 'NOT REPLICATING - CHECK LOGS!' }}"
+
     - name: Slave deployment complete
       debug:
         msg: |
-          ✅ Slave deployment complete.
-          Services: API, Caddy, Meilisearch
-          Database: Master PostgreSQL ({{ master_private_ip | default('10.0.0.3') }})
-          Cache: Master Redis ({{ master_private_ip | default('10.0.0.3') }})
+          ✅ Slave deployment complete (HIGH AVAILABILITY)
+          Services: API, Caddy, Meilisearch, PostgreSQL (replica), Redis (replica)
+          PostgreSQL: Hot Standby from Master ({{ master_private_ip | default('10.0.0.3') }})
+          Redis: Replica from Master ({{ master_private_ip | default('10.0.0.3') }})
+          Replication: {{ 'ACTIVE' if recovery_mode.stdout | trim == 't' else 'CHECK REQUIRED' }}
 
 # =============================================================================
 # PHASE 3: Final Verification
@@ -664,6 +741,12 @@
       until: health_check.status == 200
       ignore_errors: yes
 
+    - name: Check PostgreSQL replication status (master only)
+      shell: docker exec mandari-postgres psql -U {{ lookup('env', 'POSTGRES_USER') | default('mandari', true) }} -tAc "SELECT count(*) FROM pg_stat_replication;"
+      register: replication_count
+      when: postgres_role == 'primary'
+      ignore_errors: yes
+
     - name: Deployment summary
       debug:
         msg: |
@@ -673,6 +756,9 @@
           Server: {{ inventory_hostname }}
           Role: {{ postgres_role }}
           Health: {{ 'OK' if health_check.status == 200 else 'FAILED' }}
+          {% if postgres_role == 'primary' %}
+          Replicas connected: {{ replication_count.stdout | default('0') | trim }}
+          {% endif %}
           ==========================================
 
 # =============================================================================
