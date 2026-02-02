@@ -2,9 +2,13 @@
 # Mandari 2.0 - Docker Compose (Slave/Replica)
 # =============================================================================
 # This configuration runs on the slave server with:
-# - PostgreSQL as REPLICA (read-only, streams from master)
-# - Redis as REPLICA (syncs from master)
+# - NO local PostgreSQL - connects to Master's PostgreSQL directly
+# - NO local Redis - connects to Master's Redis directly
+# - Local Meilisearch (search index is local for performance)
 # - NO Ingestor service (only runs on master)
+#
+# This ensures data consistency across servers and simplifies deployment.
+# Master IP: 10.0.0.3 (Hetzner private network)
 # =============================================================================
 
 name: mandari
@@ -43,72 +47,17 @@ services:
       start_period: 30s
 
   # ===========================================================================
-  # Database (REPLICA)
+  # NO LOCAL DATABASE ON SLAVE
   # ===========================================================================
-  # NOTE: Initial replication setup must be done manually via pg_basebackup
-  # See: infrastructure/ansible/playbooks/postgres-setup.yml
-  postgres:
-    image: postgres:16-alpine
-    container_name: mandari-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-mandari}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-mandari}
-      # Allow password auth from Docker network (fixes pg_hba.conf "no encryption" error)
-      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
-    command:
-      - "postgres"
-      # Replica settings
-      - "-c"
-      - "hot_standby=on"
-      # Performance tuning
-      - "-c"
-      - "shared_buffers=256MB"
-      - "-c"
-      - "effective_cache_size=1GB"
-      - "-c"
-      - "work_mem=16MB"
-      - "-c"
-      - "listen_addresses=*"
-      # Use custom pg_hba.conf for Docker network authentication
-      - "-c"
-      - "hba_file=/etc/postgresql/pg_hba.conf"
-    volumes:
-      - ${DATA_DIR:-/mnt/data}/postgres:/var/lib/postgresql/data
-      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
-    networks:
-      - mandari-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mandari} -d ${POSTGRES_DB:-mandari}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+  # The slave connects directly to the Master's PostgreSQL via private network
+  # This ensures data consistency and simplifies deployment.
+  # Master IP: ${MASTER_PRIVATE_IP:-10.0.0.3}
 
   # ===========================================================================
-  # Cache (REPLICA)
+  # NO LOCAL REDIS ON SLAVE - connects to Master's Redis directly
   # ===========================================================================
-  redis:
-    image: redis:7-alpine
-    container_name: mandari-redis
-    restart: unless-stopped
-    command: >
-      redis-server
-      --appendonly yes
-      --maxmemory ${REDIS_MAXMEMORY:-512mb}
-      --maxmemory-policy allkeys-lru
-      --tcp-keepalive 300
-      --replicaof ${MASTER_PRIVATE_IP:-10.0.0.3} 6379
-    volumes:
-      - ${DATA_DIR:-/mnt/data}/redis:/data
-    networks:
-      - mandari-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # The slave connects directly to the Master's Redis via private network
+  # This ensures session data and caches are shared across all servers.
 
   # ===========================================================================
   # Search Engine
@@ -141,13 +90,11 @@ services:
     container_name: mandari-api
     restart: unless-stopped
     environment:
-      # Database - connects to local postgres (direct connection)
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
-      # For writes, connect to master
-      DATABASE_URL_PRIMARY: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${MASTER_PRIVATE_IP:-10.0.0.3}:5432/${POSTGRES_DB:-mandari}
-      # Cache
-      REDIS_URL: redis://redis:6379
-      # Search
+      # Database - connects directly to Master's PostgreSQL via private network
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${MASTER_PRIVATE_IP:-10.0.0.3}:5432/${POSTGRES_DB:-mandari}
+      # Cache - connects directly to Master's Redis via private network
+      REDIS_URL: redis://${MASTER_PRIVATE_IP:-10.0.0.3}:6379
+      # Search - local Meilisearch (search index can differ per server)
       MEILISEARCH_URL: http://meilisearch:7700
       MEILISEARCH_KEY: ${MEILISEARCH_KEY}
       # App
@@ -159,15 +106,14 @@ services:
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
       # Encryption
       ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY}
-      # Replica mode flag
+      # Replica mode flag (still useful for read-preference logic)
       IS_REPLICA: "true"
     networks:
       - mandari-network
+    extra_hosts:
+      # Ensure the container can resolve master's private IP
+      - "master-db:${MASTER_PRIVATE_IP:-10.0.0.3}"
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
       meilisearch:
         condition: service_healthy
     healthcheck:

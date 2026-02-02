@@ -102,7 +102,7 @@
     # =========================================================================
     # Create directories (as root, then chown)
     # =========================================================================
-    - name: Create application directories
+    - name: Create application directories (all servers)
       file:
         path: "{{ item }}"
         state: directory
@@ -112,9 +112,17 @@
         - "{{ app_dir }}/backups"
         - "{{ app_dir }}/scripts"
         - "{{ data_dir }}"
+        - "{{ data_dir }}/meilisearch"
+
+    - name: Create PostgreSQL and Redis data directories (master only)
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
         - "{{ data_dir }}/postgres"
         - "{{ data_dir }}/redis"
-        - "{{ data_dir }}/meilisearch"
+      when: postgres_role == 'primary'
 
     - name: Create ingestor data directory (master only)
       file:
@@ -464,6 +472,31 @@
 
   tasks:
     # =========================================================================
+    # Verify Master Database is Reachable BEFORE any deployment
+    # =========================================================================
+    - name: Wait for Master PostgreSQL to be reachable
+      wait_for:
+        host: "{{ master_private_ip | default('10.0.0.3') }}"
+        port: 5432
+        state: started
+        timeout: 120
+      register: master_db_check
+
+    - name: Verify PostgreSQL connection to Master
+      shell: |
+        apt-get install -y postgresql-client 2>/dev/null || true
+        PGPASSWORD="{{ lookup('env', 'POSTGRES_PASSWORD') }}" psql -h {{ master_private_ip | default('10.0.0.3') }} -U {{ lookup('env', 'POSTGRES_USER') | default('mandari', true) }} -d {{ lookup('env', 'POSTGRES_DB') | default('mandari', true) }} -c "SELECT 1" >/dev/null 2>&1
+      register: pg_connection_test
+      retries: 5
+      delay: 5
+      until: pg_connection_test.rc == 0
+      ignore_errors: yes
+
+    - name: Display Master DB connection status
+      debug:
+        msg: "{{ 'Master PostgreSQL is reachable' if pg_connection_test.rc == 0 else 'Warning: Could not verify PostgreSQL connection, proceeding anyway' }}"
+
+    # =========================================================================
     # Cleanup & Prepare (WITHOUT removing volumes - we need caddy_data!)
     # =========================================================================
     - name: Stop all existing containers (preserve volumes for SSL cert)
@@ -509,22 +542,8 @@
         force: yes
 
     # =========================================================================
-    # PostgreSQL Reinitialization (if requested)
+    # NOTE: No local PostgreSQL on Slave - it uses Master's database
     # =========================================================================
-    - name: Clear PostgreSQL data for reinitialization
-      file:
-        path: "{{ data_dir }}/postgres"
-        state: absent
-      when: force_postgres_reinit | default(false) | bool
-
-    - name: Recreate PostgreSQL data directory
-      file:
-        path: "{{ data_dir }}/postgres"
-        state: directory
-        owner: "{{ app_user }}"
-        group: "{{ app_user }}"
-        mode: '0755'
-      when: force_postgres_reinit | default(false) | bool
 
     # =========================================================================
     # Docker Registry & Pull
@@ -611,7 +630,11 @@
 
     - name: Slave deployment complete
       debug:
-        msg: "✅ Slave deployment complete."
+        msg: |
+          ✅ Slave deployment complete.
+          Services: API, Caddy, Meilisearch
+          Database: Master PostgreSQL ({{ master_private_ip | default('10.0.0.3') }})
+          Cache: Master Redis ({{ master_private_ip | default('10.0.0.3') }})
 
 # =============================================================================
 # PHASE 3: Final Verification
