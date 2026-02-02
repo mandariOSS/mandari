@@ -20,6 +20,7 @@ from .models import (
     OParlOrganization,
     OParlPerson,
     OParlMeeting,
+    OParlAgendaItem,
     OParlPaper,
     TileCache,
 )
@@ -412,7 +413,65 @@ class PaperDetailView(DetailView):
             if f.text_content and f.text_content.strip()
         ]
 
+        # Beratungsverlauf (Consultations mit Meeting-Info)
+        context["consultations"] = self._get_consultations_with_meetings(paper)
+
         return context
+
+    def _get_consultations_with_meetings(self, paper):
+        """
+        Lädt Consultations mit aufgelösten Meeting- und AgendaItem-Referenzen.
+
+        OParl-Struktur:
+        - Paper enthält eingebettete Consultation-Objekte
+        - Consultation referenziert Meeting und AgendaItem als URL-Strings
+        - Wir lösen diese Referenzen auf, um den Beratungsverlauf anzuzeigen
+        """
+        consultations = paper.consultations.all()
+        if not consultations:
+            return []
+
+        # Sammle alle meeting_external_ids und agenda_item_external_ids
+        meeting_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]
+        agenda_item_ids = [c.agenda_item_external_id for c in consultations if c.agenda_item_external_id]
+
+        # Batch-Lookup für Meetings
+        meetings_by_id = {}
+        if meeting_ids:
+            meetings = OParlMeeting.objects.filter(
+                external_id__in=meeting_ids
+            ).prefetch_related('organizations')
+            meetings_by_id = {m.external_id: m for m in meetings}
+
+        # Batch-Lookup für AgendaItems
+        agenda_items_by_id = {}
+        if agenda_item_ids:
+            agenda_items = OParlAgendaItem.objects.filter(external_id__in=agenda_item_ids)
+            agenda_items_by_id = {a.external_id: a for a in agenda_items}
+
+        # Baue angereicherte Consultation-Liste
+        result = []
+        for consultation in consultations:
+            meeting = meetings_by_id.get(consultation.meeting_external_id)
+            agenda_item = agenda_items_by_id.get(consultation.agenda_item_external_id)
+
+            result.append({
+                'consultation': consultation,
+                'meeting': meeting,
+                'agenda_item': agenda_item,
+                'date': meeting.start if meeting else None,
+                'organization_name': meeting.get_display_name() if meeting else None,
+                'agenda_number': agenda_item.number if agenda_item else None,
+                'result': agenda_item.result if agenda_item else None,
+                'public': agenda_item.public if agenda_item else True,
+                'role': consultation.role,
+                'authoritative': consultation.authoritative,
+            })
+
+        # Sortiere nach Datum (älteste zuerst = chronologischer Verlauf)
+        result.sort(key=lambda x: x['date'] or timezone.now(), reverse=False)
+
+        return result
 
 
 class PaperListPartial(ListView):

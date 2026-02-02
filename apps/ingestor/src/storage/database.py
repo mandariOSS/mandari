@@ -671,23 +671,33 @@ class DatabaseStorage:
                 oparl_modified=file.oparl_modified,
                 raw_json=file.raw_json,
             )
+
+            # Build update set - only update paper_id/meeting_id if we have values
+            # This prevents overwriting existing links when syncing standalone files
+            update_set = {
+                "name": stmt.excluded.name,
+                "file_name": stmt.excluded.file_name,
+                "mime_type": stmt.excluded.mime_type,
+                "size": stmt.excluded.size,
+                "access_url": stmt.excluded.access_url,
+                "download_url": stmt.excluded.download_url,
+                "file_date": stmt.excluded.file_date,
+                "oparl_created": stmt.excluded.oparl_created,
+                "oparl_modified": stmt.excluded.oparl_modified,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+
+            # Only update paper_id if provided (don't overwrite existing link)
+            if paper_id is not None:
+                update_set["paper_id"] = paper_id
+            # Only update meeting_id if provided
+            if meeting_id is not None:
+                update_set["meeting_id"] = meeting_id
+
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
-                set_={
-                    "paper_id": paper_id,
-                    "meeting_id": meeting_id,
-                    "name": stmt.excluded.name,
-                    "file_name": stmt.excluded.file_name,
-                    "mime_type": stmt.excluded.mime_type,
-                    "size": stmt.excluded.size,
-                    "access_url": stmt.excluded.access_url,
-                    "download_url": stmt.excluded.download_url,
-                    "file_date": stmt.excluded.file_date,
-                    "oparl_created": stmt.excluded.oparl_created,
-                    "oparl_modified": stmt.excluded.oparl_modified,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlFile.id)
 
             result = await session.execute(stmt)

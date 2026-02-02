@@ -728,8 +728,16 @@ class SyncOrchestrator:
                 metrics.record_entity_synced("agendaitem", body_name or "unknown")
             # If no meeting_id found, skip (item likely from nested sync already)
         elif isinstance(entity, ProcessedFile):
-            # Files can belong to papers or meetings - store with body_id only for standalone
-            await self.storage.upsert_file(entity, body_id)
+            # Files can belong to papers or meetings
+            # Try to resolve paper_id from back-references (OParl spec: standalone files have these)
+            paper_id = None
+            meeting_id = None
+            if entity.paper_external_ids:
+                # Use first paper reference (files can belong to multiple papers)
+                paper_id = await self.storage.get_paper_uuid(entity.paper_external_ids[0])
+            if entity.meeting_external_ids:
+                meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_ids[0])
+            await self.storage.upsert_file(entity, body_id, paper_id=paper_id, meeting_id=meeting_id)
             metrics.record_entity_synced("file", body_name or "unknown")
         elif isinstance(entity, ProcessedConsultation):
             # Consultations can belong to papers - try to look it up

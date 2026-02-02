@@ -168,6 +168,12 @@ class ProcessedFile(ProcessedEntity):
     download_url: str | None = None
     date: datetime | None = None
 
+    # Back-references (from standalone files fetched via /files endpoint)
+    # OParl spec: File objects contain 'paper' and 'meeting' arrays
+    # when fetched individually (not embedded)
+    paper_external_ids: list[str] = field(default_factory=list)
+    meeting_external_ids: list[str] = field(default_factory=list)
+
 
 class ProcessedLocation(ProcessedEntity):
     """Processed OParl Location."""
@@ -565,6 +571,10 @@ class OParlProcessor:
         if file_name and len(file_name) > 255:
             file_name = file_name[:252] + "..."
 
+        # Extract paper and meeting back-references (OParl spec: standalone files have these)
+        paper_external_ids = self._extract_refs(data.get("paper", []))
+        meeting_external_ids = self._extract_refs(data.get("meeting", []))
+
         return ProcessedFile(
             id=self.generate_uuid(external_id),
             external_id=external_id,
@@ -580,6 +590,8 @@ class OParlProcessor:
             access_url=data.get("accessUrl"),
             download_url=data.get("downloadUrl"),
             date=self.parse_datetime(data.get("date")),
+            paper_external_ids=paper_external_ids,
+            meeting_external_ids=meeting_external_ids,
         )
 
     def process_location(
