@@ -704,6 +704,25 @@
       debug:
         msg: "PostgreSQL replica status: {{ 'REPLICATING' if recovery_mode.stdout | trim == 't' else 'NOT REPLICATING - CHECK LOGS!' }}"
 
+    # =========================================================================
+    # Certificate Sync Setup (Slave only)
+    # =========================================================================
+    - name: Copy certificate sync script
+      copy:
+        src: "{{ playbook_dir }}/../../scripts/sync-certs.sh"
+        dest: "{{ app_dir }}/scripts/sync-certs.sh"
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Setup daily certificate sync cron job
+      cron:
+        name: "Sync SSL certificates from Master"
+        minute: "0"
+        hour: "3"
+        job: "MASTER_PRIVATE_IP={{ master_private_ip | default('10.0.0.3') }} {{ app_dir }}/scripts/sync-certs.sh >> /var/log/cert-sync.log 2>&1"
+        state: present
+
     - name: Slave deployment complete
       debug:
         msg: |
@@ -712,6 +731,7 @@
           PostgreSQL: Hot Standby from Master ({{ master_private_ip | default('10.0.0.3') }})
           Redis: Replica from Master ({{ master_private_ip | default('10.0.0.3') }})
           Replication: {{ 'ACTIVE' if recovery_mode.stdout | trim == 't' else 'CHECK REQUIRED' }}
+          Certificate Sync: Daily at 3:00 AM
 
 # =============================================================================
 # PHASE 3: Final Verification
