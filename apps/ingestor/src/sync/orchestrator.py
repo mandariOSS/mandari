@@ -686,6 +686,7 @@ class SyncOrchestrator:
 
         if isinstance(entity, ProcessedMeeting):
             entity_id = str(await self.storage.upsert_meeting(entity, body_id))
+            meeting_uuid = UUID(entity_id)
             # Emit high-priority event for new meetings
             if self._event_emitter and entity_id:
                 await self._event_emitter.emit_new_meeting(
@@ -695,8 +696,17 @@ class SyncOrchestrator:
                     body_name=body_name,
                     start_time=entity.start,
                 )
+            # Process nested entities (files, agenda items) with meeting_id
+            for nested in entity.nested_entities:
+                if isinstance(nested, ProcessedFile):
+                    await self.storage.upsert_file(nested, body_id, meeting_id=meeting_uuid)
+                    metrics.record_entity_synced("file", body_name or "unknown")
+                elif isinstance(nested, ProcessedAgendaItem):
+                    await self.storage.upsert_agenda_item(nested, meeting_uuid)
+                    metrics.record_entity_synced("agendaitem", body_name or "unknown")
         elif isinstance(entity, ProcessedPaper):
             entity_id = str(await self.storage.upsert_paper(entity, body_id))
+            paper_uuid = UUID(entity_id)
             # Emit high-priority event for new papers
             if self._event_emitter and entity_id:
                 await self._event_emitter.emit_new_paper(
@@ -706,6 +716,14 @@ class SyncOrchestrator:
                     body_name=body_name,
                     paper_type=entity.paper_type,
                 )
+            # Process nested entities (files, consultations) with paper_id
+            for nested in entity.nested_entities:
+                if isinstance(nested, ProcessedFile):
+                    await self.storage.upsert_file(nested, body_id, paper_id=paper_uuid)
+                    metrics.record_entity_synced("file", body_name or "unknown")
+                elif isinstance(nested, ProcessedConsultation):
+                    await self.storage.upsert_consultation(nested, body_id, paper_uuid)
+                    metrics.record_entity_synced("consultation", body_name or "unknown")
         elif isinstance(entity, ProcessedPerson):
             await self.storage.upsert_person(entity, body_id)
             metrics.record_entity_synced("person", body_name or "unknown")
