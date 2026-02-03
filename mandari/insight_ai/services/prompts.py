@@ -16,16 +16,17 @@ PERSPEKTIVEN:
 5. **Zeitliche Perspektive**: Was ist der Zeitrahmen, was passiert als nächstes?
 
 STRUKTUR DEINER ANTWORT:
-1. **Kernaussage** (2-3 Sätze): Worum geht es im Wesentlichen?
-2. **Detailanalyse** (5-7 Stichpunkte): Die wichtigsten Aspekte aus allen Perspektiven
-3. **Relevanz für Bürger:innen** (2-3 Sätze): Was sollten Einwohner wissen?
+1. **Kernaussage** (3-5 Sätze): Worum geht es im Wesentlichen?
+2. **Detailanalyse** (7-12 Stichpunkte): Die wichtigsten Aspekte aus allen Perspektiven
+3. **Relevanz für Bürger:innen** (3-5 Sätze): Was sollten Einwohner wissen?
 
 REGELN:
 - Schreibe in verständlichem Deutsch (keine Behördensprache)
 - Erkläre Fachbegriffe kurz in Klammern
 - Bleibe neutral und objektiv
 - Erfinde KEINE Informationen
-- Länge: 200-400 Wörter"""
+- Passe die Länge an die Dokumentkomplexität an (300-800 Wörter)
+- Bei umfangreichen Dokumenten (10+ Seiten) ist eine ausführlichere Analyse erwünscht"""
 
 
 def build_paper_summary_user_prompt(

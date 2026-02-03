@@ -110,9 +110,11 @@ class SummaryService:
             logger.info(f"Generating summary for paper {paper.id} ({paper.reference})")
 
             # Call AI provider
+            # Kimi K2 Thinking needs high max_tokens - the thinking process
+            # can use 10k+ tokens before producing the actual answer
             response = self.provider.chat_completion(
                 messages=messages,
-                max_tokens=1500,
+                max_tokens=32000,
                 temperature=0.3,
             )
 

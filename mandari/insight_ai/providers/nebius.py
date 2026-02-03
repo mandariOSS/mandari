@@ -136,22 +136,21 @@ class NebiusProvider(AbstractAIProvider):
             message = choices[0].get("message", {})
             logger.debug(f"Message keys: {list(message.keys())}")
 
-            # Extract content - try multiple fields
-            content = ""
+            # Extract content from the response
+            # Kimi K2 Thinking: content has the answer, reasoning_content has the thinking
+            content = message.get("content") or ""
 
-            # 1. Standard content field
-            if message.get("content"):
-                content = message["content"]
-                logger.info("Using standard message.content")
+            # Log reasoning length for debugging (but don't use it as content)
+            reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
+            if reasoning:
+                logger.debug(f"Thinking process: {len(reasoning)} chars")
 
-            # 2. reasoning_content field (Kimi K2 Thinking specific)
-            if not content and message.get("reasoning_content"):
-                content = message["reasoning_content"]
-                logger.info("Using reasoning_content from thinking model")
-
-            # 3. Log full message if still empty
+            # If content is still empty, something went wrong
             if not content:
-                logger.warning(f"Empty content! Full message: {json.dumps(message, ensure_ascii=False)[:1000]}")
+                logger.warning(
+                    f"Empty content! This usually means max_tokens was too low. "
+                    f"Reasoning length: {len(reasoning)}, Message keys: {list(message.keys())}"
+                )
 
             # Extract token usage
             usage = data.get("usage", {})
