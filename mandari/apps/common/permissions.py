@@ -36,11 +36,13 @@ PERMISSIONS = {
 
     # === FRAKTIONSSITZUNGEN (Internal faction meetings) ===
     "faction.view_public": "Öffentlichen Teil der Fraktionssitzung anzeigen",
-    "faction.view_non_public": "Nicht-öffentlichen Teil anzeigen (nach Verpflichtung)",
+    "faction.view_non_public": "Nicht-öffentlichen Teil anzeigen (nur Vereidigte)",
     "faction.create": "Fraktionssitzungen erstellen",
     "faction.edit": "Fraktionssitzungen bearbeiten",
     "faction.delete": "Fraktionssitzungen löschen",
-    "faction.manage": "Fraktionssitzungen vollständig verwalten",
+    "faction.start": "Fraktionssitzung starten/beenden",
+    "faction.invite": "Einladungen zu Fraktionssitzungen versenden",
+    "faction.manage": "Fraktionssitzungen vollständig verwalten (inkl. Status)",
 
     # === TAGESORDNUNG (Agenda) ===
     "agenda.view": "Tagesordnung anzeigen",
@@ -148,7 +150,8 @@ PERMISSION_CATEGORIES = {
         "icon": "groups",
         "permissions": [
             "faction.view_public", "faction.view_non_public",
-            "faction.create", "faction.edit", "faction.delete", "faction.manage",
+            "faction.create", "faction.edit", "faction.delete",
+            "faction.start", "faction.invite", "faction.manage",
         ],
     },
     "agenda": {
@@ -290,7 +293,8 @@ DEFAULT_ROLES = {
             "dashboard.view",
             # Faction meetings - full control
             "faction.view_public", "faction.view_non_public",
-            "faction.create", "faction.edit", "faction.delete", "faction.manage",
+            "faction.create", "faction.edit", "faction.delete",
+            "faction.start", "faction.invite", "faction.manage",
             # Agenda - full control including approval
             "agenda.view", "agenda.create", "agenda.edit", "agenda.delete",
             "agenda.approve", "agenda.reorder",
@@ -351,7 +355,8 @@ DEFAULT_ROLES = {
             # Same as faction_chair
             "dashboard.view",
             "faction.view_public", "faction.view_non_public",
-            "faction.create", "faction.edit", "faction.manage",
+            "faction.create", "faction.edit",
+            "faction.start", "faction.invite", "faction.manage",
             "agenda.view", "agenda.create", "agenda.edit",
             "agenda.approve", "agenda.reorder",
             "voting.participate",
@@ -912,8 +917,17 @@ class PermissionChecker:
         return self.has_permission("speaking.automatic")
 
     def can_access_non_public(self) -> bool:
-        """Check if user can access non-public faction content."""
-        return self.has_permission("faction.view_non_public")
+        """
+        Check if user can access non-public faction content.
+
+        Requires BOTH:
+        - faction.view_non_public permission
+        - is_sworn_in flag on membership (Verpflichtungserklärung)
+        """
+        return (
+            self.has_permission("faction.view_non_public")
+            and getattr(self.membership, "is_sworn_in", False)
+        )
 
     def can_propose_agenda_items(self) -> bool:
         """Check if user can propose agenda items (needs approval)."""
@@ -926,3 +940,23 @@ class PermissionChecker:
     def can_approve_agenda_items(self) -> bool:
         """Check if user can approve agenda proposals."""
         return self.has_permission("agenda.approve")
+
+    def can_start_faction_meeting(self) -> bool:
+        """Check if user can start/end faction meetings."""
+        return self.has_permission("faction.start")
+
+    def can_invite_to_faction_meeting(self) -> bool:
+        """Check if user can send faction meeting invitations."""
+        return self.has_permission("faction.invite")
+
+    def can_manage_faction_meeting(self) -> bool:
+        """Check if user can fully manage faction meetings (status changes, etc.)."""
+        return self.has_permission("faction.manage")
+
+    def can_create_protocols(self) -> bool:
+        """Check if user can create protocols during meetings."""
+        return self.has_permission("protocols.create")
+
+    def can_edit_protocols(self) -> bool:
+        """Check if user can edit protocols after meetings."""
+        return self.has_permission("protocols.edit")

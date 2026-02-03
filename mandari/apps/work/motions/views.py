@@ -717,7 +717,7 @@ class MotionSettingsView(WorkViewMixin, TemplateView):
     """Overview of motion/document settings."""
 
     template_name = "work/motions/settings/index.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -742,7 +742,7 @@ class MotionTypeListView(WorkViewMixin, TemplateView):
     """List and manage document types."""
 
     template_name = "work/motions/settings/types.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -760,7 +760,7 @@ class MotionTypeCreateView(WorkViewMixin, TemplateView):
     """Create a new document type."""
 
     template_name = "work/motions/settings/type_form.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -815,7 +815,7 @@ class MotionTypeEditView(WorkViewMixin, TemplateView):
     """Edit a document type."""
 
     template_name = "work/motions/settings/type_form.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -862,7 +862,7 @@ class MotionTypeEditView(WorkViewMixin, TemplateView):
 class MotionTypeDeleteView(WorkViewMixin, View):
     """Delete a document type."""
 
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def post(self, request, *args, **kwargs):
         motion_type = get_object_or_404(
@@ -889,7 +889,7 @@ class MotionTemplateListView(WorkViewMixin, TemplateView):
     """List and manage document templates."""
 
     template_name = "work/motions/settings/templates.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -907,7 +907,7 @@ class MotionTemplateCreateView(WorkViewMixin, TemplateView):
     """Create a new document template."""
 
     template_name = "work/motions/settings/template_form.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -953,7 +953,7 @@ class MotionTemplateEditView(WorkViewMixin, TemplateView):
     """Edit a document template."""
 
     template_name = "work/motions/settings/template_form.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1009,7 +1009,7 @@ class MotionTemplateEditView(WorkViewMixin, TemplateView):
 class MotionTemplateDeleteView(WorkViewMixin, View):
     """Delete a document template."""
 
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def post(self, request, *args, **kwargs):
         template = get_object_or_404(
@@ -1036,7 +1036,7 @@ class LetterheadListView(WorkViewMixin, TemplateView):
     """List and manage letterheads."""
 
     template_name = "work/motions/settings/letterheads.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1054,7 +1054,7 @@ class LetterheadCreateView(WorkViewMixin, TemplateView):
     """Create a new letterhead."""
 
     template_name = "work/motions/settings/letterhead_form.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1106,7 +1106,7 @@ class LetterheadEditView(WorkViewMixin, TemplateView):
     """Edit a letterhead."""
 
     template_name = "work/motions/settings/letterhead_form.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1163,7 +1163,7 @@ class LetterheadEditView(WorkViewMixin, TemplateView):
 class LetterheadDeleteView(WorkViewMixin, View):
     """Delete a letterhead."""
 
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def post(self, request, *args, **kwargs):
         letterhead = get_object_or_404(

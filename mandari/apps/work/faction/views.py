@@ -34,7 +34,7 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
     """List of faction meetings."""
 
     template_name = "work/faction/list.html"
-    permission_required = "faction.view"
+    permission_required = "faction.view_public"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -219,7 +219,7 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
     """Detail view of a faction meeting."""
 
     template_name = "work/faction/detail.html"
-    permission_required = "faction.view"
+    permission_required = "faction.view_public"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -293,14 +293,13 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
         from datetime import timedelta
         start_allowed_from = meeting.start - timedelta(minutes=30)
         context["can_start"] = (
-            (meeting.created_by == self.membership or self.membership.has_permission("faction.manage")) and
+            self.membership.has_permission("faction.start") and
             meeting.status in ["planned", "invited"] and
             start_allowed_from <= timezone.now()
         )
 
-        # Can manage attendance (Admin, GF, Vorsitzende)
-        context["can_manage_attendance"] = self.membership.has_permission("faction.manage") or \
-            self.membership.role in ["admin", "chair", "vice_chair", "managing_director"]
+        # Can manage attendance (users with faction.manage permission)
+        context["can_manage_attendance"] = self.membership.has_permission("faction.manage")
 
         # Protocol entries for live protocol view
         context["protocol_entries"] = meeting.protocol_entries.select_related(
@@ -520,7 +519,7 @@ class FactionProtocolView(WorkViewMixin, TemplateView):
     """Live protocol view for a faction meeting."""
 
     template_name = "work/faction/protocol.html"
-    permission_required = "faction.protocol"
+    permission_required = "protocols.create"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -706,7 +705,7 @@ class FactionScheduleListView(WorkViewMixin, TemplateView):
 class FactionAttendanceResponseView(WorkViewMixin, View):
     """API endpoint for attendance response (RSVP)."""
 
-    permission_required = "faction.view"
+    permission_required = "faction.view_public"
 
     def post(self, request, *args, **kwargs):
         meeting = get_object_or_404(
@@ -984,7 +983,7 @@ class FactionAgendaItemView(WorkViewMixin, View):
 class FactionInviteView(WorkViewMixin, View):
     """Send invitations for a meeting."""
 
-    permission_required = "faction.manage"
+    permission_required = "faction.invite"
 
     def get(self, request, *args, **kwargs):
         """Handle GET (e.g., after login redirect) - redirect to detail page."""

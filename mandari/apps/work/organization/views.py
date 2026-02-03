@@ -168,7 +168,7 @@ class MemberListView(WorkViewMixin, TemplateView):
     """List of organization members."""
 
     template_name = "work/organization/members.html"
-    permission_required = "organization.members"
+    permission_required = "members.view"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -212,7 +212,7 @@ class MemberDetailView(WorkViewMixin, TemplateView):
     """View and edit a member's details."""
 
     template_name = "work/organization/member_detail.html"
-    permission_required = "organization.members"
+    permission_required = "members.view"
 
     def _find_matching_persons(self, user, body):
         """Findet OParl-Personen anhand des Benutzernamens."""
@@ -439,7 +439,7 @@ class MemberInviteView(WorkViewMixin, TemplateView):
     """Invite a new member."""
 
     template_name = "work/organization/invite.html"
-    permission_required = "organization.invite"
+    permission_required = "members.invite"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -601,7 +601,7 @@ Falls Sie diese Einladung nicht erwartet haben, können Sie diese E-Mail ignorie
 class InvitationResendView(WorkViewMixin, View):
     """Resend an invitation."""
 
-    permission_required = "organization.invite"
+    permission_required = "members.invite"
 
     def post(self, request, *args, **kwargs):
         from apps.tenants.models import UserInvitation
@@ -632,7 +632,7 @@ class InvitationResendView(WorkViewMixin, View):
 class InvitationCancelView(WorkViewMixin, View):
     """Cancel a pending invitation."""
 
-    permission_required = "organization.invite"
+    permission_required = "members.invite"
 
     def post(self, request, *args, **kwargs):
         from apps.tenants.models import UserInvitation
@@ -780,7 +780,7 @@ class RoleListView(WorkViewMixin, TemplateView):
     """List and manage roles."""
 
     template_name = "work/organization/roles.html"
-    permission_required = "organization.roles"
+    permission_required = "organization.manage_roles"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1099,7 +1099,7 @@ class CouncilPartyListView(WorkViewMixin, TemplateView):
     """List and manage council parties for coalition settings."""
 
     template_name = "work/organization/parties.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1139,7 +1139,7 @@ class CouncilPartyCreateView(WorkViewMixin, TemplateView):
     """Create a new council party."""
 
     template_name = "work/organization/party_form.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1183,7 +1183,7 @@ class CouncilPartyEditView(WorkViewMixin, TemplateView):
     """Edit an existing council party."""
 
     template_name = "work/organization/party_form.html"
-    permission_required = "organization.settings"
+    permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

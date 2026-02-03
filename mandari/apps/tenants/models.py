@@ -592,6 +592,11 @@ class Membership(models.Model):
 
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+    is_sworn_in = models.BooleanField(
+        default=False,
+        verbose_name="Vereidigt",
+        help_text="Zugang zu nicht-öffentlichen Inhalten nach Verpflichtungserklärung"
+    )
 
     # Timestamps
     joined_at = models.DateTimeField(auto_now_add=True, verbose_name="Beigetreten")
