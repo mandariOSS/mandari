@@ -290,35 +290,25 @@
         }
 
         # Try normal migration first
-        if run_django python manage.py migrate --noinput 2>&1; then
+        echo "Running migrations..."
+        if run_django python manage.py migrate --noinput 2>&1 | tee /tmp/migrate.log; then
           echo "✅ Migrations completed successfully"
           exit 0
         fi
 
-        # If failed, check for DuplicateColumn errors and fake those migrations
-        echo "⚠️ Normal migration failed, checking for schema conflicts..."
-
-        # Get list of pending migrations
-        PENDING=$(run_django python manage.py showmigrations --plan 2>&1 | grep '\[ \]' | awk '{print $2}' || true)
-
-        if [ -n "$PENDING" ]; then
-          echo "Pending migrations: $PENDING"
-          # Try to fake migrations that have schema conflicts (columns already exist from ingestor)
-          for migration in $PENDING; do
-            APP=$(echo "$migration" | cut -d. -f1)
-            NAME=$(echo "$migration" | cut -d. -f2)
-            echo "Attempting migration: $APP $NAME"
-
-            # Try normal migrate first, if fails with DuplicateColumn, fake it
-            if ! run_django python manage.py migrate "$APP" "$NAME" --noinput 2>&1; then
-              echo "  -> Faking migration $APP $NAME (schema likely exists from ingestor)"
-              run_django python manage.py migrate "$APP" "$NAME" --fake --noinput
-            fi
-          done
+        # Check if failure was due to DuplicateColumn (schema created by ingestor)
+        if grep -q "DuplicateColumn\|already exists" /tmp/migrate.log; then
+          echo "⚠️ Schema conflict detected (columns exist from ingestor), faking insight_core migrations..."
+          run_django python manage.py migrate insight_core --fake --noinput
+          # Retry full migration
+          run_django python manage.py migrate --noinput
+          exit $?
         fi
 
-        # Final verification
-        run_django python manage.py migrate --noinput
+        # For other failures, just fail
+        echo "❌ Migration failed"
+        cat /tmp/migrate.log
+        exit 1
       args:
         executable: /bin/bash
       register: migration_result
