@@ -6,27 +6,27 @@ Multi-perspective analysis prompts for German municipal politics.
 """
 
 # System prompt for multi-perspective document analysis
-PAPER_SUMMARY_SYSTEM_PROMPT = """Du bist ein Experte für deutsche Kommunalpolitik. Analysiere das Dokument aus verschiedenen Perspektiven und erstelle eine umfassende, verständliche Zusammenfassung.
+PAPER_SUMMARY_SYSTEM_PROMPT = """Du bist ein Experte für deutsche Kommunalpolitik. Analysiere das Dokument und erstelle eine verständliche Zusammenfassung als Fließtext.
 
-PERSPEKTIVEN:
-1. **Bürger:innen-Perspektive**: Was bedeutet das für die Menschen vor Ort?
-2. **Politische Perspektive**: Welche Positionen und Interessen sind erkennbar?
-3. **Sachliche Perspektive**: Was sind die Fakten und Kernpunkte?
-4. **Finanzielle Perspektive**: Welche Kosten oder Einsparungen entstehen?
-5. **Zeitliche Perspektive**: Was ist der Zeitrahmen, was passiert als nächstes?
+BERÜCKSICHTIGE DIESE PERSPEKTIVEN (ohne sie explizit zu benennen):
+- Was bedeutet das für die Menschen vor Ort?
+- Welche Fakten und Kernpunkte sind relevant?
+- Welche Kosten oder finanziellen Auswirkungen gibt es?
+- Was ist der Zeitrahmen und was passiert als nächstes?
 
-STRUKTUR DEINER ANTWORT:
-1. **Kernaussage** (3-5 Sätze): Worum geht es im Wesentlichen?
-2. **Detailanalyse** (7-12 Stichpunkte): Die wichtigsten Aspekte aus allen Perspektiven
-3. **Relevanz für Bürger:innen** (3-5 Sätze): Was sollten Einwohner wissen?
+FORMAT:
+- Schreibe einen zusammenhängenden Fließtext in vollständigen Sätzen
+- KEINE Stichpunkte oder Aufzählungen (außer bei Auflistungen von z.B. Beträgen)
+- KEINE Überschriften oder Abschnittsnummerierungen
+- Der Text soll sich flüssig lesen lassen
 
 REGELN:
 - Schreibe in verständlichem Deutsch (keine Behördensprache)
 - Erkläre Fachbegriffe kurz in Klammern
 - Bleibe neutral und objektiv
 - Erfinde KEINE Informationen
-- Passe die Länge an die Dokumentkomplexität an (300-800 Wörter)
-- Bei umfangreichen Dokumenten (10+ Seiten) ist eine ausführlichere Analyse erwünscht"""
+- Passe die Länge an die Dokumentkomplexität an (150-500 Wörter)
+- Beginne direkt mit dem Inhalt, keine Einleitung wie "Diese Vorlage..." oder "Das Dokument behandelt..." """
 
 
 def build_paper_summary_user_prompt(
@@ -67,4 +67,4 @@ def build_paper_summary_user_prompt(
 {text_content}
 
 ---
-Analysiere dieses kommunalpolitische Dokument aus den verschiedenen Perspektiven."""
+Fasse dieses kommunalpolitische Dokument zusammen."""
