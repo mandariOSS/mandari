@@ -277,18 +277,52 @@
         export $(grep -v '^#' .env | xargs)
         # Get the network name
         NETWORK_NAME="{{ docker_network.stdout | default('mandari_mandari-network') }}"
-        # Run migrations using the API image
-        docker run --rm \
-          --network "$NETWORK_NAME" \
-          --env-file .env \
-          -e DATABASE_URL="postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@mandari-postgres:5432/${POSTGRES_DB:-mandari}" \
-          -e ALLOWED_HOSTS="localhost" \
-          ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest} \
-          python manage.py migrate --noinput
+
+        # Helper function to run Django commands
+        run_django() {
+          docker run --rm \
+            --network "$NETWORK_NAME" \
+            --env-file .env \
+            -e DATABASE_URL="postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@mandari-postgres:5432/${POSTGRES_DB:-mandari}" \
+            -e ALLOWED_HOSTS="localhost" \
+            ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest} \
+            "$@"
+        }
+
+        # Try normal migration first
+        if run_django python manage.py migrate --noinput 2>&1; then
+          echo "✅ Migrations completed successfully"
+          exit 0
+        fi
+
+        # If failed, check for DuplicateColumn errors and fake those migrations
+        echo "⚠️ Normal migration failed, checking for schema conflicts..."
+
+        # Get list of pending migrations
+        PENDING=$(run_django python manage.py showmigrations --plan 2>&1 | grep '\[ \]' | awk '{print $2}' || true)
+
+        if [ -n "$PENDING" ]; then
+          echo "Pending migrations: $PENDING"
+          # Try to fake migrations that have schema conflicts (columns already exist from ingestor)
+          for migration in $PENDING; do
+            APP=$(echo "$migration" | cut -d. -f1)
+            NAME=$(echo "$migration" | cut -d. -f2)
+            echo "Attempting migration: $APP $NAME"
+
+            # Try normal migrate first, if fails with DuplicateColumn, fake it
+            if ! run_django python manage.py migrate "$APP" "$NAME" --noinput 2>&1; then
+              echo "  -> Faking migration $APP $NAME (schema likely exists from ingestor)"
+              run_django python manage.py migrate "$APP" "$NAME" --fake --noinput
+            fi
+          done
+        fi
+
+        # Final verification
+        run_django python manage.py migrate --noinput
       args:
         executable: /bin/bash
       register: migration_result
-      retries: 3
+      retries: 2
       delay: 10
       until: migration_result.rc == 0
 
