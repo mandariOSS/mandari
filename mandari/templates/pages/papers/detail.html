@@ -64,18 +64,62 @@
                 </div>
                 <div id="paper-summary" class="px-6 py-4">
                     {% if paper.summary %}
-                        <p class="text-gray-700 dark:text-gray-300">{{ paper.summary }}</p>
+                        <div class="prose prose-sm dark:prose-invert max-w-none">
+                            {{ paper.summary|linebreaks }}
+                        </div>
                     {% else %}
-                        <button hx-get="{% url 'insight_core:insight:paper_summary' paper.id %}"
-                                hx-target="#paper-summary"
-                                hx-swap="innerHTML"
-                                class="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
-                            <i data-lucide="sparkles" class="w-4 h-4"></i>
-                            Zusammenfassung generieren
-                        </button>
-                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                            Klicken Sie, um eine KI-Zusammenfassung dieses Vorgangs zu erstellen.
-                        </p>
+                        <div x-data="{ loading: false, elapsed: 0, interval: null }"
+                             x-init="$watch('loading', value => {
+                                 if (value) {
+                                     elapsed = 0;
+                                     interval = setInterval(() => elapsed++, 1000);
+                                 } else if (interval) {
+                                     clearInterval(interval);
+                                 }
+                             })">
+                            <button hx-get="{% url 'insight_core:insight:paper_summary' paper.id %}"
+                                    hx-target="#paper-summary"
+                                    hx-swap="innerHTML"
+                                    hx-request="timeout:300000"
+                                    @htmx:before-request="loading = true"
+                                    @htmx:after-request="loading = false"
+                                    x-show="!loading"
+                                    class="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+                                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                                Zusammenfassung generieren
+                            </button>
+                            <p x-show="!loading" class="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                                Klicken Sie, um eine KI-Zusammenfassung dieses Vorgangs zu erstellen.
+                            </p>
+
+                            <!-- Loading State -->
+                            <div x-show="loading" x-cloak class="space-y-4">
+                                <div class="flex items-center gap-3">
+                                    <svg class="animate-spin h-6 w-6 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <div>
+                                        <p class="font-medium text-gray-900 dark:text-white">KI-Analyse läuft...</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                                            <span x-text="elapsed + 's'"></span> vergangen
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 text-sm">
+                                    <p class="font-medium text-blue-800 dark:text-blue-300 mb-2">Was passiert gerade?</p>
+                                    <ul class="space-y-1 text-blue-700 dark:text-blue-400">
+                                        <li x-show="elapsed < 5">📄 Dokumente werden analysiert...</li>
+                                        <li x-show="elapsed >= 5 && elapsed < 30">🤔 KI denkt nach (Reasoning-Modell)...</li>
+                                        <li x-show="elapsed >= 30 && elapsed < 90">✍️ Zusammenfassung wird geschrieben...</li>
+                                        <li x-show="elapsed >= 90">⏳ Das dauert etwas länger bei komplexen Dokumenten...</li>
+                                    </ul>
+                                    <p class="mt-2 text-xs text-blue-600 dark:text-blue-500">
+                                        Dieser Vorgang kann 1-3 Minuten dauern. Bitte lassen Sie die Seite geöffnet.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                     {% endif %}
                 </div>
             </div>

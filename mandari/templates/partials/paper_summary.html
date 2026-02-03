@@ -1,13 +1,31 @@
 {% if summary %}
 <div class="prose prose-sm dark:prose-invert max-w-none">
-    <p>{{ summary }}</p>
+    {{ summary|linebreaks }}
 </div>
+<p class="text-xs text-gray-400 dark:text-gray-500 mt-4 flex items-center gap-1">
+    <i data-lucide="sparkles" class="w-3 h-3"></i>
+    Generiert mit KI · Die Zusammenfassung kann Fehler enthalten
+</p>
 {% elif error %}
-<div class="flex items-start gap-3 text-amber-600 dark:text-amber-400">
-    <i data-lucide="alert-triangle" class="w-5 h-5 flex-shrink-0 mt-0.5"></i>
-    <p class="text-sm">{{ error }}</p>
+<div class="bg-red-50 dark:bg-red-900/20 rounded-lg p-4">
+    <div class="flex items-start gap-3">
+        <i data-lucide="alert-triangle" class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5"></i>
+        <div>
+            <p class="font-medium text-red-800 dark:text-red-300">Zusammenfassung fehlgeschlagen</p>
+            <p class="text-sm text-red-700 dark:text-red-400 mt-1">{{ error }}</p>
+        </div>
+    </div>
+    <button hx-get="{% url 'insight_core:insight:paper_summary' paper.id %}"
+            hx-target="#paper-summary"
+            hx-swap="innerHTML"
+            hx-request="timeout:300000"
+            class="mt-4 inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/40 hover:bg-red-200 dark:hover:bg-red-900/60 text-red-700 dark:text-red-300 rounded-lg transition-colors">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        Erneut versuchen
+    </button>
 </div>
 {% else %}
+<!-- Fallback loading state (should rarely be shown) -->
 <div class="flex items-center justify-center py-4">
     <svg class="animate-spin h-6 w-6 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
