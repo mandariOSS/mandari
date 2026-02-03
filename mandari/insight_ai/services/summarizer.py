@@ -90,6 +90,33 @@ class SummaryService:
                 "Dateien oder die Textextraktion ist fehlgeschlagen."
             )
 
+        # Collect metadata
+        body_name = None
+        if paper.body:
+            body_name = paper.body.name or paper.body.short_name
+
+        # Get organizations from consultations via meetings
+        organizations = set()
+        try:
+            from insight_core.models import OParlMeeting
+
+            # Get meeting external IDs from consultations
+            meeting_ext_ids = paper.consultations.values_list(
+                'meeting_external_id', flat=True
+            ).distinct()[:10]
+
+            # Find meetings and their organizations
+            meetings = OParlMeeting.objects.filter(
+                external_id__in=[m for m in meeting_ext_ids if m]
+            ).prefetch_related('organizations')
+
+            for meeting in meetings:
+                for org in meeting.organizations.all():
+                    if org.name:
+                        organizations.add(org.name)
+        except Exception as e:
+            logger.debug(f"Could not get organizations: {e}")
+
         # Build prompts
         system_prompt = PAPER_SUMMARY_SYSTEM_PROMPT
         user_prompt = build_paper_summary_user_prompt(
@@ -98,6 +125,8 @@ class SummaryService:
             reference=paper.reference,
             date=str(paper.date) if paper.date else None,
             text_content=text_content,
+            body_name=body_name,
+            organizations=list(organizations) if organizations else None,
         )
 
         # Create messages

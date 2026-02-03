@@ -35,6 +35,8 @@ def build_paper_summary_user_prompt(
     reference: str | None,
     date: str | None,
     text_content: str,
+    body_name: str | None = None,
+    organizations: list[str] | None = None,
 ) -> str:
     """
     Build the user prompt for paper summarization.
@@ -45,20 +47,27 @@ def build_paper_summary_user_prompt(
         reference: Reference number (Aktenzeichen)
         date: Date of the paper
         text_content: Combined text content from all files
+        body_name: Name of the municipality (e.g., "Stadt Münster")
+        organizations: List of committee/organization names
 
     Returns:
         Formatted user prompt string
     """
     # Build metadata section
-    metadata_lines = [f"## Dokument: {paper_name}"]
+    metadata_lines = ["## METADATEN"]
 
+    if body_name:
+        metadata_lines.append(f"**Kommune:** {body_name}")
+    if organizations:
+        metadata_lines.append(f"**Gremien:** {', '.join(organizations)}")
     if paper_type:
-        metadata_lines.append(f"**Typ:** {paper_type}")
+        metadata_lines.append(f"**Dokumenttyp:** {paper_type}")
     if reference:
         metadata_lines.append(f"**Aktenzeichen:** {reference}")
     if date:
         metadata_lines.append(f"**Datum:** {date}")
 
+    metadata_lines.append(f"**Titel:** {paper_name}")
     metadata = "\n".join(metadata_lines)
 
     return f"""{metadata}
