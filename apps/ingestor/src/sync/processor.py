@@ -171,8 +171,8 @@ class ProcessedFile(ProcessedEntity):
     # Back-references (from standalone files fetched via /files endpoint)
     # OParl spec: File objects contain 'paper' and 'meeting' arrays
     # when fetched individually (not embedded)
-    paper_external_ids: list[str] = field(default_factory=list)
-    meeting_external_ids: list[str] = field(default_factory=list)
+    paper_external_ids: list[str] = Field(default_factory=list)
+    meeting_external_ids: list[str] = Field(default_factory=list)
 
 
 class ProcessedLocation(ProcessedEntity):
