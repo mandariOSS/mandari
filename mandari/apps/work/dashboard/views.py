@@ -61,9 +61,9 @@ class DashboardView(WorkViewMixin, TemplateView):
             })
 
         # RIS/Committee meetings (if organization has OParl body)
-        if self.organization.oparl_body:
+        if self.organization.body:
             ris_meetings = OParlMeeting.objects.filter(
-                body=self.organization.oparl_body,
+                body=self.organization.body,
                 start__gte=now,
                 cancelled=False
             ).prefetch_related("organizations").order_by("start")[:5]

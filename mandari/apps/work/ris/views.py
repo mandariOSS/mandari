@@ -232,12 +232,75 @@ class RISPaperDetailView(WorkViewMixin, TemplateView):
             context["files"] = raw_files
             context["files_from_raw_json"] = True
 
-        # Get consultations (related meetings/agenda items)
-        context["consultations"] = paper.consultations.select_related(
-            "paper"
-        ).all()
+        # Get consultations enriched with meeting/agenda item data
+        context["consultations"] = self._get_enriched_consultations(paper)
 
         return context
+
+    def _get_enriched_consultations(self, paper):
+        """
+        Load consultations with resolved meeting and agenda item references.
+
+        OParl structure:
+        - Paper contains consultation objects
+        - Consultation references Meeting and AgendaItem via external_id strings
+        - We resolve these to show the full consultation history
+        """
+        from insight_core.models import OParlMeeting, OParlAgendaItem
+
+        consultations = paper.consultations.all()
+        if not consultations:
+            return []
+
+        # Collect all meeting and agenda item external IDs
+        meeting_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]
+        agenda_item_ids = [c.agenda_item_external_id for c in consultations if c.agenda_item_external_id]
+
+        # Batch lookup for meetings
+        meetings_by_id = {}
+        if meeting_ids:
+            meetings = OParlMeeting.objects.filter(
+                external_id__in=meeting_ids
+            ).prefetch_related('organizations')
+            meetings_by_id = {m.external_id: m for m in meetings}
+
+        # Batch lookup for agenda items
+        agenda_items_by_id = {}
+        if agenda_item_ids:
+            agenda_items = OParlAgendaItem.objects.filter(external_id__in=agenda_item_ids)
+            agenda_items_by_id = {a.external_id: a for a in agenda_items}
+
+        # Build enriched consultation list
+        result = []
+        for consultation in consultations:
+            meeting = meetings_by_id.get(consultation.meeting_external_id)
+            agenda_item = agenda_items_by_id.get(consultation.agenda_item_external_id)
+
+            # Get organization name from meeting's organizations
+            org_name = None
+            if meeting:
+                orgs = meeting.organizations.all()
+                if orgs:
+                    org_name = orgs[0].name or orgs[0].short_name
+
+            result.append({
+                'consultation': consultation,
+                'meeting': meeting,
+                'agenda_item': agenda_item,
+                'date': meeting.start if meeting else None,
+                'organization_name': org_name,
+                'meeting_name': meeting.name if meeting else None,
+                'agenda_number': agenda_item.number if agenda_item else None,
+                'result': getattr(agenda_item, 'result', None) if agenda_item else None,
+                'public': getattr(agenda_item, 'public', True) if agenda_item else True,
+                'role': consultation.role,
+                'authoritative': consultation.authoritative,
+            })
+
+        # Sort by date (oldest first = chronological order)
+        result.sort(key=lambda x: x['date'] or timezone.now(), reverse=False)
+
+        return result
 
 
 class RISMeetingsView(WorkViewMixin, TemplateView):

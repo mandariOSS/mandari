@@ -471,21 +471,30 @@ class PaperComment(EncryptionMixin, models.Model):
 
         if self.visibility == "consulting":
             # Check if the user's organization has a committee that consults on this paper
-            from insight_core.models import OParlConsultation
+            from insight_core.models import OParlMeeting
 
             # Get committees the user's org is assigned to
             user_committees = membership.oparl_committees.all()
             if not user_committees.exists():
                 return membership.organization == self.organization
 
-            committee_external_ids = [c.external_id for c in user_committees if c.external_id]
+            committee_external_ids = set(c.external_id for c in user_committees if c.external_id)
 
             # Check if any consultation for this paper is in one of those committees
-            # Consultations link paper to agenda_item which belongs to a meeting/organization
+            # Consultations link paper to meeting, meeting has organizations
             consultations = self.paper.consultations.all()
-            for consultation in consultations:
-                if consultation.organization_external_id in committee_external_ids:
-                    return True
+            meeting_external_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]
+
+            if meeting_external_ids:
+                # Get meetings with their organizations
+                meetings = OParlMeeting.objects.filter(
+                    external_id__in=meeting_external_ids
+                ).prefetch_related("organizations")
+
+                for meeting in meetings:
+                    for org in meeting.organizations.all():
+                        if org.external_id in committee_external_ids:
+                            return True
 
             # Fallback: same organization always sees it
             return membership.organization == self.organization

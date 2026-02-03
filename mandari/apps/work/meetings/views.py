@@ -36,7 +36,10 @@ def prefetch_papers_for_agenda_items(agenda_items):
     """
     Pre-fetch papers for a list of agenda items via consultations.
     Returns a dict mapping agenda_item.id to list of papers with their files.
+    Papers are annotated with consultation_count to avoid N+1 queries.
     """
+    from django.db.models import Count
+
     if not agenda_items:
         return {}
 
@@ -48,7 +51,22 @@ def prefetch_papers_for_agenda_items(agenda_items):
     # Get consultations with papers for these agenda items
     consultations = OParlConsultation.objects.filter(
         agenda_item_external_id__in=external_ids
-    ).select_related('paper').prefetch_related('paper__files')
+    ).select_related('paper').prefetch_related('paper__files', 'paper__consultations')
+
+    # Collect unique paper IDs for annotation
+    paper_ids = set()
+    for consultation in consultations:
+        if consultation.paper:
+            paper_ids.add(consultation.paper.id)
+
+    # Get papers with consultation count annotation
+    paper_consultation_counts = {}
+    if paper_ids:
+        from insight_core.models import OParlPaper
+        papers_with_counts = OParlPaper.objects.filter(
+            id__in=paper_ids
+        ).annotate(consultation_count=Count('consultations'))
+        paper_consultation_counts = {p.id: p.consultation_count for p in papers_with_counts}
 
     # Build mapping: external_id -> list of papers
     papers_by_ext_id = {}
@@ -57,8 +75,12 @@ def prefetch_papers_for_agenda_items(agenda_items):
             ext_id = consultation.agenda_item_external_id
             if ext_id not in papers_by_ext_id:
                 papers_by_ext_id[ext_id] = []
-            # Avoid duplicates
+            # Avoid duplicates and attach consultation count
             if consultation.paper not in papers_by_ext_id[ext_id]:
+                # Attach pre-computed consultation count to avoid N+1
+                consultation.paper._prefetched_consultation_count = paper_consultation_counts.get(
+                    consultation.paper.id, 0
+                )
                 papers_by_ext_id[ext_id].append(consultation.paper)
 
     # Build mapping: agenda_item.id -> list of papers
@@ -220,7 +242,8 @@ class MeetingListView(WorkViewMixin, TemplateView):
             # Enhance meeting objects with display info
             for meeting in meetings:
                 meeting.user_prepared = meeting.id in prepared_meeting_ids
-                meeting.agenda_count = meeting.agenda_items.count()
+                # Use len() on prefetched queryset instead of count() to avoid N+1
+                meeting.agenda_count = len(meeting.agenda_items.all())
                 # Get committee name from raw_json
                 meeting.committee_name = self._get_organization_name(meeting, org_cache)
 
@@ -530,7 +553,8 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
                         "name": item["primary_paper"].name or "Ohne Titel",
                         "reference": item["primary_paper"].reference or "",
                         "paperType": item["primary_paper"].paper_type or "",
-                        "consultationCount": item["primary_paper"].consultations.count() if item["primary_paper"] else 0,
+                        # Use prefetched count to avoid N+1 queries
+                        "consultationCount": getattr(item["primary_paper"], "_prefetched_consultation_count", 0) if item["primary_paper"] else 0,
                     } if item["primary_paper"] else None,
                     "hasFiles": item["has_files"],
                     "files": [
