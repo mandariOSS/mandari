@@ -217,7 +217,7 @@ services:
       --full-sync-hour ${INGESTOR_FULL_SYNC_HOUR:-3}
       --concurrent ${INGESTOR_CONCURRENT:-20}
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://redis:6379
       MEILISEARCH_URL: http://meilisearch:7700
       MEILISEARCH_KEY: ${MEILISEARCH_KEY}
