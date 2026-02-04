@@ -37,13 +37,6 @@ class LoginView(View):
         if request.user.is_authenticated:
             return redirect(self.get_success_url(request))
 
-        # Clear any stale messages from previous sessions
-        # This prevents old messages from other pages showing up on login
-        storage = messages.get_messages(request)
-        for _ in storage:
-            pass  # Iterate through to mark as read/consumed
-        storage.used = True
-
         form = LoginForm()
         next_url = request.GET.get("next", "")
 

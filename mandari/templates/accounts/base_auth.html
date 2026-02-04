@@ -51,20 +51,8 @@
 
             <!-- Content -->
             <div class="bg-white dark:bg-gray-800 px-8 py-8 shadow-2xl">
-                {% if messages %}
-                <div class="mb-6 space-y-3">
-                    {% for message in messages %}
-                    <div class="p-4 rounded-lg text-sm
-                        {% if message.tags == 'error' %}bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800
-                        {% elif message.tags == 'success' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800
-                        {% elif message.tags == 'warning' %}bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800
-                        {% else %}bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800{% endif %}">
-                        {{ message }}
-                    </div>
-                    {% endfor %}
-                </div>
-                {% endif %}
-
+                {# Auth pages should NOT display general messages - those belong in the work area #}
+                {# Login-specific errors are shown via form.non_field_errors in the login template #}
                 {% block content %}{% endblock %}
             </div>
 
