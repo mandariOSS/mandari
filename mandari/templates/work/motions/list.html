@@ -180,8 +180,18 @@
         {% endfor %}
     </div>
 
-    <!-- List View -->
-    <div x-show="viewMode === 'list'" x-cloak class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <!-- DEBUG: Show count -->
+    <div class="bg-yellow-100 p-4 mb-4 rounded">
+        <strong>DEBUG:</strong> motions count = {{ motions|length }},
+        stats.total = {{ stats.total }},
+        selected_type = "{{ selected_type }}",
+        selected_status = "{{ selected_status }}",
+        search_query = "{{ search_query }}",
+        filter_mine = {{ filter_mine|yesno:"true,false" }}
+    </div>
+
+    <!-- List View (default - no x-cloak so it shows even if Alpine fails) -->
+    <div x-show="viewMode === 'list'" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="divide-y divide-gray-100 dark:divide-gray-700">
             {% for motion in motions %}
             <div class="group relative">
