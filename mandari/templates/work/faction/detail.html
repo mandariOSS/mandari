@@ -25,17 +25,12 @@
 <div class="flex items-center gap-2 flex-wrap" x-data>
     {# Status-based Primary Actions #}
     {% if meeting.status == 'ongoing' %}
-        <a href="{% url 'work:faction_protocol' org_slug=organization.slug meeting_id=meeting.id %}"
-           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
-            <i data-lucide="file-text" class="w-4 h-4"></i>
-            Protokoll
-        </a>
         <form method="post" class="inline" onsubmit="return confirm('Sitzung wirklich beenden?')">
             {% csrf_token %}
             <input type="hidden" name="action" value="end_meeting">
             <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100">
                 <i data-lucide="square" class="w-4 h-4"></i>
-                Beenden
+                Sitzung beenden
             </button>
         </form>
     {% elif can_start %}
@@ -59,7 +54,7 @@
         </form>
     {% endif %}
 
-    {# Always visible: Edit, Protocol, Delete #}
+    {# Edit & Invite #}
     {% if can_edit %}
         <button type="button" @click="$dispatch('open-edit-modal')"
            class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50">
@@ -68,20 +63,12 @@
         </button>
     {% endif %}
 
-    {% if meeting.status != 'ongoing' %}
-        <a href="{% url 'work:faction_protocol' org_slug=organization.slug meeting_id=meeting.id %}"
-           class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50">
-            <i data-lucide="file-text" class="w-4 h-4"></i>
-            Protokoll
-        </a>
-    {% endif %}
-
-    {% if can_edit and meeting.status not in 'completed,cancelled' %}
-        <form method="post" class="inline" onsubmit="return confirm('Sitzung unwiderruflich loschen?')">
+    {% if not meeting.invitation_sent and can_edit and meeting.status == 'draft' %}
+        <form method="post" action="{% url 'work:faction_invite' org_slug=organization.slug meeting_id=meeting.id %}" class="inline">
             {% csrf_token %}
-            <input type="hidden" name="action" value="delete">
-            <button type="submit" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-red-50">
-                <i data-lucide="trash-2" class="w-4 h-4"></i>
+            <button type="submit" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100">
+                <i data-lucide="send" class="w-4 h-4"></i>
+                Einladen
             </button>
         </form>
     {% endif %}
@@ -99,7 +86,7 @@
 {% block work_content %}
 <div x-data="factionMeeting()" @open-edit-modal.window="showMeetingEditModal = true" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-    {# ===== LEFT COLUMN: Agenda ===== #}
+    {# ===== LEFT COLUMN: Agenda with inline Protocol ===== #}
     <div class="lg:col-span-2 space-y-4">
 
         {# Meeting Info Bar #}
@@ -121,6 +108,41 @@
                     </span>
                     {% endif %}
                 </div>
+
+                {# Collapsible Attendance Summary #}
+                <button @click="showAttendance = !showAttendance" class="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700">
+                    <span class="flex items-center gap-1">
+                        <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 text-green-700 text-xs font-medium">{{ attendance_stats.present|default:0 }}</span>
+                        <span class="text-gray-400">/</span>
+                        <span class="text-gray-600">{{ attendances|length }}</span>
+                    </span>
+                    <i data-lucide="users" class="w-4 h-4"></i>
+                    <i data-lucide="chevron-down" class="w-3 h-3 transition-transform" :class="showAttendance ? 'rotate-180' : ''"></i>
+                </button>
+            </div>
+
+            {# Expandable Attendance List #}
+            <div x-show="showAttendance" x-collapse class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div class="flex flex-wrap gap-2">
+                    {% for attendance in attendances %}
+                    <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs
+                        {% if attendance.status == 'present' %}bg-green-100 text-green-700
+                        {% elif attendance.status == 'absent' %}bg-gray-100 text-gray-500
+                        {% elif attendance.status == 'excused' %}bg-amber-100 text-amber-700
+                        {% elif attendance.status == 'confirmed' %}bg-blue-100 text-blue-700
+                        {% else %}bg-gray-50 text-gray-500{% endif %}">
+                        {% if attendance.status == 'present' %}<i data-lucide="check" class="w-3 h-3"></i>{% endif %}
+                        {{ attendance.get_display_name }}
+                        {% if not attendance.membership.is_sworn_in %}<i data-lucide="alert-circle" class="w-3 h-3 text-amber-500" title="Nicht vereidigt"></i>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if can_manage_attendance %}
+                <button @click="showAddAttendeeModal = true" class="mt-2 text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1">
+                    <i data-lucide="user-plus" class="w-3 h-3"></i>
+                    Teilnehmer hinzufugen
+                </button>
+                {% endif %}
             </div>
 
             {% if meeting.previous_meeting and not meeting.previous_meeting.protocol_approved %}
@@ -131,19 +153,124 @@
             {% endif %}
         </div>
 
-        {# ===== AGENDA SECTION ===== #}
+        {# ===== AGENDA SECTION with Protocol ===== #}
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
             <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                     <i data-lucide="list-ordered" class="w-5 h-5 text-primary-600"></i>
-                    Tagesordnung
+                    Tagesordnung {% if meeting.status == 'ongoing' %}<span class="text-green-600">& Protokoll</span>{% endif %}
                 </h3>
             </div>
 
             <div class="divide-y divide-gray-100 dark:divide-gray-700">
                 {# Public Agenda Items #}
                 {% for item in public_agenda_items %}
-                {% include "work/faction/_agenda_item_row.html" with item=item can_edit=can_edit meeting=meeting is_first=forloop.first is_last=forloop.last item_count=public_agenda_items|length %}
+                <div class="group" x-data="{ expanded: false, showProtocol: false }">
+                    <div class="p-4 flex items-start gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                         @click="expanded = !expanded">
+                        <span class="flex-shrink-0 w-8 h-8 rounded-lg bg-primary-100 dark:bg-primary-900/30 text-primary-600 flex items-center justify-center text-sm font-semibold">
+                            {{ item.number }}
+                        </span>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-start justify-between gap-2">
+                                <div>
+                                    <h4 class="font-medium text-gray-900 dark:text-white">{{ item.title }}</h4>
+                                    {% if item.get_description_decrypted %}
+                                    <p class="text-sm text-gray-500 mt-0.5">{{ item.get_description_decrypted|truncatewords:20 }}</p>
+                                    {% endif %}
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    {% if item.has_decision %}
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">
+                                        <i data-lucide="vote" class="w-3 h-3"></i>
+                                        {{ item.votes_for }}/{{ item.votes_against }}/{{ item.votes_abstain }}
+                                    </span>
+                                    {% endif %}
+                                    <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 transition-transform" :class="expanded ? 'rotate-180' : ''"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {# Expanded: Protocol entries and form #}
+                    <div x-show="expanded" x-collapse class="border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                        {# Existing protocol entries for this item #}
+                        {% for entry in item.protocol_entries.all %}
+                        <div class="px-4 py-2 flex items-start gap-3 text-sm border-b border-gray-100 dark:border-gray-800 last:border-0">
+                            <span class="flex-shrink-0 mt-0.5">
+                                {% if entry.entry_type == 'speech' %}<i data-lucide="mic" class="w-4 h-4 text-blue-500"></i>
+                                {% elif entry.entry_type == 'decision' %}<i data-lucide="gavel" class="w-4 h-4 text-green-500"></i>
+                                {% elif entry.entry_type == 'action' %}<i data-lucide="check-square" class="w-4 h-4 text-orange-500"></i>
+                                {% else %}<i data-lucide="file-text" class="w-4 h-4 text-gray-400"></i>{% endif %}
+                            </span>
+                            <div class="flex-1 min-w-0">
+                                {% if entry.speaker %}<span class="font-medium text-gray-700 dark:text-gray-300">{{ entry.speaker.user.get_display_name }}:</span>{% endif %}
+                                <span class="text-gray-600 dark:text-gray-400">{{ entry.get_content_decrypted }}</span>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="px-4 py-3 text-sm text-gray-500 text-center">
+                            <i data-lucide="file-text" class="w-4 h-4 inline mr-1"></i>
+                            Noch keine Protokolleinträge
+                        </div>
+                        {% endfor %}
+
+                        {# Add protocol entry form (when meeting is ongoing or completed and protocol not approved) #}
+                        {% if meeting.status == 'ongoing' or meeting.status == 'completed' and not meeting.protocol_approved %}
+                        <div class="p-3 border-t border-gray-200 dark:border-gray-700">
+                            <form method="post" class="space-y-2">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="add_entry">
+                                <input type="hidden" name="agenda_item_id" value="{{ item.id }}">
+                                <div class="flex gap-2">
+                                    <select name="entry_type" class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
+                                        <option value="note">Notiz</option>
+                                        <option value="speech">Redebeitrag</option>
+                                        <option value="decision">Beschluss</option>
+                                        <option value="action">Aufgabe</option>
+                                    </select>
+                                    <select name="speaker" class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 flex-1">
+                                        <option value="">-- Sprecher --</option>
+                                        {% for att in attendances %}
+                                        {% if att.membership and att.status == 'present' %}
+                                        <option value="{{ att.membership.id }}">{{ att.membership.user.get_display_name }}</option>
+                                        {% endif %}
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="flex gap-2">
+                                    <input type="text" name="content" placeholder="Protokolleintrag..." required
+                                           class="flex-1 text-sm px-3 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
+                                    <button type="submit" class="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                                        <i data-lucide="plus" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                        {% endif %}
+
+                        {# Edit/Delete buttons for managers #}
+                        {% if can_edit %}
+                        <div class="px-4 py-2 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                            <button @click="$dispatch('edit-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}', description: '{{ item.get_description_decrypted|default:""|escapejs }}' })"
+                                    class="text-xs text-gray-500 hover:text-primary-600 flex items-center gap-1">
+                                <i data-lucide="edit" class="w-3 h-3"></i> Bearbeiten
+                            </button>
+                            {% if not item.is_approval_item %}
+                            <form method="post" action="{% url 'work:faction_agenda' org_slug=organization.slug meeting_id=meeting.id %}" class="inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="item_id" value="{{ item.id }}">
+                                <button type="submit" onclick="return confirm('TOP wirklich loschen?')"
+                                        class="text-xs text-red-500 hover:text-red-700 flex items-center gap-1">
+                                    <i data-lucide="trash-2" class="w-3 h-3"></i> Loschen
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
                 {% empty %}
                 <div class="p-8 text-center text-gray-500">
                     <i data-lucide="list" class="w-12 h-12 mx-auto mb-3 text-gray-300"></i>
@@ -151,14 +278,64 @@
                 </div>
                 {% endfor %}
 
-                {# Internal Section #}
-                {% if internal_agenda_items %}
+                {# Internal Section - only for sworn-in users #}
+                {% if internal_agenda_items and can_view_internal %}
                 <div class="p-3 bg-amber-50 dark:bg-amber-900/20 flex items-center gap-2">
                     <i data-lucide="lock" class="w-4 h-4 text-amber-600"></i>
                     <span class="text-sm font-semibold text-amber-700 dark:text-amber-400">Nicht-offentlicher Teil</span>
+                    <span class="text-xs text-amber-600">(nur fur Vereidigte)</span>
                 </div>
                 {% for item in internal_agenda_items %}
-                {% include "work/faction/_agenda_item_row.html" with item=item can_edit=can_edit meeting=meeting is_internal=True is_first=forloop.first is_last=forloop.last item_count=internal_agenda_items|length %}
+                <div class="group" x-data="{ expanded: false }">
+                    <div class="p-4 flex items-start gap-3 cursor-pointer hover:bg-amber-50/50 dark:hover:bg-amber-900/20"
+                         @click="expanded = !expanded">
+                        <span class="flex-shrink-0 w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-600 flex items-center justify-center text-sm font-semibold">
+                            {{ item.number }}
+                        </span>
+                        <div class="flex-1 min-w-0">
+                            <h4 class="font-medium text-gray-900 dark:text-white">{{ item.title }}</h4>
+                            {% if item.get_description_decrypted %}
+                            <p class="text-sm text-gray-500 mt-0.5">{{ item.get_description_decrypted|truncatewords:20 }}</p>
+                            {% endif %}
+                        </div>
+                        <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 transition-transform" :class="expanded ? 'rotate-180' : ''"></i>
+                    </div>
+
+                    {# Expanded content for internal items #}
+                    <div x-show="expanded" x-collapse class="border-t border-amber-100 dark:border-amber-800 bg-amber-50/30 dark:bg-amber-900/10">
+                        {% for entry in item.protocol_entries.all %}
+                        <div class="px-4 py-2 flex items-start gap-3 text-sm border-b border-amber-100 dark:border-amber-800 last:border-0">
+                            <span class="flex-shrink-0 mt-0.5">
+                                {% if entry.entry_type == 'speech' %}<i data-lucide="mic" class="w-4 h-4 text-blue-500"></i>
+                                {% elif entry.entry_type == 'decision' %}<i data-lucide="gavel" class="w-4 h-4 text-green-500"></i>
+                                {% else %}<i data-lucide="file-text" class="w-4 h-4 text-gray-400"></i>{% endif %}
+                            </span>
+                            <div class="flex-1">
+                                {% if entry.speaker %}<span class="font-medium">{{ entry.speaker.user.get_display_name }}:</span>{% endif %}
+                                <span class="text-gray-600 dark:text-gray-400">{{ entry.get_content_decrypted }}</span>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="px-4 py-3 text-sm text-gray-500 text-center">Noch keine Protokolleinträge</div>
+                        {% endfor %}
+
+                        {% if meeting.status == 'ongoing' or meeting.status == 'completed' and not meeting.protocol_approved %}
+                        <div class="p-3 border-t border-amber-200 dark:border-amber-700">
+                            <form method="post" class="flex gap-2">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="add_entry">
+                                <input type="hidden" name="agenda_item_id" value="{{ item.id }}">
+                                <input type="hidden" name="entry_type" value="note">
+                                <input type="text" name="content" placeholder="Protokolleintrag..." required
+                                       class="flex-1 text-sm px-3 py-1.5 border border-amber-200 rounded-lg">
+                                <button type="submit" class="px-3 py-1.5 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700">
+                                    <i data-lucide="plus" class="w-4 h-4"></i>
+                                </button>
+                            </form>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
                 {% endfor %}
                 {% endif %}
             </div>
@@ -171,119 +348,47 @@
                     <i data-lucide="plus" class="w-4 h-4"></i>
                     Offentlicher TOP
                 </button>
+                {% if can_view_internal %}
                 <button @click="showAddModal('internal')"
                         class="py-3 text-sm font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 rounded-lg flex items-center justify-center gap-2">
                     <i data-lucide="plus" class="w-4 h-4"></i>
                     Nicht-offentlicher TOP
                 </button>
+                {% else %}
+                <div class="py-3 text-sm text-gray-400 bg-gray-50 rounded-lg flex items-center justify-center gap-2">
+                    <i data-lucide="lock" class="w-4 h-4"></i>
+                    Nur fur Vereidigte
+                </div>
+                {% endif %}
             </div>
             {% endif %}
         </div>
-    </div>
 
-    {# ===== RIGHT COLUMN: Attendance & Actions ===== #}
-    <div class="space-y-4">
-
-        {# Attendance Management #}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-            <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-                <h4 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <i data-lucide="users" class="w-5 h-5 text-primary-600"></i>
-                    Anwesenheit
-                </h4>
-                {% if can_manage_attendance %}
-                <button @click="showAddAttendeeModal = true"
-                        class="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1">
-                    <i data-lucide="user-plus" class="w-3 h-3"></i>
-                    Gast hinzufugen
+        {# Propose Agenda Item Button (for Sachkundige without direct create permission) #}
+        {% if can_propose_agenda and meeting.status in 'draft,planned,invited' %}
+        <div class="bg-gradient-to-r from-primary-50 to-blue-50 dark:from-primary-900/20 dark:to-blue-900/20 rounded-xl border border-primary-200 dark:border-primary-800 p-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                        <i data-lucide="lightbulb" class="w-4 h-4 text-primary-600"></i>
+                        TOP vorschlagen
+                    </h4>
+                    <p class="text-xs text-gray-500 mt-0.5">Als sachkundige/r Burger*in konnen Sie Themen zur Beratung vorschlagen.</p>
+                </div>
+                <button @click="showProposalModal = true"
+                        class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 flex items-center gap-2">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    Vorschlagen
                 </button>
-                {% endif %}
-            </div>
-
-            {# Attendance Stats #}
-            <div class="p-4 grid grid-cols-4 gap-2 text-center text-xs border-b border-gray-100 dark:border-gray-700">
-                <div class="p-2 bg-green-50 dark:bg-green-900/20 rounded">
-                    <div class="text-lg font-bold text-green-600">{{ attendance_stats.present|default:0 }}</div>
-                    <div class="text-gray-500">Anwesend</div>
-                </div>
-                <div class="p-2 bg-gray-50 dark:bg-gray-900 rounded">
-                    <div class="text-lg font-bold text-gray-600">{{ attendance_stats.absent|default:0 }}</div>
-                    <div class="text-gray-500">Abwesend</div>
-                </div>
-                <div class="p-2 bg-amber-50 dark:bg-amber-900/20 rounded">
-                    <div class="text-lg font-bold text-amber-600">{{ attendance_stats.excused|default:0 }}</div>
-                    <div class="text-gray-500">Entsch.</div>
-                </div>
-                <div class="p-2 bg-blue-50 dark:bg-blue-900/20 rounded">
-                    <div class="text-lg font-bold text-blue-600">{{ attendances|length }}</div>
-                    <div class="text-gray-500">Gesamt</div>
-                </div>
-            </div>
-
-            {# Attendance List with Status Dropdowns #}
-            <div class="max-h-80 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
-                {% for attendance in attendances %}
-                <div class="p-3 flex items-center justify-between gap-3">
-                    <div class="flex items-center gap-2 min-w-0">
-                        <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0
-                            {% if attendance.is_guest %}bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400
-                            {% else %}bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400{% endif %}">
-                            {% if attendance.is_guest %}
-                                <i data-lucide="user" class="w-4 h-4"></i>
-                            {% elif attendance.membership %}
-                                {{ attendance.membership.user.first_name|slice:":1" }}{{ attendance.membership.user.last_name|slice:":1" }}
-                            {% else %}
-                                ?
-                            {% endif %}
-                        </div>
-                        <div class="truncate">
-                            <span class="text-sm text-gray-900 dark:text-white">
-                                {{ attendance.get_display_name }}
-                            </span>
-                            {% if attendance.is_guest %}
-                            <span class="text-xs text-gray-500 ml-1">(Gast)</span>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    {% if can_manage_attendance %}
-                    <form method="post" action="{% url 'work:faction_attendance_status' org_slug=organization.slug meeting_id=meeting.id %}" class="flex-shrink-0">
-                        {% csrf_token %}
-                        <input type="hidden" name="attendance_id" value="{{ attendance.id }}">
-                        <select name="status" onchange="this.form.submit()"
-                                class="text-xs px-2 py-1 border rounded-lg
-                                    {% if attendance.status == 'present' %}bg-green-50 border-green-200 text-green-700
-                                    {% elif attendance.status == 'absent' %}bg-gray-50 border-gray-200 text-gray-700
-                                    {% elif attendance.status == 'excused' %}bg-amber-50 border-amber-200 text-amber-700
-                                    {% else %}bg-blue-50 border-blue-200 text-blue-700{% endif %}">
-                            <option value="invited" {% if attendance.status == 'invited' %}selected{% endif %}>Eingeladen</option>
-                            <option value="confirmed" {% if attendance.status == 'confirmed' %}selected{% endif %}>Zugesagt</option>
-                            <option value="present" {% if attendance.status == 'present' %}selected{% endif %}>Anwesend</option>
-                            <option value="absent" {% if attendance.status == 'absent' %}selected{% endif %}>Abwesend</option>
-                            <option value="excused" {% if attendance.status == 'excused' %}selected{% endif %}>Entschuldigt</option>
-                            <option value="declined" {% if attendance.status == 'declined' %}selected{% endif %}>Abgesagt</option>
-                        </select>
-                    </form>
-                    {% else %}
-                    <span class="text-xs px-2 py-1 rounded-lg
-                        {% if attendance.status == 'present' %}bg-green-100 text-green-700
-                        {% elif attendance.status == 'absent' %}bg-gray-100 text-gray-700
-                        {% elif attendance.status == 'excused' %}bg-amber-100 text-amber-700
-                        {% elif attendance.status == 'confirmed' %}bg-blue-100 text-blue-700
-                        {% else %}bg-gray-100 text-gray-600{% endif %}">
-                        {{ attendance.get_status_display }}
-                    </span>
-                    {% endif %}
-                </div>
-                {% empty %}
-                <div class="p-4 text-center text-sm text-gray-500">
-                    Keine Teilnehmer eingetragen
-                </div>
-                {% endfor %}
             </div>
         </div>
+        {% endif %}
+    </div>
 
-        {# RSVP for current user #}
+    {# ===== RIGHT COLUMN: Protocol Overview & Actions ===== #}
+    <div class="space-y-4">
+
+        {# RSVP for current user (before meeting) #}
         {% if my_attendance and meeting.status in 'draft,planned,invited' %}
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
             <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Meine Teilnahme</h4>
@@ -291,10 +396,10 @@
             <form method="post" action="{% url 'work:faction_respond' org_slug=organization.slug meeting_id=meeting.id %}" class="flex gap-2">
                 {% csrf_token %}
                 <button type="submit" name="status" value="confirmed" class="flex-1 py-2 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100">
-                    Zusagen
+                    <i data-lucide="check" class="w-4 h-4 inline mr-1"></i> Zusagen
                 </button>
                 <button type="submit" name="status" value="declined" class="flex-1 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100">
-                    Absagen
+                    <i data-lucide="x" class="w-4 h-4 inline mr-1"></i> Absagen
                 </button>
             </form>
             {% else %}
@@ -310,40 +415,94 @@
         </div>
         {% endif %}
 
-        {# Proposals Section (for managers) #}
-        {% if can_manage_attendance %}
-        {% with pending_proposals=meeting.agenda_items.all %}
-        {% for item in pending_proposals %}
-        {% if item.proposal_status == 'proposed' %}
-        {% if forloop.first %}
+        {# Protocol Summary (during/after meeting) #}
+        {% if meeting.status in 'ongoing,completed' %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h4 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="file-text" class="w-5 h-5 text-primary-600"></i>
+                    Protokoll
+                </h4>
+                {% if meeting.protocol_approved %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">
+                    <i data-lucide="check-circle" class="w-3 h-3"></i>
+                    Genehmigt
+                </span>
+                {% elif meeting.status == 'completed' %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-700">
+                    <i data-lucide="clock" class="w-3 h-3"></i>
+                    Entwurf
+                </span>
+                {% endif %}
+            </div>
+
+            <div class="p-4 space-y-3 max-h-96 overflow-y-auto">
+                {% for entry in protocol_entries %}
+                <div class="flex items-start gap-2 text-sm">
+                    <span class="flex-shrink-0 mt-0.5">
+                        {% if entry.entry_type == 'speech' %}<i data-lucide="mic" class="w-4 h-4 text-blue-500"></i>
+                        {% elif entry.entry_type == 'decision' %}<i data-lucide="gavel" class="w-4 h-4 text-green-500"></i>
+                        {% elif entry.entry_type == 'action' %}<i data-lucide="check-square" class="w-4 h-4 text-orange-500"></i>
+                        {% else %}<i data-lucide="file-text" class="w-4 h-4 text-gray-400"></i>{% endif %}
+                    </span>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            {% if entry.agenda_item %}<span class="text-xs text-primary-600 font-medium">TOP {{ entry.agenda_item.number }}</span>{% endif %}
+                            {% if entry.speaker %}<span class="text-xs text-gray-500">{{ entry.speaker.user.get_display_name }}</span>{% endif %}
+                        </div>
+                        <p class="text-gray-700 dark:text-gray-300">{{ entry.get_content_decrypted|truncatewords:30 }}</p>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="text-center text-gray-500 py-4">
+                    <i data-lucide="file-text" class="w-8 h-8 mx-auto mb-2 text-gray-300"></i>
+                    <p class="text-sm">Noch keine Einträge</p>
+                </div>
+                {% endfor %}
+            </div>
+
+            {% if meeting.status == 'completed' and not meeting.protocol_approved and can_edit %}
+            <div class="p-3 border-t border-gray-200 dark:border-gray-700">
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="approve_protocol">
+                    <button type="submit" class="w-full py-2 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 flex items-center justify-center gap-2">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                        Protokoll genehmigen
+                    </button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# Pending Proposals (for managers) #}
+        {% if can_approve_proposals and pending_proposals %}
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-amber-200 dark:border-amber-800">
-            <div class="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-t-xl border-b border-amber-200 dark:border-amber-800 flex items-center justify-between">
+            <div class="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-t-xl border-b border-amber-200 dark:border-amber-800">
                 <h4 class="font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-2">
                     <i data-lucide="lightbulb" class="w-5 h-5"></i>
-                    Vorschläge
+                    Vorschläge ({{ pending_proposals|length }})
                 </h4>
             </div>
             <div class="divide-y divide-amber-100 dark:divide-amber-800/50">
-        {% endif %}
+                {% for item in pending_proposals %}
                 <div class="p-4">
-                    <div class="flex items-start justify-between gap-3 mb-2">
-                        <div class="flex-1 min-w-0">
-                            <h5 class="font-medium text-gray-900 dark:text-white text-sm">{{ item.title }}</h5>
-                            {% if item.proposed_by %}
-                            <p class="text-xs text-gray-500 mt-0.5">
-                                von {{ item.proposed_by.user.get_display_name }} am {{ item.proposed_at|date:"d.m.Y" }}
-                            </p>
-                            {% endif %}
-                        </div>
+                    <div class="mb-2">
+                        <h5 class="font-medium text-gray-900 dark:text-white text-sm">{{ item.title }}</h5>
+                        {% if item.proposed_by %}
+                        <p class="text-xs text-gray-500 mt-0.5">
+                            von {{ item.proposed_by.user.get_display_name }} · {{ item.proposed_at|date:"d.m.Y" }}
+                        </p>
+                        {% endif %}
                     </div>
-                    <div class="flex gap-2 mt-3">
+                    <div class="flex gap-2">
                         <form method="post" action="{% url 'work:faction_proposal' org_slug=organization.slug meeting_id=meeting.id %}" class="flex-1">
                             {% csrf_token %}
                             <input type="hidden" name="action" value="accept">
                             <input type="hidden" name="item_id" value="{{ item.id }}">
                             <button type="submit" class="w-full py-1.5 text-xs font-medium text-green-700 bg-green-50 rounded hover:bg-green-100 flex items-center justify-center gap-1">
-                                <i data-lucide="check" class="w-3 h-3"></i>
-                                Annehmen
+                                <i data-lucide="check" class="w-3 h-3"></i> Annehmen
                             </button>
                         </form>
                         <form method="post" action="{% url 'work:faction_proposal' org_slug=organization.slug meeting_id=meeting.id %}" class="flex-1">
@@ -351,265 +510,169 @@
                             <input type="hidden" name="action" value="reject">
                             <input type="hidden" name="item_id" value="{{ item.id }}">
                             <button type="submit" class="w-full py-1.5 text-xs font-medium text-red-700 bg-red-50 rounded hover:bg-red-100 flex items-center justify-center gap-1">
-                                <i data-lucide="x" class="w-3 h-3"></i>
-                                Ablehnen
+                                <i data-lucide="x" class="w-3 h-3"></i> Ablehnen
                             </button>
                         </form>
                     </div>
                 </div>
-        {% if forloop.last %}
+                {% endfor %}
             </div>
         </div>
         {% endif %}
-        {% endif %}
-        {% endfor %}
-        {% endwith %}
-        {% endif %}
 
-        {# Propose Agenda Item Button (for Sachkundige with agenda.propose permission) #}
-        {% if can_propose_agenda and meeting.status in 'draft,planned,invited' %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-            <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">TOP vorschlagen</h4>
-            <p class="text-xs text-gray-500 mb-3">Als sachkundige/r Bürger*in können Sie Tagesordnungspunkte vorschlagen.</p>
-            <button @click="showProposalModal = true"
-                    class="w-full py-2.5 text-sm font-medium text-primary-600 bg-primary-50 dark:bg-primary-900/20 rounded-lg hover:bg-primary-100 flex items-center justify-center gap-2">
-                <i data-lucide="lightbulb" class="w-4 h-4"></i>
-                TOP vorschlagen
-            </button>
-        </div>
-        {% endif %}
+        {# Quick Actions #}
+        {% if can_edit %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-2">
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Aktionen</h4>
 
-        {# Invite Button #}
-        {% if can_edit and not meeting.invitation_sent and meeting.status in 'draft,planned' %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-            <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">Einladungen versenden</h4>
-            <p class="text-xs text-gray-500 mb-3">E-Mail an alle {{ attendances|length }} Mitglieder senden.</p>
-            <form method="post" action="{% url 'work:faction_invite' org_slug=organization.slug meeting_id=meeting.id %}">
+            {% if meeting.status == 'completed' and not meeting.protocol_approved %}
+            <a href="{% url 'work:faction_protocol' org_slug=organization.slug meeting_id=meeting.id %}"
+               class="w-full py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 flex items-center justify-center gap-2">
+                <i data-lucide="edit-3" class="w-4 h-4"></i>
+                Protokoll bearbeiten
+            </a>
+            {% endif %}
+
+            {% if meeting.status not in 'completed,cancelled' %}
+            <form method="post" onsubmit="return confirm('Sitzung wirklich absagen?')">
                 {% csrf_token %}
-                <button type="submit" class="w-full py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 flex items-center justify-center gap-2">
-                    <i data-lucide="send" class="w-4 h-4"></i>
-                    Einladungen versenden
+                <input type="hidden" name="action" value="cancel">
+                <button type="submit" class="w-full py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 flex items-center justify-center gap-2">
+                    <i data-lucide="x-circle" class="w-4 h-4"></i>
+                    Sitzung absagen
                 </button>
             </form>
-        </div>
-        {% elif meeting.invitation_sent %}
-        <div class="bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4">
-            <div class="flex items-center gap-2 text-sm text-green-700 dark:text-green-300">
-                <i data-lucide="check-circle" class="w-4 h-4"></i>
-                <span>Einladungen versendet</span>
-            </div>
-            {% if meeting.invitation_sent_at %}
-            <p class="text-xs text-green-600 mt-1">{{ meeting.invitation_sent_at|date:"d.m.Y, H:i" }} Uhr</p>
             {% endif %}
-        </div>
-        {% endif %}
 
-        {# Protocol Panel (only during meeting) #}
-        {% if meeting.status == 'ongoing' %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-green-200 dark:border-green-800">
-            <div class="p-4 bg-green-50 dark:bg-green-900/20 rounded-t-xl border-b border-green-200 dark:border-green-800">
-                <h4 class="font-semibold text-green-800 dark:text-green-200 flex items-center gap-2">
-                    <i data-lucide="radio" class="w-5 h-5 animate-pulse"></i>
-                    Live-Protokoll
-                </h4>
-            </div>
-            <div class="p-4">
-                <a href="{% url 'work:faction_protocol' org_slug=organization.slug meeting_id=meeting.id %}"
-                   class="w-full py-3 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2">
-                    <i data-lucide="file-text" class="w-4 h-4"></i>
-                    Protokoll offnen
-                </a>
-            </div>
+            <form method="post" onsubmit="return confirm('Sitzung unwiderruflich loschen?')">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete">
+                <button type="submit" class="w-full py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center justify-center gap-2">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    Loschen
+                </button>
+            </form>
         </div>
         {% endif %}
     </div>
 
     {# ===== MODALS ===== #}
 
-    {# Add/Edit Agenda Item Modal #}
+    {# Add Agenda Item Modal #}
     <div x-show="showEditModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition>
-        <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="flex items-center justify-center min-h-screen px-4">
             <div class="fixed inset-0 bg-black/50" @click="showEditModal = false"></div>
-            <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full" @click.stop>
+            <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full" @click.stop>
                 <form method="post" action="{% url 'work:faction_agenda' org_slug=organization.slug meeting_id=meeting.id %}">
                     {% csrf_token %}
-                    <input type="hidden" name="action" :value="editMode">
-                    <input type="hidden" name="item_id" :value="editItemId">
-                    <input type="hidden" name="parent_id" :value="editParentId">
-                    <input type="hidden" name="visibility" :value="editVisibility">
+                    <input type="hidden" name="action" x-bind:value="editMode">
+                    <input type="hidden" name="visibility" x-bind:value="editVisibility">
+                    <input type="hidden" name="item_id" x-bind:value="editItemId">
 
-                    <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white" x-text="modalTitle"></h3>
-                        <button type="button" @click="showEditModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
-                            <i data-lucide="x" class="w-5 h-5"></i>
-                        </button>
+                    <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+                        <h3 class="text-lg font-semibold" x-text="editMode === 'add' ? 'TOP hinzufugen' : 'TOP bearbeiten'"></h3>
                     </div>
 
                     <div class="p-4 space-y-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel <span class="text-red-500">*</span></label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel</label>
                             <input type="text" name="title" x-model="editTitle" required
-                                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
-                                   placeholder="Titel des TOPs">
+                                   class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
                             <textarea name="description" x-model="editDescription" rows="3"
-                                      class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg resize-none"
-                                      placeholder="Optionale Beschreibung..."></textarea>
+                                      class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg"></textarea>
                         </div>
                     </div>
 
                     <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-                        <button type="button" @click="showEditModal = false"
-                                class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                            Abbrechen
-                        </button>
-                        <button type="submit"
-                                class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
-                            Speichern
-                        </button>
+                        <button type="button" @click="showEditModal = false" class="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">Abbrechen</button>
+                        <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Speichern</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    {# Add Guest/Attendee Modal #}
+    {# Proposal Modal (for Sachkundige) #}
+    <div x-show="showProposalModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition>
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div class="fixed inset-0 bg-black/50" @click="showProposalModal = false"></div>
+            <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full" @click.stop>
+                <form method="post" action="{% url 'work:faction_proposal' org_slug=organization.slug meeting_id=meeting.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="propose">
+
+                    <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+                        <h3 class="text-lg font-semibold">Tagesordnungspunkt vorschlagen</h3>
+                        <p class="text-sm text-gray-500 mt-1">Ihr Vorschlag wird dem Vorsitz zur Prufung vorgelegt.</p>
+                    </div>
+
+                    <div class="p-4 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel <span class="text-red-500">*</span></label>
+                            <input type="text" name="title" required
+                                   class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+                                   placeholder="Thema Ihres Vorschlags">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Begrundung</label>
+                            <textarea name="description" rows="3"
+                                      class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+                                      placeholder="Warum sollte dies besprochen werden?"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                        <button type="button" @click="showProposalModal = false" class="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">Abbrechen</button>
+                        <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Vorschlag einreichen</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# Add Attendee Modal #}
     <div x-show="showAddAttendeeModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition>
-        <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="flex items-center justify-center min-h-screen px-4">
             <div class="fixed inset-0 bg-black/50" @click="showAddAttendeeModal = false"></div>
             <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full" @click.stop>
                 <form method="post" action="{% url 'work:faction_add_attendee' org_slug=organization.slug meeting_id=meeting.id %}">
                     {% csrf_token %}
 
-                    <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Teilnehmer hinzufugen</h3>
-                        <button type="button" @click="showAddAttendeeModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
-                            <i data-lucide="x" class="w-5 h-5"></i>
-                        </button>
+                    <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+                        <h3 class="text-lg font-semibold">Teilnehmer hinzufugen</h3>
                     </div>
 
-                    <div class="p-4 space-y-4">
-                        <div class="flex gap-4">
-                            <label class="flex items-center gap-2">
-                                <input type="radio" name="attendee_type" value="guest" x-model="attendeeType" class="text-primary-600">
-                                <span class="text-sm">Gast</span>
-                            </label>
-                            <label class="flex items-center gap-2">
-                                <input type="radio" name="attendee_type" value="member" x-model="attendeeType" class="text-primary-600">
-                                <span class="text-sm">Mitglied</span>
-                            </label>
+                    <div class="p-4 space-y-4" x-data="{ type: 'guest' }">
+                        <div class="flex gap-2">
+                            <button type="button" @click="type = 'guest'" :class="type === 'guest' ? 'bg-primary-100 border-primary-500 text-primary-700' : 'bg-gray-50 border-gray-200'"
+                                    class="flex-1 py-2 text-sm font-medium border rounded-lg">Gast</button>
+                            <button type="button" @click="type = 'member'" :class="type === 'member' ? 'bg-primary-100 border-primary-500 text-primary-700' : 'bg-gray-50 border-gray-200'"
+                                    class="flex-1 py-2 text-sm font-medium border rounded-lg">Mitglied</button>
+                        </div>
+                        <input type="hidden" name="attendee_type" x-bind:value="type">
+
+                        <div x-show="type === 'guest'">
+                            <label class="block text-sm font-medium mb-1">Name</label>
+                            <input type="text" name="guest_name" class="w-full px-3 py-2 border rounded-lg" placeholder="Name des Gastes">
                         </div>
 
-                        <div x-show="attendeeType === 'guest'">
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name des Gastes</label>
-                            <input type="text" name="guest_name"
-                                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
-                                   placeholder="Vor- und Nachname">
-                        </div>
-
-                        <div x-show="attendeeType === 'member'">
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mitglied auswahlen</label>
-                            <select name="membership_id"
-                                    class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
-                                <option value="">— Bitte wahlen —</option>
+                        <div x-show="type === 'member'">
+                            <label class="block text-sm font-medium mb-1">Mitglied</label>
+                            <select name="membership_id" class="w-full px-3 py-2 border rounded-lg">
+                                <option value="">Auswahlen...</option>
                                 {% for member in available_members %}
                                 <option value="{{ member.id }}">{{ member.user.get_display_name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
-                            <select name="status"
-                                    class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
-                                <option value="present">Anwesend</option>
-                                <option value="invited">Eingeladen</option>
-                                <option value="excused">Entschuldigt</option>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bemerkung (optional)</label>
-                            <input type="text" name="note"
-                                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
-                                   placeholder="z.B. Vertretung fur...">
-                        </div>
                     </div>
 
-                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-                        <button type="button" @click="showAddAttendeeModal = false"
-                                class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                            Abbrechen
-                        </button>
-                        <button type="submit"
-                                class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
-                            Hinzufugen
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    {# Propose Agenda Item Modal #}
-    <div x-show="showProposalModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition>
-        <div class="flex items-center justify-center min-h-screen px-4 py-8">
-            <div class="fixed inset-0 bg-black/50" @click="showProposalModal = false"></div>
-            <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full" @click.stop>
-                <form method="post" action="{% url 'work:faction_proposal' org_slug=organization.slug meeting_id=meeting.id %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="propose">
-
-                    <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                            <i data-lucide="lightbulb" class="w-5 h-5 text-amber-500"></i>
-                            TOP vorschlagen
-                        </h3>
-                        <button type="button" @click="showProposalModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
-                            <i data-lucide="x" class="w-5 h-5"></i>
-                        </button>
-                    </div>
-
-                    <div class="p-4 space-y-4">
-                        <div class="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-700 dark:text-amber-300">
-                            <p>Ihr Vorschlag wird dem Fraktionsvorstand zur Prüfung vorgelegt.</p>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel <span class="text-red-500">*</span></label>
-                            <input type="text" name="title" required
-                                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
-                                   placeholder="Titel Ihres Vorschlags">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
-                            <textarea name="description" rows="4"
-                                      class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg resize-none"
-                                      placeholder="Beschreiben Sie Ihren Vorschlag..."></textarea>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sichtbarkeit</label>
-                            <select name="visibility"
-                                    class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
-                                <option value="public">Öffentlich</option>
-                                <option value="internal">Nicht-öffentlich</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-                        <button type="button" @click="showProposalModal = false"
-                                class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                            Abbrechen
-                        </button>
-                        <button type="submit"
-                                class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
-                            Vorschlag einreichen
-                        </button>
+                    <div class="p-4 border-t flex justify-end gap-2">
+                        <button type="button" @click="showAddAttendeeModal = false" class="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">Abbrechen</button>
+                        <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Hinzufugen</button>
                     </div>
                 </form>
             </div>
@@ -633,140 +696,61 @@
                     </div>
 
                     <div class="p-4 space-y-6">
-                        {# Basic Details #}
                         <div class="space-y-4">
-                            <h4 class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                                <i data-lucide="info" class="w-4 h-4 text-primary-600"></i>
-                                Sitzungsdetails
-                            </h4>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                    Titel <span class="text-red-500">*</span>
-                                </label>
-                                <input type="text" name="title" required
-                                       value="{{ meeting.title }}"
-                                       class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel</label>
+                                <input type="text" name="title" required value="{{ meeting.title }}"
+                                       class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg">
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                        Datum <span class="text-red-500">*</span>
-                                    </label>
-                                    <input type="date" name="start_date" required
-                                           value="{{ meeting.start|date:'Y-m-d' }}"
-                                           class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Datum</label>
+                                    <input type="date" name="start_date" required value="{{ meeting.start|date:'Y-m-d' }}"
+                                           class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg">
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                        Uhrzeit <span class="text-red-500">*</span>
-                                    </label>
-                                    <input type="time" name="start_time" required
-                                           value="{{ meeting.start|time:'H:i' }}"
-                                           class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Uhrzeit</label>
+                                    <input type="time" name="start_time" required value="{{ meeting.start|time:'H:i' }}"
+                                           class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg">
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
-                                <textarea name="description" rows="2"
-                                          class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 resize-none"
-                                          placeholder="Optionale Hinweise zur Sitzung...">{{ meeting.description|default:'' }}</textarea>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ort</label>
+                                <input type="text" name="location" value="{{ meeting.location|default:'' }}"
+                                       class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg">
+                            </div>
+                            <div class="flex items-center gap-2" x-data="{ isVirtual: {{ meeting.is_virtual|yesno:'true,false' }} }">
+                                <input type="checkbox" id="is_virtual" name="is_virtual" x-model="isVirtual" class="w-4 h-4 text-primary-600 rounded">
+                                <label for="is_virtual" class="text-sm text-gray-700 dark:text-gray-300">Online-Teilnahme moglich</label>
                             </div>
                         </div>
 
-                        {# Location #}
-                        <div class="space-y-4" x-data="{ isVirtual: {{ meeting.is_virtual|yesno:'true,false' }} }">
-                            <h4 class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                                <i data-lucide="map-pin" class="w-4 h-4 text-primary-600"></i>
-                                Ort
-                            </h4>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Physischer Ort</label>
-                                <input type="text" name="location"
-                                       value="{{ meeting.location|default:'' }}"
-                                       class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
-                                       placeholder="z.B. Fraktionsburo, Rathaus Raum 203">
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <input type="checkbox" id="edit_is_virtual" name="is_virtual" x-model="isVirtual"
-                                       {% if meeting.is_virtual %}checked{% endif %}
-                                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
-                                <label for="edit_is_virtual" class="text-sm text-gray-700 dark:text-gray-300">
-                                    Online-Teilnahme moglich
-                                </label>
-                            </div>
-                            <div x-show="isVirtual" x-transition>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Video-Link</label>
-                                <input type="url" name="video_link"
-                                       value="{{ meeting.video_link|default:'' }}"
-                                       class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
-                                       placeholder="https://meet.example.com/...">
-                            </div>
-                        </div>
-
-                        {# Status #}
-                        <div class="space-y-4">
-                            <h4 class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                                <i data-lucide="activity" class="w-4 h-4 text-primary-600"></i>
-                                Status
-                            </h4>
+                        <div class="space-y-2">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
                             <div class="flex flex-wrap gap-2">
                                 {% for value, label in status_choices %}
                                 <label class="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer border text-sm
-                                    {% if meeting.status == value %}
-                                    border-primary-500 bg-primary-50 dark:bg-primary-900/20
-                                    {% else %}
-                                    border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900
-                                    {% endif %}">
-                                    <input type="radio" name="status" value="{{ value }}"
-                                           {% if meeting.status == value %}checked{% endif %}
-                                           class="text-primary-600">
-                                    <span class="{% if meeting.status == value %}text-primary-700 dark:text-primary-300 font-medium{% else %}text-gray-700 dark:text-gray-300{% endif %}">
-                                        {{ label }}
-                                    </span>
+                                    {% if meeting.status == value %}border-primary-500 bg-primary-50{% else %}border-gray-200 hover:bg-gray-50{% endif %}">
+                                    <input type="radio" name="status" value="{{ value }}" {% if meeting.status == value %}checked{% endif %} class="text-primary-600">
+                                    <span>{{ label }}</span>
                                 </label>
                                 {% endfor %}
                             </div>
                         </div>
-
-                        {# Danger Zone #}
-                        {% if can_edit and meeting.status not in 'completed,cancelled' %}
-                        <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
-                            <h4 class="text-sm font-medium text-red-700 dark:text-red-400 flex items-center gap-2 mb-3">
-                                <i data-lucide="alert-triangle" class="w-4 h-4"></i>
-                                Gefahrenzone
-                            </h4>
-                            <button type="button" @click="if(confirm('Sitzung unwiderruflich loschen?')) { showMeetingEditModal = false; $nextTick(() => document.getElementById('delete-meeting-form').submit()); }"
-                                    class="px-4 py-2 text-sm font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center gap-2">
-                                <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                Sitzung loschen
-                            </button>
-                        </div>
-                        {% endif %}
                     </div>
 
-                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2 sticky bottom-0 bg-white dark:bg-gray-800">
-                        <button type="button" @click="showMeetingEditModal = false"
-                                class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                            Abbrechen
-                        </button>
-                        <button type="submit"
-                                class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 flex items-center gap-2">
-                            <i data-lucide="save" class="w-4 h-4"></i>
-                            Speichern
-                        </button>
+                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                        <button type="button" @click="showMeetingEditModal = false" class="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">Abbrechen</button>
+                        <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Speichern</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-
-    {# Hidden Delete Form #}
-    <form id="delete-meeting-form" method="post" class="hidden">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="delete">
-    </form>
 </div>
+{% endblock %}
 
+{% block extra_js %}
 <script>
 function factionMeeting() {
     return {
@@ -774,76 +758,34 @@ function factionMeeting() {
         showAddAttendeeModal: false,
         showProposalModal: false,
         showMeetingEditModal: false,
+        showAttendance: false,
         editMode: 'add',
+        editVisibility: 'public',
         editItemId: '',
         editTitle: '',
         editDescription: '',
-        editParentId: '',
-        editVisibility: 'public',
-        attendeeType: 'guest',
-
-        get modalTitle() {
-            if (this.editMode === 'edit') return 'TOP bearbeiten';
-            if (this.editParentId) return 'Unterpunkt hinzufugen';
-            return this.editVisibility === 'internal' ? 'Nicht-offentlicher TOP' : 'Offentlicher TOP';
-        },
 
         showAddModal(visibility) {
             this.editMode = 'add';
-            this.editItemId = '';
-            this.editTitle = '';
-            this.editDescription = '';
-            this.editParentId = '';
             this.editVisibility = visibility;
-            this.showEditModal = true;
-        },
-
-        addSubItem(parentId, visibility) {
-            this.editMode = 'add';
             this.editItemId = '';
             this.editTitle = '';
             this.editDescription = '';
-            this.editParentId = parentId;
-            this.editVisibility = visibility || 'public';
             this.showEditModal = true;
         },
 
-        editItem(id, title, description) {
-            this.editMode = 'edit';
-            this.editItemId = id;
-            this.editTitle = title;
-            this.editDescription = description || '';
-            this.editParentId = '';
-            this.showEditModal = true;
-        },
+        init() {
+            this.$watch('showEditModal', value => {
+                if (value) this.$nextTick(() => lucide.createIcons());
+            });
 
-        deleteItem(id) {
-            if (confirm('TOP wirklich loschen?')) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = '{% url "work:faction_agenda" org_slug=organization.slug meeting_id=meeting.id %}';
-                form.innerHTML = `
-                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                    <input type="hidden" name="action" value="delete">
-                    <input type="hidden" name="item_id" value="${id}">
-                `;
-                document.body.appendChild(form);
-                form.submit();
-            }
-        },
-
-        moveItem(id, direction) {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = '{% url "work:faction_agenda" org_slug=organization.slug meeting_id=meeting.id %}';
-            form.innerHTML = `
-                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                <input type="hidden" name="action" value="move">
-                <input type="hidden" name="item_id" value="${id}">
-                <input type="hidden" name="direction" value="${direction}">
-            `;
-            document.body.appendChild(form);
-            form.submit();
+            window.addEventListener('edit-item', (e) => {
+                this.editMode = 'edit';
+                this.editItemId = e.detail.id;
+                this.editTitle = e.detail.title;
+                this.editDescription = e.detail.description;
+                this.showEditModal = true;
+            });
         }
     }
 }

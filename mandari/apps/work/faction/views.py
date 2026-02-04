@@ -245,7 +245,18 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
 
         context["agenda_items"] = agenda_items
         context["public_agenda_items"] = [i for i in agenda_items if i.visibility == "public"]
-        context["internal_agenda_items"] = [i for i in agenda_items if i.visibility == "internal"]
+
+        # Check if user can view non-public content (requires permission + sworn-in)
+        from apps.common.permissions import PermissionChecker
+        checker = PermissionChecker(self.membership)
+        can_view_internal = checker.can_view_non_public_faction()
+        context["can_view_internal"] = can_view_internal
+
+        # Only pass internal items if user is allowed to see them
+        if can_view_internal:
+            context["internal_agenda_items"] = [i for i in agenda_items if i.visibility == "internal"]
+        else:
+            context["internal_agenda_items"] = []
 
         # Attendance (uses model's default ordering: is_guest, membership__user__last_name, guest_name)
         context["attendances"] = meeting.attendances.select_related(
@@ -301,7 +312,11 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
         context["can_manage_attendance"] = self.membership.has_permission("faction.manage")
 
         # Can propose agenda items (for Sachkundige Bürger*innen)
-        context["can_propose_agenda"] = self.membership.has_permission("agenda.propose")
+        # Only show propose button if user can propose but NOT create directly
+        can_propose = checker.can_propose_agenda_items()
+        can_create_directly = checker.can_create_agenda_items_directly()
+        context["can_propose_agenda"] = can_propose and not can_create_directly
+        context["can_approve_proposals"] = checker.can_approve_agenda_items() or self.membership.has_permission("agenda.manage")
 
         # Pending proposals count (for managers)
         context["pending_proposals"] = meeting.agenda_items.filter(
