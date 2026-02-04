@@ -88,7 +88,7 @@ class LoginView(View):
                 # Session expires in 30 days
                 request.session.set_expiry(60 * 60 * 24 * 30)
 
-            messages.success(request, f"Willkommen zurück, {user.first_name or user.email}!")
+            messages.success(request, "Erfolgreich angemeldet.")
 
             return redirect(self.get_success_url(request, next_url))
         else:
