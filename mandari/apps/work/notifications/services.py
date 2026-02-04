@@ -223,7 +223,7 @@ class NotificationHub:
                 return
 
             # Queue the email task
-            from apps.work.tasks import send_notification_email_task
+            from apps.work.background_tasks import send_notification_email_task
             try:
                 # Try using Django 6.0 background tasks
                 from django.tasks import enqueue
