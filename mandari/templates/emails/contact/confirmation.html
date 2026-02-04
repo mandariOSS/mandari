@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background: #f8fafc; }
+        .container { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 40px 30px; text-align: center; }
+        .header h1 { margin: 0 0 10px 0; font-size: 28px; }
+        .header p { margin: 0; opacity: 0.9; }
+        .checkmark { width: 60px; height: 60px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 30px; }
+        .content { padding: 30px; }
+        .greeting { font-size: 18px; margin-bottom: 20px; }
+        .summary { background: #f8fafc; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .summary-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; font-weight: 600; margin-bottom: 5px; }
+        .summary-value { color: #1e293b; }
+        .message-preview { background: #f1f5f9; border-left: 3px solid #6366f1; padding: 15px; margin: 15px 0; border-radius: 0 8px 8px 0; white-space: pre-wrap; font-size: 14px; color: #475569; }
+        .next-steps { background: #ecfdf5; border-radius: 8px; padding: 20px; margin-top: 25px; }
+        .next-steps h3 { margin: 0 0 15px 0; color: #065f46; font-size: 16px; }
+        .next-steps ul { margin: 0; padding-left: 20px; color: #047857; }
+        .next-steps li { margin-bottom: 8px; }
+        .footer { background: #f8fafc; padding: 25px 30px; text-align: center; border-top: 1px solid #e2e8f0; }
+        .footer p { margin: 5px 0; font-size: 13px; color: #64748b; }
+        .footer a { color: #6366f1; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="checkmark">✓</div>
+            <h1>Anfrage erhalten!</h1>
+            <p>Vielen Dank für Ihre Nachricht</p>
+        </div>
+        <div class="content">
+            <p class="greeting">Hallo {{ contact.name }},</p>
+            <p>wir haben Ihre Anfrage erhalten und werden uns schnellstmöglich bei Ihnen melden.</p>
+
+            <div class="summary">
+                <div class="summary-label">Betreff</div>
+                <div class="summary-value"><strong>{{ contact.get_subject_display }}</strong></div>
+            </div>
+
+            <div class="summary-label" style="margin-top: 20px;">Ihre Nachricht</div>
+            <div class="message-preview">{{ contact.message|truncatewords:50 }}</div>
+
+            <div class="next-steps">
+                <h3>Was passiert als nächstes?</h3>
+                <ul>
+                    <li>Wir bearbeiten Anfragen in der Regel innerhalb von 1-2 Werktagen</li>
+                    <li>Bei dringenden Anliegen erreichen Sie uns auch unter <a href="mailto:hello@mandari.de">hello@mandari.de</a></li>
+                    <li>Registrierte Nutzer*innen können das Ticket-System im Work-Portal nutzen</li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer">
+            <p><strong>Mandari</strong> - Open Source Ratsinformationssystem</p>
+            <p><a href="https://mandari.de">mandari.de</a></p>
+            <p style="margin-top: 15px; font-size: 11px;">Diese E-Mail wurde automatisch versendet.</p>
+        </div>
+    </div>
+</body>
+</html>

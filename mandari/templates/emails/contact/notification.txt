@@ -1,0 +1,23 @@
+Neue Kontaktanfrage über mandari.de
+=====================================
+
+Name: {{ contact.name }}
+E-Mail: {{ contact.email }}
+Organisation: {{ contact.organization_name|default:"Nicht angegeben" }}
+Betreff: {{ contact.get_subject_display }}
+
+Nachricht:
+----------
+{{ contact.message }}
+
+----------
+
+Erstellt am: {{ contact.created_at|date:"d.m.Y H:i" }} Uhr
+IP-Adresse: {{ contact.ip_address|default:"Nicht verfügbar" }}
+
+Diese Anfrage wurde unter folgender ID gespeichert: {{ contact.id }}
+
+{% if admin_url %}
+Anfrage im Admin bearbeiten:
+{{ admin_url }}
+{% endif %}

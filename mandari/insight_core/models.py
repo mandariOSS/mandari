@@ -861,3 +861,127 @@ class TileCache(models.Model):
                     tiles.append((z, x, y))
 
         return tiles
+
+
+# =============================================================================
+# Contact Requests (Public Contact Form)
+# =============================================================================
+
+class ContactRequest(models.Model):
+    """
+    A contact request from the public contact form.
+
+    Stores inquiries from non-authenticated users and can be linked to
+    support tickets when processed by administrators.
+    """
+
+    SUBJECT_CHOICES = [
+        ("demo", "Demo anfragen"),
+        ("preise", "Preisanfrage"),
+        ("support", "Support"),
+        ("datenschutz", "Datenschutz"),
+        ("sonstiges", "Sonstiges"),
+    ]
+
+    STATUS_CHOICES = [
+        ("new", "Neu"),
+        ("read", "Gelesen"),
+        ("in_progress", "In Bearbeitung"),
+        ("replied", "Beantwortet"),
+        ("converted", "Zu Ticket konvertiert"),
+        ("closed", "Geschlossen"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Contact information
+    name = models.CharField(max_length=255, verbose_name="Name")
+    email = models.EmailField(verbose_name="E-Mail")
+    organization_name = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Organisation"
+    )
+
+    # Request details
+    subject = models.CharField(
+        max_length=50,
+        choices=SUBJECT_CHOICES,
+        default="sonstiges",
+        verbose_name="Betreff"
+    )
+    message = models.TextField(verbose_name="Nachricht")
+
+    # Status tracking
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="new",
+        verbose_name="Status"
+    )
+
+    # Link to support ticket (if converted)
+    linked_ticket = models.ForeignKey(
+        "work.SupportTicket",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contact_requests",
+        verbose_name="Verknüpftes Ticket"
+    )
+
+    # Admin notes (internal)
+    admin_notes = models.TextField(blank=True, verbose_name="Interne Notizen")
+
+    # Metadata
+    ip_address = models.GenericIPAddressField(
+        blank=True,
+        null=True,
+        verbose_name="IP-Adresse"
+    )
+    user_agent = models.TextField(blank=True, verbose_name="User Agent")
+
+    # Email tracking
+    notification_sent = models.BooleanField(
+        default=False,
+        verbose_name="Benachrichtigung gesendet"
+    )
+    confirmation_sent = models.BooleanField(
+        default=False,
+        verbose_name="Bestätigung gesendet"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Erstellt am")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Aktualisiert am")
+
+    class Meta:
+        db_table = "contact_requests"
+        verbose_name = "Kontaktanfrage"
+        verbose_name_plural = "Kontaktanfragen"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.name} - {self.get_subject_display()} ({self.created_at.strftime('%d.%m.%Y')})"
+
+    def get_subject_display_with_icon(self):
+        """Returns subject with appropriate icon."""
+        icons = {
+            "demo": "🎯",
+            "preise": "💰",
+            "support": "🛠️",
+            "datenschutz": "🔒",
+            "sonstiges": "💬",
+        }
+        return f"{icons.get(self.subject, '💬')} {self.get_subject_display()}"
+
+    def mark_as_read(self):
+        """Mark the request as read if it's new."""
+        if self.status == "new":
+            self.status = "read"
+            self.save(update_fields=["status", "updated_at"])
+
+    def mark_as_replied(self):
+        """Mark the request as replied."""
+        self.status = "replied"
+        self.save(update_fields=["status", "updated_at"])

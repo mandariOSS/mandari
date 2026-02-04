@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 30px; border-radius: 12px 12px 0 0; }
+        .header h1 { margin: 0; font-size: 24px; }
+        .content { background: #f8fafc; padding: 30px; border: 1px solid #e2e8f0; }
+        .field { margin-bottom: 15px; }
+        .field-label { font-weight: 600; color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .field-value { margin-top: 4px; }
+        .message-box { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-top: 20px; white-space: pre-wrap; }
+        .footer { background: #f1f5f9; padding: 20px; border-radius: 0 0 12px 12px; font-size: 12px; color: #64748b; }
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+        .badge-demo { background: #dbeafe; color: #1d4ed8; }
+        .badge-preise { background: #dcfce7; color: #16a34a; }
+        .badge-support { background: #fef3c7; color: #d97706; }
+        .badge-datenschutz { background: #f3e8ff; color: #9333ea; }
+        .badge-sonstiges { background: #f1f5f9; color: #475569; }
+        .btn { display: inline-block; padding: 12px 24px; background: #6366f1; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Neue Kontaktanfrage</h1>
+    </div>
+    <div class="content">
+        <div class="field">
+            <div class="field-label">Name</div>
+            <div class="field-value"><strong>{{ contact.name }}</strong></div>
+        </div>
+        <div class="field">
+            <div class="field-label">E-Mail</div>
+            <div class="field-value"><a href="mailto:{{ contact.email }}">{{ contact.email }}</a></div>
+        </div>
+        {% if contact.organization_name %}
+        <div class="field">
+            <div class="field-label">Organisation</div>
+            <div class="field-value">{{ contact.organization_name }}</div>
+        </div>
+        {% endif %}
+        <div class="field">
+            <div class="field-label">Betreff</div>
+            <div class="field-value">
+                <span class="badge badge-{{ contact.subject }}">{{ contact.get_subject_display }}</span>
+            </div>
+        </div>
+        <div class="field">
+            <div class="field-label">Nachricht</div>
+            <div class="message-box">{{ contact.message }}</div>
+        </div>
+        {% if admin_url %}
+        <a href="{{ admin_url }}" class="btn">Im Admin bearbeiten</a>
+        {% endif %}
+    </div>
+    <div class="footer">
+        <p>
+            <strong>Erstellt am:</strong> {{ contact.created_at|date:"d.m.Y" }} um {{ contact.created_at|time:"H:i" }} Uhr<br>
+            <strong>IP-Adresse:</strong> {{ contact.ip_address|default:"Nicht verfügbar" }}<br>
+            <strong>Anfrage-ID:</strong> {{ contact.id }}
+        </p>
+    </div>
+</body>
+</html>

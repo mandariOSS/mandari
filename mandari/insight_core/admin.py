@@ -307,3 +307,104 @@ class LocationMappingAdmin(ModelAdmin):
             "classes": ("collapse",)
         }),
     )
+
+
+# =============================================================================
+# Contact Requests Admin
+# =============================================================================
+
+from .models import ContactRequest
+
+
+@admin.register(ContactRequest)
+class ContactRequestAdmin(ModelAdmin):
+    """Admin for public contact form submissions."""
+
+    list_display = [
+        "created_at",
+        "name",
+        "email",
+        "subject_display",
+        "status_display",
+        "email_status",
+    ]
+    list_filter = ["status", "subject", "notification_sent", "confirmation_sent", "created_at"]
+    search_fields = ["name", "email", "organization_name", "message"]
+    readonly_fields = [
+        "id", "created_at", "updated_at",
+        "ip_address", "user_agent",
+        "notification_sent", "confirmation_sent",
+    ]
+    date_hierarchy = "created_at"
+    ordering = ["-created_at"]
+    list_per_page = 25
+
+    actions = ["mark_as_read", "mark_as_replied", "mark_as_closed"]
+
+    fieldsets = (
+        ("Kontaktdaten", {
+            "fields": ("name", "email", "organization_name"),
+        }),
+        ("Anfrage", {
+            "fields": ("subject", "message"),
+        }),
+        ("Status", {
+            "fields": ("status", "admin_notes", "linked_ticket"),
+        }),
+        ("E-Mail-Status", {
+            "fields": ("notification_sent", "confirmation_sent"),
+            "classes": ("collapse",),
+        }),
+        ("Metadaten", {
+            "fields": ("id", "ip_address", "user_agent", "created_at", "updated_at"),
+            "classes": ("collapse",),
+        }),
+    )
+
+    @admin.display(description="Betreff")
+    def subject_display(self, obj):
+        icons = {
+            "demo": "🎯",
+            "preise": "💰",
+            "support": "🛠️",
+            "datenschutz": "🔒",
+            "sonstiges": "💬",
+        }
+        return f"{icons.get(obj.subject, '💬')} {obj.get_subject_display()}"
+
+    @admin.display(description="Status")
+    def status_display(self, obj):
+        colors = {
+            "new": "#dc2626",      # red
+            "read": "#ca8a04",     # yellow
+            "in_progress": "#2563eb",  # blue
+            "replied": "#16a34a",  # green
+            "converted": "#8b5cf6",  # purple
+            "closed": "#64748b",   # gray
+        }
+        color = colors.get(obj.status, "#64748b")
+        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_status_display()}</span>')
+
+    @admin.display(description="E-Mails")
+    def email_status(self, obj):
+        parts = []
+        if obj.notification_sent:
+            parts.append('<span title="Benachrichtigung gesendet">📨</span>')
+        if obj.confirmation_sent:
+            parts.append('<span title="Bestätigung gesendet">✅</span>')
+        return mark_safe(" ".join(parts)) if parts else "-"
+
+    @admin.action(description="Als gelesen markieren")
+    def mark_as_read(self, request, queryset):
+        updated = queryset.filter(status="new").update(status="read")
+        messages.success(request, f"{updated} Anfrage(n) als gelesen markiert.")
+
+    @admin.action(description="Als beantwortet markieren")
+    def mark_as_replied(self, request, queryset):
+        updated = queryset.exclude(status__in=["closed", "converted"]).update(status="replied")
+        messages.success(request, f"{updated} Anfrage(n) als beantwortet markiert.")
+
+    @admin.action(description="Als geschlossen markieren")
+    def mark_as_closed(self, request, queryset):
+        updated = queryset.update(status="closed")
+        messages.success(request, f"{updated} Anfrage(n) geschlossen.")

@@ -1174,13 +1174,29 @@ class KontaktView(TemplateView):
     """Kontaktseite mit Formular."""
     template_name = "pages/about/kontakt.html"
 
+    # Target email for contact form notifications
+    CONTACT_EMAIL = "hello@mandari.de"
+
+    def get_client_ip(self, request):
+        """Extract client IP address from request."""
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        if x_forwarded_for:
+            return x_forwarded_for.split(",")[0].strip()
+        return request.META.get("REMOTE_ADDR")
+
     def post(self, request, *args, **kwargs):
         """Verarbeitet das Kontaktformular."""
         from django.contrib import messages
+        from apps.common.email import send_template_email
+        from .models import ContactRequest
+        import logging
+
+        logger = logging.getLogger(__name__)
 
         # Honeypot Check
         if request.POST.get("website"):
-            # Bot detected
+            # Bot detected - silently fail
+            logger.warning(f"Honeypot triggered from IP {self.get_client_ip(request)}")
             messages.error(request, "Ihre Nachricht konnte nicht gesendet werden.")
             return self.get(request, *args, **kwargs)
 
@@ -1188,19 +1204,97 @@ class KontaktView(TemplateView):
         organization = request.POST.get("organization", "").strip()
         email = request.POST.get("email", "").strip()
         subject = request.POST.get("subject", "").strip()
-        message = request.POST.get("message", "").strip()
+        message_text = request.POST.get("message", "").strip()
         privacy = request.POST.get("privacy")
 
         # Validierung
-        if not all([name, email, subject, message, privacy]):
+        if not all([name, email, subject, message_text, privacy]):
             messages.error(request, "Bitte füllen Sie alle Pflichtfelder aus.")
             return self.get(request, *args, **kwargs)
 
-        # TODO: E-Mail senden oder in Datenbank speichern
-        # Für jetzt: Erfolgsmeldung
+        # E-Mail-Validierung
+        from django.core.validators import validate_email
+        from django.core.exceptions import ValidationError
+        try:
+            validate_email(email)
+        except ValidationError:
+            messages.error(request, "Bitte geben Sie eine gültige E-Mail-Adresse ein.")
+            return self.get(request, *args, **kwargs)
+
+        # ContactRequest erstellen und speichern
+        try:
+            contact = ContactRequest.objects.create(
+                name=name,
+                email=email,
+                organization_name=organization,
+                subject=subject,
+                message=message_text,
+                ip_address=self.get_client_ip(request),
+                user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
+            )
+            logger.info(f"ContactRequest created: {contact.id}")
+        except Exception as e:
+            logger.error(f"Failed to create ContactRequest: {e}")
+            messages.error(request, "Es ist ein Fehler aufgetreten. Bitte versuchen Sie es später erneut.")
+            return self.get(request, *args, **kwargs)
+
+        # E-Mail-Kontext vorbereiten
+        email_context = {
+            "contact": contact,
+            "admin_url": request.build_absolute_uri(f"/admin/insight_core/contactrequest/{contact.id}/change/"),
+        }
+
+        # 1. Benachrichtigung an hello@mandari.de senden
+        try:
+            subject_map = {
+                "demo": "Demo-Anfrage",
+                "preise": "Preisanfrage",
+                "support": "Support-Anfrage",
+                "datenschutz": "Datenschutz-Anfrage",
+                "sonstiges": "Kontaktanfrage",
+            }
+            email_subject = f"[Mandari] {subject_map.get(subject, 'Kontaktanfrage')} von {name}"
+
+            notification_sent = send_template_email(
+                subject=email_subject,
+                template_name="emails/contact/notification",
+                context=email_context,
+                to=[self.CONTACT_EMAIL],
+                reply_to=[email],
+                fail_silently=True,
+            )
+            if notification_sent:
+                contact.notification_sent = True
+                logger.info(f"Notification email sent for ContactRequest {contact.id}")
+            else:
+                logger.warning(f"Failed to send notification email for ContactRequest {contact.id}")
+        except Exception as e:
+            logger.error(f"Error sending notification email: {e}")
+
+        # 2. Bestätigung an den Absender senden
+        try:
+            confirmation_sent = send_template_email(
+                subject="Ihre Anfrage bei Mandari - Bestätigung",
+                template_name="emails/contact/confirmation",
+                context=email_context,
+                to=[email],
+                fail_silently=True,
+            )
+            if confirmation_sent:
+                contact.confirmation_sent = True
+                logger.info(f"Confirmation email sent for ContactRequest {contact.id}")
+            else:
+                logger.warning(f"Failed to send confirmation email for ContactRequest {contact.id}")
+        except Exception as e:
+            logger.error(f"Error sending confirmation email: {e}")
+
+        # E-Mail-Status speichern
+        contact.save(update_fields=["notification_sent", "confirmation_sent"])
+
+        # Erfolgsmeldung
         messages.success(
             request,
-            "Vielen Dank für Ihre Nachricht! Wir werden uns schnellstmöglich bei Ihnen melden."
+            "Vielen Dank für Ihre Nachricht! Wir haben Ihnen eine Bestätigung per E-Mail gesendet und werden uns schnellstmöglich bei Ihnen melden."
         )
         return self.get(request, *args, **kwargs)
 
