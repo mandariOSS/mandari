@@ -20,7 +20,7 @@ from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
 from .forms import TaskForm, QuickTaskForm, TaskCommentForm
-from .models import Task, TaskComment
+from .models import Task, TaskComment, TaskShare
 
 
 class TaskListView(WorkViewMixin, TemplateView):
@@ -55,13 +55,24 @@ class TaskListView(WorkViewMixin, TemplateView):
             "related_faction_meeting"
         )
 
-        # Apply filters
+        # Apply filters based on visibility
         if view_mode == "my":
+            # My tasks: tasks I created, am assigned to, or are shared with me
             tasks = tasks.filter(
-                Q(assigned_to=self.membership) | Q(created_by=self.membership)
-            )
+                Q(assigned_to=self.membership) |
+                Q(created_by=self.membership) |
+                Q(shares__membership=self.membership)
+            ).distinct()
             context["view_mode"] = "my"
         else:
+            # All tasks: filter by visibility
+            # Show: organization-wide tasks, tasks shared with me, and my own tasks
+            tasks = tasks.filter(
+                Q(visibility="organization") |
+                Q(created_by=self.membership) |
+                Q(assigned_to=self.membership) |
+                Q(shares__membership=self.membership)
+            ).distinct()
             context["view_mode"] = "all"
 
         if search:

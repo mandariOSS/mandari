@@ -129,7 +129,8 @@
       "WebFetch(domain:tokenfactory.nebius.com)",
       "Bash(gh run list:*)",
       "WebFetch(domain:www.cometapi.com)",
-      "Bash(pushd \"D:\\\\10_Coding\\\\Mandari\\\\mandari2.0\")"
+      "Bash(pushd \"D:\\\\10_Coding\\\\Mandari\\\\mandari2.0\")",
+      "Bash(if not exist \"D:\\\\10_Coding\\\\Mandari\\\\mandari2.0\\\\mandari\\\\apps\\\\common\\\\templatetags\" mkdir \"D:\\\\10_Coding\\\\Mandari\\\\mandari2.0\\\\mandari\\\\apps\\\\common\\\\templatetags\")"
     ]
   }
 }

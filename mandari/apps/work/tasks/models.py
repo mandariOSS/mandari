@@ -20,7 +20,18 @@ class Task(models.Model):
 
     Can be personal (assigned_to = creator) or organizational (assigned to another member).
     Supports Kanban-style workflow with status columns.
+
+    Visibility levels:
+    - private: Only the creator can see it
+    - shared: Specific people (via TaskShare) can see it
+    - organization: Everyone in the organization can see it
     """
+
+    VISIBILITY_CHOICES = [
+        ("private", "Privat"),
+        ("shared", "Geteilt"),
+        ("organization", "Organisation"),
+    ]
 
     PRIORITY_CHOICES = [
         ("urgent", "Dringend"),
@@ -47,6 +58,14 @@ class Task(models.Model):
     # Task info
     title = models.CharField(max_length=200, verbose_name="Titel")
     description = models.TextField(blank=True, max_length=2000, verbose_name="Beschreibung")
+
+    # Visibility
+    visibility = models.CharField(
+        max_length=20,
+        choices=VISIBILITY_CHOICES,
+        default="private",
+        verbose_name="Sichtbarkeit"
+    )
 
     # Priority and status
     priority = models.CharField(
@@ -180,6 +199,84 @@ class Task(models.Model):
     def is_personal(self) -> bool:
         """Check if this is a personal task (assigned to creator)."""
         return self.assigned_to == self.created_by or self.assigned_to is None
+
+    def can_access(self, membership) -> bool:
+        """
+        Check if a membership can access this task.
+
+        Access is granted if:
+        - User is the creator
+        - User is assigned to the task
+        - Task visibility is 'organization'
+        - Task visibility is 'shared' and user is in shares
+        """
+        # Creator always has access
+        if self.created_by == membership:
+            return True
+
+        # Assigned user always has access
+        if self.assigned_to == membership:
+            return True
+
+        # Check visibility
+        if self.visibility == "private":
+            return False
+
+        if self.visibility == "organization":
+            return membership.organization == self.organization
+
+        if self.visibility == "shared":
+            return self.shares.filter(membership=membership).exists()
+
+        return False
+
+    def can_edit(self, membership) -> bool:
+        """Check if membership can edit this task."""
+        # Creator can always edit
+        if self.created_by == membership:
+            return True
+        # Assigned user can edit
+        if self.assigned_to == membership:
+            return True
+        return False
+
+
+class TaskShare(models.Model):
+    """
+    Share a task with a specific person.
+
+    Used when visibility='shared' to define who can see the task.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    task = models.ForeignKey(
+        Task,
+        on_delete=models.CASCADE,
+        related_name="shares",
+        verbose_name="Aufgabe"
+    )
+    membership = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.CASCADE,
+        related_name="shared_tasks",
+        verbose_name="Mitglied"
+    )
+    shared_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.CASCADE,
+        related_name="task_shares_given",
+        verbose_name="Geteilt von"
+    )
+    shared_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Aufgaben-Freigabe"
+        verbose_name_plural = "Aufgaben-Freigaben"
+        unique_together = ["task", "membership"]
+
+    def __str__(self):
+        return f"{self.task.title} → {self.membership.user.email}"
 
 
 class TaskComment(models.Model):
