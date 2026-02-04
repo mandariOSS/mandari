@@ -631,7 +631,7 @@
     </div>
 
     <!-- Toast Notifications -->
-    <div x-data="toastManager()" x-init="init()" @show-toast.window="addToast($event.detail.message, $event.detail.type)" class="fixed top-4 right-4 z-[100] space-y-3 pointer-events-none">
+    <div x-data="toastManager()" @show-toast.window="addToast($event.detail.message, $event.detail.type)" class="fixed top-4 right-4 z-[100] space-y-3 pointer-events-none">
         <template x-for="toast in toasts" :key="toast.id">
             <div x-show="toast.visible"
                  x-transition:enter="transition ease-out duration-300"
