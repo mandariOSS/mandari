@@ -334,7 +334,11 @@
           python manage.py setup_roles
       args:
         executable: /bin/bash
-      ignore_errors: yes
+      register: setup_roles_result
+
+    - name: Display setup_roles result
+      debug:
+        msg: "{{ setup_roles_result.stdout_lines | default(['Roles setup completed']) }}"
 
     # =========================================================================
     # Initialize OParl Sources (ensures ingestor has data to sync)
