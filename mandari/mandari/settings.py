@@ -107,6 +107,8 @@ AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Database error handler - shows maintenance page on DB connection issues
+    "apps.common.middleware.DatabaseErrorMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     # Subdomain redirect for organization shortcuts (e.g., volt.mandari.de -> /work/volt/)

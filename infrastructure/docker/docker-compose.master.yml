@@ -35,6 +35,7 @@ services:
       DOMAIN: ${DOMAIN:-mandari.de}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./maintenance.html:/srv/maintenance.html:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:

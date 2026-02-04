@@ -45,6 +45,17 @@ http://localhost {
 # Wildcard subdomain support - proxies to Django which handles the redirect
 # DNS-01 challenge allows wildcard certificates
 *.{$DOMAIN:mandari.de} {
+    # Maintenance Mode (same as main site)
+    @maintenance {
+        file /data/maintenance.enabled
+        not path /health /health/
+    }
+    handle @maintenance {
+        root * /srv
+        rewrite * /maintenance.html
+        file_server
+    }
+
     # Compression
     encode gzip zstd
 
@@ -78,6 +89,21 @@ http://localhost {
 # Main Site - HTTPS with automatic TLS
 # =============================================================================
 {$DOMAIN:mandari.de} {
+    # -------------------------------------------------------------------------
+    # Maintenance Mode
+    # To enable: touch /data/maintenance.enabled
+    # To disable: rm /data/maintenance.enabled
+    # -------------------------------------------------------------------------
+    @maintenance {
+        file /data/maintenance.enabled
+        not path /health /health/
+    }
+    handle @maintenance {
+        root * /srv
+        rewrite * /maintenance.html
+        file_server
+    }
+
     # Compression
     encode gzip zstd
 
