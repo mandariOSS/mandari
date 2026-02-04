@@ -480,12 +480,6 @@ class Motion(EncryptionMixin, models.Model):
         # Fallback to legacy type
         return dict(self.LEGACY_TYPE_CHOICES).get(self.motion_type, "Dokument")
 
-    def get_type_icon(self):
-        """Get the icon for the document type."""
-        if self.document_type:
-            return self.document_type.icon
-        return "file-text"
-
     def get_type_color(self):
         """Get the color for the document type."""
         if self.document_type:

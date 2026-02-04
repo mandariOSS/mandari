@@ -89,7 +89,7 @@
     </div>
 
     <!-- Grid View -->
-    <div x-show="viewMode === 'grid'" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+    <div x-show="viewMode === 'grid'" x-cloak class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {% for motion in motions %}
         <a href="{% url 'work:motion_detail' org_slug=organization.slug motion_id=motion.id %}"
            class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-lg transition-all">
@@ -331,12 +331,24 @@
 <script>
 function documentManager() {
     return {
-        viewMode: localStorage.getItem('docViewMode') || 'list',
+        viewMode: 'list',
         showShareModal: false,
         shareMotionId: null,
         shareMotionTitle: '',
         shareVisibility: 'private',
         addUserEmail: '',
+
+        init() {
+            // Load viewMode from localStorage with validation
+            const stored = localStorage.getItem('docViewMode');
+            if (stored === 'grid' || stored === 'list') {
+                this.viewMode = stored;
+            } else {
+                // Default to list and save it
+                this.viewMode = 'list';
+                localStorage.setItem('docViewMode', 'list');
+            }
+        },
 
         setViewMode(mode) {
             this.viewMode = mode;
