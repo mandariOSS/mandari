@@ -19,8 +19,24 @@ class Settings(BaseSettings):
         extra="ignore",  # Ignore extra env vars from Django's .env
     )
 
-    # Database
+    # Database (will be converted to asyncpg in __init__)
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/mandari"
+
+    def model_post_init(self, __context: object) -> None:
+        """Convert database URL to use asyncpg driver for async operations."""
+        # Ensure we use asyncpg for async SQLAlchemy
+        if self.database_url.startswith("postgresql://"):
+            object.__setattr__(
+                self,
+                "database_url",
+                self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            )
+        elif self.database_url.startswith("postgres://"):
+            object.__setattr__(
+                self,
+                "database_url",
+                self.database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+            )
 
     # Redis
     redis_url: str = "redis://localhost:6379"
