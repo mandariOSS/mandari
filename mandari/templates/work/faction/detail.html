@@ -22,7 +22,7 @@
 {% endblock %}
 
 {% block header_actions %}
-<div class="flex items-center gap-2 flex-wrap">
+<div class="flex items-center gap-2 flex-wrap" x-data>
     {# Status-based Primary Actions #}
     {% if meeting.status == 'ongoing' %}
         <a href="{% url 'work:faction_protocol' org_slug=organization.slug meeting_id=meeting.id %}"
@@ -48,8 +48,9 @@
             </button>
         </form>
     {% elif meeting.status == 'draft' and can_edit %}
-        <form method="post" action="{% url 'work:faction_edit' org_slug=organization.slug meeting_id=meeting.id %}" class="inline">
+        <form method="post" class="inline">
             {% csrf_token %}
+            <input type="hidden" name="action" value="update_status">
             <input type="hidden" name="status" value="planned">
             <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">
                 <i data-lucide="calendar-check" class="w-4 h-4"></i>
@@ -60,11 +61,11 @@
 
     {# Always visible: Edit, Protocol, Delete #}
     {% if can_edit %}
-        <a href="{% url 'work:faction_edit' org_slug=organization.slug meeting_id=meeting.id %}"
+        <button type="button" @click="$dispatch('open-edit-modal')"
            class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50">
             <i data-lucide="edit" class="w-4 h-4"></i>
             Bearbeiten
-        </a>
+        </button>
     {% endif %}
 
     {% if meeting.status != 'ongoing' %}
@@ -96,7 +97,7 @@
 {% endblock %}
 
 {% block work_content %}
-<div x-data="factionMeeting()" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div x-data="factionMeeting()" @open-edit-modal.window="showMeetingEditModal = true" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
     {# ===== LEFT COLUMN: Agenda ===== #}
     <div class="lg:col-span-2 space-y-4">
@@ -614,6 +615,156 @@
             </div>
         </div>
     </div>
+
+    {# Edit Meeting Details Modal #}
+    <div x-show="showMeetingEditModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition>
+        <div class="flex items-center justify-center min-h-screen px-4 py-8">
+            <div class="fixed inset-0 bg-black/50" @click="showMeetingEditModal = false"></div>
+            <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" @click.stop>
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_meeting">
+
+                    <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Sitzung bearbeiten</h3>
+                        <button type="button" @click="showMeetingEditModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <div class="p-4 space-y-6">
+                        {# Basic Details #}
+                        <div class="space-y-4">
+                            <h4 class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                                <i data-lucide="info" class="w-4 h-4 text-primary-600"></i>
+                                Sitzungsdetails
+                            </h4>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Titel <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" name="title" required
+                                       value="{{ meeting.title }}"
+                                       class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                        Datum <span class="text-red-500">*</span>
+                                    </label>
+                                    <input type="date" name="start_date" required
+                                           value="{{ meeting.start|date:'Y-m-d' }}"
+                                           class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                        Uhrzeit <span class="text-red-500">*</span>
+                                    </label>
+                                    <input type="time" name="start_time" required
+                                           value="{{ meeting.start|time:'H:i' }}"
+                                           class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                                <textarea name="description" rows="2"
+                                          class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 resize-none"
+                                          placeholder="Optionale Hinweise zur Sitzung...">{{ meeting.description|default:'' }}</textarea>
+                            </div>
+                        </div>
+
+                        {# Location #}
+                        <div class="space-y-4" x-data="{ isVirtual: {{ meeting.is_virtual|yesno:'true,false' }} }">
+                            <h4 class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                                <i data-lucide="map-pin" class="w-4 h-4 text-primary-600"></i>
+                                Ort
+                            </h4>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Physischer Ort</label>
+                                <input type="text" name="location"
+                                       value="{{ meeting.location|default:'' }}"
+                                       class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                       placeholder="z.B. Fraktionsburo, Rathaus Raum 203">
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="edit_is_virtual" name="is_virtual" x-model="isVirtual"
+                                       {% if meeting.is_virtual %}checked{% endif %}
+                                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                                <label for="edit_is_virtual" class="text-sm text-gray-700 dark:text-gray-300">
+                                    Online-Teilnahme moglich
+                                </label>
+                            </div>
+                            <div x-show="isVirtual" x-transition>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Video-Link</label>
+                                <input type="url" name="video_link"
+                                       value="{{ meeting.video_link|default:'' }}"
+                                       class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                       placeholder="https://meet.example.com/...">
+                            </div>
+                        </div>
+
+                        {# Status #}
+                        <div class="space-y-4">
+                            <h4 class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                                <i data-lucide="activity" class="w-4 h-4 text-primary-600"></i>
+                                Status
+                            </h4>
+                            <div class="flex flex-wrap gap-2">
+                                {% for value, label in status_choices %}
+                                <label class="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer border text-sm
+                                    {% if meeting.status == value %}
+                                    border-primary-500 bg-primary-50 dark:bg-primary-900/20
+                                    {% else %}
+                                    border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900
+                                    {% endif %}">
+                                    <input type="radio" name="status" value="{{ value }}"
+                                           {% if meeting.status == value %}checked{% endif %}
+                                           class="text-primary-600">
+                                    <span class="{% if meeting.status == value %}text-primary-700 dark:text-primary-300 font-medium{% else %}text-gray-700 dark:text-gray-300{% endif %}">
+                                        {{ label }}
+                                    </span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        {# Danger Zone #}
+                        {% if can_edit and meeting.status not in 'completed,cancelled' %}
+                        <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                            <h4 class="text-sm font-medium text-red-700 dark:text-red-400 flex items-center gap-2 mb-3">
+                                <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+                                Gefahrenzone
+                            </h4>
+                            <button type="button" @click="if(confirm('Sitzung unwiderruflich loschen?')) { showMeetingEditModal = false; $nextTick(() => document.getElementById('delete-meeting-form').submit()); }"
+                                    class="px-4 py-2 text-sm font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center gap-2">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                Sitzung loschen
+                            </button>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2 sticky bottom-0 bg-white dark:bg-gray-800">
+                        <button type="button" @click="showMeetingEditModal = false"
+                                class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                            Abbrechen
+                        </button>
+                        <button type="submit"
+                                class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 flex items-center gap-2">
+                            <i data-lucide="save" class="w-4 h-4"></i>
+                            Speichern
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# Hidden Delete Form #}
+    <form id="delete-meeting-form" method="post" class="hidden">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete">
+    </form>
 </div>
 
 <script>
@@ -622,6 +773,7 @@ function factionMeeting() {
         showEditModal: false,
         showAddAttendeeModal: false,
         showProposalModal: false,
+        showMeetingEditModal: false,
         editMode: 'add',
         editItemId: '',
         editTitle: '',

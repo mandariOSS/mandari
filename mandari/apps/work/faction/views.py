@@ -13,7 +13,6 @@ from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
 from .forms import (
-    FactionAgendaItemForm,
     FactionAttendanceResponseForm,
     FactionDecisionForm,
     FactionMeetingForm,
@@ -316,6 +315,9 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
 
         context["response_form"] = FactionAttendanceResponseForm()
 
+        # Status choices for inline edit modal
+        context["status_choices"] = FactionMeeting.STATUS_CHOICES
+
         return context
 
     def post(self, request, *args, **kwargs):
@@ -416,6 +418,56 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
 
                 messages.success(request, "Protokolleintrag gespeichert.")
 
+        elif action == "update_status":
+            # Quick status change (e.g., from draft to planned)
+            new_status = request.POST.get("status")
+            if new_status and new_status in dict(FactionMeeting.STATUS_CHOICES):
+                meeting.status = new_status
+                meeting.save()
+                status_display = dict(FactionMeeting.STATUS_CHOICES).get(new_status, new_status)
+                messages.success(request, f"Status geändert zu '{status_display}'.")
+
+        elif action == "update_meeting":
+            # Full meeting edit (inline modal)
+            from datetime import datetime
+
+            # Check permission
+            can_edit = (
+                meeting.created_by == self.membership or
+                self.membership.has_permission("faction.manage")
+            ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+
+            if not can_edit:
+                messages.error(request, "Keine Berechtigung zum Bearbeiten.")
+                return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
+
+            # Update basic details
+            meeting.title = request.POST.get("title", meeting.title)
+            meeting.description = request.POST.get("description", "")
+
+            # Update datetime
+            start_date = request.POST.get("start_date")
+            start_time = request.POST.get("start_time", "18:00")
+            if start_date:
+                try:
+                    start_datetime = datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %H:%M")
+                    meeting.start = timezone.make_aware(start_datetime) if timezone.is_naive(start_datetime) else start_datetime
+                except ValueError:
+                    pass
+
+            # Update location
+            meeting.location = request.POST.get("location", "")
+            meeting.is_virtual = request.POST.get("is_virtual") == "on"
+            meeting.video_link = request.POST.get("video_link", "") if meeting.is_virtual else ""
+
+            # Update status
+            new_status = request.POST.get("status")
+            if new_status and new_status in dict(FactionMeeting.STATUS_CHOICES):
+                meeting.status = new_status
+
+            meeting.save()
+            messages.success(request, "Änderungen gespeichert.")
+
         elif action == "delete":
             # Check permission
             can_delete = (
@@ -470,57 +522,18 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
         return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
 
 
-class FactionMeetingEditView(WorkViewMixin, TemplateView):
-    """Edit a faction meeting."""
+class FactionMeetingEditView(WorkViewMixin, View):
+    """Legacy redirect - editing is now inline in detail view."""
 
-    template_name = "work/faction/edit.html"
     permission_required = "faction.manage"
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["active_nav"] = "faction"
-
-        meeting = get_object_or_404(
-            FactionMeeting,
-            id=kwargs.get("meeting_id"),
-            organization=self.organization
-        )
-
-        context["meeting"] = meeting
-        context["form"] = FactionMeetingForm(instance=meeting, organization=self.organization)
-        context["agenda_form"] = FactionAgendaItemForm()
-        context["agenda_items"] = meeting.agenda_items.order_by("visibility", "order", "number")
-        context["status_choices"] = FactionMeeting.STATUS_CHOICES
-
-        return context
+    def get(self, request, *args, **kwargs):
+        """Redirect to detail page where inline editing is available."""
+        return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=kwargs.get("meeting_id"))
 
     def post(self, request, *args, **kwargs):
-        meeting = get_object_or_404(
-            FactionMeeting,
-            id=kwargs.get("meeting_id"),
-            organization=self.organization
-        )
-
-        # Handle quick status change (from detail page dropdown)
-        new_status = request.POST.get("status")
-        if new_status and new_status in dict(FactionMeeting.STATUS_CHOICES):
-            meeting.status = new_status
-            meeting.save()
-            status_display = dict(FactionMeeting.STATUS_CHOICES).get(new_status, new_status)
-            messages.success(request, f"Status geändert zu '{status_display}'.")
-            return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
-
-        # Handle full form submission
-        form = FactionMeetingForm(request.POST, instance=meeting, organization=self.organization)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Änderungen gespeichert.")
-            return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
-
-        context = self.get_context_data(**kwargs)
-        context["form"] = form
-        return self.render_to_response(context)
+        """Redirect POST requests to detail page."""
+        return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=kwargs.get("meeting_id"))
 
 
 class FactionProtocolView(WorkViewMixin, TemplateView):
@@ -682,7 +695,12 @@ class FactionScheduleListView(WorkViewMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["active_nav"] = "faction"
+        # Show under organization nav when accessed from organization settings
+        if "/organization/" in self.request.path:
+            context["active_nav"] = "organization"
+            context["active_tab"] = "faction_schedules"
+        else:
+            context["active_nav"] = "faction"
 
         context["schedules"] = FactionMeetingSchedule.objects.filter(
             organization=self.organization
@@ -703,6 +721,9 @@ class FactionScheduleListView(WorkViewMixin, TemplateView):
             schedule.save()
 
             messages.success(request, "Sitzungsplan erstellt.")
+            # Redirect to the URL used to access this view
+            if "/organization/" in request.path:
+                return redirect("work:organization_faction_schedules", org_slug=self.organization.slug)
             return redirect("work:faction_schedules", org_slug=self.organization.slug)
 
         context = self.get_context_data()
@@ -1026,62 +1047,18 @@ class FactionInviteView(WorkViewMixin, View):
         return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
 
 
-class FactionSettingsView(WorkViewMixin, TemplateView):
-    """Settings for faction meetings."""
+class FactionSettingsView(WorkViewMixin, View):
+    """Legacy redirect - settings are now in organization settings."""
 
-    template_name = "work/faction/settings.html"
     permission_required = "faction.manage"
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["active_nav"] = "faction"
-
-        # Get current faction settings
-        settings = self.organization.settings or {}
-        context["faction_settings"] = settings.get("faction", {})
-
-        # Default values for display
-        defaults = {
-            "auto_create_approval_item": True,
-            "first_agenda_title_with_previous": "Genehmigung der Tagesordnung und des Protokolls der Sitzung vom {datum_letzte_sitzung}",
-            "first_agenda_title_no_previous": "Genehmigung der Tagesordnung",
-            "first_agenda_description": "",
-        }
-
-        for key, default in defaults.items():
-            if key not in context["faction_settings"]:
-                context["faction_settings"][key] = default
-
-        # Available placeholders for reference
-        context["placeholders"] = [
-            ("{datum_letzte_sitzung}", "Datum der letzten Sitzung (z.B. 15.01.2026)"),
-            ("{titel_letzte_sitzung}", "Titel der letzten Sitzung"),
-            ("{nr_letzte_sitzung}", "Nummer der letzten Sitzung"),
-            ("{datum}", "Datum der aktuellen Sitzung"),
-            ("{titel}", "Titel der aktuellen Sitzung"),
-            ("{nr}", "Nummer der aktuellen Sitzung"),
-        ]
-
-        return context
+    def get(self, request, *args, **kwargs):
+        """Redirect to organization faction settings."""
+        return redirect("work:organization_faction_settings", org_slug=self.organization.slug)
 
     def post(self, request, *args, **kwargs):
-        # Get current settings
-        settings = self.organization.settings or {}
-        faction_settings = settings.get("faction", {})
-
-        # Update settings from form
-        faction_settings["auto_create_approval_item"] = request.POST.get("auto_create_approval_item") == "on"
-        faction_settings["first_agenda_title_with_previous"] = request.POST.get("first_agenda_title_with_previous", "").strip()
-        faction_settings["first_agenda_title_no_previous"] = request.POST.get("first_agenda_title_no_previous", "").strip()
-        faction_settings["first_agenda_description"] = request.POST.get("first_agenda_description", "").strip()
-
-        # Save back to organization
-        settings["faction"] = faction_settings
-        self.organization.settings = settings
-        self.organization.save()
-
-        messages.success(request, "Einstellungen gespeichert.")
-        return redirect("work:faction_settings", org_slug=self.organization.slug)
+        """Redirect POST requests to organization faction settings."""
+        return redirect("work:organization_faction_settings", org_slug=self.organization.slug)
 
 
 class FactionAttendanceStatusView(WorkViewMixin, View):
