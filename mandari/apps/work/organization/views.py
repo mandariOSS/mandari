@@ -432,6 +432,16 @@ class MemberDetailView(WorkViewMixin, TemplateView):
             else:
                 messages.error(request, "Keine RIS-Person verknüpft oder keine Kommune zugeordnet.")
 
+        elif action == "update_sworn_in":
+            # Update sworn-in status (Vereidigung)
+            is_sworn_in = request.POST.get("is_sworn_in") == "1"
+            member.is_sworn_in = is_sworn_in
+            member.save()
+            if is_sworn_in:
+                messages.success(request, f"{member.user.get_full_name() or member.user.email} wurde als vereidigt markiert.")
+            else:
+                messages.success(request, f"Vereidigungsstatus für {member.user.get_full_name() or member.user.email} wurde entfernt.")
+
         return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
 
 

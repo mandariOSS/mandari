@@ -120,6 +120,67 @@
     </div>
     {% endif %}
 
+    <!-- Sworn-in Status (Vereidigung) -->
+    {% if can_edit %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="shield-check" class="w-5 h-5 text-gray-400"></i>
+                Vereidigungsstatus
+            </h3>
+            <p class="text-sm text-gray-500 mt-1">
+                Berechtigt zum Zugang zu nicht-öffentlichen Inhalten (nach Verpflichtungserklärung)
+            </p>
+        </div>
+        <form method="post" class="p-6">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_sworn_in">
+
+            <label class="flex items-center gap-4 p-4 rounded-lg border cursor-pointer transition-colors
+                {% if member.is_sworn_in %}
+                border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20
+                {% else %}
+                border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50
+                {% endif %}">
+                <input type="checkbox" name="is_sworn_in" value="1"
+                       {% if member.is_sworn_in %}checked{% endif %}
+                       onchange="this.form.submit()"
+                       class="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500">
+                <div class="flex-1">
+                    <span class="block font-medium text-gray-900 dark:text-white">
+                        {% if member.is_sworn_in %}
+                        <span class="flex items-center gap-2">
+                            <i data-lucide="check-circle" class="w-4 h-4 text-green-500"></i>
+                            Vereidigt
+                        </span>
+                        {% else %}
+                        <span class="flex items-center gap-2">
+                            <i data-lucide="alert-circle" class="w-4 h-4 text-amber-500"></i>
+                            Nicht vereidigt
+                        </span>
+                        {% endif %}
+                    </span>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">
+                        {% if member.is_sworn_in %}
+                        Hat Zugang zu nicht-öffentlichen TOPs und Protokollen in Fraktionssitzungen.
+                        {% else %}
+                        Kein Zugang zu nicht-öffentlichen Inhalten. Nur öffentliche TOPs sichtbar.
+                        {% endif %}
+                    </span>
+                </div>
+            </label>
+        </form>
+    </div>
+    {% else %}
+    <!-- Read-only sworn-in status -->
+    {% if member.is_sworn_in %}
+    <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 mb-6 flex items-center gap-3">
+        <i data-lucide="shield-check" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+        <span class="text-green-700 dark:text-green-300 font-medium">Dieses Mitglied ist vereidigt</span>
+    </div>
+    {% endif %}
+    {% endif %}
+
     <!-- Committee Assignment (OParl Gremien) -->
     {% if has_body %}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6">

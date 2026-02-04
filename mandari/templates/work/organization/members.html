@@ -123,6 +123,9 @@
                             Eigentümer
                         </span>
                         {% endif %}
+                        {% if member.is_sworn_in %}
+                        <i data-lucide="shield-check" class="w-4 h-4 text-green-500" title="Vereidigt"></i>
+                        {% endif %}
                     </p>
                     <p class="text-sm text-gray-500">{{ member.user.email }}</p>
 
