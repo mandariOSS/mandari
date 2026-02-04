@@ -370,6 +370,16 @@ class TaskDetailView(WorkViewMixin, TemplateView):
             self.membership.has_permission("tasks.manage")
         )
 
+        # Members for sharing
+        context["members"] = self.organization.memberships.filter(
+            is_active=True
+        ).select_related("user")
+
+        # Get IDs of members task is shared with
+        context["shared_member_ids"] = list(
+            task.shares.values_list("membership_id", flat=True)
+        )
+
         return context
 
     def post(self, request, *args, **kwargs):
@@ -425,6 +435,58 @@ class TaskDetailView(WorkViewMixin, TemplateView):
             task.save()
             messages.success(request, "Status aktualisiert.")
 
+        return redirect("work:task_detail", org_slug=self.organization.slug, task_id=task.id)
+
+
+class TaskShareView(WorkViewMixin, View):
+    """Handle task visibility and sharing."""
+
+    permission_required = "tasks.manage"
+
+    def post(self, request, *args, **kwargs):
+        task = get_object_or_404(
+            Task,
+            id=kwargs.get("task_id"),
+            organization=self.organization
+        )
+
+        # Check permission
+        can_edit = (
+            task.created_by == self.membership or
+            task.assigned_to == self.membership or
+            self.membership.has_permission("tasks.manage")
+        )
+        if not can_edit:
+            messages.error(request, "Keine Berechtigung.")
+            return redirect("work:task_detail", org_slug=self.organization.slug, task_id=task.id)
+
+        # Update visibility
+        new_visibility = request.POST.get("visibility", "private")
+        if new_visibility in ["private", "shared", "organization"]:
+            task.visibility = new_visibility
+            task.save(update_fields=["visibility"])
+
+        # Handle shares if visibility is "shared"
+        if new_visibility == "shared":
+            share_with_ids = request.POST.getlist("share_with[]")
+
+            # Remove existing shares that are not in the new list
+            TaskShare.objects.filter(task=task).exclude(
+                membership_id__in=share_with_ids
+            ).delete()
+
+            # Add new shares
+            for member_id in share_with_ids:
+                TaskShare.objects.get_or_create(
+                    task=task,
+                    membership_id=member_id,
+                    defaults={"shared_by": self.membership}
+                )
+        else:
+            # If not shared, remove all shares
+            TaskShare.objects.filter(task=task).delete()
+
+        messages.success(request, "Sichtbarkeit aktualisiert.")
         return redirect("work:task_detail", org_slug=self.organization.slug, task_id=task.id)
 
 

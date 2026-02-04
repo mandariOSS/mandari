@@ -367,6 +367,11 @@ urlpatterns = [
         tasks_views.TaskDetailView.as_view(),
         name="task_detail"
     ),
+    path(
+        "<slug:org_slug>/tasks/<uuid:task_id>/share/",
+        tasks_views.TaskShareView.as_view(),
+        name="task_share"
+    ),
 
     # RIS (wrapped insight_core views)
     path(
