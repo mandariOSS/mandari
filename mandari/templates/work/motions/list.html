@@ -194,6 +194,8 @@
     <div x-show="viewMode === 'list'" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="divide-y divide-gray-100 dark:divide-gray-700">
             {% for motion in motions %}
+            <!-- DEBUG: Loop iteration {{ forloop.counter }} - Motion ID: {{ motion.id }}, Title: {{ motion.title }} -->
+            <div class="bg-red-200 p-2">DEBUG ITEM: {{ motion.title }} ({{ motion.id }})</div>
             <div class="group relative">
                 <a href="{% url 'work:motion_detail' org_slug=organization.slug motion_id=motion.id %}"
                    class="block px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
