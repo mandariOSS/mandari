@@ -180,35 +180,10 @@
         {% endfor %}
     </div>
 
-    <!-- DEBUG: Show count -->
-    <div class="bg-yellow-100 p-4 mb-4 rounded">
-        <strong>DEBUG:</strong> motions count = {{ motions|length }},
-        stats.total = {{ stats.total }},
-        selected_type = "{{ selected_type }}",
-        selected_status = "{{ selected_status }}",
-        search_query = "{{ search_query }}",
-        filter_mine = {{ filter_mine|yesno:"true,false" }}
-        <br><strong>Alpine viewMode:</strong> <span x-text="viewMode"></span>
-    </div>
-
-    <!-- DEBUG: List documents outside of x-show -->
-    <div class="bg-green-100 p-4 mb-4 rounded">
-        <strong>DEBUG Documents (outside x-show):</strong>
-        <ul>
-        {% for motion in motions %}
-            <li>{{ forloop.counter }}. {{ motion.title }} (ID: {{ motion.id }}, Status: {{ motion.status }})</li>
-        {% empty %}
-            <li>NO DOCUMENTS IN LOOP</li>
-        {% endfor %}
-        </ul>
-    </div>
-
-    <!-- List View (default - no x-cloak so it shows even if Alpine fails) -->
+    <!-- List View -->
     <div x-show="viewMode === 'list'" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="divide-y divide-gray-100 dark:divide-gray-700">
             {% for motion in motions %}
-            <!-- DEBUG: Loop iteration {{ forloop.counter }} - Motion ID: {{ motion.id }}, Title: {{ motion.title }} -->
-            <div class="bg-red-200 p-2">DEBUG ITEM: {{ motion.title }} ({{ motion.id }})</div>
             <div class="group relative">
                 <a href="{% url 'work:motion_detail' org_slug=organization.slug motion_id=motion.id %}"
                    class="block px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
