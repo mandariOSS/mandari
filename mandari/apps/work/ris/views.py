@@ -441,6 +441,7 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
         context["body"] = body
 
         from insight_core.models import OParlOrganization
+        from insight_core.ranking import get_ranking_annotation
 
         # Base queryset
         organizations = OParlOrganization.objects.filter(body=body)
@@ -465,10 +466,11 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
             body=body
         ).values_list("organization_type", flat=True).distinct().order_by("organization_type")
 
-        # Annotate with member count
+        # Annotate with member count and ranking priority
         organizations = organizations.annotate(
-            member_count=Count("memberships")
-        ).order_by("name")
+            member_count=Count("memberships"),
+            ranking_priority=get_ranking_annotation()
+        ).order_by("ranking_priority", "name")
 
         # Pagination
         paginator = Paginator(organizations, 25)

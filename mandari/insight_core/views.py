@@ -26,6 +26,7 @@ from .models import (
     OParlPaper,
     TileCache,
 )
+from .ranking import sort_organizations_by_ranking
 
 
 # =============================================================================
@@ -223,7 +224,7 @@ class OrganizationListView(TemplateView):
             else:
                 orgs = base_qs.filter(end_date__lt=today)
 
-            context["organizations"] = orgs.order_by("name")
+            context["organizations"] = sort_organizations_by_ranking(orgs)
 
             # Counts ohne Suchfilter
             all_orgs = OParlOrganization.objects.filter(body=body)
@@ -271,10 +272,12 @@ class OrganizationListPartial(ListView):
         base_qs = OParlOrganization.objects.filter(body=body)
 
         if tab == "active":
-            return base_qs.filter(
+            qs = base_qs.filter(
                 Q(end_date__isnull=True) | Q(end_date__gte=today)
-            ).order_by("name")
-        return base_qs.filter(end_date__lt=today).order_by("name")
+            )
+        else:
+            qs = base_qs.filter(end_date__lt=today)
+        return sort_organizations_by_ranking(qs)
 
 
 # =============================================================================
