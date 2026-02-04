@@ -249,7 +249,7 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
         # Check if user can view non-public content (requires permission + sworn-in)
         from apps.common.permissions import PermissionChecker
         checker = PermissionChecker(self.membership)
-        can_view_internal = checker.can_view_non_public_faction()
+        can_view_internal = checker.can_access_non_public()
         context["can_view_internal"] = can_view_internal
 
         # Only pass internal items if user is allowed to see them
