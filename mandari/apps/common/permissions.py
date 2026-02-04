@@ -457,8 +457,9 @@ DEFAULT_ROLES = {
             "agenda.view", "agenda.propose",
             # NO voting, speaking in topic area
             "speaking.in_topic",
-            # Motions - can view and comment
-            "motions.view", "motions.comment",
+            # Motions - can view, create, edit own, and comment
+            "motions.view", "motions.view_drafts", "motions.create",
+            "motions.edit", "motions.comment",
             # Protocols - full access
             "protocols.view_public", "protocols.view_full",
             # Meetings (RIS)
@@ -503,8 +504,9 @@ DEFAULT_ROLES = {
             "agenda.view", "agenda.propose",
             # NO voting, speaking in topic area
             "speaking.in_topic",
-            # Motions - can view and comment
-            "motions.view", "motions.comment",
+            # Motions - can view, create, edit own, and comment
+            "motions.view", "motions.view_drafts", "motions.create",
+            "motions.edit", "motions.comment",
             # Protocols - full access
             "protocols.view_public", "protocols.view_full",
             # Meetings (RIS)

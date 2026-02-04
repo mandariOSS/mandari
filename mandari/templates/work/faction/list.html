@@ -1,4 +1,5 @@
 {% extends "work/base_work.html" %}
+{% load permission_tags %}
 
 {% block page_title %}Fraktionssitzungen{% endblock %}
 
@@ -9,6 +10,7 @@
 
 {% block header_actions %}
 <div class="flex items-center gap-2">
+    {% if membership|has_perm:"faction.manage" %}
     <a href="{% url 'work:organization_faction_settings' org_slug=organization.slug %}"
        class="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
        title="Einstellungen">
@@ -19,11 +21,14 @@
         <i data-lucide="calendar" class="w-4 h-4 inline mr-1"></i>
         Sitzungspläne
     </a>
+    {% endif %}
+    {% if membership|has_perm:"faction.create" %}
     <a href="{% url 'work:faction_create' org_slug=organization.slug %}"
        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
         <i data-lucide="plus" class="w-4 h-4"></i>
         Neue Sitzung
     </a>
+    {% endif %}
 </div>
 {% endblock %}
 

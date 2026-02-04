@@ -1,4 +1,4 @@
-{% load static %}
+{% load static permission_tags %}
 <!DOCTYPE html>
 <html lang="de" class="scroll-smooth"
       x-data="{ darkMode: localStorage.getItem('darkMode') === 'true' }"
@@ -321,7 +321,7 @@
             </div>
 
             <!-- Navigation -->
-            <nav class="flex-1 py-4 overflow-y-auto">
+            <nav class="flex-1 py-4 overflow-y-auto overflow-x-hidden">
                 <!-- Hauptbereich -->
                 <a href="{% url 'work:dashboard' org_slug=organization.slug %}"
                    class="work-nav-item {% if active_nav == 'dashboard' %}active{% endif %}">
@@ -408,6 +408,7 @@
                     </div>
                 </div>
 
+                {% if membership|has_perm:"organization.view" %}
                 <div class="work-nav-section">Verwaltung</div>
 
                 <a href="{% url 'work:organization' org_slug=organization.slug %}"
@@ -415,6 +416,7 @@
                     <i data-lucide="settings"></i>
                     Einstellungen
                 </a>
+                {% endif %}
 
                 <a href="{% url 'work:support' org_slug=organization.slug %}"
                    class="work-nav-item {% if active_nav == 'support' %}active{% endif %}">
