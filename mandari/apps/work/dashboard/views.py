@@ -122,5 +122,5 @@ class DashboardView(WorkViewMixin, TemplateView):
         ).exclude(
             status__in=["deleted", "archived"]
         ).select_related(
-            "created_by__user"
+            "author__user"
         ).order_by("-updated_at")[:5]
