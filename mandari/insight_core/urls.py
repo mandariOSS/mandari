@@ -128,4 +128,16 @@ urlpatterns = [
     path("roadmap/", views.RoadmapView.as_view(), name="roadmap"),
     path("presse/", views.PresseView.as_view(), name="presse"),
     path("danksagungen/", views.DanksagungenView.as_view(), name="danksagungen"),
+
+    # Öffentliche Fraktionsprotokolle (ohne Login)
+    path(
+        "public/<slug:body_slug>/protokolle/",
+        views.PublicProtocolListView.as_view(),
+        name="public_protocols"
+    ),
+    path(
+        "public/<slug:body_slug>/protokolle/<uuid:meeting_id>/",
+        views.PublicProtocolDetailView.as_view(),
+        name="public_protocol_detail"
+    ),
 ]

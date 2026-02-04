@@ -309,6 +309,75 @@
         </div>
         {% endif %}
 
+        {# Proposals Section (for managers) #}
+        {% if can_manage_attendance %}
+        {% with pending_proposals=meeting.agenda_items.all %}
+        {% for item in pending_proposals %}
+        {% if item.proposal_status == 'proposed' %}
+        {% if forloop.first %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-amber-200 dark:border-amber-800">
+            <div class="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-t-xl border-b border-amber-200 dark:border-amber-800 flex items-center justify-between">
+                <h4 class="font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-2">
+                    <i data-lucide="lightbulb" class="w-5 h-5"></i>
+                    Vorschläge
+                </h4>
+            </div>
+            <div class="divide-y divide-amber-100 dark:divide-amber-800/50">
+        {% endif %}
+                <div class="p-4">
+                    <div class="flex items-start justify-between gap-3 mb-2">
+                        <div class="flex-1 min-w-0">
+                            <h5 class="font-medium text-gray-900 dark:text-white text-sm">{{ item.title }}</h5>
+                            {% if item.proposed_by %}
+                            <p class="text-xs text-gray-500 mt-0.5">
+                                von {{ item.proposed_by.user.get_display_name }} am {{ item.proposed_at|date:"d.m.Y" }}
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mt-3">
+                        <form method="post" action="{% url 'work:faction_proposal' org_slug=organization.slug meeting_id=meeting.id %}" class="flex-1">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="accept">
+                            <input type="hidden" name="item_id" value="{{ item.id }}">
+                            <button type="submit" class="w-full py-1.5 text-xs font-medium text-green-700 bg-green-50 rounded hover:bg-green-100 flex items-center justify-center gap-1">
+                                <i data-lucide="check" class="w-3 h-3"></i>
+                                Annehmen
+                            </button>
+                        </form>
+                        <form method="post" action="{% url 'work:faction_proposal' org_slug=organization.slug meeting_id=meeting.id %}" class="flex-1">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="reject">
+                            <input type="hidden" name="item_id" value="{{ item.id }}">
+                            <button type="submit" class="w-full py-1.5 text-xs font-medium text-red-700 bg-red-50 rounded hover:bg-red-100 flex items-center justify-center gap-1">
+                                <i data-lucide="x" class="w-3 h-3"></i>
+                                Ablehnen
+                            </button>
+                        </form>
+                    </div>
+                </div>
+        {% if forloop.last %}
+            </div>
+        </div>
+        {% endif %}
+        {% endif %}
+        {% endfor %}
+        {% endwith %}
+        {% endif %}
+
+        {# Propose Agenda Item Button (for Sachkundige with agenda.propose permission) #}
+        {% if can_propose_agenda and meeting.status in 'draft,planned,invited' %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">TOP vorschlagen</h4>
+            <p class="text-xs text-gray-500 mb-3">Als sachkundige/r Bürger*in können Sie Tagesordnungspunkte vorschlagen.</p>
+            <button @click="showProposalModal = true"
+                    class="w-full py-2.5 text-sm font-medium text-primary-600 bg-primary-50 dark:bg-primary-900/20 rounded-lg hover:bg-primary-100 flex items-center justify-center gap-2">
+                <i data-lucide="lightbulb" class="w-4 h-4"></i>
+                TOP vorschlagen
+            </button>
+        </div>
+        {% endif %}
+
         {# Invite Button #}
         {% if can_edit and not meeting.invitation_sent and meeting.status in 'draft,planned' %}
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
@@ -482,6 +551,69 @@
             </div>
         </div>
     </div>
+
+    {# Propose Agenda Item Modal #}
+    <div x-show="showProposalModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition>
+        <div class="flex items-center justify-center min-h-screen px-4 py-8">
+            <div class="fixed inset-0 bg-black/50" @click="showProposalModal = false"></div>
+            <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full" @click.stop>
+                <form method="post" action="{% url 'work:faction_proposal' org_slug=organization.slug meeting_id=meeting.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="propose">
+
+                    <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                            <i data-lucide="lightbulb" class="w-5 h-5 text-amber-500"></i>
+                            TOP vorschlagen
+                        </h3>
+                        <button type="button" @click="showProposalModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <div class="p-4 space-y-4">
+                        <div class="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-700 dark:text-amber-300">
+                            <p>Ihr Vorschlag wird dem Fraktionsvorstand zur Prüfung vorgelegt.</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel <span class="text-red-500">*</span></label>
+                            <input type="text" name="title" required
+                                   class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
+                                   placeholder="Titel Ihres Vorschlags">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                            <textarea name="description" rows="4"
+                                      class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg resize-none"
+                                      placeholder="Beschreiben Sie Ihren Vorschlag..."></textarea>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sichtbarkeit</label>
+                            <select name="visibility"
+                                    class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                <option value="public">Öffentlich</option>
+                                <option value="internal">Nicht-öffentlich</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                        <button type="button" @click="showProposalModal = false"
+                                class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                            Abbrechen
+                        </button>
+                        <button type="submit"
+                                class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                            Vorschlag einreichen
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -489,6 +621,7 @@ function factionMeeting() {
     return {
         showEditModal: false,
         showAddAttendeeModal: false,
+        showProposalModal: false,
         editMode: 'add',
         editItemId: '',
         editTitle: '',

@@ -477,8 +477,8 @@
                         loading: false,
                         init() {
                             this.fetchCount();
-                            // Poll for new notifications every 60 seconds
-                            setInterval(() => this.fetchCount(), 60000);
+                            // Poll for new notifications every 30 seconds
+                            setInterval(() => this.fetchCount(), 30000);
                         },
                         async fetchCount() {
                             try {

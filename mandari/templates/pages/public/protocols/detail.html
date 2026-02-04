@@ -1,0 +1,244 @@
+{% extends "base_ris.html" %}
+{% load static %}
+
+{% block title %}{{ meeting.title }} - Protokoll{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Breadcrumb -->
+    <nav class="mb-6" aria-label="Breadcrumb">
+        <ol class="flex items-center gap-2 text-sm">
+            <li>
+                <a href="{% url 'insight_core:public_protocols' body_slug=body.slug %}"
+                   class="text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400">
+                    Protokolle
+                </a>
+            </li>
+            <li class="text-gray-400">/</li>
+            <li class="text-gray-900 dark:text-white font-medium truncate max-w-xs">
+                {{ meeting.title }}
+            </li>
+        </ol>
+    </nav>
+
+    <!-- Header -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
+        <div class="flex items-start justify-between gap-4 mb-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                    {{ meeting.title }}
+                </h1>
+                <p class="text-gray-600 dark:text-gray-400">
+                    {{ organization.name }}
+                </p>
+            </div>
+            <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                <i data-lucide="check-circle" class="w-3 h-3"></i>
+                Genehmigt
+            </span>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+            <span class="flex items-center gap-1">
+                <i data-lucide="calendar" class="w-4 h-4"></i>
+                {{ meeting.start|date:"l, d. F Y" }}
+            </span>
+            {% if meeting.start %}
+            <span class="flex items-center gap-1">
+                <i data-lucide="clock" class="w-4 h-4"></i>
+                {{ meeting.start|time:"H:i" }} Uhr
+                {% if meeting.end %} - {{ meeting.end|time:"H:i" }} Uhr{% endif %}
+            </span>
+            {% endif %}
+            {% if meeting.location %}
+            <span class="flex items-center gap-1">
+                <i data-lucide="map-pin" class="w-4 h-4"></i>
+                {{ meeting.location }}
+            </span>
+            {% endif %}
+        </div>
+
+        {% if meeting.protocol_approved_at %}
+        <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400">
+            Genehmigt am {{ meeting.protocol_approved_at|date:"d.m.Y" }}
+            {% if meeting.protocol_approved_in %}
+                in der Sitzung vom {{ meeting.protocol_approved_in.start|date:"d.m.Y" }}
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Navigation -->
+    <div class="flex items-center justify-between mb-6">
+        {% if previous_meeting %}
+        <a href="{% url 'insight_core:public_protocol_detail' body_slug=body.slug meeting_id=previous_meeting.id %}"
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+            Vorheriges Protokoll
+        </a>
+        {% else %}
+        <div></div>
+        {% endif %}
+
+        {% if next_meeting %}
+        <a href="{% url 'insight_core:public_protocol_detail' body_slug=body.slug meeting_id=next_meeting.id %}"
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+            Nächstes Protokoll
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Agenda Items -->
+    <div class="space-y-4">
+        <h2 class="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="list" class="w-5 h-5"></i>
+            Tagesordnung
+        </h2>
+
+        {% if agenda_items %}
+        <div class="space-y-4">
+            {% for item in agenda_items %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="px-6 py-4">
+                    <div class="flex items-start gap-4">
+                        <span class="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-semibold text-sm">
+                            {{ item.number }}
+                        </span>
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-medium text-gray-900 dark:text-white">
+                                {{ item.title }}
+                            </h3>
+                            {% if item.get_description_decrypted %}
+                            <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                                {{ item.get_description_decrypted }}
+                            </p>
+                            {% endif %}
+
+                            {% if item.has_decision %}
+                            <div class="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <i data-lucide="vote" class="w-4 h-4 text-primary-600 dark:text-primary-400"></i>
+                                    <span class="text-sm font-medium text-gray-900 dark:text-white">Abstimmungsergebnis</span>
+                                </div>
+                                <div class="flex items-center gap-4 text-sm">
+                                    <span class="text-green-600 dark:text-green-400">
+                                        <i data-lucide="check" class="w-4 h-4 inline"></i>
+                                        {{ item.votes_for }} Ja
+                                    </span>
+                                    <span class="text-red-600 dark:text-red-400">
+                                        <i data-lucide="x" class="w-4 h-4 inline"></i>
+                                        {{ item.votes_against }} Nein
+                                    </span>
+                                    <span class="text-gray-500 dark:text-gray-400">
+                                        <i data-lucide="minus" class="w-4 h-4 inline"></i>
+                                        {{ item.votes_abstain }} Enthaltung
+                                    </span>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Protocol entries for this item -->
+                {% with entries=item.protocol_entries.all %}
+                {% if entries %}
+                <div class="px-6 pb-4">
+                    <div class="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
+                        {% for entry in entries %}
+                        <div class="flex items-start gap-3 text-sm">
+                            <span class="shrink-0 mt-0.5">
+                                {% if entry.entry_type == 'speech' %}
+                                <i data-lucide="mic" class="w-4 h-4 text-blue-500"></i>
+                                {% elif entry.entry_type == 'decision' %}
+                                <i data-lucide="gavel" class="w-4 h-4 text-green-500"></i>
+                                {% elif entry.entry_type == 'action' %}
+                                <i data-lucide="check-square" class="w-4 h-4 text-orange-500"></i>
+                                {% else %}
+                                <i data-lucide="file-text" class="w-4 h-4 text-gray-400"></i>
+                                {% endif %}
+                            </span>
+                            <div class="flex-1 min-w-0">
+                                {% if entry.speaker %}
+                                <span class="font-medium text-gray-900 dark:text-white">
+                                    {{ entry.speaker.user.get_display_name }}:
+                                </span>
+                                {% endif %}
+                                <span class="text-gray-700 dark:text-gray-300">
+                                    {{ entry.content }}
+                                </span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                {% endwith %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+            <i data-lucide="list" class="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3"></i>
+            <p class="text-gray-600 dark:text-gray-400">
+                Keine öffentlichen Tagesordnungspunkte vorhanden.
+            </p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- General Protocol Entries (not linked to specific items) -->
+    {% with general_entries=protocol_entries %}
+    {% if general_entries %}
+    <div class="mt-8 space-y-4">
+        <h2 class="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="file-text" class="w-5 h-5"></i>
+            Allgemeine Protokollnotizen
+        </h2>
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="space-y-4">
+                {% for entry in general_entries %}
+                {% if not entry.agenda_item %}
+                <div class="flex items-start gap-3 text-sm">
+                    <span class="shrink-0 mt-0.5">
+                        {% if entry.entry_type == 'speech' %}
+                        <i data-lucide="mic" class="w-4 h-4 text-blue-500"></i>
+                        {% elif entry.entry_type == 'decision' %}
+                        <i data-lucide="gavel" class="w-4 h-4 text-green-500"></i>
+                        {% elif entry.entry_type == 'action' %}
+                        <i data-lucide="check-square" class="w-4 h-4 text-orange-500"></i>
+                        {% else %}
+                        <i data-lucide="file-text" class="w-4 h-4 text-gray-400"></i>
+                        {% endif %}
+                    </span>
+                    <div class="flex-1 min-w-0">
+                        {% if entry.speaker %}
+                        <span class="font-medium text-gray-900 dark:text-white">
+                            {{ entry.speaker.user.get_display_name }}:
+                        </span>
+                        {% endif %}
+                        <span class="text-gray-700 dark:text-gray-300">
+                            {{ entry.content }}
+                        </span>
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- Back to list -->
+    <div class="mt-8 text-center">
+        <a href="{% url 'insight_core:public_protocols' body_slug=body.slug %}"
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors">
+            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+            Zurück zur Protokollliste
+        </a>
+    </div>
+</div>
+{% endblock %}

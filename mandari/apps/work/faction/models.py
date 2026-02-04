@@ -176,6 +176,12 @@ class FactionMeeting(EncryptionMixin, models.Model):
         ("cancelled", "Abgesagt"),
     ]
 
+    PROTOCOL_STATUS_CHOICES = [
+        ("draft", "Entwurf"),
+        ("pending", "Zur Genehmigung"),
+        ("approved", "Genehmigt"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     organization = models.ForeignKey(
@@ -260,6 +266,12 @@ class FactionMeeting(EncryptionMixin, models.Model):
     # Protocol (encrypted)
     protocol_encrypted = EncryptedTextField(
         verbose_name="Protokoll"
+    )
+    protocol_status = models.CharField(
+        max_length=20,
+        choices=PROTOCOL_STATUS_CHOICES,
+        default="draft",
+        verbose_name="Protokollstatus"
     )
     protocol_approved = models.BooleanField(
         default=False,
@@ -450,12 +462,27 @@ class FactionMeeting(EncryptionMixin, models.Model):
         if prev.protocol_approved:
             return False  # Already approved
 
+        prev.protocol_status = "approved"
         prev.protocol_approved = True
         prev.protocol_approved_at = timezone.now()
         prev.protocol_approved_by = approved_by
         prev.protocol_approved_in = self
-        prev.save()
+        prev.save(update_fields=[
+            "protocol_status",
+            "protocol_approved",
+            "protocol_approved_at",
+            "protocol_approved_by",
+            "protocol_approved_in"
+        ])
 
+        return True
+
+    def submit_protocol_for_approval(self):
+        """Submit the protocol for approval in the next meeting."""
+        if self.protocol_status == "approved":
+            return False  # Already approved
+        self.protocol_status = "pending"
+        self.save(update_fields=["protocol_status"])
         return True
 
     @classmethod
@@ -493,6 +520,13 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
     VISIBILITY_CHOICES = [
         ("public", "Öffentlich"),
         ("internal", "Nicht-öffentlich"),
+    ]
+
+    # Proposal status for allowing Sachkundige Bürger*innen to propose agenda items
+    PROPOSAL_STATUS_CHOICES = [
+        ("active", "Aktiv"),
+        ("proposed", "Vorgeschlagen"),
+        ("rejected", "Abgelehnt"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -573,6 +607,45 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
     # Ordering
     order = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
 
+    # Proposal system (for Sachkundige Bürger*innen)
+    proposal_status = models.CharField(
+        max_length=20,
+        choices=PROPOSAL_STATUS_CHOICES,
+        default="active",
+        verbose_name="Vorschlagsstatus",
+        help_text="Für TOPs die von Sachkundigen Bürger*innen vorgeschlagen wurden"
+    )
+    proposed_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="proposed_agenda_items",
+        verbose_name="Vorgeschlagen von"
+    )
+    proposed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Vorgeschlagen am"
+    )
+    reviewed_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_agenda_items",
+        verbose_name="Geprüft von"
+    )
+    reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Geprüft am"
+    )
+    rejection_reason = models.TextField(
+        blank=True,
+        verbose_name="Ablehnungsgrund"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -580,12 +653,46 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
         verbose_name = "Fraktions-TOP"
         verbose_name_plural = "Fraktions-TOPs"
         ordering = ["order", "number"]
+        indexes = [
+            models.Index(fields=["meeting", "proposal_status"]),
+        ]
 
     def __str__(self):
         return f"{self.number}: {self.title}"
 
     def get_encryption_organization(self):
         return self.meeting.organization
+
+    def accept_proposal(self, reviewed_by):
+        """Accept a proposed agenda item."""
+        if self.proposal_status != "proposed":
+            return False
+        self.proposal_status = "active"
+        self.reviewed_by = reviewed_by
+        self.reviewed_at = timezone.now()
+        self.save(update_fields=["proposal_status", "reviewed_by", "reviewed_at"])
+        return True
+
+    def reject_proposal(self, reviewed_by, reason=""):
+        """Reject a proposed agenda item."""
+        if self.proposal_status != "proposed":
+            return False
+        self.proposal_status = "rejected"
+        self.reviewed_by = reviewed_by
+        self.reviewed_at = timezone.now()
+        self.rejection_reason = reason
+        self.save(update_fields=["proposal_status", "reviewed_by", "reviewed_at", "rejection_reason"])
+        return True
+
+    @property
+    def is_proposal(self) -> bool:
+        """Check if this is a proposed item (not yet active)."""
+        return self.proposal_status == "proposed"
+
+    @property
+    def is_rejected(self) -> bool:
+        """Check if this proposal was rejected."""
+        return self.proposal_status == "rejected"
 
 
 class FactionAttendance(models.Model):

@@ -1,15 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Notification views for the Work module.
-
-Includes Server-Sent Events (SSE) support for real-time notifications.
 """
 
-import json
-import time
 from datetime import datetime
 
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import JsonResponse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
@@ -164,11 +160,13 @@ class NotificationMarkReadView(WorkViewMixin, View):
                     recipient=self.membership,
                 )
                 notification.mark_as_read()
+                # Invalidate count cache
+                NotificationHub.invalidate_count_cache(self.membership)
                 return JsonResponse({"success": True})
             except Notification.DoesNotExist:
                 return JsonResponse({"success": False, "error": "Not found"}, status=404)
         else:
-            # Mark all as read
+            # Mark all as read (also invalidates cache)
             count = NotificationHub.mark_all_as_read(self.membership)
             return JsonResponse({"success": True, "count": count})
 
@@ -182,86 +180,6 @@ class NotificationCountView(WorkViewMixin, View):
         """Return unread count as JSON."""
         count = NotificationHub.get_unread_count(self.membership)
         return JsonResponse({"count": count})
-
-
-class NotificationSSEView(WorkViewMixin, View):
-    """
-    Server-Sent Events (SSE) endpoint for real-time notifications.
-
-    The client maintains a persistent connection and receives updates
-    whenever new notifications arrive.
-
-    Usage in JavaScript:
-        const eventSource = new EventSource('/work/org/notifications/stream/');
-        eventSource.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            // Update UI with new notification count or display toast
-        };
-    """
-
-    permission_required = None
-
-    def get(self, request, *args, **kwargs):
-        """Stream notification updates via SSE."""
-
-        def event_stream():
-            """
-            Generator that yields SSE events.
-
-            Checks for new notifications every 3 seconds.
-            Sends heartbeat every 30 seconds to keep connection alive.
-            """
-            last_check = timezone.now()
-            last_count = NotificationHub.get_unread_count(self.membership)
-            heartbeat_interval = 30
-            check_interval = 3
-            last_heartbeat = time.time()
-
-            # Send initial count
-            yield f"data: {json.dumps({'type': 'init', 'count': last_count})}\n\n"
-
-            while True:
-                current_time = time.time()
-
-                # Check for new notifications
-                current_count = NotificationHub.get_unread_count(self.membership)
-
-                if current_count != last_count:
-                    # Get the latest notification for preview
-                    latest = Notification.objects.filter(
-                        recipient=self.membership,
-                        is_read=False,
-                    ).select_related("actor__user").first()
-
-                    notification_data = None
-                    if latest:
-                        notification_data = {
-                            "id": str(latest.id),
-                            "title": latest.title,
-                            "message": latest.message[:100],
-                            "type": latest.notification_type,
-                            "icon": latest.icon,
-                            "link": latest.link,
-                            "created_at": latest.created_at.isoformat(),
-                        }
-
-                    yield f"data: {json.dumps({'type': 'update', 'count': current_count, 'notification': notification_data})}\n\n"
-                    last_count = current_count
-
-                # Send heartbeat to keep connection alive
-                if current_time - last_heartbeat >= heartbeat_interval:
-                    yield f": heartbeat\n\n"
-                    last_heartbeat = current_time
-
-                time.sleep(check_interval)
-
-        response = StreamingHttpResponse(
-            event_stream(),
-            content_type="text/event-stream",
-        )
-        response["Cache-Control"] = "no-cache"
-        response["X-Accel-Buffering"] = "no"
-        return response
 
 
 class NotificationLatestView(WorkViewMixin, View):

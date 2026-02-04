@@ -35,18 +35,20 @@ class DashboardView(WorkViewMixin, TemplateView):
         Get upcoming meetings combining faction meetings and RIS committee meetings.
         Returns a unified list sorted by start time.
         """
+        from django.db.models import Prefetch
         from apps.work.faction.models import FactionMeeting
-        from insight_core.models import OParlMeeting
+        from insight_core.models import OParlMeeting, OParlOrganization
 
         now = timezone.now()
         meetings = []
 
         # Faction meetings (not completed/cancelled, starting from now)
+        # select_related for any FK fields that might be accessed
         faction_meetings = FactionMeeting.objects.filter(
             organization=self.organization,
             start__gte=now,
             status__in=["draft", "planned", "invited", "ongoing"]
-        ).order_by("start")[:5]
+        ).select_related("organization").order_by("start")[:5]
 
         for meeting in faction_meetings:
             meetings.append({
@@ -62,15 +64,22 @@ class DashboardView(WorkViewMixin, TemplateView):
 
         # RIS/Committee meetings (if organization has OParl body)
         if self.organization.body:
+            # Optimize with Prefetch to only fetch needed fields
             ris_meetings = OParlMeeting.objects.filter(
                 body=self.organization.body,
                 start__gte=now,
                 cancelled=False
-            ).prefetch_related("organizations").order_by("start")[:5]
+            ).prefetch_related(
+                Prefetch(
+                    "organizations",
+                    queryset=OParlOrganization.objects.only("id", "name", "short_name")
+                )
+            ).order_by("start")[:5]
 
             for meeting in ris_meetings:
                 # Get the committee name (first organization, typically the main committee)
-                orgs = meeting.organizations.all()
+                # Use prefetched cache - don't trigger new query
+                orgs = list(meeting.organizations.all())
                 if orgs:
                     committee_name = orgs[0].name or orgs[0].short_name or "Gremium"
                 else:
@@ -99,6 +108,9 @@ class DashboardView(WorkViewMixin, TemplateView):
             organization=self.organization,
             assigned_to=self.membership,
             status__in=["todo", "in_progress"]
+        ).select_related(
+            "assigned_to__user",
+            "created_by__user"
         ).order_by("-priority", "due_date", "-created_at")[:5]
 
     def get_recent_documents(self):
@@ -109,4 +121,6 @@ class DashboardView(WorkViewMixin, TemplateView):
             organization=self.organization
         ).exclude(
             status__in=["deleted", "archived"]
+        ).select_related(
+            "created_by__user"
         ).order_by("-updated_at")[:5]

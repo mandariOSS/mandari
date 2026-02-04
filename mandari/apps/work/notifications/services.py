@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -94,9 +95,12 @@ class NotificationHub:
             metadata=metadata or {},
         )
 
-        # Handle email notification
+        # Invalidate count cache for recipient
+        cls.invalidate_count_cache(recipient)
+
+        # Handle email notification asynchronously
         if send_email:
-            cls._maybe_send_email(notification)
+            cls._queue_email(notification)
 
         logger.info(
             f"Notification sent: {notification_type} to {recipient.user.email}"
@@ -194,40 +198,42 @@ class NotificationHub:
         )
 
     @classmethod
-    def _maybe_send_email(cls, notification: Notification) -> bool:
+    def _queue_email(cls, notification: Notification):
         """
-        Send email for a notification if user preferences allow.
+        Queue email for a notification to be sent asynchronously.
 
-        Returns True if email was sent.
+        Uses Django 6.0's background tasks for async processing.
         """
         try:
-            # Get or create preferences
+            # Quick check if email is enabled before queueing
             prefs, _ = NotificationPreference.objects.get_or_create(
                 membership=notification.recipient
             )
 
-            # Check if email is enabled for this type
+            # Skip if email is disabled for this type
             if not prefs.is_type_enabled(notification.notification_type, "email"):
-                return False
+                return
 
-            # Check quiet hours
+            # Skip if in quiet hours
             if cls._is_quiet_hours(prefs):
-                # Queue for later instead of sending now
-                # For now, we'll just skip
-                return False
+                return
 
-            # Check digest settings
+            # Skip if not instant digest
             if prefs.email_digest != "instant":
-                # Will be handled by digest task
-                return False
+                return
 
-            # Send the email
-            cls._send_notification_email(notification)
-            return True
+            # Queue the email task
+            from apps.work.tasks import send_notification_email_task
+            try:
+                # Try using Django 6.0 background tasks
+                from django.tasks import enqueue
+                enqueue(send_notification_email_task, str(notification.id))
+            except ImportError:
+                # Fallback to synchronous execution if tasks not available
+                send_notification_email_task(str(notification.id))
 
         except Exception as e:
-            logger.error(f"Failed to send notification email: {e}")
-            return False
+            logger.error(f"Failed to queue notification email: {e}")
 
     @classmethod
     def _is_quiet_hours(cls, prefs: NotificationPreference) -> bool:
@@ -492,20 +498,39 @@ class NotificationHub:
     # =========================================================================
 
     @classmethod
+    def _get_count_cache_key(cls, membership) -> str:
+        """Generate cache key for notification count."""
+        return f"notif_count_{membership.id}"
+
+    @classmethod
     def get_unread_count(cls, membership) -> int:
-        """Get count of unread notifications for a user."""
-        return Notification.objects.filter(
-            recipient=membership,
-            is_read=False,
-        ).count()
+        """Get count of unread notifications for a user (cached for 30 seconds)."""
+        cache_key = cls._get_count_cache_key(membership)
+        count = cache.get(cache_key)
+        if count is None:
+            count = Notification.objects.filter(
+                recipient=membership,
+                is_read=False,
+            ).count()
+            cache.set(cache_key, count, 30)  # 30 seconds TTL
+        return count
+
+    @classmethod
+    def invalidate_count_cache(cls, membership):
+        """Invalidate the notification count cache for a user."""
+        cache_key = cls._get_count_cache_key(membership)
+        cache.delete(cache_key)
 
     @classmethod
     def mark_all_as_read(cls, membership) -> int:
         """Mark all notifications as read for a user."""
-        return Notification.objects.filter(
+        count = Notification.objects.filter(
             recipient=membership,
             is_read=False,
         ).update(is_read=True, read_at=timezone.now())
+        # Invalidate cache after marking as read
+        cls.invalidate_count_cache(membership)
+        return count
 
     @classmethod
     def cleanup_old_notifications(cls, days: int = 90) -> int:

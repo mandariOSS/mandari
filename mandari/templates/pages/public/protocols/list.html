@@ -1,0 +1,158 @@
+{% extends "base_ris.html" %}
+{% load static %}
+
+{% block title %}Öffentliche Protokolle{% if body %} - {{ body.name }}{% endif %}{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+            Öffentliche Protokolle
+        </h1>
+        <p class="text-gray-600 dark:text-gray-400">
+            {% if body %}
+                Genehmigte Fraktionsprotokolle in {{ body.name }}
+            {% else %}
+                Keine Kommune ausgewählt
+            {% endif %}
+        </p>
+    </div>
+
+    {% if protocols %}
+    <!-- Filters -->
+    <div class="mb-6">
+        <form method="get" class="flex flex-col sm:flex-row gap-3">
+            <div class="relative flex-1 min-w-0">
+                <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true"></i>
+                <label for="search-protocols" class="sr-only">Protokoll suchen</label>
+                <input type="search"
+                       id="search-protocols"
+                       name="q"
+                       value="{{ search_query }}"
+                       placeholder="Protokoll suchen..."
+                       class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            </div>
+            {% if available_years %}
+            <div class="shrink-0">
+                <label for="filter-year" class="sr-only">Nach Jahr filtern</label>
+                <select id="filter-year"
+                        name="year"
+                        onchange="this.form.submit()"
+                        class="w-full sm:w-auto px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 outline-none">
+                    <option value="">Alle Jahre</option>
+                    {% for year in available_years %}
+                    <option value="{{ year }}" {% if selected_year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <button type="submit" class="px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors">
+                Suchen
+            </button>
+        </form>
+    </div>
+
+    <!-- Protocols List -->
+    <div class="space-y-4">
+        {% for protocol in protocols %}
+        <a href="{% url 'insight_core:public_protocol_detail' body_slug=body.slug meeting_id=protocol.id %}"
+           class="block bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
+            <div class="flex items-start justify-between gap-4">
+                <div class="flex-1 min-w-0">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1 truncate">
+                        {{ protocol.title }}
+                    </h3>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                        {{ protocol.organization.name }}
+                    </p>
+                    <div class="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                        <span class="flex items-center gap-1">
+                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                            {{ protocol.start|date:"d.m.Y" }}
+                        </span>
+                        {% if protocol.start %}
+                        <span class="flex items-center gap-1">
+                            <i data-lucide="clock" class="w-4 h-4"></i>
+                            {{ protocol.start|time:"H:i" }} Uhr
+                        </span>
+                        {% endif %}
+                        {% if protocol.location %}
+                        <span class="flex items-center gap-1">
+                            <i data-lucide="map-pin" class="w-4 h-4"></i>
+                            {{ protocol.location }}
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="shrink-0">
+                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                        <i data-lucide="check-circle" class="w-3 h-3"></i>
+                        Genehmigt
+                    </span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if protocols.has_other_pages %}
+    <nav class="mt-8 flex justify-center" aria-label="Seitennavigation">
+        <ul class="flex items-center gap-1">
+            {% if protocols.has_previous %}
+            <li>
+                <a href="?page={{ protocols.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+                   class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                </a>
+            </li>
+            {% endif %}
+
+            {% for num in protocols.paginator.page_range %}
+                {% if num == protocols.number %}
+                <li>
+                    <span class="px-4 py-2 rounded-lg bg-primary-600 text-white font-medium">{{ num }}</span>
+                </li>
+                {% elif num > protocols.number|add:'-3' and num < protocols.number|add:'3' %}
+                <li>
+                    <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+                       class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+                        {{ num }}
+                    </a>
+                </li>
+                {% endif %}
+            {% endfor %}
+
+            {% if protocols.has_next %}
+            <li>
+                <a href="?page={{ protocols.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+                   class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+
+    {% else %}
+    <!-- Empty State -->
+    <div class="text-center py-16">
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 mb-4">
+            <i data-lucide="file-text" class="w-8 h-8 text-gray-400"></i>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            Keine Protokolle gefunden
+        </h3>
+        <p class="text-gray-600 dark:text-gray-400">
+            {% if search_query %}
+                Keine Protokolle entsprechen Ihrer Suche.
+            {% else %}
+                Es wurden noch keine Protokolle veröffentlicht.
+            {% endif %}
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

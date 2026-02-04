@@ -35,13 +35,13 @@ class OrganizationMixin(LoginRequiredMixin):
     organization = None
     membership = None
 
-    def dispatch(self, request, *args, **kwargs):
-        """Set up organization context before view processing."""
-        # IMPORTANT: First check if user is authenticated
-        # If not, redirect to login (handled by LoginRequiredMixin)
-        if not request.user.is_authenticated:
-            return self.handle_no_permission()
+    def setup_organization_context(self, request, **kwargs):
+        """
+        Set up organization and membership context.
 
+        Returns True if context was set up successfully.
+        Raises Http404 or PermissionDenied on failure.
+        """
         # Import here to avoid circular imports
         from apps.tenants.models import Membership, Organization
 
@@ -78,6 +78,18 @@ class OrganizationMixin(LoginRequiredMixin):
         # Set on request for easy access
         request.organization = self.organization
         request.membership = self.membership
+
+        return True
+
+    def dispatch(self, request, *args, **kwargs):
+        """Set up organization context before view processing."""
+        # IMPORTANT: First check if user is authenticated
+        # If not, redirect to login (handled by LoginRequiredMixin)
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
+
+        # Set up organization context
+        self.setup_organization_context(request, **kwargs)
 
         return super().dispatch(request, *args, **kwargs)
 
@@ -123,57 +135,21 @@ class PermissionRequiredMixin(OrganizationMixin):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
 
-        # Import here to avoid circular imports
-        from apps.tenants.models import Membership, Organization
-
-        # Get organization slug from URL
-        org_slug = kwargs.get("org_slug")
-        if not org_slug:
-            raise Http404("Keine Organisation angegeben")
-
-        # Get organization
-        try:
-            self.organization = Organization.objects.get(
-                slug=org_slug,
-                is_active=True
-            )
-        except Organization.DoesNotExist:
-            raise Http404("Organisation nicht gefunden")
-
-        # Get membership for current user
-        try:
-            self.membership = Membership.objects.select_related(
-                "organization"
-            ).prefetch_related(
-                "roles__permissions",
-                "individual_permissions",
-                "denied_permissions"
-            ).get(
-                user=request.user,
-                organization=self.organization,
-                is_active=True
-            )
-        except Membership.DoesNotExist:
-            raise PermissionDenied("Kein Zugang zu dieser Organisation")
+        # Set up organization context (reuses parent's method)
+        self.setup_organization_context(request, **kwargs)
 
         # SECURITY: Check permissions BEFORE processing the view
         if self.permission_required:
             self.check_permissions()
 
-        # Set on request for easy access
-        request.organization = self.organization
-        request.membership = self.membership
-
-        # Now process the actual view (skipping OrganizationMixin.dispatch since we did it here)
+        # Now process the actual view via parent's dispatch chain
         return LoginRequiredMixin.dispatch(self, request, *args, **kwargs)
 
     def check_permissions(self):
         """Verify the user has required permissions."""
-        import logging
-        logger = logging.getLogger("apps.common.mixins")
+        from django.conf import settings
 
         if not self.membership:
-            logger.warning(f"[PermCheck] No membership for user")
             raise PermissionDenied("Nicht authentifiziert")
 
         checker = PermissionChecker(self.membership)
@@ -183,27 +159,34 @@ class PermissionRequiredMixin(OrganizationMixin):
         if isinstance(permissions, str):
             permissions = [permissions]
 
-        logger.info(f"[PermCheck] User: {self.membership.user.email}")
-        logger.info(f"[PermCheck] Roles: {list(self.membership.roles.values_list('name', flat=True))}")
-        logger.info(f"[PermCheck] Checking: {permissions}")
-        logger.info(f"[PermCheck] is_admin: {checker.is_admin()}")
+        # Debug logging only in DEBUG mode
+        if settings.DEBUG:
+            import logging
+            logger = logging.getLogger("apps.common.mixins")
+            logger.info(f"[PermCheck] User: {self.membership.user.email}")
+            logger.info(f"[PermCheck] Roles: {list(self.membership.roles.values_list('name', flat=True))}")
+            logger.info(f"[PermCheck] Checking: {permissions}")
+            logger.info(f"[PermCheck] is_admin: {checker.is_admin()}")
 
-        # Check each permission individually for debugging
-        for perm in permissions:
-            has_perm = checker.has_permission(perm)
-            logger.info(f"[PermCheck]   {perm}: {has_perm}")
+            # Check each permission individually for debugging
+            for perm in permissions:
+                has_perm = checker.has_permission(perm)
+                logger.info(f"[PermCheck]   {perm}: {has_perm}")
 
         # Check permissions
         if self.permission_require_all:
             if not checker.has_all_permissions(permissions):
-                logger.warning(f"[PermCheck] DENIED - missing required permissions")
+                if settings.DEBUG:
+                    logger.warning(f"[PermCheck] DENIED - missing required permissions")
                 raise PermissionDenied("Fehlende Berechtigung")
         else:
             if not checker.has_any_permission(permissions):
-                logger.warning(f"[PermCheck] DENIED - no matching permissions")
+                if settings.DEBUG:
+                    logger.warning(f"[PermCheck] DENIED - no matching permissions")
                 raise PermissionDenied("Fehlende Berechtigung")
 
-        logger.info(f"[PermCheck] GRANTED")
+        if settings.DEBUG:
+            logger.info(f"[PermCheck] GRANTED")
 
     def has_permission(self, permission: str) -> bool:
         """

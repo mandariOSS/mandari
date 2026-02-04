@@ -314,6 +314,12 @@ urlpatterns = [
         faction_views.FactionAddAttendeeView.as_view(),
         name="faction_add_attendee"
     ),
+    # Agenda item proposals (for Sachkundige Bürger*innen)
+    path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/proposal/",
+        faction_views.FactionAgendaProposalView.as_view(),
+        name="faction_proposal"
+    ),
 
     # Tasks
     path(
@@ -547,11 +553,6 @@ urlpatterns = [
         "<slug:org_slug>/notifications/count/",
         notifications_views.NotificationCountView.as_view(),
         name="notification_count"
-    ),
-    path(
-        "<slug:org_slug>/notifications/stream/",
-        notifications_views.NotificationSSEView.as_view(),
-        name="notification_stream"
     ),
     path(
         "<slug:org_slug>/notifications/latest/",

@@ -301,6 +301,14 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
         # Can manage attendance (users with faction.manage permission)
         context["can_manage_attendance"] = self.membership.has_permission("faction.manage")
 
+        # Can propose agenda items (for Sachkundige Bürger*innen)
+        context["can_propose_agenda"] = self.membership.has_permission("agenda.propose")
+
+        # Pending proposals count (for managers)
+        context["pending_proposals"] = meeting.agenda_items.filter(
+            proposal_status="proposed"
+        )
+
         # Protocol entries for live protocol view
         context["protocol_entries"] = meeting.protocol_entries.select_related(
             "agenda_item", "speaker__user", "created_by__user"
@@ -1189,5 +1197,83 @@ class FactionAddAttendeeView(WorkViewMixin, View):
 
         else:
             messages.error(request, "Ungültiger Teilnehmertyp.")
+
+        return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
+
+
+class FactionAgendaProposalView(WorkViewMixin, View):
+    """Handle agenda item proposals from Sachkundige Bürger*innen."""
+
+    permission_required = "agenda.propose"
+
+    def post(self, request, *args, **kwargs):
+        meeting = get_object_or_404(
+            FactionMeeting,
+            id=kwargs.get("meeting_id"),
+            organization=self.organization
+        )
+
+        action = request.POST.get("action")
+
+        if action == "propose":
+            # Create a new proposal
+            title = request.POST.get("title", "").strip()
+            description = request.POST.get("description", "").strip()
+            visibility = request.POST.get("visibility", "public")
+
+            if not title:
+                messages.error(request, "Bitte einen Titel angeben.")
+                return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
+
+            from .services import AgendaProposalService
+            item = AgendaProposalService.create_proposal(
+                meeting=meeting,
+                title=title,
+                description=description,
+                proposed_by=self.membership,
+                visibility=visibility,
+            )
+
+            messages.success(request, f"Vorschlag '{title}' eingereicht.")
+
+        elif action == "accept":
+            # Accept a proposal (requires agenda.manage permission)
+            if not self.membership.has_permission("agenda.manage"):
+                messages.error(request, "Keine Berechtigung zum Annehmen von Vorschlägen.")
+                return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
+
+            item_id = request.POST.get("item_id")
+            item = get_object_or_404(
+                FactionAgendaItem,
+                id=item_id,
+                meeting=meeting,
+                proposal_status="proposed"
+            )
+
+            from .services import AgendaProposalService
+            assign_number = request.POST.get("number", "").strip()
+            AgendaProposalService.accept_proposal(item, self.membership, assign_number or None)
+
+            messages.success(request, f"Vorschlag '{item.title}' angenommen.")
+
+        elif action == "reject":
+            # Reject a proposal (requires agenda.manage permission)
+            if not self.membership.has_permission("agenda.manage"):
+                messages.error(request, "Keine Berechtigung zum Ablehnen von Vorschlägen.")
+                return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
+
+            item_id = request.POST.get("item_id")
+            reason = request.POST.get("reason", "").strip()
+            item = get_object_or_404(
+                FactionAgendaItem,
+                id=item_id,
+                meeting=meeting,
+                proposal_status="proposed"
+            )
+
+            from .services import AgendaProposalService
+            AgendaProposalService.reject_proposal(item, self.membership, reason)
+
+            messages.success(request, f"Vorschlag '{item.title}' abgelehnt.")
 
         return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
