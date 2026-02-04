@@ -21,11 +21,22 @@ Priority levels (lower = more important):
 200: Company boards (GmbH, Aufsichtsrat, Gesellschafterversammlung)
 210: Zweckverbände (Special Purpose Associations)
 300: Other/Unknown
+
+Inactive penalty:
++500: Organizations without a meeting in the last 12 months are considered
+      inactive and get a penalty added to their priority.
 """
 
-from django.db.models import Case, When, Value, IntegerField, F
-from django.db.models.functions import Lower
+from datetime import timedelta
+
+from django.db.models import Case, When, Value, IntegerField, Max
+from django.utils import timezone
 import re
+
+
+# Penalty for organizations without recent activity (no meeting in 12 months)
+INACTIVITY_PENALTY = 500
+INACTIVITY_MONTHS = 12
 
 
 # Ranking rules: (pattern, priority, is_exact_match)
@@ -171,16 +182,77 @@ def get_ranking_annotation():
     )
 
 
-def sort_organizations_by_ranking(queryset):
+def get_inactivity_penalty_annotation():
+    """
+    Create a Django Case/When annotation for inactivity penalty.
+
+    Organizations without a meeting in the last 12 months get a penalty
+    of 500 added to their ranking priority.
+
+    Usage:
+        organizations.annotate(
+            last_meeting_date=Max('meetings__start'),
+            inactivity_penalty=get_inactivity_penalty_annotation()
+        )
+
+    Returns:
+        Case expression for use with annotate()
+    """
+    cutoff_date = timezone.now() - timedelta(days=INACTIVITY_MONTHS * 30)
+
+    return Case(
+        # No meetings at all -> inactive
+        When(last_meeting_date__isnull=True, then=Value(INACTIVITY_PENALTY)),
+        # Last meeting older than 12 months -> inactive
+        When(last_meeting_date__lt=cutoff_date, then=Value(INACTIVITY_PENALTY)),
+        # Active -> no penalty
+        default=Value(0),
+        output_field=IntegerField()
+    )
+
+
+def sort_organizations_by_ranking(queryset, include_activity=True):
     """
     Sort a queryset of organizations by ranking priority, then by name.
 
+    Organizations are sorted by:
+    1. Activity status (active organizations first, if include_activity=True)
+    2. Type-based ranking priority (Rat, Hauptausschuss, etc.)
+    3. Name (alphabetically)
+
     Args:
         queryset: Django QuerySet of OParlOrganization objects
+        include_activity: If True, inactive organizations (no meeting in 12 months)
+                         are sorted to the bottom. Default: True
 
     Returns:
-        Sorted QuerySet
+        Sorted QuerySet with annotations:
+        - ranking_priority: The type-based priority (10-300)
+        - last_meeting_date: Date of the most recent meeting (if include_activity)
+        - inactivity_penalty: 0 or 500 (if include_activity)
+        - final_priority: ranking_priority + inactivity_penalty (if include_activity)
     """
-    return queryset.annotate(
-        ranking_priority=get_ranking_annotation()
-    ).order_by('ranking_priority', 'name')
+    if include_activity:
+        # Annotate with last meeting date and calculate final priority
+        from django.db.models import F
+
+        cutoff_date = timezone.now() - timedelta(days=INACTIVITY_MONTHS * 30)
+
+        return queryset.annotate(
+            ranking_priority=get_ranking_annotation(),
+            last_meeting_date=Max('meetings__start'),
+        ).annotate(
+            inactivity_penalty=Case(
+                When(last_meeting_date__isnull=True, then=Value(INACTIVITY_PENALTY)),
+                When(last_meeting_date__lt=cutoff_date, then=Value(INACTIVITY_PENALTY)),
+                default=Value(0),
+                output_field=IntegerField()
+            ),
+        ).annotate(
+            final_priority=F('ranking_priority') + F('inactivity_penalty')
+        ).order_by('final_priority', 'name')
+    else:
+        # Simple ranking without activity check
+        return queryset.annotate(
+            ranking_priority=get_ranking_annotation()
+        ).order_by('ranking_priority', 'name')

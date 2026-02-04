@@ -441,7 +441,7 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
         context["body"] = body
 
         from insight_core.models import OParlOrganization
-        from insight_core.ranking import get_ranking_annotation
+        from insight_core.ranking import sort_organizations_by_ranking
 
         # Base queryset
         organizations = OParlOrganization.objects.filter(body=body)
@@ -452,7 +452,7 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
             organizations = organizations.filter(organization_type=org_type)
             context["selected_type"] = org_type
 
-        # Filter active/all
+        # Filter active/all (by end_date)
         show_inactive = self.request.GET.get("inactive") == "1"
         if not show_inactive:
             today = timezone.now().date()
@@ -466,11 +466,9 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
             body=body
         ).values_list("organization_type", flat=True).distinct().order_by("organization_type")
 
-        # Annotate with member count and ranking priority
-        organizations = organizations.annotate(
-            member_count=Count("memberships"),
-            ranking_priority=get_ranking_annotation()
-        ).order_by("ranking_priority", "name")
+        # Annotate with member count and apply ranking (with activity check)
+        organizations = organizations.annotate(member_count=Count("memberships"))
+        organizations = sort_organizations_by_ranking(organizations, include_activity=True)
 
         # Pagination
         paginator = Paginator(organizations, 25)
