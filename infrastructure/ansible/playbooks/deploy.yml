@@ -341,32 +341,6 @@
         msg: "{{ setup_roles_result.stdout_lines | default(['Roles setup completed']) }}"
 
     # =========================================================================
-    # Initialize OParl Sources (ensures ingestor has data to sync)
-    # =========================================================================
-    - name: Initialize OParl sources (default German municipalities)
-      shell: |
-        cd {{ app_dir }}
-        export $(grep -v '^#' .env | xargs)
-        NETWORK_NAME="{{ docker_network.stdout | default('mandari_mandari-network') }}"
-        docker run --rm \
-          --network "$NETWORK_NAME" \
-          --env-file .env \
-          -e DATABASE_URL="postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@mandari-postgres:5432/${POSTGRES_DB:-mandari}" \
-          -e REDIS_URL="redis://mandari-redis:6379" \
-          -e MEILISEARCH_URL="http://mandari-meilisearch:7700" \
-          ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest} \
-          python -m src.main init-sources --default
-      args:
-        executable: /bin/bash
-      register: init_sources_result
-      ignore_errors: yes
-
-    - name: Display init-sources result
-      debug:
-        msg: "{{ init_sources_result.stdout_lines | default(['OParl sources initialized']) }}"
-      when: init_sources_result is defined
-
-    # =========================================================================
     # Now Start All Containers (API, Ingestor, Caddy)
     # =========================================================================
     - name: Start all containers
