@@ -356,7 +356,7 @@
     # =========================================================================
     # Health Check
     # =========================================================================
-    - name: Wait for API to be healthy
+    - name: Wait for Django to be healthy
       shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' mandari-web
       register: api_health
       retries: 30
@@ -374,7 +374,7 @@
       debug:
         msg: |
           ✅ All services healthy:
-            - API (mandari-web): {{ api_health.stdout }}
+            - Django (mandari-web): {{ api_health.stdout }}
             - Ingestor (mandari-ingestor): {{ ingestor_health.stdout }}
 
     # =========================================================================
@@ -715,7 +715,7 @@
     # =========================================================================
     # Health Check
     # =========================================================================
-    - name: Wait for API to be healthy
+    - name: Wait for Django to be healthy
       shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' mandari-web
       register: api_health
       retries: 30
