@@ -188,6 +188,19 @@
         selected_status = "{{ selected_status }}",
         search_query = "{{ search_query }}",
         filter_mine = {{ filter_mine|yesno:"true,false" }}
+        <br><strong>Alpine viewMode:</strong> <span x-text="viewMode"></span>
+    </div>
+
+    <!-- DEBUG: List documents outside of x-show -->
+    <div class="bg-green-100 p-4 mb-4 rounded">
+        <strong>DEBUG Documents (outside x-show):</strong>
+        <ul>
+        {% for motion in motions %}
+            <li>{{ forloop.counter }}. {{ motion.title }} (ID: {{ motion.id }}, Status: {{ motion.status }})</li>
+        {% empty %}
+            <li>NO DOCUMENTS IN LOOP</li>
+        {% endfor %}
+        </ul>
     </div>
 
     <!-- List View (default - no x-cloak so it shows even if Alpine fails) -->
