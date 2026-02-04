@@ -363,6 +363,20 @@
       delay: 5
       until: api_health.stdout == 'healthy'
 
+    - name: Wait for Ingestor to be healthy
+      shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' mandari-ingestor
+      register: ingestor_health
+      retries: 20
+      delay: 5
+      until: ingestor_health.stdout == 'healthy'
+
+    - name: Display service health status
+      debug:
+        msg: |
+          ✅ All services healthy:
+            - API (mandari-web): {{ api_health.stdout }}
+            - Ingestor (mandari-ingestor): {{ ingestor_health.stdout }}
+
     # =========================================================================
     # Wait for SSL Certificate and Export for Slave
     # =========================================================================
