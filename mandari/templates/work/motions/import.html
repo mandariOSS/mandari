@@ -1,0 +1,224 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}PDF importieren{% endblock %}
+
+{% block header_title %}PDF importieren{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Importieren Sie PDF-Dokumente als bearbeitbare Dokumente</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:motions' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Zurück
+</a>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-2xl mx-auto">
+    <form method="post" enctype="multipart/form-data"
+          class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
+          x-data="importForm()">
+        {% csrf_token %}
+
+        <!-- Drop Zone -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                PDF-Dateien
+            </label>
+            <div class="relative"
+                 @dragover.prevent="isDragging = true"
+                 @dragleave.prevent="isDragging = false"
+                 @drop.prevent="handleDrop($event)">
+                <input type="file"
+                       name="pdf_files"
+                       id="pdf_files"
+                       accept=".pdf"
+                       multiple
+                       class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                       @change="handleFileSelect($event)">
+                <div class="border-2 border-dashed rounded-xl p-8 text-center transition-colors"
+                     :class="isDragging ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 dark:border-gray-600 hover:border-primary-400'">
+                    <div class="w-12 h-12 mx-auto mb-4 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                        <i data-lucide="upload" class="w-6 h-6 text-gray-400"></i>
+                    </div>
+                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                        <span class="font-medium text-primary-600 dark:text-primary-400">Klicken Sie hier</span>
+                        oder ziehen Sie PDF-Dateien hierher
+                    </p>
+                    <p class="mt-1 text-xs text-gray-500">
+                        PDF-Dateien bis 50 MB
+                    </p>
+                </div>
+            </div>
+
+            <!-- Selected Files -->
+            <div x-show="selectedFiles.length > 0" class="mt-4 space-y-2">
+                <template x-for="(file, index) in selectedFiles" :key="index">
+                    <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                        <div class="flex items-center gap-3">
+                            <div class="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                                <i data-lucide="file-text" class="w-4 h-4 text-red-600 dark:text-red-400"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-900 dark:text-white" x-text="file.name"></p>
+                                <p class="text-xs text-gray-500" x-text="formatFileSize(file.size)"></p>
+                            </div>
+                        </div>
+                        <button type="button"
+                                @click="removeFile(index)"
+                                class="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Document Type -->
+        <div class="mb-6">
+            <label for="document_type" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Dokumenttyp
+                <span class="font-normal text-gray-500">(optional)</span>
+            </label>
+            <select name="document_type" id="document_type"
+                    class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                <option value="">Kein Typ</option>
+                {% for type in document_types %}
+                <option value="{{ type.id }}">{{ type.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Visibility -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                Sichtbarkeit
+            </label>
+            <div class="space-y-3">
+                <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                       :class="visibility === 'private' ? 'ring-2 ring-primary-500 border-primary-500' : ''">
+                    <input type="radio" name="visibility" value="private" x-model="visibility"
+                           class="mt-0.5 text-primary-600 focus:ring-primary-500" checked>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="lock" class="w-4 h-4 text-gray-500"></i>
+                            <span class="font-medium text-gray-900 dark:text-white">Privat</span>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-0.5">Nur Sie können dieses Dokument sehen</p>
+                    </div>
+                </label>
+
+                <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                       :class="visibility === 'shared' ? 'ring-2 ring-primary-500 border-primary-500' : ''">
+                    <input type="radio" name="visibility" value="shared" x-model="visibility"
+                           class="mt-0.5 text-primary-600 focus:ring-primary-500">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="users" class="w-4 h-4 text-gray-500"></i>
+                            <span class="font-medium text-gray-900 dark:text-white">Mit bestimmten Personen teilen</span>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-0.5">Teilen Sie mit ausgewählten Personen nach dem Import</p>
+                    </div>
+                </label>
+
+                <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                       :class="visibility === 'organization' ? 'ring-2 ring-primary-500 border-primary-500' : ''">
+                    <input type="radio" name="visibility" value="organization" x-model="visibility"
+                           class="mt-0.5 text-primary-600 focus:ring-primary-500">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="building" class="w-4 h-4 text-gray-500"></i>
+                            <span class="font-medium text-gray-900 dark:text-white">Gesamte Organisation</span>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-0.5">Alle Mitglieder der Organisation können zugreifen</p>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Info -->
+        <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
+            <div class="flex gap-3">
+                <i data-lucide="info" class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"></i>
+                <div class="text-sm text-blue-800 dark:text-blue-200">
+                    <p class="font-medium">So funktioniert der Import:</p>
+                    <ul class="mt-1 list-disc list-inside text-blue-700 dark:text-blue-300">
+                        <li>Der Text wird automatisch aus dem PDF extrahiert</li>
+                        <li>Das Original-PDF wird als Anhang gespeichert</li>
+                        <li>Sie können den extrahierten Text danach bearbeiten</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Submit -->
+        <div class="flex items-center justify-end gap-3">
+            <a href="{% url 'work:motions' org_slug=organization.slug %}"
+               class="px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                Abbrechen
+            </a>
+            <button type="submit"
+                    :disabled="selectedFiles.length === 0"
+                    class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                <i data-lucide="upload" class="w-4 h-4"></i>
+                <span x-text="selectedFiles.length === 1 ? 'Importieren' : `${selectedFiles.length} Dateien importieren`">Importieren</span>
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function importForm() {
+    return {
+        isDragging: false,
+        selectedFiles: [],
+        visibility: 'private',
+
+        handleFileSelect(event) {
+            this.addFiles(event.target.files);
+        },
+
+        handleDrop(event) {
+            this.isDragging = false;
+            this.addFiles(event.dataTransfer.files);
+        },
+
+        addFiles(fileList) {
+            for (const file of fileList) {
+                if (file.type === 'application/pdf') {
+                    // Avoid duplicates
+                    if (!this.selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
+                        this.selectedFiles.push(file);
+                    }
+                }
+            }
+            this.updateFileInput();
+        },
+
+        removeFile(index) {
+            this.selectedFiles.splice(index, 1);
+            this.updateFileInput();
+        },
+
+        updateFileInput() {
+            // Update the actual file input
+            const dt = new DataTransfer();
+            this.selectedFiles.forEach(file => dt.items.add(file));
+            document.getElementById('pdf_files').files = dt.files;
+        },
+
+        formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+    }
+}
+</script>
+{% endblock %}

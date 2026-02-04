@@ -124,6 +124,11 @@ urlpatterns = [
         name="motion_create"
     ),
     path(
+        "<slug:org_slug>/motions/import/",
+        motions_views.MotionImportView.as_view(),
+        name="motion_import"
+    ),
+    path(
         "<slug:org_slug>/motions/ai/",
         motions_views.MotionAIAssistantView.as_view(),
         name="motion_ai"
@@ -144,6 +149,16 @@ urlpatterns = [
         name="motion_share"
     ),
     path(
+        "<slug:org_slug>/motions/<uuid:motion_id>/share/update/",
+        motions_views.MotionShareUpdateView.as_view(),
+        name="motion_share_update"
+    ),
+    path(
+        "<slug:org_slug>/motions/share/<uuid:share_id>/remove/",
+        motions_views.MotionShareRemoveView.as_view(),
+        name="motion_share_remove"
+    ),
+    path(
         "<slug:org_slug>/motions/<uuid:motion_id>/status/",
         motions_views.MotionStatusView.as_view(),
         name="motion_status"
@@ -152,6 +167,11 @@ urlpatterns = [
         "<slug:org_slug>/motions/<uuid:motion_id>/comment/",
         motions_views.MotionCommentView.as_view(),
         name="motion_comment"
+    ),
+    path(
+        "<slug:org_slug>/motions/<uuid:motion_id>/comment/<uuid:comment_id>/resolve/",
+        motions_views.MotionCommentResolveView.as_view(),
+        name="motion_comment_resolve"
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/upload/",

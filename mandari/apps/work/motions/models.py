@@ -267,6 +267,12 @@ class Motion(EncryptionMixin, models.Model):
         ("amendment", "Änderungsantrag"),
     ]
 
+    VISIBILITY_CHOICES = [
+        ("private", "Privat"),           # Only the author can see
+        ("shared", "Geteilt"),           # Specific people via MotionShare
+        ("organization", "Organisation"), # Everyone in the organization
+    ]
+
     STATUS_CHOICES = [
         ("draft", "Entwurf"),
         ("review", "In Prüfung"),
@@ -414,6 +420,15 @@ class Motion(EncryptionMixin, models.Model):
         help_text="Binary state for real-time collaboration"
     )
 
+    # Visibility (simplified permission system)
+    visibility = models.CharField(
+        max_length=20,
+        choices=VISIBILITY_CHOICES,
+        default="private",
+        verbose_name="Sichtbarkeit",
+        help_text="Wer kann dieses Dokument sehen?"
+    )
+
     # Metadata
     author = models.ForeignKey(
         "tenants.Membership",
@@ -501,6 +516,97 @@ class Motion(EncryptionMixin, models.Model):
         if self.document_type:
             return self.document_type.is_submittable
         return True
+
+    def can_access(self, membership) -> bool:
+        """
+        Check if a membership has access to this document.
+
+        Access is granted based on visibility:
+        - private: Only the author
+        - shared: Author + users with MotionShare entries
+        - organization: Anyone in the same organization
+        """
+        # Author always has access
+        if self.author == membership:
+            return True
+
+        if self.visibility == "private":
+            return False
+
+        if self.visibility == "organization":
+            return membership.organization == self.organization
+
+        if self.visibility == "shared":
+            # Check MotionShare entries
+            return self.shares.filter(user=membership.user).exists()
+
+        return False
+
+    def can_edit(self, membership) -> bool:
+        """
+        Check if a membership can edit this document.
+
+        With simplified permissions, anyone with access can edit
+        (except in private mode, only author can edit).
+        """
+        if self.author == membership:
+            return True
+
+        if self.visibility == "private":
+            return False
+
+        # For shared/organization, anyone with access can edit
+        return self.can_access(membership)
+
+    def can_comment(self, membership) -> bool:
+        """
+        Check if a membership can comment on this document.
+
+        With simplified permissions, anyone with access can comment.
+        """
+        return self.can_access(membership)
+
+    def get_visibility_icon(self) -> str:
+        """Get the Lucide icon name for the current visibility."""
+        icons = {
+            "private": "lock",
+            "shared": "users",
+            "organization": "building",
+        }
+        return icons.get(self.visibility, "lock")
+
+    def get_visibility_badge_class(self) -> str:
+        """Get the CSS class for the visibility badge."""
+        classes = {
+            "private": "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400",
+            "shared": "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300",
+            "organization": "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300",
+        }
+        return classes.get(self.visibility, classes["private"])
+
+    def get_type_icon(self) -> str:
+        """Get the Lucide icon name for the document type."""
+        # First check custom document type
+        if self.document_type:
+            return self.document_type.icon or "file-text"
+
+        # Fall back to legacy type
+        icons = {
+            "motion": "file-text",
+            "inquiry": "help-circle",
+            "statement": "message-square",
+            "amendment": "edit",
+        }
+        return icons.get(self.motion_type, "file-text")
+
+    def get_type_display(self) -> str:
+        """Get the display name for the document type."""
+        # First check custom document type
+        if self.document_type:
+            return self.document_type.name
+
+        # Fall back to legacy type display
+        return self.get_motion_type_display()
 
 
 class MotionShare(models.Model):

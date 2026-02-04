@@ -33,6 +33,7 @@ from .models import (
     MotionType,
     OrganizationLetterhead,
 )
+from .import_service import motion_import_service
 from .services import motion_ai_service
 
 
@@ -664,6 +665,34 @@ class MotionDocumentUploadView(WorkViewMixin, View):
         return JsonResponse({"error": form.errors}, status=400)
 
 
+class MotionCommentResolveView(WorkViewMixin, View):
+    """Mark a comment as resolved."""
+
+    permission_required = "motions.comment"
+
+    def post(self, request, *args, **kwargs):
+        comment = get_object_or_404(
+            MotionComment,
+            id=kwargs.get("comment_id"),
+            motion__id=kwargs.get("motion_id"),
+            motion__organization=self.organization
+        )
+
+        # Only author or someone with edit permission can resolve
+        if comment.author != self.membership:
+            if not self.membership.has_permission("motions.edit_all"):
+                return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+
+        comment.is_resolved = True
+        comment.save()
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"success": True})
+
+        messages.success(request, "Kommentar als erledigt markiert.")
+        return redirect("work:motion_detail", org_slug=self.organization.slug, motion_id=comment.motion.id)
+
+
 class MotionExportView(WorkViewMixin, View):
     """Export motion as PDF or DOCX."""
 
@@ -707,6 +736,157 @@ class MotionExportView(WorkViewMixin, View):
             return JsonResponse({
                 "error": f"Unbekanntes Export-Format: {export_format}"
             }, status=400)
+
+
+class MotionImportView(WorkViewMixin, TemplateView):
+    """Import PDFs as documents."""
+
+    template_name = "work/motions/import.html"
+    permission_required = "motions.create"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = "motions"
+        context["document_types"] = MotionType.objects.filter(
+            organization=self.organization,
+            is_active=True
+        ).order_by("sort_order", "name")
+        return context
+
+    def post(self, request, *args, **kwargs):
+        pdf_files = request.FILES.getlist("pdf_files")
+
+        if not pdf_files:
+            messages.error(request, "Bitte wählen Sie mindestens eine PDF-Datei aus.")
+            return redirect("work:motion_import", org_slug=self.organization.slug)
+
+        # Get optional document type
+        motion_type = None
+        motion_type_id = request.POST.get("document_type")
+        if motion_type_id:
+            try:
+                motion_type = MotionType.objects.get(
+                    id=motion_type_id,
+                    organization=self.organization
+                )
+            except MotionType.DoesNotExist:
+                pass
+
+        # Get visibility
+        visibility = request.POST.get("visibility", "private")
+        if visibility not in ["private", "shared", "organization"]:
+            visibility = "private"
+
+        # Import PDFs
+        results = motion_import_service.import_multiple_pdfs(
+            pdf_files=pdf_files,
+            organization=self.organization,
+            author=self.membership,
+            motion_type=motion_type,
+            visibility=visibility,
+        )
+
+        # Count successes and failures
+        successes = [r for r in results if r.success]
+        failures = [r for r in results if not r.success]
+
+        if successes:
+            if len(successes) == 1:
+                motion = successes[0].motion
+                messages.success(
+                    request,
+                    f"Dokument '{motion.title}' erfolgreich importiert."
+                )
+                # Redirect to edit page for single import
+                return redirect(
+                    "work:motion_edit",
+                    org_slug=self.organization.slug,
+                    motion_id=motion.id
+                )
+            else:
+                messages.success(
+                    request,
+                    f"{len(successes)} Dokumente erfolgreich importiert."
+                )
+
+        if failures:
+            for failure in failures:
+                messages.error(request, f"Import fehlgeschlagen: {failure.error}")
+
+        return redirect("work:motions", org_slug=self.organization.slug)
+
+
+class MotionShareUpdateView(WorkViewMixin, View):
+    """HTMX endpoint for updating share settings via modal."""
+
+    permission_required = "motions.share"
+
+    def post(self, request, *args, **kwargs):
+        motion = get_object_or_404(
+            Motion,
+            id=kwargs.get("motion_id"),
+            organization=self.organization
+        )
+
+        # Check if user can share this motion
+        if motion.author != self.membership and not self.membership.has_permission("motions.edit_all"):
+            return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+
+        # Update visibility
+        new_visibility = request.POST.get("visibility")
+        if new_visibility in ["private", "shared", "organization"]:
+            motion.visibility = new_visibility
+            motion.save()
+
+        # Handle adding users for shared visibility
+        if new_visibility == "shared":
+            add_user_email = request.POST.get("add_user_email", "").strip()
+            if add_user_email:
+                from apps.accounts.models import User
+                try:
+                    user = User.objects.get(email=add_user_email)
+                    # Create share if doesn't exist
+                    MotionShare.objects.get_or_create(
+                        motion=motion,
+                        scope="user",
+                        user=user,
+                        defaults={
+                            "level": "edit",
+                            "created_by": request.user,
+                        }
+                    )
+                except User.DoesNotExist:
+                    return JsonResponse(
+                        {"error": f"Benutzer '{add_user_email}' nicht gefunden."},
+                        status=400
+                    )
+
+        # Return success for HTMX
+        from django.http import HttpResponse
+        return HttpResponse(status=204, headers={"HX-Refresh": "true"})
+
+
+class MotionShareRemoveView(WorkViewMixin, View):
+    """Remove a share entry."""
+
+    permission_required = "motions.share"
+
+    def post(self, request, *args, **kwargs):
+        share = get_object_or_404(
+            MotionShare,
+            id=kwargs.get("share_id"),
+            motion__organization=self.organization
+        )
+
+        # Check if user can manage this share
+        motion = share.motion
+        if motion.author != self.membership and not self.membership.has_permission("motions.edit_all"):
+            return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+
+        share.delete()
+
+        from django.http import HttpResponse
+        return HttpResponse(status=204, headers={"HX-Refresh": "true"})
 
 
 # =============================================================================
