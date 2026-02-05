@@ -23,6 +23,9 @@
 # Claude Code (local settings)
 .claude/
 
+# Private docs (local planning, not for repo)
+.private/
+
 # =============================================================================
 # SECRETS & SENSITIVE DATA (CRITICAL!)
 # =============================================================================
