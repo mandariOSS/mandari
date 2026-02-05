@@ -1,1 +1,0 @@
-# Mandari Test Package
