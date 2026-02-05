@@ -144,6 +144,56 @@
     <p>{{ meeting.description }}</p>
     {% endif %}
 
+    {% if public_agenda_items %}
+    <div style="margin: 25px 0;">
+        <h3 style="color: #374151; font-size: 16px; margin: 0 0 15px 0; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px;">
+            Tagesordnung
+        </h3>
+        <table style="width: 100%; border-collapse: collapse;">
+            {% for item in public_agenda_items %}
+            <tr>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; width: 60px;">
+                    <span style="display: inline-block; background-color: #4f46e5; color: white; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;">
+                        TOP {{ item.number }}
+                    </span>
+                </td>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #f3f4f6;">
+                    <strong style="color: #111827;">{{ item.title }}</strong>
+                    {% if item.get_description_decrypted %}
+                    <p style="margin: 5px 0 0 0; font-size: 13px; color: #6b7280;">{{ item.get_description_decrypted|truncatewords:30 }}</p>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endif %}
+
+    {% if internal_agenda_items %}
+    <div style="margin: 25px 0; background-color: #fef3c7; border-radius: 8px; padding: 15px;">
+        <h3 style="color: #92400e; font-size: 16px; margin: 0 0 15px 0; display: flex; align-items: center; gap: 8px;">
+            🔒 Nicht-öffentlicher Teil
+        </h3>
+        <p style="font-size: 12px; color: #b45309; margin: 0 0 15px 0;">
+            Diese Punkte sind nur für vereidigte Mitglieder bestimmt.
+        </p>
+        <table style="width: 100%; border-collapse: collapse;">
+            {% for item in internal_agenda_items %}
+            <tr>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #fde68a; vertical-align: top; width: 60px;">
+                    <span style="display: inline-block; background-color: #f59e0b; color: white; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;">
+                        {{ item.number }}
+                    </span>
+                </td>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #fde68a;">
+                    <strong style="color: #78350f;">{{ item.title }}</strong>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endif %}
+
     <p>Bitte gib uns Bescheid, ob du teilnehmen kannst.</p>
 
     <div class="footer">

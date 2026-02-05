@@ -481,6 +481,10 @@
                             this.fetchCount();
                             // Poll for new notifications every 30 seconds
                             setInterval(() => this.fetchCount(), 30000);
+                            // Listen for notification marked-read events
+                            window.addEventListener('notification:marked-read', () => {
+                                this.fetchNotifications();
+                            });
                         },
                         async fetchCount() {
                             try {
@@ -510,13 +514,12 @@
                                 const response = await fetch('{% url 'work:notifications_mark_all_read' org_slug=organization.slug %}', {
                                     method: 'POST',
                                     headers: {
-                                        'X-CSRFToken': '{{ csrf_token }}',
-                                        'Content-Type': 'application/json'
+                                        'X-CSRFToken': '{{ csrf_token }}'
                                     }
                                 });
                                 if (response.ok) {
                                     this.unreadCount = 0;
-                                    this.fetchNotifications();
+                                    await this.fetchNotifications();
                                 }
                             } catch (e) {
                                 console.error('Failed to mark all as read:', e);

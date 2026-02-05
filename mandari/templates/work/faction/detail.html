@@ -112,7 +112,7 @@
                 {# Collapsible Attendance Summary #}
                 <button @click="showAttendance = !showAttendance" class="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700">
                     <span class="flex items-center gap-1">
-                        <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 text-green-700 text-xs font-medium">{{ attendance_stats.present|default:0 }}</span>
+                        <span id="confirmed-count" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 text-green-700 text-xs font-medium">{{ attendance_stats.confirmed|default:0 }}</span>
                         <span class="text-gray-400">/</span>
                         <span class="text-gray-600">{{ attendances|length }}</span>
                     </span>
@@ -251,21 +251,17 @@
 
                         {# Edit/Delete buttons for managers #}
                         {% if can_edit %}
-                        <div class="px-4 py-2 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-                            <button @click="$dispatch('edit-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}', description: '{{ item.get_description_decrypted|default:""|escapejs }}' })"
-                                    class="text-xs text-gray-500 hover:text-primary-600 flex items-center gap-1">
-                                <i data-lucide="edit" class="w-3 h-3"></i> Bearbeiten
+                        <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+                            <button @click="$dispatch('edit-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}', description: '{{ item.get_description_decrypted|default:""|escapejs }}', visibility: 'public' })"
+                                    class="px-3 py-1.5 text-sm text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg flex items-center gap-1.5 transition-colors">
+                                <i data-lucide="edit" class="w-4 h-4"></i> Bearbeiten
                             </button>
                             {% if not item.is_approval_item %}
-                            <form method="post" action="{% url 'work:faction_agenda' org_slug=organization.slug meeting_id=meeting.id %}" class="inline">
-                                {% csrf_token %}
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="item_id" value="{{ item.id }}">
-                                <button type="submit" onclick="return confirm('TOP wirklich loschen?')"
-                                        class="text-xs text-red-500 hover:text-red-700 flex items-center gap-1">
-                                    <i data-lucide="trash-2" class="w-3 h-3"></i> Loschen
-                                </button>
-                            </form>
+                            <button type="button"
+                                    @click="deleteItemId = '{{ item.id }}'; deleteItemTitle = '{{ item.title|escapejs }}'; showDeleteModal = true"
+                                    class="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg flex items-center gap-1.5 transition-colors">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i> Löschen
+                            </button>
                             {% endif %}
                         </div>
                         {% endif %}
@@ -332,6 +328,21 @@
                                     <i data-lucide="plus" class="w-4 h-4"></i>
                                 </button>
                             </form>
+                        </div>
+                        {% endif %}
+
+                        {# Edit/Delete buttons for internal items #}
+                        {% if can_edit %}
+                        <div class="px-4 py-3 border-t border-amber-200 dark:border-amber-700 flex justify-end gap-3">
+                            <button @click="$dispatch('edit-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}', description: '{{ item.get_description_decrypted|default:""|escapejs }}', visibility: 'internal' })"
+                                    class="px-3 py-1.5 text-sm text-gray-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg flex items-center gap-1.5 transition-colors">
+                                <i data-lucide="edit" class="w-4 h-4"></i> Bearbeiten
+                            </button>
+                            <button type="button"
+                                    @click="deleteItemId = '{{ item.id }}'; deleteItemTitle = '{{ item.title|escapejs }}'; showDeleteModal = true"
+                                    class="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg flex items-center gap-1.5 transition-colors">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i> Löschen
+                            </button>
                         </div>
                         {% endif %}
                     </div>
@@ -438,18 +449,29 @@
 
         {# RSVP for current user (before meeting) #}
         {% if my_attendance and meeting.status in 'draft,planned,invited' %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div id="rsvp-card" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
             <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Meine Teilnahme</h4>
             {% if my_attendance.status == 'invited' %}
-            <form method="post" action="{% url 'work:faction_respond' org_slug=organization.slug meeting_id=meeting.id %}" class="flex gap-2">
-                {% csrf_token %}
-                <button type="submit" name="status" value="confirmed" class="flex-1 py-2 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100">
+            <div class="flex gap-2" x-data>
+                <button type="button"
+                        hx-post="{% url 'work:faction_respond' org_slug=organization.slug meeting_id=meeting.id %}"
+                        hx-vals='{"status": "confirmed"}'
+                        hx-target="#rsvp-card"
+                        hx-swap="innerHTML"
+                        @htmx:after-request="updateAttendanceCount('confirmed')"
+                        class="flex-1 py-2 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100">
                     <i data-lucide="check" class="w-4 h-4 inline mr-1"></i> Zusagen
                 </button>
-                <button type="submit" name="status" value="declined" class="flex-1 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100">
+                <button type="button"
+                        hx-post="{% url 'work:faction_respond' org_slug=organization.slug meeting_id=meeting.id %}"
+                        hx-vals='{"status": "declined"}'
+                        hx-target="#rsvp-card"
+                        hx-swap="innerHTML"
+                        @htmx:after-request="updateAttendanceCount('declined')"
+                        class="flex-1 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100">
                     <i data-lucide="x" class="w-4 h-4 inline mr-1"></i> Absagen
                 </button>
-            </form>
+            </div>
             {% else %}
             <div class="text-center">
                 <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm
@@ -723,9 +745,17 @@
                                 <input type="text" name="location" value="{{ meeting.location|default:'' }}"
                                        class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg">
                             </div>
-                            <div class="flex items-center gap-2" x-data="{ isVirtual: {{ meeting.is_virtual|yesno:'true,false' }} }">
-                                <input type="checkbox" id="is_virtual" name="is_virtual" x-model="isVirtual" class="w-4 h-4 text-primary-600 rounded">
-                                <label for="is_virtual" class="text-sm text-gray-700 dark:text-gray-300">Online-Teilnahme moglich</label>
+                            <div class="space-y-3" x-data="{ isVirtual: {{ meeting.is_virtual|yesno:'true,false' }} }">
+                                <div class="flex items-center gap-2">
+                                    <input type="checkbox" id="is_virtual" name="is_virtual" x-model="isVirtual" class="w-4 h-4 text-primary-600 rounded">
+                                    <label for="is_virtual" class="text-sm text-gray-700 dark:text-gray-300">Online-Teilnahme möglich</label>
+                                </div>
+                                <div x-show="isVirtual" x-transition>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Video-Link</label>
+                                    <input type="url" name="video_link" value="{{ meeting.video_link|default:'' }}"
+                                           class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+                                           placeholder="https://meet.example.com/...">
+                                </div>
                             </div>
                         </div>
 
@@ -751,14 +781,69 @@
             </div>
         </div>
     </div>
+
+    {# Delete Confirmation Modal #}
+    <div x-show="showDeleteModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition>
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div class="fixed inset-0 bg-black/50" @click="showDeleteModal = false"></div>
+            <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full" @click.stop>
+                <form method="post" action="{% url 'work:faction_agenda' org_slug=organization.slug meeting_id=meeting.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="item_id" x-bind:value="deleteItemId">
+
+                    <div class="p-6 text-center">
+                        <div class="w-16 h-16 mx-auto mb-4 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                            <i data-lucide="trash-2" class="w-8 h-8 text-red-600 dark:text-red-400"></i>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Tagesordnungspunkt löschen?</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                            Möchten Sie diesen TOP wirklich löschen?
+                        </p>
+                        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-2" x-text="deleteItemTitle"></p>
+                        <p class="text-xs text-gray-400 mt-3">Diese Aktion kann nicht rückgängig gemacht werden.</p>
+                    </div>
+
+                    <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+                        <button type="button" @click="showDeleteModal = false"
+                                class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                            Abbrechen
+                        </button>
+                        <button type="submit"
+                                class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700">
+                            Löschen
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+// Update attendance counter after RSVP
+function updateAttendanceCount(newStatus) {
+    const countEl = document.getElementById('confirmed-count');
+    if (countEl) {
+        let count = parseInt(countEl.textContent) || 0;
+        if (newStatus === 'confirmed') {
+            countEl.textContent = count + 1;
+        }
+        // Note: if already confirmed and now declining, we'd need more logic
+        // but for first-time responses, this simple increment works
+    }
+    // Re-initialize Lucide icons after HTMX swap
+    if (window.lucide) {
+        window.lucide.createIcons();
+    }
+}
+
 function factionMeeting() {
     return {
         showEditModal: false,
+        showDeleteModal: false,
         showAddAttendeeModal: false,
         showProposalModal: false,
         showMeetingEditModal: false,
@@ -768,6 +853,8 @@ function factionMeeting() {
         editItemId: '',
         editTitle: '',
         editDescription: '',
+        deleteItemId: '',
+        deleteItemTitle: '',
 
         showAddModal(visibility) {
             this.editMode = 'add';
@@ -782,12 +869,16 @@ function factionMeeting() {
             this.$watch('showEditModal', value => {
                 if (value) this.$nextTick(() => lucide.createIcons());
             });
+            this.$watch('showDeleteModal', value => {
+                if (value) this.$nextTick(() => lucide.createIcons());
+            });
 
             window.addEventListener('edit-item', (e) => {
                 this.editMode = 'edit';
                 this.editItemId = e.detail.id;
                 this.editTitle = e.detail.title;
                 this.editDescription = e.detail.description;
+                this.editVisibility = e.detail.visibility || 'public';
                 this.showEditModal = true;
             });
         }

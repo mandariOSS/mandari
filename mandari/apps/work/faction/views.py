@@ -6,7 +6,7 @@ Faction meeting views for the Work module.
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views.generic import TemplateView, View
@@ -761,6 +761,8 @@ class FactionAttendanceResponseView(WorkViewMixin, View):
         try:
             attendance = meeting.attendances.get(membership=self.membership)
         except FactionAttendance.DoesNotExist:
+            if request.headers.get("HX-Request"):
+                return HttpResponse('<p class="text-red-600 text-sm">Keine Einladung gefunden</p>')
             return JsonResponse({"error": "Keine Einladung gefunden"}, status=404)
 
         new_status = request.POST.get("status")
@@ -769,6 +771,24 @@ class FactionAttendanceResponseView(WorkViewMixin, View):
             attendance.response_message = request.POST.get("response_message", "")
             attendance.responded_at = timezone.now()
             attendance.save()
+
+            # HTMX request - return HTML partial
+            if request.headers.get("HX-Request"):
+                status_classes = {
+                    "confirmed": "bg-green-100 text-green-700",
+                    "declined": "bg-red-100 text-red-700",
+                    "tentative": "bg-yellow-100 text-yellow-700",
+                }
+                css_class = status_classes.get(new_status, "bg-gray-100 text-gray-700")
+                html = f'''
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Meine Teilnahme</h4>
+                    <div class="text-center">
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm {css_class}">
+                            {attendance.get_status_display()}
+                        </span>
+                    </div>
+                '''
+                return HttpResponse(html)
 
             if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                 return JsonResponse({
@@ -779,6 +799,8 @@ class FactionAttendanceResponseView(WorkViewMixin, View):
 
             messages.success(request, f"Antwort gespeichert: {attendance.get_status_display()}")
         else:
+            if request.headers.get("HX-Request"):
+                return HttpResponse('<p class="text-red-600 text-sm">Ungültiger Status</p>')
             return JsonResponse({"error": "Ungültiger Status"}, status=400)
 
         return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)

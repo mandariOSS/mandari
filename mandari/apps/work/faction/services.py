@@ -45,11 +45,28 @@ class FactionMeetingEmailService:
             )
             return False
 
+        # Get agenda items based on whether the member is sworn in
+        is_sworn_in = attendance.membership.is_sworn_in
+        public_items = meeting.agenda_items.filter(
+            visibility="public",
+            proposal_status="active"
+        ).order_by("order", "number")
+
+        internal_items = []
+        if is_sworn_in:
+            internal_items = meeting.agenda_items.filter(
+                visibility="internal",
+                proposal_status="active"
+            ).order_by("order", "number")
+
         context = {
             "meeting": meeting,
             "user": user,
             "organization": meeting.organization,
             "attendance": attendance,
+            "public_agenda_items": public_items,
+            "internal_agenda_items": internal_items,
+            "is_sworn_in": is_sworn_in,
         }
 
         subject = f"Einladung: {meeting.title}"
@@ -65,7 +82,7 @@ class FactionMeetingEmailService:
             logger.error(f"Failed to render email template: {e}")
             # Fall back to simple text
             html_content = None
-            text_content = self._get_simple_invitation_text(meeting, user)
+            text_content = self._get_simple_invitation_text(meeting, user, public_items, internal_items)
 
         try:
             send_mail(
@@ -82,7 +99,7 @@ class FactionMeetingEmailService:
             logger.error(f"Failed to send invitation to {user.email}: {e}")
             return False
 
-    def _get_simple_invitation_text(self, meeting, user) -> str:
+    def _get_simple_invitation_text(self, meeting, user, public_items=None, internal_items=None) -> str:
         """Generate simple text fallback for invitation email."""
         lines = [
             f"Hallo {user.first_name or user.email},",
@@ -100,11 +117,22 @@ class FactionMeetingEmailService:
         if meeting.video_link:
             lines.append(f"Video-Link: {meeting.video_link}")
 
+        # Add agenda items
+        if public_items:
+            lines.extend(["", "TAGESORDNUNG", ""])
+            for item in public_items:
+                lines.append(f"TOP {item.number}: {item.title}")
+
+        if internal_items:
+            lines.extend(["", "NICHT-ÖFFENTLICHER TEIL", ""])
+            for item in internal_items:
+                lines.append(f"TOP {item.number}: {item.title}")
+
         lines.extend([
             "",
             "Bitte gib uns Bescheid, ob du teilnehmen kannst.",
             "",
-            f"Viele Gruesse,",
+            f"Viele Grüße,",
             f"{meeting.organization.name}",
         ])
 

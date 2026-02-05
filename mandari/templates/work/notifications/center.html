@@ -99,8 +99,8 @@
                                 {% endif %}
                                 {% if not notification.is_read %}
                                 <button hx-post="{% url 'work:notification_mark_read' org_slug=organization.slug notification_id=notification.id %}"
-                                        hx-swap="outerHTML"
-                                        hx-target="closest div.p-4"
+                                        hx-swap="none"
+                                        hx-on::after-request="this.closest('.p-4').classList.remove('bg-primary-50/50', 'dark:bg-primary-900/10'); this.remove(); this.closest('.p-4').querySelector('.inline-block.w-2.h-2')?.remove();"
                                         class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                                         title="Als gelesen markieren">
                                     <i data-lucide="check" class="w-4 h-4"></i>

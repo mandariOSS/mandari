@@ -299,11 +299,12 @@ urlpatterns = [
         faction_views.FactionProtocolView.as_view(),
         name="faction_protocol"
     ),
-    path(
-        "<slug:org_slug>/faction/schedules/",
-        faction_views.FactionScheduleListView.as_view(),
-        name="faction_schedules"
-    ),
+    # Schedules feature disabled
+    # path(
+    #     "<slug:org_slug>/faction/schedules/",
+    #     faction_views.FactionScheduleListView.as_view(),
+    #     name="faction_schedules"
+    # ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/respond/",
         faction_views.FactionAttendanceResponseView.as_view(),
@@ -446,11 +447,12 @@ urlpatterns = [
         organization_views.OrganizationFactionSettingsView.as_view(),
         name="organization_faction_settings"
     ),
-    path(
-        "<slug:org_slug>/organization/faction-schedules/",
-        faction_views.FactionScheduleListView.as_view(),
-        name="organization_faction_schedules"
-    ),
+    # Schedules feature disabled
+    # path(
+    #     "<slug:org_slug>/organization/faction-schedules/",
+    #     faction_views.FactionScheduleListView.as_view(),
+    #     name="organization_faction_schedules"
+    # ),
     path(
         "<slug:org_slug>/organization/documents-settings/",
         organization_views.OrganizationDocumentsView.as_view(),

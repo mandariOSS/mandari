@@ -16,48 +16,9 @@
 {% endblock %}
 
 {% block work_content %}
-<div class="max-w-3xl" x-data="{ isVirtual: false, useSchedule: false }">
+<div x-data="{ isVirtual: false }">
     <form method="post" class="space-y-6">
         {% csrf_token %}
-
-        <!-- From Schedule -->
-        {% if schedules %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-            <div class="flex items-center gap-3 mb-4">
-                <div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                    <i data-lucide="calendar-clock" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
-                </div>
-                <div>
-                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">Aus Sitzungsplan erstellen</h3>
-                    <p class="text-sm text-gray-500">Schnelle Erstellung basierend auf wiederkehrenden Terminen</p>
-                </div>
-            </div>
-
-            <div class="flex items-center gap-2 mb-4">
-                <input type="checkbox" id="use_schedule" x-model="useSchedule"
-                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
-                <label for="use_schedule" class="text-sm text-gray-700 dark:text-gray-300">
-                    Vorlage aus Sitzungsplan verwenden
-                </label>
-            </div>
-
-            <div x-show="useSchedule" x-transition class="space-y-3">
-                {% for schedule in schedules %}
-                <label class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800">
-                    <input type="radio" name="schedule_id" value="{{ schedule.id }}"
-                           class="text-primary-600 border-gray-300 focus:ring-primary-500">
-                    <div class="flex-1">
-                        <p class="font-medium text-gray-900 dark:text-white">{{ schedule.name }}</p>
-                        <p class="text-sm text-gray-500">
-                            {{ schedule.get_weekday_display }}, {{ schedule.time|time:"H:i" }} Uhr
-                            {% if schedule.location %} · {{ schedule.location }}{% endif %}
-                        </p>
-                    </div>
-                </label>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
 
         <!-- Basic Details -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">

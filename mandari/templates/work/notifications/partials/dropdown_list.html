@@ -4,7 +4,8 @@
     <a href="{{ notification.link|default:'#' }}"
        class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-0 {% if not notification.is_read %}bg-primary-50 dark:bg-primary-900/20{% endif %}"
        hx-post="{% url 'work:notification_mark_read' org_slug=organization.slug notification_id=notification.id %}"
-       hx-swap="none">
+       hx-swap="none"
+       hx-on::after-request="const href = this.getAttribute('href'); if (href && href !== '#') { window.location.href = href; } else { window.dispatchEvent(new CustomEvent('notification:marked-read')); }">
         <div class="flex gap-3">
             <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center
                         {% if notification.color == 'blue' %}bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400{% endif %}
