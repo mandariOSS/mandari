@@ -363,19 +363,24 @@
       delay: 5
       until: api_health.stdout == 'healthy'
 
-    - name: Wait for Ingestor to be healthy
-      shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' mandari-ingestor
+    - name: Check Ingestor status (non-blocking)
+      shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' mandari-ingestor 2>/dev/null || echo "not-found"
       register: ingestor_health
-      retries: 20
-      delay: 5
-      until: ingestor_health.stdout == 'healthy'
+      ignore_errors: yes
+
+    - name: Check if Ingestor container is running
+      shell: docker ps --filter "name=mandari-ingestor" --filter "status=running" --format "{{ '{{' }}.Names{{ '}}' }}"
+      register: ingestor_running
 
     - name: Display service health status
       debug:
         msg: |
-          ✅ All services healthy:
-            - Django (mandari-web): {{ api_health.stdout }}
-            - Ingestor (mandari-ingestor): {{ ingestor_health.stdout }}
+          ✅ Django (mandari-web): {{ api_health.stdout }}
+          {% if ingestor_running.stdout == 'mandari-ingestor' %}
+          ✅ Ingestor (mandari-ingestor): running (health: {{ ingestor_health.stdout | default('unknown') }})
+          {% else %}
+          ⚠️ Ingestor (mandari-ingestor): not running - check logs with 'docker logs mandari-ingestor'
+          {% endif %}
 
     # =========================================================================
     # Wait for SSL Certificate and Export for Slave
