@@ -13,6 +13,9 @@
 # pr-check.yml is kept public for testing
 .github/workflows/deploy.yml
 
+# Private planning documents (internal use only)
+.private/
+
 # AI context files (internal use)
 # CLAUDE.md
 # AGENTS.md

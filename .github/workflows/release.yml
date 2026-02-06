@@ -3,15 +3,17 @@
 # =============================================================================
 # Builds and publishes Docker images to GitHub Container Registry (ghcr.io)
 # Triggered on:
-#   - Published releases (tags)
+#   - Push to main branch (builds :latest)
+#   - Published releases (builds :tag + :latest)
 #   - Manual dispatch
-#
-# No extra secrets needed - uses GITHUB_TOKEN automatically!
 # =============================================================================
 
 name: Release
 
 on:
+  push:
+    branches:
+      - main
   release:
     types: [published]
   workflow_dispatch:
@@ -87,8 +89,8 @@ jobs:
       - name: Build and push Ingestor image
         uses: docker/build-push-action@v5
         with:
-          context: ./apps/ingestor
-          file: ./apps/ingestor/Dockerfile
+          context: ./ingestor
+          file: ./ingestor/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
