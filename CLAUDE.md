@@ -10,6 +10,22 @@ Mandari ist eine Open-Source-Plattform für kommunalpolitische Transparenz in De
 
 ---
 
+## Git-Workflow
+
+**Entwicklung erfolgt ausschließlich auf dem `dev` Branch.**
+
+```bash
+# Standard-Workflow
+git checkout dev
+git pull origin dev
+# ... Änderungen ...
+git add <files>
+git commit -m "feat/fix/chore: Beschreibung"
+git push origin dev
+```
+
+---
+
 ## Technologie-Stack
 
 | Komponente | Technologie |
@@ -27,7 +43,12 @@ Mandari ist eine Open-Source-Plattform für kommunalpolitische Transparenz in De
 ## Projektstruktur
 
 ```
-mandari2.0/
+mandari/
+├── .private/                   # Interne Planungsdokumente (im Repo)
+│   ├── MASTER_FEATURE_LIST.md  # Feature-Übersicht & Roadmap
+│   ├── ARCHITECTURE_*.md       # Architektur-Pläne
+│   ├── CI_CD_*.md              # Deployment-Pläne
+│   └── PLAN_*.md               # Feature-Implementierungspläne
 ├── mandari/                    # Haupt-Django-Projekt
 │   ├── apps/                   # Django Apps
 │   │   ├── accounts/           # Benutzer-Authentifizierung
@@ -44,15 +65,17 @@ mandari2.0/
 │   │       ├── ris/            # RIS-Datenansicht
 │   │       ├── support/        # Support-Tickets
 │   │       └── tasks/          # Aufgabenverwaltung
-│   ├── insight_core/           # OParl-Datenmodelle
+│   ├── insight_core/           # OParl-Datenmodelle & Services
+│   │   └── services/           # Text-Extraktion, OCR, Suche
 │   ├── insight_sync/           # OParl-Synchronisation
-│   ├── insight_search/         # Suchfunktionalität
+│   ├── insight_search/         # Meilisearch-Integration
 │   ├── insight_ai/             # KI-Pipelines
 │   ├── templates/              # Django Templates
 │   ├── static/                 # Statische Dateien
-│   └── settings.py             # Django-Einstellungen
+│   └── mandari/settings.py     # Django-Einstellungen
+├── ingestor/                   # Rust-basierter OParl-Ingestor
 ├── CLAUDE.md                   # Diese Datei
-└── AGENTS.md                   # Kopie für andere KI-Modelle
+└── LICENSE                     # EUPL-1.2
 ```
 
 ---
@@ -332,10 +355,30 @@ class OParlXxx(models.Model):
 | `OParlBody` | `display_name`, `logo` | Frontend-Anpassung |
 | `OParlBody` | `latitude`, `longitude`, `bbox_*` | Geo-Daten für Karten |
 | `OParlBody` | `osm_relation_id` | OpenStreetMap-Verknüpfung |
+| `OParlBody` | `slug` | SEO-freundliche URLs |
 | `OParlPaper` | `summary`, `locations` | KI-generierte Felder |
 | `OParlFile` | `local_path`, `text_content` | Lokale Speicherung, OCR |
+| `OParlFile` | `text_extraction_status/method/error` | Extraktions-Tracking |
 | `LocationMapping` | - | Ortsname → Koordinaten-Mapping |
 | `TileCache` | - | OSM-Kartenkacheln |
+
+### Services (insight_core/services/)
+
+| Service | Zweck |
+|---------|-------|
+| `document_extraction.py` | PDF-Textextraktion (pypdf → Mistral → Tesseract) |
+| `mistral_ocr.py` | Mistral AI OCR-Integration |
+| `text_extraction_queue.py` | Async Queue für Batch-Extraktion |
+| `search_service.py` | Meilisearch Multi-Index-Suche |
+
+### SEO & Sitemaps
+
+| Datei | Zweck |
+|-------|-------|
+| `insight_core/seo.py` | SEO-Context-Generatoren für alle Entitäten |
+| `insight_core/sitemaps.py` | Hierarchische Sitemaps pro Kommune |
+| `insight_core/signals.py` | Auto-Indexierung bei Model-Änderungen |
+| `insight_search/synonyms.py` | 100+ deutsche Kommunal-Synonyme |
 
 ### Zugriff auf OParl-Daten im Code
 
@@ -463,6 +506,9 @@ python manage.py fix_permissions
 python manage.py sync_oparl --full
 python manage.py extract_texts  # OCR für PDFs
 
+# Meilisearch konfigurieren (Synonyme, Typo-Toleranz)
+python manage.py setup_meilisearch
+
 # Statische Dateien
 python manage.py collectstatic
 
@@ -492,6 +538,20 @@ EMAIL_HOST_USER=user
 EMAIL_HOST_PASSWORD=pass
 EMAIL_USE_TLS=True
 DEFAULT_FROM_EMAIL=noreply@example.com
+
+# Meilisearch (Volltextsuche)
+MEILISEARCH_URL=http://localhost:7700
+MEILISEARCH_KEY=masterKey
+MEILISEARCH_AUTO_INDEX=True
+
+# Text-Extraktion
+TEXT_EXTRACTION_ENABLED=True
+TEXT_EXTRACTION_ASYNC=True
+TEXT_EXTRACTION_MAX_SIZE_MB=50
+
+# Mistral OCR (optional, für bessere PDF-OCR)
+MISTRAL_API_KEY=sk-...
+MISTRAL_OCR_RATE_LIMIT=60
 ```
 
 ---
@@ -500,6 +560,15 @@ DEFAULT_FROM_EMAIL=noreply@example.com
 
 ```
 /                               # Public Portal (insight_core)
+/robots.txt                     # SEO: robots.txt
+/sitemap.xml                    # SEO: Sitemap-Index
+/sitemap-pages.xml              # SEO: Statische Seiten
+/sitemap-insight-<slug>.xml     # SEO: Pro Kommune
+/insight/                       # Insight Portal
+    /vorgaenge/<uuid>/          # Paper-Detail
+    /termine/<uuid>/            # Meeting-Detail
+    /gremien/<uuid>/            # Organization-Detail
+    /personen/<uuid>/           # Person-Detail
 /admin/                         # Django Admin (Unfold)
 /accounts/                      # Login, Logout, Password Reset
 /work/<org_slug>/               # Work Portal
@@ -626,8 +695,25 @@ obj.set_content_encrypted(request.POST.get("content"))
 
 ---
 
+## .private/ - Interne Planungsdokumente
+
+Das `.private/` Verzeichnis enthält interne Planungsdokumente:
+
+| Datei | Inhalt |
+|-------|--------|
+| `MASTER_FEATURE_LIST.md` | Vollständige Feature-Liste & Roadmap |
+| `ARCHITECTURE_OPTIMIZATION_PLAN.md` | Architektur-Optimierungen |
+| `CI_CD_AND_INSTALL_PLAN.md` | CI/CD & Deployment-Konfiguration |
+| `DJANGO_PERFORMANCE_OPTIMIZATION_PLAN.md` | Performance-Optimierungen |
+| `PLAN_TEXT_EXTRACTION_SEO_SEARCH.md` | Text-Extraktion, SEO, Suche |
+| `SPDX_AND_COPYRIGHT_PLAN.md` | Lizenz & Copyright Headers |
+
+**Wichtig**: Bei neuen Features zuerst `.private/MASTER_FEATURE_LIST.md` prüfen!
+
+---
+
 ## Support & Kontakt
 
 - **OParl-Spezifikation**: https://oparl.org
-- **Projekt-Repository**: [TBD]
+- **Projekt-Repository**: https://github.com/mandariOSS/mandari
 - **Dokumentation**: `docs/`
