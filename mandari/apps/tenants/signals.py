@@ -31,10 +31,6 @@ def create_default_roles_on_organization_create(sender, instance, created, **kwa
     if created:
         try:
             roles = Role.create_default_roles(instance)
-            logger.info(
-                f"Created {len(roles)} default roles for organization: {instance.name}"
-            )
+            logger.info(f"Created {len(roles)} default roles for organization: {instance.name}")
         except Exception as e:
-            logger.error(
-                f"Failed to create default roles for {instance.name}: {e}"
-            )
+            logger.error(f"Failed to create default roles for {instance.name}: {e}")

@@ -8,8 +8,6 @@ Provides:
 - HTMXMixin: HTMX-specific functionality
 """
 
-from typing import List, Optional
-
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse
@@ -52,25 +50,16 @@ class OrganizationMixin(LoginRequiredMixin):
 
         # Get organization
         try:
-            self.organization = Organization.objects.get(
-                slug=org_slug,
-                is_active=True
-            )
+            self.organization = Organization.objects.get(slug=org_slug, is_active=True)
         except Organization.DoesNotExist:
             raise Http404("Organisation nicht gefunden")
 
         # Get membership for current user
         try:
-            self.membership = Membership.objects.select_related(
-                "organization"
-            ).prefetch_related(
-                "roles__permissions",
-                "individual_permissions",
-                "denied_permissions"
-            ).get(
-                user=request.user,
-                organization=self.organization,
-                is_active=True
+            self.membership = (
+                Membership.objects.select_related("organization")
+                .prefetch_related("roles__permissions", "individual_permissions", "denied_permissions")
+                .get(user=request.user, organization=self.organization, is_active=True)
             )
         except Membership.DoesNotExist:
             raise PermissionDenied("Kein Zugang zu dieser Organisation")
@@ -125,7 +114,7 @@ class PermissionRequiredMixin(OrganizationMixin):
             permission_require_all = False
     """
 
-    permission_required: Optional[str | List[str]] = None
+    permission_required: str | list[str] | None = None
     permission_require_all: bool = True  # Require all permissions by default
 
     def dispatch(self, request, *args, **kwargs):
@@ -162,6 +151,7 @@ class PermissionRequiredMixin(OrganizationMixin):
         # Debug logging only in DEBUG mode
         if settings.DEBUG:
             import logging
+
             logger = logging.getLogger("apps.common.mixins")
             logger.info(f"[PermCheck] User: {self.membership.user.email}")
             logger.info(f"[PermCheck] Roles: {list(self.membership.roles.values_list('name', flat=True))}")
@@ -177,16 +167,16 @@ class PermissionRequiredMixin(OrganizationMixin):
         if self.permission_require_all:
             if not checker.has_all_permissions(permissions):
                 if settings.DEBUG:
-                    logger.warning(f"[PermCheck] DENIED - missing required permissions")
+                    logger.warning("[PermCheck] DENIED - missing required permissions")
                 raise PermissionDenied("Fehlende Berechtigung")
         else:
             if not checker.has_any_permission(permissions):
                 if settings.DEBUG:
-                    logger.warning(f"[PermCheck] DENIED - no matching permissions")
+                    logger.warning("[PermCheck] DENIED - no matching permissions")
                 raise PermissionDenied("Fehlende Berechtigung")
 
         if settings.DEBUG:
-            logger.info(f"[PermCheck] GRANTED")
+            logger.info("[PermCheck] GRANTED")
 
     def has_permission(self, permission: str) -> bool:
         """
@@ -268,4 +258,5 @@ class WorkViewMixin(HTMXMixin, PermissionRequiredMixin):
     - Permission checking
     - HTMX support
     """
+
     pass

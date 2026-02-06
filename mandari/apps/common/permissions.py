@@ -17,8 +17,6 @@ Based on typical German faction (Fraktion) structures with roles like:
 - Öffentlichkeit (Public)
 """
 
-from typing import List, Set
-
 
 # =============================================================================
 # PERMISSION DEFINITIONS
@@ -27,13 +25,11 @@ from typing import List, Set
 PERMISSIONS = {
     # === DASHBOARD ===
     "dashboard.view": "Dashboard anzeigen",
-
     # === SITZUNGEN (Meetings - public council/committee meetings from RIS) ===
     "meetings.view": "Öffentliche Sitzungen anzeigen",
     "meetings.view_non_public": "Nicht-öffentliche Sitzungen anzeigen",
     "meetings.prepare": "Sitzungen vorbereiten (Notizen, Redebeiträge)",
     "meetings.notes": "Notizen zu Sitzungen erstellen",
-
     # === FRAKTIONSSITZUNGEN (Internal faction meetings) ===
     "faction.view_public": "Öffentlichen Teil der Fraktionssitzung anzeigen",
     "faction.view_non_public": "Nicht-öffentlichen Teil anzeigen (nur Vereidigte)",
@@ -43,7 +39,6 @@ PERMISSIONS = {
     "faction.start": "Fraktionssitzung starten/beenden",
     "faction.invite": "Einladungen zu Fraktionssitzungen versenden",
     "faction.manage": "Fraktionssitzungen vollständig verwalten (inkl. Status)",
-
     # === TAGESORDNUNG (Agenda) ===
     "agenda.view": "Tagesordnung anzeigen",
     "agenda.create": "Tagesordnungspunkte direkt erstellen",
@@ -53,14 +48,12 @@ PERMISSIONS = {
     "agenda.delete": "Tagesordnungspunkte löschen",
     "agenda.approve": "Tagesordnungspunkte genehmigen",
     "agenda.reorder": "Tagesordnung umordnen",
-
     # === STIMMRECHT & REDERECHT ===
     "voting.participate": "Stimmrecht bei Abstimmungen",
     "speaking.automatic": "Automatisches Rederecht",
     "speaking.in_topic": "Rederecht im eigenen Themenbereich",
     "speaking.on_request": "Rederecht auf Anfrage",
     "speaking.grant": "Rederecht an andere erteilen",
-
     # === ANTRÄGE (Motions) ===
     "motions.view": "Anträge anzeigen",
     "motions.view_drafts": "Entwürfe anzeigen",
@@ -72,7 +65,6 @@ PERMISSIONS = {
     "motions.submit_to_ris": "Anträge ans RIS übermitteln",
     "motions.share": "Anträge mit anderen Organisationen teilen",
     "motions.comment": "Anträge kommentieren",
-
     # === PROTOKOLLE (Protocols) ===
     "protocols.view_public": "Öffentliche Protokolle anzeigen",
     "protocols.view_full": "Vollständige Protokolle anzeigen",
@@ -80,7 +72,6 @@ PERMISSIONS = {
     "protocols.edit": "Protokolle bearbeiten",
     "protocols.approve": "Protokolle freigeben",
     "protocols.publish": "Protokolle veröffentlichen",
-
     # === AUFGABEN (Tasks) ===
     "tasks.view": "Aufgaben anzeigen",
     "tasks.view_all": "Alle Aufgaben anzeigen",
@@ -88,18 +79,15 @@ PERMISSIONS = {
     "tasks.assign": "Aufgaben zuweisen",
     "tasks.edit": "Eigene Aufgaben bearbeiten",
     "tasks.manage": "Alle Aufgaben verwalten",
-
     # === RIS (Read-only view of public council data) ===
     "ris.view": "RIS-Daten anzeigen (öffentlich)",
     "ris.notes": "RIS-Notizen erstellen",
     "ris.subscribe": "RIS-Benachrichtigungen aktivieren",
-
     # === ARBEITSGRUPPEN (Working Groups) ===
     "workgroups.view": "Arbeitsgruppen anzeigen",
     "workgroups.join": "Arbeitsgruppen beitreten",
     "workgroups.create": "Arbeitsgruppen erstellen",
     "workgroups.manage": "Arbeitsgruppen verwalten",
-
     # === DOKUMENTE & DATEIEN ===
     "documents.view_public": "Öffentliche Dokumente anzeigen",
     "documents.view_internal": "Interne Dokumente anzeigen",
@@ -107,7 +95,6 @@ PERMISSIONS = {
     "documents.upload": "Dokumente hochladen",
     "documents.delete": "Dokumente löschen",
     "documents.manage": "Dokumentenablage verwalten",
-
     # === MITGLIEDERVERWALTUNG (Member Management) ===
     "members.view": "Mitgliederliste anzeigen",
     "members.view_details": "Mitgliederdetails anzeigen",
@@ -115,7 +102,6 @@ PERMISSIONS = {
     "members.edit": "Mitglieder bearbeiten",
     "members.remove": "Mitglieder entfernen",
     "members.manage_roles": "Rollen zuweisen",
-
     # === ORGANISATION ===
     "organization.view": "Organisationseinstellungen anzeigen",
     "organization.edit": "Organisationseinstellungen bearbeiten",
@@ -123,11 +109,9 @@ PERMISSIONS = {
     "organization.api_tokens": "API-Tokens verwalten",
     "organization.audit_log": "Audit-Log anzeigen",
     "organization.admin": "Vollständige Administration",
-
     # === GÄSTE & ÖFFENTLICHKEIT ===
     "guests.invite": "Gäste zu Sitzungen einladen",
     "guests.manage": "Gästeliste verwalten",
-
     # === SUPPORT ===
     "support.view": "Support anzeigen",
     "support.create": "Support-Tickets erstellen",
@@ -149,17 +133,28 @@ PERMISSION_CATEGORIES = {
         "name": "Fraktionssitzungen",
         "icon": "groups",
         "permissions": [
-            "faction.view_public", "faction.view_non_public",
-            "faction.create", "faction.edit", "faction.delete",
-            "faction.start", "faction.invite", "faction.manage",
+            "faction.view_public",
+            "faction.view_non_public",
+            "faction.create",
+            "faction.edit",
+            "faction.delete",
+            "faction.start",
+            "faction.invite",
+            "faction.manage",
         ],
     },
     "agenda": {
         "name": "Tagesordnung",
         "icon": "list_alt",
         "permissions": [
-            "agenda.view", "agenda.create", "agenda.propose", "agenda.suggest",
-            "agenda.edit", "agenda.delete", "agenda.approve", "agenda.reorder",
+            "agenda.view",
+            "agenda.create",
+            "agenda.propose",
+            "agenda.suggest",
+            "agenda.edit",
+            "agenda.delete",
+            "agenda.approve",
+            "agenda.reorder",
         ],
     },
     "voting_speaking": {
@@ -167,7 +162,9 @@ PERMISSION_CATEGORIES = {
         "icon": "record_voice_over",
         "permissions": [
             "voting.participate",
-            "speaking.automatic", "speaking.in_topic", "speaking.on_request",
+            "speaking.automatic",
+            "speaking.in_topic",
+            "speaking.on_request",
             "speaking.grant",
         ],
     },
@@ -175,9 +172,15 @@ PERMISSION_CATEGORIES = {
         "name": "Anträge",
         "icon": "description",
         "permissions": [
-            "motions.view", "motions.view_drafts", "motions.create",
-            "motions.edit", "motions.edit_all", "motions.delete",
-            "motions.approve", "motions.submit_to_ris", "motions.share",
+            "motions.view",
+            "motions.view_drafts",
+            "motions.create",
+            "motions.edit",
+            "motions.edit_all",
+            "motions.delete",
+            "motions.approve",
+            "motions.submit_to_ris",
+            "motions.share",
             "motions.comment",
         ],
     },
@@ -185,25 +188,34 @@ PERMISSION_CATEGORIES = {
         "name": "Protokolle",
         "icon": "article",
         "permissions": [
-            "protocols.view_public", "protocols.view_full",
-            "protocols.create", "protocols.edit",
-            "protocols.approve", "protocols.publish",
+            "protocols.view_public",
+            "protocols.view_full",
+            "protocols.create",
+            "protocols.edit",
+            "protocols.approve",
+            "protocols.publish",
         ],
     },
     "meetings": {
         "name": "Ratssitzungen (RIS)",
         "icon": "event",
         "permissions": [
-            "meetings.view", "meetings.view_non_public",
-            "meetings.prepare", "meetings.notes",
+            "meetings.view",
+            "meetings.view_non_public",
+            "meetings.prepare",
+            "meetings.notes",
         ],
     },
     "tasks": {
         "name": "Aufgaben",
         "icon": "task_alt",
         "permissions": [
-            "tasks.view", "tasks.view_all", "tasks.create",
-            "tasks.assign", "tasks.edit", "tasks.manage",
+            "tasks.view",
+            "tasks.view_all",
+            "tasks.create",
+            "tasks.assign",
+            "tasks.edit",
+            "tasks.manage",
         ],
     },
     "ris": {
@@ -215,25 +227,33 @@ PERMISSION_CATEGORIES = {
         "name": "Arbeitsgruppen",
         "icon": "workspaces",
         "permissions": [
-            "workgroups.view", "workgroups.join",
-            "workgroups.create", "workgroups.manage",
+            "workgroups.view",
+            "workgroups.join",
+            "workgroups.create",
+            "workgroups.manage",
         ],
     },
     "documents": {
         "name": "Dokumente",
         "icon": "folder",
         "permissions": [
-            "documents.view_public", "documents.view_internal",
-            "documents.view_confidential", "documents.upload",
-            "documents.delete", "documents.manage",
+            "documents.view_public",
+            "documents.view_internal",
+            "documents.view_confidential",
+            "documents.upload",
+            "documents.delete",
+            "documents.manage",
         ],
     },
     "members": {
         "name": "Mitglieder",
         "icon": "people",
         "permissions": [
-            "members.view", "members.view_details",
-            "members.invite", "members.edit", "members.remove",
+            "members.view",
+            "members.view_details",
+            "members.invite",
+            "members.edit",
+            "members.remove",
             "members.manage_roles",
         ],
     },
@@ -241,9 +261,12 @@ PERMISSION_CATEGORIES = {
         "name": "Organisation",
         "icon": "settings",
         "permissions": [
-            "organization.view", "organization.edit",
-            "organization.manage_roles", "organization.api_tokens",
-            "organization.audit_log", "organization.admin",
+            "organization.view",
+            "organization.edit",
+            "organization.manage_roles",
+            "organization.api_tokens",
+            "organization.audit_log",
+            "organization.admin",
         ],
     },
     "guests": {
@@ -277,7 +300,6 @@ DEFAULT_ROLES = {
         "priority": 100,
         "color": "#dc2626",  # Red
     },
-
     # -------------------------------------------------------------------------
     # FRAKTIONSVORSITZ - Faction Chair
     # Manages meetings, grants speaking rights, approves agenda
@@ -292,55 +314,92 @@ DEFAULT_ROLES = {
             # Dashboard
             "dashboard.view",
             # Faction meetings - full control
-            "faction.view_public", "faction.view_non_public",
-            "faction.create", "faction.edit", "faction.delete",
-            "faction.start", "faction.invite", "faction.manage",
+            "faction.view_public",
+            "faction.view_non_public",
+            "faction.create",
+            "faction.edit",
+            "faction.delete",
+            "faction.start",
+            "faction.invite",
+            "faction.manage",
             # Agenda - full control including approval
-            "agenda.view", "agenda.create", "agenda.edit", "agenda.delete",
-            "agenda.approve", "agenda.reorder",
+            "agenda.view",
+            "agenda.create",
+            "agenda.edit",
+            "agenda.delete",
+            "agenda.approve",
+            "agenda.reorder",
             # Voting & Speaking
             "voting.participate",
-            "speaking.automatic", "speaking.grant",
+            "speaking.automatic",
+            "speaking.grant",
             # Motions
-            "motions.view", "motions.view_drafts", "motions.create",
-            "motions.edit", "motions.edit_all", "motions.approve",
-            "motions.submit_to_ris", "motions.share", "motions.comment",
+            "motions.view",
+            "motions.view_drafts",
+            "motions.create",
+            "motions.edit",
+            "motions.edit_all",
+            "motions.approve",
+            "motions.submit_to_ris",
+            "motions.share",
+            "motions.comment",
             # Protocols
-            "protocols.view_public", "protocols.view_full",
-            "protocols.create", "protocols.edit",
-            "protocols.approve", "protocols.publish",
+            "protocols.view_public",
+            "protocols.view_full",
+            "protocols.create",
+            "protocols.edit",
+            "protocols.approve",
+            "protocols.publish",
             # Meetings (RIS)
-            "meetings.view", "meetings.view_non_public",
-            "meetings.prepare", "meetings.notes",
+            "meetings.view",
+            "meetings.view_non_public",
+            "meetings.prepare",
+            "meetings.notes",
             # Tasks
-            "tasks.view", "tasks.view_all", "tasks.create",
-            "tasks.assign", "tasks.manage",
+            "tasks.view",
+            "tasks.view_all",
+            "tasks.create",
+            "tasks.assign",
+            "tasks.manage",
             # RIS
-            "ris.view", "ris.notes", "ris.subscribe",
+            "ris.view",
+            "ris.notes",
+            "ris.subscribe",
             # Workgroups
-            "workgroups.view", "workgroups.join",
-            "workgroups.create", "workgroups.manage",
+            "workgroups.view",
+            "workgroups.join",
+            "workgroups.create",
+            "workgroups.manage",
             # Documents
-            "documents.view_public", "documents.view_internal",
-            "documents.view_confidential", "documents.upload",
-            "documents.delete", "documents.manage",
+            "documents.view_public",
+            "documents.view_internal",
+            "documents.view_confidential",
+            "documents.upload",
+            "documents.delete",
+            "documents.manage",
             # Members
-            "members.view", "members.view_details",
-            "members.invite", "members.edit", "members.manage_roles",
+            "members.view",
+            "members.view_details",
+            "members.invite",
+            "members.edit",
+            "members.manage_roles",
             # Organization
-            "organization.view", "organization.edit",
-            "organization.api_tokens", "organization.audit_log",
+            "organization.view",
+            "organization.edit",
+            "organization.api_tokens",
+            "organization.audit_log",
             # Guests
-            "guests.invite", "guests.manage",
+            "guests.invite",
+            "guests.manage",
             # Support
-            "support.view", "support.create",
+            "support.view",
+            "support.create",
         ],
         "is_system_role": True,
         "is_admin": False,
         "priority": 95,
         "color": "#7c3aed",  # Purple
     },
-
     # -------------------------------------------------------------------------
     # STELLVERTRETENDER VORSITZ - Vice Chair
     # Same as chair but slightly lower priority
@@ -348,45 +407,75 @@ DEFAULT_ROLES = {
     "faction_vice_chair": {
         "name": "Stellv. Vorsitz",
         "description": (
-            "Stellvertretende Sitzungsleitung mit denselben Rechten "
-            "wie der Vorsitz, vertritt bei Abwesenheit."
+            "Stellvertretende Sitzungsleitung mit denselben Rechten wie der Vorsitz, vertritt bei Abwesenheit."
         ),
         "permissions": [
             # Same as faction_chair
             "dashboard.view",
-            "faction.view_public", "faction.view_non_public",
-            "faction.create", "faction.edit",
-            "faction.start", "faction.invite", "faction.manage",
-            "agenda.view", "agenda.create", "agenda.edit",
-            "agenda.approve", "agenda.reorder",
+            "faction.view_public",
+            "faction.view_non_public",
+            "faction.create",
+            "faction.edit",
+            "faction.start",
+            "faction.invite",
+            "faction.manage",
+            "agenda.view",
+            "agenda.create",
+            "agenda.edit",
+            "agenda.approve",
+            "agenda.reorder",
             "voting.participate",
-            "speaking.automatic", "speaking.grant",
-            "motions.view", "motions.view_drafts", "motions.create",
-            "motions.edit", "motions.edit_all", "motions.approve",
-            "motions.submit_to_ris", "motions.share", "motions.comment",
-            "protocols.view_public", "protocols.view_full",
-            "protocols.create", "protocols.edit", "protocols.approve",
-            "meetings.view", "meetings.view_non_public",
-            "meetings.prepare", "meetings.notes",
-            "tasks.view", "tasks.view_all", "tasks.create",
-            "tasks.assign", "tasks.manage",
-            "ris.view", "ris.notes", "ris.subscribe",
-            "workgroups.view", "workgroups.join",
-            "workgroups.create", "workgroups.manage",
-            "documents.view_public", "documents.view_internal",
-            "documents.view_confidential", "documents.upload",
-            "members.view", "members.view_details",
-            "members.invite", "members.manage_roles",
+            "speaking.automatic",
+            "speaking.grant",
+            "motions.view",
+            "motions.view_drafts",
+            "motions.create",
+            "motions.edit",
+            "motions.edit_all",
+            "motions.approve",
+            "motions.submit_to_ris",
+            "motions.share",
+            "motions.comment",
+            "protocols.view_public",
+            "protocols.view_full",
+            "protocols.create",
+            "protocols.edit",
+            "protocols.approve",
+            "meetings.view",
+            "meetings.view_non_public",
+            "meetings.prepare",
+            "meetings.notes",
+            "tasks.view",
+            "tasks.view_all",
+            "tasks.create",
+            "tasks.assign",
+            "tasks.manage",
+            "ris.view",
+            "ris.notes",
+            "ris.subscribe",
+            "workgroups.view",
+            "workgroups.join",
+            "workgroups.create",
+            "workgroups.manage",
+            "documents.view_public",
+            "documents.view_internal",
+            "documents.view_confidential",
+            "documents.upload",
+            "members.view",
+            "members.view_details",
+            "members.invite",
+            "members.manage_roles",
             "organization.view",
-            "guests.invite", "guests.manage",
-            "support.view", "support.create",
+            "guests.invite",
+            "guests.manage",
+            "support.view",
+            "support.create",
         ],
         "is_system_role": True,
         "is_admin": False,
         "priority": 90,
         "color": "#8b5cf6",  # Lighter purple
     },
-
     # -------------------------------------------------------------------------
     # FRAKTIONSMITGLIED - Faction Member (Council Member)
     # Full participation, voting rights, can add agenda items directly
@@ -401,42 +490,62 @@ DEFAULT_ROLES = {
         "permissions": [
             "dashboard.view",
             # Faction - full access
-            "faction.view_public", "faction.view_non_public",
+            "faction.view_public",
+            "faction.view_non_public",
             # Agenda - can create directly (Hoheit über TO)
-            "agenda.view", "agenda.create", "agenda.edit",
+            "agenda.view",
+            "agenda.create",
+            "agenda.edit",
             # Full voting and speaking rights
             "voting.participate",
             "speaking.automatic",
             # Motions - create and edit own
-            "motions.view", "motions.view_drafts", "motions.create",
-            "motions.edit", "motions.share", "motions.comment",
+            "motions.view",
+            "motions.view_drafts",
+            "motions.create",
+            "motions.edit",
+            "motions.share",
+            "motions.comment",
             # Protocols
-            "protocols.view_public", "protocols.view_full",
+            "protocols.view_public",
+            "protocols.view_full",
             # Meetings (RIS)
-            "meetings.view", "meetings.view_non_public",
-            "meetings.prepare", "meetings.notes",
+            "meetings.view",
+            "meetings.view_non_public",
+            "meetings.prepare",
+            "meetings.notes",
             # Tasks
-            "tasks.view", "tasks.view_all", "tasks.create", "tasks.assign",
+            "tasks.view",
+            "tasks.view_all",
+            "tasks.create",
+            "tasks.assign",
             # RIS
-            "ris.view", "ris.notes", "ris.subscribe",
+            "ris.view",
+            "ris.notes",
+            "ris.subscribe",
             # Workgroups
-            "workgroups.view", "workgroups.join", "workgroups.create",
+            "workgroups.view",
+            "workgroups.join",
+            "workgroups.create",
             # Documents
-            "documents.view_public", "documents.view_internal",
-            "documents.view_confidential", "documents.upload",
+            "documents.view_public",
+            "documents.view_internal",
+            "documents.view_confidential",
+            "documents.upload",
             # Members
-            "members.view", "members.view_details",
+            "members.view",
+            "members.view_details",
             # Guests
             "guests.invite",
             # Support
-            "support.view", "support.create",
+            "support.view",
+            "support.create",
         ],
         "is_system_role": True,
         "is_admin": False,
         "priority": 80,
         "color": "#2563eb",  # Blue
     },
-
     # -------------------------------------------------------------------------
     # SACHKUNDIGE/R BÜRGER/IN - Expert Citizen
     # Advisory role, can view non-public (after oath), propose agenda items
@@ -452,39 +561,53 @@ DEFAULT_ROLES = {
         "permissions": [
             "dashboard.view",
             # Faction - full access (after oath)
-            "faction.view_public", "faction.view_non_public",
+            "faction.view_public",
+            "faction.view_non_public",
             # Agenda - can PROPOSE (needs approval)
-            "agenda.view", "agenda.propose",
+            "agenda.view",
+            "agenda.propose",
             # NO voting, speaking in topic area
             "speaking.in_topic",
             # Motions - can view, create, edit own, and comment
-            "motions.view", "motions.view_drafts", "motions.create",
-            "motions.edit", "motions.comment",
+            "motions.view",
+            "motions.view_drafts",
+            "motions.create",
+            "motions.edit",
+            "motions.comment",
             # Protocols - full access
-            "protocols.view_public", "protocols.view_full",
+            "protocols.view_public",
+            "protocols.view_full",
             # Meetings (RIS)
-            "meetings.view", "meetings.view_non_public",
-            "meetings.prepare", "meetings.notes",
+            "meetings.view",
+            "meetings.view_non_public",
+            "meetings.prepare",
+            "meetings.notes",
             # Tasks - own tasks
-            "tasks.view", "tasks.create", "tasks.edit",
+            "tasks.view",
+            "tasks.create",
+            "tasks.edit",
             # RIS
-            "ris.view", "ris.notes", "ris.subscribe",
+            "ris.view",
+            "ris.notes",
+            "ris.subscribe",
             # Workgroups
-            "workgroups.view", "workgroups.join",
+            "workgroups.view",
+            "workgroups.join",
             # Documents
-            "documents.view_public", "documents.view_internal",
+            "documents.view_public",
+            "documents.view_internal",
             "documents.view_confidential",
             # Members
             "members.view",
             # Support
-            "support.view", "support.create",
+            "support.view",
+            "support.create",
         ],
         "is_system_role": True,
         "is_admin": False,
         "priority": 60,
         "color": "#0891b2",  # Cyan
     },
-
     # -------------------------------------------------------------------------
     # BEZIRKSVERTRETER/IN - District Representative
     # Similar to Expert Citizen, different context
@@ -499,39 +622,53 @@ DEFAULT_ROLES = {
         "permissions": [
             "dashboard.view",
             # Faction - full access (after oath)
-            "faction.view_public", "faction.view_non_public",
+            "faction.view_public",
+            "faction.view_non_public",
             # Agenda - can PROPOSE (needs approval)
-            "agenda.view", "agenda.propose",
+            "agenda.view",
+            "agenda.propose",
             # NO voting, speaking in topic area
             "speaking.in_topic",
             # Motions - can view, create, edit own, and comment
-            "motions.view", "motions.view_drafts", "motions.create",
-            "motions.edit", "motions.comment",
+            "motions.view",
+            "motions.view_drafts",
+            "motions.create",
+            "motions.edit",
+            "motions.comment",
             # Protocols - full access
-            "protocols.view_public", "protocols.view_full",
+            "protocols.view_public",
+            "protocols.view_full",
             # Meetings (RIS)
-            "meetings.view", "meetings.view_non_public",
-            "meetings.prepare", "meetings.notes",
+            "meetings.view",
+            "meetings.view_non_public",
+            "meetings.prepare",
+            "meetings.notes",
             # Tasks - own tasks
-            "tasks.view", "tasks.create", "tasks.edit",
+            "tasks.view",
+            "tasks.create",
+            "tasks.edit",
             # RIS
-            "ris.view", "ris.notes", "ris.subscribe",
+            "ris.view",
+            "ris.notes",
+            "ris.subscribe",
             # Workgroups
-            "workgroups.view", "workgroups.join",
+            "workgroups.view",
+            "workgroups.join",
             # Documents
-            "documents.view_public", "documents.view_internal",
+            "documents.view_public",
+            "documents.view_internal",
             "documents.view_confidential",
             # Members
             "members.view",
             # Support
-            "support.view", "support.create",
+            "support.view",
+            "support.create",
         ],
         "is_system_role": True,
         "is_admin": False,
         "priority": 60,
         "color": "#059669",  # Emerald
     },
-
     # -------------------------------------------------------------------------
     # FRAKTIONSPERSONAL - Faction Staff
     # Support role, organization & documentation
@@ -546,47 +683,68 @@ DEFAULT_ROLES = {
         "permissions": [
             "dashboard.view",
             # Faction - full access (after oath)
-            "faction.view_public", "faction.view_non_public",
-            "faction.create", "faction.edit",  # Can help organize
+            "faction.view_public",
+            "faction.view_non_public",
+            "faction.create",
+            "faction.edit",  # Can help organize
             # Agenda - can create (administrative support)
-            "agenda.view", "agenda.create", "agenda.edit",
+            "agenda.view",
+            "agenda.create",
+            "agenda.edit",
             # NO voting, speaking on request
             "speaking.on_request",
             # Motions - full view, can help create
-            "motions.view", "motions.view_drafts",
-            "motions.create", "motions.edit", "motions.comment",
+            "motions.view",
+            "motions.view_drafts",
+            "motions.create",
+            "motions.edit",
+            "motions.comment",
             # Protocols - create and edit (main documentation task)
-            "protocols.view_public", "protocols.view_full",
-            "protocols.create", "protocols.edit",
+            "protocols.view_public",
+            "protocols.view_full",
+            "protocols.create",
+            "protocols.edit",
             # Meetings (RIS)
-            "meetings.view", "meetings.view_non_public",
-            "meetings.prepare", "meetings.notes",
+            "meetings.view",
+            "meetings.view_non_public",
+            "meetings.prepare",
+            "meetings.notes",
             # Tasks - manage all (administrative)
-            "tasks.view", "tasks.view_all", "tasks.create",
-            "tasks.assign", "tasks.manage",
+            "tasks.view",
+            "tasks.view_all",
+            "tasks.create",
+            "tasks.assign",
+            "tasks.manage",
             # RIS
-            "ris.view", "ris.notes", "ris.subscribe",
+            "ris.view",
+            "ris.notes",
+            "ris.subscribe",
             # Workgroups
-            "workgroups.view", "workgroups.join",
+            "workgroups.view",
+            "workgroups.join",
             # Documents - full internal access
-            "documents.view_public", "documents.view_internal",
-            "documents.view_confidential", "documents.upload",
+            "documents.view_public",
+            "documents.view_internal",
+            "documents.view_confidential",
+            "documents.upload",
             "documents.manage",
             # Members
-            "members.view", "members.view_details",
+            "members.view",
+            "members.view_details",
             # Organization - view settings
             "organization.view",
             # Guests
-            "guests.invite", "guests.manage",
+            "guests.invite",
+            "guests.manage",
             # Support
-            "support.view", "support.create",
+            "support.view",
+            "support.create",
         ],
         "is_system_role": True,
         "is_admin": False,
         "priority": 55,
         "color": "#ca8a04",  # Yellow/Amber
     },
-
     # -------------------------------------------------------------------------
     # PARTEIMITGLIED - Party Member (NOT on council)
     # Public access only, can suggest topics
@@ -606,11 +764,13 @@ DEFAULT_ROLES = {
             # Faction - PUBLIC ONLY
             "faction.view_public",
             # Agenda - can SUGGEST only (longer process)
-            "agenda.view", "agenda.suggest",
+            "agenda.view",
+            "agenda.suggest",
             # Speaking on request only
             "speaking.on_request",
             # Motions - view public only
-            "motions.view", "motions.comment",
+            "motions.view",
+            "motions.comment",
             # Protocols - public only
             "protocols.view_public",
             # Meetings (RIS) - public
@@ -626,20 +786,19 @@ DEFAULT_ROLES = {
             # Members - basic list
             "members.view",
             # Support
-            "support.view", "support.create",
+            "support.view",
+            "support.create",
         ],
         "is_system_role": True,
         "is_admin": False,
         "priority": 30,
         "color": "#6366f1",  # Indigo (party color)
     },
-
     # -------------------------------------------------------------------------
     # HINWEIS: Gäste und interessierte Bürger*innen haben KEINEN Zugang
     # zu Mandari Work. Sie können nur über das öffentliche Insight-Portal
     # oder per E-Mail Themen einreichen.
     # -------------------------------------------------------------------------
-
     # -------------------------------------------------------------------------
     # GESCHÄFTSFÜHRUNG - Managing Director (if applicable)
     # Administrative without voting
@@ -654,55 +813,88 @@ DEFAULT_ROLES = {
         "permissions": [
             "dashboard.view",
             # Faction - full access
-            "faction.view_public", "faction.view_non_public",
-            "faction.create", "faction.edit", "faction.manage",
+            "faction.view_public",
+            "faction.view_non_public",
+            "faction.create",
+            "faction.edit",
+            "faction.manage",
             # Agenda - full control
-            "agenda.view", "agenda.create", "agenda.edit",
-            "agenda.delete", "agenda.reorder",
+            "agenda.view",
+            "agenda.create",
+            "agenda.edit",
+            "agenda.delete",
+            "agenda.reorder",
             # NO voting, can speak
             "speaking.automatic",
             # Motions - full edit access
-            "motions.view", "motions.view_drafts", "motions.create",
-            "motions.edit", "motions.edit_all",
-            "motions.submit_to_ris", "motions.share", "motions.comment",
+            "motions.view",
+            "motions.view_drafts",
+            "motions.create",
+            "motions.edit",
+            "motions.edit_all",
+            "motions.submit_to_ris",
+            "motions.share",
+            "motions.comment",
             # Protocols - full
-            "protocols.view_public", "protocols.view_full",
-            "protocols.create", "protocols.edit",
-            "protocols.approve", "protocols.publish",
+            "protocols.view_public",
+            "protocols.view_full",
+            "protocols.create",
+            "protocols.edit",
+            "protocols.approve",
+            "protocols.publish",
             # Meetings
-            "meetings.view", "meetings.view_non_public",
-            "meetings.prepare", "meetings.notes",
+            "meetings.view",
+            "meetings.view_non_public",
+            "meetings.prepare",
+            "meetings.notes",
             # Tasks - full
-            "tasks.view", "tasks.view_all", "tasks.create",
-            "tasks.assign", "tasks.manage",
+            "tasks.view",
+            "tasks.view_all",
+            "tasks.create",
+            "tasks.assign",
+            "tasks.manage",
             # RIS
-            "ris.view", "ris.notes", "ris.subscribe",
+            "ris.view",
+            "ris.notes",
+            "ris.subscribe",
             # Workgroups - full
-            "workgroups.view", "workgroups.join",
-            "workgroups.create", "workgroups.manage",
+            "workgroups.view",
+            "workgroups.join",
+            "workgroups.create",
+            "workgroups.manage",
             # Documents - full
-            "documents.view_public", "documents.view_internal",
-            "documents.view_confidential", "documents.upload",
-            "documents.delete", "documents.manage",
+            "documents.view_public",
+            "documents.view_internal",
+            "documents.view_confidential",
+            "documents.upload",
+            "documents.delete",
+            "documents.manage",
             # Members - full management
-            "members.view", "members.view_details",
-            "members.invite", "members.edit", "members.remove",
+            "members.view",
+            "members.view_details",
+            "members.invite",
+            "members.edit",
+            "members.remove",
             "members.manage_roles",
             # Organization - full admin
-            "organization.view", "organization.edit",
-            "organization.manage_roles", "organization.api_tokens",
+            "organization.view",
+            "organization.edit",
+            "organization.manage_roles",
+            "organization.api_tokens",
             "organization.audit_log",
             # Guests
-            "guests.invite", "guests.manage",
+            "guests.invite",
+            "guests.manage",
             # Support
-            "support.view", "support.create", "support.admin",
+            "support.view",
+            "support.create",
+            "support.admin",
         ],
         "is_system_role": True,
         "is_admin": False,
         "priority": 85,
         "color": "#0d9488",  # Teal
     },
-
     # -------------------------------------------------------------------------
     # AG-SPRECHER/IN - Working Group Speaker
     # Leads a working group
@@ -716,33 +908,51 @@ DEFAULT_ROLES = {
         "permissions": [
             "dashboard.view",
             # Faction - full access
-            "faction.view_public", "faction.view_non_public",
+            "faction.view_public",
+            "faction.view_non_public",
             # Agenda - can propose from AG
-            "agenda.view", "agenda.propose",
+            "agenda.view",
+            "agenda.propose",
             # Speaking in topic
             "speaking.automatic",
             # Motions
-            "motions.view", "motions.view_drafts", "motions.create",
-            "motions.edit", "motions.comment",
+            "motions.view",
+            "motions.view_drafts",
+            "motions.create",
+            "motions.edit",
+            "motions.comment",
             # Protocols
-            "protocols.view_public", "protocols.view_full",
+            "protocols.view_public",
+            "protocols.view_full",
             # Meetings
-            "meetings.view", "meetings.view_non_public",
-            "meetings.prepare", "meetings.notes",
+            "meetings.view",
+            "meetings.view_non_public",
+            "meetings.prepare",
+            "meetings.notes",
             # Tasks
-            "tasks.view", "tasks.view_all", "tasks.create", "tasks.assign",
+            "tasks.view",
+            "tasks.view_all",
+            "tasks.create",
+            "tasks.assign",
             # RIS
-            "ris.view", "ris.notes", "ris.subscribe",
+            "ris.view",
+            "ris.notes",
+            "ris.subscribe",
             # Workgroups - manage own
-            "workgroups.view", "workgroups.join",
-            "workgroups.create", "workgroups.manage",
+            "workgroups.view",
+            "workgroups.join",
+            "workgroups.create",
+            "workgroups.manage",
             # Documents
-            "documents.view_public", "documents.view_internal",
+            "documents.view_public",
+            "documents.view_internal",
             "documents.upload",
             # Members
-            "members.view", "members.view_details",
+            "members.view",
+            "members.view_details",
             # Support
-            "support.view", "support.create",
+            "support.view",
+            "support.create",
         ],
         "is_system_role": True,
         "is_admin": False,
@@ -756,12 +966,13 @@ DEFAULT_ROLES = {
 # UTILITY FUNCTIONS
 # =============================================================================
 
-def get_all_permissions() -> List[str]:
+
+def get_all_permissions() -> list[str]:
     """Get list of all permission codenames."""
     return list(PERMISSIONS.keys())
 
 
-def get_permission_choices() -> List[tuple]:
+def get_permission_choices() -> list[tuple]:
     """Get permission choices for Django model fields."""
     return [(code, name) for code, name in PERMISSIONS.items()]
 
@@ -819,18 +1030,18 @@ class PermissionChecker:
             membership: Membership model instance
         """
         self.membership = membership
-        self._permissions: Set[str] = None
-        self._denied: Set[str] = None
+        self._permissions: set[str] = None
+        self._denied: set[str] = None
 
     @property
-    def permissions(self) -> Set[str]:
+    def permissions(self) -> set[str]:
         """Get the set of granted permissions."""
         if self._permissions is None:
             self._load_permissions()
         return self._permissions
 
     @property
-    def denied_permissions(self) -> Set[str]:
+    def denied_permissions(self) -> set[str]:
         """Get the set of explicitly denied permissions."""
         if self._denied is None:
             self._load_permissions()
@@ -882,7 +1093,7 @@ class PermissionChecker:
 
         return permission in self.permissions
 
-    def has_any_permission(self, permissions: List[str]) -> bool:
+    def has_any_permission(self, permissions: list[str]) -> bool:
         """
         Check if the user has any of the given permissions.
 
@@ -894,7 +1105,7 @@ class PermissionChecker:
         """
         return any(self.has_permission(p) for p in permissions)
 
-    def has_all_permissions(self, permissions: List[str]) -> bool:
+    def has_all_permissions(self, permissions: list[str]) -> bool:
         """
         Check if the user has all of the given permissions.
 
@@ -926,10 +1137,7 @@ class PermissionChecker:
         - faction.view_non_public permission
         - is_sworn_in flag on membership (Verpflichtungserklärung)
         """
-        return (
-            self.has_permission("faction.view_non_public")
-            and getattr(self.membership, "is_sworn_in", False)
-        )
+        return self.has_permission("faction.view_non_public") and getattr(self.membership, "is_sworn_in", False)
 
     def can_propose_agenda_items(self) -> bool:
         """Check if user can propose agenda items (needs approval)."""

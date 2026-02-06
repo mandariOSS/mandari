@@ -8,7 +8,6 @@ from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
-from django.db import models
 from unfold.admin import ModelAdmin
 
 from .models import BlogPost, Release
@@ -68,25 +67,35 @@ class BlogPostAdmin(ModelAdmin):
     ordering = ["-created_at"]
 
     fieldsets = (
-        (None, {
-            "fields": ("title", "slug", "excerpt", "content")
-        }),
-        ("Kategorisierung", {
-            "fields": ("category", "status", "author"),
-            "classes": ("collapse",),
-        }),
-        ("Bild", {
-            "fields": ("featured_image", "image_alt"),
-            "classes": ("collapse",),
-        }),
-        ("SEO", {
-            "fields": ("meta_description",),
-            "classes": ("collapse",),
-        }),
-        ("Zeitstempel", {
-            "fields": ("published_at",),
-            "classes": ("collapse",),
-        }),
+        (None, {"fields": ("title", "slug", "excerpt", "content")}),
+        (
+            "Kategorisierung",
+            {
+                "fields": ("category", "status", "author"),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Bild",
+            {
+                "fields": ("featured_image", "image_alt"),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "SEO",
+            {
+                "fields": ("meta_description",),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Zeitstempel",
+            {
+                "fields": ("published_at",),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     readonly_fields = ["created_at", "updated_at"]
@@ -103,18 +112,21 @@ class BlogPostAdmin(ModelAdmin):
         return format_html(
             '<span style="padding: 2px 8px; border-radius: 4px; font-size: 12px;" class="{}">{}</span>',
             color,
-            obj.get_category_display()
+            obj.get_category_display(),
         )
+
     category_badge.short_description = "Kategorie"
 
     def status_badge(self, obj):
         if obj.status == BlogPost.Status.PUBLISHED:
             return mark_safe('<span style="color: green;">&#x2713; Veröffentlicht</span>')
         return mark_safe('<span style="color: orange;">&#x270E; Entwurf</span>')
+
     status_badge.short_description = "Status"
 
     def reading_time_display(self, obj):
         return f"{obj.reading_time} Min."
+
     reading_time_display.short_description = "Lesezeit"
 
     class Media:
@@ -150,16 +162,20 @@ class ReleaseAdmin(ModelAdmin):
     date_hierarchy = "release_date"
 
     fieldsets = (
-        (None, {
-            "fields": ("version", "title", "content")
-        }),
-        ("Release-Info", {
-            "fields": ("release_type", "release_date", "is_published", "breaking_changes"),
-        }),
-        ("Links", {
-            "fields": ("github_url",),
-            "classes": ("collapse",),
-        }),
+        (None, {"fields": ("version", "title", "content")}),
+        (
+            "Release-Info",
+            {
+                "fields": ("release_type", "release_date", "is_published", "breaking_changes"),
+            },
+        ),
+        (
+            "Links",
+            {
+                "fields": ("github_url",),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     readonly_fields = ["created_at", "updated_at"]
@@ -167,8 +183,9 @@ class ReleaseAdmin(ModelAdmin):
     def version_display(self, obj):
         return format_html(
             '<code style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">v{}</code>',
-            obj.version
+            obj.version,
         )
+
     version_display.short_description = "Version"
 
     def release_type_badge(self, obj):
@@ -182,14 +199,16 @@ class ReleaseAdmin(ModelAdmin):
             '<span style="background: {}; color: {}; padding: 2px 8px; border-radius: 4px; font-size: 12px;">{}</span>',
             bg_color,
             text_color,
-            obj.get_release_type_display()
+            obj.get_release_type_display(),
         )
+
     release_type_badge.short_description = "Typ"
 
     def breaking_changes_badge(self, obj):
         if obj.breaking_changes:
             return mark_safe('<span style="color: #dc2626;">&#x26A0; Breaking</span>')
         return mark_safe('<span style="color: #16a34a;">&#x2713;</span>')
+
     breaking_changes_badge.short_description = "Breaking"
 
     class Media:

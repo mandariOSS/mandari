@@ -10,13 +10,14 @@ Provides functionality to send motions to:
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 
 if TYPE_CHECKING:
     from apps.tenants.models import CouncilParty, Organization
+
     from .models import Motion
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class EmailResult:
     """Result of an email send operation."""
+
     success: bool
     recipient: str
     error: str = ""
@@ -47,10 +49,7 @@ class MotionEmailService:
         self.organization = organization
 
     def send_to_administration(
-        self,
-        motion: "Motion",
-        attach_pdf: bool = True,
-        custom_message: str = ""
+        self, motion: "Motion", attach_pdf: bool = True, custom_message: str = ""
     ) -> EmailResult:
         """
         Send a motion to the administration.
@@ -64,25 +63,18 @@ class MotionEmailService:
             EmailResult indicating success or failure
         """
         if not self.organization.administration_email:
-            return EmailResult(
-                success=False,
-                recipient="",
-                error="Keine Verwaltungs-E-Mail konfiguriert"
-            )
+            return EmailResult(success=False, recipient="", error="Keine Verwaltungs-E-Mail konfiguriert")
 
         return self._send_motion(
             motion=motion,
             to_email=self.organization.administration_email,
             subject_prefix="Neuer Antrag",
             attach_pdf=attach_pdf,
-            custom_message=custom_message
+            custom_message=custom_message,
         )
 
     def send_to_coalition(
-        self,
-        motion: "Motion",
-        attach_pdf: bool = True,
-        custom_message: str = ""
+        self, motion: "Motion", attach_pdf: bool = True, custom_message: str = ""
     ) -> list[EmailResult]:
         """
         Send a motion to all coalition partners.
@@ -111,7 +103,7 @@ class MotionEmailService:
                 subject_prefix=f"Koalitionsabstimmung: {self.organization.name}",
                 attach_pdf=attach_pdf,
                 custom_message=custom_message,
-                party_name=party.name
+                party_name=party.name,
             )
             results.append(result)
 
@@ -122,7 +114,7 @@ class MotionEmailService:
         motion: "Motion",
         party: "CouncilParty",
         attach_pdf: bool = True,
-        custom_message: str = ""
+        custom_message: str = "",
     ) -> EmailResult:
         """
         Send a motion to a specific party.
@@ -140,7 +132,7 @@ class MotionEmailService:
             return EmailResult(
                 success=False,
                 recipient=party.name,
-                error=f"Keine E-Mail für {party.name} konfiguriert"
+                error=f"Keine E-Mail für {party.name} konfiguriert",
             )
 
         return self._send_motion(
@@ -149,7 +141,7 @@ class MotionEmailService:
             subject_prefix=f"Antrag von {self.organization.name}",
             attach_pdf=attach_pdf,
             custom_message=custom_message,
-            party_name=party.name
+            party_name=party.name,
         )
 
     def _send_motion(
@@ -159,7 +151,7 @@ class MotionEmailService:
         subject_prefix: str,
         attach_pdf: bool,
         custom_message: str,
-        party_name: Optional[str] = None
+        party_name: str | None = None,
     ) -> EmailResult:
         """
         Internal method to send a motion email.
@@ -188,10 +180,7 @@ class MotionEmailService:
 
             # Try to render template, fall back to simple text
             try:
-                html_body = render_to_string(
-                    "work/motions/email/motion_email.html",
-                    context
-                )
+                html_body = render_to_string("work/motions/email/motion_email.html", context)
             except Exception:
                 # Fallback to simple text email
                 html_body = self._generate_simple_email(motion, custom_message)
@@ -208,13 +197,11 @@ class MotionEmailService:
             if attach_pdf:
                 try:
                     from .export_service import motion_export_service
+
                     pdf_content = motion_export_service.export_to_pdf(motion)
 
                     # Create safe filename
-                    safe_title = "".join(
-                        c for c in motion.title[:50]
-                        if c.isalnum() or c in (' ', '-', '_')
-                    ).strip()
+                    safe_title = "".join(c for c in motion.title[:50] if c.isalnum() or c in (" ", "-", "_")).strip()
                     filename = f"{safe_title}.pdf"
 
                     email.attach(filename, pdf_content, "application/pdf")
@@ -228,19 +215,11 @@ class MotionEmailService:
                 logger.info(f"Motion email sent to {to_email}")
                 return EmailResult(success=True, recipient=to_email)
             else:
-                return EmailResult(
-                    success=False,
-                    recipient=to_email,
-                    error="E-Mail konnte nicht gesendet werden"
-                )
+                return EmailResult(success=False, recipient=to_email, error="E-Mail konnte nicht gesendet werden")
 
         except Exception as e:
             logger.error(f"Failed to send motion email to {to_email}: {e}")
-            return EmailResult(
-                success=False,
-                recipient=to_email,
-                error=str(e)
-            )
+            return EmailResult(success=False, recipient=to_email, error=str(e))
 
     def _generate_simple_email(self, motion: "Motion", custom_message: str) -> str:
         """
@@ -262,12 +241,12 @@ class MotionEmailService:
             <p><strong>Typ:</strong> {motion.get_type_display()}</p>
             <p><strong>Status:</strong> {motion.get_status_display()}</p>
 
-            {f'<p style="margin: 20px 0; padding: 15px; background: #f5f5f5; border-radius: 4px;">{custom_message}</p>' if custom_message else ''}
+            {f'<p style="margin: 20px 0; padding: 15px; background: #f5f5f5; border-radius: 4px;">{custom_message}</p>' if custom_message else ""}
 
             <hr style="margin: 20px 0;">
 
             <div style="white-space: pre-wrap;">
-                {motion.content or 'Kein Inhalt'}
+                {motion.content or "Kein Inhalt"}
             </div>
 
             <hr style="margin: 20px 0;">
@@ -289,11 +268,13 @@ class MotionEmailService:
         """
         from apps.tenants.models import CouncilParty
 
-        return list(CouncilParty.objects.filter(
-            organization=self.organization,
-            is_coalition_member=True,
-            is_active=True,
-        ).order_by("coalition_order"))
+        return list(
+            CouncilParty.objects.filter(
+                organization=self.organization,
+                is_coalition_member=True,
+                is_active=True,
+            ).order_by("coalition_order")
+        )
 
     def get_all_parties(self) -> list:
         """
@@ -304,10 +285,12 @@ class MotionEmailService:
         """
         from apps.tenants.models import CouncilParty
 
-        return list(CouncilParty.objects.filter(
-            organization=self.organization,
-            is_active=True,
-        ).order_by("coalition_order", "name"))
+        return list(
+            CouncilParty.objects.filter(
+                organization=self.organization,
+                is_active=True,
+            ).order_by("coalition_order", "name")
+        )
 
 
 def get_email_service(organization: "Organization") -> MotionEmailService:

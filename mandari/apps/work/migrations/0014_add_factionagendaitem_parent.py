@@ -1,11 +1,10 @@
 # Generated migration for FactionAgendaItem parent field
 
-from django.db import migrations, models
 import django.db.models.deletion
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("work", "0013_extend_motion_workflow"),
     ]

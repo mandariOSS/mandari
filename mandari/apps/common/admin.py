@@ -8,8 +8,7 @@ Includes SiteSettings admin for global configuration.
 from urllib.parse import urlparse
 
 from django import forms
-from django.contrib import admin
-from django.contrib import messages
+from django.contrib import admin, messages
 from django.utils.http import url_has_allowed_host_and_scheme
 from unfold.admin import ModelAdmin
 from unfold.decorators import action
@@ -44,7 +43,7 @@ class SiteSettingsAdminForm(forms.ModelForm):
         widget=forms.PasswordInput(render_value=True),
         required=False,
         label="SMTP Passwort",
-        help_text="Leer lassen, um vorhandenes Passwort beizubehalten"
+        help_text="Leer lassen, um vorhandenes Passwort beizubehalten",
     )
 
     class Meta:
@@ -69,34 +68,43 @@ class SiteSettingsAdmin(ModelAdmin):
     form = SiteSettingsAdminForm
 
     fieldsets = (
-        ("E-Mail / SMTP Einstellungen", {
-            "fields": (
-                "email_host",
-                ("email_port", "email_use_tls", "email_use_ssl"),
-                "email_host_user",
-                "email_host_password",
-                "email_timeout",
-                ("default_from_email", "default_from_name"),
-            ),
-            "description": (
-                "Konfiguration des SMTP-Servers für den E-Mail-Versand. "
-                "Wenn leer, werden die Umgebungsvariablen verwendet."
-            ),
-        }),
-        ("Allgemeine Einstellungen", {
-            "fields": (
-                "site_name",
-                "site_description",
-            ),
-            "classes": ("collapse",),
-        }),
-        ("Wartungsmodus", {
-            "fields": (
-                "maintenance_mode",
-                "maintenance_message",
-            ),
-            "classes": ("collapse",),
-        }),
+        (
+            "E-Mail / SMTP Einstellungen",
+            {
+                "fields": (
+                    "email_host",
+                    ("email_port", "email_use_tls", "email_use_ssl"),
+                    "email_host_user",
+                    "email_host_password",
+                    "email_timeout",
+                    ("default_from_email", "default_from_name"),
+                ),
+                "description": (
+                    "Konfiguration des SMTP-Servers für den E-Mail-Versand. "
+                    "Wenn leer, werden die Umgebungsvariablen verwendet."
+                ),
+            },
+        ),
+        (
+            "Allgemeine Einstellungen",
+            {
+                "fields": (
+                    "site_name",
+                    "site_description",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Wartungsmodus",
+            {
+                "fields": (
+                    "maintenance_mode",
+                    "maintenance_message",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     actions_detail = ["test_email"]
@@ -119,7 +127,7 @@ class SiteSettingsAdmin(ModelAdmin):
     @action(description="Test-E-Mail senden")
     def test_email(self, request, object_id):
         """Send a test email to verify SMTP settings."""
-        from django.core.mail import get_connection, EmailMessage
+        from django.core.mail import EmailMessage, get_connection
 
         settings = SiteSettings.get_settings()
         config = SiteSettings.get_email_config()
@@ -156,17 +164,12 @@ class SiteSettingsAdmin(ModelAdmin):
             )
             email.send()
 
-            messages.success(
-                request,
-                f"Test-E-Mail wurde erfolgreich an {request.user.email} gesendet."
-            )
+            messages.success(request, f"Test-E-Mail wurde erfolgreich an {request.user.email} gesendet.")
         except Exception as e:
-            messages.error(
-                request,
-                f"Fehler beim Senden der Test-E-Mail: {str(e)}"
-            )
+            messages.error(request, f"Fehler beim Senden der Test-E-Mail: {str(e)}")
 
         from django.http import HttpResponseRedirect
+
         # SECURITY: Validate referer to prevent Open Redirect attacks
         return HttpResponseRedirect(get_safe_admin_redirect(request))
 
@@ -175,5 +178,6 @@ class SiteSettingsAdmin(ModelAdmin):
         if object_id is None:
             settings, _ = SiteSettings.objects.get_or_create(pk=1)
             from django.shortcuts import redirect
+
             return redirect(f"/admin/common/sitesettings/{settings.pk}/change/")
         return super().changeform_view(request, object_id, form_url, extra_context)

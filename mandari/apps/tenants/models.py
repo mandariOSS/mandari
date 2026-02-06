@@ -50,21 +50,12 @@ class PartyGroup(models.Model):
         null=True,
         blank=True,
         related_name="children",
-        verbose_name="Übergeordnete Gruppe"
+        verbose_name="Übergeordnete Gruppe",
     )
 
     # Branding (inherited by child organizations unless overridden)
-    logo = models.ImageField(
-        upload_to="parties/logos/",
-        blank=True,
-        null=True,
-        verbose_name="Logo"
-    )
-    primary_color = models.CharField(
-        max_length=7,
-        default="#6366f1",
-        verbose_name="Primärfarbe"
-    )
+    logo = models.ImageField(upload_to="parties/logos/", blank=True, null=True, verbose_name="Logo")
+    primary_color = models.CharField(max_length=7, default="#6366f1", verbose_name="Primärfarbe")
     website = models.URLField(blank=True, verbose_name="Website")
 
     # Settings (inherited by children)
@@ -159,7 +150,7 @@ class Organization(models.Model):
         blank=True,
         related_name="organizations",
         verbose_name="Parteigruppe",
-        help_text="Übergeordnete Parteistruktur (z.B. Volt NRW)"
+        help_text="Übergeordnete Parteistruktur (z.B. Volt NRW)",
     )
 
     # Regional grouping via OParl Body (optional)
@@ -170,7 +161,7 @@ class Organization(models.Model):
         blank=True,
         related_name="work_organizations",
         verbose_name="Kommune/Region",
-        help_text="OParl-Body für RIS-Daten (z.B. Stadt Münster)"
+        help_text="OParl-Body für RIS-Daten (z.B. Stadt Münster)",
     )
 
     # Optional: specific OParl organizations (factions/committees)
@@ -179,27 +170,14 @@ class Organization(models.Model):
         blank=True,
         related_name="work_organizations",
         verbose_name="OParl-Gremien",
-        help_text="Verknüpfte Gremien im RIS (z.B. Fraktion, Ausschüsse)"
+        help_text="Verknüpfte Gremien im RIS (z.B. Fraktion, Ausschüsse)",
     )
 
     # === BRANDING ===
 
-    logo = models.ImageField(
-        upload_to="organizations/logos/",
-        blank=True,
-        null=True,
-        verbose_name="Logo"
-    )
-    primary_color = models.CharField(
-        max_length=7,
-        default="#6366f1",
-        verbose_name="Primärfarbe"
-    )
-    secondary_color = models.CharField(
-        max_length=7,
-        default="#8b5cf6",
-        verbose_name="Sekundärfarbe"
-    )
+    logo = models.ImageField(upload_to="organizations/logos/", blank=True, null=True, verbose_name="Logo")
+    primary_color = models.CharField(max_length=7, default="#6366f1", verbose_name="Primärfarbe")
+    secondary_color = models.CharField(max_length=7, default="#8b5cf6", verbose_name="Sekundärfarbe")
 
     # === CONTACT ===
 
@@ -212,7 +190,7 @@ class Organization(models.Model):
     administration_email = models.EmailField(
         blank=True,
         verbose_name="Verwaltungs-E-Mail",
-        help_text="Standard-E-Mail für Anträge an die Verwaltung"
+        help_text="Standard-E-Mail für Anträge an die Verwaltung",
     )
 
     # Coalition configuration
@@ -220,7 +198,7 @@ class Organization(models.Model):
         max_length=200,
         blank=True,
         verbose_name="Koalitionsname",
-        help_text="z.B. 'Ampel', 'Rot-Grün'"
+        help_text="z.B. 'Ampel', 'Rot-Grün'",
     )
 
     # === SMTP (for sending emails from org domain) ===
@@ -240,7 +218,7 @@ class Organization(models.Model):
         null=True,
         editable=False,
         verbose_name="Verschlüsselungsschlüssel",
-        help_text="Encrypted with master key, used for tenant data"
+        help_text="Encrypted with master key, used for tenant data",
     )
 
     # === SETTINGS ===
@@ -249,7 +227,7 @@ class Organization(models.Model):
     require_2fa = models.BooleanField(
         default=False,
         verbose_name="2FA erforderlich",
-        help_text="Alle Mitglieder müssen 2FA aktivieren"
+        help_text="Alle Mitglieder müssen 2FA aktivieren",
     )
 
     # === STATUS ===
@@ -265,7 +243,7 @@ class Organization(models.Model):
         blank=True,
         related_name="owned_organizations",
         verbose_name="Eigentümer",
-        help_text="Wird automatisch gesetzt wenn erste Person beitritt"
+        help_text="Wird automatisch gesetzt wenn erste Person beitritt",
     )
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -313,17 +291,13 @@ class Organization(models.Model):
         """Get organizations in the same party group."""
         if not self.party_group:
             return Organization.objects.none()
-        return Organization.objects.filter(
-            party_group=self.party_group
-        ).exclude(id=self.id)
+        return Organization.objects.filter(party_group=self.party_group).exclude(id=self.id)
 
     def get_regional_siblings(self):
         """Get organizations in the same OParl Body (same municipality)."""
         if not self.body:
             return Organization.objects.none()
-        return Organization.objects.filter(
-            body=self.body
-        ).exclude(id=self.id)
+        return Organization.objects.filter(body=self.body).exclude(id=self.id)
 
     def get_party_ancestry_organizations(self):
         """Get all organizations in parent party groups."""
@@ -374,12 +348,7 @@ class Permission(models.Model):
     Populated from apps.common.permissions.PERMISSIONS on migration.
     """
 
-    codename = models.CharField(
-        max_length=100,
-        unique=True,
-        primary_key=True,
-        verbose_name="Code"
-    )
+    codename = models.CharField(max_length=100, unique=True, primary_key=True, verbose_name="Code")
     name = models.CharField(max_length=200, verbose_name="Name")
     category = models.CharField(max_length=50, verbose_name="Kategorie")
 
@@ -396,10 +365,7 @@ class Permission(models.Model):
         """Synchronize permissions from PERMISSIONS dict."""
         for codename, name in PERMISSIONS.items():
             category = codename.split(".")[0]
-            cls.objects.update_or_create(
-                codename=codename,
-                defaults={"name": name, "category": category}
-            )
+            cls.objects.update_or_create(codename=codename, defaults={"name": name, "category": category})
 
 
 class Role(models.Model):
@@ -412,48 +378,25 @@ class Role(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     organization = models.ForeignKey(
-        Organization,
-        on_delete=models.CASCADE,
-        related_name="roles",
-        verbose_name="Organisation"
+        Organization, on_delete=models.CASCADE, related_name="roles", verbose_name="Organisation"
     )
 
     name = models.CharField(max_length=100, verbose_name="Name")
     description = models.TextField(blank=True, verbose_name="Beschreibung")
 
     # Permissions
-    permissions = models.ManyToManyField(
-        Permission,
-        blank=True,
-        related_name="roles",
-        verbose_name="Berechtigungen"
-    )
-    is_admin = models.BooleanField(
-        default=False,
-        verbose_name="Administrator",
-        help_text="Hat alle Berechtigungen"
-    )
+    permissions = models.ManyToManyField(Permission, blank=True, related_name="roles", verbose_name="Berechtigungen")
+    is_admin = models.BooleanField(default=False, verbose_name="Administrator", help_text="Hat alle Berechtigungen")
 
     # Settings
     is_system_role = models.BooleanField(
-        default=False,
-        verbose_name="Systemrolle",
-        help_text="Kann nicht gelöscht werden"
+        default=False, verbose_name="Systemrolle", help_text="Kann nicht gelöscht werden"
     )
     priority = models.PositiveIntegerField(
-        default=50,
-        verbose_name="Priorität",
-        help_text="Höhere Priorität bei Konflikten"
+        default=50, verbose_name="Priorität", help_text="Höhere Priorität bei Konflikten"
     )
-    require_2fa = models.BooleanField(
-        default=False,
-        verbose_name="2FA erforderlich"
-    )
-    color = models.CharField(
-        max_length=7,
-        default="#6b7280",
-        verbose_name="Farbe"
-    )
+    require_2fa = models.BooleanField(default=False, verbose_name="2FA erforderlich")
+    color = models.CharField(max_length=7, default="#6b7280", verbose_name="Farbe")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -480,10 +423,7 @@ class Role(models.Model):
 
         for role_key, role_config in DEFAULT_ROLES.items():
             # Check if role already exists
-            existing = cls.objects.filter(
-                organization=organization,
-                name=role_config["name"]
-            ).first()
+            existing = cls.objects.filter(organization=organization, name=role_config["name"]).first()
 
             if existing:
                 # Update existing role
@@ -534,22 +474,17 @@ class Membership(models.Model):
         django_settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="memberships",
-        verbose_name="Benutzer"
+        verbose_name="Benutzer",
     )
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
         related_name="memberships",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
 
     # Roles (multiple roles possible)
-    roles = models.ManyToManyField(
-        Role,
-        blank=True,
-        related_name="memberships",
-        verbose_name="Rollen"
-    )
+    roles = models.ManyToManyField(Role, blank=True, related_name="memberships", verbose_name="Rollen")
 
     # Individual permissions (in addition to role permissions)
     individual_permissions = models.ManyToManyField(
@@ -557,7 +492,7 @@ class Membership(models.Model):
         blank=True,
         related_name="individual_memberships",
         verbose_name="Individuelle Berechtigungen",
-        help_text="Zusätzlich zu Rollenberechtigungen"
+        help_text="Zusätzlich zu Rollenberechtigungen",
     )
 
     # Denied permissions (override role permissions)
@@ -566,7 +501,7 @@ class Membership(models.Model):
         blank=True,
         related_name="denied_memberships",
         verbose_name="Verweigerte Berechtigungen",
-        help_text="Explizit verweigert, auch wenn Rolle sie hat"
+        help_text="Explizit verweigert, auch wenn Rolle sie hat",
     )
 
     # Optional link to OParl person
@@ -577,7 +512,7 @@ class Membership(models.Model):
         blank=True,
         related_name="work_memberships",
         verbose_name="OParl-Person",
-        help_text="Verknüpfung zur Person im RIS"
+        help_text="Verknüpfung zur Person im RIS",
     )
 
     # Assigned OParl committees/organizations (Gremien)
@@ -587,7 +522,7 @@ class Membership(models.Model):
         blank=True,
         related_name="work_memberships",
         verbose_name="Zugewiesene Gremien",
-        help_text="OParl-Gremien deren Sitzungen angezeigt werden"
+        help_text="OParl-Gremien deren Sitzungen angezeigt werden",
     )
 
     # Status
@@ -595,7 +530,7 @@ class Membership(models.Model):
     is_sworn_in = models.BooleanField(
         default=False,
         verbose_name="Vereidigt",
-        help_text="Zugang zu nicht-öffentlichen Inhalten nach Verpflichtungserklärung"
+        help_text="Zugang zu nicht-öffentlichen Inhalten nach Verpflichtungserklärung",
     )
 
     # Timestamps
@@ -609,13 +544,9 @@ class Membership(models.Model):
         null=True,
         blank=True,
         related_name="sent_invitations",
-        verbose_name="Eingeladen von"
+        verbose_name="Eingeladen von",
     )
-    invitation_accepted_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name="Einladung angenommen"
-    )
+    invitation_accepted_at = models.DateTimeField(blank=True, null=True, verbose_name="Einladung angenommen")
 
     class Meta:
         verbose_name = "Mitgliedschaft"
@@ -649,9 +580,7 @@ class Membership(models.Model):
         Security: Validates role belongs to the same organization.
         """
         if role.organization_id != self.organization_id:
-            raise ValueError(
-                f"Cannot add role '{role.name}' - it belongs to a different organization"
-            )
+            raise ValueError(f"Cannot add role '{role.name}' - it belongs to a different organization")
         self.roles.add(role)
 
     def has_permission(self, permission: str) -> bool:
@@ -661,6 +590,7 @@ class Membership(models.Model):
         Uses the PermissionChecker for consistent permission evaluation.
         """
         from apps.common.permissions import PermissionChecker
+
         return PermissionChecker(self).has_permission(permission)
 
 
@@ -677,7 +607,7 @@ class UserInvitation(models.Model):
         Organization,
         on_delete=models.CASCADE,
         related_name="invitations",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
 
     # Invitation details
@@ -685,18 +615,13 @@ class UserInvitation(models.Model):
     token = models.CharField(max_length=64, unique=True)
 
     # Pre-assigned roles
-    roles = models.ManyToManyField(
-        Role,
-        blank=True,
-        related_name="invitations",
-        verbose_name="Rollen"
-    )
+    roles = models.ManyToManyField(Role, blank=True, related_name="invitations", verbose_name="Rollen")
 
     # Personal message
     message = models.TextField(
         blank=True,
         verbose_name="Nachricht",
-        help_text="Persönliche Nachricht in der Einladungs-E-Mail"
+        help_text="Persönliche Nachricht in der Einladungs-E-Mail",
     )
 
     # Status
@@ -704,7 +629,7 @@ class UserInvitation(models.Model):
         django_settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="created_invitations",
-        verbose_name="Eingeladen von"
+        verbose_name="Eingeladen von",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(verbose_name="Gültig bis")
@@ -714,7 +639,7 @@ class UserInvitation(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="accepted_invitations"
+        related_name="accepted_invitations",
     )
 
     class Meta:
@@ -729,6 +654,7 @@ class UserInvitation(models.Model):
     def is_valid(self) -> bool:
         """Check if invitation is still valid."""
         from django.utils import timezone
+
         return self.accepted_at is None and timezone.now() < self.expires_at
 
     @classmethod
@@ -739,7 +665,7 @@ class UserInvitation(models.Model):
         invited_by,
         roles=None,
         message: str = "",
-        valid_days: int = 7
+        valid_days: int = 7,
     ):
         """
         Create a new invitation with a secure token.
@@ -748,6 +674,7 @@ class UserInvitation(models.Model):
         """
         import secrets
         from datetime import timedelta
+
         from django.utils import timezone
 
         token = secrets.token_urlsafe(48)
@@ -767,9 +694,7 @@ class UserInvitation(models.Model):
             for role in roles:
                 if role.organization_id != organization.id:
                     invitation.delete()
-                    raise ValueError(
-                        f"Role '{role.name}' does not belong to organization '{organization.name}'"
-                    )
+                    raise ValueError(f"Role '{role.name}' does not belong to organization '{organization.name}'")
             invitation.roles.set(roles)
 
         return invitation
@@ -789,45 +714,23 @@ class CouncilParty(models.Model):
         Organization,
         on_delete=models.CASCADE,
         related_name="council_parties",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
 
     name = models.CharField(max_length=200, verbose_name="Name")
     short_name = models.CharField(max_length=20, verbose_name="Kurzname")
 
     # Contact information
-    email = models.EmailField(
-        blank=True,
-        verbose_name="E-Mail",
-        help_text="E-Mail für Antragsversand"
-    )
-    contact_name = models.CharField(
-        max_length=200,
-        blank=True,
-        verbose_name="Ansprechpartner"
-    )
-    contact_phone = models.CharField(
-        max_length=50,
-        blank=True,
-        verbose_name="Telefon"
-    )
+    email = models.EmailField(blank=True, verbose_name="E-Mail", help_text="E-Mail für Antragsversand")
+    contact_name = models.CharField(max_length=200, blank=True, verbose_name="Ansprechpartner")
+    contact_phone = models.CharField(max_length=50, blank=True, verbose_name="Telefon")
 
     # Branding
-    color = models.CharField(
-        max_length=7,
-        default="#6b7280",
-        verbose_name="Farbe"
-    )
+    color = models.CharField(max_length=7, default="#6b7280", verbose_name="Farbe")
 
     # Coalition membership
-    is_coalition_member = models.BooleanField(
-        default=False,
-        verbose_name="Koalitionspartner"
-    )
-    coalition_order = models.IntegerField(
-        default=0,
-        verbose_name="Reihenfolge in Koalition"
-    )
+    is_coalition_member = models.BooleanField(default=False, verbose_name="Koalitionspartner")
+    coalition_order = models.IntegerField(default=0, verbose_name="Reihenfolge in Koalition")
 
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")

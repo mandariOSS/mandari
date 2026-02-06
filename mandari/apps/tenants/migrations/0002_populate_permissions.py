@@ -13,7 +13,7 @@ def populate_permissions(apps, schema_editor):
     Permission = apps.get_model("tenants", "Permission")
 
     # Import permissions from the permissions module
-    from apps.common.permissions import PERMISSIONS, PERMISSION_CATEGORIES
+    from apps.common.permissions import PERMISSION_CATEGORIES, PERMISSIONS
 
     # Create permissions
     for codename, name in PERMISSIONS.items():
@@ -44,7 +44,6 @@ def remove_permissions(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("tenants", "0001_initial"),
     ]

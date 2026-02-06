@@ -25,10 +25,7 @@ def send_notification_email_task(notification_id: str):
     from apps.work.notifications.models import Notification, NotificationPreference
 
     try:
-        notification = Notification.objects.select_related(
-            "recipient__user",
-            "actor__user"
-        ).get(id=notification_id)
+        notification = Notification.objects.select_related("recipient__user", "actor__user").get(id=notification_id)
     except Notification.DoesNotExist:
         logger.error(f"Notification {notification_id} not found")
         return
@@ -45,7 +42,7 @@ def send_notification_email_task(notification_id: str):
             logger.info(f"Email disabled for notification type {notification.notification_type}")
             return
         if prefs.email_digest != "instant":
-            logger.info(f"Email digest not instant, skipping immediate send")
+            logger.info("Email digest not instant, skipping immediate send")
             return
     except NotificationPreference.DoesNotExist:
         # Default to sending if no preferences set
@@ -61,10 +58,7 @@ def send_notification_email_task(notification_id: str):
     }
 
     try:
-        html_content = render_to_string(
-            "work/notifications/email/notification.html",
-            context
-        )
+        html_content = render_to_string("work/notifications/email/notification.html", context)
         text_content = strip_tags(html_content)
     except Exception as e:
         logger.error(f"Failed to render email template: {e}")
@@ -84,6 +78,7 @@ def send_notification_email_task(notification_id: str):
         # Mark as sent
         notification.email_sent = True
         from django.utils import timezone
+
         notification.email_sent_at = timezone.now()
         notification.save(update_fields=["email_sent", "email_sent_at"])
 
@@ -101,15 +96,11 @@ def send_meeting_invitation_task(meeting_id: str, attendance_id: str):
         meeting_id: UUID of the FactionMeeting
         attendance_id: UUID of the FactionAttendance record
     """
-    from apps.work.faction.models import FactionMeeting, FactionAttendance
+    from apps.work.faction.models import FactionAttendance, FactionMeeting
 
     try:
-        meeting = FactionMeeting.objects.select_related(
-            "organization"
-        ).get(id=meeting_id)
-        attendance = FactionAttendance.objects.select_related(
-            "membership__user"
-        ).get(id=attendance_id)
+        meeting = FactionMeeting.objects.select_related("organization").get(id=meeting_id)
+        attendance = FactionAttendance.objects.select_related("membership__user").get(id=attendance_id)
     except (FactionMeeting.DoesNotExist, FactionAttendance.DoesNotExist) as e:
         logger.error(f"Meeting or attendance not found: {e}")
         return
@@ -130,10 +121,7 @@ def send_meeting_invitation_task(meeting_id: str, attendance_id: str):
     }
 
     try:
-        html_content = render_to_string(
-            "work/faction/email/invitation.html",
-            context
-        )
+        html_content = render_to_string("work/faction/email/invitation.html", context)
         text_content = strip_tags(html_content)
     except Exception as e:
         logger.error(f"Failed to render invitation email template: {e}")
@@ -152,6 +140,7 @@ def send_meeting_invitation_task(meeting_id: str, attendance_id: str):
 
         # Mark invitation as sent
         from django.utils import timezone
+
         attendance.invitation_sent = True
         attendance.invitation_sent_at = timezone.now()
         attendance.save(update_fields=["invitation_sent", "invitation_sent_at"])
@@ -172,11 +161,11 @@ def send_meeting_reminder_task(meeting_id: str):
     from apps.work.faction.models import FactionMeeting
 
     try:
-        meeting = FactionMeeting.objects.select_related(
-            "organization"
-        ).prefetch_related(
-            "attendances__membership__user"
-        ).get(id=meeting_id)
+        meeting = (
+            FactionMeeting.objects.select_related("organization")
+            .prefetch_related("attendances__membership__user")
+            .get(id=meeting_id)
+        )
     except FactionMeeting.DoesNotExist:
         logger.error(f"Meeting {meeting_id} not found")
         return
@@ -197,10 +186,7 @@ def send_meeting_reminder_task(meeting_id: str):
         }
 
         try:
-            html_content = render_to_string(
-                "work/faction/email/reminder.html",
-                context
-            )
+            html_content = render_to_string("work/faction/email/reminder.html", context)
             text_content = strip_tags(html_content)
 
             send_mail(

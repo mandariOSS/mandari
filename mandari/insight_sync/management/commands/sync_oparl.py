@@ -24,10 +24,9 @@ Automatische Ausführung via Cron:
 
 import asyncio
 import sys
-from pathlib import Path
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
@@ -35,22 +34,26 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--source", "-s",
+            "--source",
+            "-s",
             type=str,
             help="URL einer einzelnen Quelle (sonst alle Quellen)",
         )
         parser.add_argument(
-            "--full", "-f",
+            "--full",
+            "-f",
             action="store_true",
             help="Full Sync statt Incremental Sync",
         )
         parser.add_argument(
-            "--background", "-b",
+            "--background",
+            "-b",
             action="store_true",
             help="Task im Hintergrund ausführen (Django 6.0 Tasks)",
         )
         parser.add_argument(
-            "--concurrent", "-c",
+            "--concurrent",
+            "-c",
             type=int,
             default=10,
             help="Maximale gleichzeitige HTTP-Requests (default: 10)",
@@ -61,8 +64,6 @@ class Command(BaseCommand):
         full = options["full"]
         background = options["background"]
         concurrent = options["concurrent"]
-
-        sync_type = "Full" if full else "Incremental"
 
         if background:
             self._run_background(source_url, full)
@@ -102,13 +103,11 @@ class Command(BaseCommand):
                     orchestrator.print_result(result)
 
                     if result.success:
-                        self.stdout.write(self.style.SUCCESS(
-                            f"Sync erfolgreich: {self._count_entities(result)} Entitäten"
-                        ))
+                        self.stdout.write(
+                            self.style.SUCCESS(f"Sync erfolgreich: {self._count_entities(result)} Entitäten")
+                        )
                     else:
-                        self.stdout.write(self.style.ERROR(
-                            f"Sync fehlgeschlagen: {', '.join(result.errors)}"
-                        ))
+                        self.stdout.write(self.style.ERROR(f"Sync fehlgeschlagen: {', '.join(result.errors)}"))
                 else:
                     self.stdout.write(f"Starte {sync_type} Sync aller Quellen...")
                     results = await orchestrator.sync_all(full=full)
@@ -119,22 +118,22 @@ class Command(BaseCommand):
                         if result.success:
                             total_entities += self._count_entities(result)
 
-                    self.stdout.write(self.style.SUCCESS(
-                        f"Sync abgeschlossen: {total_entities} Entitäten synchronisiert"
-                    ))
+                    self.stdout.write(
+                        self.style.SUCCESS(f"Sync abgeschlossen: {total_entities} Entitäten synchronisiert")
+                    )
 
         asyncio.run(_run())
 
     def _count_entities(self, result) -> int:
         """Zählt alle synchronisierten Entitäten."""
         return (
-            result.organizations_synced +
-            result.persons_synced +
-            result.memberships_synced +
-            result.meetings_synced +
-            result.papers_synced +
-            result.files_synced +
-            result.locations_synced +
-            result.agenda_items_synced +
-            result.consultations_synced
+            result.organizations_synced
+            + result.persons_synced
+            + result.memberships_synced
+            + result.meetings_synced
+            + result.papers_synced
+            + result.files_synced
+            + result.locations_synced
+            + result.agenda_items_synced
+            + result.consultations_synced
         )

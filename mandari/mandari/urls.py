@@ -4,13 +4,13 @@ URL configuration for Mandari project.
 Mandari Insight - Kommunalpolitische Transparenz
 """
 
-from django.contrib import admin
-from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import JsonResponse
+from django.contrib import admin
 from django.db import connection
+from django.http import JsonResponse
 from django.shortcuts import render
+from django.urls import include, path
 
 
 def health_check(request):
@@ -23,28 +23,25 @@ def health_check(request):
     except Exception:
         db_status = "error"
 
-    return JsonResponse({
-        "status": "ok" if db_status == "ok" else "degraded",
-        "database": db_status,
-    })
+    return JsonResponse(
+        {
+            "status": "ok" if db_status == "ok" else "degraded",
+            "database": db_status,
+        }
+    )
 
 
 urlpatterns = [
     # Health check (for Docker/Kubernetes)
     path("health/", health_check, name="health_check"),
-
     # Admin
     path("admin/", admin.site.urls),
-
     # Authentication (login, logout, password reset)
     path("accounts/", include("apps.accounts.urls", namespace="accounts")),
-
     # Session RIS (administrative portal)
     path("session/", include("apps.session.urls", namespace="session")),
-
     # Work module (portal for organizations)
     path("work/", include("apps.work.urls", namespace="work")),
-
     # Main application (public RIS)
     path("", include("insight_core.urls")),
 ]
@@ -57,6 +54,7 @@ if settings.DEBUG:
 # =============================================================================
 # Custom Error Handlers
 # =============================================================================
+
 
 def handler_400(request, exception=None):
     """Bad Request error handler."""
@@ -76,6 +74,7 @@ def handler_404(request, exception=None):
 def handler_500(request):
     """Server Error handler."""
     import uuid
+
     return render(request, "500.html", {"request_id": str(uuid.uuid4())[:8]}, status=500)
 
 

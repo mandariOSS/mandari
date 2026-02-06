@@ -32,8 +32,8 @@ def has_perm(membership, permission):
     return membership.has_permission(permission)
 
 
-@register.filter
-def has_perm(membership, permission):
+@register.filter("has_perm")
+def has_perm_filter(membership, permission):
     """
     Filter to check if a membership has a specific permission.
 
@@ -54,6 +54,7 @@ def has_any_perm(membership, *permissions):
     if not membership:
         return False
     from apps.common.permissions import PermissionChecker
+
     checker = PermissionChecker(membership)
     return checker.has_any_permission(list(permissions))
 
@@ -68,5 +69,6 @@ def has_all_perms(membership, *permissions):
     if not membership:
         return False
     from apps.common.permissions import PermissionChecker
+
     checker = PermissionChecker(membership)
     return checker.has_all_permissions(list(permissions))

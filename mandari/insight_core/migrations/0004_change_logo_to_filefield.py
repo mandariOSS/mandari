@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("insight_core", "0003_add_body_display_name_and_logo"),
     ]

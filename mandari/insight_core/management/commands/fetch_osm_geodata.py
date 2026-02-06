@@ -10,6 +10,7 @@ Usage:
 """
 
 import time
+
 import httpx
 from django.core.management.base import BaseCommand, CommandError
 
@@ -39,7 +40,7 @@ class Command(BaseCommand):
     def fetch_osm_data(self, osm_relation_id):
         """Fetch geographic data from OSM Nominatim API."""
         # Nominatim API mit relation ID (Präfix R für Relation)
-        url = f"https://nominatim.openstreetmap.org/lookup"
+        url = "https://nominatim.openstreetmap.org/lookup"
         params = {
             "osm_ids": f"R{osm_relation_id}",
             "format": "json",
@@ -47,9 +48,7 @@ class Command(BaseCommand):
             "addressdetails": 1,
         }
 
-        headers = {
-            "User-Agent": "Mandari/1.0 (https://mandari.dev; contact@mandari.dev)"
-        }
+        headers = {"User-Agent": "Mandari/1.0 (https://mandari.dev; contact@mandari.dev)"}
 
         try:
             with httpx.Client(timeout=30.0, headers=headers) as client:
@@ -60,14 +59,10 @@ class Command(BaseCommand):
                     if data and len(data) > 0:
                         return data[0]
                     else:
-                        self.stdout.write(self.style.WARNING(
-                            f"No data found for OSM relation {osm_relation_id}"
-                        ))
+                        self.stdout.write(self.style.WARNING(f"No data found for OSM relation {osm_relation_id}"))
                         return None
                 else:
-                    self.stdout.write(self.style.ERROR(
-                        f"HTTP {response.status_code} from Nominatim"
-                    ))
+                    self.stdout.write(self.style.ERROR(f"HTTP {response.status_code} from Nominatim"))
                     return None
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Error fetching OSM data: {e}"))
@@ -93,8 +88,7 @@ class Command(BaseCommand):
             body.bbox_west = float(bbox[2])
             body.bbox_east = float(bbox[3])
             self.stdout.write(
-                f"  Bounding Box: N{body.bbox_north}, S{body.bbox_south}, "
-                f"E{body.bbox_east}, W{body.bbox_west}"
+                f"  Bounding Box: N{body.bbox_north}, S{body.bbox_south}, E{body.bbox_east}, W{body.bbox_west}"
             )
 
         body.save()
@@ -106,9 +100,7 @@ class Command(BaseCommand):
             bodies = OParlBody.objects.exclude(osm_relation_id__isnull=True)
 
             if not bodies.exists():
-                self.stdout.write(self.style.WARNING(
-                    "No bodies with osm_relation_id found"
-                ))
+                self.stdout.write(self.style.WARNING("No bodies with osm_relation_id found"))
                 return
 
             self.stdout.write(f"Processing {bodies.count()} bodies...")
@@ -136,9 +128,7 @@ class Command(BaseCommand):
             osm_id = options.get("osm_id") or body.osm_relation_id
 
             if not osm_id:
-                raise CommandError(
-                    "No OSM relation ID provided. Use --osm-id or set osm_relation_id on the body."
-                )
+                raise CommandError("No OSM relation ID provided. Use --osm-id or set osm_relation_id on the body.")
 
             self.stdout.write(f"Fetching geo data for {body.get_display_name()}...")
             self.stdout.write(f"OSM Relation ID: {osm_id}")
@@ -164,6 +154,4 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR("Failed to fetch OSM data"))
 
         else:
-            raise CommandError(
-                "Please specify --body-id with --osm-id, or use --all"
-            )
+            raise CommandError("Please specify --body-id with --osm-id, or use --all")

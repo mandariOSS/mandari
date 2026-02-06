@@ -9,31 +9,18 @@ Usage:
 """
 
 from django.core.management.base import BaseCommand
-from django.db import transaction
 
-from apps.common.permissions import PERMISSIONS, DEFAULT_ROLES
-from apps.tenants.models import Permission, Role, Organization, Membership
+from apps.common.permissions import DEFAULT_ROLES, PERMISSIONS
+from apps.tenants.models import Membership, Organization, Permission, Role
 
 
 class Command(BaseCommand):
     help = "Diagnose and fix permission system issues"
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            "--fix",
-            action="store_true",
-            help="Apply fixes (without this flag, only diagnoses)"
-        )
-        parser.add_argument(
-            "--org",
-            type=str,
-            help="Organization slug to check/fix (default: all)"
-        )
-        parser.add_argument(
-            "--user",
-            type=str,
-            help="User email to check"
-        )
+        parser.add_argument("--fix", action="store_true", help="Apply fixes (without this flag, only diagnoses)")
+        parser.add_argument("--org", type=str, help="Organization slug to check/fix (default: all)")
+        parser.add_argument("--user", type=str, help="User email to check")
 
     def handle(self, *args, **options):
         fix_mode = options["fix"]
@@ -67,9 +54,7 @@ class Command(BaseCommand):
         if fix_mode:
             self.stdout.write(self.style.SUCCESS("Fixes applied!"))
         else:
-            self.stdout.write(self.style.WARNING(
-                "Dry run complete. Use --fix to apply changes."
-            ))
+            self.stdout.write(self.style.WARNING("Dry run complete. Use --fix to apply changes."))
         self.stdout.write(self.style.NOTICE("=" * 60 + "\n"))
 
     def _check_permissions(self, fix_mode):
@@ -178,9 +163,9 @@ class Command(BaseCommand):
                     default_role = roles.filter(is_admin=False).order_by("-priority").first()
 
                 if default_role:
-                    self.stdout.write(self.style.SUCCESS(
-                        f"  -> Assigning '{default_role.name}' to members without roles..."
-                    ))
+                    self.stdout.write(
+                        self.style.SUCCESS(f"  -> Assigning '{default_role.name}' to members without roles...")
+                    )
                     for m in no_role_members:
                         m.roles.add(default_role)
                     self.stdout.write(self.style.SUCCESS("  -> Done!"))
@@ -198,7 +183,7 @@ class Command(BaseCommand):
         try:
             user = User.objects.get(email=user_email)
         except User.DoesNotExist:
-            self.stdout.write(self.style.ERROR(f"  User not found!"))
+            self.stdout.write(self.style.ERROR("  User not found!"))
             return
 
         self.stdout.write(f"  User ID: {user.id}")
@@ -206,10 +191,7 @@ class Command(BaseCommand):
 
         # Get memberships
         if org_slug:
-            memberships = Membership.objects.filter(
-                user=user,
-                organization__slug=org_slug
-            )
+            memberships = Membership.objects.filter(user=user, organization__slug=org_slug)
         else:
             memberships = Membership.objects.filter(user=user)
 
@@ -247,13 +229,8 @@ class Command(BaseCommand):
 
             # If user has no roles and fix mode, offer to make admin
             if fix_mode and roles.count() == 0:
-                admin_role = Role.objects.filter(
-                    organization=membership.organization,
-                    is_admin=True
-                ).first()
+                admin_role = Role.objects.filter(organization=membership.organization, is_admin=True).first()
                 if admin_role:
-                    self.stdout.write(self.style.SUCCESS(
-                        f"  -> Assigning admin role '{admin_role.name}'..."
-                    ))
+                    self.stdout.write(self.style.SUCCESS(f"  -> Assigning admin role '{admin_role.name}'..."))
                     membership.roles.add(admin_role)
                     self.stdout.write(self.style.SUCCESS("  -> Done!"))

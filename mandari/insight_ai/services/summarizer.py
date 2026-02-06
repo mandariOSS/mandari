@@ -11,31 +11,36 @@ from typing import TYPE_CHECKING
 
 from insight_ai.providers import NebiusProvider
 from insight_ai.providers.base import ChatMessage
+
 from .prompts import PAPER_SUMMARY_SYSTEM_PROMPT, build_paper_summary_user_prompt
 
 if TYPE_CHECKING:
-    from insight_core.models import OParlPaper, OParlFile
+    from insight_core.models import OParlFile, OParlPaper
 
 logger = logging.getLogger(__name__)
 
 
 class SummaryError(Exception):
     """Base exception for summary generation errors."""
+
     pass
 
 
 class NoTextContentError(SummaryError):
     """Raised when no text content is available for summarization."""
+
     pass
 
 
 class APINotConfiguredError(SummaryError):
     """Raised when the AI API is not properly configured."""
+
     pass
 
 
 class TextExtractionError(SummaryError):
     """Raised when text extraction fails."""
+
     pass
 
 
@@ -101,14 +106,12 @@ class SummaryService:
             from insight_core.models import OParlMeeting
 
             # Get meeting external IDs from consultations
-            meeting_ext_ids = paper.consultations.values_list(
-                'meeting_external_id', flat=True
-            ).distinct()[:10]
+            meeting_ext_ids = paper.consultations.values_list("meeting_external_id", flat=True).distinct()[:10]
 
             # Find meetings and their organizations
-            meetings = OParlMeeting.objects.filter(
-                external_id__in=[m for m in meeting_ext_ids if m]
-            ).prefetch_related('organizations')
+            meetings = OParlMeeting.objects.filter(external_id__in=[m for m in meeting_ext_ids if m]).prefetch_related(
+                "organizations"
+            )
 
             for meeting in meetings:
                 for org in meeting.organizations.all():
@@ -216,8 +219,8 @@ class SummaryService:
             Extracted text or empty string on failure
         """
         from insight_core.services.document_extraction import (
-            download_and_extract,
             DocumentDownloadError,
+            download_and_extract,
         )
 
         url = file.download_url or file.access_url
@@ -239,10 +242,7 @@ class SummaryService:
                 # Save extracted text to file for future use
                 file.text_content = result.text
                 file.save(update_fields=["text_content"])
-                logger.info(
-                    f"Extracted {len(result.text)} chars from file {file.id} "
-                    f"(OCR: {result.ocr_performed})"
-                )
+                logger.info(f"Extracted {len(result.text)} chars from file {file.id} (OCR: {result.ocr_performed})")
                 return result.text
 
             logger.warning(f"No text extracted from file {file.id}")

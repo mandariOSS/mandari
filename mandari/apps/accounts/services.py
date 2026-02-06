@@ -17,7 +17,6 @@ import json
 import secrets
 import struct
 import time
-from typing import Optional
 
 from cryptography.fernet import Fernet
 from django.conf import settings
@@ -25,15 +24,16 @@ from django.utils import timezone
 
 try:
     import qrcode
+
     HAS_QRCODE = True
 except ImportError:
     HAS_QRCODE = False
 
 from .models import (
-    TwoFactorDevice,
-    TrustedDevice,
-    UserSession,
     SecurityNotification,
+    TrustedDevice,
+    TwoFactorDevice,
+    UserSession,
 )
 
 
@@ -96,7 +96,7 @@ class TwoFactorService:
             f"&period={self.TOTP_INTERVAL}"
         )
 
-    def generate_qr_code(self, uri: str) -> Optional[str]:
+    def generate_qr_code(self, uri: str) -> str | None:
         """Generate QR code as base64-encoded PNG."""
         if not HAS_QRCODE:
             return None
@@ -347,10 +347,7 @@ class SessionService:
     @classmethod
     def get_user_sessions(cls, user):
         """Get all active sessions for a user."""
-        return UserSession.objects.filter(
-            user=user,
-            expires_at__gt=timezone.now()
-        ).order_by("-last_activity")
+        return UserSession.objects.filter(user=user, expires_at__gt=timezone.now()).order_by("-last_activity")
 
     @classmethod
     def create_session(cls, user, request, session_key: str):

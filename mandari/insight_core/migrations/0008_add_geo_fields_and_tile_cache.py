@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("insight_core", "0007_add_location_mapping"),
     ]
@@ -13,30 +12,22 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="oparlbody",
             name="bbox_east",
-            field=models.DecimalField(
-                blank=True, decimal_places=7, max_digits=10, null=True
-            ),
+            field=models.DecimalField(blank=True, decimal_places=7, max_digits=10, null=True),
         ),
         migrations.AddField(
             model_name="oparlbody",
             name="bbox_north",
-            field=models.DecimalField(
-                blank=True, decimal_places=7, max_digits=10, null=True
-            ),
+            field=models.DecimalField(blank=True, decimal_places=7, max_digits=10, null=True),
         ),
         migrations.AddField(
             model_name="oparlbody",
             name="bbox_south",
-            field=models.DecimalField(
-                blank=True, decimal_places=7, max_digits=10, null=True
-            ),
+            field=models.DecimalField(blank=True, decimal_places=7, max_digits=10, null=True),
         ),
         migrations.AddField(
             model_name="oparlbody",
             name="bbox_west",
-            field=models.DecimalField(
-                blank=True, decimal_places=7, max_digits=10, null=True
-            ),
+            field=models.DecimalField(blank=True, decimal_places=7, max_digits=10, null=True),
         ),
         migrations.AddField(
             model_name="oparlbody",
@@ -97,9 +88,7 @@ class Migration(migrations.Migration):
                 "verbose_name": "Tile Cache",
                 "verbose_name_plural": "Tile Cache",
                 "db_table": "tile_cache",
-                "indexes": [
-                    models.Index(fields=["z", "x", "y"], name="tile_cache_z_82dee3_idx")
-                ],
+                "indexes": [models.Index(fields=["z", "x", "y"], name="tile_cache_z_82dee3_idx")],
                 "unique_together": {("z", "x", "y")},
             },
         ),

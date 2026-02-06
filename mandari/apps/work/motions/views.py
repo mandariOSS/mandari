@@ -3,7 +3,6 @@
 Motion/Antrag views for the Work module.
 """
 
-import json
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Q
@@ -13,6 +12,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
+
 from .forms import (
     AIAssistantForm,
     MotionCommentForm,
@@ -23,17 +23,16 @@ from .forms import (
     MotionStatusForm,
     MotionTemplateForm,
 )
+from .import_service import motion_import_service
 from .models import (
     Motion,
     MotionComment,
-    MotionDocument,
     MotionRevision,
     MotionShare,
     MotionTemplate,
     MotionType,
     OrganizationLetterhead,
 )
-from .import_service import motion_import_service
 from .services import motion_ai_service
 
 
@@ -48,9 +47,7 @@ class MotionListView(WorkViewMixin, TemplateView):
         context["active_nav"] = "motions"
 
         # Base queryset - exclude deleted items by default
-        motions = Motion.objects.filter(
-            organization=self.organization
-        ).exclude(status="deleted")
+        motions = Motion.objects.filter(organization=self.organization).exclude(status="deleted")
 
         # Filter by status
         status = self.request.GET.get("status")
@@ -67,10 +64,7 @@ class MotionListView(WorkViewMixin, TemplateView):
         # Search
         search = self.request.GET.get("q", "").strip()
         if search:
-            motions = motions.filter(
-                Q(title__icontains=search) |
-                Q(summary__icontains=search)
-            )
+            motions = motions.filter(Q(title__icontains=search) | Q(summary__icontains=search))
             context["search_query"] = search
 
         # Filter by author (only own motions)
@@ -93,9 +87,7 @@ class MotionListView(WorkViewMixin, TemplateView):
         context["paginator"] = paginator
 
         # Statistics (exclude deleted)
-        all_motions = Motion.objects.filter(
-            organization=self.organization
-        ).exclude(status="deleted")
+        all_motions = Motion.objects.filter(organization=self.organization).exclude(status="deleted")
         context["stats"] = {
             "total": all_motions.count(),
             "draft": all_motions.filter(status="draft").count(),
@@ -104,18 +96,15 @@ class MotionListView(WorkViewMixin, TemplateView):
         }
 
         # Filter out 'deleted' from visible status choices
-        context["status_choices"] = [
-            (value, label) for value, label in Motion.STATUS_CHOICES
-            if value != "deleted"
-        ]
+        context["status_choices"] = [(value, label) for value, label in Motion.STATUS_CHOICES if value != "deleted"]
         context["type_choices"] = Motion.LEGACY_TYPE_CHOICES
 
         # Also get custom document types for this organization
         from .models import MotionType
-        context["document_types"] = MotionType.objects.filter(
-            organization=self.organization,
-            is_active=True
-        ).order_by("sort_order", "name")
+
+        context["document_types"] = MotionType.objects.filter(organization=self.organization, is_active=True).order_by(
+            "sort_order", "name"
+        )
 
         return context
 
@@ -133,21 +122,20 @@ class MotionCreateView(WorkViewMixin, TemplateView):
         context["ai_available"] = motion_ai_service.is_available()
 
         # Get custom document types for this organization
-        context["document_types"] = MotionType.objects.filter(
-            organization=self.organization,
-            is_active=True
-        ).order_by("sort_order", "name")
+        context["document_types"] = MotionType.objects.filter(organization=self.organization, is_active=True).order_by(
+            "sort_order", "name"
+        )
 
         # Get templates
-        context["templates"] = MotionTemplate.objects.filter(
-            organization=self.organization,
-            is_active=True
-        ).select_related("motion_type", "letterhead").order_by("-is_default", "name")
+        context["templates"] = (
+            MotionTemplate.objects.filter(organization=self.organization, is_active=True)
+            .select_related("motion_type", "letterhead")
+            .order_by("-is_default", "name")
+        )
 
         # Get letterheads
         context["letterheads"] = OrganizationLetterhead.objects.filter(
-            organization=self.organization,
-            is_active=True
+            organization=self.organization, is_active=True
         ).order_by("-is_default", "name")
 
         return context
@@ -173,10 +161,7 @@ class MotionCreateView(WorkViewMixin, TemplateView):
         document_type_id = request.POST.get("document_type")
         if document_type_id:
             try:
-                motion.document_type = MotionType.objects.get(
-                    id=document_type_id,
-                    organization=self.organization
-                )
+                motion.document_type = MotionType.objects.get(id=document_type_id, organization=self.organization)
             except MotionType.DoesNotExist:
                 pass
 
@@ -189,10 +174,7 @@ class MotionCreateView(WorkViewMixin, TemplateView):
         template_id = request.POST.get("template")
         if template_id:
             try:
-                template = MotionTemplate.objects.get(
-                    id=template_id,
-                    organization=self.organization
-                )
+                template = MotionTemplate.objects.get(id=template_id, organization=self.organization)
                 motion.template = template
 
                 # Use template's letterhead if set
@@ -209,10 +191,7 @@ class MotionCreateView(WorkViewMixin, TemplateView):
         letterhead_id = request.POST.get("letterhead")
         if letterhead_id:
             try:
-                motion.letterhead = OrganizationLetterhead.objects.get(
-                    id=letterhead_id,
-                    organization=self.organization
-                )
+                motion.letterhead = OrganizationLetterhead.objects.get(id=letterhead_id, organization=self.organization)
             except OrganizationLetterhead.DoesNotExist:
                 pass
 
@@ -232,27 +211,23 @@ class MotionDetailView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "motions"
 
-        motion = get_object_or_404(
-            Motion,
-            id=kwargs.get("motion_id"),
-            organization=self.organization
-        )
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
         context["motion"] = motion
         context["is_author"] = motion.author == self.membership
 
         # Check edit permission
         context["can_edit"] = (
-            motion.author == self.membership or
-            self.membership.has_permission("motions.edit_all")
+            motion.author == self.membership or self.membership.has_permission("motions.edit_all")
         ) and motion.status in ["draft", "review"]
 
         # Get comments
-        context["comments"] = motion.comments.filter(
-            parent__isnull=True
-        ).select_related("author__user").prefetch_related(
-            "replies__author__user"
-        ).order_by("created_at")
+        context["comments"] = (
+            motion.comments.filter(parent__isnull=True)
+            .select_related("author__user")
+            .prefetch_related("replies__author__user")
+            .order_by("created_at")
+        )
 
         # Get documents
         context["documents"] = motion.documents.all()
@@ -262,9 +237,7 @@ class MotionDetailView(WorkViewMixin, TemplateView):
 
         # Get shares
         if motion.author == self.membership or self.membership.has_permission("motions.share"):
-            context["shares"] = motion.shares.select_related(
-                "user", "role", "organization"
-            ).order_by("-created_at")
+            context["shares"] = motion.shares.select_related("user", "role", "organization").order_by("-created_at")
 
         context["comment_form"] = MotionCommentForm()
         context["status_form"] = MotionStatusForm(initial={"status": motion.status})
@@ -282,11 +255,7 @@ class MotionEditView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "motions"
 
-        motion = get_object_or_404(
-            Motion,
-            id=kwargs.get("motion_id"),
-            organization=self.organization
-        )
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
         # Check permission
         if motion.author != self.membership and not self.membership.has_permission("motions.edit_all"):
@@ -308,18 +277,17 @@ class MotionEditView(WorkViewMixin, TemplateView):
 
     def post(self, request, *args, **kwargs):
         import logging
+
         logger = logging.getLogger("apps.work.motions")
 
         motion_id = kwargs.get("motion_id")
         logger.info(f"[MotionEdit] POST request for motion {motion_id}")
         logger.info(f"[MotionEdit] User: {request.user.email}, Org: {self.organization.slug}")
-        logger.info(f"[MotionEdit] Membership: {self.membership}, Roles: {list(self.membership.roles.values_list('name', flat=True))}")
-
-        motion = get_object_or_404(
-            Motion,
-            id=motion_id,
-            organization=self.organization
+        logger.info(
+            f"[MotionEdit] Membership: {self.membership}, Roles: {list(self.membership.roles.values_list('name', flat=True))}"
         )
+
+        motion = get_object_or_404(Motion, id=motion_id, organization=self.organization)
         logger.info(f"[MotionEdit] Motion found: {motion.title}, Author: {motion.author}")
 
         # Check permission
@@ -343,7 +311,7 @@ class MotionEditView(WorkViewMixin, TemplateView):
                 motion.status = "deleted"
                 motion.deleted_at = timezone.now()
                 motion.save()
-                logger.info(f"[MotionEdit] Motion deleted (soft)")
+                logger.info("[MotionEdit] Motion deleted (soft)")
 
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                     return JsonResponse({"success": True, "redirect": True})
@@ -370,7 +338,7 @@ class MotionEditView(WorkViewMixin, TemplateView):
                 motion.summary = summary
 
                 # Get content
-                logger.info(f"[MotionEdit] Decrypting old content...")
+                logger.info("[MotionEdit] Decrypting old content...")
                 try:
                     old_content = motion.get_content_decrypted()
                     logger.info(f"[MotionEdit] Old content length: {len(old_content) if old_content else 0}")
@@ -383,14 +351,14 @@ class MotionEditView(WorkViewMixin, TemplateView):
 
                 # Create revision if content changed significantly
                 if old_content != new_content and old_content:
-                    logger.info(f"[MotionEdit] Creating revision...")
+                    logger.info("[MotionEdit] Creating revision...")
                     try:
                         version = motion.revisions.count() + 1
                         revision = MotionRevision(
                             motion=motion,
                             version=version,
                             changed_by=self.membership,
-                            change_summary=request.POST.get("change_summary", "Automatische Speicherung")
+                            change_summary=request.POST.get("change_summary", "Automatische Speicherung"),
                         )
                         revision.set_content_encrypted(old_content)
                         revision.save()
@@ -399,12 +367,12 @@ class MotionEditView(WorkViewMixin, TemplateView):
                         logger.exception(f"[MotionEdit] REVISION CREATION FAILED: {e}")
                         # Continue anyway - revision is not critical
 
-                logger.info(f"[MotionEdit] Encrypting new content...")
+                logger.info("[MotionEdit] Encrypting new content...")
                 motion.set_content_encrypted(new_content)
 
-                logger.info(f"[MotionEdit] Saving motion...")
+                logger.info("[MotionEdit] Saving motion...")
                 motion.save()
-                logger.info(f"[MotionEdit] Motion saved successfully!")
+                logger.info("[MotionEdit] Motion saved successfully!")
 
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                     return JsonResponse({"success": True, "saved_at": timezone.now().isoformat()})
@@ -453,26 +421,18 @@ class MotionShareView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "motions"
 
-        motion = get_object_or_404(
-            Motion,
-            id=kwargs.get("motion_id"),
-            organization=self.organization
-        )
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
         context["motion"] = motion
         context["form"] = MotionShareForm()
-        context["shares"] = motion.shares.select_related(
-            "user", "role", "organization", "party_group"
-        ).order_by("-created_at")
+        context["shares"] = motion.shares.select_related("user", "role", "organization", "party_group").order_by(
+            "-created_at"
+        )
 
         return context
 
     def post(self, request, *args, **kwargs):
-        motion = get_object_or_404(
-            Motion,
-            id=kwargs.get("motion_id"),
-            organization=self.organization
-        )
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
         form = MotionShareForm(request.POST)
         if form.is_valid():
@@ -483,6 +443,7 @@ class MotionShareView(WorkViewMixin, TemplateView):
             # Handle user sharing by email
             if share.scope == "user":
                 from apps.accounts.models import User
+
                 email = form.cleaned_data.get("email")
                 try:
                     user = User.objects.get(email=email)
@@ -532,11 +493,7 @@ class MotionAIAssistantView(WorkViewMixin, View):
                 return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
 
             if result.success:
-                return JsonResponse({
-                    "success": True,
-                    "content": result.content,
-                    "suggestions": result.suggestions
-                })
+                return JsonResponse({"success": True, "content": result.content, "suggestions": result.suggestions})
             else:
                 return JsonResponse({"error": result.error}, status=500)
 
@@ -550,11 +507,7 @@ class MotionCommentView(WorkViewMixin, View):
     permission_required = "motions.comment"
 
     def post(self, request, *args, **kwargs):
-        motion = get_object_or_404(
-            Motion,
-            id=kwargs.get("motion_id"),
-            organization=self.organization
-        )
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
         form = MotionCommentForm(request.POST)
         if form.is_valid():
@@ -564,15 +517,17 @@ class MotionCommentView(WorkViewMixin, View):
             comment.save()
 
             if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                return JsonResponse({
-                    "success": True,
-                    "comment": {
-                        "id": str(comment.id),
-                        "content": comment.content,
-                        "author": self.membership.user.get_display_name(),
-                        "created_at": comment.created_at.isoformat()
+                return JsonResponse(
+                    {
+                        "success": True,
+                        "comment": {
+                            "id": str(comment.id),
+                            "content": comment.content,
+                            "author": self.membership.user.get_display_name(),
+                            "created_at": comment.created_at.isoformat(),
+                        },
                     }
-                })
+                )
 
             messages.success(request, "Kommentar hinzugefügt.")
             return redirect("work:motion_detail", org_slug=self.organization.slug, motion_id=motion.id)
@@ -586,11 +541,7 @@ class MotionStatusView(WorkViewMixin, View):
     permission_required = "motions.edit"
 
     def post(self, request, *args, **kwargs):
-        motion = get_object_or_404(
-            Motion,
-            id=kwargs.get("motion_id"),
-            organization=self.organization
-        )
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
         new_status = request.POST.get("status")
         if new_status not in dict(Motion.STATUS_CHOICES):
@@ -608,9 +559,12 @@ class MotionStatusView(WorkViewMixin, View):
         }
 
         if new_status not in valid_transitions.get(motion.status, []):
-            return JsonResponse({
-                "error": f"Ungültiger Statusübergang von '{motion.get_status_display()}' zu '{dict(Motion.STATUS_CHOICES)[new_status]}'"
-            }, status=400)
+            return JsonResponse(
+                {
+                    "error": f"Ungültiger Statusübergang von '{motion.get_status_display()}' zu '{dict(Motion.STATUS_CHOICES)[new_status]}'"
+                },
+                status=400,
+            )
 
         motion.status = new_status
         if new_status == "submitted":
@@ -618,11 +572,13 @@ class MotionStatusView(WorkViewMixin, View):
         motion.save()
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return JsonResponse({
-                "success": True,
-                "status": motion.status,
-                "status_display": motion.get_status_display()
-            })
+            return JsonResponse(
+                {
+                    "success": True,
+                    "status": motion.status,
+                    "status_display": motion.get_status_display(),
+                }
+            )
 
         messages.success(request, f"Status geändert zu '{motion.get_status_display()}'.")
         return redirect("work:motion_detail", org_slug=self.organization.slug, motion_id=motion.id)
@@ -634,11 +590,7 @@ class MotionDocumentUploadView(WorkViewMixin, View):
     permission_required = "motions.edit"
 
     def post(self, request, *args, **kwargs):
-        motion = get_object_or_404(
-            Motion,
-            id=kwargs.get("motion_id"),
-            organization=self.organization
-        )
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
         form = MotionDocumentForm(request.POST, request.FILES)
         if form.is_valid():
@@ -653,14 +605,16 @@ class MotionDocumentUploadView(WorkViewMixin, View):
 
             document.save()
 
-            return JsonResponse({
-                "success": True,
-                "document": {
-                    "id": str(document.id),
-                    "filename": document.filename,
-                    "size": document.file_size
+            return JsonResponse(
+                {
+                    "success": True,
+                    "document": {
+                        "id": str(document.id),
+                        "filename": document.filename,
+                        "size": document.file_size,
+                    },
                 }
-            })
+            )
 
         return JsonResponse({"error": form.errors}, status=400)
 
@@ -675,7 +629,7 @@ class MotionCommentResolveView(WorkViewMixin, View):
             MotionComment,
             id=kwargs.get("comment_id"),
             motion__id=kwargs.get("motion_id"),
-            motion__organization=self.organization
+            motion__organization=self.organization,
         )
 
         # Only author or someone with edit permission can resolve
@@ -700,13 +654,10 @@ class MotionExportView(WorkViewMixin, View):
 
     def get(self, request, *args, **kwargs):
         from django.http import HttpResponse
+
         from .export_service import motion_export_service
 
-        motion = get_object_or_404(
-            Motion,
-            id=kwargs.get("motion_id"),
-            organization=self.organization
-        )
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
         export_format = request.GET.get("format", "pdf")
 
@@ -723,19 +674,13 @@ class MotionExportView(WorkViewMixin, View):
                 return response
 
             except Exception as e:
-                return JsonResponse({
-                    "error": f"PDF-Export fehlgeschlagen: {str(e)}"
-                }, status=500)
+                return JsonResponse({"error": f"PDF-Export fehlgeschlagen: {str(e)}"}, status=500)
 
         elif export_format == "docx":
-            return JsonResponse({
-                "error": "DOCX-Export wird noch implementiert"
-            }, status=501)
+            return JsonResponse({"error": "DOCX-Export wird noch implementiert"}, status=501)
 
         else:
-            return JsonResponse({
-                "error": f"Unbekanntes Export-Format: {export_format}"
-            }, status=400)
+            return JsonResponse({"error": f"Unbekanntes Export-Format: {export_format}"}, status=400)
 
 
 class MotionImportView(WorkViewMixin, TemplateView):
@@ -747,10 +692,9 @@ class MotionImportView(WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "motions"
-        context["document_types"] = MotionType.objects.filter(
-            organization=self.organization,
-            is_active=True
-        ).order_by("sort_order", "name")
+        context["document_types"] = MotionType.objects.filter(organization=self.organization, is_active=True).order_by(
+            "sort_order", "name"
+        )
         return context
 
     def post(self, request, *args, **kwargs):
@@ -765,10 +709,7 @@ class MotionImportView(WorkViewMixin, TemplateView):
         motion_type_id = request.POST.get("document_type")
         if motion_type_id:
             try:
-                motion_type = MotionType.objects.get(
-                    id=motion_type_id,
-                    organization=self.organization
-                )
+                motion_type = MotionType.objects.get(id=motion_type_id, organization=self.organization)
             except MotionType.DoesNotExist:
                 pass
 
@@ -793,21 +734,11 @@ class MotionImportView(WorkViewMixin, TemplateView):
         if successes:
             if len(successes) == 1:
                 motion = successes[0].motion
-                messages.success(
-                    request,
-                    f"Dokument '{motion.title}' erfolgreich importiert."
-                )
+                messages.success(request, f"Dokument '{motion.title}' erfolgreich importiert.")
                 # Redirect to edit page for single import
-                return redirect(
-                    "work:motion_edit",
-                    org_slug=self.organization.slug,
-                    motion_id=motion.id
-                )
+                return redirect("work:motion_edit", org_slug=self.organization.slug, motion_id=motion.id)
             else:
-                messages.success(
-                    request,
-                    f"{len(successes)} Dokumente erfolgreich importiert."
-                )
+                messages.success(request, f"{len(successes)} Dokumente erfolgreich importiert.")
 
         if failures:
             for failure in failures:
@@ -822,11 +753,7 @@ class MotionShareUpdateView(WorkViewMixin, View):
     permission_required = "motions.share"
 
     def post(self, request, *args, **kwargs):
-        motion = get_object_or_404(
-            Motion,
-            id=kwargs.get("motion_id"),
-            organization=self.organization
-        )
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
         # Check if user can share this motion
         if motion.author != self.membership and not self.membership.has_permission("motions.edit_all"):
@@ -843,6 +770,7 @@ class MotionShareUpdateView(WorkViewMixin, View):
             add_user_email = request.POST.get("add_user_email", "").strip()
             if add_user_email:
                 from apps.accounts.models import User
+
                 try:
                     user = User.objects.get(email=add_user_email)
                     # Create share if doesn't exist
@@ -853,16 +781,14 @@ class MotionShareUpdateView(WorkViewMixin, View):
                         defaults={
                             "level": "edit",
                             "created_by": request.user,
-                        }
+                        },
                     )
                 except User.DoesNotExist:
-                    return JsonResponse(
-                        {"error": f"Benutzer '{add_user_email}' nicht gefunden."},
-                        status=400
-                    )
+                    return JsonResponse({"error": f"Benutzer '{add_user_email}' nicht gefunden."}, status=400)
 
         # Return success for HTMX
         from django.http import HttpResponse
+
         return HttpResponse(status=204, headers={"HX-Refresh": "true"})
 
 
@@ -872,11 +798,7 @@ class MotionShareRemoveView(WorkViewMixin, View):
     permission_required = "motions.share"
 
     def post(self, request, *args, **kwargs):
-        share = get_object_or_404(
-            MotionShare,
-            id=kwargs.get("share_id"),
-            motion__organization=self.organization
-        )
+        share = get_object_or_404(MotionShare, id=kwargs.get("share_id"), motion__organization=self.organization)
 
         # Check if user can manage this share
         motion = share.motion
@@ -886,12 +808,14 @@ class MotionShareRemoveView(WorkViewMixin, View):
         share.delete()
 
         from django.http import HttpResponse
+
         return HttpResponse(status=204, headers={"HX-Refresh": "true"})
 
 
 # =============================================================================
 # Settings Views for Motion Types, Templates, and Letterheads
 # =============================================================================
+
 
 class MotionSettingsView(WorkViewMixin, TemplateView):
     """Overview of motion/document settings."""
@@ -905,15 +829,9 @@ class MotionSettingsView(WorkViewMixin, TemplateView):
         context["settings_tab"] = "documents"
 
         # Get counts
-        context["type_count"] = MotionType.objects.filter(
-            organization=self.organization
-        ).count()
-        context["template_count"] = MotionTemplate.objects.filter(
-            organization=self.organization
-        ).count()
-        context["letterhead_count"] = OrganizationLetterhead.objects.filter(
-            organization=self.organization
-        ).count()
+        context["type_count"] = MotionType.objects.filter(organization=self.organization).count()
+        context["template_count"] = MotionTemplate.objects.filter(organization=self.organization).count()
+        context["letterhead_count"] = OrganizationLetterhead.objects.filter(organization=self.organization).count()
 
         return context
 
@@ -929,9 +847,7 @@ class MotionTypeListView(WorkViewMixin, TemplateView):
         context["active_nav"] = "organization"
         context["settings_tab"] = "types"
 
-        context["types"] = MotionType.objects.filter(
-            organization=self.organization
-        ).order_by("sort_order", "name")
+        context["types"] = MotionType.objects.filter(organization=self.organization).order_by("sort_order", "name")
 
         return context
 
@@ -970,10 +886,7 @@ class MotionTypeCreateView(WorkViewMixin, TemplateView):
 
         # If setting as default, unset others
         if is_default:
-            MotionType.objects.filter(
-                organization=self.organization,
-                is_default=True
-            ).update(is_default=False)
+            MotionType.objects.filter(organization=self.organization, is_default=True).update(is_default=False)
 
         MotionType.objects.create(
             organization=self.organization,
@@ -1003,19 +916,11 @@ class MotionTypeEditView(WorkViewMixin, TemplateView):
         context["settings_tab"] = "types"
         context["is_new"] = False
 
-        context["motion_type"] = get_object_or_404(
-            MotionType,
-            id=kwargs.get("type_id"),
-            organization=self.organization
-        )
+        context["motion_type"] = get_object_or_404(MotionType, id=kwargs.get("type_id"), organization=self.organization)
         return context
 
     def post(self, request, *args, **kwargs):
-        motion_type = get_object_or_404(
-            MotionType,
-            id=kwargs.get("type_id"),
-            organization=self.organization
-        )
+        motion_type = get_object_or_404(MotionType, id=kwargs.get("type_id"), organization=self.organization)
 
         motion_type.name = request.POST.get("name", "").strip()
         motion_type.slug = request.POST.get("slug", "").strip()
@@ -1027,10 +932,7 @@ class MotionTypeEditView(WorkViewMixin, TemplateView):
         is_default = request.POST.get("is_default") == "on"
 
         if is_default and not motion_type.is_default:
-            MotionType.objects.filter(
-                organization=self.organization,
-                is_default=True
-            ).update(is_default=False)
+            MotionType.objects.filter(organization=self.organization, is_default=True).update(is_default=False)
         motion_type.is_default = is_default
 
         motion_type.save()
@@ -1045,17 +947,13 @@ class MotionTypeDeleteView(WorkViewMixin, View):
     permission_required = "organization.edit"
 
     def post(self, request, *args, **kwargs):
-        motion_type = get_object_or_404(
-            MotionType,
-            id=kwargs.get("type_id"),
-            organization=self.organization
-        )
+        motion_type = get_object_or_404(MotionType, id=kwargs.get("type_id"), organization=self.organization)
 
         # Check if type is in use
         if Motion.objects.filter(document_type=motion_type).exists():
             messages.error(
                 request,
-                f"Dokumenttyp '{motion_type.name}' wird noch verwendet und kann nicht gelöscht werden."
+                f"Dokumenttyp '{motion_type.name}' wird noch verwendet und kann nicht gelöscht werden.",
             )
         else:
             name = motion_type.name
@@ -1076,9 +974,11 @@ class MotionTemplateListView(WorkViewMixin, TemplateView):
         context["active_nav"] = "organization"
         context["settings_tab"] = "templates"
 
-        context["templates"] = MotionTemplate.objects.filter(
-            organization=self.organization
-        ).select_related("motion_type", "letterhead").order_by("-is_default", "name")
+        context["templates"] = (
+            MotionTemplate.objects.filter(organization=self.organization)
+            .select_related("motion_type", "letterhead")
+            .order_by("-is_default", "name")
+        )
 
         return context
 
@@ -1096,14 +996,8 @@ class MotionTemplateCreateView(WorkViewMixin, TemplateView):
         context["is_new"] = True
         context["form"] = MotionTemplateForm(organization=self.organization)
 
-        context["types"] = MotionType.objects.filter(
-            organization=self.organization,
-            is_active=True
-        )
-        context["letterheads"] = OrganizationLetterhead.objects.filter(
-            organization=self.organization,
-            is_active=True
-        )
+        context["types"] = MotionType.objects.filter(organization=self.organization, is_active=True)
+        context["letterheads"] = OrganizationLetterhead.objects.filter(organization=self.organization, is_active=True)
         return context
 
     def post(self, request, *args, **kwargs):
@@ -1115,10 +1009,7 @@ class MotionTemplateCreateView(WorkViewMixin, TemplateView):
 
             # If setting as default, unset others
             if template.is_default:
-                MotionTemplate.objects.filter(
-                    organization=self.organization,
-                    is_default=True
-                ).update(is_default=False)
+                MotionTemplate.objects.filter(organization=self.organization, is_default=True).update(is_default=False)
 
             template.save()
             messages.success(request, f"Vorlage '{template.name}' erstellt.")
@@ -1141,30 +1032,16 @@ class MotionTemplateEditView(WorkViewMixin, TemplateView):
         context["settings_tab"] = "templates"
         context["is_new"] = False
 
-        template = get_object_or_404(
-            MotionTemplate,
-            id=kwargs.get("template_id"),
-            organization=self.organization
-        )
+        template = get_object_or_404(MotionTemplate, id=kwargs.get("template_id"), organization=self.organization)
         context["template"] = template
         context["form"] = MotionTemplateForm(instance=template, organization=self.organization)
 
-        context["types"] = MotionType.objects.filter(
-            organization=self.organization,
-            is_active=True
-        )
-        context["letterheads"] = OrganizationLetterhead.objects.filter(
-            organization=self.organization,
-            is_active=True
-        )
+        context["types"] = MotionType.objects.filter(organization=self.organization, is_active=True)
+        context["letterheads"] = OrganizationLetterhead.objects.filter(organization=self.organization, is_active=True)
         return context
 
     def post(self, request, *args, **kwargs):
-        template = get_object_or_404(
-            MotionTemplate,
-            id=kwargs.get("template_id"),
-            organization=self.organization
-        )
+        template = get_object_or_404(MotionTemplate, id=kwargs.get("template_id"), organization=self.organization)
 
         form = MotionTemplateForm(request.POST, instance=template, organization=self.organization)
 
@@ -1172,10 +1049,9 @@ class MotionTemplateEditView(WorkViewMixin, TemplateView):
             template = form.save(commit=False)
 
             if template.is_default:
-                MotionTemplate.objects.filter(
-                    organization=self.organization,
-                    is_default=True
-                ).exclude(id=template.id).update(is_default=False)
+                MotionTemplate.objects.filter(organization=self.organization, is_default=True).exclude(
+                    id=template.id
+                ).update(is_default=False)
 
             template.save()
             messages.success(request, f"Vorlage '{template.name}' aktualisiert.")
@@ -1192,17 +1068,13 @@ class MotionTemplateDeleteView(WorkViewMixin, View):
     permission_required = "organization.edit"
 
     def post(self, request, *args, **kwargs):
-        template = get_object_or_404(
-            MotionTemplate,
-            id=kwargs.get("template_id"),
-            organization=self.organization
-        )
+        template = get_object_or_404(MotionTemplate, id=kwargs.get("template_id"), organization=self.organization)
 
         # Check if template is in use
         if Motion.objects.filter(template=template).exists():
             messages.error(
                 request,
-                f"Vorlage '{template.name}' wird noch verwendet und kann nicht gelöscht werden."
+                f"Vorlage '{template.name}' wird noch verwendet und kann nicht gelöscht werden.",
             )
         else:
             name = template.name
@@ -1223,9 +1095,9 @@ class LetterheadListView(WorkViewMixin, TemplateView):
         context["active_nav"] = "organization"
         context["settings_tab"] = "letterheads"
 
-        context["letterheads"] = OrganizationLetterhead.objects.filter(
-            organization=self.organization
-        ).order_by("-is_default", "name")
+        context["letterheads"] = OrganizationLetterhead.objects.filter(organization=self.organization).order_by(
+            "-is_default", "name"
+        )
 
         return context
 
@@ -1259,10 +1131,9 @@ class LetterheadCreateView(WorkViewMixin, TemplateView):
 
         is_default = request.POST.get("is_default") == "on"
         if is_default:
-            OrganizationLetterhead.objects.filter(
-                organization=self.organization,
-                is_default=True
-            ).update(is_default=False)
+            OrganizationLetterhead.objects.filter(organization=self.organization, is_default=True).update(
+                is_default=False
+            )
 
         OrganizationLetterhead.objects.create(
             organization=self.organization,
@@ -1295,17 +1166,13 @@ class LetterheadEditView(WorkViewMixin, TemplateView):
         context["is_new"] = False
 
         context["letterhead"] = get_object_or_404(
-            OrganizationLetterhead,
-            id=kwargs.get("letterhead_id"),
-            organization=self.organization
+            OrganizationLetterhead, id=kwargs.get("letterhead_id"), organization=self.organization
         )
         return context
 
     def post(self, request, *args, **kwargs):
         letterhead = get_object_or_404(
-            OrganizationLetterhead,
-            id=kwargs.get("letterhead_id"),
-            organization=self.organization
+            OrganizationLetterhead, id=kwargs.get("letterhead_id"), organization=self.organization
         )
 
         letterhead.name = request.POST.get("name", "").strip()
@@ -1328,10 +1195,9 @@ class LetterheadEditView(WorkViewMixin, TemplateView):
 
         is_default = request.POST.get("is_default") == "on"
         if is_default and not letterhead.is_default:
-            OrganizationLetterhead.objects.filter(
-                organization=self.organization,
-                is_default=True
-            ).update(is_default=False)
+            OrganizationLetterhead.objects.filter(organization=self.organization, is_default=True).update(
+                is_default=False
+            )
         letterhead.is_default = is_default
 
         letterhead.save()
@@ -1347,21 +1213,19 @@ class LetterheadDeleteView(WorkViewMixin, View):
 
     def post(self, request, *args, **kwargs):
         letterhead = get_object_or_404(
-            OrganizationLetterhead,
-            id=kwargs.get("letterhead_id"),
-            organization=self.organization
+            OrganizationLetterhead, id=kwargs.get("letterhead_id"), organization=self.organization
         )
 
         # Check if letterhead is in use
         in_use = (
-            Motion.objects.filter(letterhead=letterhead).exists() or
-            MotionTemplate.objects.filter(letterhead=letterhead).exists()
+            Motion.objects.filter(letterhead=letterhead).exists()
+            or MotionTemplate.objects.filter(letterhead=letterhead).exists()
         )
 
         if in_use:
             messages.error(
                 request,
-                f"Briefkopf '{letterhead.name}' wird noch verwendet und kann nicht gelöscht werden."
+                f"Briefkopf '{letterhead.name}' wird noch verwendet und kann nicht gelöscht werden.",
             )
         else:
             name = letterhead.name
@@ -1375,6 +1239,7 @@ class LetterheadDeleteView(WorkViewMixin, View):
 # Trash (Papierkorb) Views
 # =============================================================================
 
+
 class MotionTrashView(WorkViewMixin, TemplateView):
     """View deleted motions (Papierkorb)."""
 
@@ -1386,18 +1251,16 @@ class MotionTrashView(WorkViewMixin, TemplateView):
         context["active_nav"] = "motions"
 
         # Get only deleted motions
-        deleted_motions = Motion.objects.filter(
-            organization=self.organization,
-            status="deleted"
-        ).select_related("author__user").order_by("-deleted_at")
+        deleted_motions = (
+            Motion.objects.filter(organization=self.organization, status="deleted")
+            .select_related("author__user")
+            .order_by("-deleted_at")
+        )
 
         # Search
         search = self.request.GET.get("q", "").strip()
         if search:
-            deleted_motions = deleted_motions.filter(
-                Q(title__icontains=search) |
-                Q(summary__icontains=search)
-            )
+            deleted_motions = deleted_motions.filter(Q(title__icontains=search) | Q(summary__icontains=search))
             context["search_query"] = search
 
         # Pagination
@@ -1405,10 +1268,7 @@ class MotionTrashView(WorkViewMixin, TemplateView):
         page = self.request.GET.get("page", 1)
         context["motions"] = paginator.get_page(page)
         context["paginator"] = paginator
-        context["trash_count"] = Motion.objects.filter(
-            organization=self.organization,
-            status="deleted"
-        ).count()
+        context["trash_count"] = Motion.objects.filter(organization=self.organization, status="deleted").count()
 
         return context
 
@@ -1419,12 +1279,7 @@ class MotionRestoreView(WorkViewMixin, View):
     permission_required = "motions.edit"
 
     def post(self, request, *args, **kwargs):
-        motion = get_object_or_404(
-            Motion,
-            id=kwargs.get("motion_id"),
-            organization=self.organization,
-            status="deleted"
-        )
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization, status="deleted")
 
         # Restore to draft
         motion.status = "draft"
@@ -1444,12 +1299,7 @@ class MotionPermanentDeleteView(WorkViewMixin, View):
     permission_required = "motions.edit"
 
     def post(self, request, *args, **kwargs):
-        motion = get_object_or_404(
-            Motion,
-            id=kwargs.get("motion_id"),
-            organization=self.organization,
-            status="deleted"
-        )
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization, status="deleted")
 
         title = motion.title
         motion.delete()
@@ -1467,15 +1317,9 @@ class MotionEmptyTrashView(WorkViewMixin, View):
     permission_required = "motions.edit"
 
     def post(self, request, *args, **kwargs):
-        count = Motion.objects.filter(
-            organization=self.organization,
-            status="deleted"
-        ).count()
+        count = Motion.objects.filter(organization=self.organization, status="deleted").count()
 
-        Motion.objects.filter(
-            organization=self.organization,
-            status="deleted"
-        ).delete()
+        Motion.objects.filter(organization=self.organization, status="deleted").delete()
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse({"success": True, "count": count})

@@ -7,21 +7,27 @@ Provides views for:
 - Password reset flow
 """
 
-from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login as auth_login, logout as auth_logout
+from django.contrib.auth import login as auth_login
+from django.contrib.auth import logout as auth_logout
+from django.contrib.auth.views import (
+    PasswordResetCompleteView as DjangoPasswordResetCompleteView,
+)
+from django.contrib.auth.views import (
+    PasswordResetConfirmView as DjangoPasswordResetConfirmView,
+)
+from django.contrib.auth.views import (
+    PasswordResetDoneView as DjangoPasswordResetDoneView,
+)
 from django.contrib.auth.views import (
     PasswordResetView as DjangoPasswordResetView,
-    PasswordResetDoneView as DjangoPasswordResetDoneView,
-    PasswordResetConfirmView as DjangoPasswordResetConfirmView,
-    PasswordResetCompleteView as DjangoPasswordResetCompleteView,
 )
 from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import TemplateView
 
-from .forms import LoginForm, PasswordResetForm, SetPasswordForm, RegistrationForm
+from .forms import LoginForm, PasswordResetForm, RegistrationForm, SetPasswordForm
 from .models import LoginAttempt
 
 
@@ -43,11 +49,15 @@ class LoginView(View):
         # Check for pending invitation
         invitation = self._get_pending_invitation(request)
 
-        return render(request, self.template_name, {
-            "form": form,
-            "next": next_url,
-            "invitation": invitation,
-        })
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "next": next_url,
+                "invitation": invitation,
+            },
+        )
 
     def post(self, request):
         form = LoginForm(request.POST, request=request)
@@ -61,15 +71,16 @@ class LoginView(View):
         invitation = self._get_pending_invitation(request)
 
         if self.is_rate_limited(ip_address, email):
-            messages.error(
+            messages.error(request, "Zu viele fehlgeschlagene Anmeldeversuche. Bitte warte 15 Minuten.")
+            return render(
                 request,
-                "Zu viele fehlgeschlagene Anmeldeversuche. Bitte warte 15 Minuten."
+                self.template_name,
+                {
+                    "form": form,
+                    "next": next_url,
+                    "invitation": invitation,
+                },
             )
-            return render(request, self.template_name, {
-                "form": form,
-                "next": next_url,
-                "invitation": invitation,
-            })
 
         if form.is_valid():
             user = form.get_user()
@@ -95,11 +106,15 @@ class LoginView(View):
             # Log failed attempt
             self.log_attempt(request, email, success=False)
 
-        return render(request, self.template_name, {
-            "form": form,
-            "next": next_url,
-            "invitation": invitation,
-        })
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "next": next_url,
+                "invitation": invitation,
+            },
+        )
 
     def get_success_url(self, request, next_url=None):
         """Determine where to redirect after login."""
@@ -108,7 +123,7 @@ class LoginView(View):
             return next_url
 
         # Default: redirect to work portal if user has memberships
-        if hasattr(request.user, 'memberships'):
+        if hasattr(request.user, "memberships"):
             active_memberships = request.user.memberships.filter(is_active=True)
             if active_memberships.exists():
                 first_org = active_memberships.first().organization
@@ -120,6 +135,7 @@ class LoginView(View):
     def is_safe_url(self, url, request):
         """Check if URL is safe for redirect."""
         from django.utils.http import url_has_allowed_host_and_scheme
+
         return url_has_allowed_host_and_scheme(
             url,
             allowed_hosts={request.get_host()},
@@ -135,8 +151,9 @@ class LoginView(View):
 
     def is_rate_limited(self, ip_address, email):
         """Check if login attempts are rate limited."""
-        from django.utils import timezone
         from datetime import timedelta
+
+        from django.utils import timezone
 
         # Allow 5 attempts per 15 minutes
         threshold = timezone.now() - timedelta(minutes=15)
@@ -167,14 +184,13 @@ class LoginView(View):
         if not token:
             return None
 
-        from apps.tenants.models import UserInvitation
         from django.utils import timezone
+
+        from apps.tenants.models import UserInvitation
 
         try:
             invitation = UserInvitation.objects.get(
-                token=token,
-                accepted_at__isnull=True,
-                expires_at__gt=timezone.now()
+                token=token, accepted_at__isnull=True, expires_at__gt=timezone.now()
             )
             return invitation
         except UserInvitation.DoesNotExist:
@@ -209,6 +225,7 @@ class LoggedOutView(TemplateView):
 # =============================================================================
 # Password Reset Views (using Django's built-in views with custom templates)
 # =============================================================================
+
 
 class PasswordResetView(DjangoPasswordResetView):
     """Request password reset."""
@@ -248,6 +265,7 @@ class PasswordResetCompleteView(DjangoPasswordResetCompleteView):
 # Registration (for invited users)
 # =============================================================================
 
+
 class RegisterView(View):
     """
     Registration view for invited users.
@@ -273,16 +291,21 @@ class RegisterView(View):
 
         # Check if email already has an account
         from .models import User
+
         if User.objects.filter(email=invitation.email).exists():
             messages.info(request, "Ein Konto mit dieser E-Mail existiert bereits. Bitte melden Sie sich an.")
             return redirect("accounts:login")
 
         form = RegistrationForm(email=invitation.email)
 
-        return render(request, self.template_name, {
-            "form": form,
-            "invitation": invitation,
-        })
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "invitation": invitation,
+            },
+        )
 
     def post(self, request):
         # Check for pending invitation
@@ -308,27 +331,27 @@ class RegisterView(View):
             auth_login(request, user)
 
             # Redirect to accept invitation
-            messages.success(
-                request,
-                f"Willkommen, {user.first_name}! Ihr Konto wurde erstellt."
-            )
+            messages.success(request, f"Willkommen, {user.first_name}! Ihr Konto wurde erstellt.")
             return redirect("work:accept_invitation", token=invitation_token)
 
-        return render(request, self.template_name, {
-            "form": form,
-            "invitation": invitation,
-        })
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "invitation": invitation,
+            },
+        )
 
     def get_invitation(self, token):
         """Get and validate the invitation."""
-        from apps.tenants.models import UserInvitation
         from django.utils import timezone
+
+        from apps.tenants.models import UserInvitation
 
         try:
             invitation = UserInvitation.objects.get(
-                token=token,
-                accepted_at__isnull=True,
-                expires_at__gt=timezone.now()
+                token=token, accepted_at__isnull=True, expires_at__gt=timezone.now()
             )
             return invitation
         except UserInvitation.DoesNotExist:

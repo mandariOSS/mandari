@@ -10,7 +10,6 @@ Provides security measures for AI integration:
 
 import html
 import re
-from typing import Optional
 
 from django.core.cache import cache
 
@@ -61,13 +60,14 @@ class AIInputSanitizer:
             return ""
 
         # Truncate overly long input
-        text = text[:cls.MAX_INPUT_LENGTH]
+        text = text[: cls.MAX_INPUT_LENGTH]
 
         # Check for and neutralize injection patterns
         for pattern in cls.INJECTION_PATTERNS:
             if re.search(pattern, text, re.IGNORECASE):
                 if log_attempts:
                     import logging
+
                     logger = logging.getLogger(__name__)
                     logger.warning(f"Potential prompt injection detected: pattern '{pattern}'")
                 # Replace with innocuous text
@@ -121,9 +121,25 @@ class AIOutputFilter:
 
     # Tags that are safe to keep after escaping
     SAFE_TAGS = [
-        "strong", "b", "em", "i", "u", "br", "p",
-        "ul", "ol", "li", "h1", "h2", "h3", "h4",
-        "blockquote", "pre", "code", "span", "div"
+        "strong",
+        "b",
+        "em",
+        "i",
+        "u",
+        "br",
+        "p",
+        "ul",
+        "ol",
+        "li",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "blockquote",
+        "pre",
+        "code",
+        "span",
+        "div",
     ]
 
     @classmethod
@@ -145,6 +161,7 @@ class AIOutputFilter:
         for pattern in cls.FORBIDDEN_PATTERNS:
             if re.search(pattern, text, re.IGNORECASE):
                 import logging
+
                 logger = logging.getLogger(__name__)
                 logger.warning(f"Forbidden pattern in AI output: {pattern}")
                 text = re.sub(pattern, "", text, flags=re.IGNORECASE)
@@ -182,7 +199,7 @@ class AIOutputFilter:
             return ""
 
         # Remove null bytes and other control characters
-        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+        text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
 
         return text
 

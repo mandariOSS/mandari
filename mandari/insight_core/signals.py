@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from django.conf import settings
-from django.db.models.signals import post_save, post_delete
+from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 from .models import (
@@ -33,6 +33,7 @@ def _get_meilisearch_client():
     """Gibt den Meilisearch-Client zurück."""
     try:
         import meilisearch
+
         url = getattr(settings, "MEILISEARCH_URL", "http://localhost:7700")
         key = getattr(settings, "MEILISEARCH_KEY", "")
         return meilisearch.Client(url, key)
@@ -167,6 +168,7 @@ def _delete_document(index_name: str, doc_id: str):
 # =============================================================================
 # Signal Handlers
 # =============================================================================
+
 
 @receiver(post_save, sender=OParlPaper)
 def index_paper(sender, instance, **kwargs):

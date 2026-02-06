@@ -5,11 +5,10 @@ Support views for the Work module.
 Provides support ticket system and knowledge base for organizations.
 """
 
-import json
 import re
 
 from django.contrib import messages
-from django.db.models import Q, Count
+from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
@@ -19,13 +18,14 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.work.notifications.services import NotificationHub
+
 from .models import (
-    SupportTicket,
-    SupportTicketMessage,
-    SupportTicketAttachment,
-    KnowledgeBaseCategory,
-    KnowledgeBaseArticle,
     ArticleFeedback,
+    KnowledgeBaseArticle,
+    KnowledgeBaseCategory,
+    SupportTicket,
+    SupportTicketAttachment,
+    SupportTicketMessage,
 )
 
 
@@ -40,10 +40,9 @@ class SupportListView(WorkViewMixin, TemplateView):
         context["active_nav"] = "support"
 
         # Get user's tickets
-        tickets = SupportTicket.objects.filter(
-            organization=self.organization,
-            created_by=self.membership
-        ).order_by("-updated_at")
+        tickets = SupportTicket.objects.filter(organization=self.organization, created_by=self.membership).order_by(
+            "-updated_at"
+        )
 
         # Filter by status
         status_filter = self.request.GET.get("status", "")
@@ -66,19 +65,15 @@ class SupportListView(WorkViewMixin, TemplateView):
         }
 
         # Knowledge base categories
-        context["kb_categories"] = KnowledgeBaseCategory.objects.filter(
-            is_active=True
-        ).annotate(
-            article_count_published=Count(
-                "articles",
-                filter=Q(articles__is_published=True)
-            )
-        ).order_by("sort_order")
+        context["kb_categories"] = (
+            KnowledgeBaseCategory.objects.filter(is_active=True)
+            .annotate(article_count_published=Count("articles", filter=Q(articles__is_published=True)))
+            .order_by("sort_order")
+        )
 
         # Featured articles
         context["featured_articles"] = KnowledgeBaseArticle.objects.filter(
-            is_published=True,
-            is_featured=True
+            is_published=True, is_featured=True
         ).select_related("category")[:5]
 
         return context
@@ -100,8 +95,7 @@ class SupportCreateView(WorkViewMixin, TemplateView):
         category = self.request.GET.get("category", "")
         if category:
             context["suggested_articles"] = KnowledgeBaseArticle.objects.filter(
-                is_published=True,
-                category__slug=category
+                is_published=True, category__slug=category
             )[:3]
 
         return context
@@ -162,7 +156,7 @@ class SupportDetailView(WorkViewMixin, TemplateView):
         ticket = get_object_or_404(
             SupportTicket.objects.select_related("created_by__user", "assigned_to"),
             id=ticket_id,
-            organization=self.organization
+            organization=self.organization,
         )
 
         # Check if user can access this ticket
@@ -173,9 +167,9 @@ class SupportDetailView(WorkViewMixin, TemplateView):
         context["ticket"] = ticket
 
         # Get messages (exclude internal notes for non-staff)
-        messages_qs = ticket.messages.select_related(
-            "author_membership__user", "author_staff"
-        ).prefetch_related("attachments")
+        messages_qs = ticket.messages.select_related("author_membership__user", "author_staff").prefetch_related(
+            "attachments"
+        )
 
         if not self.request.user.is_staff:
             messages_qs = messages_qs.filter(is_internal=False)
@@ -190,11 +184,7 @@ class SupportDetailView(WorkViewMixin, TemplateView):
     def post(self, request, *args, **kwargs):
         """Add a message to the ticket."""
         ticket_id = self.kwargs.get("ticket_id")
-        ticket = get_object_or_404(
-            SupportTicket,
-            id=ticket_id,
-            organization=self.organization
-        )
+        ticket = get_object_or_404(SupportTicket, id=ticket_id, organization=self.organization)
 
         action = request.POST.get("action", "reply")
 
@@ -238,9 +228,7 @@ class SupportDetailView(WorkViewMixin, TemplateView):
                 ticket.status = "open"
 
                 # Notify about status change
-                NotificationHub.notify_support_ticket_status_change(
-                    ticket, old_status, ticket.status
-                )
+                NotificationHub.notify_support_ticket_status_change(ticket, old_status, ticket.status)
             ticket.save()
 
             messages.success(request, "Ihre Nachricht wurde gesendet.")
@@ -252,9 +240,7 @@ class SupportDetailView(WorkViewMixin, TemplateView):
             ticket.save()
 
             # Notify about status change
-            NotificationHub.notify_support_ticket_status_change(
-                ticket, old_status, "closed"
-            )
+            NotificationHub.notify_support_ticket_status_change(ticket, old_status, "closed")
             messages.success(request, "Das Ticket wurde geschlossen.")
 
         elif action == "reopen":
@@ -268,9 +254,7 @@ class SupportDetailView(WorkViewMixin, TemplateView):
                 ticket.save()
 
                 # Notify about status change
-                NotificationHub.notify_support_ticket_status_change(
-                    ticket, old_status, "open"
-                )
+                NotificationHub.notify_support_ticket_status_change(ticket, old_status, "open")
                 messages.success(request, "Das Ticket wurde wieder geöffnet.")
 
         return redirect("work:support_detail", org_slug=self.organization.slug, ticket_id=ticket.id)
@@ -283,24 +267,20 @@ class SupportTicketMessagesPartialView(WorkViewMixin, View):
 
     def get(self, request, *args, **kwargs):
         """Return message thread HTML partial for HTMX polling."""
-        from django.template.loader import render_to_string
         from django.http import HttpResponse
+        from django.template.loader import render_to_string
 
         ticket_id = self.kwargs.get("ticket_id")
-        ticket = get_object_or_404(
-            SupportTicket,
-            id=ticket_id,
-            organization=self.organization
-        )
+        ticket = get_object_or_404(SupportTicket, id=ticket_id, organization=self.organization)
 
         # Check access
         if ticket.created_by != self.membership and not self.has_permission("support.manage"):
             return HttpResponse("", status=403)
 
         # Get messages (exclude internal notes for non-staff)
-        messages_qs = ticket.messages.select_related(
-            "author_membership__user", "author_staff"
-        ).prefetch_related("attachments")
+        messages_qs = ticket.messages.select_related("author_membership__user", "author_staff").prefetch_related(
+            "attachments"
+        )
 
         if not request.user.is_staff:
             messages_qs = messages_qs.filter(is_internal=False)
@@ -345,42 +325,41 @@ class KnowledgeBaseView(WorkViewMixin, TemplateView):
 
         if query:
             # Search articles
-            articles = KnowledgeBaseArticle.objects.filter(
-                is_published=True
-            ).filter(
-                Q(title__icontains=query) |
-                Q(excerpt__icontains=query) |
-                Q(content__icontains=query) |
-                Q(tags__icontains=query)
-            ).select_related("category").order_by("-views_count")[:20]
+            articles = (
+                KnowledgeBaseArticle.objects.filter(is_published=True)
+                .filter(
+                    Q(title__icontains=query)
+                    | Q(excerpt__icontains=query)
+                    | Q(content__icontains=query)
+                    | Q(tags__icontains=query)
+                )
+                .select_related("category")
+                .order_by("-views_count")[:20]
+            )
             context["search_results"] = articles
         else:
             # Show categories with articles
-            categories = KnowledgeBaseCategory.objects.filter(
-                is_active=True
-            ).prefetch_related(
-                "articles"
-            ).annotate(
-                article_count_published=Count(
-                    "articles",
-                    filter=Q(articles__is_published=True)
-                )
-            ).filter(
-                article_count_published__gt=0
-            ).order_by("sort_order")
+            categories = (
+                KnowledgeBaseCategory.objects.filter(is_active=True)
+                .prefetch_related("articles")
+                .annotate(article_count_published=Count("articles", filter=Q(articles__is_published=True)))
+                .filter(article_count_published__gt=0)
+                .order_by("sort_order")
+            )
 
             context["categories"] = categories
 
             # Featured articles
             context["featured_articles"] = KnowledgeBaseArticle.objects.filter(
-                is_published=True,
-                is_featured=True
+                is_published=True, is_featured=True
             ).select_related("category")[:5]
 
             # Popular articles
-            context["popular_articles"] = KnowledgeBaseArticle.objects.filter(
-                is_published=True
-            ).select_related("category").order_by("-views_count")[:10]
+            context["popular_articles"] = (
+                KnowledgeBaseArticle.objects.filter(is_published=True)
+                .select_related("category")
+                .order_by("-views_count")[:10]
+            )
 
         return context
 
@@ -396,18 +375,13 @@ class KnowledgeBaseCategoryView(WorkViewMixin, TemplateView):
         context["active_nav"] = "support"
 
         category_slug = self.kwargs.get("category_slug")
-        category = get_object_or_404(
-            KnowledgeBaseCategory,
-            slug=category_slug,
-            is_active=True
-        )
+        category = get_object_or_404(KnowledgeBaseCategory, slug=category_slug, is_active=True)
         context["category"] = category
 
         # Get articles in this category
-        articles = KnowledgeBaseArticle.objects.filter(
-            category=category,
-            is_published=True
-        ).order_by("-is_featured", "-published_at")
+        articles = KnowledgeBaseArticle.objects.filter(category=category, is_published=True).order_by(
+            "-is_featured", "-published_at"
+        )
 
         context["articles"] = articles
 
@@ -431,7 +405,7 @@ class KnowledgeBaseArticleView(WorkViewMixin, TemplateView):
             KnowledgeBaseArticle.objects.select_related("category", "author"),
             category__slug=category_slug,
             slug=article_slug,
-            is_published=True
+            is_published=True,
         )
 
         # Increment view count
@@ -444,17 +418,17 @@ class KnowledgeBaseArticleView(WorkViewMixin, TemplateView):
         context["article_html"] = self._render_markdown(article.content)
 
         # Related articles
-        context["related_articles"] = KnowledgeBaseArticle.objects.filter(
-            category=article.category,
-            is_published=True
-        ).exclude(id=article.id).order_by("-views_count")[:5]
+        context["related_articles"] = (
+            KnowledgeBaseArticle.objects.filter(category=article.category, is_published=True)
+            .exclude(id=article.id)
+            .order_by("-views_count")[:5]
+        )
 
         # Check if user already gave feedback
         session_key = self.request.session.session_key or ""
-        context["user_feedback"] = ArticleFeedback.objects.filter(
-            article=article,
-            session_key=session_key
-        ).first() if session_key else None
+        context["user_feedback"] = (
+            ArticleFeedback.objects.filter(article=article, session_key=session_key).first() if session_key else None
+        )
 
         return context
 
@@ -466,43 +440,67 @@ class KnowledgeBaseArticleView(WorkViewMixin, TemplateView):
         text = html.escape(text)
 
         # Headers
-        text = re.sub(r'^### (.+)$', r'<h3 class="text-lg font-semibold mt-6 mb-2">\1</h3>', text, flags=re.MULTILINE)
-        text = re.sub(r'^## (.+)$', r'<h2 class="text-xl font-semibold mt-8 mb-3">\1</h2>', text, flags=re.MULTILINE)
-        text = re.sub(r'^# (.+)$', r'<h1 class="text-2xl font-bold mt-8 mb-4">\1</h1>', text, flags=re.MULTILINE)
+        text = re.sub(
+            r"^### (.+)$",
+            r'<h3 class="text-lg font-semibold mt-6 mb-2">\1</h3>',
+            text,
+            flags=re.MULTILINE,
+        )
+        text = re.sub(
+            r"^## (.+)$",
+            r'<h2 class="text-xl font-semibold mt-8 mb-3">\1</h2>',
+            text,
+            flags=re.MULTILINE,
+        )
+        text = re.sub(
+            r"^# (.+)$",
+            r'<h1 class="text-2xl font-bold mt-8 mb-4">\1</h1>',
+            text,
+            flags=re.MULTILINE,
+        )
 
         # Bold and italic
-        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
-        text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
+        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+        text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
 
         # Code blocks
-        text = re.sub(r'```(\w+)?\n(.*?)\n```', r'<pre class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg overflow-x-auto my-4"><code>\2</code></pre>', text, flags=re.DOTALL)
-        text = re.sub(r'`(.+?)`', r'<code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">\1</code>', text)
+        text = re.sub(
+            r"```(\w+)?\n(.*?)\n```",
+            r'<pre class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg overflow-x-auto my-4"><code>\2</code></pre>',
+            text,
+            flags=re.DOTALL,
+        )
+        text = re.sub(r"`(.+?)`", r'<code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">\1</code>', text)
 
         # Lists
-        lines = text.split('\n')
+        lines = text.split("\n")
         result = []
         in_list = False
         for line in lines:
-            if line.strip().startswith('- '):
+            if line.strip().startswith("- "):
                 if not in_list:
                     result.append('<ul class="list-disc pl-6 my-4 space-y-1">')
                     in_list = True
-                result.append(f'<li>{line.strip()[2:]}</li>')
+                result.append(f"<li>{line.strip()[2:]}</li>")
             else:
                 if in_list:
-                    result.append('</ul>')
+                    result.append("</ul>")
                     in_list = False
                 result.append(line)
         if in_list:
-            result.append('</ul>')
-        text = '\n'.join(result)
+            result.append("</ul>")
+        text = "\n".join(result)
 
         # Paragraphs
-        text = re.sub(r'\n\n+', '</p><p class="my-4">', text)
+        text = re.sub(r"\n\n+", '</p><p class="my-4">', text)
         text = f'<p class="my-4">{text}</p>'
 
         # Links
-        text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2" class="text-primary-600 hover:underline" target="_blank">\1</a>', text)
+        text = re.sub(
+            r"\[(.+?)\]\((.+?)\)",
+            r'<a href="\2" class="text-primary-600 hover:underline" target="_blank">\1</a>',
+            text,
+        )
 
         return text
 
@@ -526,10 +524,7 @@ class ArticleFeedbackView(WorkViewMixin, View):
         session_key = request.session.session_key
 
         # Check for existing feedback
-        existing = ArticleFeedback.objects.filter(
-            article=article,
-            session_key=session_key
-        ).first()
+        existing = ArticleFeedback.objects.filter(article=article, session_key=session_key).first()
 
         if existing:
             # Update existing feedback
@@ -565,10 +560,12 @@ class ArticleFeedbackView(WorkViewMixin, View):
             article.save(update_fields=["helpful_yes", "helpful_no"])
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return JsonResponse({
-                "success": True,
-                "helpful_percentage": article.helpful_percentage,
-            })
+            return JsonResponse(
+                {
+                    "success": True,
+                    "helpful_percentage": article.helpful_percentage,
+                }
+            )
 
         messages.success(request, "Vielen Dank für Ihr Feedback!")
         # SECURITY: Use Django's built-in URL validation to prevent Open Redirect
@@ -595,15 +592,12 @@ class ArticleSearchAPIView(WorkViewMixin, View):
         if len(query) < 2:
             return JsonResponse({"results": []})
 
-        articles = KnowledgeBaseArticle.objects.filter(
-            is_published=True
-        ).filter(
-            Q(title__icontains=query) |
-            Q(excerpt__icontains=query) |
-            Q(tags__icontains=query)
-        ).select_related("category").values(
-            "id", "title", "excerpt", "category__name", "category__slug", "slug"
-        )[:10]
+        articles = (
+            KnowledgeBaseArticle.objects.filter(is_published=True)
+            .filter(Q(title__icontains=query) | Q(excerpt__icontains=query) | Q(tags__icontains=query))
+            .select_related("category")
+            .values("id", "title", "excerpt", "category__name", "category__slug", "slug")[:10]
+        )
 
         results = [
             {
@@ -611,7 +605,7 @@ class ArticleSearchAPIView(WorkViewMixin, View):
                 "title": a["title"],
                 "excerpt": a["excerpt"][:100] + "..." if len(a["excerpt"]) > 100 else a["excerpt"],
                 "category": a["category__name"],
-                "url": f"/work/{self.organization.slug}/support/kb/{a['category__slug']}/{a['slug']}/"
+                "url": f"/work/{self.organization.slug}/support/kb/{a['category__slug']}/{a['slug']}/",
             }
             for a in articles
         ]

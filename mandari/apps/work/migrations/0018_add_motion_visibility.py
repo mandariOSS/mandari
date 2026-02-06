@@ -20,24 +20,21 @@ def migrate_visibility_forward(apps, schema_editor):
     - If motion has any other shares → shared
     - Otherwise → private
     """
-    Motion = apps.get_model('work', 'Motion')
-    MotionShare = apps.get_model('work', 'MotionShare')
+    Motion = apps.get_model("work", "Motion")
+    MotionShare = apps.get_model("work", "MotionShare")
 
     for motion in Motion.objects.all():
         # Check for organization-scope shares
-        has_org_share = MotionShare.objects.filter(
-            motion=motion,
-            scope='organization'
-        ).exists()
+        has_org_share = MotionShare.objects.filter(motion=motion, scope="organization").exists()
 
         if has_org_share:
-            motion.visibility = 'organization'
+            motion.visibility = "organization"
         elif MotionShare.objects.filter(motion=motion).exists():
-            motion.visibility = 'shared'
+            motion.visibility = "shared"
         else:
-            motion.visibility = 'private'
+            motion.visibility = "private"
 
-        motion.save(update_fields=['visibility'])
+        motion.save(update_fields=["visibility"])
 
 
 def migrate_visibility_backward(apps, schema_editor):
@@ -46,29 +43,25 @@ def migrate_visibility_backward(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('work', '0017_add_proposal_and_protocol_status'),
+        ("work", "0017_add_proposal_and_protocol_status"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='motion',
-            name='visibility',
+            model_name="motion",
+            name="visibility",
             field=models.CharField(
                 choices=[
-                    ('private', 'Privat'),
-                    ('shared', 'Geteilt'),
-                    ('organization', 'Organisation')
+                    ("private", "Privat"),
+                    ("shared", "Geteilt"),
+                    ("organization", "Organisation"),
                 ],
-                default='private',
-                help_text='Wer kann dieses Dokument sehen?',
+                default="private",
+                help_text="Wer kann dieses Dokument sehen?",
                 max_length=20,
-                verbose_name='Sichtbarkeit'
+                verbose_name="Sichtbarkeit",
             ),
         ),
-        migrations.RunPython(
-            migrate_visibility_forward,
-            migrate_visibility_backward
-        ),
+        migrations.RunPython(migrate_visibility_forward, migrate_visibility_backward),
     ]

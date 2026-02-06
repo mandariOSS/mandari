@@ -10,11 +10,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from django.core.files.uploadedfile import UploadedFile
-from django.utils import timezone
-
 from insight_core.services.document_extraction import extract_text_from_file
 
 if TYPE_CHECKING:
@@ -31,9 +29,9 @@ class ImportResult:
     """Result of a PDF import operation."""
 
     success: bool
-    motion: Optional["Motion"] = None
-    document: Optional["MotionDocument"] = None
-    error: Optional[str] = None
+    motion: Motion | None = None
+    document: MotionDocument | None = None
+    error: str | None = None
     extracted_text_length: int = 0
     ocr_performed: bool = False
 
@@ -50,10 +48,10 @@ class MotionImportService:
     def import_pdf(
         cls,
         pdf_file: UploadedFile,
-        organization: "Organization",
-        author: "Membership",
-        motion_type: Optional["MotionType"] = None,
-        title: Optional[str] = None,
+        organization: Organization,
+        author: Membership,
+        motion_type: MotionType | None = None,
+        title: str | None = None,
         visibility: str = "private",
     ) -> ImportResult:
         """
@@ -115,16 +113,13 @@ class MotionImportService:
                 if not text_content.strip().startswith("<"):
                     # Convert line breaks to paragraphs
                     paragraphs = text_content.split("\n\n")
-                    html_content = "\n".join(
-                        f"<p>{p.strip()}</p>" for p in paragraphs if p.strip()
-                    )
+                    html_content = "\n".join(f"<p>{p.strip()}</p>" for p in paragraphs if p.strip())
                     motion.set_content_encrypted(html_content)
                 else:
                     motion.set_content_encrypted(text_content)
             else:
                 motion.set_content_encrypted(
-                    "<p><em>Text konnte nicht extrahiert werden. "
-                    "Bitte überprüfen Sie das Original-PDF.</em></p>"
+                    "<p><em>Text konnte nicht extrahiert werden. Bitte überprüfen Sie das Original-PDF.</em></p>"
                 )
 
             motion.save()
@@ -165,9 +160,9 @@ class MotionImportService:
     def import_multiple_pdfs(
         cls,
         pdf_files: list[UploadedFile],
-        organization: "Organization",
-        author: "Membership",
-        motion_type: Optional["MotionType"] = None,
+        organization: Organization,
+        author: Membership,
+        motion_type: MotionType | None = None,
         visibility: str = "private",
     ) -> list[ImportResult]:
         """

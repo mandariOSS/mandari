@@ -4,7 +4,6 @@ Forms for faction meeting management.
 """
 
 from django import forms
-from django.utils import timezone
 
 from .models import (
     FactionAgendaItem,
@@ -36,14 +35,14 @@ class FactionMeetingForm(forms.ModelForm):
             "title": forms.TextInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "placeholder": "Titel der Sitzung",
                 }
             ),
             "description": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 3,
                     "placeholder": "Optionale Beschreibung",
                 }
@@ -51,13 +50,13 @@ class FactionMeetingForm(forms.ModelForm):
             "schedule": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "start": forms.DateTimeInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "type": "datetime-local",
                 },
                 format="%Y-%m-%dT%H:%M",
@@ -65,7 +64,7 @@ class FactionMeetingForm(forms.ModelForm):
             "end": forms.DateTimeInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "type": "datetime-local",
                 },
                 format="%Y-%m-%dT%H:%M",
@@ -73,7 +72,7 @@ class FactionMeetingForm(forms.ModelForm):
             "location": forms.TextInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "placeholder": "Ort der Sitzung",
                 }
             ),
@@ -85,14 +84,14 @@ class FactionMeetingForm(forms.ModelForm):
             "video_link": forms.URLInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "placeholder": "https://...",
                 }
             ),
             "related_meeting": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
         }
@@ -103,8 +102,7 @@ class FactionMeetingForm(forms.ModelForm):
 
         if organization:
             self.fields["schedule"].queryset = FactionMeetingSchedule.objects.filter(
-                organization=organization,
-                is_active=True
+                organization=organization, is_active=True
             )
 
 
@@ -127,33 +125,33 @@ class FactionScheduleForm(forms.ModelForm):
             "name": forms.TextInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "placeholder": "z.B. Wöchentliche Fraktionssitzung",
                 }
             ),
             "recurrence": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "weekday": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "time": forms.TimeInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "type": "time",
                 }
             ),
             "duration_minutes": forms.NumberInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "min": 15,
                     "max": 480,
                 }
@@ -161,14 +159,14 @@ class FactionScheduleForm(forms.ModelForm):
             "default_location": forms.TextInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "placeholder": "Standard-Ort",
                 }
             ),
             "default_video_link": forms.URLInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "placeholder": "https://...",
                 }
             ),
@@ -195,27 +193,27 @@ class FactionAgendaItemForm(forms.ModelForm):
             "number": forms.TextInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "placeholder": "TOP 1",
                 }
             ),
             "title": forms.TextInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "description_encrypted": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 3,
                 }
             ),
             "related_agenda_item": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
         }
@@ -238,19 +236,19 @@ class FactionProtocolEntryForm(forms.ModelForm):
             "agenda_item": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "entry_type": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "content_encrypted": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 3,
                     "placeholder": "Protokolleintrag...",
                 }
@@ -258,19 +256,19 @@ class FactionProtocolEntryForm(forms.ModelForm):
             "speaker": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "action_assignee": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "action_due_date": forms.DateInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "type": "date",
                 }
             ),
@@ -294,34 +292,34 @@ class FactionDecisionForm(forms.ModelForm):
             "votes_yes": forms.NumberInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "min": 0,
                 }
             ),
             "votes_no": forms.NumberInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "min": 0,
                 }
             ),
             "votes_abstain": forms.NumberInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "min": 0,
                 }
             ),
             "result": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "decision_text": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 3,
                     "placeholder": "Abweichender Beschlusstext (optional)",
                 }
@@ -329,7 +327,7 @@ class FactionDecisionForm(forms.ModelForm):
             "notes": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 2,
                     "placeholder": "Anmerkungen zur Abstimmung",
                 }
@@ -352,7 +350,7 @@ class FactionAttendanceResponseForm(forms.ModelForm):
             "response_message": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 2,
                     "placeholder": "Begründung (bei Absage)",
                 }

@@ -5,10 +5,11 @@ Zeigt Statistiken und Übersichten für das Mandari-Projekt.
 """
 
 import json
+from datetime import timedelta
+
 from django.db.models import Count
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
-from datetime import timedelta
 
 
 def dashboard_callback(request, context):
@@ -18,18 +19,19 @@ def dashboard_callback(request, context):
     Diese Funktion wird von Unfold aufgerufen und fügt
     statistische Daten zum Template-Context hinzu.
     """
-    from insight_core.models import (
-        OParlSource,
-        OParlBody,
-        OParlOrganization,
-        OParlPerson,
-        OParlMeeting,
-        OParlPaper,
-        OParlAgendaItem,
-        OParlFile,
-        OParlMembership,
-    )
     from insight_content.models import BlogPost, Release
+
+    from insight_core.models import (
+        OParlAgendaItem,
+        OParlBody,
+        OParlFile,
+        OParlMeeting,
+        OParlMembership,
+        OParlOrganization,
+        OParlPaper,
+        OParlPerson,
+        OParlSource,
+    )
 
     # Zeitraum für "kürzlich"
     recent_date = timezone.now() - timedelta(days=7)
@@ -43,13 +45,9 @@ def dashboard_callback(request, context):
         "organizations": OParlOrganization.objects.count(),
         "persons": OParlPerson.objects.count(),
         "meetings": OParlMeeting.objects.count(),
-        "meetings_upcoming": OParlMeeting.objects.filter(
-            start__gte=timezone.now()
-        ).count(),
+        "meetings_upcoming": OParlMeeting.objects.filter(start__gte=timezone.now()).count(),
         "papers": OParlPaper.objects.count(),
-        "papers_recent": OParlPaper.objects.filter(
-            created_at__gte=recent_date
-        ).count(),
+        "papers_recent": OParlPaper.objects.filter(created_at__gte=recent_date).count(),
         "agenda_items": OParlAgendaItem.objects.count(),
         "files": OParlFile.objects.count(),
         "memberships": OParlMembership.objects.count(),
@@ -58,9 +56,7 @@ def dashboard_callback(request, context):
     # Content Statistiken
     context["content_stats"] = {
         "blog_posts": BlogPost.objects.count(),
-        "blog_published": BlogPost.objects.filter(
-            status=BlogPost.Status.PUBLISHED
-        ).count(),
+        "blog_published": BlogPost.objects.filter(status=BlogPost.Status.PUBLISHED).count(),
         "releases": Release.objects.count(),
         "releases_published": Release.objects.filter(is_published=True).count(),
     }
@@ -76,26 +72,34 @@ def dashboard_callback(request, context):
     context["recent_sources"] = sources
 
     # Anstehende Sitzungen
-    context["upcoming_meetings"] = OParlMeeting.objects.filter(
-        start__gte=timezone.now(),
-        cancelled=False
-    ).order_by("start")[:5]
+    context["upcoming_meetings"] = OParlMeeting.objects.filter(start__gte=timezone.now(), cancelled=False).order_by(
+        "start"
+    )[:5]
 
     # Kürzlich hinzugefügte Vorgänge
-    context["recent_papers"] = OParlPaper.objects.order_by(
-        "-created_at"
-    )[:5]
+    context["recent_papers"] = OParlPaper.objects.order_by("-created_at")[:5]
 
     # === CHART DATA ===
 
     # German month names
-    month_names = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
-                   "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
+    month_names = [
+        "Jan",
+        "Feb",
+        "Mär",
+        "Apr",
+        "Mai",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Okt",
+        "Nov",
+        "Dez",
+    ]
 
     # Papers per month
     papers_monthly = list(
-        OParlPaper.objects
-        .filter(date__gte=twelve_months_ago, date__isnull=False)
+        OParlPaper.objects.filter(date__gte=twelve_months_ago, date__isnull=False)
         .annotate(month=TruncMonth("date"))
         .values("month")
         .annotate(count=Count("id"))
@@ -104,8 +108,7 @@ def dashboard_callback(request, context):
 
     # Meetings per month
     meetings_monthly = list(
-        OParlMeeting.objects
-        .filter(start__gte=twelve_months_ago)
+        OParlMeeting.objects.filter(start__gte=twelve_months_ago)
         .annotate(month=TruncMonth("start"))
         .values("month")
         .annotate(count=Count("id"))
@@ -131,18 +134,9 @@ def dashboard_callback(request, context):
     context["chart_meetings"] = json.dumps(chart_meetings)
 
     # Papers by body (for doughnut chart)
-    papers_by_body = list(
-        OParlPaper.objects
-        .values("body__name")
-        .annotate(count=Count("id"))
-        .order_by("-count")[:10]
-    )
+    papers_by_body = list(OParlPaper.objects.values("body__name").annotate(count=Count("id")).order_by("-count")[:10])
 
-    context["papers_by_body_labels"] = json.dumps(
-        [p["body__name"] or "Unbekannt" for p in papers_by_body]
-    )
-    context["papers_by_body_data"] = json.dumps(
-        [p["count"] for p in papers_by_body]
-    )
+    context["papers_by_body_labels"] = json.dumps([p["body__name"] or "Unbekannt" for p in papers_by_body])
+    context["papers_by_body_data"] = json.dumps([p["count"] for p in papers_by_body])
 
     return context

@@ -27,12 +27,11 @@ Inactive penalty:
       inactive and get a penalty added to their priority.
 """
 
+import re
 from datetime import timedelta
 
-from django.db.models import Case, When, Value, IntegerField, Max
+from django.db.models import Case, IntegerField, Max, Value, When
 from django.utils import timezone
-import re
-
 
 # Penalty for organizations without recent activity (no meeting in 12 months)
 INACTIVITY_PENALTY = 500
@@ -47,7 +46,6 @@ RANKING_RULES = [
     (r"^Rat$", 10, True),
     (r"^Hauptausschuss$", 20, True),
     (r"^Haupt- und Finanzausschuss$", 20, True),
-
     # Regular committees (pattern matches)
     (r"^Ausschuss für ", 30, False),
     (r"^Betriebsausschuss ", 40, False),
@@ -58,33 +56,26 @@ RANKING_RULES = [
     (r"^Wahlausschuss$", 70, True),
     (r"^Wahlprüfungsausschuss$", 70, True),
     (r"^Wahlausschuss ", 70, False),
-
     # Commissions
     (r"^Kommission ", 80, False),
     (r"Kommission$", 80, False),
-
     # District representations
     (r"^Bezirksvertretung ", 90, False),
-
     # Integration council
     (r"^Integrationsrat$", 95, True),
-
     # Advisory boards
     (r"^Beirat ", 100, False),
     (r" Beirat$", 100, False),
-
     # Youth/Senior councils
     (r"^Jugendrat$", 110, True),
     (r"^Seniorenvertretung$", 110, True),
     (r"^Kommunale Seniorenvertretung$", 110, True),
-
     # Company boards (GmbH, etc.) - lowest priority for active committees
     (r"GmbH", 200, False),
     (r"Aufsichtsrat$", 200, False),
     (r"Gesellschafterversammlung$", 200, False),
     (r"eG,", 200, False),
     (r"e\.V\.", 200, False),
-
     # Special purpose associations
     (r"^Zweckverband ", 210, False),
 ]
@@ -102,8 +93,6 @@ def get_organization_priority(name: str) -> int:
     """
     if not name:
         return 300
-
-    name_lower = name.lower()
 
     for pattern, priority, is_exact in RANKING_RULES:
         if is_exact:
@@ -137,49 +126,34 @@ def get_ranking_annotation():
         When(name__iexact="Rat", then=Value(10)),
         When(name__iexact="Hauptausschuss", then=Value(20)),
         When(name__iexact="Haupt- und Finanzausschuss", then=Value(20)),
-
         # Pattern matches - use __istartswith and __icontains
         When(name__istartswith="Ausschuss für ", then=Value(30)),
         When(name__istartswith="Betriebsausschuss ", then=Value(40)),
-
         When(name__iexact="Kulturausschuss", then=Value(50)),
         When(name__iexact="Sportausschuss", then=Value(50)),
         When(name__iexact="Rechnungsprüfungsausschuss", then=Value(50)),
-
         When(name__istartswith="Unterausschuss ", then=Value(60)),
-
         When(name__iexact="Wahlausschuss", then=Value(70)),
         When(name__iexact="Wahlprüfungsausschuss", then=Value(70)),
         When(name__istartswith="Wahlausschuss ", then=Value(70)),
-
         When(name__istartswith="Kommission ", then=Value(80)),
         When(name__iendswith="kommission", then=Value(80)),
-
         When(name__istartswith="Bezirksvertretung ", then=Value(90)),
-
         When(name__iexact="Integrationsrat", then=Value(95)),
-
         When(name__istartswith="Beirat ", then=Value(100)),
         When(name__iendswith=" Beirat", then=Value(100)),
-
         When(name__iexact="Jugendrat", then=Value(110)),
         When(name__icontains="Seniorenvertretung", then=Value(110)),
-
         # Company boards (lower priority)
         When(name__icontains="GmbH", then=Value(200)),
         When(name__iendswith="Aufsichtsrat", then=Value(200)),
         When(name__iendswith="Gesellschafterversammlung", then=Value(200)),
         When(name__icontains="eG,", then=Value(200)),
         When(name__icontains="e.V.", then=Value(200)),
-
         When(name__istartswith="Zweckverband ", then=Value(210)),
     ]
 
-    return Case(
-        *whens,
-        default=Value(300),
-        output_field=IntegerField()
-    )
+    return Case(*whens, default=Value(300), output_field=IntegerField())
 
 
 def get_inactivity_penalty_annotation():
@@ -207,7 +181,7 @@ def get_inactivity_penalty_annotation():
         When(last_meeting_date__lt=cutoff_date, then=Value(INACTIVITY_PENALTY)),
         # Active -> no penalty
         default=Value(0),
-        output_field=IntegerField()
+        output_field=IntegerField(),
     )
 
 
@@ -238,21 +212,22 @@ def sort_organizations_by_ranking(queryset, include_activity=True):
 
         cutoff_date = timezone.now() - timedelta(days=INACTIVITY_MONTHS * 30)
 
-        return queryset.annotate(
-            ranking_priority=get_ranking_annotation(),
-            last_meeting_date=Max('meetings__start'),
-        ).annotate(
-            inactivity_penalty=Case(
-                When(last_meeting_date__isnull=True, then=Value(INACTIVITY_PENALTY)),
-                When(last_meeting_date__lt=cutoff_date, then=Value(INACTIVITY_PENALTY)),
-                default=Value(0),
-                output_field=IntegerField()
-            ),
-        ).annotate(
-            final_priority=F('ranking_priority') + F('inactivity_penalty')
-        ).order_by('final_priority', 'name')
+        return (
+            queryset.annotate(
+                ranking_priority=get_ranking_annotation(),
+                last_meeting_date=Max("meetings__start"),
+            )
+            .annotate(
+                inactivity_penalty=Case(
+                    When(last_meeting_date__isnull=True, then=Value(INACTIVITY_PENALTY)),
+                    When(last_meeting_date__lt=cutoff_date, then=Value(INACTIVITY_PENALTY)),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                ),
+            )
+            .annotate(final_priority=F("ranking_priority") + F("inactivity_penalty"))
+            .order_by("final_priority", "name")
+        )
     else:
         # Simple ranking without activity check
-        return queryset.annotate(
-            ranking_priority=get_ranking_annotation()
-        ).order_by('ranking_priority', 'name')
+        return queryset.annotate(ranking_priority=get_ranking_annotation()).order_by("ranking_priority", "name")

@@ -40,24 +40,20 @@ class FactionMeetingEmailService:
         """Send a single invitation email."""
         user = attendance.membership.user
         if not user.email:
-            logger.warning(
-                f"Skipping invitation for user {user.id} - no email address"
-            )
+            logger.warning(f"Skipping invitation for user {user.id} - no email address")
             return False
 
         # Get agenda items based on whether the member is sworn in
         is_sworn_in = attendance.membership.is_sworn_in
-        public_items = meeting.agenda_items.filter(
-            visibility="public",
-            proposal_status="active"
-        ).order_by("order", "number")
+        public_items = meeting.agenda_items.filter(visibility="public", proposal_status="active").order_by(
+            "order", "number"
+        )
 
         internal_items = []
         if is_sworn_in:
-            internal_items = meeting.agenda_items.filter(
-                visibility="internal",
-                proposal_status="active"
-            ).order_by("order", "number")
+            internal_items = meeting.agenda_items.filter(visibility="internal", proposal_status="active").order_by(
+                "order", "number"
+            )
 
         context = {
             "meeting": meeting,
@@ -72,12 +68,8 @@ class FactionMeetingEmailService:
         subject = f"Einladung: {meeting.title}"
 
         try:
-            html_content = render_to_string(
-                "work/faction/email/invitation.html", context
-            )
-            text_content = render_to_string(
-                "work/faction/email/invitation.txt", context
-            )
+            html_content = render_to_string("work/faction/email/invitation.html", context)
+            text_content = render_to_string("work/faction/email/invitation.txt", context)
         except Exception as e:
             logger.error(f"Failed to render email template: {e}")
             # Fall back to simple text
@@ -128,13 +120,15 @@ class FactionMeetingEmailService:
             for item in internal_items:
                 lines.append(f"TOP {item.number}: {item.title}")
 
-        lines.extend([
-            "",
-            "Bitte gib uns Bescheid, ob du teilnehmen kannst.",
-            "",
-            f"Viele Grüße,",
-            f"{meeting.organization.name}",
-        ])
+        lines.extend(
+            [
+                "",
+                "Bitte gib uns Bescheid, ob du teilnehmen kannst.",
+                "",
+                "Viele Grüße,",
+                f"{meeting.organization.name}",
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -144,9 +138,7 @@ class FactionMeetingEmailService:
 
         Returns the count of successfully sent emails.
         """
-        attendances = meeting.attendances.filter(
-            status__in=["confirmed", "tentative"]
-        )
+        attendances = meeting.attendances.filter(status__in=["confirmed", "tentative"])
         sent_count = 0
 
         for attendance in attendances:
@@ -172,12 +164,8 @@ class FactionMeetingEmailService:
         subject = f"Erinnerung: {meeting.title} in {hours_before} Stunden"
 
         try:
-            html_content = render_to_string(
-                "work/faction/email/reminder.html", context
-            )
-            text_content = render_to_string(
-                "work/faction/email/reminder.txt", context
-            )
+            html_content = render_to_string("work/faction/email/reminder.html", context)
+            text_content = render_to_string("work/faction/email/reminder.txt", context)
         except Exception:
             # Fall back to simple text
             html_content = None
@@ -243,10 +231,7 @@ class AgendaProposalService:
         item.set_description_encrypted(description)
         item.save()
 
-        logger.info(
-            f"Agenda proposal created: '{title}' for meeting {meeting.id} "
-            f"by {proposed_by.user.email}"
-        )
+        logger.info(f"Agenda proposal created: '{title}' for meeting {meeting.id} by {proposed_by.user.email}")
 
         # Notify meeting managers
         cls._notify_managers(meeting, item, proposed_by)
@@ -257,8 +242,8 @@ class AgendaProposalService:
     def _notify_managers(cls, meeting, item, proposed_by):
         """Notify members with agenda.manage permission about the new proposal."""
         from apps.common.permissions import PermissionChecker
-        from apps.work.notifications.services import NotificationHub
         from apps.work.notifications.models import NotificationType
+        from apps.work.notifications.services import NotificationHub
 
         # Find all members with agenda.manage permission
         managers = []
@@ -298,14 +283,12 @@ class AgendaProposalService:
             item.number = assign_number
             item.save(update_fields=["number"])
 
-        logger.info(
-            f"Agenda proposal accepted: '{item.title}' by {reviewed_by.user.email}"
-        )
+        logger.info(f"Agenda proposal accepted: '{item.title}' by {reviewed_by.user.email}")
 
         # Notify the proposer
         if item.proposed_by:
-            from apps.work.notifications.services import NotificationHub
             from apps.work.notifications.models import NotificationType
+            from apps.work.notifications.services import NotificationHub
 
             NotificationHub.send(
                 recipient=item.proposed_by,
@@ -334,14 +317,12 @@ class AgendaProposalService:
         if not item.reject_proposal(reviewed_by, reason):
             return False
 
-        logger.info(
-            f"Agenda proposal rejected: '{item.title}' by {reviewed_by.user.email}"
-        )
+        logger.info(f"Agenda proposal rejected: '{item.title}' by {reviewed_by.user.email}")
 
         # Notify the proposer
         if item.proposed_by:
-            from apps.work.notifications.services import NotificationHub
             from apps.work.notifications.models import NotificationType
+            from apps.work.notifications.services import NotificationHub
 
             message = f'Dein Vorschlag "{item.title}" wurde nicht angenommen.'
             if reason:
@@ -368,9 +349,9 @@ class AgendaProposalService:
         """Get all proposals by a specific member across all meetings."""
         from .models import FactionAgendaItem
 
-        return FactionAgendaItem.objects.filter(
-            proposed_by=membership
-        ).select_related("meeting").order_by("-proposed_at")
+        return (
+            FactionAgendaItem.objects.filter(proposed_by=membership).select_related("meeting").order_by("-proposed_at")
+        )
 
 
 class ProtocolApprovalService:
@@ -422,13 +403,15 @@ class ProtocolApprovalService:
         meeting.protocol_approved_at = timezone.now()
         meeting.protocol_approved_by = approved_by
         meeting.protocol_approved_in = approved_in_meeting
-        meeting.save(update_fields=[
-            "protocol_status",
-            "protocol_approved",
-            "protocol_approved_at",
-            "protocol_approved_by",
-            "protocol_approved_in",
-        ])
+        meeting.save(
+            update_fields=[
+                "protocol_status",
+                "protocol_approved",
+                "protocol_approved_at",
+                "protocol_approved_by",
+                "protocol_approved_in",
+            ]
+        )
 
         logger.info(
             f"Protocol approved: meeting {meeting.id} "

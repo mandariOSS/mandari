@@ -39,7 +39,7 @@ class MotionType(models.Model):
         "tenants.Organization",
         on_delete=models.CASCADE,
         related_name="motion_types",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
 
     name = models.CharField(max_length=100, verbose_name="Name")
@@ -47,34 +47,21 @@ class MotionType(models.Model):
     description = models.TextField(blank=True, verbose_name="Beschreibung")
 
     # Icon and color for UI
-    icon = models.CharField(
-        max_length=50,
-        default="file-text",
-        verbose_name="Icon (Lucide)"
-    )
-    color = models.CharField(
-        max_length=20,
-        default="blue",
-        verbose_name="Farbe"
-    )
+    icon = models.CharField(max_length=50, default="file-text", verbose_name="Icon (Lucide)")
+    color = models.CharField(max_length=20, default="blue", verbose_name="Farbe")
 
     # Workflow settings
     requires_approval = models.BooleanField(
         default=True,
         verbose_name="Freigabe erforderlich",
-        help_text="Dokument muss vor Einreichung freigegeben werden"
+        help_text="Dokument muss vor Einreichung freigegeben werden",
     )
     is_submittable = models.BooleanField(
-        default=True,
-        verbose_name="Einreichbar",
-        help_text="Kann offiziell eingereicht werden"
+        default=True, verbose_name="Einreichbar", help_text="Kann offiziell eingereicht werden"
     )
 
     # Status
-    is_default = models.BooleanField(
-        default=False,
-        verbose_name="Standard-Typ"
-    )
+    is_default = models.BooleanField(default=False, verbose_name="Standard-Typ")
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     sort_order = models.IntegerField(default=0, verbose_name="Sortierung")
 
@@ -104,53 +91,31 @@ class OrganizationLetterhead(models.Model):
         "tenants.Organization",
         on_delete=models.CASCADE,
         related_name="letterheads",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
 
     name = models.CharField(max_length=200, verbose_name="Name")
     description = models.TextField(blank=True, verbose_name="Beschreibung")
 
     # The PDF file
-    pdf_file = models.FileField(
-        upload_to="motions/letterheads/%Y/%m/",
-        verbose_name="PDF-Datei"
-    )
+    pdf_file = models.FileField(upload_to="motions/letterheads/%Y/%m/", verbose_name="PDF-Datei")
 
     # Content positioning (in mm from top-left)
     content_margin_top = models.PositiveIntegerField(
         default=60,
         verbose_name="Abstand oben (mm)",
-        help_text="Abstand vom oberen Rand zum Textbereich"
+        help_text="Abstand vom oberen Rand zum Textbereich",
     )
-    content_margin_left = models.PositiveIntegerField(
-        default=25,
-        verbose_name="Abstand links (mm)"
-    )
-    content_margin_right = models.PositiveIntegerField(
-        default=20,
-        verbose_name="Abstand rechts (mm)"
-    )
-    content_margin_bottom = models.PositiveIntegerField(
-        default=30,
-        verbose_name="Abstand unten (mm)"
-    )
+    content_margin_left = models.PositiveIntegerField(default=25, verbose_name="Abstand links (mm)")
+    content_margin_right = models.PositiveIntegerField(default=20, verbose_name="Abstand rechts (mm)")
+    content_margin_bottom = models.PositiveIntegerField(default=30, verbose_name="Abstand unten (mm)")
 
     # Font settings
-    font_family = models.CharField(
-        max_length=100,
-        default="Arial",
-        verbose_name="Schriftart"
-    )
-    font_size = models.PositiveIntegerField(
-        default=11,
-        verbose_name="Schriftgröße (pt)"
-    )
+    font_family = models.CharField(max_length=100, default="Arial", verbose_name="Schriftart")
+    font_size = models.PositiveIntegerField(default=11, verbose_name="Schriftgröße (pt)")
 
     # Status
-    is_default = models.BooleanField(
-        default=False,
-        verbose_name="Standard-Briefkopf"
-    )
+    is_default = models.BooleanField(default=False, verbose_name="Standard-Briefkopf")
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -178,7 +143,7 @@ class MotionTemplate(models.Model):
         "tenants.Organization",
         on_delete=models.CASCADE,
         related_name="motion_templates",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
 
     # Link to type (optional - if set, only available for this type)
@@ -189,7 +154,7 @@ class MotionTemplate(models.Model):
         blank=True,
         related_name="templates",
         verbose_name="Dokumenttyp",
-        help_text="Vorlage nur für diesen Typ verfügbar (leer = alle Typen)"
+        help_text="Vorlage nur für diesen Typ verfügbar (leer = alle Typen)",
     )
 
     # Link to letterhead (optional)
@@ -199,7 +164,7 @@ class MotionTemplate(models.Model):
         null=True,
         blank=True,
         related_name="templates",
-        verbose_name="Briefkopf"
+        verbose_name="Briefkopf",
     )
 
     name = models.CharField(max_length=200, verbose_name="Name")
@@ -209,33 +174,24 @@ class MotionTemplate(models.Model):
     content_template = models.TextField(
         blank=True,
         verbose_name="Inhaltsvorlage",
-        help_text="Vorausgefüllter Inhalt für neue Dokumente"
+        help_text="Vorausgefüllter Inhalt für neue Dokumente",
     )
 
     # Structure hints for AI
     structure_hints = models.TextField(
         blank=True,
         verbose_name="Strukturhinweise",
-        help_text="Hinweise für die KI-Unterstützung (z.B. Abschnitte, Formatierung)"
+        help_text="Hinweise für die KI-Unterstützung (z.B. Abschnitte, Formatierung)",
     )
 
     # Signature block
-    signature_block = models.TextField(
-        blank=True,
-        verbose_name="Signaturblock"
-    )
+    signature_block = models.TextField(blank=True, verbose_name="Signaturblock")
 
     # Sharing
-    is_shared_party = models.BooleanField(
-        default=False,
-        verbose_name="Partei-weit teilen"
-    )
+    is_shared_party = models.BooleanField(default=False, verbose_name="Partei-weit teilen")
 
     # Status
-    is_default = models.BooleanField(
-        default=False,
-        verbose_name="Standard-Vorlage"
-    )
+    is_default = models.BooleanField(default=False, verbose_name="Standard-Vorlage")
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -268,9 +224,9 @@ class Motion(EncryptionMixin, models.Model):
     ]
 
     VISIBILITY_CHOICES = [
-        ("private", "Privat"),           # Only the author can see
-        ("shared", "Geteilt"),           # Specific people via MotionShare
-        ("organization", "Organisation"), # Everyone in the organization
+        ("private", "Privat"),  # Only the author can see
+        ("shared", "Geteilt"),  # Specific people via MotionShare
+        ("organization", "Organisation"),  # Everyone in the organization
     ]
 
     STATUS_CHOICES = [
@@ -302,7 +258,7 @@ class Motion(EncryptionMixin, models.Model):
         "tenants.Organization",
         on_delete=models.CASCADE,
         related_name="motions",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
 
     # Type - can be dynamic (MotionType) or legacy (string)
@@ -312,7 +268,7 @@ class Motion(EncryptionMixin, models.Model):
         null=True,
         blank=True,
         related_name="motions",
-        verbose_name="Dokumenttyp"
+        verbose_name="Dokumenttyp",
     )
     # Legacy field for backwards compatibility
     motion_type = models.CharField(
@@ -320,28 +276,17 @@ class Motion(EncryptionMixin, models.Model):
         choices=LEGACY_TYPE_CHOICES,
         default="motion",
         verbose_name="Typ (legacy)",
-        blank=True
+        blank=True,
     )
 
     title = models.CharField(max_length=500, verbose_name="Titel")
-    summary = models.TextField(
-        blank=True,
-        verbose_name="Zusammenfassung",
-        help_text="Öffentliche Kurzfassung"
-    )
+    summary = models.TextField(blank=True, verbose_name="Zusammenfassung", help_text="Öffentliche Kurzfassung")
 
     # Content (encrypted, stored as HTML from WYSIWYG editor)
-    content_encrypted = EncryptedTextField(
-        verbose_name="Inhalt"
-    )
+    content_encrypted = EncryptedTextField(verbose_name="Inhalt")
 
     # Status
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default="draft",
-        verbose_name="Status"
-    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft", verbose_name="Status")
 
     # Default edit mode for collaborators
     default_edit_mode = models.CharField(
@@ -349,7 +294,7 @@ class Motion(EncryptionMixin, models.Model):
         choices=EDIT_MODE_CHOICES,
         default="edit",
         verbose_name="Standard-Bearbeitungsmodus",
-        help_text="Standard-Modus für neue Mitarbeiter"
+        help_text="Standard-Modus für neue Mitarbeiter",
     )
 
     # Target meeting for agenda integration
@@ -360,7 +305,7 @@ class Motion(EncryptionMixin, models.Model):
         blank=True,
         related_name="proposed_motions",
         verbose_name="Ziel-Sitzung",
-        help_text="Sitzung, in der dieser Antrag behandelt werden soll"
+        help_text="Sitzung, in der dieser Antrag behandelt werden soll",
     )
 
     # Template used
@@ -370,7 +315,7 @@ class Motion(EncryptionMixin, models.Model):
         null=True,
         blank=True,
         related_name="motions",
-        verbose_name="Vorlage"
+        verbose_name="Vorlage",
     )
 
     # Letterhead for export
@@ -380,7 +325,7 @@ class Motion(EncryptionMixin, models.Model):
         null=True,
         blank=True,
         related_name="motions",
-        verbose_name="Briefkopf"
+        verbose_name="Briefkopf",
     )
 
     # Linkages to OParl
@@ -391,7 +336,7 @@ class Motion(EncryptionMixin, models.Model):
         blank=True,
         related_name="work_motions",
         verbose_name="Verknüpfter Vorgang",
-        help_text="OParl-Vorlage wenn eingereicht"
+        help_text="OParl-Vorlage wenn eingereicht",
     )
     related_meeting = models.ForeignKey(
         "insight_core.OParlMeeting",
@@ -399,7 +344,7 @@ class Motion(EncryptionMixin, models.Model):
         null=True,
         blank=True,
         related_name="work_motions",
-        verbose_name="Ziel-Sitzung"
+        verbose_name="Ziel-Sitzung",
     )
 
     # For amendments - link to parent motion
@@ -409,7 +354,7 @@ class Motion(EncryptionMixin, models.Model):
         null=True,
         blank=True,
         related_name="amendments",
-        verbose_name="Bezugsantrag"
+        verbose_name="Bezugsantrag",
     )
 
     # Real-time collaboration state (Yjs document)
@@ -417,7 +362,7 @@ class Motion(EncryptionMixin, models.Model):
         blank=True,
         null=True,
         verbose_name="Yjs-Dokument",
-        help_text="Binary state for real-time collaboration"
+        help_text="Binary state for real-time collaboration",
     )
 
     # Visibility (simplified permission system)
@@ -426,7 +371,7 @@ class Motion(EncryptionMixin, models.Model):
         choices=VISIBILITY_CHOICES,
         default="private",
         verbose_name="Sichtbarkeit",
-        help_text="Wer kann dieses Dokument sehen?"
+        help_text="Wer kann dieses Dokument sehen?",
     )
 
     # Metadata
@@ -434,27 +379,19 @@ class Motion(EncryptionMixin, models.Model):
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="authored_motions",
-        verbose_name="Autor"
+        verbose_name="Autor",
     )
-    tags = models.JSONField(
-        default=list,
-        blank=True,
-        verbose_name="Tags"
-    )
+    tags = models.JSONField(default=list, blank=True, verbose_name="Tags")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    submitted_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name="Eingereicht am"
-    )
+    submitted_at = models.DateTimeField(blank=True, null=True, verbose_name="Eingereicht am")
     deleted_at = models.DateTimeField(
         blank=True,
         null=True,
         verbose_name="Gelöscht am",
-        help_text="Zeitpunkt der Löschung (30 Tage Papierkorb)"
+        help_text="Zeitpunkt der Löschung (30 Tage Papierkorb)",
     )
 
     class Meta:
@@ -472,13 +409,6 @@ class Motion(EncryptionMixin, models.Model):
 
     def get_encryption_organization(self):
         return self.organization
-
-    def get_type_display(self):
-        """Get the display name for the document type."""
-        if self.document_type:
-            return self.document_type.name
-        # Fallback to legacy type
-        return dict(self.LEGACY_TYPE_CHOICES).get(self.motion_type, "Dokument")
 
     def get_type_color(self):
         """Get the color for the document type."""
@@ -632,25 +562,11 @@ class MotionShare(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    motion = models.ForeignKey(
-        Motion,
-        on_delete=models.CASCADE,
-        related_name="shares",
-        verbose_name="Antrag"
-    )
+    motion = models.ForeignKey(Motion, on_delete=models.CASCADE, related_name="shares", verbose_name="Antrag")
 
     # Scope and level
-    scope = models.CharField(
-        max_length=20,
-        choices=SCOPE_CHOICES,
-        verbose_name="Bereich"
-    )
-    level = models.CharField(
-        max_length=20,
-        choices=LEVEL_CHOICES,
-        default="view",
-        verbose_name="Berechtigung"
-    )
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, verbose_name="Bereich")
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES, default="view", verbose_name="Berechtigung")
 
     # Target (only one should be set based on scope)
     user = models.ForeignKey(
@@ -659,7 +575,7 @@ class MotionShare(models.Model):
         null=True,
         blank=True,
         related_name="motion_shares",
-        verbose_name="Benutzer"
+        verbose_name="Benutzer",
     )
     role = models.ForeignKey(
         "tenants.Role",
@@ -667,7 +583,7 @@ class MotionShare(models.Model):
         null=True,
         blank=True,
         related_name="motion_shares",
-        verbose_name="Rolle"
+        verbose_name="Rolle",
     )
     organization = models.ForeignKey(
         "tenants.Organization",
@@ -675,7 +591,7 @@ class MotionShare(models.Model):
         null=True,
         blank=True,
         related_name="shared_motions",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
     party_group = models.ForeignKey(
         "tenants.PartyGroup",
@@ -683,7 +599,7 @@ class MotionShare(models.Model):
         null=True,
         blank=True,
         related_name="shared_motions",
-        verbose_name="Parteigruppe"
+        verbose_name="Parteigruppe",
     )
     body = models.ForeignKey(
         "insight_core.OParlBody",
@@ -691,7 +607,7 @@ class MotionShare(models.Model):
         null=True,
         blank=True,
         related_name="shared_motions",
-        verbose_name="OParl Body"
+        verbose_name="OParl Body",
     )
 
     # Metadata
@@ -699,14 +615,10 @@ class MotionShare(models.Model):
         "accounts.User",
         on_delete=models.CASCADE,
         related_name="created_motion_shares",
-        verbose_name="Erstellt von"
+        verbose_name="Erstellt von",
     )
     created_at = models.DateTimeField(auto_now_add=True)
-    message = models.TextField(
-        blank=True,
-        verbose_name="Nachricht",
-        help_text="Optionale Nachricht an den Empfänger"
-    )
+    message = models.TextField(blank=True, verbose_name="Nachricht", help_text="Optionale Nachricht an den Empfänger")
 
     class Meta:
         verbose_name = "Antragsfreigabe"
@@ -752,36 +664,22 @@ class MotionDocument(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    motion = models.ForeignKey(
-        Motion,
-        on_delete=models.CASCADE,
-        related_name="documents",
-        verbose_name="Antrag"
-    )
+    motion = models.ForeignKey(Motion, on_delete=models.CASCADE, related_name="documents", verbose_name="Antrag")
 
-    file = models.FileField(
-        upload_to="motions/documents/%Y/%m/",
-        verbose_name="Datei"
-    )
+    file = models.FileField(upload_to="motions/documents/%Y/%m/", verbose_name="Datei")
     filename = models.CharField(max_length=255, verbose_name="Dateiname")
     mime_type = models.CharField(max_length=100, verbose_name="MIME-Typ")
-    file_size = models.PositiveIntegerField(
-        default=0,
-        verbose_name="Dateigröße (Bytes)"
-    )
+    file_size = models.PositiveIntegerField(default=0, verbose_name="Dateigröße (Bytes)")
 
     # Extracted text for search
-    text_content = models.TextField(
-        blank=True,
-        verbose_name="Extrahierter Text"
-    )
+    text_content = models.TextField(blank=True, verbose_name="Extrahierter Text")
 
     # Metadata
     uploaded_by = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="uploaded_documents",
-        verbose_name="Hochgeladen von"
+        verbose_name="Hochgeladen von",
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
@@ -803,32 +701,21 @@ class MotionRevision(EncryptionMixin, models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    motion = models.ForeignKey(
-        Motion,
-        on_delete=models.CASCADE,
-        related_name="revisions",
-        verbose_name="Antrag"
-    )
+    motion = models.ForeignKey(Motion, on_delete=models.CASCADE, related_name="revisions", verbose_name="Antrag")
 
     version = models.PositiveIntegerField(verbose_name="Version")
 
     # Snapshot of content (encrypted)
-    content_encrypted = EncryptedTextField(
-        verbose_name="Inhalt"
-    )
+    content_encrypted = EncryptedTextField(verbose_name="Inhalt")
 
     # Metadata
     changed_by = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="motion_revisions",
-        verbose_name="Geändert von"
+        verbose_name="Geändert von",
     )
-    change_summary = models.CharField(
-        max_length=500,
-        blank=True,
-        verbose_name="Änderungszusammenfassung"
-    )
+    change_summary = models.CharField(max_length=500, blank=True, verbose_name="Änderungszusammenfassung")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -858,12 +745,7 @@ class MotionComment(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    motion = models.ForeignKey(
-        Motion,
-        on_delete=models.CASCADE,
-        related_name="comments",
-        verbose_name="Antrag"
-    )
+    motion = models.ForeignKey(Motion, on_delete=models.CASCADE, related_name="comments", verbose_name="Antrag")
 
     # Threading
     parent = models.ForeignKey(
@@ -872,24 +754,13 @@ class MotionComment(models.Model):
         null=True,
         blank=True,
         related_name="replies",
-        verbose_name="Antwort auf"
+        verbose_name="Antwort auf",
     )
 
     # Position in document (for inline comments)
-    selection_start = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name="Auswahl Start"
-    )
-    selection_end = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        verbose_name="Auswahl Ende"
-    )
-    selected_text = models.TextField(
-        blank=True,
-        verbose_name="Ausgewählter Text"
-    )
+    selection_start = models.PositiveIntegerField(null=True, blank=True, verbose_name="Auswahl Start")
+    selection_end = models.PositiveIntegerField(null=True, blank=True, verbose_name="Auswahl Ende")
+    selected_text = models.TextField(blank=True, verbose_name="Ausgewählter Text")
 
     # Content
     content = models.TextField(verbose_name="Kommentar")
@@ -899,25 +770,18 @@ class MotionComment(models.Model):
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="motion_comments",
-        verbose_name="Autor"
+        verbose_name="Autor",
     )
-    is_resolved = models.BooleanField(
-        default=False,
-        verbose_name="Erledigt"
-    )
+    is_resolved = models.BooleanField(default=False, verbose_name="Erledigt")
     resolved_by = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="resolved_comments",
-        verbose_name="Erledigt von"
+        verbose_name="Erledigt von",
     )
-    resolved_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name="Erledigt am"
-    )
+    resolved_at = models.DateTimeField(blank=True, null=True, verbose_name="Erledigt am")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -948,42 +812,22 @@ class MotionApproval(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    motion = models.ForeignKey(
-        Motion,
-        on_delete=models.CASCADE,
-        related_name="approvals",
-        verbose_name="Antrag"
-    )
+    motion = models.ForeignKey(Motion, on_delete=models.CASCADE, related_name="approvals", verbose_name="Antrag")
     approver = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="motion_approvals",
-        verbose_name="Genehmiger"
+        verbose_name="Genehmiger",
     )
-    approval_type = models.CharField(
-        max_length=20,
-        choices=APPROVAL_TYPE_CHOICES,
-        verbose_name="Genehmigungstyp"
-    )
+    approval_type = models.CharField(max_length=20, choices=APPROVAL_TYPE_CHOICES, verbose_name="Genehmigungstyp")
 
     # Decision: None=pending, True=approved, False=rejected
-    approved = models.BooleanField(
-        null=True,
-        default=None,
-        verbose_name="Genehmigt"
-    )
-    comment = models.TextField(
-        blank=True,
-        verbose_name="Kommentar"
-    )
+    approved = models.BooleanField(null=True, default=None, verbose_name="Genehmigt")
+    comment = models.TextField(blank=True, verbose_name="Kommentar")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
-    decided_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        verbose_name="Entschieden am"
-    )
+    decided_at = models.DateTimeField(null=True, blank=True, verbose_name="Entschieden am")
 
     class Meta:
         verbose_name = "Genehmigung"

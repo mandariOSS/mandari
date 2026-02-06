@@ -63,20 +63,19 @@ class SessionTenantMiddleware(MiddlewareMixin):
         request.session_user = None
         if request.user.is_authenticated:
             try:
-                request.session_user = SessionUser.objects.select_related(
-                    "tenant"
-                ).prefetch_related(
-                    "roles"
-                ).get(
-                    user=request.user,
-                    tenant=tenant,
-                    is_active=True,
+                request.session_user = (
+                    SessionUser.objects.select_related("tenant")
+                    .prefetch_related("roles")
+                    .get(
+                        user=request.user,
+                        tenant=tenant,
+                        is_active=True,
+                    )
                 )
                 # Update last access
                 from django.utils import timezone
-                SessionUser.objects.filter(pk=request.session_user.pk).update(
-                    last_access=timezone.now()
-                )
+
+                SessionUser.objects.filter(pk=request.session_user.pk).update(last_access=timezone.now())
             except SessionUser.DoesNotExist:
                 # User is authenticated but not a member of this tenant
                 pass

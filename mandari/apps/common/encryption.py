@@ -13,7 +13,6 @@ Key Hierarchy:
 
 import base64
 import os
-from typing import Optional
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.conf import settings
@@ -34,7 +33,7 @@ def get_master_key() -> bytes:
     if not master_key_b64:
         raise ValueError(
             "ENCRYPTION_MASTER_KEY not configured. "
-            "Generate with: python -c \"import secrets; import base64; print(base64.b64encode(secrets.token_bytes(32)).decode())\""
+            'Generate with: python -c "import secrets; import base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"'
         )
 
     key = base64.b64decode(master_key_b64)
@@ -54,7 +53,7 @@ def generate_key() -> bytes:
     return AESGCM.generate_key(bit_length=256)
 
 
-def encrypt_key(key: bytes, master_key: Optional[bytes] = None) -> bytes:
+def encrypt_key(key: bytes, master_key: bytes | None = None) -> bytes:
     """
     Encrypt a key with the master key.
 
@@ -69,7 +68,7 @@ def encrypt_key(key: bytes, master_key: Optional[bytes] = None) -> bytes:
     return nonce + ciphertext
 
 
-def decrypt_key(encrypted_key: bytes, master_key: Optional[bytes] = None) -> bytes:
+def decrypt_key(encrypted_key: bytes, master_key: bytes | None = None) -> bytes:
     """
     Decrypt a key with the master key.
 
@@ -102,9 +101,10 @@ class TenantEncryption:
             organization: Organization model instance with encryption_key field
         """
         import logging
+
         self.logger = logging.getLogger("apps.common.encryption")
         self.organization = organization
-        self._key: Optional[bytes] = None
+        self._key: bytes | None = None
 
     @property
     def key(self) -> bytes:
@@ -121,7 +121,7 @@ class TenantEncryption:
                 self.organization.encryption_key = encrypt_key(new_key)
                 self.organization.save(update_fields=["encryption_key"])
                 self._key = new_key
-                self.logger.info(f"[Encryption] New key generated and saved")
+                self.logger.info("[Encryption] New key generated and saved")
             else:
                 # Decrypt existing key
                 try:
@@ -173,7 +173,7 @@ class TenantEncryption:
         Security: Uses authenticated encryption (GCM) to detect tampering.
         """
         if not ciphertext:
-            self.logger.debug(f"[Encryption] Decrypt called with empty ciphertext")
+            self.logger.debug("[Encryption] Decrypt called with empty ciphertext")
             return ""
 
         self.logger.debug(f"[Encryption] Decrypting {len(ciphertext)} bytes")
@@ -197,6 +197,7 @@ class TenantEncryption:
 
 class DecryptionError(Exception):
     """Raised when decryption fails due to invalid data or tampering."""
+
     pass
 
 

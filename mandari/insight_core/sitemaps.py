@@ -13,9 +13,6 @@ Hierarchische Sitemap-Struktur:
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Optional
-
 from django.contrib.sitemaps import Sitemap
 from django.urls import reverse
 
@@ -109,7 +106,7 @@ class BaseMunicipalSitemap(Sitemap):
         super().__init__()
 
     @property
-    def body(self) -> Optional[OParlBody]:
+    def body(self) -> OParlBody | None:
         """Lazy-Loading der Kommune."""
         if self._body is None:
             try:
@@ -129,9 +126,7 @@ class PaperSitemap(BaseMunicipalSitemap):
         """Gibt alle Papers der Kommune zurück."""
         if not self.body:
             return []
-        return OParlPaper.objects.filter(
-            body=self.body
-        ).order_by("-date", "-oparl_created")[:self.limit]
+        return OParlPaper.objects.filter(body=self.body).order_by("-date", "-oparl_created")[: self.limit]
 
     def location(self, paper):
         """Gibt die URL für einen Vorgang zurück."""
@@ -152,9 +147,7 @@ class MeetingSitemap(BaseMunicipalSitemap):
         """Gibt alle Meetings der Kommune zurück."""
         if not self.body:
             return []
-        return OParlMeeting.objects.filter(
-            body=self.body
-        ).order_by("-start")[:self.limit]
+        return OParlMeeting.objects.filter(body=self.body).order_by("-start")[: self.limit]
 
     def location(self, meeting):
         """Gibt die URL für eine Sitzung zurück."""
@@ -175,9 +168,7 @@ class OrganizationSitemap(BaseMunicipalSitemap):
         """Gibt alle Organizations der Kommune zurück."""
         if not self.body:
             return []
-        return OParlOrganization.objects.filter(
-            body=self.body
-        ).order_by("name")[:self.limit]
+        return OParlOrganization.objects.filter(body=self.body).order_by("name")[: self.limit]
 
     def location(self, org):
         """Gibt die URL für ein Gremium zurück."""
@@ -198,9 +189,7 @@ class PersonSitemap(BaseMunicipalSitemap):
         """Gibt alle Persons der Kommune zurück."""
         if not self.body:
             return []
-        return OParlPerson.objects.filter(
-            body=self.body
-        ).order_by("family_name", "given_name")[:self.limit]
+        return OParlPerson.objects.filter(body=self.body).order_by("family_name", "given_name")[: self.limit]
 
     def location(self, person):
         """Gibt die URL für eine Person zurück."""

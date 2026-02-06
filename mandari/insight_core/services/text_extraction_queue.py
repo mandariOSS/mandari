@@ -9,12 +9,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from django.conf import settings
-from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -31,8 +28,8 @@ class ExtractionResult:
     success: bool
     method: str
     text_length: int = 0
-    page_count: Optional[int] = None
-    error: Optional[str] = None
+    page_count: int | None = None
+    error: str | None = None
     duration_ms: int = 0
 
 
@@ -59,9 +56,7 @@ class TextExtractionQueue:
         """Initialisiert den Queue-Service."""
         self.enabled = getattr(settings, "TEXT_EXTRACTION_ENABLED", True)
         self.async_mode = getattr(settings, "TEXT_EXTRACTION_ASYNC", True)
-        self.max_size = getattr(
-            settings, "TEXT_EXTRACTION_MAX_SIZE_MB", 50
-        ) * 1024 * 1024
+        self.max_size = getattr(settings, "TEXT_EXTRACTION_MAX_SIZE_MB", 50) * 1024 * 1024
 
     def queue_extraction(self, file: OParlFile) -> bool:
         """
@@ -86,10 +81,7 @@ class TextExtractionQueue:
         # Status auf pending setzen
         file.text_extraction_status = "pending"
         file.text_extraction_error = None
-        file.save(update_fields=[
-            "text_extraction_status",
-            "text_extraction_error"
-        ])
+        file.save(update_fields=["text_extraction_status", "text_extraction_error"])
 
         if self.async_mode:
             # Task für späteren Prozess einreihen
@@ -145,6 +137,7 @@ class TextExtractionQueue:
             ExtractionResult mit Ergebnis
         """
         import time
+
         from .document_extraction import download_and_extract
 
         start_time = time.time()
@@ -179,35 +172,36 @@ class TextExtractionQueue:
             file.text_extraction_status = "completed" if doc.text else "skipped"
             file.text_extraction_error = None
 
-            file.save(update_fields=[
-                "text_content",
-                "sha256_hash",
-                "page_count",
-                "text_extracted_at",
-                "text_extraction_method",
-                "text_extraction_status",
-                "text_extraction_error",
-            ])
+            file.save(
+                update_fields=[
+                    "text_content",
+                    "sha256_hash",
+                    "page_count",
+                    "text_extracted_at",
+                    "text_extraction_method",
+                    "text_extraction_status",
+                    "text_extraction_error",
+                ]
+            )
 
             result.success = True
             result.method = file.text_extraction_method
             result.text_length = len(doc.text)
             result.page_count = doc.page_count
 
-            logger.info(
-                f"Textextraktion erfolgreich: {file.id} "
-                f"({result.text_length} Zeichen via {result.method})"
-            )
+            logger.info(f"Textextraktion erfolgreich: {file.id} ({result.text_length} Zeichen via {result.method})")
 
         except Exception as e:
             logger.exception(f"Textextraktion fehlgeschlagen für {file.id}: {e}")
 
             file.text_extraction_status = "failed"
             file.text_extraction_error = str(e)[:1000]  # Kürzen
-            file.save(update_fields=[
-                "text_extraction_status",
-                "text_extraction_error",
-            ])
+            file.save(
+                update_fields=[
+                    "text_extraction_status",
+                    "text_extraction_error",
+                ]
+            )
 
             result.error = str(e)
 
@@ -217,7 +211,7 @@ class TextExtractionQueue:
     def process_pending(
         self,
         batch_size: int = 50,
-        body_id: Optional[UUID] = None,
+        body_id: UUID | None = None,
     ) -> list[ExtractionResult]:
         """
         Verarbeitet ausstehende Dateien.
@@ -232,9 +226,7 @@ class TextExtractionQueue:
         # Ausstehende Dateien laden
         qs = OParlFile.objects.filter(
             text_extraction_status="pending",
-        ).exclude(
-            Q(download_url__isnull=True) & Q(access_url__isnull=True)
-        )
+        ).exclude(Q(download_url__isnull=True) & Q(access_url__isnull=True))
 
         if body_id:
             qs = qs.filter(body_id=body_id)
@@ -266,7 +258,7 @@ class TextExtractionQueue:
 
         return results
 
-    def get_stats(self, body_id: Optional[UUID] = None) -> dict:
+    def get_stats(self, body_id: UUID | None = None) -> dict:
         """
         Gibt Statistiken zur Textextraktion zurück.
 
@@ -290,7 +282,7 @@ class TextExtractionQueue:
             "with_text": qs.exclude(text_content__isnull=True).exclude(text_content="").count(),
         }
 
-    def reset_failed(self, body_id: Optional[UUID] = None) -> int:
+    def reset_failed(self, body_id: UUID | None = None) -> int:
         """
         Setzt fehlgeschlagene Extraktionen zurück auf pending.
 
@@ -314,7 +306,7 @@ class TextExtractionQueue:
 
 
 # Singleton-Instanz
-_extraction_queue: Optional[TextExtractionQueue] = None
+_extraction_queue: TextExtractionQueue | None = None
 
 
 def get_extraction_queue() -> TextExtractionQueue:

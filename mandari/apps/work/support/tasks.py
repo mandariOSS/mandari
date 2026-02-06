@@ -36,8 +36,8 @@ def auto_close_resolved_tickets(days: int = 7) -> dict[str, Any]:
     Returns:
         Dict with statistics about closed tickets.
     """
-    from apps.work.support.models import SupportTicket
     from apps.work.notifications.services import NotificationHub
+    from apps.work.support.models import SupportTicket
 
     logger.info(f"Running auto-close for tickets resolved more than {days} days ago")
 
@@ -62,9 +62,7 @@ def auto_close_resolved_tickets(days: int = 7) -> dict[str, Any]:
         ticket.save(update_fields=["status", "closed_at", "updated_at"])
 
         # Send notification to ticket creator
-        NotificationHub.notify_support_ticket_status_change(
-            ticket, old_status, "closed"
-        )
+        NotificationHub.notify_support_ticket_status_change(ticket, old_status, "closed")
 
         closed_tickets.append(str(ticket.id))
         closed_count += 1
@@ -98,9 +96,9 @@ def send_resolution_reminder(days_until_close: int = 2) -> dict[str, Any]:
     Returns:
         Dict with statistics about reminders sent.
     """
-    from apps.work.support.models import SupportTicket
-    from apps.work.notifications.services import NotificationHub
     from apps.work.notifications.models import NotificationType
+    from apps.work.notifications.services import NotificationHub
+    from apps.work.support.models import SupportTicket
 
     # Auto-close happens at 7 days, so reminder at (7 - days_until_close) days
     reminder_after_days = 7 - days_until_close

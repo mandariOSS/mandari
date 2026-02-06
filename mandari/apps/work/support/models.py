@@ -48,40 +48,23 @@ class SupportTicket(EncryptionMixin, models.Model):
         "tenants.Organization",
         on_delete=models.CASCADE,
         related_name="support_tickets",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
 
     # Ticket info
     subject = models.CharField(max_length=500, verbose_name="Betreff")
-    description_encrypted = EncryptedTextField(
-        verbose_name="Beschreibung"
-    )
+    description_encrypted = EncryptedTextField(verbose_name="Beschreibung")
 
-    category = models.CharField(
-        max_length=20,
-        choices=CATEGORY_CHOICES,
-        default="question",
-        verbose_name="Kategorie"
-    )
-    priority = models.CharField(
-        max_length=20,
-        choices=PRIORITY_CHOICES,
-        default="normal",
-        verbose_name="Priorität"
-    )
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default="open",
-        verbose_name="Status"
-    )
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="question", verbose_name="Kategorie")
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="normal", verbose_name="Priorität")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="open", verbose_name="Status")
 
     # Creator
     created_by = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="created_tickets",
-        verbose_name="Erstellt von"
+        verbose_name="Erstellt von",
     )
 
     # Assignment (for support staff)
@@ -91,44 +74,20 @@ class SupportTicket(EncryptionMixin, models.Model):
         null=True,
         blank=True,
         related_name="assigned_tickets",
-        verbose_name="Zugewiesen an"
+        verbose_name="Zugewiesen an",
     )
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    resolved_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name="Gelöst am"
-    )
-    closed_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name="Geschlossen am"
-    )
-    escalated_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name="Eskaliert am"
-    )
-    on_hold_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name="Zurückgestellt am"
-    )
-    last_customer_reply_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name="Letzte Kundenantwort"
-    )
+    resolved_at = models.DateTimeField(blank=True, null=True, verbose_name="Gelöst am")
+    closed_at = models.DateTimeField(blank=True, null=True, verbose_name="Geschlossen am")
+    escalated_at = models.DateTimeField(blank=True, null=True, verbose_name="Eskaliert am")
+    on_hold_at = models.DateTimeField(blank=True, null=True, verbose_name="Zurückgestellt am")
+    last_customer_reply_at = models.DateTimeField(blank=True, null=True, verbose_name="Letzte Kundenantwort")
 
     # On hold reason
-    on_hold_reason = models.CharField(
-        max_length=500,
-        blank=True,
-        verbose_name="Grund für Zurückstellung"
-    )
+    on_hold_reason = models.CharField(max_length=500, blank=True, verbose_name="Grund für Zurückstellung")
 
     class Meta:
         verbose_name = "Support-Ticket"
@@ -166,17 +125,10 @@ class SupportTicketMessage(EncryptionMixin, models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    ticket = models.ForeignKey(
-        SupportTicket,
-        on_delete=models.CASCADE,
-        related_name="messages",
-        verbose_name="Ticket"
-    )
+    ticket = models.ForeignKey(SupportTicket, on_delete=models.CASCADE, related_name="messages", verbose_name="Ticket")
 
     # Content (encrypted)
-    content_encrypted = EncryptedTextField(
-        verbose_name="Nachricht"
-    )
+    content_encrypted = EncryptedTextField(verbose_name="Nachricht")
 
     # Author - either membership (customer) or user (support staff)
     author_membership = models.ForeignKey(
@@ -185,7 +137,7 @@ class SupportTicketMessage(EncryptionMixin, models.Model):
         null=True,
         blank=True,
         related_name="ticket_messages",
-        verbose_name="Autor (Mitglied)"
+        verbose_name="Autor (Mitglied)",
     )
     author_staff = models.ForeignKey(
         "accounts.User",
@@ -193,14 +145,11 @@ class SupportTicketMessage(EncryptionMixin, models.Model):
         null=True,
         blank=True,
         related_name="support_messages",
-        verbose_name="Autor (Support)"
+        verbose_name="Autor (Support)",
     )
 
     # Internal note (not visible to customer)
-    is_internal = models.BooleanField(
-        default=False,
-        verbose_name="Interne Notiz"
-    )
+    is_internal = models.BooleanField(default=False, verbose_name="Interne Notiz")
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -242,10 +191,7 @@ class SupportTicketAttachment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     ticket = models.ForeignKey(
-        SupportTicket,
-        on_delete=models.CASCADE,
-        related_name="attachments",
-        verbose_name="Ticket"
+        SupportTicket, on_delete=models.CASCADE, related_name="attachments", verbose_name="Ticket"
     )
     message = models.ForeignKey(
         SupportTicketMessage,
@@ -253,19 +199,13 @@ class SupportTicketAttachment(models.Model):
         null=True,
         blank=True,
         related_name="attachments",
-        verbose_name="Nachricht"
+        verbose_name="Nachricht",
     )
 
-    file = models.FileField(
-        upload_to="support/attachments/%Y/%m/",
-        verbose_name="Datei"
-    )
+    file = models.FileField(upload_to="support/attachments/%Y/%m/", verbose_name="Datei")
     filename = models.CharField(max_length=255, verbose_name="Dateiname")
     mime_type = models.CharField(max_length=100, verbose_name="MIME-Typ")
-    file_size = models.PositiveIntegerField(
-        default=0,
-        verbose_name="Dateigröße (Bytes)"
-    )
+    file_size = models.PositiveIntegerField(default=0, verbose_name="Dateigröße (Bytes)")
 
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
@@ -288,16 +228,8 @@ class KnowledgeBaseCategory(models.Model):
     name = models.CharField(max_length=100, verbose_name="Name")
     slug = models.SlugField(max_length=100, unique=True, verbose_name="Slug")
     description = models.TextField(blank=True, verbose_name="Beschreibung")
-    icon = models.CharField(
-        max_length=50,
-        default="help-circle",
-        verbose_name="Icon (Lucide)"
-    )
-    color = models.CharField(
-        max_length=20,
-        default="blue",
-        verbose_name="Farbe"
-    )
+    icon = models.CharField(max_length=50, default="help-circle", verbose_name="Icon (Lucide)")
+    color = models.CharField(max_length=20, default="blue", verbose_name="Farbe")
     sort_order = models.IntegerField(default=0, verbose_name="Sortierung")
 
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
@@ -329,15 +261,12 @@ class KnowledgeBaseArticle(models.Model):
         KnowledgeBaseCategory,
         on_delete=models.CASCADE,
         related_name="articles",
-        verbose_name="Kategorie"
+        verbose_name="Kategorie",
     )
 
     title = models.CharField(max_length=200, verbose_name="Titel")
     slug = models.SlugField(max_length=200, verbose_name="Slug")
-    excerpt = models.TextField(
-        blank=True,
-        verbose_name="Kurzbeschreibung"
-    )
+    excerpt = models.TextField(blank=True, verbose_name="Kurzbeschreibung")
     content = models.TextField(verbose_name="Inhalt (Markdown)")
 
     # Publishing
@@ -350,11 +279,7 @@ class KnowledgeBaseArticle(models.Model):
     helpful_no = models.PositiveIntegerField(default=0, verbose_name="Hilfreich: Nein")
 
     # SEO/Search
-    tags = models.CharField(
-        max_length=500,
-        blank=True,
-        verbose_name="Tags (kommagetrennt)"
-    )
+    tags = models.CharField(max_length=500, blank=True, verbose_name="Tags (kommagetrennt)")
 
     # Author
     author = models.ForeignKey(
@@ -363,16 +288,12 @@ class KnowledgeBaseArticle(models.Model):
         null=True,
         blank=True,
         related_name="kb_articles",
-        verbose_name="Autor"
+        verbose_name="Autor",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    published_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        verbose_name="Veröffentlicht am"
-    )
+    published_at = models.DateTimeField(null=True, blank=True, verbose_name="Veröffentlicht am")
 
     class Meta:
         verbose_name = "KB-Artikel"
@@ -411,7 +332,7 @@ class ArticleFeedback(models.Model):
         KnowledgeBaseArticle,
         on_delete=models.CASCADE,
         related_name="feedback",
-        verbose_name="Artikel"
+        verbose_name="Artikel",
     )
 
     is_helpful = models.BooleanField(verbose_name="War hilfreich")
@@ -424,14 +345,10 @@ class ArticleFeedback(models.Model):
         null=True,
         blank=True,
         related_name="article_feedback",
-        verbose_name="Benutzer"
+        verbose_name="Benutzer",
     )
 
-    session_key = models.CharField(
-        max_length=40,
-        blank=True,
-        verbose_name="Session-Key"
-    )
+    session_key = models.CharField(max_length=40, blank=True, verbose_name="Session-Key")
 
     created_at = models.DateTimeField(auto_now_add=True)
 

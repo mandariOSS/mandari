@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("insight_content", "0002_alter_blogpost_author"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),

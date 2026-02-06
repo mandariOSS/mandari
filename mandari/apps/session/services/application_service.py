@@ -6,11 +6,9 @@ This service provides the integration between Work module and Session RIS,
 enabling political organizations to submit applications (Anträge) directly.
 """
 
-from typing import Optional
 from uuid import UUID
 
 from django.db import transaction
-from django.utils import timezone
 
 from apps.session.models import (
     SessionApplication,
@@ -40,7 +38,7 @@ class ApplicationService:
         ).select_related("oparl_body")
 
     @staticmethod
-    def get_tenant_for_body(oparl_body_id: UUID) -> Optional[SessionTenant]:
+    def get_tenant_for_body(oparl_body_id: UUID) -> SessionTenant | None:
         """
         Get the Session tenant for an OParl Body.
 
@@ -86,7 +84,7 @@ class ApplicationService:
         submitter_email: str,
         application_type: str = "motion",
         submitting_organization=None,
-        target_organization_id: Optional[UUID] = None,
+        target_organization_id: UUID | None = None,
         submitter_phone: str = "",
         co_signers: str = "",
         financial_impact: str = "",
@@ -218,7 +216,7 @@ class ApplicationService:
     def get_applications_for_organization(
         work_organization,
         tenant: SessionTenant,
-        status: Optional[str] = None,
+        status: str | None = None,
     ):
         """
         Get all applications submitted by a Work organization.

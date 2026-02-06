@@ -5,8 +5,9 @@ Migriert von SQLAlchemy zu Django ORM.
 """
 
 import uuid
-from django.db import models
+
 from django.core.validators import FileExtensionValidator
+from django.db import models
 
 
 class OParlSource(models.Model):
@@ -46,11 +47,7 @@ class OParlBody(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
-    source = models.ForeignKey(
-        OParlSource,
-        on_delete=models.CASCADE,
-        related_name="bodies"
-    )
+    source = models.ForeignKey(OParlSource, on_delete=models.CASCADE, related_name="bodies")
 
     name = models.CharField(max_length=255)
     short_name = models.CharField(max_length=100, blank=True, null=True)
@@ -60,14 +57,14 @@ class OParlBody(models.Model):
         unique=True,
         blank=True,
         null=True,
-        help_text="URL-freundlicher Identifikator (z.B. 'muenster' für Münster)"
+        help_text="URL-freundlicher Identifikator (z.B. 'muenster' für Münster)",
     )
     # Anzeigename für das Frontend (manuell anpassbar)
     display_name = models.CharField(
         max_length=100,
         blank=True,
         null=True,
-        help_text="Kurzer Anzeigename für das Frontend (z.B. 'Köln' statt 'Stadt Köln, kreisfreie Stadt')"
+        help_text="Kurzer Anzeigename für das Frontend (z.B. 'Köln' statt 'Stadt Köln, kreisfreie Stadt')",
     )
     website = models.URLField(blank=True, null=True)
     license = models.TextField(blank=True, null=True)
@@ -92,17 +89,23 @@ class OParlBody(models.Model):
         blank=True,
         null=True,
         validators=[FileExtensionValidator(allowed_extensions=["svg", "png", "jpg", "jpeg", "webp", "gif"])],
-        help_text="Logo der Kommune (SVG, PNG, JPG, WebP). Format wird automatisch angepasst."
+        help_text="Logo der Kommune (SVG, PNG, JPG, WebP). Format wird automatisch angepasst.",
     )
 
     # Geografische Daten (für Karten)
     latitude = models.DecimalField(
-        max_digits=10, decimal_places=7, blank=True, null=True,
-        help_text="Breitengrad des Zentrums (z.B. 51.9606649 für Münster)"
+        max_digits=10,
+        decimal_places=7,
+        blank=True,
+        null=True,
+        help_text="Breitengrad des Zentrums (z.B. 51.9606649 für Münster)",
     )
     longitude = models.DecimalField(
-        max_digits=10, decimal_places=7, blank=True, null=True,
-        help_text="Längengrad des Zentrums (z.B. 7.6261347 für Münster)"
+        max_digits=10,
+        decimal_places=7,
+        blank=True,
+        null=True,
+        help_text="Längengrad des Zentrums (z.B. 7.6261347 für Münster)",
     )
     # Bounding Box für die Kartenansicht
     bbox_north = models.DecimalField(max_digits=10, decimal_places=7, blank=True, null=True)
@@ -111,8 +114,7 @@ class OParlBody(models.Model):
     bbox_west = models.DecimalField(max_digits=10, decimal_places=7, blank=True, null=True)
     # OSM Relation ID für automatisches Abrufen der Grenzen
     osm_relation_id = models.BigIntegerField(
-        blank=True, null=True,
-        help_text="OpenStreetMap Relation ID (z.B. 62591 für Münster)"
+        blank=True, null=True, help_text="OpenStreetMap Relation ID (z.B. 62591 für Münster)"
     )
 
     # OParl-Zeitstempel
@@ -150,11 +152,7 @@ class OParlOrganization(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
-    body = models.ForeignKey(
-        OParlBody,
-        on_delete=models.CASCADE,
-        related_name="organizations"
-    )
+    body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="organizations")
 
     name = models.CharField(max_length=500, blank=True, null=True)
     short_name = models.CharField(max_length=100, blank=True, null=True)
@@ -187,8 +185,10 @@ class OParlOrganization(models.Model):
     @property
     def is_active(self):
         """Prüft ob das Gremium noch aktiv ist."""
+        from datetime import datetime
+
         from django.utils import timezone
-        from datetime import date, datetime
+
         if self.end_date is None:
             return True
         end = self.end_date.date() if isinstance(self.end_date, datetime) else self.end_date
@@ -200,11 +200,7 @@ class OParlPerson(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
-    body = models.ForeignKey(
-        OParlBody,
-        on_delete=models.CASCADE,
-        related_name="persons"
-    )
+    body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="persons")
 
     name = models.CharField(max_length=255, blank=True, null=True)
     family_name = models.CharField(max_length=255, blank=True, null=True)
@@ -261,11 +257,7 @@ class OParlMeeting(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
-    body = models.ForeignKey(
-        OParlBody,
-        on_delete=models.CASCADE,
-        related_name="meetings"
-    )
+    body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="meetings")
 
     name = models.CharField(max_length=500, blank=True, null=True)
     meeting_state = models.CharField(max_length=100, blank=True, null=True)
@@ -278,11 +270,7 @@ class OParlMeeting(models.Model):
     location_address = models.TextField(blank=True, null=True)
 
     # Gremien, die an dieser Sitzung beteiligt sind
-    organizations = models.ManyToManyField(
-        OParlOrganization,
-        related_name="meetings",
-        blank=True
-    )
+    organizations = models.ManyToManyField(OParlOrganization, related_name="meetings", blank=True)
 
     # OParl-Zeitstempel
     oparl_created = models.DateTimeField(blank=True, null=True)
@@ -326,11 +314,7 @@ class OParlPaper(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
-    body = models.ForeignKey(
-        OParlBody,
-        on_delete=models.CASCADE,
-        related_name="papers"
-    )
+    body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="papers")
 
     name = models.CharField(max_length=500, blank=True, null=True)
     reference = models.CharField(max_length=100, blank=True, null=True, db_index=True)
@@ -370,11 +354,7 @@ class OParlAgendaItem(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
-    meeting = models.ForeignKey(
-        OParlMeeting,
-        on_delete=models.CASCADE,
-        related_name="agenda_items"
-    )
+    meeting = models.ForeignKey(OParlMeeting, on_delete=models.CASCADE, related_name="agenda_items")
 
     number = models.CharField(max_length=50, blank=True, null=True)
     order = models.IntegerField(blank=True, null=True)
@@ -407,15 +387,11 @@ class OParlAgendaItem(models.Model):
 
     def get_papers(self):
         """Liefert alle Papers/Vorgänge, die mit diesem TOP verknüpft sind."""
-        return OParlPaper.objects.filter(
-            consultations__agenda_item_external_id=self.external_id
-        ).distinct()
+        return OParlPaper.objects.filter(consultations__agenda_item_external_id=self.external_id).distinct()
 
     def get_consultations(self):
         """Liefert alle Consultations für diesen TOP."""
-        return OParlConsultation.objects.filter(
-            agenda_item_external_id=self.external_id
-        ).select_related('paper')
+        return OParlConsultation.objects.filter(agenda_item_external_id=self.external_id).select_related("paper")
 
 
 class OParlFile(models.Model):
@@ -442,27 +418,9 @@ class OParlFile(models.Model):
     external_id = models.TextField(unique=True, db_index=True)
 
     # OParl relationships (must match ingestor schema)
-    body = models.ForeignKey(
-        OParlBody,
-        on_delete=models.CASCADE,
-        related_name="files",
-        blank=True,
-        null=True
-    )
-    paper = models.ForeignKey(
-        OParlPaper,
-        on_delete=models.CASCADE,
-        related_name="files",
-        blank=True,
-        null=True
-    )
-    meeting = models.ForeignKey(
-        OParlMeeting,
-        on_delete=models.CASCADE,
-        related_name="files",
-        blank=True,
-        null=True
-    )
+    body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="files", blank=True, null=True)
+    paper = models.ForeignKey(OParlPaper, on_delete=models.CASCADE, related_name="files", blank=True, null=True)
+    meeting = models.ForeignKey(OParlMeeting, on_delete=models.CASCADE, related_name="files", blank=True, null=True)
 
     name = models.CharField(max_length=500, blank=True, null=True)
     file_name = models.CharField(max_length=255, blank=True, null=True)
@@ -484,7 +442,7 @@ class OParlFile(models.Model):
         default="pending",
         db_index=True,
         verbose_name="Extraktionsstatus",
-        help_text="Status der Textextraktion"
+        help_text="Status der Textextraktion",
     )
     text_extraction_method = models.CharField(
         max_length=20,
@@ -492,25 +450,22 @@ class OParlFile(models.Model):
         blank=True,
         null=True,
         verbose_name="Extraktionsmethode",
-        help_text="Methode die für die Textextraktion verwendet wurde"
+        help_text="Methode die für die Textextraktion verwendet wurde",
     )
     text_extraction_error = models.TextField(
         blank=True,
         null=True,
         verbose_name="Extraktionsfehler",
-        help_text="Fehlermeldung falls Extraktion fehlschlug"
+        help_text="Fehlermeldung falls Extraktion fehlschlug",
     )
     text_extracted_at = models.DateTimeField(
         blank=True,
         null=True,
         verbose_name="Extrahiert am",
-        help_text="Zeitpunkt der letzten Textextraktion"
+        help_text="Zeitpunkt der letzten Textextraktion",
     )
     page_count = models.PositiveIntegerField(
-        blank=True,
-        null=True,
-        verbose_name="Seitenanzahl",
-        help_text="Anzahl der Seiten (bei PDFs)"
+        blank=True, null=True, verbose_name="Seitenanzahl", help_text="Anzahl der Seiten (bei PDFs)"
     )
 
     # OParl-Zeitstempel
@@ -550,16 +505,8 @@ class OParlMembership(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
 
-    person = models.ForeignKey(
-        OParlPerson,
-        on_delete=models.CASCADE,
-        related_name="memberships"
-    )
-    organization = models.ForeignKey(
-        OParlOrganization,
-        on_delete=models.CASCADE,
-        related_name="memberships"
-    )
+    person = models.ForeignKey(OParlPerson, on_delete=models.CASCADE, related_name="memberships")
+    organization = models.ForeignKey(OParlOrganization, on_delete=models.CASCADE, related_name="memberships")
 
     role = models.CharField(max_length=255, blank=True, null=True)
     voting_right = models.BooleanField(default=True)
@@ -589,8 +536,10 @@ class OParlMembership(models.Model):
     @property
     def is_active(self):
         """Prüft ob die Mitgliedschaft noch aktiv ist."""
+        from datetime import datetime
+
         from django.utils import timezone
-        from datetime import date, datetime
+
         if self.end_date is None:
             return True
         end = self.end_date.date() if isinstance(self.end_date, datetime) else self.end_date
@@ -602,13 +551,7 @@ class OParlLocation(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
-    body = models.ForeignKey(
-        OParlBody,
-        on_delete=models.CASCADE,
-        related_name="locations",
-        blank=True,
-        null=True
-    )
+    body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="locations", blank=True, null=True)
 
     description = models.TextField(blank=True, null=True)
     street_address = models.CharField(max_length=500, blank=True, null=True)
@@ -644,20 +587,8 @@ class OParlConsultation(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
-    body = models.ForeignKey(
-        OParlBody,
-        on_delete=models.CASCADE,
-        related_name="consultations",
-        blank=True,
-        null=True
-    )
-    paper = models.ForeignKey(
-        OParlPaper,
-        on_delete=models.CASCADE,
-        related_name="consultations",
-        blank=True,
-        null=True
-    )
+    body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="consultations", blank=True, null=True)
+    paper = models.ForeignKey(OParlPaper, on_delete=models.CASCADE, related_name="consultations", blank=True, null=True)
 
     paper_external_id = models.TextField(blank=True, null=True)
     meeting_external_id = models.TextField(blank=True, null=True)
@@ -691,11 +622,7 @@ class OParlLegislativeTerm(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
     body = models.ForeignKey(
-        OParlBody,
-        on_delete=models.CASCADE,
-        related_name="legislative_terms",
-        blank=True,
-        null=True
+        OParlBody, on_delete=models.CASCADE, related_name="legislative_terms", blank=True, null=True
     )
 
     name = models.CharField(max_length=255, blank=True, null=True)
@@ -725,8 +652,10 @@ class OParlLegislativeTerm(models.Model):
     @property
     def is_current(self):
         """Prüft ob dies die aktuelle Wahlperiode ist."""
+        from datetime import datetime
+
         from django.utils import timezone
-        from datetime import date, datetime
+
         today = timezone.now().date()
         start = self.start_date
         end = self.end_date
@@ -745,6 +674,7 @@ class OParlLegislativeTerm(models.Model):
 # Location Mapping (für Koordinaten-Zuordnung)
 # =============================================================================
 
+
 class LocationMapping(models.Model):
     """Mapping von Ortsnamen zu Koordinaten, pro Kommune."""
 
@@ -753,42 +683,33 @@ class LocationMapping(models.Model):
         OParlBody,
         on_delete=models.CASCADE,
         related_name="location_mappings",
-        verbose_name="Kommune"
+        verbose_name="Kommune",
     )
 
     # Der Name des Ortes (z.B. "Hauptausschusszimmer", "Rathaus Festsaal")
     location_name = models.CharField(
         max_length=500,
         verbose_name="Ortsbezeichnung",
-        help_text="Der Name wie er in Sitzungen verwendet wird (z.B. 'Hauptausschusszimmer')"
+        help_text="Der Name wie er in Sitzungen verwendet wird (z.B. 'Hauptausschusszimmer')",
     )
 
     # Koordinaten
     latitude = models.DecimalField(
-        max_digits=10,
-        decimal_places=7,
-        verbose_name="Breitengrad",
-        help_text="z.B. 51.9617867"
+        max_digits=10, decimal_places=7, verbose_name="Breitengrad", help_text="z.B. 51.9617867"
     )
     longitude = models.DecimalField(
-        max_digits=10,
-        decimal_places=7,
-        verbose_name="Längengrad",
-        help_text="z.B. 7.6281645"
+        max_digits=10, decimal_places=7, verbose_name="Längengrad", help_text="z.B. 7.6281645"
     )
 
     # Optionale Zusatzinfos
     address = models.TextField(
-        blank=True,
-        null=True,
-        verbose_name="Adresse",
-        help_text="Vollständige Adresse (optional)"
+        blank=True, null=True, verbose_name="Adresse", help_text="Vollständige Adresse (optional)"
     )
     description = models.TextField(
         blank=True,
         null=True,
         verbose_name="Beschreibung",
-        help_text="Zusätzliche Informationen zum Ort"
+        help_text="Zusätzliche Informationen zum Ort",
     )
 
     # Zeitstempel
@@ -841,6 +762,7 @@ class LocationMapping(models.Model):
 # Tile Cache für performante Karten
 # =============================================================================
 
+
 class TileCache(models.Model):
     """
     Cache für Map-Tiles.
@@ -848,6 +770,7 @@ class TileCache(models.Model):
     Tiles werden lokal gespeichert für maximale Performance.
     Ein wöchentlicher Cronjob aktualisiert die Tiles für alle Kommunen.
     """
+
     # Tile-Koordinaten
     z = models.PositiveIntegerField(db_index=True)  # Zoom Level
     x = models.PositiveIntegerField(db_index=True)  # X-Koordinate
@@ -887,12 +810,14 @@ class TileCache(models.Model):
     def store_tile(cls, z, x, y, tile_data, content_type="image/png", source="openstreetmap"):
         """Speichert ein Tile im Cache."""
         tile, created = cls.objects.update_or_create(
-            z=z, x=x, y=y,
+            z=z,
+            x=x,
+            y=y,
             defaults={
                 "tile_data": tile_data,
                 "content_type": content_type,
                 "fetched_from": source,
-            }
+            },
         )
         return tile
 
@@ -907,7 +832,7 @@ class TileCache(models.Model):
 
         def lat_lon_to_tile(lat, lon, zoom):
             lat_rad = math.radians(lat)
-            n = 2.0 ** zoom
+            n = 2.0**zoom
             x = int((lon + 180.0) / 360.0 * n)
             y = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
             return x, y
@@ -927,6 +852,7 @@ class TileCache(models.Model):
 # =============================================================================
 # Contact Requests (Public Contact Form)
 # =============================================================================
+
 
 class ContactRequest(models.Model):
     """
@@ -958,28 +884,14 @@ class ContactRequest(models.Model):
     # Contact information
     name = models.CharField(max_length=255, verbose_name="Name")
     email = models.EmailField(verbose_name="E-Mail")
-    organization_name = models.CharField(
-        max_length=255,
-        blank=True,
-        verbose_name="Organisation"
-    )
+    organization_name = models.CharField(max_length=255, blank=True, verbose_name="Organisation")
 
     # Request details
-    subject = models.CharField(
-        max_length=50,
-        choices=SUBJECT_CHOICES,
-        default="sonstiges",
-        verbose_name="Betreff"
-    )
+    subject = models.CharField(max_length=50, choices=SUBJECT_CHOICES, default="sonstiges", verbose_name="Betreff")
     message = models.TextField(verbose_name="Nachricht")
 
     # Status tracking
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default="new",
-        verbose_name="Status"
-    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Status")
 
     # Link to support ticket (if converted)
     linked_ticket = models.ForeignKey(
@@ -988,29 +900,19 @@ class ContactRequest(models.Model):
         null=True,
         blank=True,
         related_name="contact_requests",
-        verbose_name="Verknüpftes Ticket"
+        verbose_name="Verknüpftes Ticket",
     )
 
     # Admin notes (internal)
     admin_notes = models.TextField(blank=True, verbose_name="Interne Notizen")
 
     # Metadata
-    ip_address = models.GenericIPAddressField(
-        blank=True,
-        null=True,
-        verbose_name="IP-Adresse"
-    )
+    ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name="IP-Adresse")
     user_agent = models.TextField(blank=True, verbose_name="User Agent")
 
     # Email tracking
-    notification_sent = models.BooleanField(
-        default=False,
-        verbose_name="Benachrichtigung gesendet"
-    )
-    confirmation_sent = models.BooleanField(
-        default=False,
-        verbose_name="Bestätigung gesendet"
-    )
+    notification_sent = models.BooleanField(default=False, verbose_name="Benachrichtigung gesendet")
+    confirmation_sent = models.BooleanField(default=False, verbose_name="Bestätigung gesendet")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Erstellt am")

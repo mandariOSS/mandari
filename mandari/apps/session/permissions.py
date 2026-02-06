@@ -9,7 +9,6 @@ Provides:
 """
 
 from functools import wraps
-from typing import List, Optional, Union
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
@@ -97,11 +96,11 @@ class SessionPermissionChecker:
         """Check if user has a specific permission."""
         return permission in self.permissions
 
-    def has_any_permission(self, permissions: List[str]) -> bool:
+    def has_any_permission(self, permissions: list[str]) -> bool:
         """Check if user has at least one of the permissions."""
         return bool(set(permissions) & self.permissions)
 
-    def has_all_permissions(self, permissions: List[str]) -> bool:
+    def has_all_permissions(self, permissions: list[str]) -> bool:
         """Check if user has all of the permissions."""
         return set(permissions).issubset(self.permissions)
 
@@ -140,9 +139,7 @@ class SessionMixin(LoginRequiredMixin):
 
         # Get tenant
         try:
-            self.session_tenant = SessionTenant.objects.get(
-                slug=tenant_slug, is_active=True
-            )
+            self.session_tenant = SessionTenant.objects.get(slug=tenant_slug, is_active=True)
         except SessionTenant.DoesNotExist:
             raise Http404("Mandant nicht gefunden")
 
@@ -152,14 +149,14 @@ class SessionMixin(LoginRequiredMixin):
         # Get session user for current user
         if request.user.is_authenticated:
             try:
-                self.session_user = SessionUser.objects.select_related(
-                    "tenant"
-                ).prefetch_related(
-                    "roles"
-                ).get(
-                    user=request.user,
-                    tenant=self.session_tenant,
-                    is_active=True,
+                self.session_user = (
+                    SessionUser.objects.select_related("tenant")
+                    .prefetch_related("roles")
+                    .get(
+                        user=request.user,
+                        tenant=self.session_tenant,
+                        is_active=True,
+                    )
                 )
             except SessionUser.DoesNotExist:
                 raise PermissionDenied("Kein Zugang zu diesem Mandanten")
@@ -204,7 +201,7 @@ class SessionPermissionMixin(SessionMixin):
             permission_require_all = False
     """
 
-    permission_required: Optional[Union[str, List[str]]] = None
+    permission_required: str | list[str] | None = None
     permission_require_all: bool = True
 
     def dispatch(self, request, *args, **kwargs):
@@ -299,7 +296,7 @@ class SessionViewMixin(HTMXMixin, SessionPermissionMixin):
     pass
 
 
-def session_permission_required(permission: Union[str, List[str]], require_all: bool = True):
+def session_permission_required(permission: str | list[str], require_all: bool = True):
     """
     Decorator for function-based views that require permissions.
 

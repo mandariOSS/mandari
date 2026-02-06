@@ -2,15 +2,16 @@
 Views für Blog und Releases
 """
 
-from django.shortcuts import render, get_object_or_404
-from django.views.generic import ListView, DetailView
 from django.db.models import Q
+from django.shortcuts import get_object_or_404, render
+from django.views.generic import DetailView, ListView
 
 from .models import BlogPost, Release
 
 
 class BlogListView(ListView):
     """Liste aller veröffentlichten Blog-Artikel"""
+
     model = BlogPost
     template_name = "pages/about/blog.html"
     context_object_name = "posts"
@@ -28,9 +29,7 @@ class BlogListView(ListView):
         search = self.request.GET.get("q")
         if search:
             queryset = queryset.filter(
-                Q(title__icontains=search) |
-                Q(excerpt__icontains=search) |
-                Q(content__icontains=search)
+                Q(title__icontains=search) | Q(excerpt__icontains=search) | Q(content__icontains=search)
             )
 
         return queryset.select_related("author")
@@ -43,9 +42,7 @@ class BlogListView(ListView):
 
         # Featured Post (neuester)
         if not context["current_category"] and not context["search_query"]:
-            featured = BlogPost.objects.filter(
-                status=BlogPost.Status.PUBLISHED
-            ).first()
+            featured = BlogPost.objects.filter(status=BlogPost.Status.PUBLISHED).first()
             context["featured_post"] = featured
 
         return context
@@ -53,6 +50,7 @@ class BlogListView(ListView):
 
 class BlogDetailView(DetailView):
     """Einzelner Blog-Artikel"""
+
     model = BlogPost
     template_name = "pages/about/blog_detail.html"
     context_object_name = "post"
@@ -70,19 +68,16 @@ class BlogDetailView(DetailView):
 
         # Verwandte Artikel (gleiche Kategorie)
         context["related_posts"] = BlogPost.objects.filter(
-            status=BlogPost.Status.PUBLISHED,
-            category=self.object.category
+            status=BlogPost.Status.PUBLISHED, category=self.object.category
         ).exclude(pk=self.object.pk)[:3]
 
         # Navigation (vorheriger/nächster Artikel)
         context["previous_post"] = BlogPost.objects.filter(
-            status=BlogPost.Status.PUBLISHED,
-            published_at__lt=self.object.published_at
+            status=BlogPost.Status.PUBLISHED, published_at__lt=self.object.published_at
         ).first()
 
         context["next_post"] = BlogPost.objects.filter(
-            status=BlogPost.Status.PUBLISHED,
-            published_at__gt=self.object.published_at
+            status=BlogPost.Status.PUBLISHED, published_at__gt=self.object.published_at
         ).last()
 
         return context
@@ -90,6 +85,7 @@ class BlogDetailView(DetailView):
 
 class ReleaseListView(ListView):
     """Changelog mit allen Releases"""
+
     model = Release
     template_name = "pages/about/releases.html"
     context_object_name = "releases"
@@ -119,6 +115,7 @@ class ReleaseListView(ListView):
 
 # Einfache Function-Based Views als Alternative
 
+
 def blog_list(request):
     """Blog-Übersicht"""
     # Prüfe ob überhaupt Posts existieren (für Coming Soon vs. Filter-Ergebnisse)
@@ -132,10 +129,7 @@ def blog_list(request):
 
     search = request.GET.get("q")
     if search:
-        posts = posts.filter(
-            Q(title__icontains=search) |
-            Q(excerpt__icontains=search)
-        )
+        posts = posts.filter(Q(title__icontains=search) | Q(excerpt__icontains=search))
 
     # Zeige Filter nur wenn Posts existieren ODER ein Filter/Suche aktiv ist
     is_filtering = bool(category or search)
@@ -163,10 +157,9 @@ def blog_detail(request, slug):
     else:
         post = get_object_or_404(BlogPost, slug=slug, status=BlogPost.Status.PUBLISHED)
 
-    related_posts = BlogPost.objects.filter(
-        status=BlogPost.Status.PUBLISHED,
-        category=post.category
-    ).exclude(pk=post.pk)[:3]
+    related_posts = BlogPost.objects.filter(status=BlogPost.Status.PUBLISHED, category=post.category).exclude(
+        pk=post.pk
+    )[:3]
 
     context = {
         "post": post,

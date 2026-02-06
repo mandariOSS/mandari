@@ -10,7 +10,6 @@ import io
 from typing import TYPE_CHECKING
 
 from django.template.loader import render_to_string
-from django.conf import settings
 
 if TYPE_CHECKING:
     from .models import Motion
@@ -86,11 +85,12 @@ class MotionExportService:
 
     def _simple_pdf(self, html_content: str) -> bytes:
         """Fallback simple PDF generation using reportlab."""
-        from reportlab.lib.pagesizes import A4
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import mm
         import re
+
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
@@ -106,14 +106,14 @@ class MotionExportService:
         story = []
 
         # Strip HTML tags for simple text
-        text = re.sub(r'<[^>]+>', '', html_content)
-        text = text.replace('&nbsp;', ' ').replace('&amp;', '&')
+        text = re.sub(r"<[^>]+>", "", html_content)
+        text = text.replace("&nbsp;", " ").replace("&amp;", "&")
 
         # Add content
-        for line in text.split('\n'):
+        for line in text.split("\n"):
             line = line.strip()
             if line:
-                story.append(Paragraph(line, styles['Normal']))
+                story.append(Paragraph(line, styles["Normal"]))
                 story.append(Spacer(1, 6))
 
         doc.build(story)
@@ -147,6 +147,7 @@ class MotionExportService:
             for page_num, content_page in enumerate(content_pdf.pages):
                 # Create a new page from letterhead
                 from copy import copy
+
                 new_page = copy(letterhead_page)
 
                 # Merge content on top

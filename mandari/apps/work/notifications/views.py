@@ -6,11 +6,11 @@ Notification views for the Work module.
 from datetime import datetime
 
 from django.http import JsonResponse
-from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+
 from .models import Notification, NotificationPreference, NotificationType
 from .services import NotificationHub
 
@@ -30,9 +30,9 @@ class NotificationCenterView(WorkViewMixin, TemplateView):
         per_page = 20
         offset = (page - 1) * per_page
 
-        notifications = Notification.objects.filter(
-            recipient=self.membership
-        ).select_related("actor__user")[offset:offset + per_page]
+        notifications = Notification.objects.filter(recipient=self.membership).select_related("actor__user")[
+            offset : offset + per_page
+        ]
 
         total = Notification.objects.filter(recipient=self.membership).count()
 
@@ -57,28 +57,26 @@ class NotificationPreferencesView(WorkViewMixin, TemplateView):
         context["active_nav"] = "notifications"
 
         # Get or create preferences
-        prefs, _ = NotificationPreference.objects.get_or_create(
-            membership=self.membership
-        )
+        prefs, _ = NotificationPreference.objects.get_or_create(membership=self.membership)
         context["preferences"] = prefs
         # Create list of notification types with their enabled status
         notification_types_with_settings = []
         for ntype, label in NotificationType.choices:
-            notification_types_with_settings.append({
-                "value": ntype,
-                "label": label,
-                "in_app_enabled": prefs.is_type_enabled(ntype, "in_app"),
-                "email_enabled": prefs.is_type_enabled(ntype, "email"),
-            })
+            notification_types_with_settings.append(
+                {
+                    "value": ntype,
+                    "label": label,
+                    "in_app_enabled": prefs.is_type_enabled(ntype, "in_app"),
+                    "email_enabled": prefs.is_type_enabled(ntype, "email"),
+                }
+            )
         context["notification_types"] = notification_types_with_settings
 
         return context
 
     def post(self, request, *args, **kwargs):
         """Update notification preferences."""
-        prefs, _ = NotificationPreference.objects.get_or_create(
-            membership=self.membership
-        )
+        prefs, _ = NotificationPreference.objects.get_or_create(membership=self.membership)
 
         # Update global settings
         prefs.email_enabled = request.POST.get("email_enabled") == "on"
@@ -108,6 +106,7 @@ class NotificationPreferencesView(WorkViewMixin, TemplateView):
 
         # Redirect back with success message
         from django.contrib import messages
+
         messages.success(request, "Einstellungen gespeichert.")
 
         return self.get(request, *args, **kwargs)
@@ -120,13 +119,12 @@ class NotificationListPartialView(WorkViewMixin, View):
 
     def get(self, request, *args, **kwargs):
         """Return recent notifications as HTML partial."""
-        notifications = Notification.objects.filter(
-            recipient=self.membership
-        ).select_related("actor__user")[:10]
+        notifications = Notification.objects.filter(recipient=self.membership).select_related("actor__user")[:10]
 
         unread_count = NotificationHub.get_unread_count(self.membership)
 
         from django.template.loader import render_to_string
+
         html = render_to_string(
             "work/notifications/partials/dropdown_list.html",
             {
@@ -137,10 +135,12 @@ class NotificationListPartialView(WorkViewMixin, View):
             request=request,
         )
 
-        return JsonResponse({
-            "html": html,
-            "unread_count": unread_count,
-        })
+        return JsonResponse(
+            {
+                "html": html,
+                "unread_count": unread_count,
+            }
+        )
 
 
 class NotificationMarkReadView(WorkViewMixin, View):
@@ -208,18 +208,22 @@ class NotificationLatestView(WorkViewMixin, View):
 
         data = []
         for n in notifications:
-            data.append({
-                "id": str(n.id),
-                "title": n.title,
-                "message": n.message[:100],
-                "type": n.notification_type,
-                "icon": n.icon,
-                "color": n.color,
-                "link": n.link,
-                "created_at": n.created_at.isoformat(),
-            })
+            data.append(
+                {
+                    "id": str(n.id),
+                    "title": n.title,
+                    "message": n.message[:100],
+                    "type": n.notification_type,
+                    "icon": n.icon,
+                    "color": n.color,
+                    "link": n.link,
+                    "created_at": n.created_at.isoformat(),
+                }
+            )
 
-        return JsonResponse({
-            "notifications": data,
-            "count": NotificationHub.get_unread_count(self.membership),
-        })
+        return JsonResponse(
+            {
+                "notifications": data,
+                "count": NotificationHub.get_unread_count(self.membership),
+            }
+        )

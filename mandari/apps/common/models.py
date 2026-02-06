@@ -5,8 +5,8 @@ Common models for the Mandari platform.
 Includes global site settings that can be configured via Admin.
 """
 
-from django.db import models
 from django.core.cache import cache
+from django.db import models
 
 
 class SiteSettings(models.Model):
@@ -28,55 +28,38 @@ class SiteSettings(models.Model):
         blank=True,
         verbose_name="E-Mail Backend",
         help_text="Leer lassen für Standardwert aus Umgebungsvariablen",
-        default=""
+        default="",
     )
     email_host = models.CharField(
         max_length=255,
         blank=True,
         verbose_name="SMTP Host",
-        help_text="z.B. smtp.gmail.com oder mail.example.de"
+        help_text="z.B. smtp.gmail.com oder mail.example.de",
     )
     email_port = models.PositiveIntegerField(
-        default=587,
-        verbose_name="SMTP Port",
-        help_text="Standardport: 587 (TLS) oder 465 (SSL)"
+        default=587, verbose_name="SMTP Port", help_text="Standardport: 587 (TLS) oder 465 (SSL)"
     )
-    email_host_user = models.CharField(
-        max_length=255,
-        blank=True,
-        verbose_name="SMTP Benutzername"
-    )
+    email_host_user = models.CharField(max_length=255, blank=True, verbose_name="SMTP Benutzername")
     email_host_password = models.CharField(
         max_length=255,
         blank=True,
         verbose_name="SMTP Passwort",
-        help_text="Wird verschlüsselt gespeichert"
+        help_text="Wird verschlüsselt gespeichert",
     )
-    email_use_tls = models.BooleanField(
-        default=True,
-        verbose_name="TLS verwenden",
-        help_text="STARTTLS (Port 587)"
-    )
+    email_use_tls = models.BooleanField(default=True, verbose_name="TLS verwenden", help_text="STARTTLS (Port 587)")
     email_use_ssl = models.BooleanField(
-        default=False,
-        verbose_name="SSL verwenden",
-        help_text="Implizites SSL (Port 465)"
+        default=False, verbose_name="SSL verwenden", help_text="Implizites SSL (Port 465)"
     )
-    email_timeout = models.PositiveIntegerField(
-        default=30,
-        verbose_name="Timeout (Sekunden)"
-    )
+    email_timeout = models.PositiveIntegerField(default=30, verbose_name="Timeout (Sekunden)")
     default_from_email = models.EmailField(
-        blank=True,
-        verbose_name="Standard-Absender",
-        help_text="z.B. noreply@mandari.de"
+        blank=True, verbose_name="Standard-Absender", help_text="z.B. noreply@mandari.de"
     )
     default_from_name = models.CharField(
         max_length=255,
         blank=True,
         default="Mandari",
         verbose_name="Absender-Name",
-        help_text="z.B. 'Mandari System'"
+        help_text="z.B. 'Mandari System'",
     )
 
     # ==========================================================================
@@ -86,31 +69,23 @@ class SiteSettings(models.Model):
         max_length=255,
         blank=True,
         verbose_name="Nebius API Key",
-        help_text="API Key für Nebius TokenFactory (KI-Zusammenfassungen)"
+        help_text="API Key für Nebius TokenFactory (KI-Zusammenfassungen)",
     )
 
     # ==========================================================================
     # General Settings
     # ==========================================================================
-    site_name = models.CharField(
-        max_length=100,
-        default="Mandari",
-        verbose_name="Seitenname"
-    )
+    site_name = models.CharField(max_length=100, default="Mandari", verbose_name="Seitenname")
     site_description = models.TextField(
-        blank=True,
-        default="Kommunalpolitische Transparenz",
-        verbose_name="Seitenbeschreibung"
+        blank=True, default="Kommunalpolitische Transparenz", verbose_name="Seitenbeschreibung"
     )
     maintenance_mode = models.BooleanField(
-        default=False,
-        verbose_name="Wartungsmodus",
-        help_text="Website für Besucher sperren"
+        default=False, verbose_name="Wartungsmodus", help_text="Website für Besucher sperren"
     )
     maintenance_message = models.TextField(
         blank=True,
         default="Die Website wird gerade gewartet. Bitte versuchen Sie es später erneut.",
-        verbose_name="Wartungsnachricht"
+        verbose_name="Wartungsnachricht",
     )
 
     # ==========================================================================

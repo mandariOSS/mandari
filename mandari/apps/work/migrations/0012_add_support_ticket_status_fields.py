@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("work", "0011_faction_approval_workflow"),
     ]
@@ -14,23 +13,17 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="supportticket",
             name="escalated_at",
-            field=models.DateTimeField(
-                blank=True, null=True, verbose_name="Eskaliert am"
-            ),
+            field=models.DateTimeField(blank=True, null=True, verbose_name="Eskaliert am"),
         ),
         migrations.AddField(
             model_name="supportticket",
             name="on_hold_at",
-            field=models.DateTimeField(
-                blank=True, null=True, verbose_name="Zurückgestellt am"
-            ),
+            field=models.DateTimeField(blank=True, null=True, verbose_name="Zurückgestellt am"),
         ),
         migrations.AddField(
             model_name="supportticket",
             name="last_customer_reply_at",
-            field=models.DateTimeField(
-                blank=True, null=True, verbose_name="Letzte Kundenantwort"
-            ),
+            field=models.DateTimeField(blank=True, null=True, verbose_name="Letzte Kundenantwort"),
         ),
         migrations.AddField(
             model_name="supportticket",

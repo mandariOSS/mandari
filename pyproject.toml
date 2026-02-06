@@ -11,7 +11,7 @@ requires-python = ">=3.12"
 authors = [{ name = "Mandari Contributors" }]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py312"
 exclude = [
     ".git",
@@ -19,6 +19,7 @@ exclude = [
     "__pycache__",
     "node_modules",
     "_old",
+    "*/migrations/*",
 ]
 
 [tool.ruff.lint]
@@ -29,6 +30,15 @@ select = [
     "N",   # pep8-naming
     "W",   # pycodestyle warnings
     "UP",  # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "E402",   # module import not at top (Django settings pattern)
+    "N806",   # non-lowercase variable in function (Django patterns)
+    "DJ001",  # nullable string fields (existing models)
+    "DJ007",  # all with model form
+    "DJ008",  # model without __str__
+    "DJ012",  # unordered body content
 ]
 
 [tool.mypy]

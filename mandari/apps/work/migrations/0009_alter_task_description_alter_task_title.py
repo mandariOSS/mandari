@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("work", "0008_remove_agendaitemposition_estimated_speech_duration_and_more"),
     ]
@@ -13,9 +12,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name="task",
             name="description",
-            field=models.TextField(
-                blank=True, max_length=2000, verbose_name="Beschreibung"
-            ),
+            field=models.TextField(blank=True, max_length=2000, verbose_name="Beschreibung"),
         ),
         migrations.AlterField(
             model_name="task",

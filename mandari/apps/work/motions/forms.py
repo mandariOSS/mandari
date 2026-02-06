@@ -35,13 +35,13 @@ class MotionForm(forms.ModelForm):
             "motion_type": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
                 }
             ),
             "title": forms.TextInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "placeholder": "Titel des Antrags",
                     "autofocus": True,
                 }
@@ -49,7 +49,7 @@ class MotionForm(forms.ModelForm):
             "summary": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 3,
                     "placeholder": "Öffentliche Kurzzusammenfassung (optional)",
                 }
@@ -57,19 +57,19 @@ class MotionForm(forms.ModelForm):
             "template": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
                 }
             ),
             "related_meeting": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
                 }
             ),
             "parent_motion": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
                 }
             ),
         }
@@ -81,16 +81,15 @@ class MotionForm(forms.ModelForm):
         # Limit template choices to organization's templates
         if organization:
             self.fields["template"].queryset = MotionTemplate.objects.filter(
-                organization=organization,
-                is_active=True
+                organization=organization, is_active=True
             ).order_by("-is_default", "name")
 
             # For amendment - only show motions from same organization
-            self.fields["parent_motion"].queryset = Motion.objects.filter(
-                organization=organization
-            ).exclude(
-                status__in=["archived", "rejected"]
-            ).order_by("-created_at")
+            self.fields["parent_motion"].queryset = (
+                Motion.objects.filter(organization=organization)
+                .exclude(status__in=["archived", "rejected"])
+                .order_by("-created_at")
+            )
             self.fields["parent_motion"].required = False
 
 
@@ -104,7 +103,7 @@ class MotionContentForm(forms.Form):
                 "id": "motion-content",
             }
         ),
-        required=False
+        required=False,
     )
 
 
@@ -126,9 +125,7 @@ class MotionDocumentForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["file"].validators = [
-            FileExtensionValidator(
-                allowed_extensions=["pdf", "doc", "docx", "xls", "xlsx", "png", "jpg", "jpeg"]
-            )
+            FileExtensionValidator(allowed_extensions=["pdf", "doc", "docx", "xls", "xlsx", "png", "jpg", "jpeg"])
         ]
 
 
@@ -140,10 +137,10 @@ class MotionShareForm(forms.ModelForm):
         widget=forms.EmailInput(
             attrs={
                 "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                         "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 "placeholder": "E-Mail-Adresse eingeben",
             }
-        )
+        ),
     )
 
     class Meta:
@@ -153,19 +150,19 @@ class MotionShareForm(forms.ModelForm):
             "scope": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
                 }
             ),
             "level": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
                 }
             ),
             "message": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 3,
                     "placeholder": "Optionale Nachricht an den Empfänger",
                 }
@@ -183,7 +180,7 @@ class MotionCommentForm(forms.ModelForm):
             "content": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 3,
                     "placeholder": "Kommentar hinzufügen...",
                 }
@@ -203,9 +200,9 @@ class MotionStatusForm(forms.Form):
         widget=forms.Select(
             attrs={
                 "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                         "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
+                "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
             }
-        )
+        ),
     )
 
 
@@ -230,33 +227,33 @@ class MotionTemplateForm(forms.ModelForm):
             "name": forms.TextInput(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "description": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 2,
                 }
             ),
             "motion_type": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "letterhead": forms.Select(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 }
             ),
             "content_template": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500 "
-                             "font-mono text-sm",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500 "
+                    "font-mono text-sm",
                     "rows": 10,
                     "placeholder": "Vorausgefüllter Inhalt für neue Dokumente (HTML/Markdown)",
                 }
@@ -264,7 +261,7 @@ class MotionTemplateForm(forms.ModelForm):
             "structure_hints": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 4,
                     "placeholder": "Hinweise für die KI-Unterstützung (Abschnitte, Formatierung...)",
                 }
@@ -272,7 +269,7 @@ class MotionTemplateForm(forms.ModelForm):
             "signature_block": forms.Textarea(
                 attrs={
                     "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                             "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                     "rows": 4,
                 }
             ),
@@ -285,12 +282,10 @@ class MotionTemplateForm(forms.ModelForm):
         # Limit motion_type and letterhead choices to organization
         if organization:
             self.fields["motion_type"].queryset = MotionType.objects.filter(
-                organization=organization,
-                is_active=True
+                organization=organization, is_active=True
             ).order_by("sort_order", "name")
             self.fields["letterhead"].queryset = OrganizationLetterhead.objects.filter(
-                organization=organization,
-                is_active=True
+                organization=organization, is_active=True
             ).order_by("-is_default", "name")
 
 
@@ -306,29 +301,19 @@ class AIAssistantForm(forms.Form):
         ("summary", "Zusammenfassung erstellen"),
     ]
 
-    action = forms.ChoiceField(
-        choices=ACTION_CHOICES,
-        widget=forms.HiddenInput()
-    )
+    action = forms.ChoiceField(choices=ACTION_CHOICES, widget=forms.HiddenInput())
 
-    text = forms.CharField(
-        required=False,
-        widget=forms.HiddenInput()
-    )
+    text = forms.CharField(required=False, widget=forms.HiddenInput())
 
     instruction = forms.CharField(
         required=False,
         widget=forms.TextInput(
             attrs={
                 "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                         "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
+                "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
                 "placeholder": "Anweisung für die KI, z.B. 'kürzer formulieren'",
             }
-        )
+        ),
     )
 
-    motion_type = forms.ChoiceField(
-        choices=Motion.LEGACY_TYPE_CHOICES,
-        required=False,
-        widget=forms.HiddenInput()
-    )
+    motion_type = forms.ChoiceField(choices=Motion.LEGACY_TYPE_CHOICES, required=False, widget=forms.HiddenInput())

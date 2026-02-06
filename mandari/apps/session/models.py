@@ -18,7 +18,6 @@ Security:
 
 import uuid
 from decimal import Decimal
-from typing import Optional
 
 from django.conf import settings
 from django.db import models
@@ -26,7 +25,6 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from apps.common.encryption import EncryptedTextField, EncryptionMixin
-
 
 # =============================================================================
 # TENANT MODEL
@@ -48,9 +46,7 @@ class SessionTenant(models.Model):
     # Basic Info
     name = models.CharField(max_length=255, verbose_name="Name")
     slug = models.SlugField(max_length=100, unique=True, verbose_name="URL-Slug")
-    short_name = models.CharField(
-        max_length=50, blank=True, verbose_name="Kurzname"
-    )
+    short_name = models.CharField(max_length=50, blank=True, verbose_name="Kurzname")
     description = models.TextField(blank=True, verbose_name="Beschreibung")
 
     # OParl Connection (optional - for public data sync)
@@ -71,18 +67,12 @@ class SessionTenant(models.Model):
         null=True,
         verbose_name="Logo",
     )
-    primary_color = models.CharField(
-        max_length=7, default="#1e40af", verbose_name="Primärfarbe"
-    )
-    secondary_color = models.CharField(
-        max_length=7, default="#3b82f6", verbose_name="Sekundärfarbe"
-    )
+    primary_color = models.CharField(max_length=7, default="#1e40af", verbose_name="Primärfarbe")
+    secondary_color = models.CharField(max_length=7, default="#3b82f6", verbose_name="Sekundärfarbe")
 
     # Contact
     contact_email = models.EmailField(blank=True, verbose_name="Kontakt-E-Mail")
-    contact_phone = models.CharField(
-        max_length=50, blank=True, verbose_name="Telefon"
-    )
+    contact_phone = models.CharField(max_length=50, blank=True, verbose_name="Telefon")
     website = models.URLField(blank=True, verbose_name="Website")
     address = models.TextField(blank=True, verbose_name="Adresse")
 
@@ -96,9 +86,7 @@ class SessionTenant(models.Model):
     )
 
     # Settings
-    settings = models.JSONField(
-        default=dict, blank=True, verbose_name="Einstellungen"
-    )
+    settings = models.JSONField(default=dict, blank=True, verbose_name="Einstellungen")
 
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
@@ -149,98 +137,48 @@ class SessionRole(models.Model):
 
     # Permission flags (explicit for clarity and security)
     # Dashboard
-    can_view_dashboard = models.BooleanField(
-        default=True, verbose_name="Dashboard anzeigen"
-    )
+    can_view_dashboard = models.BooleanField(default=True, verbose_name="Dashboard anzeigen")
 
     # Meetings
-    can_view_meetings = models.BooleanField(
-        default=True, verbose_name="Sitzungen anzeigen"
-    )
-    can_create_meetings = models.BooleanField(
-        default=False, verbose_name="Sitzungen erstellen"
-    )
-    can_edit_meetings = models.BooleanField(
-        default=False, verbose_name="Sitzungen bearbeiten"
-    )
-    can_delete_meetings = models.BooleanField(
-        default=False, verbose_name="Sitzungen löschen"
-    )
+    can_view_meetings = models.BooleanField(default=True, verbose_name="Sitzungen anzeigen")
+    can_create_meetings = models.BooleanField(default=False, verbose_name="Sitzungen erstellen")
+    can_edit_meetings = models.BooleanField(default=False, verbose_name="Sitzungen bearbeiten")
+    can_delete_meetings = models.BooleanField(default=False, verbose_name="Sitzungen löschen")
     can_view_non_public_meetings = models.BooleanField(
         default=False, verbose_name="Nicht-öffentliche Sitzungen anzeigen"
     )
 
     # Papers
-    can_view_papers = models.BooleanField(
-        default=True, verbose_name="Vorlagen anzeigen"
-    )
-    can_create_papers = models.BooleanField(
-        default=False, verbose_name="Vorlagen erstellen"
-    )
-    can_edit_papers = models.BooleanField(
-        default=False, verbose_name="Vorlagen bearbeiten"
-    )
-    can_delete_papers = models.BooleanField(
-        default=False, verbose_name="Vorlagen löschen"
-    )
-    can_approve_papers = models.BooleanField(
-        default=False, verbose_name="Vorlagen freigeben"
-    )
-    can_view_non_public_papers = models.BooleanField(
-        default=False, verbose_name="Nicht-öffentliche Vorlagen anzeigen"
-    )
+    can_view_papers = models.BooleanField(default=True, verbose_name="Vorlagen anzeigen")
+    can_create_papers = models.BooleanField(default=False, verbose_name="Vorlagen erstellen")
+    can_edit_papers = models.BooleanField(default=False, verbose_name="Vorlagen bearbeiten")
+    can_delete_papers = models.BooleanField(default=False, verbose_name="Vorlagen löschen")
+    can_approve_papers = models.BooleanField(default=False, verbose_name="Vorlagen freigeben")
+    can_view_non_public_papers = models.BooleanField(default=False, verbose_name="Nicht-öffentliche Vorlagen anzeigen")
 
     # Applications (from parties)
-    can_view_applications = models.BooleanField(
-        default=True, verbose_name="Anträge anzeigen"
-    )
-    can_process_applications = models.BooleanField(
-        default=False, verbose_name="Anträge bearbeiten"
-    )
+    can_view_applications = models.BooleanField(default=True, verbose_name="Anträge anzeigen")
+    can_process_applications = models.BooleanField(default=False, verbose_name="Anträge bearbeiten")
 
     # Protocols
-    can_view_protocols = models.BooleanField(
-        default=True, verbose_name="Protokolle anzeigen"
-    )
-    can_create_protocols = models.BooleanField(
-        default=False, verbose_name="Protokolle erstellen"
-    )
-    can_edit_protocols = models.BooleanField(
-        default=False, verbose_name="Protokolle bearbeiten"
-    )
-    can_approve_protocols = models.BooleanField(
-        default=False, verbose_name="Protokolle freigeben"
-    )
+    can_view_protocols = models.BooleanField(default=True, verbose_name="Protokolle anzeigen")
+    can_create_protocols = models.BooleanField(default=False, verbose_name="Protokolle erstellen")
+    can_edit_protocols = models.BooleanField(default=False, verbose_name="Protokolle bearbeiten")
+    can_approve_protocols = models.BooleanField(default=False, verbose_name="Protokolle freigeben")
 
     # Attendance & Allowances
-    can_manage_attendance = models.BooleanField(
-        default=False, verbose_name="Anwesenheit verwalten"
-    )
-    can_manage_allowances = models.BooleanField(
-        default=False, verbose_name="Sitzungsgelder verwalten"
-    )
+    can_manage_attendance = models.BooleanField(default=False, verbose_name="Anwesenheit verwalten")
+    can_manage_allowances = models.BooleanField(default=False, verbose_name="Sitzungsgelder verwalten")
 
     # Administration
-    can_manage_users = models.BooleanField(
-        default=False, verbose_name="Benutzer verwalten"
-    )
-    can_manage_organizations = models.BooleanField(
-        default=False, verbose_name="Gremien verwalten"
-    )
-    can_manage_settings = models.BooleanField(
-        default=False, verbose_name="Einstellungen verwalten"
-    )
-    can_view_audit_log = models.BooleanField(
-        default=False, verbose_name="Audit-Log anzeigen"
-    )
+    can_manage_users = models.BooleanField(default=False, verbose_name="Benutzer verwalten")
+    can_manage_organizations = models.BooleanField(default=False, verbose_name="Gremien verwalten")
+    can_manage_settings = models.BooleanField(default=False, verbose_name="Einstellungen verwalten")
+    can_view_audit_log = models.BooleanField(default=False, verbose_name="Audit-Log anzeigen")
 
     # API Access
-    can_access_api = models.BooleanField(
-        default=False, verbose_name="API-Zugang"
-    )
-    can_access_oparl_api = models.BooleanField(
-        default=True, verbose_name="OParl-API-Zugang"
-    )
+    can_access_api = models.BooleanField(default=False, verbose_name="API-Zugang")
+    can_access_oparl_api = models.BooleanField(default=True, verbose_name="OParl-API-Zugang")
 
     # Role metadata
     is_admin = models.BooleanField(
@@ -253,9 +191,7 @@ class SessionRole(models.Model):
         verbose_name="Systemrolle",
         help_text="Kann nicht gelöscht werden",
     )
-    priority = models.PositiveIntegerField(
-        default=50, verbose_name="Priorität"
-    )
+    priority = models.PositiveIntegerField(default=50, verbose_name="Priorität")
     color = models.CharField(max_length=7, default="#6b7280", verbose_name="Farbe")
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -393,16 +329,12 @@ class SessionUser(models.Model):
     )
 
     # User-specific settings
-    settings = models.JSONField(
-        default=dict, blank=True, verbose_name="Einstellungen"
-    )
+    settings = models.JSONField(default=dict, blank=True, verbose_name="Einstellungen")
 
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     joined_at = models.DateTimeField(auto_now_add=True, verbose_name="Beigetreten")
-    last_access = models.DateTimeField(
-        blank=True, null=True, verbose_name="Letzter Zugriff"
-    )
+    last_access = models.DateTimeField(blank=True, null=True, verbose_name="Letzter Zugriff")
 
     class Meta:
         db_table = "session_users"
@@ -458,9 +390,7 @@ class SessionOrganization(models.Model):
 
     # Basic info
     name = models.CharField(max_length=500, verbose_name="Name")
-    short_name = models.CharField(
-        max_length=100, blank=True, verbose_name="Kurzname"
-    )
+    short_name = models.CharField(max_length=100, blank=True, verbose_name="Kurzname")
     organization_type = models.CharField(
         max_length=100,
         choices=[
@@ -494,12 +424,8 @@ class SessionOrganization(models.Model):
     )
 
     # Settings
-    default_meeting_location = models.CharField(
-        max_length=255, blank=True, verbose_name="Standardort für Sitzungen"
-    )
-    default_meeting_start_time = models.TimeField(
-        blank=True, null=True, verbose_name="Standardzeit für Sitzungen"
-    )
+    default_meeting_location = models.CharField(max_length=255, blank=True, verbose_name="Standardort für Sitzungen")
+    default_meeting_start_time = models.TimeField(blank=True, null=True, verbose_name="Standardzeit für Sitzungen")
 
     # Allowance settings
     allowance_amount = models.DecimalField(
@@ -508,9 +434,7 @@ class SessionOrganization(models.Model):
         default=Decimal("0.00"),
         verbose_name="Sitzungsgeld",
     )
-    allowance_currency = models.CharField(
-        max_length=3, default="EUR", verbose_name="Währung"
-    )
+    allowance_currency = models.CharField(max_length=3, default="EUR", verbose_name="Währung")
 
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
@@ -559,9 +483,7 @@ class SessionPerson(models.Model):
     title = models.CharField(max_length=50, blank=True, verbose_name="Titel")
     given_name = models.CharField(max_length=100, verbose_name="Vorname")
     family_name = models.CharField(max_length=100, verbose_name="Nachname")
-    form_of_address = models.CharField(
-        max_length=50, blank=True, verbose_name="Anrede"
-    )
+    form_of_address = models.CharField(max_length=50, blank=True, verbose_name="Anrede")
 
     # Contact (encrypted for privacy)
     email = models.EmailField(blank=True, verbose_name="E-Mail")
@@ -569,9 +491,7 @@ class SessionPerson(models.Model):
     address = models.TextField(blank=True, verbose_name="Adresse")
 
     # Bank details for allowances (encrypted)
-    bank_account_holder = models.CharField(
-        max_length=255, blank=True, verbose_name="Kontoinhaber"
-    )
+    bank_account_holder = models.CharField(max_length=255, blank=True, verbose_name="Kontoinhaber")
     bank_iban = models.CharField(max_length=34, blank=True, verbose_name="IBAN")
     bank_bic = models.CharField(max_length=11, blank=True, verbose_name="BIC")
 
@@ -642,9 +562,7 @@ class SessionOrganizationMembership(models.Model):
     end_date = models.DateField(blank=True, null=True, verbose_name="Bis")
 
     # Voting rights
-    has_voting_rights = models.BooleanField(
-        default=True, verbose_name="Stimmberechtigt"
-    )
+    has_voting_rights = models.BooleanField(default=True, verbose_name="Stimmberechtigt")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -701,19 +619,13 @@ class SessionMeeting(EncryptionMixin, models.Model):
     # Date/Time
     start = models.DateTimeField(verbose_name="Beginn")
     end = models.DateTimeField(blank=True, null=True, verbose_name="Ende")
-    actual_start = models.DateTimeField(
-        blank=True, null=True, verbose_name="Tatsächlicher Beginn"
-    )
-    actual_end = models.DateTimeField(
-        blank=True, null=True, verbose_name="Tatsächliches Ende"
-    )
+    actual_start = models.DateTimeField(blank=True, null=True, verbose_name="Tatsächlicher Beginn")
+    actual_end = models.DateTimeField(blank=True, null=True, verbose_name="Tatsächliches Ende")
 
     # Location
     location = models.CharField(max_length=500, blank=True, verbose_name="Ort")
     room = models.CharField(max_length=100, blank=True, verbose_name="Raum")
-    street_address = models.CharField(
-        max_length=255, blank=True, verbose_name="Straße"
-    )
+    street_address = models.CharField(max_length=255, blank=True, verbose_name="Straße")
     postal_code = models.CharField(max_length=10, blank=True, verbose_name="PLZ")
     locality = models.CharField(max_length=100, blank=True, verbose_name="Stadt")
 
@@ -732,9 +644,7 @@ class SessionMeeting(EncryptionMixin, models.Model):
         verbose_name="Status",
     )
     cancelled = models.BooleanField(default=False, verbose_name="Abgesagt")
-    cancellation_reason = models.TextField(
-        blank=True, verbose_name="Absagegrund"
-    )
+    cancellation_reason = models.TextField(blank=True, verbose_name="Absagegrund")
 
     # Visibility
     is_public = models.BooleanField(
@@ -744,17 +654,11 @@ class SessionMeeting(EncryptionMixin, models.Model):
     )
 
     # Non-public internal notes (encrypted)
-    internal_notes_encrypted = EncryptedTextField(
-        blank=True, null=True, verbose_name="Interne Notizen"
-    )
+    internal_notes_encrypted = EncryptedTextField(blank=True, null=True, verbose_name="Interne Notizen")
 
     # Invitation
-    invitation_sent_at = models.DateTimeField(
-        blank=True, null=True, verbose_name="Einladung versandt am"
-    )
-    invitation_text = models.TextField(
-        blank=True, verbose_name="Einladungstext"
-    )
+    invitation_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Einladung versandt am")
+    invitation_text = models.TextField(blank=True, verbose_name="Einladungstext")
 
     # Workflow
     created_by = models.ForeignKey(
@@ -827,9 +731,7 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
     )
 
     # Voting
-    resolution_text = models.TextField(
-        blank=True, verbose_name="Beschlusstext"
-    )
+    resolution_text = models.TextField(blank=True, verbose_name="Beschlusstext")
     resolution_text_encrypted = EncryptedTextField(
         blank=True,
         null=True,
@@ -851,9 +753,7 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
     )
     votes_yes = models.PositiveIntegerField(default=0, verbose_name="Ja-Stimmen")
     votes_no = models.PositiveIntegerField(default=0, verbose_name="Nein-Stimmen")
-    votes_abstain = models.PositiveIntegerField(
-        default=0, verbose_name="Enthaltungen"
-    )
+    votes_abstain = models.PositiveIntegerField(default=0, verbose_name="Enthaltungen")
 
     # Timing
     start_time = models.TimeField(blank=True, null=True, verbose_name="Beginn")
@@ -933,14 +833,10 @@ class SessionPaper(EncryptionMixin, models.Model):
 
     # Content
     main_text = models.TextField(blank=True, verbose_name="Sachverhalt")
-    resolution_text = models.TextField(
-        blank=True, verbose_name="Beschlussvorschlag"
-    )
+    resolution_text = models.TextField(blank=True, verbose_name="Beschlussvorschlag")
 
     # Non-public content (encrypted)
-    confidential_text_encrypted = EncryptedTextField(
-        blank=True, null=True, verbose_name="Vertraulicher Inhalt"
-    )
+    confidential_text_encrypted = EncryptedTextField(blank=True, null=True, verbose_name="Vertraulicher Inhalt")
 
     # Visibility
     is_public = models.BooleanField(
@@ -966,9 +862,7 @@ class SessionPaper(EncryptionMixin, models.Model):
 
     # Dates
     date = models.DateField(blank=True, null=True, verbose_name="Datum")
-    deadline = models.DateField(
-        blank=True, null=True, verbose_name="Frist"
-    )
+    deadline = models.DateField(blank=True, null=True, verbose_name="Frist")
 
     # References
     originator_organization = models.ForeignKey(
@@ -1024,9 +918,7 @@ class SessionPaper(EncryptionMixin, models.Model):
         related_name="approved_papers",
         verbose_name="Freigegeben von",
     )
-    approved_at = models.DateTimeField(
-        blank=True, null=True, verbose_name="Freigegeben am"
-    )
+    approved_at = models.DateTimeField(blank=True, null=True, verbose_name="Freigegeben am")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1115,13 +1007,9 @@ class SessionApplication(EncryptionMixin, models.Model):
         verbose_name="Einreichende Organisation",
         help_text="Fraktion/Partei, die den Antrag einreicht",
     )
-    submitter_name = models.CharField(
-        max_length=255, verbose_name="Name des Einreichers"
-    )
+    submitter_name = models.CharField(max_length=255, verbose_name="Name des Einreichers")
     submitter_email = models.EmailField(verbose_name="E-Mail des Einreichers")
-    submitter_phone = models.CharField(
-        max_length=50, blank=True, verbose_name="Telefon des Einreichers"
-    )
+    submitter_phone = models.CharField(max_length=50, blank=True, verbose_name="Telefon des Einreichers")
 
     # Co-signers
     co_signers = models.TextField(
@@ -1158,9 +1046,7 @@ class SessionApplication(EncryptionMixin, models.Model):
     )
 
     # Processing
-    received_at = models.DateTimeField(
-        blank=True, null=True, verbose_name="Eingegangen am"
-    )
+    received_at = models.DateTimeField(blank=True, null=True, verbose_name="Eingegangen am")
     received_by = models.ForeignKey(
         SessionUser,
         on_delete=models.SET_NULL,
@@ -1169,9 +1055,7 @@ class SessionApplication(EncryptionMixin, models.Model):
         related_name="received_applications",
         verbose_name="Bearbeitet von",
     )
-    processing_notes = models.TextField(
-        blank=True, verbose_name="Bearbeitungsnotizen"
-    )
+    processing_notes = models.TextField(blank=True, verbose_name="Bearbeitungsnotizen")
 
     # Urgency
     is_urgent = models.BooleanField(
@@ -1179,9 +1063,7 @@ class SessionApplication(EncryptionMixin, models.Model):
         verbose_name="Dringend",
         help_text="Soll der Antrag bevorzugt behandelt werden?",
     )
-    urgency_reason = models.TextField(
-        blank=True, verbose_name="Begründung der Dringlichkeit"
-    )
+    urgency_reason = models.TextField(blank=True, verbose_name="Begründung der Dringlichkeit")
 
     # Deadline
     deadline = models.DateField(
@@ -1289,9 +1171,7 @@ class SessionProtocol(EncryptionMixin, models.Model):
         related_name="approved_protocols",
         verbose_name="Genehmigt von",
     )
-    approved_at = models.DateTimeField(
-        blank=True, null=True, verbose_name="Genehmigt am"
-    )
+    approved_at = models.DateTimeField(blank=True, null=True, verbose_name="Genehmigt am")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1352,12 +1232,8 @@ class SessionAttendance(models.Model):
     )
 
     # Timing
-    arrival_time = models.TimeField(
-        blank=True, null=True, verbose_name="Ankunft"
-    )
-    departure_time = models.TimeField(
-        blank=True, null=True, verbose_name="Abgang"
-    )
+    arrival_time = models.TimeField(blank=True, null=True, verbose_name="Ankunft")
+    departure_time = models.TimeField(blank=True, null=True, verbose_name="Abgang")
 
     # Notes
     notes = models.TextField(blank=True, verbose_name="Notizen")
@@ -1379,9 +1255,7 @@ class SessionAttendance(models.Model):
     )
 
     # Voting rights (can be different from organization membership)
-    has_voting_rights = models.BooleanField(
-        default=True, verbose_name="Stimmberechtigt"
-    )
+    has_voting_rights = models.BooleanField(default=True, verbose_name="Stimmberechtigt")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1412,12 +1286,8 @@ class SessionAllowance(models.Model):
     )
 
     # Amount
-    amount = models.DecimalField(
-        max_digits=8, decimal_places=2, verbose_name="Betrag"
-    )
-    currency = models.CharField(
-        max_length=3, default="EUR", verbose_name="Währung"
-    )
+    amount = models.DecimalField(max_digits=8, decimal_places=2, verbose_name="Betrag")
+    currency = models.CharField(max_length=3, default="EUR", verbose_name="Währung")
 
     # Status
     status = models.CharField(
@@ -1441,18 +1311,12 @@ class SessionAllowance(models.Model):
         related_name="approved_allowances",
         verbose_name="Genehmigt von",
     )
-    approved_at = models.DateTimeField(
-        blank=True, null=True, verbose_name="Genehmigt am"
-    )
+    approved_at = models.DateTimeField(blank=True, null=True, verbose_name="Genehmigt am")
     paid_at = models.DateTimeField(blank=True, null=True, verbose_name="Ausgezahlt am")
 
     # Export reference (for accounting systems)
-    export_reference = models.CharField(
-        max_length=100, blank=True, verbose_name="Export-Referenz"
-    )
-    export_date = models.DateTimeField(
-        blank=True, null=True, verbose_name="Export-Datum"
-    )
+    export_reference = models.CharField(max_length=100, blank=True, verbose_name="Export-Referenz")
+    export_date = models.DateTimeField(blank=True, null=True, verbose_name="Export-Datum")
 
     notes = models.TextField(blank=True, verbose_name="Notizen")
 
@@ -1495,9 +1359,7 @@ class SessionFile(models.Model):
         upload_to="session/files/%Y/%m/",
         verbose_name="Datei",
     )
-    mime_type = models.CharField(
-        max_length=100, blank=True, verbose_name="MIME-Typ"
-    )
+    mime_type = models.CharField(max_length=100, blank=True, verbose_name="MIME-Typ")
     size = models.PositiveBigIntegerField(default=0, verbose_name="Größe (Bytes)")
 
     # Extracted text (for search)
@@ -1602,9 +1464,7 @@ class SessionAuditLog(models.Model):
         related_name="audit_logs",
         verbose_name="Benutzer",
     )
-    ip_address = models.GenericIPAddressField(
-        blank=True, null=True, verbose_name="IP-Adresse"
-    )
+    ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name="IP-Adresse")
     user_agent = models.TextField(blank=True, verbose_name="User-Agent")
 
     # Action
@@ -1627,14 +1487,10 @@ class SessionAuditLog(models.Model):
     # Target
     model_name = models.CharField(max_length=100, verbose_name="Modell")
     object_id = models.UUIDField(verbose_name="Objekt-ID")
-    object_repr = models.CharField(
-        max_length=500, blank=True, verbose_name="Objekt-Beschreibung"
-    )
+    object_repr = models.CharField(max_length=500, blank=True, verbose_name="Objekt-Beschreibung")
 
     # Changes (JSON diff)
-    changes = models.JSONField(
-        default=dict, blank=True, verbose_name="Änderungen"
-    )
+    changes = models.JSONField(default=dict, blank=True, verbose_name="Änderungen")
 
     # Timestamp
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1744,15 +1600,9 @@ class SessionAPIToken(models.Model):
     )
 
     # Usage tracking
-    last_used_at = models.DateTimeField(
-        null=True, blank=True, verbose_name="Zuletzt verwendet"
-    )
-    last_used_ip = models.GenericIPAddressField(
-        null=True, blank=True, verbose_name="Letzte IP-Adresse"
-    )
-    usage_count = models.PositiveIntegerField(
-        default=0, verbose_name="Verwendungszähler"
-    )
+    last_used_at = models.DateTimeField(null=True, blank=True, verbose_name="Zuletzt verwendet")
+    last_used_ip = models.GenericIPAddressField(null=True, blank=True, verbose_name="Letzte IP-Adresse")
+    usage_count = models.PositiveIntegerField(default=0, verbose_name="Verwendungszähler")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1770,12 +1620,14 @@ class SessionAPIToken(models.Model):
     def generate_token(cls):
         """Generate a new random API token."""
         import secrets
+
         return secrets.token_hex(32)  # 64 characters
 
     @classmethod
     def hash_token(cls, raw_token: str) -> str:
         """Hash a raw token for storage."""
         import hashlib
+
         return hashlib.sha256(raw_token.encode()).hexdigest()
 
     @classmethod

@@ -6,11 +6,9 @@ Uses SiteSettings for SMTP configuration with fallback to Django settings.
 """
 
 import logging
-from typing import List, Optional
 
 from django.core.mail import EmailMessage, EmailMultiAlternatives, get_connection
 from django.template.loader import render_to_string
-from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +57,11 @@ def get_from_email() -> str:
 def send_email(
     subject: str,
     body: str,
-    to: List[str],
-    from_email: Optional[str] = None,
-    html_body: Optional[str] = None,
-    reply_to: Optional[List[str]] = None,
-    attachments: Optional[List[tuple]] = None,
+    to: list[str],
+    from_email: str | None = None,
+    html_body: str | None = None,
+    reply_to: list[str] | None = None,
+    attachments: list[tuple] | None = None,
     fail_silently: bool = False,
 ) -> bool:
     """
@@ -128,9 +126,9 @@ def send_template_email(
     subject: str,
     template_name: str,
     context: dict,
-    to: List[str],
-    from_email: Optional[str] = None,
-    reply_to: Optional[List[str]] = None,
+    to: list[str],
+    from_email: str | None = None,
+    reply_to: list[str] | None = None,
     fail_silently: bool = False,
 ) -> bool:
     """
@@ -173,8 +171,9 @@ def send_template_email(
     if not text_body and html_body:
         # Simple HTML to text conversion
         import re
-        text_body = re.sub(r'<[^>]+>', '', html_body)
-        text_body = re.sub(r'\s+', ' ', text_body).strip()
+
+        text_body = re.sub(r"<[^>]+>", "", html_body)
+        text_body = re.sub(r"\s+", " ", text_body).strip()
 
     return send_email(
         subject=subject,

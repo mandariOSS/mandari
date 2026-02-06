@@ -48,26 +48,19 @@ class RISOverviewView(WorkViewMixin, TemplateView):
 
         # Papers (Vorgänge)
         papers_total = OParlPaper.objects.filter(body=body).count()
-        papers_this_year = OParlPaper.objects.filter(
-            body=body,
-            date__year=today.year
-        ).count()
+        papers_this_year = OParlPaper.objects.filter(body=body, date__year=today.year).count()
 
         # Meetings (Sitzungen)
         meetings_total = OParlMeeting.objects.filter(body=body).count()
-        meetings_upcoming = OParlMeeting.objects.filter(
-            body=body,
-            start__gt=timezone.now(),
-            cancelled=False
-        ).count()
+        meetings_upcoming = OParlMeeting.objects.filter(body=body, start__gt=timezone.now(), cancelled=False).count()
 
         # Organizations (Gremien)
         organizations_total = OParlOrganization.objects.filter(body=body).count()
-        organizations_active = OParlOrganization.objects.filter(
-            body=body
-        ).filter(
-            Q(end_date__isnull=True) | Q(end_date__gte=today)
-        ).count()
+        organizations_active = (
+            OParlOrganization.objects.filter(body=body)
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .count()
+        )
 
         # Persons (Personen)
         persons_total = OParlPerson.objects.filter(body=body).count()
@@ -83,16 +76,14 @@ class RISOverviewView(WorkViewMixin, TemplateView):
         }
 
         # Recent papers
-        context["recent_papers"] = OParlPaper.objects.filter(
-            body=body
-        ).order_by("-date", "-oparl_created")[:5]
+        context["recent_papers"] = OParlPaper.objects.filter(body=body).order_by("-date", "-oparl_created")[:5]
 
         # Upcoming meetings
-        context["upcoming_meetings"] = OParlMeeting.objects.filter(
-            body=body,
-            start__gt=timezone.now(),
-            cancelled=False
-        ).prefetch_related("organizations").order_by("start")[:5]
+        context["upcoming_meetings"] = (
+            OParlMeeting.objects.filter(body=body, start__gt=timezone.now(), cancelled=False)
+            .prefetch_related("organizations")
+            .order_by("start")[:5]
+        )
 
         return context
 
@@ -123,10 +114,7 @@ class RISPapersView(WorkViewMixin, TemplateView):
         # Search
         search = self.request.GET.get("q", "").strip()
         if search:
-            papers = papers.filter(
-                Q(name__icontains=search) |
-                Q(reference__icontains=search)
-            )
+            papers = papers.filter(Q(name__icontains=search) | Q(reference__icontains=search))
             context["search_query"] = search
 
         # Filter by paper type
@@ -145,14 +133,11 @@ class RISPapersView(WorkViewMixin, TemplateView):
                 pass
 
         # Get available filters
-        context["paper_types"] = OParlPaper.objects.filter(
-            body=body
-        ).values_list("paper_type", flat=True).distinct().order_by("paper_type")
+        context["paper_types"] = (
+            OParlPaper.objects.filter(body=body).values_list("paper_type", flat=True).distinct().order_by("paper_type")
+        )
 
-        context["years"] = OParlPaper.objects.filter(
-            body=body,
-            date__isnull=False
-        ).dates("date", "year", order="DESC")
+        context["years"] = OParlPaper.objects.filter(body=body, date__isnull=False).dates("date", "year", order="DESC")
 
         # Order and paginate
         papers = papers.order_by("-date", "-oparl_created")
@@ -183,11 +168,7 @@ class RISPaperDetailView(WorkViewMixin, TemplateView):
 
         from insight_core.models import OParlPaper
 
-        paper = get_object_or_404(
-            OParlPaper,
-            id=kwargs.get("paper_id"),
-            body=body
-        )
+        paper = get_object_or_404(OParlPaper, id=kwargs.get("paper_id"), body=body)
 
         context["paper"] = paper
         context["body"] = body
@@ -206,28 +187,32 @@ class RISPaperDetailView(WorkViewMixin, TemplateView):
             # Main file
             main_file = raw_json.get("mainFile")
             if main_file and isinstance(main_file, dict):
-                raw_files.append({
-                    "name": main_file.get("name", main_file.get("fileName", "Hauptdokument")),
-                    "file_name": main_file.get("fileName", ""),
-                    "mime_type": main_file.get("mimeType", ""),
-                    "access_url": main_file.get("accessUrl", ""),
-                    "download_url": main_file.get("downloadUrl", ""),
-                    "is_main": True,
-                })
+                raw_files.append(
+                    {
+                        "name": main_file.get("name", main_file.get("fileName", "Hauptdokument")),
+                        "file_name": main_file.get("fileName", ""),
+                        "mime_type": main_file.get("mimeType", ""),
+                        "access_url": main_file.get("accessUrl", ""),
+                        "download_url": main_file.get("downloadUrl", ""),
+                        "is_main": True,
+                    }
+                )
 
             # Auxiliary files
             aux_files = raw_json.get("auxiliaryFile", [])
             if isinstance(aux_files, list):
                 for af in aux_files:
                     if isinstance(af, dict):
-                        raw_files.append({
-                            "name": af.get("name", af.get("fileName", "Dokument")),
-                            "file_name": af.get("fileName", ""),
-                            "mime_type": af.get("mimeType", ""),
-                            "access_url": af.get("accessUrl", ""),
-                            "download_url": af.get("downloadUrl", ""),
-                            "is_main": False,
-                        })
+                        raw_files.append(
+                            {
+                                "name": af.get("name", af.get("fileName", "Dokument")),
+                                "file_name": af.get("fileName", ""),
+                                "mime_type": af.get("mimeType", ""),
+                                "access_url": af.get("accessUrl", ""),
+                                "download_url": af.get("downloadUrl", ""),
+                                "is_main": False,
+                            }
+                        )
 
             context["files"] = raw_files
             context["files_from_raw_json"] = True
@@ -246,7 +231,7 @@ class RISPaperDetailView(WorkViewMixin, TemplateView):
         - Consultation references Meeting and AgendaItem via external_id strings
         - We resolve these to show the full consultation history
         """
-        from insight_core.models import OParlMeeting, OParlAgendaItem
+        from insight_core.models import OParlAgendaItem, OParlMeeting
 
         consultations = paper.consultations.all()
         if not consultations:
@@ -259,9 +244,7 @@ class RISPaperDetailView(WorkViewMixin, TemplateView):
         # Batch lookup for meetings
         meetings_by_id = {}
         if meeting_ids:
-            meetings = OParlMeeting.objects.filter(
-                external_id__in=meeting_ids
-            ).prefetch_related('organizations')
+            meetings = OParlMeeting.objects.filter(external_id__in=meeting_ids).prefetch_related("organizations")
             meetings_by_id = {m.external_id: m for m in meetings}
 
         # Batch lookup for agenda items
@@ -283,22 +266,24 @@ class RISPaperDetailView(WorkViewMixin, TemplateView):
                 if orgs:
                     org_name = orgs[0].name or orgs[0].short_name
 
-            result.append({
-                'consultation': consultation,
-                'meeting': meeting,
-                'agenda_item': agenda_item,
-                'date': meeting.start if meeting else None,
-                'organization_name': org_name,
-                'meeting_name': meeting.name if meeting else None,
-                'agenda_number': agenda_item.number if agenda_item else None,
-                'result': getattr(agenda_item, 'result', None) if agenda_item else None,
-                'public': getattr(agenda_item, 'public', True) if agenda_item else True,
-                'role': consultation.role,
-                'authoritative': consultation.authoritative,
-            })
+            result.append(
+                {
+                    "consultation": consultation,
+                    "meeting": meeting,
+                    "agenda_item": agenda_item,
+                    "date": meeting.start if meeting else None,
+                    "organization_name": org_name,
+                    "meeting_name": meeting.name if meeting else None,
+                    "agenda_number": agenda_item.number if agenda_item else None,
+                    "result": getattr(agenda_item, "result", None) if agenda_item else None,
+                    "public": getattr(agenda_item, "public", True) if agenda_item else True,
+                    "role": consultation.role,
+                    "authoritative": consultation.authoritative,
+                }
+            )
 
         # Sort by date (oldest first = chronological order)
-        result.sort(key=lambda x: x['date'] or timezone.now(), reverse=False)
+        result.sort(key=lambda x: x["date"] or timezone.now(), reverse=False)
 
         return result
 
@@ -324,9 +309,7 @@ class RISMeetingsView(WorkViewMixin, TemplateView):
         from insight_core.models import OParlMeeting, OParlOrganization
 
         # Base queryset
-        meetings = OParlMeeting.objects.filter(body=body).prefetch_related(
-            "organizations"
-        )
+        meetings = OParlMeeting.objects.filter(body=body).prefetch_related("organizations")
 
         # Filter: upcoming/past
         view_mode = self.request.GET.get("view", "upcoming")
@@ -350,9 +333,7 @@ class RISMeetingsView(WorkViewMixin, TemplateView):
             context["selected_org"] = org_id
 
         # Get available organizations for filter
-        context["organizations"] = OParlOrganization.objects.filter(
-            body=body
-        ).order_by("name")
+        context["organizations"] = OParlOrganization.objects.filter(body=body).order_by("name")
 
         # Filter by year
         year = self.request.GET.get("year")
@@ -363,10 +344,9 @@ class RISMeetingsView(WorkViewMixin, TemplateView):
             except ValueError:
                 pass
 
-        context["years"] = OParlMeeting.objects.filter(
-            body=body,
-            start__isnull=False
-        ).dates("start", "year", order="DESC")
+        context["years"] = OParlMeeting.objects.filter(body=body, start__isnull=False).dates(
+            "start", "year", order="DESC"
+        )
 
         # Pagination
         paginator = Paginator(meetings, 25)
@@ -395,11 +375,7 @@ class RISMeetingDetailView(WorkViewMixin, TemplateView):
 
         from insight_core.models import OParlMeeting
 
-        meeting = get_object_or_404(
-            OParlMeeting,
-            id=kwargs.get("meeting_id"),
-            body=body
-        )
+        meeting = get_object_or_404(OParlMeeting, id=kwargs.get("meeting_id"), body=body)
 
         context["meeting"] = meeting
         context["body"] = body
@@ -411,10 +387,12 @@ class RISMeetingDetailView(WorkViewMixin, TemplateView):
         items_with_papers = []
         for item in agenda_items:
             papers = item.get_papers()
-            items_with_papers.append({
-                "item": item,
-                "papers": papers,
-            })
+            items_with_papers.append(
+                {
+                    "item": item,
+                    "papers": papers,
+                }
+            )
 
         context["agenda_items"] = items_with_papers
         context["organizations"] = meeting.organizations.all()
@@ -456,15 +434,16 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
         show_inactive = self.request.GET.get("inactive") == "1"
         if not show_inactive:
             today = timezone.now().date()
-            organizations = organizations.filter(
-                Q(end_date__isnull=True) | Q(end_date__gte=today)
-            )
+            organizations = organizations.filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
         context["show_inactive"] = show_inactive
 
         # Get available types
-        context["org_types"] = OParlOrganization.objects.filter(
-            body=body
-        ).values_list("organization_type", flat=True).distinct().order_by("organization_type")
+        context["org_types"] = (
+            OParlOrganization.objects.filter(body=body)
+            .values_list("organization_type", flat=True)
+            .distinct()
+            .order_by("organization_type")
+        )
 
         # Annotate with member count and apply ranking (with activity check)
         organizations = organizations.annotate(member_count=Count("memberships"))
@@ -497,19 +476,13 @@ class RISOrganizationDetailView(WorkViewMixin, TemplateView):
 
         from insight_core.models import OParlOrganization
 
-        org = get_object_or_404(
-            OParlOrganization,
-            id=kwargs.get("org_id"),
-            body=body
-        )
+        org = get_object_or_404(OParlOrganization, id=kwargs.get("org_id"), body=body)
 
         context["org"] = org
         context["body"] = body
 
         # Get members
-        context["memberships"] = org.memberships.select_related(
-            "person"
-        ).order_by("-start_date")
+        context["memberships"] = org.memberships.select_related("person").order_by("-start_date")
 
         # Get recent meetings
         context["recent_meetings"] = org.meetings.order_by("-start")[:10]
@@ -544,16 +517,12 @@ class RISPersonsView(WorkViewMixin, TemplateView):
         search = self.request.GET.get("q", "").strip()
         if search:
             persons = persons.filter(
-                Q(name__icontains=search) |
-                Q(family_name__icontains=search) |
-                Q(given_name__icontains=search)
+                Q(name__icontains=search) | Q(family_name__icontains=search) | Q(given_name__icontains=search)
             )
             context["search_query"] = search
 
         # Order
-        persons = persons.annotate(
-            membership_count=Count("memberships")
-        ).order_by("family_name", "given_name")
+        persons = persons.annotate(membership_count=Count("memberships")).order_by("family_name", "given_name")
 
         # Pagination
         paginator = Paginator(persons, 50)
@@ -582,19 +551,13 @@ class RISPersonDetailView(WorkViewMixin, TemplateView):
 
         from insight_core.models import OParlPerson
 
-        person = get_object_or_404(
-            OParlPerson,
-            id=kwargs.get("person_id"),
-            body=body
-        )
+        person = get_object_or_404(OParlPerson, id=kwargs.get("person_id"), body=body)
 
         context["person"] = person
         context["body"] = body
 
         # Get memberships
-        context["memberships"] = person.memberships.select_related(
-            "organization"
-        ).order_by("-start_date")
+        context["memberships"] = person.memberships.select_related("organization").order_by("-start_date")
 
         return context
 
@@ -627,7 +590,9 @@ class RISMapView(WorkViewMixin, TemplateView):
                 "south": float(body.bbox_south) if body.bbox_south else None,
                 "east": float(body.bbox_east) if body.bbox_east else None,
                 "west": float(body.bbox_west) if body.bbox_west else None,
-            } if body.bbox_north else None
+            }
+            if body.bbox_north
+            else None,
         }
 
         return context
@@ -646,10 +611,7 @@ class RISMapDataView(WorkViewMixin, View):
         from insight_core.models import OParlPaper
 
         # Get papers with locations
-        papers = OParlPaper.objects.filter(
-            body=body,
-            locations__isnull=False
-        ).exclude(locations=[])[:500]
+        papers = OParlPaper.objects.filter(body=body, locations__isnull=False).exclude(locations=[])[:500]
 
         features = []
         for paper in papers:
@@ -664,25 +626,21 @@ class RISMapDataView(WorkViewMixin, View):
                 lng = location.get("lng") or location.get("lon") or location.get("longitude")
 
                 if lat and lng:
-                    features.append({
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Point",
-                            "coordinates": [float(lng), float(lat)]
-                        },
-                        "properties": {
-                            "id": str(paper.id),
-                            "title": paper.name or "Vorgang",
-                            "reference": paper.reference,
-                            "date": paper.date.isoformat() if paper.date else None,
-                            "location_name": location.get("name", ""),
+                    features.append(
+                        {
+                            "type": "Feature",
+                            "geometry": {"type": "Point", "coordinates": [float(lng), float(lat)]},
+                            "properties": {
+                                "id": str(paper.id),
+                                "title": paper.name or "Vorgang",
+                                "reference": paper.reference,
+                                "date": paper.date.isoformat() if paper.date else None,
+                                "location_name": location.get("name", ""),
+                            },
                         }
-                    })
+                    )
 
-        return JsonResponse({
-            "type": "FeatureCollection",
-            "features": features
-        })
+        return JsonResponse({"type": "FeatureCollection", "features": features})
 
 
 class RISSearchView(WorkViewMixin, TemplateView):
@@ -717,37 +675,33 @@ class RISSearchView(WorkViewMixin, TemplateView):
         )
 
         # Search papers
-        papers = OParlPaper.objects.filter(
-            body=body
-        ).filter(
-            Q(name__icontains=query) |
-            Q(reference__icontains=query)
-        ).order_by("-date")[:10]
+        papers = (
+            OParlPaper.objects.filter(body=body)
+            .filter(Q(name__icontains=query) | Q(reference__icontains=query))
+            .order_by("-date")[:10]
+        )
 
         # Search meetings
-        meetings = OParlMeeting.objects.filter(
-            body=body
-        ).filter(
-            Q(name__icontains=query) |
-            Q(location_name__icontains=query)
-        ).prefetch_related("organizations").order_by("-start")[:10]
+        meetings = (
+            OParlMeeting.objects.filter(body=body)
+            .filter(Q(name__icontains=query) | Q(location_name__icontains=query))
+            .prefetch_related("organizations")
+            .order_by("-start")[:10]
+        )
 
         # Search organizations
-        organizations = OParlOrganization.objects.filter(
-            body=body
-        ).filter(
-            Q(name__icontains=query) |
-            Q(short_name__icontains=query)
-        ).order_by("name")[:10]
+        organizations = (
+            OParlOrganization.objects.filter(body=body)
+            .filter(Q(name__icontains=query) | Q(short_name__icontains=query))
+            .order_by("name")[:10]
+        )
 
         # Search persons
-        persons = OParlPerson.objects.filter(
-            body=body
-        ).filter(
-            Q(name__icontains=query) |
-            Q(family_name__icontains=query) |
-            Q(given_name__icontains=query)
-        ).order_by("family_name")[:10]
+        persons = (
+            OParlPerson.objects.filter(body=body)
+            .filter(Q(name__icontains=query) | Q(family_name__icontains=query) | Q(given_name__icontains=query))
+            .order_by("family_name")[:10]
+        )
 
         context["results"] = {
             "papers": papers,
@@ -756,11 +710,6 @@ class RISSearchView(WorkViewMixin, TemplateView):
             "persons": persons,
         }
 
-        context["total_results"] = (
-            papers.count() +
-            meetings.count() +
-            organizations.count() +
-            persons.count()
-        )
+        context["total_results"] = papers.count() + meetings.count() + organizations.count() + persons.count()
 
         return context

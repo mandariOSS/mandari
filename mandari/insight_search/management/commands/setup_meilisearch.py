@@ -9,8 +9,9 @@ Konfiguriert die Meilisearch-Indizes mit optimalen Einstellungen:
 """
 
 import logging
-from django.core.management.base import BaseCommand, CommandError
+
 from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 
 logger = logging.getLogger(__name__)
 
@@ -257,21 +258,24 @@ class Command(BaseCommand):
 
         # Typo Tolerance (Fuzzy Search)
         self.stdout.write("  Konfiguriere Typo-Toleranz...")
-        index.update_typo_tolerance({
-            "enabled": True,
-            "minWordSizeForTypos": {
-                "oneTypo": 4,  # Mindestens 4 Buchstaben für 1 Typo
-                "twoTypos": 8,  # Mindestens 8 Buchstaben für 2 Typos
-            },
-            "disableOnWords": [],
-            "disableOnAttributes": [],
-        })
+        index.update_typo_tolerance(
+            {
+                "enabled": True,
+                "minWordSizeForTypos": {
+                    "oneTypo": 4,  # Mindestens 4 Buchstaben für 1 Typo
+                    "twoTypos": 8,  # Mindestens 8 Buchstaben für 2 Typos
+                },
+                "disableOnWords": [],
+                "disableOnAttributes": [],
+            }
+        )
 
         # Synonyme
         if not options.get("no_synonyms"):
             self.stdout.write("  Konfiguriere Synonyme...")
             try:
                 from insight_search.synonyms import get_meilisearch_synonyms
+
                 synonyms = get_meilisearch_synonyms()
                 index.update_synonyms(synonyms)
                 self.stdout.write(f"    {len(synonyms)} Synonym-Gruppen gesetzt")
@@ -280,14 +284,16 @@ class Command(BaseCommand):
 
         # Ranking Rules (Standard + body_id Boost)
         self.stdout.write("  Konfiguriere Ranking...")
-        index.update_ranking_rules([
-            "words",
-            "typo",
-            "proximity",
-            "attribute",
-            "sort",
-            "exactness",
-        ])
+        index.update_ranking_rules(
+            [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ]
+        )
 
         # Pagination (großzügige Limits)
         self.stdout.write("  Konfiguriere Pagination...")

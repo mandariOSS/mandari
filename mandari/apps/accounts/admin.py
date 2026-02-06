@@ -17,11 +17,10 @@ Dieses Admin dient nur zur:
 
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.contrib.auth.forms import UserCreationForm, UserChangeForm
-from django import forms
+from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 from unfold.admin import ModelAdmin
 
-from .models import User, LoginAttempt
+from .models import LoginAttempt, User
 
 
 class GDPRUserCreationForm(UserCreationForm):
@@ -86,46 +85,67 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
 
     # Feldsets für Bearbeitung - nur minimale Daten
     fieldsets = (
-        ("Identifikation", {
-            "fields": ("email", "password"),
-            "description": "E-Mail ist der Login-Name. Passwort kann hier zurückgesetzt werden."
-        }),
-        ("Name (optional)", {
-            "fields": ("first_name", "last_name"),
-            "description": "Name hilft bei der Zuordnung. Wird im Work Portal vom User selbst verwaltet.",
-            "classes": ("collapse",),
-        }),
-        ("Status", {
-            "fields": ("is_active",),
-            "description": "Deaktivierte User können sich nicht einloggen."
-        }),
-        ("System-Berechtigungen", {
-            "fields": ("is_staff", "is_superuser"),
-            "description": "Nur für System-Administratoren. Work-Berechtigungen werden im Work Portal verwaltet.",
-            "classes": ("collapse",),
-        }),
-        ("Info (nur lesen)", {
-            "fields": ("date_joined", "last_login_info", "membership_info"),
-            "classes": ("collapse",),
-        }),
+        (
+            "Identifikation",
+            {
+                "fields": ("email", "password"),
+                "description": "E-Mail ist der Login-Name. Passwort kann hier zurückgesetzt werden.",
+            },
+        ),
+        (
+            "Name (optional)",
+            {
+                "fields": ("first_name", "last_name"),
+                "description": "Name hilft bei der Zuordnung. Wird im Work Portal vom User selbst verwaltet.",
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Status",
+            {
+                "fields": ("is_active",),
+                "description": "Deaktivierte User können sich nicht einloggen.",
+            },
+        ),
+        (
+            "System-Berechtigungen",
+            {
+                "fields": ("is_staff", "is_superuser"),
+                "description": "Nur für System-Administratoren. Work-Berechtigungen werden im Work Portal verwaltet.",
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Info (nur lesen)",
+            {
+                "fields": ("date_joined", "last_login_info", "membership_info"),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     # Feldsets für Erstellung - nur E-Mail und Passwort
     add_fieldsets = (
-        ("Neuen Work-User anlegen", {
-            "classes": ("wide",),
-            "fields": ("email", "password1", "password2"),
-            "description": (
-                "Erstellt einen neuen User für das Work Portal. "
-                "Der User kann sich dann einloggen und sein Profil selbst vervollständigen. "
-                "Persönliche Daten werden nur im Work Portal verwaltet (DSGVO)."
-            ),
-        }),
-        ("Optional: Name", {
-            "classes": ("wide", "collapse"),
-            "fields": ("first_name", "last_name"),
-            "description": "Name kann auch später vom User selbst eingetragen werden.",
-        }),
+        (
+            "Neuen Work-User anlegen",
+            {
+                "classes": ("wide",),
+                "fields": ("email", "password1", "password2"),
+                "description": (
+                    "Erstellt einen neuen User für das Work Portal. "
+                    "Der User kann sich dann einloggen und sein Profil selbst vervollständigen. "
+                    "Persönliche Daten werden nur im Work Portal verwaltet (DSGVO)."
+                ),
+            },
+        ),
+        (
+            "Optional: Name",
+            {
+                "classes": ("wide", "collapse"),
+                "fields": ("first_name", "last_name"),
+                "description": "Name kann auch später vom User selbst eingetragen werden.",
+            },
+        ),
     )
 
     # Entferne groups und user_permissions aus dem Admin
@@ -143,7 +163,7 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
 
     def has_2fa(self, obj):
         """Zeigt ob 2FA aktiviert ist (ohne Details)."""
-        return hasattr(obj, 'totp_device') and obj.totp_device.is_confirmed
+        return hasattr(obj, "totp_device") and obj.totp_device.is_confirmed
 
     has_2fa.boolean = True
     has_2fa.short_description = "2FA"
@@ -167,7 +187,7 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
 
     def membership_info(self, obj):
         """Zeigt Organisationsnamen (keine persönlichen Details)."""
-        orgs = obj.memberships.filter(is_active=True).select_related('organization')
+        orgs = obj.memberships.filter(is_active=True).select_related("organization")
         if not orgs:
             return "Keine Mitgliedschaften"
         return ", ".join([m.organization.name for m in orgs[:5]])
@@ -176,7 +196,7 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
 
     def get_queryset(self, request):
         """Optimierte Query mit prefetch."""
-        return super().get_queryset(request).prefetch_related('memberships__organization')
+        return super().get_queryset(request).prefetch_related("memberships__organization")
 
 
 @admin.register(LoginAttempt)
@@ -191,7 +211,14 @@ class LoginAttemptAdmin(ModelAdmin):
     list_display = ("email_masked", "ip_address", "was_successful", "timestamp")
     list_filter = ("was_successful", "timestamp")
     search_fields = ("email", "ip_address")
-    readonly_fields = ("email", "ip_address", "user_agent", "was_successful", "failure_reason", "timestamp")
+    readonly_fields = (
+        "email",
+        "ip_address",
+        "user_agent",
+        "was_successful",
+        "failure_reason",
+        "timestamp",
+    )
     ordering = ("-timestamp",)
 
     # Keine Bearbeitung erlaubt

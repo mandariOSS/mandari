@@ -7,28 +7,20 @@ import json
 from datetime import datetime, timedelta
 
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
+from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting, OParlOrganization
 
 from apps.common.mixins import WorkViewMixin
-from insight_core.models import OParlMeeting, OParlAgendaItem, OParlOrganization, OParlConsultation
 
-from .forms import (
-    MeetingPreparationForm,
-    AgendaItemPositionForm,
-    AgendaItemNoteForm,
-    QuickNoteForm,
-    AgendaSpeechNoteForm,
-    AgendaDocumentLinkForm,
-)
 from .models import (
-    MeetingPreparation,
-    AgendaItemPosition,
-    AgendaItemNote,
-    AgendaSpeechNote,
     AgendaDocumentLink,
+    AgendaItemNote,
+    AgendaItemPosition,
+    AgendaSpeechNote,
+    MeetingPreparation,
 )
 
 
@@ -49,9 +41,11 @@ def prefetch_papers_for_agenda_items(agenda_items):
         return {}
 
     # Get consultations with papers for these agenda items
-    consultations = OParlConsultation.objects.filter(
-        agenda_item_external_id__in=external_ids
-    ).select_related('paper').prefetch_related('paper__files', 'paper__consultations')
+    consultations = (
+        OParlConsultation.objects.filter(agenda_item_external_id__in=external_ids)
+        .select_related("paper")
+        .prefetch_related("paper__files", "paper__consultations")
+    )
 
     # Collect unique paper IDs for annotation
     paper_ids = set()
@@ -63,9 +57,10 @@ def prefetch_papers_for_agenda_items(agenda_items):
     paper_consultation_counts = {}
     if paper_ids:
         from insight_core.models import OParlPaper
-        papers_with_counts = OParlPaper.objects.filter(
-            id__in=paper_ids
-        ).annotate(consultation_count=Count('consultations'))
+
+        papers_with_counts = OParlPaper.objects.filter(id__in=paper_ids).annotate(
+            consultation_count=Count("consultations")
+        )
         paper_consultation_counts = {p.id: p.consultation_count for p in papers_with_counts}
 
     # Build mapping: external_id -> list of papers
@@ -174,18 +169,24 @@ class MeetingListView(WorkViewMixin, TemplateView):
             assigned_committee_ext_ids = {c.external_id for c in assigned_committees if c.external_id}
 
             # Get all committees for filter dropdown
-            all_committees = OParlOrganization.objects.filter(body=body).exclude(
-                organization_type__in=["Fraktion", "Partei"]
-            ).order_by("name")
+            all_committees = (
+                OParlOrganization.objects.filter(body=body)
+                .exclude(organization_type__in=["Fraktion", "Partei"])
+                .order_by("name")
+            )
 
             # Build base queryset - filter by start date to limit results
-            qs = OParlMeeting.objects.filter(
-                body=body,
-                cancelled=False,
-                start__isnull=False,
-            ).prefetch_related(
-                "agenda_items",
-                            ).select_related("body")
+            qs = (
+                OParlMeeting.objects.filter(
+                    body=body,
+                    cancelled=False,
+                    start__isnull=False,
+                )
+                .prefetch_related(
+                    "agenda_items",
+                )
+                .select_related("body")
+            )
 
             # Time filter
             if time_filter == "upcoming":
@@ -208,17 +209,13 @@ class MeetingListView(WorkViewMixin, TemplateView):
 
             # Filter by assigned committees using raw_json (like old code)
             if view_mode == "my" and assigned_committee_ext_ids:
-                meetings = [
-                    m for m in all_meetings
-                    if self._meeting_matches_committees(m, assigned_committee_ext_ids)
-                ]
+                meetings = [m for m in all_meetings if self._meeting_matches_committees(m, assigned_committee_ext_ids)]
             elif committee_filter:
                 # Get the committee's external_id for filtering
                 filter_committee = OParlOrganization.objects.filter(id=committee_filter).first()
                 if filter_committee and filter_committee.external_id:
                     meetings = [
-                        m for m in all_meetings
-                        if self._meeting_matches_committees(m, {filter_committee.external_id})
+                        m for m in all_meetings if self._meeting_matches_committees(m, {filter_committee.external_id})
                     ]
                 else:
                     meetings = all_meetings
@@ -230,10 +227,9 @@ class MeetingListView(WorkViewMixin, TemplateView):
 
             # Get preparation status for current user
             prepared_meeting_ids = set(
-                MeetingPreparation.objects.filter(
-                    membership=membership,
-                    is_prepared=True
-                ).values_list("meeting_id", flat=True)
+                MeetingPreparation.objects.filter(membership=membership, is_prepared=True).values_list(
+                    "meeting_id", flat=True
+                )
             )
 
             # Organization name cache
@@ -314,17 +310,19 @@ class MeetingCalendarEventsView(WorkViewMixin, View):
             if len(title) > 40:
                 title = title[:37] + "..."
 
-            events.append({
-                "id": str(meeting.id),
-                "title": title,
-                "start": meeting.start.isoformat() if meeting.start else None,
-                "end": meeting.end.isoformat() if meeting.end else None,
-                "url": f"/work/{organization.slug}/meetings/{meeting.id}/",
-                "extendedProps": {
-                    "location": meeting.location_name,
-                    "fullTitle": meeting.get_display_name(),
+            events.append(
+                {
+                    "id": str(meeting.id),
+                    "title": title,
+                    "start": meeting.start.isoformat() if meeting.start else None,
+                    "end": meeting.end.isoformat() if meeting.end else None,
+                    "url": f"/work/{organization.slug}/meetings/{meeting.id}/",
+                    "extendedProps": {
+                        "location": meeting.location_name,
+                        "fullTitle": meeting.get_display_name(),
+                    },
                 }
-            })
+            )
 
         return JsonResponse(events, safe=False)
 
@@ -351,9 +349,9 @@ class MeetingDetailView(WorkViewMixin, TemplateView):
         meeting = get_object_or_404(
             OParlMeeting.objects.prefetch_related(
                 "agenda_items",
-                                            ),
+            ),
             id=meeting_id,
-            body=body
+            body=body,
         )
 
         if meeting:
@@ -361,10 +359,7 @@ class MeetingDetailView(WorkViewMixin, TemplateView):
             meeting.committee_name = MeetingListView._get_organization_name(meeting, {})
 
             # Sort agenda items by number
-            agenda_items = sorted(
-                meeting.agenda_items.all(),
-                key=lambda x: (x.number or "999")
-            )
+            agenda_items = sorted(meeting.agenda_items.all(), key=lambda x: (x.number or "999"))
 
             # Pre-fetch papers for agenda items
             papers_by_item = prefetch_papers_for_agenda_items(agenda_items)
@@ -378,10 +373,7 @@ class MeetingDetailView(WorkViewMixin, TemplateView):
             membership = self.membership
             preparation = None
             if membership:
-                preparation = MeetingPreparation.objects.filter(
-                    membership=membership,
-                    meeting=meeting
-                ).first()
+                preparation = MeetingPreparation.objects.filter(membership=membership, meeting=meeting).first()
 
             context["meeting"] = meeting
             context["agenda_items"] = agenda_items
@@ -415,9 +407,9 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
             OParlMeeting.objects.prefetch_related(
                 "organizations",
                 "agenda_items",
-                                            ),
+            ),
             id=meeting_id,
-            body=body
+            body=body,
         )
 
         # Add committee name from raw_json
@@ -427,42 +419,35 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         if meeting and membership:
             # Get or create preparation
             preparation, created = MeetingPreparation.objects.get_or_create(
-                organization=organization,
-                membership=membership,
-                meeting=meeting,
-                defaults={}
+                organization=organization, membership=membership, meeting=meeting, defaults={}
             )
 
             # Sort agenda items with natural number sorting
             def natural_sort_key(item):
                 """Sort agenda items naturally: 1, 2, 10, 11 instead of 1, 10, 11, 2."""
                 import re
+
                 number = item.number or "999"
                 # Split into numeric and non-numeric parts
-                parts = re.split(r'(\d+)', str(number))
+                parts = re.split(r"(\d+)", str(number))
                 # Convert numeric parts to integers for proper sorting
                 return [int(p) if p.isdigit() else p.lower() for p in parts if p]
 
-            agenda_items = sorted(
-                meeting.agenda_items.all(),
-                key=natural_sort_key
-            )
+            agenda_items = sorted(meeting.agenda_items.all(), key=natural_sort_key)
 
             # Pre-fetch papers for agenda items
             papers_by_item = prefetch_papers_for_agenda_items(agenda_items)
 
             # Get positions for each agenda item
             positions_by_item = {}
-            for pos in AgendaItemPosition.objects.filter(
-                preparation=preparation
-            ).select_related("agenda_item"):
+            for pos in AgendaItemPosition.objects.filter(preparation=preparation).select_related("agenda_item"):
                 positions_by_item[pos.agenda_item_id] = pos
 
             # Get notes/comments for agenda items (visible to current user)
             notes_by_item = {}
-            all_notes = AgendaItemNote.objects.filter(
-                agenda_item__meeting=meeting
-            ).select_related("author", "author__user")
+            all_notes = AgendaItemNote.objects.filter(agenda_item__meeting=meeting).select_related(
+                "author", "author__user"
+            )
 
             for note in all_notes:
                 if note.is_visible_to(membership):
@@ -478,24 +463,25 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
                 papers = papers_by_item.get(item.id, [])
                 primary_paper = papers[0] if papers else None
                 has_files = any(p.files.exists() for p in papers) if papers else False
-                prepared_items.append({
-                    "item": item,
-                    "position": position,
-                    "notes": notes,
-                    "papers": papers,
-                    "primary_paper": primary_paper,
-                    "has_files": has_files,
-                })
+                prepared_items.append(
+                    {
+                        "item": item,
+                        "position": position,
+                        "notes": notes,
+                        "papers": papers,
+                        "primary_paper": primary_paper,
+                        "has_files": has_files,
+                    }
+                )
 
             # Position choices for template
             position_choices = AgendaItemPosition.POSITION_CHOICES
             visibility_choices = AgendaItemNote.VISIBILITY_CHOICES
 
             # Get speech notes for this meeting
-            speech_notes = AgendaSpeechNote.objects.filter(
-                meeting=meeting,
-                author=membership
-            ).select_related("agenda_item")
+            speech_notes = AgendaSpeechNote.objects.filter(meeting=meeting, author=membership).select_related(
+                "agenda_item"
+            )
             speech_notes_by_item = {sn.agenda_item_id: sn for sn in speech_notes}
 
             # Add speech notes to prepared items
@@ -504,8 +490,7 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
 
             # Get document links for this meeting
             document_links = AgendaDocumentLink.objects.filter(
-                agenda_item__meeting=meeting,
-                organization=organization
+                agenda_item__meeting=meeting, organization=organization
             ).select_related("agenda_item", "added_by__user")
             doc_links_by_item = {}
             for link in document_links:
@@ -533,43 +518,53 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
             context["stats"] = stats
 
             # JSON data for Alpine.js two-column layout
-            prepared_items_json = json.dumps([
-                {
-                    "id": str(item["item"].id),
-                    "number": item["item"].number or str(idx + 1),
-                    "name": item["item"].name or "Ohne Titel",
-                    "position": item["position"].position if item["position"] else "open",
-                    "notes": item["position"].get_notes_decrypted() if item["position"] else "",
-                    "discussionNote": item["position"].discussion_note if item["position"] else "",
-                    "isFinal": item["position"].is_final if item["position"] else False,
-                    "hasSpeechNote": bool(item["speech_note"]),
-                    "speechTitle": item["speech_note"].title if item["speech_note"] else "",
-                    "speechContent": item["speech_note"].content if item["speech_note"] else "",
-                    "speechDuration": item["speech_note"].estimated_duration if item["speech_note"] else 0,
-                    "speechShared": item["speech_note"].is_shared if item["speech_note"] else False,
-                    # Paper details
-                    "paper": {
-                        "id": str(item["primary_paper"].id),
-                        "name": item["primary_paper"].name or "Ohne Titel",
-                        "reference": item["primary_paper"].reference or "",
-                        "paperType": item["primary_paper"].paper_type or "",
-                        # Use prefetched count to avoid N+1 queries
-                        "consultationCount": getattr(item["primary_paper"], "_prefetched_consultation_count", 0) if item["primary_paper"] else 0,
-                    } if item["primary_paper"] else None,
-                    "hasFiles": item["has_files"],
-                    "files": [
-                        {"name": f.name or f.file_name or "Dokument", "url": f.access_url or f.download_url}
-                        for p in item["papers"] for f in p.files.all()
-                        if f.access_url or f.download_url  # Only include files with URLs
-                    ],
-                    "documentLinks": [
-                        {"id": str(link.id), "title": link.title, "url": link.url}
-                        for link in item["document_links"]
-                    ],
-                    "notesCount": len(item["notes"]),
-                }
-                for idx, item in enumerate(prepared_items)
-            ])
+            prepared_items_json = json.dumps(
+                [
+                    {
+                        "id": str(item["item"].id),
+                        "number": item["item"].number or str(idx + 1),
+                        "name": item["item"].name or "Ohne Titel",
+                        "position": item["position"].position if item["position"] else "open",
+                        "notes": item["position"].get_notes_decrypted() if item["position"] else "",
+                        "discussionNote": item["position"].discussion_note if item["position"] else "",
+                        "isFinal": item["position"].is_final if item["position"] else False,
+                        "hasSpeechNote": bool(item["speech_note"]),
+                        "speechTitle": item["speech_note"].title if item["speech_note"] else "",
+                        "speechContent": item["speech_note"].content if item["speech_note"] else "",
+                        "speechDuration": item["speech_note"].estimated_duration if item["speech_note"] else 0,
+                        "speechShared": item["speech_note"].is_shared if item["speech_note"] else False,
+                        # Paper details
+                        "paper": {
+                            "id": str(item["primary_paper"].id),
+                            "name": item["primary_paper"].name or "Ohne Titel",
+                            "reference": item["primary_paper"].reference or "",
+                            "paperType": item["primary_paper"].paper_type or "",
+                            # Use prefetched count to avoid N+1 queries
+                            "consultationCount": getattr(item["primary_paper"], "_prefetched_consultation_count", 0)
+                            if item["primary_paper"]
+                            else 0,
+                        }
+                        if item["primary_paper"]
+                        else None,
+                        "hasFiles": item["has_files"],
+                        "files": [
+                            {
+                                "name": f.name or f.file_name or "Dokument",
+                                "url": f.access_url or f.download_url,
+                            }
+                            for p in item["papers"]
+                            for f in p.files.all()
+                            if f.access_url or f.download_url  # Only include files with URLs
+                        ],
+                        "documentLinks": [
+                            {"id": str(link.id), "title": link.title, "url": link.url}
+                            for link in item["document_links"]
+                        ],
+                        "notesCount": len(item["notes"]),
+                    }
+                    for idx, item in enumerate(prepared_items)
+                ]
+            )
             context["prepared_items_json"] = prepared_items_json
 
         return context
@@ -587,10 +582,7 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         meeting = get_object_or_404(OParlMeeting, id=meeting_id, body=body)
 
         if membership:
-            preparation = MeetingPreparation.objects.filter(
-                membership=membership,
-                meeting=meeting
-            ).first()
+            preparation = MeetingPreparation.objects.filter(membership=membership, meeting=meeting).first()
 
             if preparation:
                 action = request.POST.get("action")
@@ -631,17 +623,12 @@ class AgendaPositionAPIView(WorkViewMixin, View):
 
         # Get or create preparation
         preparation, _ = MeetingPreparation.objects.get_or_create(
-            organization=organization,
-            membership=membership,
-            meeting=meeting,
-            defaults={}
+            organization=organization, membership=membership, meeting=meeting, defaults={}
         )
 
         # Get or create position
         position, created = AgendaItemPosition.objects.get_or_create(
-            preparation=preparation,
-            agenda_item=agenda_item,
-            defaults={}
+            preparation=preparation, agenda_item=agenda_item, defaults={}
         )
 
         # Update position
@@ -658,14 +645,16 @@ class AgendaPositionAPIView(WorkViewMixin, View):
 
         position.save()
 
-        return JsonResponse({
-            "success": True,
-            "position": position.position,
-            "position_display": position.get_position_display(),
-            "has_notes": bool(position.notes_encrypted),
-            "has_discussion_note": bool(position.discussion_note),
-            "is_final": position.is_final,
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "position": position.position,
+                "position_display": position.get_position_display(),
+                "has_notes": bool(position.notes_encrypted),
+                "has_discussion_note": bool(position.discussion_note),
+                "is_final": position.is_final,
+            }
+        )
 
 
 class AgendaNotesAPIView(WorkViewMixin, View):
@@ -688,25 +677,29 @@ class AgendaNotesAPIView(WorkViewMixin, View):
         agenda_item = get_object_or_404(OParlAgendaItem, id=item_id, meeting=meeting)
 
         # Get visible notes
-        all_notes = AgendaItemNote.objects.filter(
-            agenda_item=agenda_item
-        ).select_related("author", "author__user").order_by("-is_pinned", "-is_decision", "-created_at")
+        all_notes = (
+            AgendaItemNote.objects.filter(agenda_item=agenda_item)
+            .select_related("author", "author__user")
+            .order_by("-is_pinned", "-is_decision", "-created_at")
+        )
 
         visible_notes = [n for n in all_notes if n.is_visible_to(membership)]
 
         notes_data = []
         for note in visible_notes:
-            notes_data.append({
-                "id": str(note.id),
-                "content": note.get_content_decrypted(),
-                "visibility": note.visibility,
-                "visibility_display": note.get_visibility_display(),
-                "is_decision": note.is_decision,
-                "is_pinned": note.is_pinned,
-                "author": note.author.user.get_display_name(),
-                "is_own": note.author == membership,
-                "created_at": note.created_at.isoformat(),
-            })
+            notes_data.append(
+                {
+                    "id": str(note.id),
+                    "content": note.get_content_decrypted(),
+                    "visibility": note.visibility,
+                    "visibility_display": note.get_visibility_display(),
+                    "is_decision": note.is_decision,
+                    "is_pinned": note.is_pinned,
+                    "author": note.author.user.get_display_name(),
+                    "is_own": note.author == membership,
+                    "created_at": note.created_at.isoformat(),
+                }
+            )
 
         return JsonResponse({"notes": notes_data})
 
@@ -743,16 +736,18 @@ class AgendaNotesAPIView(WorkViewMixin, View):
         note.set_content_encrypted(content)
         note.save()
 
-        return JsonResponse({
-            "success": True,
-            "note": {
-                "id": str(note.id),
-                "content": content,  # Return original content
-                "visibility_display": note.get_visibility_display(),
-                "is_decision": note.is_decision,
-                "author": membership.user.get_display_name(),
+        return JsonResponse(
+            {
+                "success": True,
+                "note": {
+                    "id": str(note.id),
+                    "content": content,  # Return original content
+                    "visibility_display": note.get_visibility_display(),
+                    "is_decision": note.is_decision,
+                    "author": membership.user.get_display_name(),
+                },
             }
-        })
+        )
 
     def delete(self, request, *args, **kwargs):
         """Delete a note (only own notes)."""
@@ -790,15 +785,14 @@ class PreparationSummaryView(WorkViewMixin, TemplateView):
         context["meeting"] = meeting
 
         if membership:
-            preparation = MeetingPreparation.objects.filter(
-                membership=membership,
-                meeting=meeting
-            ).first()
+            preparation = MeetingPreparation.objects.filter(membership=membership, meeting=meeting).first()
 
             if preparation:
-                positions = AgendaItemPosition.objects.filter(
-                    preparation=preparation
-                ).exclude(position="open").select_related("agenda_item")
+                positions = (
+                    AgendaItemPosition.objects.filter(preparation=preparation)
+                    .exclude(position="open")
+                    .select_related("agenda_item")
+                )
 
                 # Group by position type
                 positions_by_type = {
@@ -816,10 +810,11 @@ class PreparationSummaryView(WorkViewMixin, TemplateView):
                         positions_by_type[pos.position].append(pos)
 
                 # Get speech notes for this meeting
-                speeches = AgendaSpeechNote.objects.filter(
-                    meeting=meeting,
-                    author=membership
-                ).select_related("agenda_item").order_by("agenda_item__number")
+                speeches = (
+                    AgendaSpeechNote.objects.filter(meeting=meeting, author=membership)
+                    .select_related("agenda_item")
+                    .order_by("agenda_item__number")
+                )
 
                 context["positions_by_type"] = positions_by_type
                 context["speeches"] = speeches
@@ -847,20 +842,20 @@ class SpeechNoteAPIView(WorkViewMixin, View):
         agenda_item = get_object_or_404(OParlAgendaItem, id=item_id, meeting=meeting)
 
         speech_note = AgendaSpeechNote.objects.filter(
-            meeting=meeting,
-            agenda_item=agenda_item,
-            author=membership
+            meeting=meeting, agenda_item=agenda_item, author=membership
         ).first()
 
         if speech_note:
-            return JsonResponse({
-                "exists": True,
-                "id": str(speech_note.id),
-                "title": speech_note.title,
-                "content": speech_note.content,
-                "estimated_duration": speech_note.estimated_duration,
-                "is_shared": speech_note.is_shared,
-            })
+            return JsonResponse(
+                {
+                    "exists": True,
+                    "id": str(speech_note.id),
+                    "title": speech_note.title,
+                    "content": speech_note.content,
+                    "estimated_duration": speech_note.estimated_duration,
+                    "is_shared": speech_note.is_shared,
+                }
+            )
         return JsonResponse({"exists": False})
 
     def post(self, request, *args, **kwargs):
@@ -889,14 +884,16 @@ class SpeechNoteAPIView(WorkViewMixin, View):
                 "content": data.get("content", ""),
                 "estimated_duration": int(data.get("estimated_duration", 0)),
                 "is_shared": data.get("is_shared", False) in [True, "true", "1", "on"],
-            }
+            },
         )
 
-        return JsonResponse({
-            "success": True,
-            "id": str(speech_note.id),
-            "created": created,
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "id": str(speech_note.id),
+                "created": created,
+            }
+        )
 
     def delete(self, request, *args, **kwargs):
         """Delete speech note."""
@@ -907,11 +904,7 @@ class SpeechNoteAPIView(WorkViewMixin, View):
         if not membership:
             return JsonResponse({"error": "Unauthorized"}, status=403)
 
-        AgendaSpeechNote.objects.filter(
-            meeting_id=meeting_id,
-            agenda_item_id=item_id,
-            author=membership
-        ).delete()
+        AgendaSpeechNote.objects.filter(meeting_id=meeting_id, agenda_item_id=item_id, author=membership).delete()
 
         return JsonResponse({"success": True})
 
@@ -936,9 +929,7 @@ class TeleprompterView(WorkViewMixin, TemplateView):
             agenda_item = get_object_or_404(OParlAgendaItem, id=item_id, meeting=meeting)
 
             speech_note = AgendaSpeechNote.objects.filter(
-                meeting=meeting,
-                agenda_item=agenda_item,
-                author=membership
+                meeting=meeting, agenda_item=agenda_item, author=membership
             ).first()
 
             context["meeting"] = meeting
@@ -958,24 +949,25 @@ class DocumentLinkAPIView(WorkViewMixin, View):
         item_id = self.kwargs.get("item_id")
         organization = self.organization
 
-        links = AgendaDocumentLink.objects.filter(
-            agenda_item_id=item_id,
-            organization=organization
-        ).select_related("added_by__user")
+        links = AgendaDocumentLink.objects.filter(agenda_item_id=item_id, organization=organization).select_related(
+            "added_by__user"
+        )
 
-        return JsonResponse({
-            "links": [
-                {
-                    "id": str(link.id),
-                    "title": link.title,
-                    "url": link.url,
-                    "description": link.description,
-                    "added_by": link.added_by.user.get_display_name(),
-                    "created_at": link.created_at.isoformat(),
-                }
-                for link in links
-            ]
-        })
+        return JsonResponse(
+            {
+                "links": [
+                    {
+                        "id": str(link.id),
+                        "title": link.title,
+                        "url": link.url,
+                        "description": link.description,
+                        "added_by": link.added_by.user.get_display_name(),
+                        "created_at": link.created_at.isoformat(),
+                    }
+                    for link in links
+                ]
+            }
+        )
 
     def post(self, request, *args, **kwargs):
         """Add a document link."""
@@ -1008,14 +1000,16 @@ class DocumentLinkAPIView(WorkViewMixin, View):
             description=data.get("description", ""),
         )
 
-        return JsonResponse({
-            "success": True,
-            "link": {
-                "id": str(link.id),
-                "title": link.title,
-                "url": link.url,
+        return JsonResponse(
+            {
+                "success": True,
+                "link": {
+                    "id": str(link.id),
+                    "title": link.title,
+                    "url": link.url,
+                },
             }
-        })
+        )
 
     def delete(self, request, *args, **kwargs):
         """Delete a document link (only own links)."""
@@ -1039,6 +1033,7 @@ class PaperCommentAPIView(WorkViewMixin, View):
     def get(self, request, *args, **kwargs):
         """Get comments for a paper visible to the current user."""
         from insight_core.models import OParlPaper
+
         from .models import PaperComment
 
         paper_id = self.kwargs.get("paper_id")
@@ -1054,24 +1049,27 @@ class PaperCommentAPIView(WorkViewMixin, View):
 
         comments_data = []
         for comment in visible_comments:
-            comments_data.append({
-                "id": str(comment.id),
-                "content": comment.get_content_decrypted(),
-                "visibility": comment.visibility,
-                "visibility_display": comment.get_visibility_display(),
-                "is_recommendation": comment.is_recommendation,
-                "author": comment.author.user.get_display_name(),
-                "organization": comment.organization.name,
-                "is_own": comment.author == membership,
-                "is_own_org": comment.organization == membership.organization,
-                "created_at": comment.created_at.isoformat(),
-            })
+            comments_data.append(
+                {
+                    "id": str(comment.id),
+                    "content": comment.get_content_decrypted(),
+                    "visibility": comment.visibility,
+                    "visibility_display": comment.get_visibility_display(),
+                    "is_recommendation": comment.is_recommendation,
+                    "author": comment.author.user.get_display_name(),
+                    "organization": comment.organization.name,
+                    "is_own": comment.author == membership,
+                    "is_own_org": comment.organization == membership.organization,
+                    "created_at": comment.created_at.isoformat(),
+                }
+            )
 
         return JsonResponse({"comments": comments_data})
 
     def post(self, request, *args, **kwargs):
         """Add a new comment on a paper."""
         from insight_core.models import OParlPaper
+
         from .models import PaperComment
 
         paper_id = self.kwargs.get("paper_id")
@@ -1105,17 +1103,19 @@ class PaperCommentAPIView(WorkViewMixin, View):
         comment.set_content_encrypted(content)
         comment.save()
 
-        return JsonResponse({
-            "success": True,
-            "comment": {
-                "id": str(comment.id),
-                "content": content,
-                "visibility_display": comment.get_visibility_display(),
-                "is_recommendation": comment.is_recommendation,
-                "author": membership.user.get_display_name(),
-                "organization": organization.name,
+        return JsonResponse(
+            {
+                "success": True,
+                "comment": {
+                    "id": str(comment.id),
+                    "content": content,
+                    "visibility_display": comment.get_visibility_display(),
+                    "is_recommendation": comment.is_recommendation,
+                    "author": membership.user.get_display_name(),
+                    "organization": organization.name,
+                },
             }
-        })
+        )
 
     def delete(self, request, *args, **kwargs):
         """Delete a comment (only own comments)."""

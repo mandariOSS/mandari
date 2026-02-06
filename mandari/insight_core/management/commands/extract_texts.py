@@ -18,12 +18,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
-from django.utils import timezone
 
-from insight_core.models import OParlFile, OParlBody
+from insight_core.models import OParlBody, OParlFile
 from insight_core.services.document_extraction import (
-    download_and_extract,
     DocumentDownloadError,
+    download_and_extract,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,15 +91,11 @@ class Command(BaseCommand):
         queryset = OParlFile.objects.select_related("paper", "paper__body")
 
         # Filter: Nur Dateien mit Download-URL
-        queryset = queryset.filter(
-            Q(download_url__isnull=False) | Q(access_url__isnull=False)
-        )
+        queryset = queryset.filter(Q(download_url__isnull=False) | Q(access_url__isnull=False))
 
         # Filter: Ohne text_content (außer bei --reprocess)
         if not reprocess:
-            queryset = queryset.filter(
-                Q(text_content__isnull=True) | Q(text_content="")
-            )
+            queryset = queryset.filter(Q(text_content__isnull=True) | Q(text_content=""))
 
         # Filter: Nur bestimmte Kommune
         if body_id:
@@ -113,9 +108,7 @@ class Command(BaseCommand):
 
         # Filter: Nur PDFs
         if pdf_only:
-            queryset = queryset.filter(
-                Q(mime_type__icontains="pdf") | Q(file_name__iendswith=".pdf")
-            )
+            queryset = queryset.filter(Q(mime_type__icontains="pdf") | Q(file_name__iendswith=".pdf"))
 
         # Limit anwenden
         if limit > 0:
@@ -145,20 +138,15 @@ class Command(BaseCommand):
         # Batch-Verarbeitung
         files = list(queryset)
         for batch_start in range(0, len(files), batch_size):
-            batch = files[batch_start:batch_start + batch_size]
+            batch = files[batch_start : batch_start + batch_size]
             batch_num = (batch_start // batch_size) + 1
             total_batches = (len(files) + batch_size - 1) // batch_size
 
-            self.stdout.write(
-                f"\nBatch {batch_num}/{total_batches} ({len(batch)} Dateien)..."
-            )
+            self.stdout.write(f"\nBatch {batch_num}/{total_batches} ({len(batch)} Dateien)...")
 
             # Parallele Verarbeitung
             with ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = {
-                    executor.submit(self._process_file, f, verbose): f
-                    for f in batch
-                }
+                futures = {executor.submit(self._process_file, f, verbose): f for f in batch}
 
                 for future in as_completed(futures):
                     file = futures[future]
@@ -176,9 +164,7 @@ class Command(BaseCommand):
                     except Exception as exc:
                         stats["failed"] += 1
                         if verbose:
-                            self.stdout.write(
-                                self.style.ERROR(f"Fehler bei {file.id}: {exc}")
-                            )
+                            self.stdout.write(self.style.ERROR(f"Fehler bei {file.id}: {exc}"))
 
         # Zusammenfassung
         self.stdout.write("\n" + "=" * 50)
@@ -217,8 +203,7 @@ class Command(BaseCommand):
                 if verbose:
                     self.stdout.write(
                         self.style.SUCCESS(
-                            f"  {file.id}: {len(result.text)} Zeichen"
-                            f"{' (OCR)' if result.ocr_performed else ''}"
+                            f"  {file.id}: {len(result.text)} Zeichen{' (OCR)' if result.ocr_performed else ''}"
                         )
                     )
 
@@ -230,21 +215,15 @@ class Command(BaseCommand):
                 }
             else:
                 if verbose:
-                    self.stdout.write(
-                        self.style.WARNING(f"  {file.id}: Kein Text extrahiert")
-                    )
+                    self.stdout.write(self.style.WARNING(f"  {file.id}: Kein Text extrahiert"))
                 return {"success": False, "reason": "Kein Text extrahiert"}
 
         except DocumentDownloadError as exc:
             if verbose:
-                self.stdout.write(
-                    self.style.ERROR(f"  {file.id}: Download-Fehler - {exc}")
-                )
+                self.stdout.write(self.style.ERROR(f"  {file.id}: Download-Fehler - {exc}"))
             return {"success": False, "reason": str(exc)}
 
         except Exception as exc:
             if verbose:
-                self.stdout.write(
-                    self.style.ERROR(f"  {file.id}: Fehler - {exc}")
-                )
+                self.stdout.write(self.style.ERROR(f"  {file.id}: Fehler - {exc}"))
             return {"success": False, "reason": str(exc)}

@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = []
@@ -51,9 +50,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "email_host_user",
-                    models.CharField(
-                        blank=True, max_length=255, verbose_name="SMTP Benutzername"
-                    ),
+                    models.CharField(blank=True, max_length=255, verbose_name="SMTP Benutzername"),
                 ),
                 (
                     "email_host_password",
@@ -82,9 +79,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "email_timeout",
-                    models.PositiveIntegerField(
-                        default=30, verbose_name="Timeout (Sekunden)"
-                    ),
+                    models.PositiveIntegerField(default=30, verbose_name="Timeout (Sekunden)"),
                 ),
                 (
                     "default_from_email",
@@ -107,9 +102,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "site_name",
-                    models.CharField(
-                        default="Mandari", max_length=100, verbose_name="Seitenname"
-                    ),
+                    models.CharField(default="Mandari", max_length=100, verbose_name="Seitenname"),
                 ),
                 (
                     "site_description",

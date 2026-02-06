@@ -523,14 +523,18 @@ def remove_initial_content(apps, schema_editor):
     KnowledgeBaseCategory = apps.get_model("work", "KnowledgeBaseCategory")
     KnowledgeBaseCategory.objects.filter(
         slug__in=[
-            "erste-schritte", "sitzungen", "antraege", "fraktion",
-            "aufgaben", "konto-sicherheit", "faq"
+            "erste-schritte",
+            "sitzungen",
+            "antraege",
+            "fraktion",
+            "aufgaben",
+            "konto-sicherheit",
+            "faq",
         ]
     ).delete()
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("work", "0004_add_support_knowledge_base_models"),
     ]

@@ -13,7 +13,6 @@ import logging
 import time
 from dataclasses import dataclass
 from threading import Lock
-from typing import Optional
 
 import httpx
 from django.conf import settings
@@ -92,7 +91,7 @@ class MistralOCRService:
     # Model für OCR/Vision Tasks
     OCR_MODEL = "pixtral-12b-2409"
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         """
         Initialisiert den Mistral OCR Service.
 
@@ -100,10 +99,8 @@ class MistralOCRService:
             api_key: Optional API Key, sonst aus settings.MISTRAL_API_KEY
         """
         self.api_key = api_key or getattr(settings, "MISTRAL_API_KEY", "")
-        self.rate_limiter = RateLimiter(
-            requests_per_minute=getattr(settings, "MISTRAL_OCR_RATE_LIMIT", 60)
-        )
-        self._client: Optional[httpx.AsyncClient] = None
+        self.rate_limiter = RateLimiter(requests_per_minute=getattr(settings, "MISTRAL_OCR_RATE_LIMIT", 60))
+        self._client: httpx.AsyncClient | None = None
 
     @property
     def is_configured(self) -> bool:
@@ -172,9 +169,7 @@ class MistralOCRService:
         # Rate Limiting prüfen
         if not self.rate_limiter.acquire():
             wait_time = self.rate_limiter.wait_time()
-            raise RateLimitError(
-                f"Rate Limit erreicht. Bitte {wait_time:.1f}s warten."
-            )
+            raise RateLimitError(f"Rate Limit erreicht. Bitte {wait_time:.1f}s warten.")
 
         try:
             # PDF zu Base64 konvertieren
@@ -201,9 +196,7 @@ class MistralOCRService:
                             },
                             {
                                 "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:application/pdf;base64,{pdf_base64}"
-                                },
+                                "image_url": {"url": f"data:application/pdf;base64,{pdf_base64}"},
                             },
                         ],
                     }
@@ -222,9 +215,7 @@ class MistralOCRService:
             if response.status_code != 200:
                 error_detail = response.text
                 logger.error(f"Mistral OCR Fehler: {response.status_code} - {error_detail}")
-                raise OCRExtractionError(
-                    f"API Fehler {response.status_code}: {error_detail[:200]}"
-                )
+                raise OCRExtractionError(f"API Fehler {response.status_code}: {error_detail[:200]}")
 
             result = response.json()
             text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -255,7 +246,7 @@ class MistralOCRService:
 
 
 # Singleton-Instanz
-_mistral_service: Optional[MistralOCRService] = None
+_mistral_service: MistralOCRService | None = None
 
 
 def get_mistral_ocr_service() -> MistralOCRService:
@@ -286,14 +277,12 @@ def extract_text_with_mistral(pdf_bytes: bytes, file_name: str = "document.pdf")
     try:
         # In neuem Event Loop ausführen falls nicht bereits async
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             # Bereits in async context - direkt awaiten
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(
-                    asyncio.run,
-                    service.extract_text(pdf_bytes, file_name)
-                )
+                future = pool.submit(asyncio.run, service.extract_text(pdf_bytes, file_name))
                 return future.result(timeout=120)
         except RuntimeError:
             # Kein running loop - neuen erstellen

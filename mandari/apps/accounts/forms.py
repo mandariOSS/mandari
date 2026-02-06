@@ -12,6 +12,8 @@ from django import forms
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.forms import (
     PasswordResetForm as DjangoPasswordResetForm,
+)
+from django.contrib.auth.forms import (
     SetPasswordForm as DjangoSetPasswordForm,
 )
 from django.core.exceptions import ValidationError

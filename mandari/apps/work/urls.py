@@ -8,296 +8,275 @@ All URLs are prefixed with /work/<org_slug>/
 from django.urls import path
 
 from apps.work.dashboard import views as dashboard_views
+from apps.work.faction import views as faction_views
 from apps.work.meetings import views as meetings_views
 from apps.work.motions import views as motions_views
-from apps.work.faction import views as faction_views
-from apps.work.tasks import views as tasks_views
-from apps.work.ris import views as ris_views
-from apps.work.organization import views as organization_views
-from apps.work.support import views as support_views
 from apps.work.notifications import views as notifications_views
+from apps.work.organization import views as organization_views
+from apps.work.ris import views as ris_views
+from apps.work.support import views as support_views
+from apps.work.tasks import views as tasks_views
 
 app_name = "work"
 
 urlpatterns = [
     # Dashboard
-    path(
-        "<slug:org_slug>/",
-        dashboard_views.DashboardView.as_view(),
-        name="dashboard"
-    ),
+    path("<slug:org_slug>/", dashboard_views.DashboardView.as_view(), name="dashboard"),
     path(
         "<slug:org_slug>/dashboard/",
         dashboard_views.DashboardView.as_view(),
-        name="dashboard_explicit"
+        name="dashboard_explicit",
     ),
-
     # Meetings (OParl meeting preparation)
-    path(
-        "<slug:org_slug>/meetings/",
-        meetings_views.MeetingListView.as_view(),
-        name="meetings"
-    ),
+    path("<slug:org_slug>/meetings/", meetings_views.MeetingListView.as_view(), name="meetings"),
     path(
         "<slug:org_slug>/meetings/calendar/",
         meetings_views.MeetingCalendarView.as_view(),
-        name="meetings_calendar"
+        name="meetings_calendar",
     ),
     path(
         "<slug:org_slug>/meetings/calendar/events/",
         meetings_views.MeetingCalendarEventsView.as_view(),
-        name="meetings_calendar_events"
+        name="meetings_calendar_events",
     ),
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/",
         meetings_views.MeetingDetailView.as_view(),
-        name="meeting_detail"
+        name="meeting_detail",
     ),
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/prepare/",
         meetings_views.MeetingPrepareView.as_view(),
-        name="meeting_prepare"
+        name="meeting_prepare",
     ),
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/summary/",
         meetings_views.PreparationSummaryView.as_view(),
-        name="meeting_summary"
+        name="meeting_summary",
     ),
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/position/<uuid:item_id>/",
         meetings_views.AgendaPositionAPIView.as_view(),
-        name="meeting_position_api"
+        name="meeting_position_api",
     ),
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/notes/<uuid:item_id>/",
         meetings_views.AgendaNotesAPIView.as_view(),
-        name="meeting_notes_api"
+        name="meeting_notes_api",
     ),
     path(
         "<slug:org_slug>/meetings/notes/<uuid:note_id>/delete/",
         meetings_views.AgendaNotesAPIView.as_view(),
-        name="meeting_note_delete"
+        name="meeting_note_delete",
     ),
     # Speech notes (teleprompter)
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/speech/<uuid:item_id>/",
         meetings_views.SpeechNoteAPIView.as_view(),
-        name="meeting_speech_api"
+        name="meeting_speech_api",
     ),
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/teleprompter/<uuid:item_id>/",
         meetings_views.TeleprompterView.as_view(),
-        name="meeting_teleprompter"
+        name="meeting_teleprompter",
     ),
     # Document links
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/documents/<uuid:item_id>/",
         meetings_views.DocumentLinkAPIView.as_view(),
-        name="meeting_documents_api"
+        name="meeting_documents_api",
     ),
     path(
         "<slug:org_slug>/meetings/documents/<uuid:link_id>/delete/",
         meetings_views.DocumentLinkAPIView.as_view(),
-        name="meeting_document_delete"
+        name="meeting_document_delete",
     ),
     # Paper comments (cross-committee collaboration)
     path(
         "<slug:org_slug>/paper/<uuid:paper_id>/comments/",
         meetings_views.PaperCommentAPIView.as_view(),
-        name="paper_comments_api"
+        name="paper_comments_api",
     ),
     path(
         "<slug:org_slug>/paper/comment/<uuid:comment_id>/delete/",
         meetings_views.PaperCommentAPIView.as_view(),
-        name="paper_comment_delete"
+        name="paper_comment_delete",
     ),
-
     # Motions
-    path(
-        "<slug:org_slug>/motions/",
-        motions_views.MotionListView.as_view(),
-        name="motions"
-    ),
+    path("<slug:org_slug>/motions/", motions_views.MotionListView.as_view(), name="motions"),
     path(
         "<slug:org_slug>/motions/create/",
         motions_views.MotionCreateView.as_view(),
-        name="motion_create"
+        name="motion_create",
     ),
     path(
         "<slug:org_slug>/motions/import/",
         motions_views.MotionImportView.as_view(),
-        name="motion_import"
+        name="motion_import",
     ),
     path(
         "<slug:org_slug>/motions/ai/",
         motions_views.MotionAIAssistantView.as_view(),
-        name="motion_ai"
+        name="motion_ai",
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/",
         motions_views.MotionDetailView.as_view(),
-        name="motion_detail"
+        name="motion_detail",
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/edit/",
         motions_views.MotionEditView.as_view(),
-        name="motion_edit"
+        name="motion_edit",
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/share/",
         motions_views.MotionShareView.as_view(),
-        name="motion_share"
+        name="motion_share",
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/share/update/",
         motions_views.MotionShareUpdateView.as_view(),
-        name="motion_share_update"
+        name="motion_share_update",
     ),
     path(
         "<slug:org_slug>/motions/share/<uuid:share_id>/remove/",
         motions_views.MotionShareRemoveView.as_view(),
-        name="motion_share_remove"
+        name="motion_share_remove",
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/status/",
         motions_views.MotionStatusView.as_view(),
-        name="motion_status"
+        name="motion_status",
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/comment/",
         motions_views.MotionCommentView.as_view(),
-        name="motion_comment"
+        name="motion_comment",
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/comment/<uuid:comment_id>/resolve/",
         motions_views.MotionCommentResolveView.as_view(),
-        name="motion_comment_resolve"
+        name="motion_comment_resolve",
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/upload/",
         motions_views.MotionDocumentUploadView.as_view(),
-        name="motion_upload"
+        name="motion_upload",
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/export/",
         motions_views.MotionExportView.as_view(),
-        name="motion_export"
+        name="motion_export",
     ),
-
     # Trash (Papierkorb)
     path(
         "<slug:org_slug>/motions/trash/",
         motions_views.MotionTrashView.as_view(),
-        name="motion_trash"
+        name="motion_trash",
     ),
     path(
         "<slug:org_slug>/motions/trash/empty/",
         motions_views.MotionEmptyTrashView.as_view(),
-        name="motion_empty_trash"
+        name="motion_empty_trash",
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/restore/",
         motions_views.MotionRestoreView.as_view(),
-        name="motion_restore"
+        name="motion_restore",
     ),
     path(
         "<slug:org_slug>/motions/<uuid:motion_id>/permanent-delete/",
         motions_views.MotionPermanentDeleteView.as_view(),
-        name="motion_permanent_delete"
+        name="motion_permanent_delete",
     ),
-
     # Motion Settings
     path(
         "<slug:org_slug>/organization/documents/",
         motions_views.MotionSettingsView.as_view(),
-        name="motion_settings"
+        name="motion_settings",
     ),
     path(
         "<slug:org_slug>/organization/documents/types/",
         motions_views.MotionTypeListView.as_view(),
-        name="motion_type_list"
+        name="motion_type_list",
     ),
     path(
         "<slug:org_slug>/organization/documents/types/create/",
         motions_views.MotionTypeCreateView.as_view(),
-        name="motion_type_create"
+        name="motion_type_create",
     ),
     path(
         "<slug:org_slug>/organization/documents/types/<uuid:type_id>/",
         motions_views.MotionTypeEditView.as_view(),
-        name="motion_type_edit"
+        name="motion_type_edit",
     ),
     path(
         "<slug:org_slug>/organization/documents/types/<uuid:type_id>/delete/",
         motions_views.MotionTypeDeleteView.as_view(),
-        name="motion_type_delete"
+        name="motion_type_delete",
     ),
     path(
         "<slug:org_slug>/organization/documents/templates/",
         motions_views.MotionTemplateListView.as_view(),
-        name="motion_template_list"
+        name="motion_template_list",
     ),
     path(
         "<slug:org_slug>/organization/documents/templates/create/",
         motions_views.MotionTemplateCreateView.as_view(),
-        name="motion_template_create"
+        name="motion_template_create",
     ),
     path(
         "<slug:org_slug>/organization/documents/templates/<uuid:template_id>/",
         motions_views.MotionTemplateEditView.as_view(),
-        name="motion_template_edit"
+        name="motion_template_edit",
     ),
     path(
         "<slug:org_slug>/organization/documents/templates/<uuid:template_id>/delete/",
         motions_views.MotionTemplateDeleteView.as_view(),
-        name="motion_template_delete"
+        name="motion_template_delete",
     ),
     path(
         "<slug:org_slug>/organization/documents/letterheads/",
         motions_views.LetterheadListView.as_view(),
-        name="letterhead_list"
+        name="letterhead_list",
     ),
     path(
         "<slug:org_slug>/organization/documents/letterheads/create/",
         motions_views.LetterheadCreateView.as_view(),
-        name="letterhead_create"
+        name="letterhead_create",
     ),
     path(
         "<slug:org_slug>/organization/documents/letterheads/<uuid:letterhead_id>/",
         motions_views.LetterheadEditView.as_view(),
-        name="letterhead_edit"
+        name="letterhead_edit",
     ),
     path(
         "<slug:org_slug>/organization/documents/letterheads/<uuid:letterhead_id>/delete/",
         motions_views.LetterheadDeleteView.as_view(),
-        name="letterhead_delete"
+        name="letterhead_delete",
     ),
-
     # Faction meetings
-    path(
-        "<slug:org_slug>/faction/",
-        faction_views.FactionMeetingListView.as_view(),
-        name="faction"
-    ),
+    path("<slug:org_slug>/faction/", faction_views.FactionMeetingListView.as_view(), name="faction"),
     path(
         "<slug:org_slug>/faction/create/",
         faction_views.FactionMeetingCreateView.as_view(),
-        name="faction_create"
+        name="faction_create",
     ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/",
         faction_views.FactionMeetingDetailView.as_view(),
-        name="faction_detail"
+        name="faction_detail",
     ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/edit/",
         faction_views.FactionMeetingEditView.as_view(),
-        name="faction_edit"
+        name="faction_edit",
     ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/protocol/",
         faction_views.FactionProtocolView.as_view(),
-        name="faction_protocol"
+        name="faction_protocol",
     ),
     # Schedules feature disabled
     # path(
@@ -308,144 +287,97 @@ urlpatterns = [
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/respond/",
         faction_views.FactionAttendanceResponseView.as_view(),
-        name="faction_respond"
+        name="faction_respond",
     ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/agenda/",
         faction_views.FactionAgendaItemView.as_view(),
-        name="faction_agenda"
+        name="faction_agenda",
     ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/invite/",
         faction_views.FactionInviteView.as_view(),
-        name="faction_invite"
+        name="faction_invite",
     ),
     path(
         "<slug:org_slug>/faction/settings/",
         faction_views.FactionSettingsView.as_view(),
-        name="faction_settings"
+        name="faction_settings",
     ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/attendance/status/",
         faction_views.FactionAttendanceStatusView.as_view(),
-        name="faction_attendance_status"
+        name="faction_attendance_status",
     ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/attendance/add/",
         faction_views.FactionAddAttendeeView.as_view(),
-        name="faction_add_attendee"
+        name="faction_add_attendee",
     ),
     # Agenda item proposals (for Sachkundige Bürger*innen)
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/proposal/",
         faction_views.FactionAgendaProposalView.as_view(),
-        name="faction_proposal"
+        name="faction_proposal",
     ),
-
     # Tasks
-    path(
-        "<slug:org_slug>/tasks/",
-        tasks_views.TaskListView.as_view(),
-        name="tasks"
-    ),
-    path(
-        "<slug:org_slug>/tasks/api/",
-        tasks_views.TaskBoardAPIView.as_view(),
-        name="tasks_api"
-    ),
-    path(
-        "<slug:org_slug>/tasks/import/",
-        tasks_views.TaskImportView.as_view(),
-        name="tasks_import"
-    ),
-    path(
-        "<slug:org_slug>/tasks/create/",
-        tasks_views.TaskCreateView.as_view(),
-        name="task_create"
-    ),
+    path("<slug:org_slug>/tasks/", tasks_views.TaskListView.as_view(), name="tasks"),
+    path("<slug:org_slug>/tasks/api/", tasks_views.TaskBoardAPIView.as_view(), name="tasks_api"),
+    path("<slug:org_slug>/tasks/import/", tasks_views.TaskImportView.as_view(), name="tasks_import"),
+    path("<slug:org_slug>/tasks/create/", tasks_views.TaskCreateView.as_view(), name="task_create"),
     path(
         "<slug:org_slug>/tasks/<uuid:task_id>/",
         tasks_views.TaskDetailView.as_view(),
-        name="task_detail"
+        name="task_detail",
     ),
     path(
         "<slug:org_slug>/tasks/<uuid:task_id>/share/",
         tasks_views.TaskShareView.as_view(),
-        name="task_share"
+        name="task_share",
     ),
-
     # RIS (wrapped insight_core views)
-    path(
-        "<slug:org_slug>/ris/",
-        ris_views.RISOverviewView.as_view(),
-        name="ris_overview"
-    ),
-    path(
-        "<slug:org_slug>/ris/search/",
-        ris_views.RISSearchView.as_view(),
-        name="ris_search"
-    ),
-    path(
-        "<slug:org_slug>/ris/papers/",
-        ris_views.RISPapersView.as_view(),
-        name="ris_papers"
-    ),
+    path("<slug:org_slug>/ris/", ris_views.RISOverviewView.as_view(), name="ris_overview"),
+    path("<slug:org_slug>/ris/search/", ris_views.RISSearchView.as_view(), name="ris_search"),
+    path("<slug:org_slug>/ris/papers/", ris_views.RISPapersView.as_view(), name="ris_papers"),
     path(
         "<slug:org_slug>/ris/papers/<uuid:paper_id>/",
         ris_views.RISPaperDetailView.as_view(),
-        name="ris_paper_detail"
+        name="ris_paper_detail",
     ),
-    path(
-        "<slug:org_slug>/ris/meetings/",
-        ris_views.RISMeetingsView.as_view(),
-        name="ris_meetings"
-    ),
+    path("<slug:org_slug>/ris/meetings/", ris_views.RISMeetingsView.as_view(), name="ris_meetings"),
     path(
         "<slug:org_slug>/ris/meetings/<uuid:meeting_id>/",
         ris_views.RISMeetingDetailView.as_view(),
-        name="ris_meeting_detail"
+        name="ris_meeting_detail",
     ),
     path(
         "<slug:org_slug>/ris/organizations/",
         ris_views.RISOrganizationsView.as_view(),
-        name="ris_organizations"
+        name="ris_organizations",
     ),
     path(
         "<slug:org_slug>/ris/organizations/<uuid:org_id>/",
         ris_views.RISOrganizationDetailView.as_view(),
-        name="ris_organization_detail"
+        name="ris_organization_detail",
     ),
-    path(
-        "<slug:org_slug>/ris/persons/",
-        ris_views.RISPersonsView.as_view(),
-        name="ris_persons"
-    ),
+    path("<slug:org_slug>/ris/persons/", ris_views.RISPersonsView.as_view(), name="ris_persons"),
     path(
         "<slug:org_slug>/ris/persons/<uuid:person_id>/",
         ris_views.RISPersonDetailView.as_view(),
-        name="ris_person_detail"
+        name="ris_person_detail",
     ),
-    path(
-        "<slug:org_slug>/ris/map/",
-        ris_views.RISMapView.as_view(),
-        name="ris_map"
-    ),
-    path(
-        "<slug:org_slug>/ris/map/data/",
-        ris_views.RISMapDataView.as_view(),
-        name="ris_map_data"
-    ),
-
+    path("<slug:org_slug>/ris/map/", ris_views.RISMapView.as_view(), name="ris_map"),
+    path("<slug:org_slug>/ris/map/data/", ris_views.RISMapDataView.as_view(), name="ris_map_data"),
     # Organization settings
     path(
         "<slug:org_slug>/organization/",
         organization_views.OrganizationSettingsView.as_view(),
-        name="organization"
+        name="organization",
     ),
     path(
         "<slug:org_slug>/organization/faction-settings/",
         organization_views.OrganizationFactionSettingsView.as_view(),
-        name="organization_faction_settings"
+        name="organization_faction_settings",
     ),
     # Schedules feature disabled
     # path(
@@ -456,158 +388,144 @@ urlpatterns = [
     path(
         "<slug:org_slug>/organization/documents-settings/",
         organization_views.OrganizationDocumentsView.as_view(),
-        name="organization_documents"
+        name="organization_documents",
     ),
     path(
         "<slug:org_slug>/organization/members/",
         organization_views.MemberListView.as_view(),
-        name="members"
+        name="members",
     ),
     path(
         "<slug:org_slug>/organization/members/invite/",
         organization_views.MemberInviteView.as_view(),
-        name="member_invite"
+        name="member_invite",
     ),
     path(
         "<slug:org_slug>/organization/members/<uuid:member_id>/",
         organization_views.MemberDetailView.as_view(),
-        name="member_detail"
+        name="member_detail",
     ),
     path(
         "<slug:org_slug>/organization/invitations/<uuid:invitation_id>/resend/",
         organization_views.InvitationResendView.as_view(),
-        name="invitation_resend"
+        name="invitation_resend",
     ),
     path(
         "<slug:org_slug>/organization/invitations/<uuid:invitation_id>/cancel/",
         organization_views.InvitationCancelView.as_view(),
-        name="invitation_cancel"
+        name="invitation_cancel",
     ),
     path(
         "<slug:org_slug>/organization/roles/",
         organization_views.RoleListView.as_view(),
-        name="roles"
+        name="roles",
     ),
-
     # Council Parties (Coalition management)
     path(
         "<slug:org_slug>/organization/parties/",
         organization_views.CouncilPartyListView.as_view(),
-        name="council_parties"
+        name="council_parties",
     ),
     path(
         "<slug:org_slug>/organization/parties/create/",
         organization_views.CouncilPartyCreateView.as_view(),
-        name="council_party_create"
+        name="council_party_create",
     ),
     path(
         "<slug:org_slug>/organization/parties/<uuid:party_id>/",
         organization_views.CouncilPartyEditView.as_view(),
-        name="council_party_edit"
+        name="council_party_edit",
     ),
-
     # Support
-    path(
-        "<slug:org_slug>/support/",
-        support_views.SupportListView.as_view(),
-        name="support"
-    ),
+    path("<slug:org_slug>/support/", support_views.SupportListView.as_view(), name="support"),
     path(
         "<slug:org_slug>/support/create/",
         support_views.SupportCreateView.as_view(),
-        name="support_create"
+        name="support_create",
     ),
     path(
         "<slug:org_slug>/support/<uuid:ticket_id>/",
         support_views.SupportDetailView.as_view(),
-        name="support_detail"
+        name="support_detail",
     ),
     path(
         "<slug:org_slug>/support/<uuid:ticket_id>/messages/",
         support_views.SupportTicketMessagesPartialView.as_view(),
-        name="support_messages_partial"
+        name="support_messages_partial",
     ),
-
     # Knowledge Base
     path(
         "<slug:org_slug>/support/kb/",
         support_views.KnowledgeBaseView.as_view(),
-        name="knowledge_base"
+        name="knowledge_base",
     ),
     path(
         "<slug:org_slug>/support/kb/search/",
         support_views.ArticleSearchAPIView.as_view(),
-        name="kb_search"
+        name="kb_search",
     ),
     path(
         "<slug:org_slug>/support/kb/<slug:category_slug>/",
         support_views.KnowledgeBaseCategoryView.as_view(),
-        name="kb_category"
+        name="kb_category",
     ),
     path(
         "<slug:org_slug>/support/kb/<slug:category_slug>/<slug:article_slug>/",
         support_views.KnowledgeBaseArticleView.as_view(),
-        name="kb_article"
+        name="kb_article",
     ),
     path(
         "<slug:org_slug>/support/kb/article/<uuid:article_id>/feedback/",
         support_views.ArticleFeedbackView.as_view(),
-        name="kb_article_feedback"
+        name="kb_article_feedback",
     ),
-
     # Notifications
     path(
         "<slug:org_slug>/notifications/",
         notifications_views.NotificationCenterView.as_view(),
-        name="notifications"
+        name="notifications",
     ),
     path(
         "<slug:org_slug>/notifications/preferences/",
         notifications_views.NotificationPreferencesView.as_view(),
-        name="notification_preferences"
+        name="notification_preferences",
     ),
     path(
         "<slug:org_slug>/notifications/partials/list/",
         notifications_views.NotificationListPartialView.as_view(),
-        name="notifications_partial"
+        name="notifications_partial",
     ),
     path(
         "<slug:org_slug>/notifications/mark-read/",
         notifications_views.NotificationMarkReadView.as_view(),
-        name="notifications_mark_all_read"
+        name="notifications_mark_all_read",
     ),
     path(
         "<slug:org_slug>/notifications/<uuid:notification_id>/mark-read/",
         notifications_views.NotificationMarkReadView.as_view(),
-        name="notification_mark_read"
+        name="notification_mark_read",
     ),
     path(
         "<slug:org_slug>/notifications/count/",
         notifications_views.NotificationCountView.as_view(),
-        name="notification_count"
+        name="notification_count",
     ),
     path(
         "<slug:org_slug>/notifications/latest/",
         notifications_views.NotificationLatestView.as_view(),
-        name="notification_latest"
+        name="notification_latest",
     ),
-
     # User profile & security (within organization context)
-    path(
-        "<slug:org_slug>/profile/",
-        organization_views.ProfileView.as_view(),
-        name="profile"
-    ),
+    path("<slug:org_slug>/profile/", organization_views.ProfileView.as_view(), name="profile"),
     path(
         "<slug:org_slug>/profile/security/",
         organization_views.SecurityView.as_view(),
-        name="security"
+        name="security",
     ),
-
     # Public invitation acceptance (no org_slug needed, token contains info)
     path(
         "invitation/<str:token>/",
         organization_views.AcceptInvitationView.as_view(),
-        name="accept_invitation"
+        name="accept_invitation",
     ),
 ]

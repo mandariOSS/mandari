@@ -29,42 +29,18 @@ class BlogPost(models.Model):
     excerpt = models.TextField(
         "Kurzbeschreibung",
         max_length=500,
-        help_text="Kurze Zusammenfassung für die Übersicht (max. 500 Zeichen)"
+        help_text="Kurze Zusammenfassung für die Übersicht (max. 500 Zeichen)",
     )
     content = models.TextField("Inhalt", help_text="Unterstützt Markdown-Formatierung")
 
     # Meta-Daten
-    author = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        verbose_name="Autor"
-    )
-    category = models.CharField(
-        "Kategorie",
-        max_length=20,
-        choices=Category.choices,
-        default=Category.NEWS
-    )
-    status = models.CharField(
-        "Status",
-        max_length=20,
-        choices=Status.choices,
-        default=Status.DRAFT
-    )
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, verbose_name="Autor")
+    category = models.CharField("Kategorie", max_length=20, choices=Category.choices, default=Category.NEWS)
+    status = models.CharField("Status", max_length=20, choices=Status.choices, default=Status.DRAFT)
 
     # Bild
-    featured_image = models.ImageField(
-        "Beitragsbild",
-        upload_to="blog/images/",
-        blank=True,
-        null=True
-    )
-    image_alt = models.CharField(
-        "Bild-Alternativtext",
-        max_length=200,
-        blank=True
-    )
+    featured_image = models.ImageField("Beitragsbild", upload_to="blog/images/", blank=True, null=True)
+    image_alt = models.CharField("Bild-Alternativtext", max_length=200, blank=True)
 
     # Zeitstempel
     created_at = models.DateTimeField("Erstellt am", auto_now_add=True)
@@ -76,7 +52,7 @@ class BlogPost(models.Model):
         "Meta-Beschreibung",
         max_length=160,
         blank=True,
-        help_text="Für Suchmaschinen (max. 160 Zeichen)"
+        help_text="Für Suchmaschinen (max. 160 Zeichen)",
     )
 
     class Meta:
@@ -127,38 +103,21 @@ class Release(models.Model):
         PATCH = "patch", "Patch/Bugfix"
 
     # Basis-Felder
-    version = models.CharField(
-        "Version",
-        max_length=20,
-        unique=True,
-        help_text="Semantic Versioning, z.B. 1.0.0"
-    )
+    version = models.CharField("Version", max_length=20, unique=True, help_text="Semantic Versioning, z.B. 1.0.0")
     title = models.CharField("Titel", max_length=200)
-    content = models.TextField(
-        "Changelog",
-        help_text="Unterstützt Markdown-Formatierung. Nutze Listen für Änderungen."
-    )
+    content = models.TextField("Changelog", help_text="Unterstützt Markdown-Formatierung. Nutze Listen für Änderungen.")
 
     # Meta-Daten
     release_type = models.CharField(
-        "Release-Typ",
-        max_length=20,
-        choices=ReleaseType.choices,
-        default=ReleaseType.MINOR
+        "Release-Typ", max_length=20, choices=ReleaseType.choices, default=ReleaseType.MINOR
     )
     release_date = models.DateField("Release-Datum", default=timezone.now)
     is_published = models.BooleanField("Veröffentlicht", default=False)
 
     # Zusätzliche Infos
-    github_url = models.URLField(
-        "GitHub Release URL",
-        blank=True,
-        help_text="Link zum GitHub Release"
-    )
+    github_url = models.URLField("GitHub Release URL", blank=True, help_text="Link zum GitHub Release")
     breaking_changes = models.BooleanField(
-        "Breaking Changes",
-        default=False,
-        help_text="Enthält inkompatible Änderungen"
+        "Breaking Changes", default=False, help_text="Enthält inkompatible Änderungen"
     )
 
     # Zeitstempel

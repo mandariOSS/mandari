@@ -14,7 +14,6 @@ import secrets
 import uuid
 from datetime import timedelta
 
-from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
@@ -63,12 +62,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     last_name = models.CharField(max_length=150, blank=True, verbose_name="Nachname")
 
     # Profile
-    avatar = models.ImageField(
-        upload_to="avatars/",
-        blank=True,
-        null=True,
-        verbose_name="Profilbild"
-    )
+    avatar = models.ImageField(upload_to="avatars/", blank=True, null=True, verbose_name="Profilbild")
     phone = models.CharField(max_length=50, blank=True, verbose_name="Telefon")
 
     # Status
@@ -137,16 +131,10 @@ class TwoFactorDevice(models.Model):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.OneToOneField(
-        User,
-        on_delete=models.CASCADE,
-        related_name="totp_device"
-    )
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="totp_device")
 
     # TOTP secret (encrypted)
-    secret_encrypted = models.BinaryField(
-        verbose_name="Verschlüsseltes Secret"
-    )
+    secret_encrypted = models.BinaryField(verbose_name="Verschlüsseltes Secret")
 
     # Status
     is_confirmed = models.BooleanField(default=False, verbose_name="Bestätigt")
@@ -158,11 +146,7 @@ class TwoFactorDevice(models.Model):
     last_used_at = models.DateTimeField(blank=True, null=True)
 
     # Backup codes (encrypted JSON list)
-    backup_codes_encrypted = models.BinaryField(
-        blank=True,
-        null=True,
-        verbose_name="Backup-Codes"
-    )
+    backup_codes_encrypted = models.BinaryField(blank=True, null=True, verbose_name="Backup-Codes")
 
     class Meta:
         verbose_name = "2FA-Gerät"
@@ -181,11 +165,7 @@ class TrustedDevice(models.Model):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="trusted_devices"
-    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="trusted_devices")
 
     # Device identification
     device_token = models.CharField(max_length=64, unique=True)
@@ -214,13 +194,7 @@ class TrustedDevice(models.Model):
         return timezone.now() < self.expires_at
 
     @classmethod
-    def create_for_user(
-        cls,
-        user,
-        request,
-        device_name: str = "",
-        valid_days: int = 30
-    ):
+    def create_for_user(cls, user, request, device_name: str = "", valid_days: int = 30):
         """Create a new trusted device for a user."""
         token = secrets.token_hex(32)
         expires_at = timezone.now() + timedelta(days=valid_days)
@@ -268,11 +242,7 @@ class UserSession(models.Model):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="sessions"
-    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="sessions")
 
     # Session identification
     session_key = models.CharField(max_length=40, unique=True)
@@ -336,11 +306,7 @@ class LoginAttempt(models.Model):
     def get_recent_failures(cls, email: str, minutes: int = 30) -> int:
         """Count recent failed login attempts for an email."""
         cutoff = timezone.now() - timedelta(minutes=minutes)
-        return cls.objects.filter(
-            email=email,
-            was_successful=False,
-            timestamp__gte=cutoff
-        ).count()
+        return cls.objects.filter(email=email, was_successful=False, timestamp__gte=cutoff).count()
 
     @classmethod
     def is_rate_limited(cls, email: str, max_attempts: int = 5) -> bool:
@@ -356,11 +322,7 @@ class PasswordResetToken(models.Model):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="password_reset_tokens"
-    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="password_reset_tokens")
 
     token = models.CharField(max_length=64, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -383,9 +345,7 @@ class PasswordResetToken(models.Model):
         expires_at = timezone.now() + timedelta(hours=valid_hours)
 
         # Invalidate previous tokens
-        cls.objects.filter(user=user, used_at__isnull=True).update(
-            used_at=timezone.now()
-        )
+        cls.objects.filter(user=user, used_at__isnull=True).update(used_at=timezone.now())
 
         return cls.objects.create(
             user=user,
@@ -400,11 +360,7 @@ class EmailVerificationToken(models.Model):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="email_verification_tokens"
-    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="email_verification_tokens")
 
     token = models.CharField(max_length=64, unique=True)
     email = models.EmailField()  # The email being verified
@@ -454,11 +410,7 @@ class SecurityNotification(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="security_notifications"
-    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="security_notifications")
 
     notification_type = models.CharField(max_length=50, choices=NOTIFICATION_TYPES)
     title = models.CharField(max_length=200)

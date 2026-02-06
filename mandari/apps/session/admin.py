@@ -23,6 +23,7 @@ from .models import (
     SessionAgendaItem,
     SessionAPIToken,
     SessionApplication,
+    SessionAuditLog,
     SessionFile,
     SessionMeeting,
     SessionOrganization,
@@ -30,7 +31,6 @@ from .models import (
     SessionProtocol,
     SessionRole,
     SessionTenant,
-    SessionAuditLog,
 )
 
 # NOTE: The following models are intentionally NOT registered in Django admin
@@ -53,7 +53,15 @@ from .models import (
 class SessionTenantAdmin(ModelAdmin):
     """Admin for Session tenants."""
 
-    list_display = ["name", "slug", "contact_email", "organization_count", "user_count", "is_active_display", "created_at"]
+    list_display = [
+        "name",
+        "slug",
+        "contact_email",
+        "organization_count",
+        "user_count",
+        "is_active_display",
+        "created_at",
+    ]
     list_filter = ["is_active", "created_at"]
     search_fields = ["name", "slug", "contact_email"]
     prepopulated_fields = {"slug": ("name",)}
@@ -62,27 +70,40 @@ class SessionTenantAdmin(ModelAdmin):
     actions_detail = ["generate_api_token_action"]
 
     fieldsets = (
-        (None, {
-            "fields": ("name", "slug", "short_name", "description")
-        }),
-        ("OParl-Verknüpfung", {
-            "fields": ("oparl_body",),
-            "classes": ("collapse",),
-            "description": "Verknüpfung mit einer OParl-Kommune für die automatische Synchronisation öffentlicher Daten."
-        }),
-        ("Branding", {
-            "fields": ("logo", "primary_color", "secondary_color"),
-        }),
-        ("Kontakt", {
-            "fields": ("contact_email", "contact_phone", "website", "address"),
-        }),
-        ("Einstellungen", {
-            "fields": ("settings", "is_active"),
-        }),
-        ("System", {
-            "fields": ("encryption_key", "created_at", "updated_at"),
-            "classes": ("collapse",),
-        }),
+        (None, {"fields": ("name", "slug", "short_name", "description")}),
+        (
+            "OParl-Verknüpfung",
+            {
+                "fields": ("oparl_body",),
+                "classes": ("collapse",),
+                "description": "Verknüpfung mit einer OParl-Kommune für die automatische Synchronisation öffentlicher Daten.",
+            },
+        ),
+        (
+            "Branding",
+            {
+                "fields": ("logo", "primary_color", "secondary_color"),
+            },
+        ),
+        (
+            "Kontakt",
+            {
+                "fields": ("contact_email", "contact_phone", "website", "address"),
+            },
+        ),
+        (
+            "Einstellungen",
+            {
+                "fields": ("settings", "is_active"),
+            },
+        ),
+        (
+            "System",
+            {
+                "fields": ("encryption_key", "created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     @admin.display(description="Gremien")
@@ -121,7 +142,7 @@ class SessionTenantAdmin(ModelAdmin):
                 f"Neuer API-Token erstellt! <strong>Token (nur einmal sichtbar):</strong><br>"
                 f"<code style='background: #fef3c7; padding: 4px 8px; border-radius: 4px; font-family: monospace;'>{raw_token}</code><br>"
                 f"<small>Kopieren Sie diesen Token sofort, er kann nicht erneut angezeigt werden!</small>"
-            )
+            ),
         )
         return None
 
@@ -141,68 +162,93 @@ class SessionRoleAdmin(ModelAdmin):
     ordering = ["tenant__name", "-priority", "name"]
 
     fieldsets = (
-        (None, {
-            "fields": ("tenant", "name", "description")
-        }),
-        ("Dashboard", {
-            "fields": ("can_view_dashboard",),
-        }),
-        ("Sitzungen", {
-            "fields": (
-                "can_view_meetings",
-                "can_create_meetings",
-                "can_edit_meetings",
-                "can_delete_meetings",
-                "can_view_non_public_meetings",
-            ),
-        }),
-        ("Vorlagen", {
-            "fields": (
-                "can_view_papers",
-                "can_create_papers",
-                "can_edit_papers",
-                "can_delete_papers",
-                "can_approve_papers",
-                "can_view_non_public_papers",
-            ),
-        }),
-        ("Anträge", {
-            "fields": (
-                "can_view_applications",
-                "can_process_applications",
-            ),
-        }),
-        ("Protokolle", {
-            "fields": (
-                "can_view_protocols",
-                "can_create_protocols",
-                "can_edit_protocols",
-                "can_approve_protocols",
-            ),
-        }),
-        ("Anwesenheit & Sitzungsgelder", {
-            "fields": (
-                "can_manage_attendance",
-                "can_manage_allowances",
-            ),
-        }),
-        ("Administration", {
-            "fields": (
-                "can_manage_users",
-                "can_manage_organizations",
-                "can_manage_settings",
-                "can_view_audit_log",
-            ),
-        }),
-        ("API", {
-            "fields": (
-                "can_access_api",
-                "can_access_oparl_api",
-            ),
-        }),
-        ("Rolleneinstellungen", {
-            "fields": ("is_admin", "is_system_role", "priority", "color"),
-        }),
+        (None, {"fields": ("tenant", "name", "description")}),
+        (
+            "Dashboard",
+            {
+                "fields": ("can_view_dashboard",),
+            },
+        ),
+        (
+            "Sitzungen",
+            {
+                "fields": (
+                    "can_view_meetings",
+                    "can_create_meetings",
+                    "can_edit_meetings",
+                    "can_delete_meetings",
+                    "can_view_non_public_meetings",
+                ),
+            },
+        ),
+        (
+            "Vorlagen",
+            {
+                "fields": (
+                    "can_view_papers",
+                    "can_create_papers",
+                    "can_edit_papers",
+                    "can_delete_papers",
+                    "can_approve_papers",
+                    "can_view_non_public_papers",
+                ),
+            },
+        ),
+        (
+            "Anträge",
+            {
+                "fields": (
+                    "can_view_applications",
+                    "can_process_applications",
+                ),
+            },
+        ),
+        (
+            "Protokolle",
+            {
+                "fields": (
+                    "can_view_protocols",
+                    "can_create_protocols",
+                    "can_edit_protocols",
+                    "can_approve_protocols",
+                ),
+            },
+        ),
+        (
+            "Anwesenheit & Sitzungsgelder",
+            {
+                "fields": (
+                    "can_manage_attendance",
+                    "can_manage_allowances",
+                ),
+            },
+        ),
+        (
+            "Administration",
+            {
+                "fields": (
+                    "can_manage_users",
+                    "can_manage_organizations",
+                    "can_manage_settings",
+                    "can_view_audit_log",
+                ),
+            },
+        ),
+        (
+            "API",
+            {
+                "fields": (
+                    "can_access_api",
+                    "can_access_oparl_api",
+                ),
+            },
+        ),
+        (
+            "Rolleneinstellungen",
+            {
+                "fields": ("is_admin", "is_system_role", "priority", "color"),
+            },
+        ),
     )
 
 
@@ -229,28 +275,41 @@ class SessionOrganizationAdmin(ModelAdmin):
     # NOTE: No membership inline - protects personal data
 
     fieldsets = (
-        (None, {
-            "fields": ("tenant", "name", "short_name", "organization_type")
-        }),
-        ("OParl-Verknüpfung", {
-            "fields": ("oparl_organization",),
-            "classes": ("collapse",),
-        }),
-        ("Hierarchie", {
-            "fields": ("parent",),
-        }),
-        ("Einstellungen", {
-            "fields": (
-                "default_meeting_location",
-                "default_meeting_start_time",
-            ),
-        }),
-        ("Sitzungsgelder", {
-            "fields": ("allowance_amount", "allowance_currency"),
-        }),
-        ("Status", {
-            "fields": ("is_active", "start_date", "end_date"),
-        }),
+        (None, {"fields": ("tenant", "name", "short_name", "organization_type")}),
+        (
+            "OParl-Verknüpfung",
+            {
+                "fields": ("oparl_organization",),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Hierarchie",
+            {
+                "fields": ("parent",),
+            },
+        ),
+        (
+            "Einstellungen",
+            {
+                "fields": (
+                    "default_meeting_location",
+                    "default_meeting_start_time",
+                ),
+            },
+        ),
+        (
+            "Sitzungsgelder",
+            {
+                "fields": ("allowance_amount", "allowance_currency"),
+            },
+        ),
+        (
+            "Status",
+            {
+                "fields": ("is_active", "start_date", "end_date"),
+            },
+        ),
     )
 
     @admin.display(description="Mitglieder")
@@ -289,7 +348,15 @@ class SessionMeetingAdmin(ModelAdmin):
     Attendance is managed through the Session portal.
     """
 
-    list_display = ["name", "organization", "start", "meeting_state_display", "is_public_display", "cancelled_display", "attendance_count"]
+    list_display = [
+        "name",
+        "organization",
+        "start",
+        "meeting_state_display",
+        "is_public_display",
+        "cancelled_display",
+        "attendance_count",
+    ]
     list_filter = ["tenant", "organization", "meeting_state", "is_public", "cancelled"]
     search_fields = ["name", "organization__name"]
     date_hierarchy = "start"
@@ -297,50 +364,63 @@ class SessionMeetingAdmin(ModelAdmin):
     actions = ["mark_scheduled", "mark_completed", "cancel_meetings"]
 
     fieldsets = (
-        (None, {
-            "fields": ("tenant", "name", "organization")
-        }),
-        ("OParl-Verknüpfung", {
-            "fields": ("oparl_meeting",),
-            "classes": ("collapse",),
-        }),
-        ("Datum & Zeit", {
-            "fields": (
-                ("start", "end"),
-                ("actual_start", "actual_end"),
-            ),
-        }),
-        ("Ort", {
-            "fields": (
-                "location",
-                "room",
-                ("street_address", "postal_code", "locality"),
-            ),
-        }),
-        ("Status", {
-            "fields": ("meeting_state", "is_public", "cancelled", "cancellation_reason"),
-        }),
-        ("Einladung", {
-            "fields": ("invitation_sent_at", "invitation_text"),
-            "classes": ("collapse",),
-        }),
+        (None, {"fields": ("tenant", "name", "organization")}),
+        (
+            "OParl-Verknüpfung",
+            {
+                "fields": ("oparl_meeting",),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Datum & Zeit",
+            {
+                "fields": (
+                    ("start", "end"),
+                    ("actual_start", "actual_end"),
+                ),
+            },
+        ),
+        (
+            "Ort",
+            {
+                "fields": (
+                    "location",
+                    "room",
+                    ("street_address", "postal_code", "locality"),
+                ),
+            },
+        ),
+        (
+            "Status",
+            {
+                "fields": ("meeting_state", "is_public", "cancelled", "cancellation_reason"),
+            },
+        ),
+        (
+            "Einladung",
+            {
+                "fields": ("invitation_sent_at", "invitation_text"),
+                "classes": ("collapse",),
+            },
+        ),
         # NOTE: created_by removed - references SessionUser (personal data)
     )
 
     @admin.display(description="Status")
     def meeting_state_display(self, obj):
         colors = {
-            "scheduled": "#60a5fa",   # blue
+            "scheduled": "#60a5fa",  # blue
             "invitation_sent": "#a78bfa",  # purple
             "in_progress": "#fbbf24",  # yellow
-            "completed": "#34d399",    # green
-            "archived": "#9ca3af",     # gray
+            "completed": "#34d399",  # green
+            "archived": "#9ca3af",  # gray
         }
         color = colors.get(obj.meeting_state, "#9ca3af")
         return format_html(
             '<span style="background: {}; color: white; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem;">{}</span>',
             color,
-            obj.get_meeting_state_display()
+            obj.get_meeting_state_display(),
         )
 
     @admin.display(description="Öffentlich", boolean=True)
@@ -399,32 +479,48 @@ class SessionPaperAdmin(ModelAdmin):
     inlines = [SessionFileInline]
 
     fieldsets = (
-        (None, {
-            "fields": ("tenant", "reference", "name", "paper_type")
-        }),
-        ("OParl-Verknüpfung", {
-            "fields": ("oparl_paper",),
-            "classes": ("collapse",),
-        }),
-        ("Inhalt", {
-            "fields": ("main_text", "resolution_text"),
-        }),
-        ("Sichtbarkeit", {
-            "fields": ("is_public", "status"),
-        }),
-        ("Termine", {
-            "fields": ("date", "deadline"),
-        }),
-        ("Zuordnungen", {
-            "fields": (
-                "main_organization",
-                # originator_person removed - personal data
-            ),
-        }),
-        ("Herkunft", {
-            "fields": ("source_application",),
-            "classes": ("collapse",),
-        }),
+        (None, {"fields": ("tenant", "reference", "name", "paper_type")}),
+        (
+            "OParl-Verknüpfung",
+            {
+                "fields": ("oparl_paper",),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Inhalt",
+            {
+                "fields": ("main_text", "resolution_text"),
+            },
+        ),
+        (
+            "Sichtbarkeit",
+            {
+                "fields": ("is_public", "status"),
+            },
+        ),
+        (
+            "Termine",
+            {
+                "fields": ("date", "deadline"),
+            },
+        ),
+        (
+            "Zuordnungen",
+            {
+                "fields": (
+                    "main_organization",
+                    # originator_person removed - personal data
+                ),
+            },
+        ),
+        (
+            "Herkunft",
+            {
+                "fields": ("source_application",),
+                "classes": ("collapse",),
+            },
+        ),
         # NOTE: Workflow section removed - created_by/approved_by reference SessionUser
     )
 
@@ -443,7 +539,15 @@ class SessionApplicationAdmin(ModelAdmin):
     Detailed application data is managed through the Session portal.
     """
 
-    list_display = ["reference", "title", "application_type", "status_display", "submitting_organization", "is_urgent_display", "submitted_at"]
+    list_display = [
+        "reference",
+        "title",
+        "application_type",
+        "status_display",
+        "submitting_organization",
+        "is_urgent_display",
+        "submitted_at",
+    ]
     list_filter = ["tenant", "application_type", "status", "is_urgent"]
     search_fields = ["reference", "title"]  # Personal data removed from search
     date_hierarchy = "submitted_at"
@@ -452,46 +556,59 @@ class SessionApplicationAdmin(ModelAdmin):
     actions_detail = ["create_paper_from_application"]
 
     fieldsets = (
-        (None, {
-            "fields": ("tenant", "reference", "title", "application_type")
-        }),
-        ("Inhalt", {
-            "fields": ("justification", "resolution_proposal", "financial_impact"),
-        }),
-        ("Einreicher (nur Organisation)", {
-            "fields": (
-                "submitting_organization",
-                # Personal data fields removed: submitter_name, email, phone
-            ),
-            "description": "Detaillierte Einreicher-Informationen sind im Session-Portal einsehbar."
-        }),
-        ("Zielgremium", {
-            "fields": ("target_organization",),
-        }),
-        ("Dringlichkeit", {
-            "fields": ("is_urgent", "urgency_reason", "deadline"),
-        }),
-        ("Status", {
-            "fields": ("status", "received_at", "processing_notes"),
-            # received_by removed - references SessionUser
-        }),
+        (None, {"fields": ("tenant", "reference", "title", "application_type")}),
+        (
+            "Inhalt",
+            {
+                "fields": ("justification", "resolution_proposal", "financial_impact"),
+            },
+        ),
+        (
+            "Einreicher (nur Organisation)",
+            {
+                "fields": (
+                    "submitting_organization",
+                    # Personal data fields removed: submitter_name, email, phone
+                ),
+                "description": "Detaillierte Einreicher-Informationen sind im Session-Portal einsehbar.",
+            },
+        ),
+        (
+            "Zielgremium",
+            {
+                "fields": ("target_organization",),
+            },
+        ),
+        (
+            "Dringlichkeit",
+            {
+                "fields": ("is_urgent", "urgency_reason", "deadline"),
+            },
+        ),
+        (
+            "Status",
+            {
+                "fields": ("status", "received_at", "processing_notes"),
+                # received_by removed - references SessionUser
+            },
+        ),
     )
 
     @admin.display(description="Status")
     def status_display(self, obj):
         colors = {
             "submitted": "#fbbf24",  # yellow
-            "received": "#60a5fa",   # blue
+            "received": "#60a5fa",  # blue
             "in_review": "#a78bfa",  # purple
-            "accepted": "#34d399",   # green
-            "rejected": "#f87171",   # red
+            "accepted": "#34d399",  # green
+            "rejected": "#f87171",  # red
             "withdrawn": "#9ca3af",  # gray
         }
         color = colors.get(obj.status, "#9ca3af")
         return format_html(
             '<span style="background: {}; color: white; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem;">{}</span>',
             color,
-            obj.get_status_display()
+            obj.get_status_display(),
         )
 
     @admin.display(description="Dringend", boolean=True)
@@ -545,10 +662,7 @@ class SessionApplicationAdmin(ModelAdmin):
         app.status = "accepted"
         app.save()
 
-        messages.success(
-            request,
-            f"Vorlage '{paper.reference}' wurde aus dem Antrag erstellt."
-        )
+        messages.success(request, f"Vorlage '{paper.reference}' wurde aus dem Antrag erstellt.")
         return None
 
 
@@ -570,15 +684,19 @@ class SessionProtocolAdmin(ModelAdmin):
     search_fields = ["meeting__name"]
 
     fieldsets = (
-        (None, {
-            "fields": ("meeting",)
-        }),
-        ("Inhalt", {
-            "fields": ("content",),
-        }),
-        ("Status", {
-            "fields": ("status", "approved_at"),
-        }),
+        (None, {"fields": ("meeting",)}),
+        (
+            "Inhalt",
+            {
+                "fields": ("content",),
+            },
+        ),
+        (
+            "Status",
+            {
+                "fields": ("status", "approved_at"),
+            },
+        ),
         # Workflow section removed - references SessionUser
     )
 
@@ -602,21 +720,30 @@ class SessionAuditLogAdmin(ModelAdmin):
     search_fields = ["object_repr"]  # Removed user search
     date_hierarchy = "created_at"
     readonly_fields = [
-        "tenant", "action",
-        "model_name", "object_id", "object_repr", "changes", "created_at"
+        "tenant",
+        "action",
+        "model_name",
+        "object_id",
+        "object_repr",
+        "changes",
+        "created_at",
     ]
     # Excluded: user, ip_address, user_agent - personal data
 
     fieldsets = (
-        (None, {
-            "fields": ("tenant", "action", "model_name", "object_id", "object_repr")
-        }),
-        ("Änderungen", {
-            "fields": ("changes",),
-        }),
-        ("Zeitstempel", {
-            "fields": ("created_at",),
-        }),
+        (None, {"fields": ("tenant", "action", "model_name", "object_id", "object_repr")}),
+        (
+            "Änderungen",
+            {
+                "fields": ("changes",),
+            },
+        ),
+        (
+            "Zeitstempel",
+            {
+                "fields": ("created_at",),
+            },
+        ),
         # User/IP information not shown - privacy
     )
 
@@ -639,53 +766,88 @@ class SessionAuditLogAdmin(ModelAdmin):
 class SessionAPITokenAdmin(ModelAdmin):
     """Admin for Session API tokens."""
 
-    list_display = ["name", "tenant", "token_prefix_display", "is_active_display", "permissions_display", "last_used_at", "usage_count", "expires_at"]
-    list_filter = ["tenant", "is_active", "can_submit_applications", "can_read_meetings", "can_read_papers"]
+    list_display = [
+        "name",
+        "tenant",
+        "token_prefix_display",
+        "is_active_display",
+        "permissions_display",
+        "last_used_at",
+        "usage_count",
+        "expires_at",
+    ]
+    list_filter = [
+        "tenant",
+        "is_active",
+        "can_submit_applications",
+        "can_read_meetings",
+        "can_read_papers",
+    ]
     search_fields = ["name", "tenant__name", "token_prefix"]
-    readonly_fields = ["token", "token_prefix", "last_used_at", "usage_count", "created_at", "updated_at"]
+    readonly_fields = [
+        "token",
+        "token_prefix",
+        "last_used_at",
+        "usage_count",
+        "created_at",
+        "updated_at",
+    ]
     # last_used_ip removed for privacy
     actions = ["deactivate_tokens", "activate_tokens"]
 
     fieldsets = (
-        (None, {
-            "fields": ("tenant", "name", "description")
-        }),
-        ("Token", {
-            "fields": ("token_prefix", "token"),
-            "description": "Der Token wird beim Erstellen einmalig angezeigt und kann danach nicht mehr abgerufen werden. Nutzen Sie 'Neuen Token generieren' um einen Token zu erstellen.",
-        }),
-        ("Berechtigungen", {
-            "fields": (
-                "can_submit_applications",
-                "can_read_meetings",
-                "can_read_papers",
-            ),
-        }),
-        ("Sicherheit", {
-            "fields": (
-                "is_active",
-                "rate_limit_per_minute",
-                "allowed_ips",
-                "expires_at",
-            ),
-        }),
+        (None, {"fields": ("tenant", "name", "description")}),
+        (
+            "Token",
+            {
+                "fields": ("token_prefix", "token"),
+                "description": "Der Token wird beim Erstellen einmalig angezeigt und kann danach nicht mehr abgerufen werden. Nutzen Sie 'Neuen Token generieren' um einen Token zu erstellen.",
+            },
+        ),
+        (
+            "Berechtigungen",
+            {
+                "fields": (
+                    "can_submit_applications",
+                    "can_read_meetings",
+                    "can_read_papers",
+                ),
+            },
+        ),
+        (
+            "Sicherheit",
+            {
+                "fields": (
+                    "is_active",
+                    "rate_limit_per_minute",
+                    "allowed_ips",
+                    "expires_at",
+                ),
+            },
+        ),
         # created_by removed - references SessionUser
-        ("Nutzungsstatistik", {
-            "fields": ("last_used_at", "usage_count"),
-            # last_used_ip removed for privacy
-            "classes": ("collapse",),
-        }),
-        ("Zeitstempel", {
-            "fields": ("created_at", "updated_at"),
-            "classes": ("collapse",),
-        }),
+        (
+            "Nutzungsstatistik",
+            {
+                "fields": ("last_used_at", "usage_count"),
+                # last_used_ip removed for privacy
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Zeitstempel",
+            {
+                "fields": ("created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     @admin.display(description="Token")
     def token_prefix_display(self, obj):
         return format_html(
             '<code style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">{}</code>...',
-            obj.token_prefix
+            obj.token_prefix,
         )
 
     @admin.display(description="Aktiv", boolean=True)
@@ -715,12 +877,12 @@ class SessionAPITokenAdmin(ModelAdmin):
 
     # NOTE: save_model for created_by removed - handled in Session portal
 
-    def add_view(self, request, form_url='', extra_context=None):
+    def add_view(self, request, form_url="", extra_context=None):
         """Show info message when adding new token."""
         extra_context = extra_context or {}
         messages.info(
             request,
             "Nach dem Speichern wird der vollständige Token einmalig angezeigt. "
-            "Kopieren Sie ihn sofort, da er danach nicht mehr abgerufen werden kann!"
+            "Kopieren Sie ihn sofort, da er danach nicht mehr abgerufen werden kann!",
         )
         return super().add_view(request, form_url, extra_context)

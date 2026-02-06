@@ -12,6 +12,7 @@ Usage:
 """
 
 import time
+
 import httpx
 from django.core.management.base import BaseCommand, CommandError
 
@@ -68,26 +69,25 @@ class Command(BaseCommand):
             if not bodies.exists():
                 raise CommandError(f"Body with ID {options['body_id']} not found")
         else:
-            bodies = OParlBody.objects.exclude(
-                bbox_north__isnull=True
-            ).exclude(
-                bbox_south__isnull=True
-            ).exclude(
-                bbox_east__isnull=True
-            ).exclude(
-                bbox_west__isnull=True
+            bodies = (
+                OParlBody.objects.exclude(bbox_north__isnull=True)
+                .exclude(bbox_south__isnull=True)
+                .exclude(bbox_east__isnull=True)
+                .exclude(bbox_west__isnull=True)
             )
 
         if not bodies.exists():
-            self.stdout.write(self.style.WARNING(
-                "No bodies with bounding box data found. "
-                "Please add geographic data (bbox_north, bbox_south, bbox_east, bbox_west) to bodies first."
-            ))
+            self.stdout.write(
+                self.style.WARNING(
+                    "No bodies with bounding box data found. "
+                    "Please add geographic data (bbox_north, bbox_south, bbox_east, bbox_west) to bodies first."
+                )
+            )
             return
 
-        self.stdout.write(self.style.SUCCESS(
-            f"Processing {bodies.count()} bodies with zoom levels {zoom_min}-{zoom_max}"
-        ))
+        self.stdout.write(
+            self.style.SUCCESS(f"Processing {bodies.count()} bodies with zoom levels {zoom_min}-{zoom_max}")
+        )
 
         total_tiles = 0
         total_fetched = 0
@@ -103,7 +103,7 @@ class Command(BaseCommand):
                 float(body.bbox_south),
                 float(body.bbox_east),
                 float(body.bbox_west),
-                zoom_levels=zoom_levels
+                zoom_levels=zoom_levels,
             )
 
             total_tiles += len(tiles)
@@ -122,7 +122,7 @@ class Command(BaseCommand):
 
             with httpx.Client(
                 timeout=10.0,
-                headers={"User-Agent": "Mandari/1.0 (https://mandari.dev; contact@mandari.dev)"}
+                headers={"User-Agent": "Mandari/1.0 (https://mandari.dev; contact@mandari.dev)"},
             ) as client:
                 for i, (z, x, y) in enumerate(tiles):
                     # Check if already cached
@@ -132,7 +132,7 @@ class Command(BaseCommand):
                         continue
 
                     # Fetch from OSM
-                    subdomain = ['a', 'b', 'c'][x % 3]
+                    subdomain = ["a", "b", "c"][x % 3]
                     tile_url = f"https://{subdomain}.tile.openstreetmap.org/{z}/{x}/{y}.png"
 
                     try:
@@ -143,9 +143,7 @@ class Command(BaseCommand):
                             fetched += 1
                         else:
                             errors += 1
-                            self.stdout.write(
-                                self.style.WARNING(f"    HTTP {response.status_code} for {z}/{x}/{y}")
-                            )
+                            self.stdout.write(self.style.WARNING(f"    HTTP {response.status_code} for {z}/{x}/{y}"))
 
                     except Exception as e:
                         errors += 1
@@ -162,13 +160,11 @@ class Command(BaseCommand):
             total_cached += cached
             total_errors += errors
 
-            self.stdout.write(
-                f"  Fetched: {fetched}, Already cached: {cached}, Errors: {errors}"
-            )
+            self.stdout.write(f"  Fetched: {fetched}, Already cached: {cached}, Errors: {errors}")
 
         # Summary
         self.stdout.write("\n" + "=" * 50)
-        self.stdout.write(self.style.SUCCESS(f"Summary:"))
+        self.stdout.write(self.style.SUCCESS("Summary:"))
         self.stdout.write(f"  Total tiles: {total_tiles}")
         self.stdout.write(f"  Newly fetched: {total_fetched}")
         self.stdout.write(f"  Already cached: {total_cached}")

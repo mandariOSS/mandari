@@ -7,31 +7,29 @@ Server-Side Rendering mit Django Templates + HTMX.
 import json
 from datetime import timedelta
 
-from django.shortcuts import render, redirect, get_object_or_404
-from django.views.generic import TemplateView, ListView, DetailView
-from django.http import JsonResponse, HttpResponse
-from django.utils import timezone
-from django.db.models import Q, Count
 from django.core.paginator import Paginator
-from django.views.decorators.http import require_POST, require_GET
-
-from django.shortcuts import get_object_or_404
+from django.db.models import Q
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.views.decorators.http import require_GET, require_POST
+from django.views.generic import DetailView, ListView, TemplateView
 
 from .models import (
-    OParlBody,
-    OParlOrganization,
-    OParlPerson,
-    OParlMeeting,
     OParlAgendaItem,
+    OParlBody,
+    OParlMeeting,
+    OParlOrganization,
     OParlPaper,
+    OParlPerson,
     TileCache,
 )
 from .ranking import sort_organizations_by_ranking
 
-
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
 
 def get_active_body(request):
     """Holt die aktive Kommune aus der Session oder setzt einen Standard."""
@@ -59,8 +57,10 @@ def is_all_bodies_mode(request):
 # Landingpage (Marketing)
 # =============================================================================
 
+
 class HomeView(TemplateView):
     """Marketing-Landingpage mit Produkt-Übersicht."""
+
     template_name = "pages/landing.html"
 
     def get_context_data(self, **kwargs):
@@ -79,6 +79,7 @@ class HomeView(TemplateView):
 
         # SEO-Kontext
         from .seo import get_home_seo
+
         context["seo"] = get_home_seo(self.request).to_dict()
 
         return context
@@ -88,8 +89,10 @@ class HomeView(TemplateView):
 # Portal Homepage (RIS)
 # =============================================================================
 
+
 class PortalHomeView(TemplateView):
     """Portal-Startseite mit Kommune-Auswahl und Statistiken."""
+
     template_name = "pages/portal/home.html"
 
     def get_context_data(self, **kwargs):
@@ -121,19 +124,18 @@ class PortalHomeView(TemplateView):
             }
 
             # Nächste Sitzungen
-            context["upcoming_meetings"] = OParlMeeting.objects.filter(
-                body=body,
-                start__gte=timezone.now(),
-                cancelled=False
-            ).prefetch_related("organizations").order_by("start")[:5]
+            context["upcoming_meetings"] = (
+                OParlMeeting.objects.filter(body=body, start__gte=timezone.now(), cancelled=False)
+                .prefetch_related("organizations")
+                .order_by("start")[:5]
+            )
 
             # Neueste Vorgänge
-            context["recent_papers"] = OParlPaper.objects.filter(
-                body=body
-            ).order_by("-date", "-oparl_created")[:5]
+            context["recent_papers"] = OParlPaper.objects.filter(body=body).order_by("-date", "-oparl_created")[:5]
 
         # SEO-Kontext
         from .seo import get_portal_home_seo
+
         context["seo"] = get_portal_home_seo(self.request, body if not all_bodies_mode else None).to_dict()
 
         return context
@@ -199,8 +201,10 @@ def clear_body(request):
 # Gremien (Organizations)
 # =============================================================================
 
+
 class OrganizationListView(TemplateView):
     """Liste aller Gremien mit Aktiv/Vergangen-Tabs."""
+
     template_name = "pages/organizations/list.html"
 
     def get_template_names(self):
@@ -221,14 +225,10 @@ class OrganizationListView(TemplateView):
 
             # Suche
             if q:
-                base_qs = base_qs.filter(
-                    Q(name__icontains=q) | Q(short_name__icontains=q)
-                )
+                base_qs = base_qs.filter(Q(name__icontains=q) | Q(short_name__icontains=q))
 
             if tab == "active":
-                orgs = base_qs.filter(
-                    Q(end_date__isnull=True) | Q(end_date__gte=today)
-                )
+                orgs = base_qs.filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
             else:
                 orgs = base_qs.filter(end_date__lt=today)
 
@@ -236,9 +236,7 @@ class OrganizationListView(TemplateView):
 
             # Counts ohne Suchfilter
             all_orgs = OParlOrganization.objects.filter(body=body)
-            context["active_count"] = all_orgs.filter(
-                Q(end_date__isnull=True) | Q(end_date__gte=today)
-            ).count()
+            context["active_count"] = all_orgs.filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).count()
             context["past_count"] = all_orgs.filter(end_date__lt=today).count()
 
         context["tab"] = tab
@@ -247,6 +245,7 @@ class OrganizationListView(TemplateView):
 
 class OrganizationDetailView(DetailView):
     """Detailseite eines Gremiums."""
+
     model = OParlOrganization
     template_name = "pages/organizations/detail.html"
     context_object_name = "organization"
@@ -256,12 +255,15 @@ class OrganizationDetailView(DetailView):
         org = self.object
 
         # Mitglieder
-        context["members"] = org.memberships.select_related("person").filter(
-            Q(end_date__isnull=True) | Q(end_date__gte=timezone.now().date())
-        ).order_by("person__family_name")
+        context["members"] = (
+            org.memberships.select_related("person")
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=timezone.now().date()))
+            .order_by("person__family_name")
+        )
 
         # SEO-Kontext
         from .seo import get_organization_seo
+
         context["seo"] = get_organization_seo(org, self.request).to_dict()
 
         return context
@@ -269,6 +271,7 @@ class OrganizationDetailView(DetailView):
 
 class OrganizationListPartial(ListView):
     """HTMX Partial für Gremien-Liste."""
+
     model = OParlOrganization
     template_name = "partials/organization_list.html"
     context_object_name = "organizations"
@@ -284,9 +287,7 @@ class OrganizationListPartial(ListView):
         base_qs = OParlOrganization.objects.filter(body=body)
 
         if tab == "active":
-            qs = base_qs.filter(
-                Q(end_date__isnull=True) | Q(end_date__gte=today)
-            )
+            qs = base_qs.filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
         else:
             qs = base_qs.filter(end_date__lt=today)
         return sort_organizations_by_ranking(qs)
@@ -296,8 +297,10 @@ class OrganizationListPartial(ListView):
 # Personen
 # =============================================================================
 
+
 class PersonListView(ListView):
     """Liste aller Personen."""
+
     model = OParlPerson
     template_name = "pages/persons/list.html"
     context_object_name = "persons"
@@ -319,17 +322,14 @@ class PersonListView(ListView):
         # Suche
         q = self.request.GET.get("q", "").strip()
         if q:
-            qs = qs.filter(
-                Q(name__icontains=q) |
-                Q(family_name__icontains=q) |
-                Q(given_name__icontains=q)
-            )
+            qs = qs.filter(Q(name__icontains=q) | Q(family_name__icontains=q) | Q(given_name__icontains=q))
 
         return qs.order_by("family_name", "given_name")
 
 
 class PersonDetailView(DetailView):
     """Detailseite einer Person."""
+
     model = OParlPerson
     template_name = "pages/persons/detail.html"
     context_object_name = "person"
@@ -339,12 +339,11 @@ class PersonDetailView(DetailView):
         person = self.object
 
         # Mitgliedschaften
-        context["memberships"] = person.memberships.select_related(
-            "organization"
-        ).order_by("-start_date")
+        context["memberships"] = person.memberships.select_related("organization").order_by("-start_date")
 
         # SEO-Kontext
         from .seo import get_person_seo
+
         context["seo"] = get_person_seo(person, self.request).to_dict()
 
         return context
@@ -352,6 +351,7 @@ class PersonDetailView(DetailView):
 
 class PersonListPartial(ListView):
     """HTMX Partial für Personen-Liste."""
+
     model = OParlPerson
     template_name = "partials/person_list.html"
     context_object_name = "persons"
@@ -362,8 +362,10 @@ class PersonListPartial(ListView):
 # Vorgänge (Papers)
 # =============================================================================
 
+
 class PaperListView(ListView):
     """Liste aller Vorgänge."""
+
     model = OParlPaper
     template_name = "pages/papers/list.html"
     context_object_name = "papers"
@@ -385,10 +387,7 @@ class PaperListView(ListView):
         # Suche
         q = self.request.GET.get("q", "").strip()
         if q:
-            qs = qs.filter(
-                Q(name__icontains=q) |
-                Q(reference__icontains=q)
-            )
+            qs = qs.filter(Q(name__icontains=q) | Q(reference__icontains=q))
 
         # Typ-Filter
         paper_type = self.request.GET.get("type", "").strip()
@@ -403,19 +402,20 @@ class PaperListView(ListView):
 
         if body:
             # Verfügbare Typen für Filter
-            context["paper_types"] = OParlPaper.objects.filter(
-                body=body
-            ).exclude(
-                paper_type__isnull=True
-            ).values_list(
-                "paper_type", flat=True
-            ).distinct().order_by("paper_type")
+            context["paper_types"] = (
+                OParlPaper.objects.filter(body=body)
+                .exclude(paper_type__isnull=True)
+                .values_list("paper_type", flat=True)
+                .distinct()
+                .order_by("paper_type")
+            )
 
         return context
 
 
 class PaperDetailView(DetailView):
     """Detailseite eines Vorgangs."""
+
     model = OParlPaper
     template_name = "pages/papers/detail.html"
     context_object_name = "paper"
@@ -429,16 +429,14 @@ class PaperDetailView(DetailView):
         context["files"] = files
 
         # Dateien mit extrahiertem Text für Rohtext-Tab
-        context["files_with_text"] = [
-            f for f in files
-            if f.text_content and f.text_content.strip()
-        ]
+        context["files_with_text"] = [f for f in files if f.text_content and f.text_content.strip()]
 
         # Beratungsverlauf (Consultations mit Meeting-Info)
         context["consultations"] = self._get_consultations_with_meetings(paper)
 
         # SEO-Kontext
         from .seo import get_paper_seo
+
         context["seo"] = get_paper_seo(paper, self.request).to_dict()
 
         return context
@@ -463,9 +461,7 @@ class PaperDetailView(DetailView):
         # Batch-Lookup für Meetings
         meetings_by_id = {}
         if meeting_ids:
-            meetings = OParlMeeting.objects.filter(
-                external_id__in=meeting_ids
-            ).prefetch_related('organizations')
+            meetings = OParlMeeting.objects.filter(external_id__in=meeting_ids).prefetch_related("organizations")
             meetings_by_id = {m.external_id: m for m in meetings}
 
         # Batch-Lookup für AgendaItems
@@ -480,27 +476,30 @@ class PaperDetailView(DetailView):
             meeting = meetings_by_id.get(consultation.meeting_external_id)
             agenda_item = agenda_items_by_id.get(consultation.agenda_item_external_id)
 
-            result.append({
-                'consultation': consultation,
-                'meeting': meeting,
-                'agenda_item': agenda_item,
-                'date': meeting.start if meeting else None,
-                'organization_name': meeting.get_display_name() if meeting else None,
-                'agenda_number': agenda_item.number if agenda_item else None,
-                'result': agenda_item.result if agenda_item else None,
-                'public': agenda_item.public if agenda_item else True,
-                'role': consultation.role,
-                'authoritative': consultation.authoritative,
-            })
+            result.append(
+                {
+                    "consultation": consultation,
+                    "meeting": meeting,
+                    "agenda_item": agenda_item,
+                    "date": meeting.start if meeting else None,
+                    "organization_name": meeting.get_display_name() if meeting else None,
+                    "agenda_number": agenda_item.number if agenda_item else None,
+                    "result": agenda_item.result if agenda_item else None,
+                    "public": agenda_item.public if agenda_item else True,
+                    "role": consultation.role,
+                    "authoritative": consultation.authoritative,
+                }
+            )
 
         # Sortiere nach Datum (älteste zuerst = chronologischer Verlauf)
-        result.sort(key=lambda x: x['date'] or timezone.now(), reverse=False)
+        result.sort(key=lambda x: x["date"] or timezone.now(), reverse=False)
 
         return result
 
 
 class PaperListPartial(ListView):
     """HTMX Partial für Vorgänge-Liste."""
+
     model = OParlPaper
     template_name = "partials/paper_list.html"
     context_object_name = "papers"
@@ -518,62 +517,89 @@ def paper_summary(request, pk):
 
     # Return cached summary if available
     if paper.summary:
-        return render(request, "partials/paper_summary.html", {
-            "paper": paper,
-            "summary": paper.summary,
-        })
+        return render(
+            request,
+            "partials/paper_summary.html",
+            {
+                "paper": paper,
+                "summary": paper.summary,
+            },
+        )
 
     # Generate new summary
     try:
         from insight_ai.services.summarizer import (
-            SummaryService,
-            NoTextContentError,
             APINotConfiguredError,
+            NoTextContentError,
             SummaryError,
+            SummaryService,
         )
 
         service = SummaryService()
         summary = service.generate_summary(paper)
 
-        return render(request, "partials/paper_summary.html", {
-            "paper": paper,
-            "summary": summary,
-        })
+        return render(
+            request,
+            "partials/paper_summary.html",
+            {
+                "paper": paper,
+                "summary": summary,
+            },
+        )
 
     except NoTextContentError as e:
-        return render(request, "partials/paper_summary.html", {
-            "paper": paper,
-            "error": str(e),
-        })
+        return render(
+            request,
+            "partials/paper_summary.html",
+            {
+                "paper": paper,
+                "error": str(e),
+            },
+        )
 
     except APINotConfiguredError as e:
-        return render(request, "partials/paper_summary.html", {
-            "paper": paper,
-            "error": str(e),
-        })
+        return render(
+            request,
+            "partials/paper_summary.html",
+            {
+                "paper": paper,
+                "error": str(e),
+            },
+        )
 
     except SummaryError as e:
-        return render(request, "partials/paper_summary.html", {
-            "paper": paper,
-            "error": str(e),
-        })
+        return render(
+            request,
+            "partials/paper_summary.html",
+            {
+                "paper": paper,
+                "error": str(e),
+            },
+        )
 
     except Exception as e:
         import logging
+
         logger = logging.getLogger(__name__)
         logger.exception(f"Unexpected error in paper_summary: {e}")
-        return render(request, "partials/paper_summary.html", {
-            "paper": paper,
-            "error": f"Unerwarteter Fehler: {str(e)}",
-        })
+        return render(
+            request,
+            "partials/paper_summary.html",
+            {
+                "paper": paper,
+                "error": f"Unerwarteter Fehler: {str(e)}",
+            },
+        )
 
 
 # =============================================================================
 # Termine (Meetings)
 # =============================================================================
 
+
 class MeetingListView(ListView):
     """Liste aller Sitzungen."""
+
     model = OParlMeeting
     template_name = "pages/meetings/list.html"
     context_object_name = "meetings"
@@ -595,10 +621,7 @@ class MeetingListView(ListView):
         # Suche
         q = self.request.GET.get("q", "").strip()
         if q:
-            qs = qs.filter(
-                Q(name__icontains=q) |
-                Q(location_name__icontains=q)
-            )
+            qs = qs.filter(Q(name__icontains=q) | Q(location_name__icontains=q))
 
         # Zeitraum-Filter
         period = self.request.GET.get("period", "upcoming")
@@ -616,11 +639,13 @@ class MeetingListView(ListView):
 
 class MeetingCalendarView(TemplateView):
     """Kalenderansicht der Sitzungen."""
+
     template_name = "pages/meetings/calendar.html"
 
 
 class MeetingDetailView(DetailView):
     """Detailseite einer Sitzung."""
+
     model = OParlMeeting
     template_name = "pages/meetings/detail.html"
     context_object_name = "meeting"
@@ -638,14 +663,13 @@ class MeetingDetailView(DetailView):
         # Location Koordinaten für Karte
         if meeting.location_name and meeting.body:
             from .models import LocationMapping
-            coords = LocationMapping.get_coordinates_for_location(
-                meeting.body,
-                meeting.location_name
-            )
+
+            coords = LocationMapping.get_coordinates_for_location(meeting.body, meeting.location_name)
             context["location_coordinates"] = coords
 
         # SEO-Kontext
         from .seo import get_meeting_seo
+
         context["seo"] = get_meeting_seo(meeting, self.request).to_dict()
 
         return context
@@ -653,6 +677,7 @@ class MeetingDetailView(DetailView):
 
 class MeetingListPartial(ListView):
     """HTMX Partial für Sitzungen-Liste."""
+
     model = OParlMeeting
     template_name = "partials/meeting_list.html"
     context_object_name = "meetings"
@@ -674,6 +699,7 @@ def calendar_events(request):
 
     if start_str:
         from datetime import datetime
+
         try:
             start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
             qs = qs.filter(start__gte=start)
@@ -682,6 +708,7 @@ def calendar_events(request):
 
     if end_str:
         from datetime import datetime
+
         try:
             end = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
             qs = qs.filter(start__lte=end)
@@ -694,17 +721,19 @@ def calendar_events(request):
         # Truncate long titles for calendar display
         title = full_title[:37] + "..." if len(full_title) > 40 else full_title
 
-        events.append({
-            "id": str(meeting.id),
-            "title": title,
-            "start": meeting.start.isoformat() if meeting.start else None,
-            "end": meeting.end.isoformat() if meeting.end else None,
-            "url": f"/insight/termine/{meeting.id}/",
-            "extendedProps": {
-                "location": meeting.location_name,
-                "fullTitle": full_title,
+        events.append(
+            {
+                "id": str(meeting.id),
+                "title": title,
+                "start": meeting.start.isoformat() if meeting.start else None,
+                "end": meeting.end.isoformat() if meeting.end else None,
+                "url": f"/insight/termine/{meeting.id}/",
+                "extendedProps": {
+                    "location": meeting.location_name,
+                    "fullTitle": full_title,
+                },
             }
-        })
+        )
 
     return JsonResponse(events, safe=False)
 
@@ -713,8 +742,10 @@ def calendar_events(request):
 # Suche
 # =============================================================================
 
+
 class SearchView(TemplateView):
     """Suchseite mit erweiterter Filterung."""
+
     template_name = "pages/search.html"
 
     def get_context_data(self, **kwargs):
@@ -745,14 +776,26 @@ def search_results(request):
     body = get_active_body(request)
 
     if not query or len(query) < 2:
-        return render(request, "partials/search_results.html", {
-            "results": [],
-            "query": query,
-        })
+        return render(
+            request,
+            "partials/search_results.html",
+            {
+                "results": [],
+                "query": query,
+            },
+        )
 
     # Meilisearch verwenden
     try:
-        from .services.search_service import get_search_service, format_search_result, INDEX_MEETINGS, INDEX_PAPERS, INDEX_PERSONS, INDEX_ORGANIZATIONS, INDEX_FILES
+        from .services.search_service import (
+            INDEX_FILES,
+            INDEX_MEETINGS,
+            INDEX_ORGANIZATIONS,
+            INDEX_PAPERS,
+            INDEX_PERSONS,
+            format_search_result,
+            get_search_service,
+        )
 
         search_service = get_search_service()
 
@@ -782,18 +825,23 @@ def search_results(request):
         # Ergebnisse formatieren
         results = [format_search_result(hit) for hit in search_result["results"]]
 
-        return render(request, "partials/search_results.html", {
-            "results": results,
-            "query": query,
-            "total": search_result["total"],
-            "page": search_result["page"],
-            "pages": search_result["pages"],
-            "search_type": search_type,
-        })
+        return render(
+            request,
+            "partials/search_results.html",
+            {
+                "results": results,
+                "query": query,
+                "total": search_result["total"],
+                "page": search_result["page"],
+                "pages": search_result["pages"],
+                "search_type": search_type,
+            },
+        )
 
     except Exception as e:
         # Fallback auf Django-Suche bei Fehler
         import logging
+
         logger = logging.getLogger(__name__)
         logger.warning(f"Meilisearch-Suche fehlgeschlagen, Fallback auf Django: {e}")
 
@@ -801,76 +849,80 @@ def search_results(request):
 
         if body:
             # Vorgänge
-            papers = OParlPaper.objects.filter(
-                body=body
-            ).filter(
+            papers = OParlPaper.objects.filter(body=body).filter(
                 Q(name__icontains=query) | Q(reference__icontains=query)
             )[:10]
             for paper in papers:
-                results.append({
-                    "type": "paper",
-                    "title": paper.name or paper.reference,
-                    "subtitle": paper.paper_type,
-                    "url": f"/vorgaenge/{paper.id}/",
-                })
+                results.append(
+                    {
+                        "type": "paper",
+                        "title": paper.name or paper.reference,
+                        "subtitle": paper.paper_type,
+                        "url": f"/vorgaenge/{paper.id}/",
+                    }
+                )
 
             # Personen
-            persons = OParlPerson.objects.filter(
-                body=body
-            ).filter(
-                Q(name__icontains=query) |
-                Q(family_name__icontains=query) |
-                Q(given_name__icontains=query)
+            persons = OParlPerson.objects.filter(body=body).filter(
+                Q(name__icontains=query) | Q(family_name__icontains=query) | Q(given_name__icontains=query)
             )[:10]
             for person in persons:
-                results.append({
-                    "type": "person",
-                    "title": person.display_name,
-                    "subtitle": "Person",
-                    "url": f"/personen/{person.id}/",
-                })
+                results.append(
+                    {
+                        "type": "person",
+                        "title": person.display_name,
+                        "subtitle": "Person",
+                        "url": f"/personen/{person.id}/",
+                    }
+                )
 
             # Gremien
-            orgs = OParlOrganization.objects.filter(
-                body=body
-            ).filter(
+            orgs = OParlOrganization.objects.filter(body=body).filter(
                 Q(name__icontains=query) | Q(short_name__icontains=query)
             )[:10]
             for org in orgs:
-                results.append({
-                    "type": "organization",
-                    "title": org.name,
-                    "subtitle": org.organization_type,
-                    "url": f"/gremien/{org.id}/",
-                })
+                results.append(
+                    {
+                        "type": "organization",
+                        "title": org.name,
+                        "subtitle": org.organization_type,
+                        "url": f"/gremien/{org.id}/",
+                    }
+                )
 
             # Sitzungen
-            meetings = OParlMeeting.objects.filter(
-                body=body
-            ).filter(
+            meetings = OParlMeeting.objects.filter(body=body).filter(
                 Q(name__icontains=query) | Q(location_name__icontains=query)
             )[:10]
             for meeting in meetings:
-                results.append({
-                    "type": "meeting",
-                    "title": meeting.name or "Sitzung",
-                    "subtitle": meeting.start.strftime("%d.%m.%Y") if meeting.start else None,
-                    "url": f"/termine/{meeting.id}/",
-                })
+                results.append(
+                    {
+                        "type": "meeting",
+                        "title": meeting.name or "Sitzung",
+                        "subtitle": meeting.start.strftime("%d.%m.%Y") if meeting.start else None,
+                        "url": f"/termine/{meeting.id}/",
+                    }
+                )
 
-        return render(request, "partials/search_results.html", {
-            "results": results,
-            "query": query,
-            "total": len(results),
-        })
+        return render(
+            request,
+            "partials/search_results.html",
+            {
+                "results": results,
+                "query": query,
+                "total": len(results),
+            },
+        )
 
 
 # =============================================================================
 # Karte
 # =============================================================================
 
+
 class MapView(TemplateView):
     """Kartenansicht mit Vorgängen der letzten 4 Wochen."""
+
     template_name = "pages/map.html"
 
     def get_context_data(self, **kwargs):
@@ -909,36 +961,28 @@ def map_markers(request):
     # Vorgänge der letzten 4 Wochen mit Geo-Daten
     four_weeks_ago = timezone.now() - timedelta(weeks=4)
 
-    papers = OParlPaper.objects.filter(
-        body=body,
-        date__gte=four_weeks_ago,
-        locations__isnull=False
-    )
+    papers = OParlPaper.objects.filter(body=body, date__gte=four_weeks_ago, locations__isnull=False)
 
     features = []
     for paper in papers:
         if paper.locations and isinstance(paper.locations, list):
             for loc in paper.locations:
                 if "lat" in loc and "lon" in loc:
-                    features.append({
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Point",
-                            "coordinates": [loc["lon"], loc["lat"]]
-                        },
-                        "properties": {
-                            "id": str(paper.id),
-                            "title": paper.name,
-                            "reference": paper.reference,
-                            "url": f"/vorgaenge/{paper.id}/",
-                            "location_name": loc.get("name", ""),
+                    features.append(
+                        {
+                            "type": "Feature",
+                            "geometry": {"type": "Point", "coordinates": [loc["lon"], loc["lat"]]},
+                            "properties": {
+                                "id": str(paper.id),
+                                "title": paper.name,
+                                "reference": paper.reference,
+                                "url": f"/vorgaenge/{paper.id}/",
+                                "location_name": loc.get("name", ""),
+                            },
                         }
-                    })
+                    )
 
-    return JsonResponse({
-        "type": "FeatureCollection",
-        "features": features
-    })
+    return JsonResponse({"type": "FeatureCollection", "features": features})
 
 
 # =============================================================================
@@ -947,6 +991,7 @@ def map_markers(request):
 
 import httpx
 from django.views.decorators.cache import cache_page
+
 
 @require_GET
 def tile_proxy(request, z, x, y):
@@ -975,17 +1020,18 @@ def tile_proxy(request, z, x, y):
                 "Cache-Control": "public, max-age=604800",  # 7 Tage Browser-Cache
                 "Access-Control-Allow-Origin": "*",  # nosec: intentional for public tiles
                 "X-Tile-Source": "cache",
-            }
+            },
         )
 
     # 2. Nicht im Cache - von OSM laden
-    subdomain = ['a', 'b', 'c'][x % 3]
+    subdomain = ["a", "b", "c"][x % 3]
     tile_url = f"https://{subdomain}.tile.openstreetmap.org/{z}/{x}/{y}.png"
 
     try:
-        with httpx.Client(timeout=10.0, headers={
-            "User-Agent": "Mandari/1.0 (https://mandari.dev; contact@mandari.dev)"
-        }) as client:
+        with httpx.Client(
+            timeout=10.0,
+            headers={"User-Agent": "Mandari/1.0 (https://mandari.dev; contact@mandari.dev)"},
+        ) as client:
             response = client.get(tile_url)
 
             if response.status_code == 200:
@@ -1000,13 +1046,15 @@ def tile_proxy(request, z, x, y):
                         "Cache-Control": "public, max-age=604800",  # 7 Tage Browser-Cache
                         "Access-Control-Allow-Origin": "*",  # nosec: intentional for public tiles
                         "X-Tile-Source": "osm",
-                    }
+                    },
                 )
             else:
                 from django.http import HttpResponseNotFound
+
                 return HttpResponseNotFound()
     except Exception as e:
         from django.http import HttpResponseServerError
+
         return HttpResponseServerError(f"Tile proxy error: {str(e)}")
 
 
@@ -1026,7 +1074,6 @@ def style_proxy(request):
             response = client.get(style_url)
 
             if response.status_code == 200:
-                import json
                 style = response.json()
 
                 # Ersetze externe Tile-URLs mit lokalem Proxy
@@ -1034,18 +1081,13 @@ def style_proxy(request):
                     for source_name, source in style["sources"].items():
                         if "tiles" in source:
                             # Ersetze VersaTiles URL mit lokalem Proxy
-                            source["tiles"] = [
-                                request.build_absolute_uri("/insight/tiles/{z}/{x}/{y}")
-                            ]
+                            source["tiles"] = [request.build_absolute_uri("/insight/tiles/{z}/{x}/{y}")]
                         if "url" in source:
                             # Für TileJSON URLs
                             del source["url"]
-                            source["tiles"] = [
-                                request.build_absolute_uri("/insight/tiles/{z}/{x}/{y}")
-                            ]
+                            source["tiles"] = [request.build_absolute_uri("/insight/tiles/{z}/{x}/{y}")]
 
                 # Ersetze Sprite und Glyphs URLs
-                base_url = request.build_absolute_uri("/static/vendor/maplibre/")
                 if "sprite" in style:
                     style["sprite"] = request.build_absolute_uri("/insight/map-assets/sprite")
                 if "glyphs" in style:
@@ -1077,12 +1119,14 @@ def map_sprite(request, filename="sprite"):
             response = client.get(sprite_url)
             if response.status_code == 200:
                 from django.http import HttpResponse
+
                 content_type = "application/json" if ext == "json" else "image/png"
                 return HttpResponse(response.content, content_type=content_type)
-    except:
+    except Exception:
         pass
 
     from django.http import HttpResponseNotFound
+
     return HttpResponseNotFound()
 
 
@@ -1097,14 +1141,13 @@ def map_glyphs(request, fontstack, range_):
             response = client.get(glyphs_url)
             if response.status_code == 200:
                 from django.http import HttpResponse
-                return HttpResponse(
-                    response.content,
-                    content_type="application/x-protobuf"
-                )
-    except:
+
+                return HttpResponse(response.content, content_type="application/x-protobuf")
+    except Exception:
         pass
 
     from django.http import HttpResponseNotFound
+
     return HttpResponseNotFound()
 
 
@@ -1112,8 +1155,10 @@ def map_glyphs(request, fontstack, range_):
 # Chat (KI-Assistent)
 # =============================================================================
 
+
 class ChatView(TemplateView):
     """KI-Chat-Interface."""
+
     template_name = "pages/chat.html"
 
 
@@ -1124,7 +1169,6 @@ def chat_message(request):
 
     Nutzt Groq API via insight_ai.
     """
-    import json
 
     try:
         data = json.loads(request.body)
@@ -1137,36 +1181,42 @@ def chat_message(request):
 
     # Prüfe DSGVO-Consent
     if not request.session.get("chat_consent"):
-        return JsonResponse({
-            "error": "consent_required",
-            "message": "Bitte stimmen Sie der Datenverarbeitung zu."
-        }, status=403)
+        return JsonResponse(
+            {"error": "consent_required", "message": "Bitte stimmen Sie der Datenverarbeitung zu."},
+            status=403,
+        )
 
     # TODO: Groq API Integration via insight_ai
     # Für jetzt: Placeholder-Antwort
-    return JsonResponse({
-        "response": "Der KI-Assistent ist noch nicht konfiguriert. "
-                   "Bitte konfigurieren Sie den GROQ_API_KEY in der .env Datei.",
-        "sources": []
-    })
+    return JsonResponse(
+        {
+            "response": "Der KI-Assistent ist noch nicht konfiguriert. "
+            "Bitte konfigurieren Sie den GROQ_API_KEY in der .env Datei.",
+            "sources": [],
+        }
+    )
 
 
 # =============================================================================
 # Rechtliche Seiten
 # =============================================================================
 
+
 class ImpressumView(TemplateView):
     """Impressum."""
+
     template_name = "pages/legal/impressum.html"
 
 
 class DatenschutzView(TemplateView):
     """Datenschutzerklärung."""
+
     template_name = "pages/legal/datenschutz.html"
 
 
 class AGBView(TemplateView):
     """Allgemeine Geschäftsbedingungen."""
+
     template_name = "pages/legal/agb.html"
 
 
@@ -1174,28 +1224,34 @@ class AGBView(TemplateView):
 # Über Mandari Seiten
 # =============================================================================
 
+
 class ProduktView(TemplateView):
     """Produktübersicht - Mandari Work & RIS."""
+
     template_name = "pages/about/produkt.html"
 
 
 class LoesungenView(TemplateView):
     """Lösungen für Fraktionen, Verwaltungen, Bürger."""
+
     template_name = "pages/about/loesungen.html"
 
 
 class SicherheitView(TemplateView):
     """Sicherheit & Datenschutz."""
+
     template_name = "pages/about/sicherheit.html"
 
 
 class OpenSourceView(TemplateView):
     """Open Source Philosophie."""
+
     template_name = "pages/about/open-source.html"
 
 
 class KontaktView(TemplateView):
     """Kontaktseite mit Formular."""
+
     template_name = "pages/about/kontakt.html"
 
     # Target email for contact form notifications
@@ -1210,10 +1266,12 @@ class KontaktView(TemplateView):
 
     def post(self, request, *args, **kwargs):
         """Verarbeitet das Kontaktformular."""
-        from django.contrib import messages
-        from apps.common.email import send_template_email
-        from .models import ContactRequest
         import logging
+
+        from apps.common.email import send_template_email
+        from django.contrib import messages
+
+        from .models import ContactRequest
 
         logger = logging.getLogger(__name__)
 
@@ -1237,8 +1295,9 @@ class KontaktView(TemplateView):
             return self.get(request, *args, **kwargs)
 
         # E-Mail-Validierung
-        from django.core.validators import validate_email
         from django.core.exceptions import ValidationError
+        from django.core.validators import validate_email
+
         try:
             validate_email(email)
         except ValidationError:
@@ -1318,7 +1377,7 @@ class KontaktView(TemplateView):
         # Erfolgsmeldung
         messages.success(
             request,
-            "Vielen Dank für Ihre Nachricht! Wir haben Ihnen eine Bestätigung per E-Mail gesendet und werden uns schnellstmöglich bei Ihnen melden."
+            "Vielen Dank für Ihre Nachricht! Wir haben Ihnen eine Bestätigung per E-Mail gesendet und werden uns schnellstmöglich bei Ihnen melden.",
         )
         return self.get(request, *args, **kwargs)
 
@@ -1327,48 +1386,58 @@ class KontaktView(TemplateView):
 # Neue Seiten (Preise, Mitmachen, Team, FAQ, Releases, Partner, Blog)
 # =============================================================================
 
+
 class PreiseView(TemplateView):
     """Preise - Transparente Preisübersicht."""
+
     template_name = "pages/about/preise.html"
 
 
 class MitmachenView(TemplateView):
     """Mitmachen - Projekt unterstützen."""
+
     template_name = "pages/about/mitmachen.html"
 
 
 class TeamView(TemplateView):
     """Team - Die Menschen hinter Mandari."""
+
     template_name = "pages/about/team.html"
 
 
 class FAQView(TemplateView):
     """FAQ - Häufig gestellte Fragen."""
+
     template_name = "pages/about/faq.html"
 
 
 class ReleasesView(TemplateView):
     """Releases - Versionshistorie."""
+
     template_name = "pages/about/releases.html"
 
 
 class PartnerView(TemplateView):
     """Partner - Gemeinsam für Transparenz."""
+
     template_name = "pages/about/partner.html"
 
 
 class BlogView(TemplateView):
     """Blog - Neuigkeiten und Einblicke (Platzhalter)."""
+
     template_name = "pages/about/blog.html"
 
 
 class UeberUnsView(TemplateView):
     """Mission & Werte - Warum Mandari existiert."""
+
     template_name = "pages/about/ueber-uns.html"
 
 
 class KommunenView(TemplateView):
     """Kommunen - Übersicht aller angebundenen Städte."""
+
     template_name = "pages/about/kommunen.html"
 
     def get_context_data(self, **kwargs):
@@ -1386,22 +1455,26 @@ class KommunenView(TemplateView):
 
 class RoadmapView(TemplateView):
     """Roadmap - Meilensteine und Zukunftsplanung."""
+
     template_name = "pages/about/roadmap.html"
 
 
 class PresseView(TemplateView):
     """Presse & Medien - Ressourcen für Journalisten."""
+
     template_name = "pages/about/presse.html"
 
 
 class DanksagungenView(TemplateView):
     """Danksagungen & Abhängigkeiten - Transparenz über verwendete Projekte."""
+
     template_name = "pages/about/danksagungen.html"
 
 
 # =============================================================================
 # Öffentliche Fraktionsprotokolle
 # =============================================================================
+
 
 class PublicProtocolListView(TemplateView):
     """
@@ -1413,6 +1486,7 @@ class PublicProtocolListView(TemplateView):
 
     Keine Authentifizierung erforderlich.
     """
+
     template_name = "pages/public/protocols/list.html"
 
     def get_context_data(self, **kwargs):
@@ -1440,21 +1514,20 @@ class PublicProtocolListView(TemplateView):
         # Get approved protocols from these organizations
         from apps.work.faction.models import FactionMeeting
 
-        protocols = FactionMeeting.objects.filter(
-            organization__in=organizations,
-            protocol_status="approved",
-            status="completed",
-        ).select_related(
-            "organization"
-        ).order_by("-start")
+        protocols = (
+            FactionMeeting.objects.filter(
+                organization__in=organizations,
+                protocol_status="approved",
+                status="completed",
+            )
+            .select_related("organization")
+            .order_by("-start")
+        )
 
         # Filter and search
         search = self.request.GET.get("q", "").strip()
         if search:
-            protocols = protocols.filter(
-                Q(title__icontains=search) |
-                Q(description__icontains=search)
-            )
+            protocols = protocols.filter(Q(title__icontains=search) | Q(description__icontains=search))
 
         # Year filter
         year = self.request.GET.get("year")
@@ -1486,12 +1559,13 @@ class PublicProtocolDetailView(TemplateView):
     Zeigt nur öffentliche TOPs (visibility='public').
     Keine Authentifizierung erforderlich.
     """
+
     template_name = "pages/public/protocols/detail.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        from apps.work.faction.models import FactionMeeting, FactionAgendaItem
+        from apps.work.faction.models import FactionMeeting
 
         # Get the meeting
         meeting_id = kwargs.get("meeting_id")
@@ -1516,26 +1590,34 @@ class PublicProtocolDetailView(TemplateView):
 
         # Get public protocol entries (only for public items)
         public_item_ids = agenda_items.values_list("id", flat=True)
-        protocol_entries = meeting.protocol_entries.filter(
-            Q(agenda_item__isnull=True) | Q(agenda_item_id__in=public_item_ids)
-        ).select_related(
-            "agenda_item", "speaker__user"
-        ).order_by("order", "created_at")
+        protocol_entries = (
+            meeting.protocol_entries.filter(Q(agenda_item__isnull=True) | Q(agenda_item_id__in=public_item_ids))
+            .select_related("agenda_item", "speaker__user")
+            .order_by("order", "created_at")
+        )
 
         context["protocol_entries"] = protocol_entries
 
         # Previous/Next navigation
-        context["previous_meeting"] = FactionMeeting.objects.filter(
-            organization=meeting.organization,
-            protocol_status="approved",
-            start__lt=meeting.start,
-        ).order_by("-start").first()
+        context["previous_meeting"] = (
+            FactionMeeting.objects.filter(
+                organization=meeting.organization,
+                protocol_status="approved",
+                start__lt=meeting.start,
+            )
+            .order_by("-start")
+            .first()
+        )
 
-        context["next_meeting"] = FactionMeeting.objects.filter(
-            organization=meeting.organization,
-            protocol_status="approved",
-            start__gt=meeting.start,
-        ).order_by("start").first()
+        context["next_meeting"] = (
+            FactionMeeting.objects.filter(
+                organization=meeting.organization,
+                protocol_status="approved",
+                start__gt=meeting.start,
+            )
+            .order_by("start")
+            .first()
+        )
 
         return context
 
@@ -1543,6 +1625,7 @@ class PublicProtocolDetailView(TemplateView):
 # =============================================================================
 # SEO: robots.txt und Sitemaps
 # =============================================================================
+
 
 @require_GET
 def robots_txt(request):
@@ -1606,10 +1689,12 @@ def sitemap_index(request):
     # Kommune-spezifische Sitemaps
     for body in OParlBody.objects.filter(slug__isnull=False):
         lastmod = body.updated_at.strftime("%Y-%m-%dT%H:%M:%S+00:00") if body.updated_at else now
-        sitemaps.append({
-            "loc": f"{site_url}/sitemap-insight-{body.slug}.xml",
-            "lastmod": lastmod,
-        })
+        sitemaps.append(
+            {
+                "loc": f"{site_url}/sitemap-insight-{body.slug}.xml",
+                "lastmod": lastmod,
+            }
+        )
 
     # XML generieren
     xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
@@ -1623,10 +1708,7 @@ def sitemap_index(request):
 
     xml_parts.append("</sitemapindex>")
 
-    return HttpResponse(
-        "\n".join(xml_parts),
-        content_type="application/xml; charset=utf-8"
-    )
+    return HttpResponse("\n".join(xml_parts), content_type="application/xml; charset=utf-8")
 
 
 @require_GET
@@ -1635,6 +1717,7 @@ def static_sitemap(request):
     Generiert die Sitemap für statische Seiten.
     """
     from django.conf import settings
+
     from .sitemaps import StaticPagesSitemap
 
     site_url = getattr(settings, "SITE_URL", "https://mandari.de")
@@ -1656,10 +1739,7 @@ def static_sitemap(request):
 
     xml_parts.append("</urlset>")
 
-    return HttpResponse(
-        "\n".join(xml_parts),
-        content_type="application/xml; charset=utf-8"
-    )
+    return HttpResponse("\n".join(xml_parts), content_type="application/xml; charset=utf-8")
 
 
 @require_GET
@@ -1698,7 +1778,7 @@ def body_sitemap(request, body_slug):
             f"/insight/vorgaenge/{paper.id}/",
             paper.oparl_modified or paper.updated_at,
             "monthly",
-            0.6
+            0.6,
         )
 
     # Sitzungen
@@ -1707,17 +1787,12 @@ def body_sitemap(request, body_slug):
             f"/insight/termine/{meeting.id}/",
             meeting.oparl_modified or meeting.updated_at,
             "weekly",
-            0.7
+            0.7,
         )
 
     # Gremien
     for org in OParlOrganization.objects.filter(body=body).order_by("name")[:5000]:
-        add_url(
-            f"/insight/gremien/{org.id}/",
-            org.oparl_modified or org.updated_at,
-            "monthly",
-            0.5
-        )
+        add_url(f"/insight/gremien/{org.id}/", org.oparl_modified or org.updated_at, "monthly", 0.5)
 
     # Personen
     for person in OParlPerson.objects.filter(body=body).order_by("family_name")[:5000]:
@@ -1725,15 +1800,12 @@ def body_sitemap(request, body_slug):
             f"/insight/personen/{person.id}/",
             person.oparl_modified or person.updated_at,
             "monthly",
-            0.4
+            0.4,
         )
 
     xml_parts.append("</urlset>")
 
-    response = HttpResponse(
-        "\n".join(xml_parts),
-        content_type="application/xml; charset=utf-8"
-    )
+    response = HttpResponse("\n".join(xml_parts), content_type="application/xml; charset=utf-8")
 
     # Cache für 24 Stunden
     response["Cache-Control"] = "public, max-age=86400"

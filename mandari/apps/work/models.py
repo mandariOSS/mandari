@@ -6,6 +6,14 @@ This allows accessing all models via `from apps.work.models import ...`
 """
 
 # Meetings
+# Faction meetings
+from apps.work.faction.models import (
+    FactionAgendaItem,
+    FactionAttendance,
+    FactionMeeting,
+    FactionMeetingException,
+    FactionMeetingSchedule,
+)
 from apps.work.meetings.models import (
     AgendaItemNote,
     AgendaItemPosition,
@@ -22,17 +30,12 @@ from apps.work.motions.models import (
     MotionTemplate,
 )
 
-# Faction meetings
-from apps.work.faction.models import (
-    FactionAgendaItem,
-    FactionAttendance,
-    FactionMeeting,
-    FactionMeetingException,
-    FactionMeetingSchedule,
+# Notifications
+from apps.work.notifications.models import (
+    Notification,
+    NotificationPreference,
+    NotificationType,
 )
-
-# Tasks
-from apps.work.tasks.models import Task, TaskComment
 
 # Support
 from apps.work.support.models import (
@@ -41,12 +44,8 @@ from apps.work.support.models import (
     SupportTicketMessage,
 )
 
-# Notifications
-from apps.work.notifications.models import (
-    Notification,
-    NotificationPreference,
-    NotificationType,
-)
+# Tasks
+from apps.work.tasks.models import Task, TaskComment
 
 __all__ = [
     # Meetings

@@ -5,19 +5,16 @@ Session views.
 Provides views for the Session RIS administration interface.
 """
 
-import json
-from datetime import date, timedelta
-from typing import Any
+from datetime import timedelta
 
 from django.contrib import messages
 from django.db.models import Count, Q
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import (
     CreateView,
-    DeleteView,
     DetailView,
     ListView,
     TemplateView,
@@ -26,20 +23,15 @@ from django.views.generic import (
 
 from .models import (
     SessionAgendaItem,
-    SessionAllowance,
     SessionApplication,
     SessionAttendance,
-    SessionFile,
     SessionMeeting,
     SessionOrganization,
     SessionPaper,
     SessionPerson,
-    SessionProtocol,
-    SessionTenant,
     SessionUser,
 )
-from .permissions import SessionPermissionMixin, SessionViewMixin
-
+from .permissions import SessionViewMixin
 
 # =============================================================================
 # DASHBOARD
@@ -58,19 +50,25 @@ class DashboardView(SessionViewMixin, TemplateView):
         today = timezone.now().date()
 
         # Upcoming meetings (next 30 days)
-        context["upcoming_meetings"] = SessionMeeting.objects.filter(
-            tenant=tenant,
-            start__date__gte=today,
-            start__date__lte=today + timedelta(days=30),
-            cancelled=False,
-        ).select_related("organization").order_by("start")[:5]
+        context["upcoming_meetings"] = (
+            SessionMeeting.objects.filter(
+                tenant=tenant,
+                start__date__gte=today,
+                start__date__lte=today + timedelta(days=30),
+                cancelled=False,
+            )
+            .select_related("organization")
+            .order_by("start")[:5]
+        )
 
         # Recent papers
-        context["recent_papers"] = SessionPaper.objects.filter(
-            tenant=tenant,
-        ).select_related(
-            "main_organization", "originator_organization"
-        ).order_by("-created_at")[:5]
+        context["recent_papers"] = (
+            SessionPaper.objects.filter(
+                tenant=tenant,
+            )
+            .select_related("main_organization", "originator_organization")
+            .order_by("-created_at")[:5]
+        )
 
         # Pending applications
         context["pending_applications"] = SessionApplication.objects.filter(
@@ -87,19 +85,13 @@ class DashboardView(SessionViewMixin, TemplateView):
                 cancelled=False,
             ).count(),
             "papers_total": SessionPaper.objects.filter(tenant=tenant).count(),
-            "papers_draft": SessionPaper.objects.filter(
-                tenant=tenant, status="draft"
-            ).count(),
+            "papers_draft": SessionPaper.objects.filter(tenant=tenant, status="draft").count(),
             "applications_pending": SessionApplication.objects.filter(
                 tenant=tenant,
                 status__in=["submitted", "received", "in_review"],
             ).count(),
-            "organizations_count": SessionOrganization.objects.filter(
-                tenant=tenant, is_active=True
-            ).count(),
-            "persons_count": SessionPerson.objects.filter(
-                tenant=tenant, is_active=True
-            ).count(),
+            "organizations_count": SessionOrganization.objects.filter(tenant=tenant, is_active=True).count(),
+            "persons_count": SessionPerson.objects.filter(tenant=tenant, is_active=True).count(),
         }
 
         return context
@@ -144,9 +136,7 @@ class MeetingListView(SessionViewMixin, ListView):
         # Search
         search = self.request.GET.get("q")
         if search:
-            qs = qs.filter(
-                Q(name__icontains=search) | Q(organization__name__icontains=search)
-            )
+            qs = qs.filter(Q(name__icontains=search) | Q(organization__name__icontains=search))
 
         return qs
 
@@ -155,9 +145,7 @@ class MeetingListView(SessionViewMixin, ListView):
         context["organizations"] = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         ).order_by("name")
-        context["meeting_states"] = SessionMeeting._meta.get_field(
-            "meeting_state"
-        ).choices
+        context["meeting_states"] = SessionMeeting._meta.get_field("meeting_state").choices
         return context
 
 
@@ -179,14 +167,10 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         meeting = self.object
 
         # Agenda items
-        context["agenda_items"] = meeting.agenda_items.select_related(
-            "paper"
-        ).order_by("order", "number")
+        context["agenda_items"] = meeting.agenda_items.select_related("paper").order_by("order", "number")
 
         # Attendances
-        context["attendances"] = meeting.attendances.select_related(
-            "person"
-        ).order_by("person__family_name")
+        context["attendances"] = meeting.attendances.select_related("person").order_by("person__family_name")
 
         # Files
         context["files"] = meeting.files.order_by("name")
@@ -296,9 +280,9 @@ class PaperListView(SessionViewMixin, ListView):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        qs = qs.select_related(
-            "main_organization", "originator_organization", "originator_person"
-        ).order_by("-date", "-created_at")
+        qs = qs.select_related("main_organization", "originator_organization", "originator_person").order_by(
+            "-date", "-created_at"
+        )
 
         # Filter by type
         paper_type = self.request.GET.get("type")
@@ -313,18 +297,12 @@ class PaperListView(SessionViewMixin, ListView):
         # Filter by organization
         org_id = self.request.GET.get("organization")
         if org_id:
-            qs = qs.filter(
-                Q(main_organization_id=org_id) | Q(originator_organization_id=org_id)
-            )
+            qs = qs.filter(Q(main_organization_id=org_id) | Q(originator_organization_id=org_id))
 
         # Search
         search = self.request.GET.get("q")
         if search:
-            qs = qs.filter(
-                Q(name__icontains=search)
-                | Q(reference__icontains=search)
-                | Q(main_text__icontains=search)
-            )
+            qs = qs.filter(Q(name__icontains=search) | Q(reference__icontains=search) | Q(main_text__icontains=search))
 
         return qs
 
@@ -366,9 +344,7 @@ class PaperDetailView(SessionViewMixin, DetailView):
         context["files"] = paper.files.order_by("name")
 
         # Agenda items (where this paper was discussed)
-        context["agenda_items"] = paper.agenda_items.select_related(
-            "meeting__organization"
-        ).order_by("-meeting__start")
+        context["agenda_items"] = paper.agenda_items.select_related("meeting__organization").order_by("-meeting__start")
 
         return context
 
@@ -398,9 +374,7 @@ class PaperCreateView(SessionViewMixin, CreateView):
         form.fields["main_organization"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         )
-        form.fields[
-            "originator_organization"
-        ].queryset = SessionOrganization.objects.filter(
+        form.fields["originator_organization"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         )
         form.fields["originator_person"].queryset = SessionPerson.objects.filter(
@@ -451,9 +425,7 @@ class PaperUpdateView(SessionViewMixin, UpdateView):
         form.fields["main_organization"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         )
-        form.fields[
-            "originator_organization"
-        ].queryset = SessionOrganization.objects.filter(
+        form.fields["originator_organization"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         )
         form.fields["originator_person"].queryset = SessionPerson.objects.filter(
@@ -491,9 +463,9 @@ class ApplicationListView(SessionViewMixin, ListView):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        qs = qs.select_related(
-            "submitting_organization", "target_organization", "received_by__user"
-        ).order_by("-submitted_at")
+        qs = qs.select_related("submitting_organization", "target_organization", "received_by__user").order_by(
+            "-submitted_at"
+        )
 
         # Filter by status
         status = self.request.GET.get("status")
@@ -509,21 +481,15 @@ class ApplicationListView(SessionViewMixin, ListView):
         search = self.request.GET.get("q")
         if search:
             qs = qs.filter(
-                Q(title__icontains=search)
-                | Q(reference__icontains=search)
-                | Q(submitter_name__icontains=search)
+                Q(title__icontains=search) | Q(reference__icontains=search) | Q(submitter_name__icontains=search)
             )
 
         return qs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["application_statuses"] = SessionApplication._meta.get_field(
-            "status"
-        ).choices
-        context["application_types"] = SessionApplication._meta.get_field(
-            "application_type"
-        ).choices
+        context["application_statuses"] = SessionApplication._meta.get_field("status").choices
+        context["application_types"] = SessionApplication._meta.get_field("application_type").choices
         return context
 
 
@@ -604,9 +570,7 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
             tenant=self.session_tenant,
         )
         context["application"] = application
-        context["organizations"] = SessionOrganization.objects.filter(
-            tenant=self.session_tenant, is_active=True
-        )
+        context["organizations"] = SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True)
         return context
 
     def post(self, request, *args, **kwargs):
@@ -662,9 +626,9 @@ class OrganizationListView(SessionViewMixin, ListView):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        qs = qs.annotate(
-            member_count=Count("memberships", filter=Q(memberships__end_date__isnull=True))
-        ).order_by("name")
+        qs = qs.annotate(member_count=Count("memberships", filter=Q(memberships__end_date__isnull=True))).order_by(
+            "name"
+        )
 
         # Filter by type
         org_type = self.request.GET.get("type")
@@ -679,9 +643,7 @@ class OrganizationListView(SessionViewMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["organization_types"] = SessionOrganization._meta.get_field(
-            "organization_type"
-        ).choices
+        context["organization_types"] = SessionOrganization._meta.get_field("organization_type").choices
         return context
 
 
@@ -699,9 +661,9 @@ class OrganizationDetailView(SessionViewMixin, DetailView):
         org = self.object
 
         # Members
-        context["memberships"] = org.memberships.select_related("person").filter(
-            end_date__isnull=True
-        ).order_by("person__family_name")
+        context["memberships"] = (
+            org.memberships.select_related("person").filter(end_date__isnull=True).order_by("person__family_name")
+        )
 
         # Recent meetings
         context["recent_meetings"] = org.meetings.order_by("-start")[:5]
@@ -740,9 +702,7 @@ class PersonListView(SessionViewMixin, ListView):
         search = self.request.GET.get("q")
         if search:
             qs = qs.filter(
-                Q(given_name__icontains=search)
-                | Q(family_name__icontains=search)
-                | Q(email__icontains=search)
+                Q(given_name__icontains=search) | Q(family_name__icontains=search) | Q(email__icontains=search)
             )
 
         return qs
@@ -762,14 +722,12 @@ class PersonDetailView(SessionViewMixin, DetailView):
         person = self.object
 
         # Memberships
-        context["memberships"] = person.memberships.select_related(
-            "organization"
-        ).order_by("-start_date")
+        context["memberships"] = person.memberships.select_related("organization").order_by("-start_date")
 
         # Recent attendances
-        context["recent_attendances"] = person.attendances.select_related(
-            "meeting__organization"
-        ).order_by("-meeting__start")[:10]
+        context["recent_attendances"] = person.attendances.select_related("meeting__organization").order_by(
+            "-meeting__start"
+        )[:10]
 
         return context
 
@@ -797,9 +755,7 @@ class UserListView(SessionViewMixin, ListView):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        return qs.select_related("user").prefetch_related("roles").order_by(
-            "user__email"
-        )
+        return qs.select_related("user").prefetch_related("roles").order_by("user__email")
 
 
 # =============================================================================
@@ -817,9 +773,7 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
-        form.fields["paper"].queryset = SessionPaper.objects.filter(
-            tenant=self.session_tenant
-        )
+        form.fields["paper"].queryset = SessionPaper.objects.filter(tenant=self.session_tenant)
         return form
 
     def form_valid(self, form):

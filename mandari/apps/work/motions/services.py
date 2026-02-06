@@ -13,7 +13,6 @@ Provides AI assistance for motion creation:
 import json
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 from django.conf import settings
 
@@ -25,6 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AIResponse:
     """Standardized AI response."""
+
     success: bool
     content: str = ""
     error: str = ""
@@ -81,6 +81,7 @@ Format-Hinweise:
 
         try:
             from groq import Groq
+
             return Groq(api_key=self.api_key)
         except ImportError:
             logger.warning("Groq library not installed")
@@ -97,7 +98,7 @@ Format-Hinweise:
         if self.user_id:
             AIRateLimiter.increment(self.user_id)
 
-    def _call_api(self, messages: list, max_tokens: int = 2000) -> Optional[str]:
+    def _call_api(self, messages: list, max_tokens: int = 2000) -> str | None:
         """Make API call to Groq with security checks."""
         # Check rate limit
         allowed, error_message = self._check_rate_limit()
@@ -127,13 +128,7 @@ Format-Hinweise:
             logger.error(f"Groq API error: {e}")
             return None
 
-    def improve_text(
-        self,
-        text: str,
-        instruction: str,
-        motion_type: str = "motion",
-        context: str = ""
-    ) -> AIResponse:
+    def improve_text(self, text: str, instruction: str, motion_type: str = "motion", context: str = "") -> AIResponse:
         """
         Improve text based on specific instruction.
 
@@ -164,13 +159,13 @@ Format-Hinweise:
 
 Anweisung: {instruction}
 
-{f'Kontext: {context}' if context else ''}
+{f"Kontext: {context}" if context else ""}
 
 Text:
 {text}
 
-Antworte nur mit dem verbesserten Text, ohne Erklärungen."""
-            }
+Antworte nur mit dem verbesserten Text, ohne Erklärungen.""",
+            },
         ]
 
         result = self._call_api(messages)
@@ -179,11 +174,7 @@ Antworte nur mit dem verbesserten Text, ohne Erklärungen."""
 
         return AIResponse(success=False, error="AI-Service nicht verfügbar")
 
-    def check_formalities(
-        self,
-        content: str,
-        motion_type: str = "motion"
-    ) -> AIResponse:
+    def check_formalities(self, content: str, motion_type: str = "motion") -> AIResponse:
         """
         Check a motion for formal correctness.
 
@@ -219,8 +210,8 @@ Antworte im JSON-Format:
     "suggestions": ["Verbesserungsvorschlag 1", "Verbesserungsvorschlag 2"],
     "score": 85,
     "summary": "Kurze Zusammenfassung"
-}}"""
-            }
+}}""",
+            },
         ]
 
         result = self._call_api(messages)
@@ -231,7 +222,7 @@ Antworte im JSON-Format:
                 return AIResponse(
                     success=True,
                     content=data.get("summary", ""),
-                    suggestions=data.get("issues", []) + data.get("suggestions", [])
+                    suggestions=data.get("issues", []) + data.get("suggestions", []),
                 )
             except json.JSONDecodeError:
                 # Return as plain text
@@ -265,18 +256,15 @@ Gib maximal 5 Vorschläge. Antworte im JSON-Format:
     {{"type": "struktur", "suggestion": "Vorschlag 1"}},
     {{"type": "sprache", "suggestion": "Vorschlag 2"}},
     {{"type": "inhalt", "suggestion": "Vorschlag 3"}}
-]"""
-            }
+]""",
+            },
         ]
 
         result = self._call_api(messages)
         if result:
             try:
                 suggestions = json.loads(result)
-                return AIResponse(
-                    success=True,
-                    suggestions=[s.get("suggestion", str(s)) for s in suggestions]
-                )
+                return AIResponse(success=True, suggestions=[s.get("suggestion", str(s)) for s in suggestions])
             except json.JSONDecodeError:
                 # Parse as plain text list
                 lines = [line.strip("- ").strip() for line in result.split("\n") if line.strip()]
@@ -308,8 +296,8 @@ Der Titel sollte:
 Antrag:
 {content[:2000]}
 
-Antworte nur mit dem Titel, ohne Erklärungen."""
-            }
+Antworte nur mit dem Titel, ohne Erklärungen.""",
+            },
         ]
 
         result = self._call_api(messages, max_tokens=200)
@@ -320,12 +308,7 @@ Antworte nur mit dem Titel, ohne Erklärungen."""
 
         return AIResponse(success=False, error="AI-Service nicht verfügbar")
 
-    def expand_bullet_points(
-        self,
-        bullet_points: str,
-        motion_type: str = "motion",
-        context: str = ""
-    ) -> AIResponse:
+    def expand_bullet_points(self, bullet_points: str, motion_type: str = "motion", context: str = "") -> AIResponse:
         """
         Expand bullet points into a full motion text.
 
@@ -352,7 +335,7 @@ Antworte nur mit dem Titel, ohne Erklärungen."""
                 "role": "user",
                 "content": f"""Formuliere aus diesen Stichpunkten einen vollständigen {type_name}.
 
-{f'Kontext: {context}' if context else ''}
+{f"Kontext: {context}" if context else ""}
 
 Stichpunkte:
 {bullet_points}
@@ -361,8 +344,8 @@ Erstelle einen gut strukturierten {type_name} mit:
 - Klarem Beschlussvorschlag (bei Anträgen) oder klarer Fragestellung (bei Anfragen)
 - Sachlicher Begründung
 
-Antworte nur mit dem ausformulierten {type_name}."""
-            }
+Antworte nur mit dem ausformulierten {type_name}.""",
+            },
         ]
 
         result = self._call_api(messages, max_tokens=3000)
@@ -395,8 +378,8 @@ Die Zusammenfassung sollte:
 Antrag:
 {content[:3000]}
 
-Antworte nur mit der Zusammenfassung."""
-            }
+Antworte nur mit der Zusammenfassung.""",
+            },
         ]
 
         result = self._call_api(messages, max_tokens=500)

@@ -5,19 +5,19 @@ Organization settings views for the Work module.
 
 import json
 import logging
+
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
-from django.http import JsonResponse, Http404
-from django.shortcuts import redirect, get_object_or_404
-from django.template.loader import render_to_string
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
-from apps.common.mixins import WorkViewMixin
+from apps.accounts.services import PasswordService, SessionService, TwoFactorService
 from apps.common.email import send_email
-from apps.accounts.services import TwoFactorService, SessionService, PasswordService
+from apps.common.mixins import WorkViewMixin
 
 logger = logging.getLogger(__name__)
 
@@ -35,21 +35,16 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
 
         # Check if user can manage faction settings
         from apps.common.permissions import PermissionChecker
+
         checker = PermissionChecker(self.membership)
         context["can_manage_faction"] = checker.has_permission("faction.manage")
 
         # Get document settings counts
-        from apps.work.motions.models import MotionType, MotionTemplate, OrganizationLetterhead
+        from apps.work.motions.models import MotionTemplate, MotionType, OrganizationLetterhead
 
-        context["type_count"] = MotionType.objects.filter(
-            organization=self.organization
-        ).count()
-        context["template_count"] = MotionTemplate.objects.filter(
-            organization=self.organization
-        ).count()
-        context["letterhead_count"] = OrganizationLetterhead.objects.filter(
-            organization=self.organization
-        ).count()
+        context["type_count"] = MotionType.objects.filter(organization=self.organization).count()
+        context["template_count"] = MotionTemplate.objects.filter(organization=self.organization).count()
+        context["letterhead_count"] = OrganizationLetterhead.objects.filter(organization=self.organization).count()
 
         return context
 
@@ -112,8 +107,12 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         faction_settings["require_protocol_approval"] = request.POST.get("require_protocol_approval") == "on"
 
         # Update title templates
-        faction_settings["first_agenda_title_with_previous"] = request.POST.get("first_agenda_title_with_previous", "").strip()
-        faction_settings["first_agenda_title_no_previous"] = request.POST.get("first_agenda_title_no_previous", "").strip()
+        faction_settings["first_agenda_title_with_previous"] = request.POST.get(
+            "first_agenda_title_with_previous", ""
+        ).strip()
+        faction_settings["first_agenda_title_no_previous"] = request.POST.get(
+            "first_agenda_title_no_previous", ""
+        ).strip()
         faction_settings["first_agenda_description"] = request.POST.get("first_agenda_description", "").strip()
 
         # Save back to organization
@@ -137,21 +136,20 @@ class OrganizationDocumentsView(WorkViewMixin, TemplateView):
 
         # Check if user can manage faction settings
         from apps.common.permissions import PermissionChecker
+
         checker = PermissionChecker(self.membership)
         context["can_manage_faction"] = checker.has_permission("faction.manage")
 
         # Get document settings counts
-        from apps.work.motions.models import MotionType, MotionTemplate, OrganizationLetterhead
+        from apps.work.motions.models import MotionTemplate, MotionType, OrganizationLetterhead
 
-        context["motion_types"] = MotionType.objects.filter(
-            organization=self.organization
-        ).order_by("sort_order", "name")
-        context["templates"] = MotionTemplate.objects.filter(
-            organization=self.organization
-        ).select_related("motion_type").order_by("name")
-        context["letterheads"] = OrganizationLetterhead.objects.filter(
-            organization=self.organization
-        ).order_by("name")
+        context["motion_types"] = MotionType.objects.filter(organization=self.organization).order_by(
+            "sort_order", "name"
+        )
+        context["templates"] = (
+            MotionTemplate.objects.filter(organization=self.organization).select_related("motion_type").order_by("name")
+        )
+        context["letterheads"] = OrganizationLetterhead.objects.filter(organization=self.organization).order_by("name")
 
         context["type_count"] = context["motion_types"].count()
         context["template_count"] = context["templates"].count()
@@ -163,6 +161,7 @@ class OrganizationDocumentsView(WorkViewMixin, TemplateView):
 # =============================================================================
 # MEMBER MANAGEMENT
 # =============================================================================
+
 
 class MemberListView(WorkViewMixin, TemplateView):
     """List of organization members."""
@@ -176,28 +175,30 @@ class MemberListView(WorkViewMixin, TemplateView):
 
         # Check if user can manage faction settings
         from apps.common.permissions import PermissionChecker
+
         checker = PermissionChecker(self.membership)
         context["can_manage_faction"] = checker.has_permission("faction.manage")
 
         from apps.tenants.models import Membership, UserInvitation
 
         # Get all active members
-        members = Membership.objects.filter(
-            organization=self.organization,
-            is_active=True
-        ).select_related("user").prefetch_related("roles").order_by("user__first_name", "user__last_name")
+        members = (
+            Membership.objects.filter(organization=self.organization, is_active=True)
+            .select_related("user")
+            .prefetch_related("roles")
+            .order_by("user__first_name", "user__last_name")
+        )
 
         # Get inactive members
-        inactive_members = Membership.objects.filter(
-            organization=self.organization,
-            is_active=False
-        ).select_related("user").prefetch_related("roles")
+        inactive_members = (
+            Membership.objects.filter(organization=self.organization, is_active=False)
+            .select_related("user")
+            .prefetch_related("roles")
+        )
 
         # Get pending invitations
         pending_invitations = UserInvitation.objects.filter(
-            organization=self.organization,
-            accepted_at__isnull=True,
-            expires_at__gt=timezone.now()
+            organization=self.organization, accepted_at__isnull=True, expires_at__gt=timezone.now()
         ).order_by("-created_at")
 
         context["members"] = members
@@ -216,8 +217,8 @@ class MemberDetailView(WorkViewMixin, TemplateView):
 
     def _find_matching_persons(self, user, body):
         """Findet OParl-Personen anhand des Benutzernamens."""
-        from insight_core.models import OParlPerson
         from django.db.models import Q
+        from insight_core.models import OParlPerson
 
         first = user.first_name.strip() if user.first_name else ""
         last = user.last_name.strip() if user.last_name else ""
@@ -228,9 +229,9 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         query = Q(body=body)
         if first and last:
             query &= (
-                Q(given_name__iexact=first, family_name__iexact=last) |
-                Q(name__icontains=f"{first} {last}") |
-                Q(name__icontains=f"{last}, {first}")
+                Q(given_name__iexact=first, family_name__iexact=last)
+                | Q(name__icontains=f"{first} {last}")
+                | Q(name__icontains=f"{last}, {first}")
             )
         elif last:
             query &= Q(family_name__iexact=last) | Q(name__icontains=last)
@@ -239,15 +240,14 @@ class MemberDetailView(WorkViewMixin, TemplateView):
 
     def _get_suggested_committees(self, oparl_person, body, today):
         """Holt aktive Gremienmitgliedschaften einer OParl-Person."""
-        from insight_core.models import OParlMembership
         from django.db.models import Q
+        from insight_core.models import OParlMembership
 
-        memberships = OParlMembership.objects.filter(
-            person=oparl_person,
-            organization__body=body
-        ).filter(
-            Q(end_date__isnull=True) | Q(end_date__gte=today)
-        ).select_related('organization')
+        memberships = (
+            OParlMembership.objects.filter(person=oparl_person, organization__body=body)
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .select_related("organization")
+        )
 
         return [m.organization for m in memberships if m.organization.is_active]
 
@@ -255,23 +255,19 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
 
-        from apps.tenants.models import Membership, Role
         from django.db.models import Q
 
+        from apps.tenants.models import Membership, Role
+
         member_id = kwargs.get("member_id")
-        member = get_object_or_404(
-            Membership,
-            id=member_id,
-            organization=self.organization
-        )
+        member = get_object_or_404(Membership, id=member_id, organization=self.organization)
 
         context["member"] = member
-        context["available_roles"] = Role.objects.filter(
-            organization=self.organization
-        ).order_by("name")
+        context["available_roles"] = Role.objects.filter(organization=self.organization).order_by("name")
         context["is_owner"] = self.organization.owner == member.user
         context["is_self"] = member.user == self.request.user
         from apps.common.permissions import PermissionChecker
+
         checker = PermissionChecker(self.membership)
         context["can_edit"] = checker.has_permission("members.edit") or checker.is_admin()
 
@@ -291,13 +287,9 @@ class MemberDetailView(WorkViewMixin, TemplateView):
                 Q(end_date__isnull=True) | Q(end_date__gte=today)
             ).order_by("name")
 
-            context["inactive_committees"] = all_committees.filter(
-                end_date__lt=today
-            ).order_by("name")
+            context["inactive_committees"] = all_committees.filter(end_date__lt=today).order_by("name")
 
-            context["member_committees"] = list(
-                member.oparl_committees.values_list("id", flat=True)
-            )
+            context["member_committees"] = list(member.oparl_committees.values_list("id", flat=True))
 
             # OParl-Person Vorschläge
             context["oparl_person"] = member.oparl_person
@@ -309,9 +301,7 @@ class MemberDetailView(WorkViewMixin, TemplateView):
                 context["suggested_committee_ids"] = [c.id for c in suggested]
             else:
                 # Namens-Matching für Vorschläge
-                context["potential_oparl_persons"] = self._find_matching_persons(
-                    member.user, body
-                )
+                context["potential_oparl_persons"] = self._find_matching_persons(member.user, body)
         else:
             context["active_committees"] = []
             context["inactive_committees"] = []
@@ -327,14 +317,11 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         from apps.tenants.models import Membership, Role
 
         member_id = kwargs.get("member_id")
-        member = get_object_or_404(
-            Membership,
-            id=member_id,
-            organization=self.organization
-        )
+        member = get_object_or_404(Membership, id=member_id, organization=self.organization)
 
         # Check permission
         from apps.common.permissions import PermissionChecker
+
         checker = PermissionChecker(self.membership)
         if not checker.has_permission("members.edit") and not checker.is_admin():
             messages.error(request, "Keine Berechtigung zum Bearbeiten von Mitgliedern.")
@@ -348,24 +335,25 @@ class MemberDetailView(WorkViewMixin, TemplateView):
             body = self.organization.body
             if body:
                 from insight_core.models import OParlOrganization
-                committees = OParlOrganization.objects.filter(
-                    id__in=committee_ids,
-                    body=body
-                )
+
+                committees = OParlOrganization.objects.filter(id__in=committee_ids, body=body)
                 member.oparl_committees.set(committees)
-                messages.success(request, f"Gremien für {member.user.get_full_name() or member.user.email} aktualisiert.")
+                messages.success(
+                    request,
+                    f"Gremien für {member.user.get_full_name() or member.user.email} aktualisiert.",
+                )
             else:
                 messages.error(request, "Keine Kommune verknüpft. Gremien können nicht zugewiesen werden.")
 
         elif action == "update_roles":
             # Update member roles
             role_ids = request.POST.getlist("roles")
-            roles = Role.objects.filter(
-                id__in=role_ids,
-                organization=self.organization
-            )
+            roles = Role.objects.filter(id__in=role_ids, organization=self.organization)
             member.roles.set(roles)
-            messages.success(request, f"Rollen für {member.user.get_full_name() or member.user.email} aktualisiert.")
+            messages.success(
+                request,
+                f"Rollen für {member.user.get_full_name() or member.user.email} aktualisiert.",
+            )
 
         elif action == "deactivate":
             # Deactivate member (soft delete)
@@ -376,7 +364,10 @@ class MemberDetailView(WorkViewMixin, TemplateView):
             else:
                 member.is_active = False
                 member.save()
-                messages.success(request, f"{member.user.get_full_name() or member.user.email} wurde deaktiviert.")
+                messages.success(
+                    request,
+                    f"{member.user.get_full_name() or member.user.email} wurde deaktiviert.",
+                )
                 return redirect("work:members", org_slug=self.organization.slug)
 
         elif action == "reactivate":
@@ -403,13 +394,17 @@ class MemberDetailView(WorkViewMixin, TemplateView):
             else:
                 self.organization.owner = member.user
                 self.organization.save()
-                messages.success(request, f"Eigentümerschaft wurde auf {member.user.get_full_name() or member.user.email} übertragen.")
+                messages.success(
+                    request,
+                    f"Eigentümerschaft wurde auf {member.user.get_full_name() or member.user.email} übertragen.",
+                )
 
         elif action == "link_oparl_person":
             person_id = request.POST.get("oparl_person_id")
             body = self.organization.body
             if body and person_id:
                 from insight_core.models import OParlPerson
+
                 oparl_person = get_object_or_404(OParlPerson, id=person_id, body=body)
                 member.oparl_person = oparl_person
                 member.save()
@@ -438,9 +433,15 @@ class MemberDetailView(WorkViewMixin, TemplateView):
             member.is_sworn_in = is_sworn_in
             member.save()
             if is_sworn_in:
-                messages.success(request, f"{member.user.get_full_name() or member.user.email} wurde als vereidigt markiert.")
+                messages.success(
+                    request,
+                    f"{member.user.get_full_name() or member.user.email} wurde als vereidigt markiert.",
+                )
             else:
-                messages.success(request, f"Vereidigungsstatus für {member.user.get_full_name() or member.user.email} wurde entfernt.")
+                messages.success(
+                    request,
+                    f"Vereidigungsstatus für {member.user.get_full_name() or member.user.email} wurde entfernt.",
+                )
 
         return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
 
@@ -457,16 +458,14 @@ class MemberInviteView(WorkViewMixin, TemplateView):
 
         from apps.tenants.models import Role
 
-        context["available_roles"] = Role.objects.filter(
-            organization=self.organization
-        ).order_by("name")
+        context["available_roles"] = Role.objects.filter(organization=self.organization).order_by("name")
 
         return context
 
     def post(self, request, *args, **kwargs):
         """Handle invitation creation."""
-        from apps.tenants.models import UserInvitation, Role, Membership
         from apps.accounts.models import User
+        from apps.tenants.models import Membership, Role, UserInvitation
 
         email = request.POST.get("email", "").strip().lower()
         role_ids = request.POST.getlist("roles")
@@ -482,10 +481,7 @@ class MemberInviteView(WorkViewMixin, TemplateView):
 
         if existing_user:
             # Check if already a member
-            existing_membership = Membership.objects.filter(
-                user=existing_user,
-                organization=self.organization
-            ).first()
+            existing_membership = Membership.objects.filter(user=existing_user, organization=self.organization).first()
 
             if existing_membership:
                 if existing_membership.is_active:
@@ -502,7 +498,7 @@ class MemberInviteView(WorkViewMixin, TemplateView):
             organization=self.organization,
             email=email,
             accepted_at__isnull=True,
-            expires_at__gt=timezone.now()
+            expires_at__gt=timezone.now(),
         ).first()
 
         if existing_invitation:
@@ -510,10 +506,7 @@ class MemberInviteView(WorkViewMixin, TemplateView):
             return redirect("work:members", org_slug=self.organization.slug)
 
         # Get selected roles
-        roles = Role.objects.filter(
-            id__in=role_ids,
-            organization=self.organization
-        ) if role_ids else None
+        roles = Role.objects.filter(id__in=role_ids, organization=self.organization) if role_ids else None
 
         # Create invitation
         try:
@@ -523,7 +516,7 @@ class MemberInviteView(WorkViewMixin, TemplateView):
                 invited_by=request.user,
                 roles=roles,
                 message=message_text,
-                valid_days=7
+                valid_days=7,
             )
 
             # Send invitation email
@@ -556,7 +549,7 @@ class MemberInviteView(WorkViewMixin, TemplateView):
             <p>Sie wurden von <strong>{invitation.invited_by.get_full_name() or invitation.invited_by.email}</strong>
                eingeladen, der Organisation <strong>{self.organization.name}</strong> auf Mandari Work beizutreten.</p>
 
-            {f'<p><em>Nachricht: {invitation.message}</em></p>' if invitation.message else ''}
+            {f"<p><em>Nachricht: {invitation.message}</em></p>" if invitation.message else ""}
 
             <p>
                 <a href="{accept_url}"
@@ -567,7 +560,7 @@ class MemberInviteView(WorkViewMixin, TemplateView):
             </p>
 
             <p style="color: #666; font-size: 14px;">
-                Diese Einladung ist gültig bis zum {invitation.expires_at.strftime('%d.%m.%Y um %H:%M Uhr')}.
+                Diese Einladung ist gültig bis zum {invitation.expires_at.strftime("%d.%m.%Y um %H:%M Uhr")}.
             </p>
 
             <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
@@ -586,12 +579,12 @@ Hallo,
 Sie wurden von {invitation.invited_by.get_full_name() or invitation.invited_by.email} eingeladen,
 der Organisation {self.organization.name} auf Mandari Work beizutreten.
 
-{f'Nachricht: {invitation.message}' if invitation.message else ''}
+{f"Nachricht: {invitation.message}" if invitation.message else ""}
 
 Klicken Sie auf folgenden Link, um die Einladung anzunehmen:
 {accept_url}
 
-Diese Einladung ist gültig bis zum {invitation.expires_at.strftime('%d.%m.%Y um %H:%M Uhr')}.
+Diese Einladung ist gültig bis zum {invitation.expires_at.strftime("%d.%m.%Y um %H:%M Uhr")}.
 
 Falls Sie diese Einladung nicht erwartet haben, können Sie diese E-Mail ignorieren.
         """
@@ -621,11 +614,12 @@ class InvitationResendView(WorkViewMixin, View):
             UserInvitation,
             id=invitation_id,
             organization=self.organization,
-            accepted_at__isnull=True
+            accepted_at__isnull=True,
         )
 
         # Extend expiration
         from datetime import timedelta
+
         invitation.expires_at = timezone.now() + timedelta(days=7)
         invitation.save()
 
@@ -652,7 +646,7 @@ class InvitationCancelView(WorkViewMixin, View):
             UserInvitation,
             id=invitation_id,
             organization=self.organization,
-            accepted_at__isnull=True
+            accepted_at__isnull=True,
         )
 
         email = invitation.email
@@ -673,9 +667,11 @@ class AcceptInvitationView(TemplateView):
         token = kwargs.get("token")
 
         try:
-            invitation = UserInvitation.objects.select_related(
-                "organization", "invited_by"
-            ).prefetch_related("roles").get(token=token)
+            invitation = (
+                UserInvitation.objects.select_related("organization", "invited_by")
+                .prefetch_related("roles")
+                .get(token=token)
+            )
         except UserInvitation.DoesNotExist:
             messages.error(request, "Einladung nicht gefunden oder bereits verwendet.")
             return redirect("accounts:login")
@@ -697,6 +693,7 @@ class AcceptInvitationView(TemplateView):
 
             # Check if user with this email already exists
             from apps.accounts.models import User
+
             user_exists = User.objects.filter(email=invitation.email).exists()
 
             if user_exists:
@@ -705,7 +702,10 @@ class AcceptInvitationView(TemplateView):
                 return redirect("accounts:login")
             else:
                 # No account yet → redirect directly to registration
-                messages.info(request, f"Willkommen! Erstellen Sie Ihr Konto, um {invitation.organization.name} beizutreten.")
+                messages.info(
+                    request,
+                    f"Willkommen! Erstellen Sie Ihr Konto, um {invitation.organization.name} beizutreten.",
+                )
                 return redirect("accounts:register")
 
     def get_context_data(self, **kwargs):
@@ -713,9 +713,11 @@ class AcceptInvitationView(TemplateView):
         from apps.tenants.models import UserInvitation
 
         token = self.kwargs.get("token")
-        invitation = UserInvitation.objects.select_related(
-            "organization", "invited_by"
-        ).prefetch_related("roles").get(token=token)
+        invitation = (
+            UserInvitation.objects.select_related("organization", "invited_by")
+            .prefetch_related("roles")
+            .get(token=token)
+        )
 
         context["invitation"] = invitation
         context["organization"] = invitation.organization
@@ -723,7 +725,7 @@ class AcceptInvitationView(TemplateView):
 
     def post(self, request, *args, **kwargs):
         """Accept the invitation and create membership."""
-        from apps.tenants.models import UserInvitation, Membership
+        from apps.tenants.models import Membership, UserInvitation
 
         if not request.user.is_authenticated:
             return redirect("accounts:login")
@@ -731,9 +733,9 @@ class AcceptInvitationView(TemplateView):
         token = kwargs.get("token")
 
         try:
-            invitation = UserInvitation.objects.select_related(
-                "organization"
-            ).prefetch_related("roles").get(token=token)
+            invitation = (
+                UserInvitation.objects.select_related("organization").prefetch_related("roles").get(token=token)
+            )
         except UserInvitation.DoesNotExist:
             messages.error(request, "Einladung nicht gefunden.")
             return redirect("accounts:login")
@@ -743,10 +745,7 @@ class AcceptInvitationView(TemplateView):
             return redirect("accounts:login")
 
         # Check if already a member
-        existing = Membership.objects.filter(
-            user=request.user,
-            organization=invitation.organization
-        ).first()
+        existing = Membership.objects.filter(user=request.user, organization=invitation.organization).first()
 
         if existing:
             if existing.is_active:
@@ -761,7 +760,7 @@ class AcceptInvitationView(TemplateView):
                 user=request.user,
                 organization=invitation.organization,
                 invited_by=invitation.invited_by,
-                invitation_accepted_at=timezone.now()
+                invitation_accepted_at=timezone.now(),
             )
 
             # Add roles from invitation
@@ -798,14 +797,18 @@ class RoleListView(WorkViewMixin, TemplateView):
 
         # Check if user can manage faction settings
         from apps.common.permissions import PermissionChecker
+
         checker = PermissionChecker(self.membership)
         context["can_manage_faction"] = checker.has_permission("faction.manage")
 
         # Get all roles for this organization
         from apps.tenants.models import Role
-        roles = Role.objects.filter(
-            organization=self.organization
-        ).prefetch_related("permissions").order_by("priority", "name")
+
+        roles = (
+            Role.objects.filter(organization=self.organization)
+            .prefetch_related("permissions")
+            .order_by("priority", "name")
+        )
 
         context["roles"] = roles
         return context
@@ -814,6 +817,7 @@ class RoleListView(WorkViewMixin, TemplateView):
 # =============================================================================
 # USER PROFILE
 # =============================================================================
+
 
 class ProfileView(WorkViewMixin, TemplateView):
     """User profile within organization context."""
@@ -865,16 +869,16 @@ class SecurityView(WorkViewMixin, TemplateView):
         current_session_key = self.request.session.session_key
 
         for session in sessions:
-            session.is_current = (session.session_key == current_session_key)
+            session.is_current = session.session_key == current_session_key
 
         context["sessions"] = sessions
 
         # Get trusted devices
         from apps.accounts.models import TrustedDevice
-        context["trusted_devices"] = TrustedDevice.objects.filter(
-            user=user,
-            expires_at__gt=timezone.now()
-        ).order_by("-last_used_at")
+
+        context["trusted_devices"] = TrustedDevice.objects.filter(user=user, expires_at__gt=timezone.now()).order_by(
+            "-last_used_at"
+        )
 
         # Password strength (for UI hint)
         context["password_requirements"] = {
@@ -951,12 +955,14 @@ class SecurityView(WorkViewMixin, TemplateView):
 
         # Return JSON for HTMX/Alpine
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return JsonResponse({
-                "success": True,
-                "qr_code": setup_data["qr_code"],
-                "secret": setup_data["secret"],
-                "backup_codes": setup_data["backup_codes"],
-            })
+            return JsonResponse(
+                {
+                    "success": True,
+                    "qr_code": setup_data["qr_code"],
+                    "secret": setup_data["secret"],
+                    "backup_codes": setup_data["backup_codes"],
+                }
+            )
 
         # Store data for template
         messages.info(request, "Scannen Sie den QR-Code mit Ihrer Authenticator-App.")
@@ -1074,12 +1080,14 @@ class SecurityAPIView(WorkViewMixin, View):
                 "secret": setup_data["secret"],
                 "backup_codes": setup_data["backup_codes"],
             }
-            return JsonResponse({
-                "success": True,
-                "qr_code": setup_data["qr_code"],
-                "secret": setup_data["secret"],
-                "backup_codes": setup_data["backup_codes"],
-            })
+            return JsonResponse(
+                {
+                    "success": True,
+                    "qr_code": setup_data["qr_code"],
+                    "secret": setup_data["secret"],
+                    "backup_codes": setup_data["backup_codes"],
+                }
+            )
 
         elif action == "verify_2fa":
             data = json.loads(request.body) if request.content_type == "application/json" else request.POST
@@ -1105,6 +1113,7 @@ class SecurityAPIView(WorkViewMixin, View):
 # COUNCIL PARTY MANAGEMENT
 # =============================================================================
 
+
 class CouncilPartyListView(WorkViewMixin, TemplateView):
     """List and manage council parties for coalition settings."""
 
@@ -1118,9 +1127,7 @@ class CouncilPartyListView(WorkViewMixin, TemplateView):
 
         from apps.tenants.models import CouncilParty
 
-        parties = CouncilParty.objects.filter(
-            organization=self.organization
-        ).order_by("coalition_order", "name")
+        parties = CouncilParty.objects.filter(organization=self.organization).order_by("coalition_order", "name")
 
         context["parties"] = parties
         context["coalition_parties"] = parties.filter(is_coalition_member=True)
@@ -1203,11 +1210,7 @@ class CouncilPartyEditView(WorkViewMixin, TemplateView):
         from apps.tenants.models import CouncilParty
 
         party_id = kwargs.get("party_id")
-        party = get_object_or_404(
-            CouncilParty,
-            id=party_id,
-            organization=self.organization
-        )
+        party = get_object_or_404(CouncilParty, id=party_id, organization=self.organization)
         context["party"] = party
         return context
 
@@ -1215,11 +1218,7 @@ class CouncilPartyEditView(WorkViewMixin, TemplateView):
         from apps.tenants.models import CouncilParty
 
         party_id = kwargs.get("party_id")
-        party = get_object_or_404(
-            CouncilParty,
-            id=party_id,
-            organization=self.organization
-        )
+        party = get_object_or_404(CouncilParty, id=party_id, organization=self.organization)
 
         action = request.POST.get("action")
 
@@ -1238,10 +1237,11 @@ class CouncilPartyEditView(WorkViewMixin, TemplateView):
             return redirect("work:council_party_edit", org_slug=self.organization.slug, party_id=party_id)
 
         # Check for duplicate short name (excluding current party)
-        if CouncilParty.objects.filter(
-            organization=self.organization,
-            short_name=short_name
-        ).exclude(id=party_id).exists():
+        if (
+            CouncilParty.objects.filter(organization=self.organization, short_name=short_name)
+            .exclude(id=party_id)
+            .exists()
+        ):
             messages.error(request, f"Eine andere Fraktion mit dem Kurzname '{short_name}' existiert bereits.")
             return redirect("work:council_party_edit", org_slug=self.organization.slug, party_id=party_id)
 

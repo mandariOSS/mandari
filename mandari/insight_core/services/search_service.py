@@ -84,7 +84,7 @@ class MeilisearchService:
                     "showRankingScore": True,
                     # Highlighting für bessere Suchergebnisse
                     "attributesToHighlight": ["name", "text_content", "reference"],
-                    "highlightPreTag": "<mark class=\"bg-yellow-200 dark:bg-yellow-800\">",
+                    "highlightPreTag": '<mark class="bg-yellow-200 dark:bg-yellow-800">',
                     "highlightPostTag": "</mark>",
                     "attributesToCrop": ["text_content"],
                     "cropLength": 200,
@@ -421,6 +421,7 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
         if hit.get("start"):
             try:
                 from datetime import datetime
+
                 dt = datetime.fromisoformat(hit["start"].replace("Z", "+00:00"))
                 subtitle = dt.strftime("%d.%m.%Y")
             except (ValueError, AttributeError):

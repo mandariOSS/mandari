@@ -11,7 +11,7 @@ Usage:
 import httpx
 from django.core.management.base import BaseCommand, CommandError
 
-from insight_core.models import OParlSource, OParlBody
+from insight_core.models import OParlBody, OParlSource
 
 
 class Command(BaseCommand):
@@ -36,10 +36,7 @@ class Command(BaseCommand):
 
     def fetch_oparl_system(self, url):
         """Fetch OParl system data."""
-        headers = {
-            "User-Agent": "Mandari/1.0 (https://mandari.dev)",
-            "Accept": "application/json"
-        }
+        headers = {"User-Agent": "Mandari/1.0 (https://mandari.dev)", "Accept": "application/json"}
 
         try:
             with httpx.Client(timeout=30.0, headers=headers, follow_redirects=True) as client:
@@ -48,9 +45,7 @@ class Command(BaseCommand):
                 if response.status_code == 200:
                     return response.json()
                 else:
-                    self.stdout.write(self.style.ERROR(
-                        f"HTTP {response.status_code} from OParl API"
-                    ))
+                    self.stdout.write(self.style.ERROR(f"HTTP {response.status_code} from OParl API"))
                     return None
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Error fetching OParl data: {e}"))
@@ -58,10 +53,7 @@ class Command(BaseCommand):
 
     def fetch_oparl_body(self, url):
         """Fetch OParl body data."""
-        headers = {
-            "User-Agent": "Mandari/1.0 (https://mandari.dev)",
-            "Accept": "application/json"
-        }
+        headers = {"User-Agent": "Mandari/1.0 (https://mandari.dev)", "Accept": "application/json"}
 
         try:
             with httpx.Client(timeout=30.0, headers=headers, follow_redirects=True) as client:
@@ -103,7 +95,7 @@ class Command(BaseCommand):
                 "website": system_data.get("website"),
                 "is_active": True,
                 "raw_json": system_data,
-            }
+            },
         )
 
         if created:
@@ -119,12 +111,12 @@ class Command(BaseCommand):
         self.stdout.write(f"\nFound {len(body_urls)} body/bodies")
 
         for i, body_url in enumerate(body_urls):
-            self.stdout.write(f"\nFetching body {i+1}: {body_url}")
+            self.stdout.write(f"\nFetching body {i + 1}: {body_url}")
 
             body_data = self.fetch_oparl_body(body_url)
 
             if not body_data:
-                self.stdout.write(self.style.WARNING(f"  Could not fetch body data"))
+                self.stdout.write(self.style.WARNING("  Could not fetch body data"))
                 continue
 
             # Body erstellen oder aktualisieren
@@ -147,7 +139,7 @@ class Command(BaseCommand):
                     "file_list_url": body_data.get("file"),
                     # Rohdaten
                     "raw_json": body_data,
-                }
+                },
             )
 
             # OSM ID setzen falls angegeben

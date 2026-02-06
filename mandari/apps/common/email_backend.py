@@ -57,6 +57,7 @@ class SiteSettingsEmailBackend(SMTPBackend):
 
         try:
             from .models import SiteSettings
+
             site_settings = SiteSettings.get_settings()
 
             # Use SiteSettings if email_host is configured, otherwise fallback
@@ -108,6 +109,7 @@ class ConsoleOrSiteSettingsBackend(SiteSettingsEmailBackend):
         if self.debug_mode:
             # Print to console in debug mode
             from django.core.mail.backends.console import EmailBackend as ConsoleBackend
+
             console_backend = ConsoleBackend()
             return console_backend.send_messages(email_messages)
         else:

@@ -7,7 +7,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -181,9 +180,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "published_at",
-                    models.DateTimeField(
-                        blank=True, null=True, verbose_name="Veröffentlicht am"
-                    ),
+                    models.DateTimeField(blank=True, null=True, verbose_name="Veröffentlicht am"),
                 ),
                 (
                     "meta_description",

@@ -5,9 +5,7 @@ Nebius TokenFactory AI Provider.
 Uses OpenAI-compatible API with Kimi K2 Thinking model.
 """
 
-import json
 import logging
-from typing import Optional
 
 import httpx
 
@@ -32,7 +30,7 @@ class NebiusProvider(AbstractAIProvider):
     PRIMARY_MODEL = "moonshotai/Kimi-K2-Thinking"
     FALLBACK_MODEL = "thudm/GLM-4.5"
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         """
         Initialize the Nebius provider.
 
@@ -48,6 +46,7 @@ class NebiusProvider(AbstractAIProvider):
             return self._api_key
 
         from apps.common.models import SiteSettings
+
         return SiteSettings.get_nebius_api_key()
 
     def is_available(self) -> bool:
@@ -91,10 +90,7 @@ class NebiusProvider(AbstractAIProvider):
             )
 
         # Convert ChatMessage to dict format
-        message_dicts = [
-            {"role": msg.role, "content": msg.content}
-            for msg in messages
-        ]
+        message_dicts = [{"role": msg.role, "content": msg.content} for msg in messages]
 
         # Kimi K2 Thinking recommends temperature=1.0
         actual_temp = 1.0 if "Thinking" in self._model else temperature

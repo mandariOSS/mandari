@@ -5,20 +5,20 @@ Enthält Business-Logik und externe Service-Integrationen.
 """
 
 from .document_extraction import (
-    ExtractedDocument,
     DocumentDownloadError,
+    ExtractedDocument,
     download_and_extract,
     extract_text_from_file,
 )
 from .search_service import (
-    MeilisearchService,
-    get_search_service,
-    format_search_result,
+    INDEX_FILES,
     INDEX_MEETINGS,
+    INDEX_ORGANIZATIONS,
     INDEX_PAPERS,
     INDEX_PERSONS,
-    INDEX_ORGANIZATIONS,
-    INDEX_FILES,
+    MeilisearchService,
+    format_search_result,
+    get_search_service,
 )
 
 __all__ = [

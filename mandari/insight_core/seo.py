@@ -12,12 +12,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urljoin
 
 from django.conf import settings
 from django.http import HttpRequest
-from django.utils.html import escape
 
 
 @dataclass
@@ -32,10 +31,10 @@ class SEOContext:
     description: str
     canonical_url: str
     og_type: str = "website"
-    og_image: Optional[str] = None
+    og_image: str | None = None
     og_locale: str = "de_DE"
     twitter_card: str = "summary"
-    json_ld: Optional[dict] = None
+    json_ld: dict | None = None
     keywords: list[str] = field(default_factory=list)
     robots: str = "index, follow"
     author: str = "Mandari"
@@ -62,7 +61,7 @@ def get_site_url() -> str:
     return getattr(settings, "SITE_URL", "https://mandari.de")
 
 
-def build_canonical_url(request: HttpRequest, path: Optional[str] = None) -> str:
+def build_canonical_url(request: HttpRequest, path: str | None = None) -> str:
     """
     Baut die kanonische URL für eine Seite.
 
@@ -88,6 +87,7 @@ def get_default_og_image() -> str:
 # Entitäts-spezifische SEO-Generatoren
 # =============================================================================
 
+
 def get_paper_seo(paper, request: HttpRequest) -> SEOContext:
     """
     Generiert SEO-Kontext für eine Vorgangs-Detailseite.
@@ -100,7 +100,9 @@ def get_paper_seo(paper, request: HttpRequest) -> SEOContext:
         SEOContext mit Paper-spezifischen Metadaten
     """
     title = f"{paper.reference or ''}: {paper.name or 'Vorgang'}"[:60]
-    description = f"Vorgang {paper.reference or ''} vom {paper.date.strftime('%d.%m.%Y') if paper.date else 'unbekannt'}"
+    description = (
+        f"Vorgang {paper.reference or ''} vom {paper.date.strftime('%d.%m.%Y') if paper.date else 'unbekannt'}"
+    )
 
     if paper.paper_type:
         description += f" - {paper.paper_type}"
@@ -169,12 +171,16 @@ def get_meeting_seo(meeting, request: HttpRequest) -> SEOContext:
             "@type": "Place",
             "name": meeting.location_name or "Rathaus",
             "address": meeting.location_address,
-        } if meeting.location_name else None,
+        }
+        if meeting.location_name
+        else None,
         "organizer": {
             "@type": "Organization",
             "name": meeting.body.get_display_name() if meeting.body else "Kommune",
         },
-        "eventStatus": "https://schema.org/EventCancelled" if meeting.cancelled else "https://schema.org/EventScheduled",
+        "eventStatus": "https://schema.org/EventCancelled"
+        if meeting.cancelled
+        else "https://schema.org/EventScheduled",
     }
 
     return SEOContext(
@@ -218,7 +224,9 @@ def get_organization_seo(organization, request: HttpRequest) -> SEOContext:
         "parentOrganization": {
             "@type": "GovernmentOrganization",
             "name": organization.body.get_display_name() if organization.body else None,
-        } if organization.body else None,
+        }
+        if organization.body
+        else None,
     }
 
     return SEOContext(
@@ -262,7 +270,9 @@ def get_person_seo(person, request: HttpRequest) -> SEOContext:
         "worksFor": {
             "@type": "GovernmentOrganization",
             "name": person.body.get_display_name() if person.body else None,
-        } if person.body else None,
+        }
+        if person.body
+        else None,
     }
 
     return SEOContext(
@@ -317,6 +327,7 @@ def get_body_seo(body, request: HttpRequest) -> SEOContext:
 # =============================================================================
 # Statische Seiten
 # =============================================================================
+
 
 def get_home_seo(request: HttpRequest) -> SEOContext:
     """SEO für die Startseite."""

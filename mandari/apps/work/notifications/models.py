@@ -69,7 +69,7 @@ class Notification(models.Model):
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="notifications",
-        verbose_name="Empfänger"
+        verbose_name="Empfänger",
     )
 
     # Notification content
@@ -77,17 +77,13 @@ class Notification(models.Model):
         max_length=30,
         choices=NotificationType.choices,
         default=NotificationType.SYSTEM_MESSAGE,
-        verbose_name="Typ"
+        verbose_name="Typ",
     )
     title = models.CharField(max_length=255, verbose_name="Titel")
     message = models.TextField(verbose_name="Nachricht")
 
     # Optional link to related object
-    link = models.CharField(
-        max_length=500,
-        blank=True,
-        verbose_name="Link"
-    )
+    link = models.CharField(max_length=500, blank=True, verbose_name="Link")
 
     # Actor (who triggered this notification, if any)
     actor = models.ForeignKey(
@@ -96,7 +92,7 @@ class Notification(models.Model):
         null=True,
         blank=True,
         related_name="triggered_notifications",
-        verbose_name="Auslöser"
+        verbose_name="Auslöser",
     )
 
     # Status
@@ -204,44 +200,21 @@ class NotificationPreference(models.Model):
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="notification_preferences",
-        verbose_name="Mitgliedschaft"
+        verbose_name="Mitgliedschaft",
     )
 
     # Global settings
-    email_enabled = models.BooleanField(
-        default=True,
-        verbose_name="E-Mail-Benachrichtigungen aktiviert"
-    )
-    push_enabled = models.BooleanField(
-        default=True,
-        verbose_name="Push-Benachrichtigungen aktiviert"
-    )
+    email_enabled = models.BooleanField(default=True, verbose_name="E-Mail-Benachrichtigungen aktiviert")
+    push_enabled = models.BooleanField(default=True, verbose_name="Push-Benachrichtigungen aktiviert")
 
     # Per-type settings (JSON for flexibility)
     # Format: {"type_name": {"in_app": true, "email": true}}
-    type_settings = models.JSONField(
-        default=dict,
-        blank=True,
-        verbose_name="Typ-Einstellungen"
-    )
+    type_settings = models.JSONField(default=dict, blank=True, verbose_name="Typ-Einstellungen")
 
     # Quiet hours
-    quiet_hours_enabled = models.BooleanField(
-        default=False,
-        verbose_name="Ruhezeiten aktiviert"
-    )
-    quiet_hours_start = models.TimeField(
-        null=True,
-        blank=True,
-        default="22:00",
-        verbose_name="Ruhezeit Start"
-    )
-    quiet_hours_end = models.TimeField(
-        null=True,
-        blank=True,
-        default="07:00",
-        verbose_name="Ruhezeit Ende"
-    )
+    quiet_hours_enabled = models.BooleanField(default=False, verbose_name="Ruhezeiten aktiviert")
+    quiet_hours_start = models.TimeField(null=True, blank=True, default="22:00", verbose_name="Ruhezeit Start")
+    quiet_hours_end = models.TimeField(null=True, blank=True, default="07:00", verbose_name="Ruhezeit Ende")
 
     # Email digest
     email_digest = models.CharField(
@@ -253,7 +226,7 @@ class NotificationPreference(models.Model):
             ("never", "Nie"),
         ],
         default="instant",
-        verbose_name="E-Mail-Zusammenfassung"
+        verbose_name="E-Mail-Zusammenfassung",
     )
 
     # Timestamps
@@ -290,7 +263,4 @@ class NotificationPreference(models.Model):
 
     def get_default_settings(self) -> dict:
         """Return default settings for all notification types."""
-        return {
-            ntype.value: {"in_app": True, "email": True}
-            for ntype in NotificationType
-        }
+        return {ntype.value: {"in_app": True, "email": True} for ntype in NotificationType}

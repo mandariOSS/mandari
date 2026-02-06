@@ -38,9 +38,7 @@ Für Produktion als Systemd Service:
 import asyncio
 import signal
 import sys
-from datetime import datetime, time as dt_time
-from pathlib import Path
-from typing import Any
+from datetime import datetime
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -57,7 +55,8 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--interval", "-i",
+            "--interval",
+            "-i",
             type=int,
             default=getattr(settings, "SYNC_INTERVAL_MINUTES", 15),
             help="Minuten zwischen Incremental Syncs (default: 15)",
@@ -69,7 +68,8 @@ class Command(BaseCommand):
             help="Stunde für täglichen Full Sync (0-23, default: 3)",
         )
         parser.add_argument(
-            "--concurrent", "-c",
+            "--concurrent",
+            "-c",
             type=int,
             default=10,
             help="Maximale gleichzeitige HTTP-Requests (default: 10)",
@@ -80,7 +80,8 @@ class Command(BaseCommand):
             help="Nur einmal ausführen und beenden",
         )
         parser.add_argument(
-            "--full", "-f",
+            "--full",
+            "-f",
             action="store_true",
             help="Full Sync statt Incremental (bei --once)",
         )
@@ -120,14 +121,16 @@ class Command(BaseCommand):
 
     def _run_daemon(self, interval: int, full_hour: int, concurrent: int):
         """Läuft als Daemon mit periodischen Syncs."""
-        self.stdout.write(self.style.SUCCESS(
-            f"\n{'='*60}\n"
-            f"Mandari OParl Sync Daemon gestartet\n"
-            f"{'='*60}\n"
-            f"Incremental Sync: alle {interval} Minuten\n"
-            f"Full Sync: täglich um {full_hour:02d}:00 Uhr\n"
-            f"{'='*60}\n"
-        ))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"\n{'=' * 60}\n"
+                f"Mandari OParl Sync Daemon gestartet\n"
+                f"{'=' * 60}\n"
+                f"Incremental Sync: alle {interval} Minuten\n"
+                f"Full Sync: täglich um {full_hour:02d}:00 Uhr\n"
+                f"{'=' * 60}\n"
+            )
+        )
 
         asyncio.run(self._daemon_loop(interval, full_hour, concurrent))
 
@@ -142,9 +145,7 @@ class Command(BaseCommand):
                 # Warte bis zum nächsten Sync
                 next_sync = datetime.now().replace(second=0, microsecond=0)
                 minutes_to_wait = interval - (next_sync.minute % interval)
-                next_sync = next_sync.replace(
-                    minute=(next_sync.minute + minutes_to_wait) % 60
-                )
+                next_sync = next_sync.replace(minute=(next_sync.minute + minutes_to_wait) % 60)
                 if minutes_to_wait == interval:
                     minutes_to_wait = 0
 
@@ -154,7 +155,7 @@ class Command(BaseCommand):
                     self.stdout.write(
                         f"[{datetime.now().strftime('%H:%M:%S')}] "
                         f"Nächster Sync: {next_sync.strftime('%H:%M:%S')} "
-                        f"(in {int(wait_seconds/60)} Minuten)"
+                        f"(in {int(wait_seconds / 60)} Minuten)"
                     )
 
                 # Warte in kleinen Schritten für responsives Shutdown
@@ -168,22 +169,18 @@ class Command(BaseCommand):
 
                 # Prüfe ob Full Sync fällig
                 now = datetime.now()
-                is_full_sync_time = (
-                    now.hour == full_hour and
-                    (self._last_full_sync_date is None or
-                     self._last_full_sync_date != now.date())
+                is_full_sync_time = now.hour == full_hour and (
+                    self._last_full_sync_date is None or self._last_full_sync_date != now.date()
                 )
 
                 if is_full_sync_time:
-                    self.stdout.write(self.style.WARNING(
-                        f"\n[{now.strftime('%H:%M:%S')}] Starte täglichen Full Sync..."
-                    ))
+                    self.stdout.write(
+                        self.style.WARNING(f"\n[{now.strftime('%H:%M:%S')}] Starte täglichen Full Sync...")
+                    )
                     await self._sync_all(full=True, concurrent=concurrent)
                     self._last_full_sync_date = now.date()
                 else:
-                    self.stdout.write(
-                        f"\n[{now.strftime('%H:%M:%S')}] Starte Incremental Sync..."
-                    )
+                    self.stdout.write(f"\n[{now.strftime('%H:%M:%S')}] Starte Incremental Sync...")
                     await self._sync_all(full=False, concurrent=concurrent)
 
             except Exception as e:
@@ -216,10 +213,9 @@ class Command(BaseCommand):
 
                 duration = (datetime.now() - start_time).total_seconds()
                 sync_type = "Full" if full else "Incremental"
-                self.stdout.write(self.style.SUCCESS(
-                    f"{sync_type} Sync abgeschlossen in {duration:.1f}s: "
-                    f"{total_entities} Entitäten"
-                ))
+                self.stdout.write(
+                    self.style.SUCCESS(f"{sync_type} Sync abgeschlossen in {duration:.1f}s: {total_entities} Entitäten")
+                )
 
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Sync fehlgeschlagen: {e}"))
@@ -229,13 +225,13 @@ class Command(BaseCommand):
     def _count_entities(self, result) -> int:
         """Zählt alle synchronisierten Entitäten."""
         return (
-            result.organizations_synced +
-            result.persons_synced +
-            result.memberships_synced +
-            result.meetings_synced +
-            result.papers_synced +
-            result.files_synced +
-            result.locations_synced +
-            result.agenda_items_synced +
-            result.consultations_synced
+            result.organizations_synced
+            + result.persons_synced
+            + result.memberships_synced
+            + result.meetings_synced
+            + result.papers_synced
+            + result.files_synced
+            + result.locations_synced
+            + result.agenda_items_synced
+            + result.consultations_synced
         )

@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("tenants", "0005_add_coalition_and_email_fields"),
         ("work", "0014_add_factionagendaitem_parent"),
@@ -24,9 +23,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="factionattendance",
             name="guest_name",
-            field=models.CharField(
-                blank=True, max_length=200, verbose_name="Name des Gastes"
-            ),
+            field=models.CharField(blank=True, max_length=200, verbose_name="Name des Gastes"),
         ),
         migrations.AddField(
             model_name="factionattendance",

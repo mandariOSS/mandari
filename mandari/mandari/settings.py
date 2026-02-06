@@ -22,10 +22,7 @@ if env_path.exists():
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    "SECRET_KEY",
-    "django-insecure-change-me-in-production-with-a-real-secret-key"
-)
+SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-change-me-in-production-with-a-real-secret-key")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "True").lower() in ("true", "1", "yes")
@@ -35,6 +32,7 @@ SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
 
 # Parse domain from SITE_URL
 from urllib.parse import urlparse
+
 _site_domain = urlparse(SITE_URL).netloc
 
 # Allowed hosts from environment (filter empty strings)
@@ -149,10 +147,7 @@ WSGI_APPLICATION = "mandari.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/mandari"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/mandari")
 
 # Remove +asyncpg suffix if present (from FastAPI config)
 DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
@@ -261,7 +256,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Meilisearch
 MEILISEARCH_URL = os.environ.get("MEILISEARCH_URL", "http://localhost:7700")
 MEILISEARCH_KEY = os.environ.get("MEILISEARCH_KEY", "masterKey")
-MEILISEARCH_AUTO_INDEX = os.environ.get("MEILISEARCH_AUTO_INDEX", "True").lower() in ("true", "1", "yes")
+MEILISEARCH_AUTO_INDEX = os.environ.get("MEILISEARCH_AUTO_INDEX", "True").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 # Groq API (für KI-Features)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
@@ -271,8 +270,16 @@ MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 MISTRAL_OCR_RATE_LIMIT = int(os.environ.get("MISTRAL_OCR_RATE_LIMIT", "60"))  # Requests pro Minute
 
 # Text Extraction
-TEXT_EXTRACTION_ENABLED = os.environ.get("TEXT_EXTRACTION_ENABLED", "True").lower() in ("true", "1", "yes")
-TEXT_EXTRACTION_ASYNC = os.environ.get("TEXT_EXTRACTION_ASYNC", "True").lower() in ("true", "1", "yes")
+TEXT_EXTRACTION_ENABLED = os.environ.get("TEXT_EXTRACTION_ENABLED", "True").lower() in (
+    "true",
+    "1",
+    "yes",
+)
+TEXT_EXTRACTION_ASYNC = os.environ.get("TEXT_EXTRACTION_ASYNC", "True").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", "50"))
 
 # Encryption Master Key (für Work-Module Datenverschlüsselung)
@@ -293,8 +300,9 @@ TASKS = {
     "default": {
         # Development: Immediate execution (synchronous)
         # Production: Use "django.tasks.backends.database.DatabaseBackend"
-        "BACKEND": "django.tasks.backends.immediate.ImmediateBackend" if DEBUG
-                   else "django.tasks.backends.database.DatabaseBackend",
+        "BACKEND": "django.tasks.backends.immediate.ImmediateBackend"
+        if DEBUG
+        else "django.tasks.backends.database.DatabaseBackend",
     }
 }
 
@@ -307,8 +315,7 @@ TASKS = {
 # Falls back to environment variables if SiteSettings is not configured
 EMAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND",
-    "django.core.mail.backends.console.EmailBackend" if DEBUG
-    else "apps.common.email_backend.SiteSettingsEmailBackend"
+    "django.core.mail.backends.console.EmailBackend" if DEBUG else "apps.common.email_backend.SiteSettingsEmailBackend",
 )
 
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
@@ -444,48 +451,43 @@ UNFOLD = {
     "SITE_HEADER": "Mandari",
     "SITE_SUBHEADER": "Kommunalpolitische Transparenz",
     "SITE_URL": "/",
-
     # UI Options
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": True,
     "SHOW_BACK_BUTTON": True,
-
     # Environment Badge (oben rechts)
     "ENVIRONMENT": "mandari.admin_utils.environment_callback",
-
     # Dashboard
     "DASHBOARD_CALLBACK": "insight_core.admin_dashboard.dashboard_callback",
-
     # Farbschema - passend zum Frontend (Indigo)
     "COLORS": {
         "base": {
-            "50": "249 250 251",   # gray-50
+            "50": "249 250 251",  # gray-50
             "100": "243 244 246",  # gray-100
             "200": "229 231 235",  # gray-200
             "300": "209 213 219",  # gray-300
             "400": "156 163 175",  # gray-400
             "500": "107 114 128",  # gray-500
-            "600": "75 85 99",     # gray-600
-            "700": "55 65 81",     # gray-700
-            "800": "31 41 55",     # gray-800
-            "900": "17 24 39",     # gray-900
-            "950": "3 7 18",       # gray-950
+            "600": "75 85 99",  # gray-600
+            "700": "55 65 81",  # gray-700
+            "800": "31 41 55",  # gray-800
+            "900": "17 24 39",  # gray-900
+            "950": "3 7 18",  # gray-950
         },
         "primary": {
-            "50": "238 242 255",   # indigo-50
+            "50": "238 242 255",  # indigo-50
             "100": "224 231 255",  # indigo-100
             "200": "199 210 254",  # indigo-200
             "300": "165 180 252",  # indigo-300
             "400": "129 140 248",  # indigo-400
-            "500": "99 102 241",   # indigo-500
-            "600": "79 70 229",    # indigo-600
-            "700": "67 56 202",    # indigo-700
-            "800": "55 48 163",    # indigo-800
-            "900": "49 46 129",    # indigo-900
-            "950": "30 27 75",     # indigo-950
+            "500": "99 102 241",  # indigo-500
+            "600": "79 70 229",  # indigo-600
+            "700": "67 56 202",  # indigo-700
+            "800": "55 48 163",  # indigo-800
+            "900": "49 46 129",  # indigo-900
+            "950": "30 27 75",  # indigo-950
         },
     },
-
     # Sidebar Navigation
     # Icons: Material Symbols (https://fonts.google.com/icons)
     "SIDEBAR": {
@@ -753,7 +755,6 @@ UNFOLD = {
             },
         ],
     },
-
     # Site Dropdown (oben rechts, neben User)
     "SITE_DROPDOWN": [
         {

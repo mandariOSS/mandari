@@ -16,7 +16,7 @@ Usage:
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.common.permissions import DEFAULT_ROLES
-from apps.tenants.models import Organization, Role, Permission
+from apps.tenants.models import Organization, Permission, Role
 
 
 class Command(BaseCommand):
@@ -52,24 +52,16 @@ class Command(BaseCommand):
         expected_count = len(PERMISSIONS)
 
         if perm_count < expected_count:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"Syncing permissions... ({perm_count}/{expected_count} in DB)"
-                )
-            )
+            self.stdout.write(self.style.WARNING(f"Syncing permissions... ({perm_count}/{expected_count} in DB)"))
             Permission.sync_permissions()
             perm_count = Permission.objects.count()
-            self.stdout.write(
-                self.style.SUCCESS(f"Permissions synced! Now {perm_count} in database.")
-            )
+            self.stdout.write(self.style.SUCCESS(f"Permissions synced! Now {perm_count} in database."))
         else:
             self.stdout.write(f"Found {perm_count} permissions in database.")
 
         # Get organizations
         if options["org"]:
-            orgs = Organization.objects.filter(
-                name__icontains=options["org"]
-            ) | Organization.objects.filter(
+            orgs = Organization.objects.filter(name__icontains=options["org"]) | Organization.objects.filter(
                 slug__icontains=options["org"]
             )
             if not orgs.exists():
@@ -96,38 +88,25 @@ class Command(BaseCommand):
             existing_count = Role.objects.filter(organization=org).count()
 
             if existing_count > 0 and not options["force"]:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"  {existing_count} roles already exist. Use --force to update."
-                    )
-                )
+                self.stdout.write(self.style.WARNING(f"  {existing_count} roles already exist. Use --force to update."))
                 continue
 
             roles = Role.create_default_roles(org)
 
-            created = len([r for r in roles if r._state.adding])
-            updated = len(roles) - created
-
             total_created += len(roles) if existing_count == 0 else 0
             total_updated += len(roles) if existing_count > 0 else 0
 
-            self.stdout.write(
-                self.style.SUCCESS(f"  Created/updated {len(roles)} roles:")
-            )
+            self.stdout.write(self.style.SUCCESS(f"  Created/updated {len(roles)} roles:"))
             for role in sorted(roles, key=lambda r: -r.priority):
                 perm_count = role.permissions.count()
                 admin_marker = " [ADMIN]" if role.is_admin else ""
                 self.stdout.write(
-                    f"    - {role.name} (Priorität: {role.priority}, "
-                    f"{perm_count} Berechtigungen){admin_marker}"
+                    f"    - {role.name} (Priorität: {role.priority}, {perm_count} Berechtigungen){admin_marker}"
                 )
 
         self.stdout.write("")
         self.stdout.write(
-            self.style.SUCCESS(
-                f"Done! Created {total_created} new roles, "
-                f"updated {total_updated} existing roles."
-            )
+            self.style.SUCCESS(f"Done! Created {total_created} new roles, updated {total_updated} existing roles.")
         )
 
     def list_roles(self):
@@ -135,10 +114,7 @@ class Command(BaseCommand):
         self.stdout.write("\nVerfügbare Standard-Rollen:\n")
         self.stdout.write("=" * 80)
 
-        for role_key, role_config in sorted(
-            DEFAULT_ROLES.items(),
-            key=lambda x: -x[1].get("priority", 0)
-        ):
+        for role_key, role_config in sorted(DEFAULT_ROLES.items(), key=lambda x: -x[1].get("priority", 0)):
             name = role_config["name"]
             priority = role_config.get("priority", 0)
             is_admin = role_config.get("is_admin", False)
@@ -156,6 +132,7 @@ class Command(BaseCommand):
             if description:
                 # Wrap description
                 import textwrap
+
                 wrapped = textwrap.fill(description, width=70)
                 for line in wrapped.split("\n"):
                     self.stdout.write(f"  {line}")

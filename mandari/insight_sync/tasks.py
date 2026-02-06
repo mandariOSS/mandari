@@ -21,8 +21,10 @@ logger = logging.getLogger(__name__)
 def _get_sync_orchestrator():
     """Lazy import des SyncOrchestrators um zirkuläre Imports zu vermeiden."""
     import sys
+
     sys.path.insert(0, str(settings.BASE_DIR.parent / "apps" / "ingestor"))
     from src.sync.orchestrator import SyncOrchestrator
+
     return SyncOrchestrator
 
 
@@ -50,24 +52,26 @@ def sync_all_sources(full: bool = False) -> dict[str, Any]:
 
             for result in results:
                 entities = (
-                    result.organizations_synced +
-                    result.persons_synced +
-                    result.memberships_synced +
-                    result.meetings_synced +
-                    result.papers_synced +
-                    result.files_synced +
-                    result.locations_synced +
-                    result.agenda_items_synced +
-                    result.consultations_synced
+                    result.organizations_synced
+                    + result.persons_synced
+                    + result.memberships_synced
+                    + result.meetings_synced
+                    + result.papers_synced
+                    + result.files_synced
+                    + result.locations_synced
+                    + result.agenda_items_synced
+                    + result.consultations_synced
                 )
                 total_entities += entities
-                source_results.append({
-                    "source": result.source_name,
-                    "success": result.success,
-                    "entities": entities,
-                    "duration": result.duration_seconds,
-                    "errors": result.errors,
-                })
+                source_results.append(
+                    {
+                        "source": result.source_name,
+                        "success": result.success,
+                        "entities": entities,
+                        "duration": result.duration_seconds,
+                        "errors": result.errors,
+                    }
+                )
 
             return {
                 "sync_type": "full" if full else "incremental",
@@ -101,15 +105,15 @@ def sync_source(source_url: str, full: bool = False) -> dict[str, Any]:
             result = await orchestrator.sync_source(source_url, full=full)
 
             entities = (
-                result.organizations_synced +
-                result.persons_synced +
-                result.memberships_synced +
-                result.meetings_synced +
-                result.papers_synced +
-                result.files_synced +
-                result.locations_synced +
-                result.agenda_items_synced +
-                result.consultations_synced
+                result.organizations_synced
+                + result.persons_synced
+                + result.memberships_synced
+                + result.meetings_synced
+                + result.papers_synced
+                + result.files_synced
+                + result.locations_synced
+                + result.agenda_items_synced
+                + result.consultations_synced
             )
 
             return {

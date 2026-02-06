@@ -16,7 +16,6 @@ GERMAN_MUNICIPAL_SYNONYMS = {
     "Ausschuss": ["Gremium", "Fachausschuss", "Ausschuß"],
     "Fachausschuss": ["Ausschuss", "Gremium"],
     "Hauptausschuss": ["HA", "Haupt- und Finanzausschuss"],
-
     # Personen & Rollen
     "Bürgermeister": ["BM", "Oberbürgermeister", "OB"],
     "Oberbürgermeister": ["OB", "Bürgermeister"],
@@ -27,14 +26,12 @@ GERMAN_MUNICIPAL_SYNONYMS = {
     "Fraktionsvorsitzender": ["Fraktionsvorsitzende", "FV"],
     "Sachkundiger Bürger": ["SKB", "sachkundige Bürgerin"],
     "Ratsmitglied": ["Stadtverordnete", "Stadtverordneter", "Ratsherr", "Ratsfrau"],
-
     # Fraktionen & Parteien
     "Fraktion": ["Ratsfraktion", "Fraktionsgemeinschaft"],
     "Ratsfraktion": ["Fraktion"],
     "Koalition": ["Bündnis", "Zusammenschluss"],
     "Opposition": ["Oppositionsfraktion"],
     "Gruppe": ["Wählergruppe", "Wählergemeinschaft"],
-
     # Dokumente
     "Vorlage": ["Drucksache", "Beschlussvorlage", "Ratsvorlage"],
     "Drucksache": ["Vorlage", "DS"],
@@ -50,7 +47,6 @@ GERMAN_MUNICIPAL_SYNONYMS = {
     "Stellungnahme": ["Statement", "Positionierung"],
     "Protokoll": ["Niederschrift", "Sitzungsprotokoll"],
     "Niederschrift": ["Protokoll"],
-
     # Sitzungen & Termine
     "Sitzung": ["Versammlung", "Zusammenkunft", "Termin"],
     "Ratssitzung": ["Stadtratssitzung", "Gemeinderatssitzung"],
@@ -58,7 +54,6 @@ GERMAN_MUNICIPAL_SYNONYMS = {
     "Tagesordnung": ["TO", "Agenda", "TOP"],
     "TOP": ["Tagesordnungspunkt", "Tagesordnung"],
     "Tagesordnungspunkt": ["TOP"],
-
     # Abstimmungen
     "Abstimmung": ["Votum", "Beschlussfassung"],
     "Mehrheit": ["Stimmmehrheit"],
@@ -66,7 +61,6 @@ GERMAN_MUNICIPAL_SYNONYMS = {
     "Enthaltung": ["Stimmenthaltung"],
     "abgelehnt": ["zurückgewiesen", "nicht angenommen"],
     "angenommen": ["beschlossen", "zugestimmt"],
-
     # Verwaltung
     "Verwaltung": ["Stadtverwaltung", "Gemeindeverwaltung", "Rathaus"],
     "Stadtverwaltung": ["Verwaltung", "Rathaus"],
@@ -74,7 +68,6 @@ GERMAN_MUNICIPAL_SYNONYMS = {
     "Amt": ["Fachamt", "Behörde", "Dienststelle"],
     "Fachamt": ["Amt"],
     "Fachbereich": ["FB", "Abteilung"],
-
     # Themen
     "Stadtentwicklung": ["Stadterneuerung", "Stadtplanung"],
     "Stadtplanung": ["Bauleitplanung", "Bebauungsplan"],
@@ -100,7 +93,6 @@ GERMAN_MUNICIPAL_SYNONYMS = {
     "Bauen": ["Bauamt", "Bauwesen", "Hochbau", "Tiefbau"],
     "Ordnung": ["Ordnungsamt", "Ordnungsdienst"],
     "Feuerwehr": ["Brandschutz", "Rettungsdienst"],
-
     # Rechtliche Begriffe
     "Genehmigung": ["Erlaubnis", "Bewilligung", "Zustimmung"],
     "Einwand": ["Einspruch", "Widerspruch"],
@@ -108,7 +100,6 @@ GERMAN_MUNICIPAL_SYNONYMS = {
     "Bürgerbegehren": ["Bürgerantrag", "Volksbegehren"],
     "Öffentlichkeitsbeteiligung": ["Bürgerbeteiligung", "Partizipation"],
     "Bürgerbeteiligung": ["Beteiligung", "Partizipation"],
-
     # Abkürzungen
     "BV": ["Bezirksvertretung"],
     "HA": ["Hauptausschuss"],

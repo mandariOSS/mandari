@@ -29,37 +29,27 @@ class MeetingPreparation(EncryptionMixin, models.Model):
         "tenants.Organization",
         on_delete=models.CASCADE,
         related_name="meeting_preparations",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
     membership = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="meeting_preparations",
-        verbose_name="Mitglied"
+        verbose_name="Mitglied",
     )
     meeting = models.ForeignKey(
         "insight_core.OParlMeeting",
         on_delete=models.CASCADE,
         related_name="work_preparations",
-        verbose_name="Sitzung"
+        verbose_name="Sitzung",
     )
 
     # Personal notes (encrypted)
-    notes_encrypted = EncryptedTextField(
-        verbose_name="Notizen",
-        help_text="Persönliche Notizen zur Sitzung"
-    )
+    notes_encrypted = EncryptedTextField(verbose_name="Notizen", help_text="Persönliche Notizen zur Sitzung")
 
     # Status
-    is_prepared = models.BooleanField(
-        default=False,
-        verbose_name="Vorbereitet"
-    )
-    prepared_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name="Vorbereitet am"
-    )
+    is_prepared = models.BooleanField(default=False, verbose_name="Vorbereitet")
+    prepared_at = models.DateTimeField(blank=True, null=True, verbose_name="Vorbereitet am")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -102,41 +92,33 @@ class AgendaItemPosition(EncryptionMixin, models.Model):
         MeetingPreparation,
         on_delete=models.CASCADE,
         related_name="positions",
-        verbose_name="Vorbereitung"
+        verbose_name="Vorbereitung",
     )
     agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",
         on_delete=models.CASCADE,
         related_name="work_positions",
-        verbose_name="Tagesordnungspunkt"
+        verbose_name="Tagesordnungspunkt",
     )
 
     # Position
-    position = models.CharField(
-        max_length=20,
-        choices=POSITION_CHOICES,
-        default="open",
-        verbose_name="Position"
-    )
+    position = models.CharField(max_length=20, choices=POSITION_CHOICES, default="open", verbose_name="Position")
 
     # Private note (only user sees)
     notes_encrypted = EncryptedTextField(
-        verbose_name="Private Notiz",
-        help_text="Persönliche Notizen (nur für Sie sichtbar)"
+        verbose_name="Private Notiz", help_text="Persönliche Notizen (nur für Sie sichtbar)"
     )
 
     # Discussion note (organization members see)
     discussion_note = models.TextField(
         blank=True,
         verbose_name="Diskussionsnotiz",
-        help_text="Notiz für die Fraktionsdiskussion (für alle sichtbar)"
+        help_text="Notiz für die Fraktionsdiskussion (für alle sichtbar)",
     )
 
     # Finalization
     is_final = models.BooleanField(
-        default=False,
-        verbose_name="Endgültig",
-        help_text="Position als endgültig markieren"
+        default=False, verbose_name="Endgültig", help_text="Position als endgültig markieren"
     )
 
     # Timestamps
@@ -178,13 +160,13 @@ class AgendaItemNote(EncryptionMixin, models.Model):
         "tenants.Organization",
         on_delete=models.CASCADE,
         related_name="agenda_notes",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
     agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",
         on_delete=models.CASCADE,
         related_name="work_notes",
-        verbose_name="Tagesordnungspunkt"
+        verbose_name="Tagesordnungspunkt",
     )
 
     # Visibility
@@ -192,30 +174,25 @@ class AgendaItemNote(EncryptionMixin, models.Model):
         max_length=20,
         choices=VISIBILITY_CHOICES,
         default="organization",
-        verbose_name="Sichtbarkeit"
+        verbose_name="Sichtbarkeit",
     )
 
     # Content (encrypted)
-    content_encrypted = EncryptedTextField(
-        verbose_name="Inhalt"
-    )
+    content_encrypted = EncryptedTextField(verbose_name="Inhalt")
 
     # Metadata
     author = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="authored_notes",
-        verbose_name="Autor"
+        verbose_name="Autor",
     )
     is_decision = models.BooleanField(
         default=False,
         verbose_name="Als Beschluss markiert",
-        help_text="Markiert diese Notiz als offiziellen Fraktionsbeschluss"
+        help_text="Markiert diese Notiz als offiziellen Fraktionsbeschluss",
     )
-    is_pinned = models.BooleanField(
-        default=False,
-        verbose_name="Angeheftet"
-    )
+    is_pinned = models.BooleanField(default=False, verbose_name="Angeheftet")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -262,47 +239,34 @@ class AgendaSpeechNote(EncryptionMixin, models.Model):
         "tenants.Organization",
         on_delete=models.CASCADE,
         related_name="speech_notes",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
     author = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="speech_notes",
-        verbose_name="Autor"
+        verbose_name="Autor",
     )
     meeting = models.ForeignKey(
         "insight_core.OParlMeeting",
         on_delete=models.CASCADE,
         related_name="work_speech_notes",
-        verbose_name="Sitzung"
+        verbose_name="Sitzung",
     )
     agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",
         on_delete=models.CASCADE,
         related_name="work_speech_notes",
-        verbose_name="Tagesordnungspunkt"
+        verbose_name="Tagesordnungspunkt",
     )
 
     # Content
-    title = models.CharField(
-        max_length=200,
-        blank=True,
-        verbose_name="Titel"
-    )
-    content = models.TextField(
-        verbose_name="Redetext",
-        help_text="Text für den Teleprompter"
-    )
-    estimated_duration = models.PositiveIntegerField(
-        default=0,
-        verbose_name="Geschätzte Dauer (Sekunden)"
-    )
+    title = models.CharField(max_length=200, blank=True, verbose_name="Titel")
+    content = models.TextField(verbose_name="Redetext", help_text="Text für den Teleprompter")
+    estimated_duration = models.PositiveIntegerField(default=0, verbose_name="Geschätzte Dauer (Sekunden)")
 
     # Visibility
-    is_shared = models.BooleanField(
-        default=False,
-        verbose_name="Mit Organisation teilen"
-    )
+    is_shared = models.BooleanField(default=False, verbose_name="Mit Organisation teilen")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -335,33 +299,25 @@ class AgendaDocumentLink(models.Model):
         "tenants.Organization",
         on_delete=models.CASCADE,
         related_name="document_links",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
     added_by = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="added_documents",
-        verbose_name="Hinzugefügt von"
+        verbose_name="Hinzugefügt von",
     )
     agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",
         on_delete=models.CASCADE,
         related_name="work_document_links",
-        verbose_name="Tagesordnungspunkt"
+        verbose_name="Tagesordnungspunkt",
     )
 
     # Document info
-    title = models.CharField(
-        max_length=255,
-        verbose_name="Titel"
-    )
-    url = models.URLField(
-        verbose_name="URL"
-    )
-    description = models.TextField(
-        blank=True,
-        verbose_name="Beschreibung"
-    )
+    title = models.CharField(max_length=255, verbose_name="Titel")
+    url = models.URLField(verbose_name="URL")
+    description = models.TextField(blank=True, verbose_name="Beschreibung")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -401,19 +357,19 @@ class PaperComment(EncryptionMixin, models.Model):
         "insight_core.OParlPaper",
         on_delete=models.CASCADE,
         related_name="work_comments",
-        verbose_name="Vorgang"
+        verbose_name="Vorgang",
     )
     organization = models.ForeignKey(
         "tenants.Organization",
         on_delete=models.CASCADE,
         related_name="paper_comments",
-        verbose_name="Organisation"
+        verbose_name="Organisation",
     )
     author = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.CASCADE,
         related_name="paper_comments",
-        verbose_name="Autor"
+        verbose_name="Autor",
     )
 
     # Visibility
@@ -421,19 +377,17 @@ class PaperComment(EncryptionMixin, models.Model):
         max_length=20,
         choices=VISIBILITY_CHOICES,
         default="organization",
-        verbose_name="Sichtbarkeit"
+        verbose_name="Sichtbarkeit",
     )
 
     # Content (encrypted)
-    content_encrypted = EncryptedTextField(
-        verbose_name="Inhalt"
-    )
+    content_encrypted = EncryptedTextField(verbose_name="Inhalt")
 
     # Metadata
     is_recommendation = models.BooleanField(
         default=False,
         verbose_name="Als Empfehlung markiert",
-        help_text="Markiert diesen Kommentar als offizielle Empfehlung der Organisation"
+        help_text="Markiert diesen Kommentar als offizielle Empfehlung der Organisation",
     )
 
     # Timestamps
@@ -487,9 +441,9 @@ class PaperComment(EncryptionMixin, models.Model):
 
             if meeting_external_ids:
                 # Get meetings with their organizations
-                meetings = OParlMeeting.objects.filter(
-                    external_id__in=meeting_external_ids
-                ).prefetch_related("organizations")
+                meetings = OParlMeeting.objects.filter(external_id__in=meeting_external_ids).prefetch_related(
+                    "organizations"
+                )
 
                 for meeting in meetings:
                     for org in meeting.organizations.all():
@@ -504,7 +458,5 @@ class PaperComment(EncryptionMixin, models.Model):
     @classmethod
     def get_visible_comments_for_paper(cls, paper, membership):
         """Get all comments visible to this membership for a given paper."""
-        all_comments = cls.objects.filter(paper=paper).select_related(
-            "author", "author__user", "organization"
-        )
+        all_comments = cls.objects.filter(paper=paper).select_related("author", "author__user", "organization")
         return [c for c in all_comments if c.is_visible_to(membership)]

@@ -1,6 +1,7 @@
 """Management command to link meetings with their organizations based on raw_json data."""
 
 from django.core.management.base import BaseCommand
+
 from insight_core.models import OParlMeeting, OParlOrganization
 
 
@@ -70,7 +71,5 @@ class Command(BaseCommand):
             )
         else:
             self.stdout.write(
-                self.style.SUCCESS(
-                    f"Updated {meetings_updated} meetings with {links_created} organization links"
-                )
+                self.style.SUCCESS(f"Updated {meetings_updated} meetings with {links_created} organization links")
             )

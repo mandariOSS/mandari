@@ -4,8 +4,8 @@ Django Admin Konfiguration für OParl-Models.
 Verwendet Django Unfold für modernes Admin-Interface.
 """
 
-import asyncio
 import threading
+
 from django.contrib import admin, messages
 from django.utils import timezone
 from django.utils.safestring import mark_safe
@@ -13,26 +13,28 @@ from unfold.admin import ModelAdmin
 from unfold.decorators import action
 
 from .models import (
-    OParlSource,
-    OParlBody,
-    OParlOrganization,
-    OParlPerson,
-    OParlMeeting,
-    OParlPaper,
     OParlAgendaItem,
-    OParlFile,
-    OParlMembership,
-    OParlLocation,
+    OParlBody,
     OParlConsultation,
+    OParlFile,
     OParlLegislativeTerm,
+    OParlLocation,
+    OParlMeeting,
+    OParlMembership,
+    OParlOrganization,
+    OParlPaper,
+    OParlPerson,
+    OParlSource,
 )
 
 
 def run_sync_in_thread(source_url: str, full: bool = False):
     """Run sync in a separate thread to not block the admin."""
+
     def sync_task():
         try:
             from insight_sync.tasks import sync_source
+
             result = sync_source(source_url, full=full)
             print(f"Sync completed: {result}")
         except Exception as e:
@@ -44,7 +46,14 @@ def run_sync_in_thread(source_url: str, full: bool = False):
 
 @admin.register(OParlSource)
 class OParlSourceAdmin(ModelAdmin):
-    list_display = ["name", "url", "is_active", "sync_status_display", "last_sync_ago", "body_count"]
+    list_display = [
+        "name",
+        "url",
+        "is_active",
+        "sync_status_display",
+        "last_sync_ago",
+        "body_count",
+    ]
     list_filter = ["is_active"]
     search_fields = ["name", "url"]
     readonly_fields = ["id", "created_at", "updated_at", "last_sync", "last_full_sync"]
@@ -115,43 +124,76 @@ class OParlSourceAdmin(ModelAdmin):
 
 @admin.register(OParlBody)
 class OParlBodyAdmin(ModelAdmin):
-    list_display = ["get_display_name", "name", "short_name", "display_name", "has_logo", "has_geo_data", "source"]
+    list_display = [
+        "get_display_name",
+        "name",
+        "short_name",
+        "display_name",
+        "has_logo",
+        "has_geo_data",
+        "source",
+    ]
     list_filter = ["source", "classification"]
     search_fields = ["name", "short_name", "display_name"]
-    readonly_fields = ["id", "external_id", "created_at", "updated_at", "oparl_created", "oparl_modified"]
+    readonly_fields = [
+        "id",
+        "external_id",
+        "created_at",
+        "updated_at",
+        "oparl_created",
+        "oparl_modified",
+    ]
     list_editable = ["display_name"]  # Direkt in der Liste bearbeitbar
 
     fieldsets = (
-        ("Anzeige im Frontend", {
-            "fields": ("display_name", "logo"),
-            "description": "Diese Felder bestimmen, wie die Kommune im Frontend angezeigt wird."
-        }),
-        ("OParl-Daten", {
-            "fields": ("name", "short_name", "classification", "website"),
-        }),
-        ("Geografische Daten (für Karte)", {
-            "fields": (
-                ("latitude", "longitude"),
-                ("bbox_north", "bbox_south"),
-                ("bbox_east", "bbox_west"),
-                "osm_relation_id",
-            ),
-            "description": (
-                "Zentrum und Bounding Box der Kommune für die Kartenanzeige. "
-                "OSM Relation ID findest du auf https://www.openstreetmap.org/ - Suche nach der Stadt und kopiere die Relation ID aus der URL."
-            ),
-        }),
-        ("Quelle", {
-            "fields": ("source", "external_id"),
-        }),
-        ("Zeitstempel", {
-            "fields": ("oparl_created", "oparl_modified", "created_at", "updated_at"),
-            "classes": ("collapse",),
-        }),
-        ("Rohdaten", {
-            "fields": ("raw_json",),
-            "classes": ("collapse",),
-        }),
+        (
+            "Anzeige im Frontend",
+            {
+                "fields": ("display_name", "logo"),
+                "description": "Diese Felder bestimmen, wie die Kommune im Frontend angezeigt wird.",
+            },
+        ),
+        (
+            "OParl-Daten",
+            {
+                "fields": ("name", "short_name", "classification", "website"),
+            },
+        ),
+        (
+            "Geografische Daten (für Karte)",
+            {
+                "fields": (
+                    ("latitude", "longitude"),
+                    ("bbox_north", "bbox_south"),
+                    ("bbox_east", "bbox_west"),
+                    "osm_relation_id",
+                ),
+                "description": (
+                    "Zentrum und Bounding Box der Kommune für die Kartenanzeige. "
+                    "OSM Relation ID findest du auf https://www.openstreetmap.org/ - Suche nach der Stadt und kopiere die Relation ID aus der URL."
+                ),
+            },
+        ),
+        (
+            "Quelle",
+            {
+                "fields": ("source", "external_id"),
+            },
+        ),
+        (
+            "Zeitstempel",
+            {
+                "fields": ("oparl_created", "oparl_modified", "created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Rohdaten",
+            {
+                "fields": ("raw_json",),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     @admin.display(boolean=True, description="Geo")
@@ -268,7 +310,16 @@ class TileCacheAdmin(ModelAdmin):
     list_display = ["tile_coords", "content_type", "fetched_from", "created_at", "updated_at"]
     list_filter = ["z", "fetched_from"]
     search_fields = ["z", "x", "y"]
-    readonly_fields = ["z", "x", "y", "tile_data", "content_type", "fetched_from", "created_at", "updated_at"]
+    readonly_fields = [
+        "z",
+        "x",
+        "y",
+        "tile_data",
+        "content_type",
+        "fetched_from",
+        "created_at",
+        "updated_at",
+    ]
     ordering = ["-updated_at"]
 
     @admin.display(description="Tile")
@@ -291,21 +342,16 @@ class LocationMappingAdmin(ModelAdmin):
     autocomplete_fields = ["body"]
 
     fieldsets = (
-        (None, {
-            "fields": ("body", "location_name")
-        }),
-        ("Koordinaten", {
-            "fields": ("latitude", "longitude"),
-            "description": "Koordinaten im Dezimalformat (z.B. 51.9617867, 7.6281645)"
-        }),
-        ("Zusatzinformationen", {
-            "fields": ("address", "description"),
-            "classes": ("collapse",)
-        }),
-        ("Metadaten", {
-            "fields": ("id", "created_at", "updated_at"),
-            "classes": ("collapse",)
-        }),
+        (None, {"fields": ("body", "location_name")}),
+        (
+            "Koordinaten",
+            {
+                "fields": ("latitude", "longitude"),
+                "description": "Koordinaten im Dezimalformat (z.B. 51.9617867, 7.6281645)",
+            },
+        ),
+        ("Zusatzinformationen", {"fields": ("address", "description"), "classes": ("collapse",)}),
+        ("Metadaten", {"fields": ("id", "created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
 
@@ -331,9 +377,13 @@ class ContactRequestAdmin(ModelAdmin):
     list_filter = ["status", "subject", "notification_sent", "confirmation_sent", "created_at"]
     search_fields = ["name", "email", "organization_name", "message"]
     readonly_fields = [
-        "id", "created_at", "updated_at",
-        "ip_address", "user_agent",
-        "notification_sent", "confirmation_sent",
+        "id",
+        "created_at",
+        "updated_at",
+        "ip_address",
+        "user_agent",
+        "notification_sent",
+        "confirmation_sent",
     ]
     date_hierarchy = "created_at"
     ordering = ["-created_at"]
@@ -342,23 +392,38 @@ class ContactRequestAdmin(ModelAdmin):
     actions = ["mark_as_read", "mark_as_replied", "mark_as_closed"]
 
     fieldsets = (
-        ("Kontaktdaten", {
-            "fields": ("name", "email", "organization_name"),
-        }),
-        ("Anfrage", {
-            "fields": ("subject", "message"),
-        }),
-        ("Status", {
-            "fields": ("status", "admin_notes", "linked_ticket"),
-        }),
-        ("E-Mail-Status", {
-            "fields": ("notification_sent", "confirmation_sent"),
-            "classes": ("collapse",),
-        }),
-        ("Metadaten", {
-            "fields": ("id", "ip_address", "user_agent", "created_at", "updated_at"),
-            "classes": ("collapse",),
-        }),
+        (
+            "Kontaktdaten",
+            {
+                "fields": ("name", "email", "organization_name"),
+            },
+        ),
+        (
+            "Anfrage",
+            {
+                "fields": ("subject", "message"),
+            },
+        ),
+        (
+            "Status",
+            {
+                "fields": ("status", "admin_notes", "linked_ticket"),
+            },
+        ),
+        (
+            "E-Mail-Status",
+            {
+                "fields": ("notification_sent", "confirmation_sent"),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Metadaten",
+            {
+                "fields": ("id", "ip_address", "user_agent", "created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     @admin.display(description="Betreff")
@@ -375,12 +440,12 @@ class ContactRequestAdmin(ModelAdmin):
     @admin.display(description="Status")
     def status_display(self, obj):
         colors = {
-            "new": "#dc2626",      # red
-            "read": "#ca8a04",     # yellow
+            "new": "#dc2626",  # red
+            "read": "#ca8a04",  # yellow
             "in_progress": "#2563eb",  # blue
             "replied": "#16a34a",  # green
             "converted": "#8b5cf6",  # purple
-            "closed": "#64748b",   # gray
+            "closed": "#64748b",  # gray
         }
         color = colors.get(obj.status, "#64748b")
         return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_status_display()}</span>')

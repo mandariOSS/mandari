@@ -7,36 +7,32 @@ Provides admin interfaces for:
 - Support tickets with full management capabilities
 """
 
-from django import forms
 from django.contrib import admin
 from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.html import format_html, mark_safe
-from unfold.admin import ModelAdmin, TabularInline, StackedInline
-from unfold.decorators import display
+from unfold.admin import ModelAdmin, StackedInline, TabularInline
 
 from .support.models import (
-    KnowledgeBaseCategory,
-    KnowledgeBaseArticle,
     ArticleFeedback,
+    KnowledgeBaseArticle,
+    KnowledgeBaseCategory,
     SupportTicket,
-    SupportTicketMessage,
     SupportTicketAttachment,
+    SupportTicketMessage,
 )
-
 
 # =============================================================================
 # Support Ticket Badge for Unfold Sidebar
 # =============================================================================
+
 
 def support_ticket_badge(request):
     """
     Returns badge content for the Support-Tickets menu item.
     Shows count of open/in-progress tickets that need attention.
     """
-    open_count = SupportTicket.objects.filter(
-        status__in=["open", "in_progress", "escalated"]
-    ).count()
+    open_count = SupportTicket.objects.filter(status__in=["open", "in_progress", "escalated"]).count()
     if open_count > 0:
         return str(open_count)
     return None
@@ -45,6 +41,7 @@ def support_ticket_badge(request):
 # =============================================================================
 # Knowledge Base Admin
 # =============================================================================
+
 
 @admin.register(KnowledgeBaseCategory)
 class KnowledgeBaseCategoryAdmin(ModelAdmin):
@@ -72,23 +69,33 @@ class KnowledgeBaseCategoryAdmin(ModelAdmin):
     ordering = ("sort_order", "name")
 
     fieldsets = (
-        ("Kategorie", {
-            "fields": ("name", "slug", "description"),
-        }),
-        ("Darstellung", {
-            "fields": ("icon", "color", "sort_order"),
-            "description": "Icon: Lucide Icon Name (z.B. 'book-open', 'settings', 'help-circle'). Farbe: Tailwind Farbname (z.B. 'blue', 'green', 'purple').",
-        }),
-        ("Status", {
-            "fields": ("is_active",),
-        }),
+        (
+            "Kategorie",
+            {
+                "fields": ("name", "slug", "description"),
+            },
+        ),
+        (
+            "Darstellung",
+            {
+                "fields": ("icon", "color", "sort_order"),
+                "description": "Icon: Lucide Icon Name (z.B. 'book-open', 'settings', 'help-circle'). Farbe: Tailwind Farbname (z.B. 'blue', 'green', 'purple').",
+            },
+        ),
+        (
+            "Status",
+            {
+                "fields": ("is_active",),
+            },
+        ),
     )
 
     def icon_preview(self, obj):
         return format_html(
             '<span style="font-family: monospace; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">{}</span>',
-            obj.icon
+            obj.icon,
         )
+
     icon_preview.short_description = "Icon"
 
     def color_preview(self, obj):
@@ -106,8 +113,10 @@ class KnowledgeBaseCategoryAdmin(ModelAdmin):
         hex_color = colors.get(obj.color, "#6b7280")
         return format_html(
             '<span style="display: inline-block; width: 20px; height: 20px; background: {}; border-radius: 4px; vertical-align: middle;"></span> {}',
-            hex_color, obj.color
+            hex_color,
+            obj.color,
         )
+
     color_preview.short_description = "Farbe"
 
     def article_count(self, obj):
@@ -116,11 +125,14 @@ class KnowledgeBaseCategoryAdmin(ModelAdmin):
         if total > count:
             return f"{count} ({total} gesamt)"
         return str(count)
+
     article_count.short_description = "Artikel"
 
     def get_queryset(self, request):
-        return super().get_queryset(request).annotate(
-            _article_count=Count("articles", filter=Q(articles__is_published=True))
+        return (
+            super()
+            .get_queryset(request)
+            .annotate(_article_count=Count("articles", filter=Q(articles__is_published=True)))
         )
 
 
@@ -153,25 +165,40 @@ class KnowledgeBaseArticleAdmin(ModelAdmin):
     autocomplete_fields = ("category", "author")
 
     fieldsets = (
-        ("Artikel", {
-            "fields": ("title", "slug", "category", "excerpt"),
-        }),
-        ("Inhalt", {
-            "fields": ("content",),
-            "description": "Markdown-formatierter Inhalt. Unterstützt: # Überschriften, **fett**, *kursiv*, `code`, - Listen, [Links](url).",
-        }),
-        ("Veröffentlichung", {
-            "fields": ("is_published", "is_featured", "published_at"),
-        }),
-        ("SEO & Suche", {
-            "fields": ("tags",),
-            "description": "Kommagetrennte Tags für die Suche, z.B. 'anmeldung, login, passwort'.",
-            "classes": ("collapse",),
-        }),
-        ("Metadaten", {
-            "fields": ("author", "views_count", "helpful_yes", "helpful_no"),
-            "classes": ("collapse",),
-        }),
+        (
+            "Artikel",
+            {
+                "fields": ("title", "slug", "category", "excerpt"),
+            },
+        ),
+        (
+            "Inhalt",
+            {
+                "fields": ("content",),
+                "description": "Markdown-formatierter Inhalt. Unterstützt: # Überschriften, **fett**, *kursiv*, `code`, - Listen, [Links](url).",
+            },
+        ),
+        (
+            "Veröffentlichung",
+            {
+                "fields": ("is_published", "is_featured", "published_at"),
+            },
+        ),
+        (
+            "SEO & Suche",
+            {
+                "fields": ("tags",),
+                "description": "Kommagetrennte Tags für die Suche, z.B. 'anmeldung, login, passwort'.",
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Metadaten",
+            {
+                "fields": ("author", "views_count", "helpful_yes", "helpful_no"),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     readonly_fields = ("views_count", "helpful_yes", "helpful_no")
@@ -185,8 +212,11 @@ class KnowledgeBaseArticleAdmin(ModelAdmin):
         return format_html(
             '<span style="color: {};">{} / {} ({}%)</span>',
             {"green": "#22c55e", "amber": "#f59e0b", "red": "#ef4444"}[color],
-            obj.helpful_yes, total, percentage
+            obj.helpful_yes,
+            total,
+            percentage,
         )
+
     helpful_rating.short_description = "Bewertung"
 
     def save_model(self, request, obj, form, change):
@@ -219,6 +249,7 @@ class ArticleFeedbackAdmin(ModelAdmin):
 
     def has_comment(self, obj):
         return bool(obj.comment)
+
     has_comment.boolean = True
     has_comment.short_description = "Kommentar"
 
@@ -227,8 +258,10 @@ class ArticleFeedbackAdmin(ModelAdmin):
 # Support Tickets Admin - Full Management Interface
 # =============================================================================
 
+
 class AssignedToMeFilter(admin.SimpleListFilter):
     """Filter to show only tickets assigned to the current user."""
+
     title = "Meine Tickets"
     parameter_name = "assigned_to_me"
 
@@ -248,6 +281,7 @@ class AssignedToMeFilter(admin.SimpleListFilter):
 
 class OpenTicketsFilter(admin.SimpleListFilter):
     """Quick filter for open/active tickets."""
+
     title = "Schnellfilter"
     parameter_name = "quick"
 
@@ -270,6 +304,7 @@ class OpenTicketsFilter(admin.SimpleListFilter):
 
 class SupportTicketAttachmentInline(TabularInline):
     """Inline für Ticket-Anhänge."""
+
     model = SupportTicketAttachment
     extra = 0
     readonly_fields = ("filename", "mime_type", "file_size_display", "uploaded_at", "file_link")
@@ -282,12 +317,14 @@ class SupportTicketAttachmentInline(TabularInline):
         elif obj.file_size < 1024 * 1024:
             return f"{obj.file_size / 1024:.1f} KB"
         return f"{obj.file_size / (1024 * 1024):.1f} MB"
+
     file_size_display.short_description = "Größe"
 
     def file_link(self, obj):
         if obj.file:
             return format_html('<a href="{}" target="_blank">Herunterladen</a>', obj.file.url)
         return "—"
+
     file_link.short_description = "Datei"
 
     def has_add_permission(self, request, obj=None):
@@ -296,6 +333,7 @@ class SupportTicketAttachmentInline(TabularInline):
 
 class SupportTicketMessageInline(StackedInline):
     """Inline für Ticket-Nachrichten mit besserer Darstellung."""
+
     model = SupportTicketMessage
     extra = 0
     readonly_fields = ("message_display",)
@@ -306,6 +344,7 @@ class SupportTicketMessageInline(StackedInline):
     def message_display(self, obj):
         """Rich display of message with author and timestamp."""
         import html as html_module
+
         try:
             content = html_module.escape(obj.get_content_decrypted())
         except Exception:
@@ -316,7 +355,9 @@ class SupportTicketMessageInline(StackedInline):
             author = f"<strong class='ticket-msg-staff'>⚡ {author_name} (Support)</strong>"
             msg_class = "ticket-msg ticket-msg-from-staff"
         else:
-            author_name = html_module.escape(obj.author_membership.user.get_full_name() if obj.author_membership else "Unbekannt")
+            author_name = html_module.escape(
+                obj.author_membership.user.get_full_name() if obj.author_membership else "Unbekannt"
+            )
             author_email = html_module.escape(obj.author_membership.user.email if obj.author_membership else "")
             author = f"<strong class='ticket-msg-customer'>{author_name}</strong> <span class='ticket-msg-email'>({author_email})</span>"
             msg_class = "ticket-msg ticket-msg-from-customer"
@@ -329,11 +370,12 @@ class SupportTicketMessageInline(StackedInline):
             <div class="{msg_class}">
                 <div class="ticket-msg-header">
                     {author} {internal_badge}
-                    <span class="ticket-msg-time">{obj.created_at.strftime('%d.%m.%Y %H:%M')}</span>
+                    <span class="ticket-msg-time">{obj.created_at.strftime("%d.%m.%Y %H:%M")}</span>
                 </div>
                 <div class="ticket-msg-content">{content}</div>
             </div>
         """)
+
     message_display.short_description = ""
 
     def has_add_permission(self, request, obj=None):
@@ -380,10 +422,21 @@ class SupportTicketAdmin(ModelAdmin):
     )
     search_fields = ("subject", "organization__name", "id")
     readonly_fields = (
-        "id", "organization", "subject", "description_display",
-        "category", "priority", "created_by_display", "created_at", "updated_at",
-        "resolved_at", "closed_at", "escalated_at", "on_hold_at",
-        "last_customer_reply_at", "ticket_stats",
+        "id",
+        "organization",
+        "subject",
+        "description_display",
+        "category",
+        "priority",
+        "created_by_display",
+        "created_at",
+        "updated_at",
+        "resolved_at",
+        "closed_at",
+        "escalated_at",
+        "on_hold_at",
+        "last_customer_reply_at",
+        "ticket_stats",
     )
     ordering = ("-updated_at",)
     date_hierarchy = "created_at"
@@ -401,24 +454,42 @@ class SupportTicketAdmin(ModelAdmin):
     save_on_top = True
 
     fieldsets = (
-        ("Ticket-Details", {
-            "fields": ("ticket_stats", "subject", "description_display", "category", "priority"),
-        }),
-        ("Kunde", {
-            "fields": ("organization", "created_by_display"),
-        }),
-        ("Bearbeitung", {
-            "fields": ("status", "assigned_to", "on_hold_reason"),
-            "classes": ("wide",),
-        }),
-        ("Zeitverlauf", {
-            "fields": (
-                ("created_at", "updated_at"),
-                ("last_customer_reply_at", "escalated_at"),
-                ("on_hold_at", "resolved_at", "closed_at"),
-            ),
-            "classes": ("collapse",),
-        }),
+        (
+            "Ticket-Details",
+            {
+                "fields": (
+                    "ticket_stats",
+                    "subject",
+                    "description_display",
+                    "category",
+                    "priority",
+                ),
+            },
+        ),
+        (
+            "Kunde",
+            {
+                "fields": ("organization", "created_by_display"),
+            },
+        ),
+        (
+            "Bearbeitung",
+            {
+                "fields": ("status", "assigned_to", "on_hold_reason"),
+                "classes": ("wide",),
+            },
+        ),
+        (
+            "Zeitverlauf",
+            {
+                "fields": (
+                    ("created_at", "updated_at"),
+                    ("last_customer_reply_at", "escalated_at"),
+                    ("on_hold_at", "resolved_at", "closed_at"),
+                ),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     class Media:
@@ -427,9 +498,12 @@ class SupportTicketAdmin(ModelAdmin):
         }
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related(
-            "organization", "created_by__user", "assigned_to"
-        ).prefetch_related("messages")
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("organization", "created_by__user", "assigned_to")
+            .prefetch_related("messages")
+        )
 
     def ticket_stats(self, obj):
         """Display ticket statistics as a dashboard."""
@@ -465,16 +539,19 @@ class SupportTicketAdmin(ModelAdmin):
                 </div>
             </div>
         """)
+
     ticket_stats.short_description = "Übersicht"
 
     def description_display(self, obj):
         """Display decrypted description with formatting."""
         import html as html_module
+
         try:
             desc = html_module.escape(obj.get_description_decrypted())
             return mark_safe(f'<div class="ticket-description">{desc}</div>')
         except Exception:
             return "[Verschlüsselt - Kein Zugriff]"
+
     description_display.short_description = "Beschreibung"
 
     def created_by_display(self, obj):
@@ -484,16 +561,18 @@ class SupportTicketAdmin(ModelAdmin):
             return format_html(
                 '<strong>{}</strong><br><span style="color: #6b7280;">{}</span>',
                 user.get_full_name() or user.email,
-                user.email
+                user.email,
             )
         return "—"
+
     created_by_display.short_description = "Erstellt von"
 
     def ticket_id(self, obj):
         return format_html(
             '<code style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">#{}</code>',
-            obj.id.hex[:8]
+            obj.id.hex[:8],
         )
+
     ticket_id.short_description = "ID"
     ticket_id.admin_order_field = "id"
 
@@ -506,6 +585,7 @@ class SupportTicketAdmin(ModelAdmin):
         }
         icon, title = icons.get(obj.priority, ("⚪", ""))
         return format_html('<span title="{}">{}</span>', title, icon)
+
     priority_icon.short_description = "!"
     priority_icon.admin_order_field = "priority"
 
@@ -514,11 +594,13 @@ class SupportTicketAdmin(ModelAdmin):
         if len(obj.subject) > max_len:
             return obj.subject[:max_len] + "..."
         return obj.subject
+
     subject_short.short_description = "Betreff"
     subject_short.admin_order_field = "subject"
 
     def organization_name(self, obj):
         return obj.organization.name if obj.organization else "—"
+
     organization_name.short_description = "Organisation"
     organization_name.admin_order_field = "organization__name"
 
@@ -531,10 +613,8 @@ class SupportTicketAdmin(ModelAdmin):
             "other": "#6b7280",
         }
         color = colors.get(obj.category, "#6b7280")
-        return format_html(
-            '<span style="color: {}; font-size: 12px;">{}</span>',
-            color, obj.get_category_display()
-        )
+        return format_html('<span style="color: {}; font-size: 12px;">{}</span>', color, obj.get_category_display())
+
     category_badge.short_description = "Kategorie"
 
     def status_badge(self, obj):
@@ -550,8 +630,11 @@ class SupportTicketAdmin(ModelAdmin):
         fg, bg, label = colors.get(obj.status, ("#6b7280", "#f3f4f6", obj.status))
         return format_html(
             '<span style="background: {}; color: {}; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 500;">{}</span>',
-            bg, fg, label
+            bg,
+            fg,
+            label,
         )
+
     status_badge.short_description = "Status"
     status_badge.admin_order_field = "status"
 
@@ -560,11 +643,10 @@ class SupportTicketAdmin(ModelAdmin):
             name = obj.assigned_to.get_full_name() or obj.assigned_to.email.split("@")[0]
             return format_html(
                 '<span style="background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 11px;">{}</span>',
-                name[:15]
+                name[:15],
             )
-        return mark_safe(
-            '<span style="color: #9ca3af; font-size: 11px;">Nicht zugewiesen</span>'
-        )
+        return mark_safe('<span style="color: #9ca3af; font-size: 11px;">Nicht zugewiesen</span>')
+
     assigned_badge.short_description = "Zugewiesen"
     assigned_badge.admin_order_field = "assigned_to"
 
@@ -574,8 +656,9 @@ class SupportTicketAdmin(ModelAdmin):
             return mark_safe('<span style="color: #9ca3af;">0</span>')
         return format_html(
             '<span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 10px; font-size: 11px;">{}</span>',
-            count
+            count,
         )
+
     message_count.short_description = "Msg"
 
     def age_display(self, obj):
@@ -587,6 +670,7 @@ class SupportTicketAdmin(ModelAdmin):
         else:
             hours = age.seconds // 3600
             return format_html('<span style="color: #22c55e;">{} h</span>', hours)
+
     age_display.short_description = "Alter"
     age_display.admin_order_field = "created_at"
 
@@ -621,9 +705,8 @@ class SupportTicketAdmin(ModelAdmin):
 
                 # Send notification
                 from apps.work.notifications.services import NotificationHub
-                NotificationHub.notify_support_ticket_status_change(
-                    obj, old_status, obj.status
-                )
+
+                NotificationHub.notify_support_ticket_status_change(obj, old_status, obj.status)
 
         super().save_model(request, obj, form, change)
 
@@ -666,6 +749,7 @@ class SupportTicketAdmin(ModelAdmin):
     def get_urls(self):
         """Add custom URLs for ticket actions."""
         from django.urls import path
+
         urls = super().get_urls()
         custom_urls = [
             path(
@@ -678,8 +762,8 @@ class SupportTicketAdmin(ModelAdmin):
 
     def reply_view(self, request, object_id):
         """Handle reply submission."""
-        from django.shortcuts import get_object_or_404, redirect
         from django.contrib import messages as django_messages
+        from django.shortcuts import get_object_or_404, redirect
         from django.urls import reverse
 
         ticket = get_object_or_404(SupportTicket, pk=object_id)
@@ -703,13 +787,12 @@ class SupportTicketAdmin(ModelAdmin):
                         ticket.save()
 
                     from apps.work.notifications.services import NotificationHub
-                    NotificationHub.notify_support_ticket_reply(
-                        ticket, msg, is_staff_reply=True
-                    )
+
+                    NotificationHub.notify_support_ticket_reply(ticket, msg, is_staff_reply=True)
 
                 django_messages.success(
                     request,
-                    "✅ Antwort gesendet." if not is_internal else "📝 Interne Notiz hinzugefügt."
+                    "✅ Antwort gesendet." if not is_internal else "📝 Interne Notiz hinzugefügt.",
                 )
             else:
                 django_messages.error(request, "Bitte geben Sie eine Nachricht ein.")
@@ -720,6 +803,7 @@ class SupportTicketAdmin(ModelAdmin):
     def change_view(self, request, object_id, form_url="", extra_context=None):
         """Enhanced change view with reply form."""
         from django.urls import reverse
+
         extra_context = extra_context or {}
         extra_context["show_reply_form"] = True
         # Use absolute URL to avoid relative path issues

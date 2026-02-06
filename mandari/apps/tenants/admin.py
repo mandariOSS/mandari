@@ -11,16 +11,16 @@ by default. However, owner assignment is available for initial setup.
 
 from django import forms
 from django.contrib import admin
-from django.contrib.admin.widgets import AutocompleteSelect
 from unfold.admin import ModelAdmin
 
 from apps.accounts.models import User
+
 from .models import (
+    Membership,
     Organization,
     PartyGroup,
     Permission,
     Role,
-    Membership,
 )
 
 
@@ -35,12 +35,13 @@ class PartyGroupAdmin(ModelAdmin):
     ordering = ["name"]
 
     fieldsets = (
-        (None, {
-            "fields": ("name", "slug", "description", "parent")
-        }),
-        ("Status", {
-            "fields": ("is_active",),
-        }),
+        (None, {"fields": ("name", "slug", "description", "parent")}),
+        (
+            "Status",
+            {
+                "fields": ("is_active",),
+            },
+        ),
     )
 
     def level(self, obj):
@@ -85,7 +86,7 @@ class OrganizationAdmin(ModelAdmin):
         "member_count",
         "owner_display",
         "is_active",
-        "created_at"
+        "created_at",
     ]
     list_filter = ["is_active", "party_group", "body", "require_2fa"]
     search_fields = ["name", "slug"]
@@ -95,43 +96,54 @@ class OrganizationAdmin(ModelAdmin):
     autocomplete_fields = ["owner"]
 
     fieldsets = (
-        (None, {
-            "fields": ("name", "slug", "description"),
-        }),
-        ("Eigentümer", {
-            "fields": ("owner", "member_list_link"),
-            "description": (
-                "Der Eigentümer hat volle Kontrolle über die Organisation. "
-                "Wählen Sie einen aktiven Mitglied aus der Liste. "
-                "Neue Mitglieder werden über das Work-Portal hinzugefügt."
-            )
-        }),
-        ("Gruppierung", {
-            "fields": ("party_group", "body", "oparl_organizations"),
-            "description": "Organisation kann einer Partei-Hierarchie UND einer regionalen Gruppe angehören."
-        }),
-        ("Branding", {
-            "fields": ("logo", "primary_color", "secondary_color"),
-            "classes": ("collapse",)
-        }),
-        ("Öffentliche Informationen", {
-            "fields": ("website",),
-            "classes": ("collapse",)
-        }),
-        ("E-Mail (SMTP)", {
-            "fields": (
-                "smtp_host", "smtp_port", "smtp_username",
-                "smtp_use_tls", "smtp_from_email", "smtp_from_name"
-            ),
-            "classes": ("collapse",)
-        }),
-        ("Einstellungen", {
-            "fields": ("settings", "require_2fa", "is_active")
-        }),
-        ("System", {
-            "fields": ("encryption_key", "created_at", "updated_at"),
-            "classes": ("collapse",)
-        }),
+        (
+            None,
+            {
+                "fields": ("name", "slug", "description"),
+            },
+        ),
+        (
+            "Eigentümer",
+            {
+                "fields": ("owner", "member_list_link"),
+                "description": (
+                    "Der Eigentümer hat volle Kontrolle über die Organisation. "
+                    "Wählen Sie einen aktiven Mitglied aus der Liste. "
+                    "Neue Mitglieder werden über das Work-Portal hinzugefügt."
+                ),
+            },
+        ),
+        (
+            "Gruppierung",
+            {
+                "fields": ("party_group", "body", "oparl_organizations"),
+                "description": "Organisation kann einer Partei-Hierarchie UND einer regionalen Gruppe angehören.",
+            },
+        ),
+        (
+            "Branding",
+            {"fields": ("logo", "primary_color", "secondary_color"), "classes": ("collapse",)},
+        ),
+        ("Öffentliche Informationen", {"fields": ("website",), "classes": ("collapse",)}),
+        (
+            "E-Mail (SMTP)",
+            {
+                "fields": (
+                    "smtp_host",
+                    "smtp_port",
+                    "smtp_username",
+                    "smtp_use_tls",
+                    "smtp_from_email",
+                    "smtp_from_name",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        ("Einstellungen", {"fields": ("settings", "require_2fa", "is_active")}),
+        (
+            "System",
+            {"fields": ("encryption_key", "created_at", "updated_at"), "classes": ("collapse",)},
+        ),
     )
 
     def member_count(self, obj):
@@ -179,22 +191,26 @@ class RoleAdmin(ModelAdmin):
         "is_admin",
         "is_system_role",
         "priority",
-        "permission_count"
+        "permission_count",
     ]
     list_filter = ["is_admin", "is_system_role", "organization"]
     search_fields = ["name", "organization__name"]
     filter_horizontal = ["permissions"]
 
     fieldsets = (
-        (None, {
-            "fields": ("organization", "name", "description")
-        }),
-        ("Berechtigungen", {
-            "fields": ("permissions",),
-        }),
-        ("Einstellungen", {
-            "fields": ("is_admin", "is_system_role", "priority", "color"),
-        }),
+        (None, {"fields": ("organization", "name", "description")}),
+        (
+            "Berechtigungen",
+            {
+                "fields": ("permissions",),
+            },
+        ),
+        (
+            "Einstellungen",
+            {
+                "fields": ("is_admin", "is_system_role", "priority", "color"),
+            },
+        ),
     )
 
     def permission_count(self, obj):
@@ -223,35 +239,55 @@ class MembershipAdmin(ModelAdmin):
     list_filter = ["is_active", "organization", "roles"]
     search_fields = ["user__email", "user__first_name", "user__last_name", "organization__name"]
     autocomplete_fields = ["user", "organization", "oparl_person", "invited_by"]
-    filter_horizontal = ["roles", "individual_permissions", "denied_permissions", "oparl_committees"]
+    filter_horizontal = [
+        "roles",
+        "individual_permissions",
+        "denied_permissions",
+        "oparl_committees",
+    ]
     readonly_fields = ["joined_at", "updated_at", "invitation_accepted_at"]
     ordering = ["-joined_at"]
 
     fieldsets = (
-        ("Mitgliedschaft", {
-            "fields": ("user", "organization", "is_active"),
-        }),
-        ("Rollen & Berechtigungen", {
-            "fields": ("roles", "individual_permissions", "denied_permissions"),
-            "description": (
-                "Rollen definieren die Hauptberechtigungen. "
-                "Individuelle Berechtigungen werden zusätzlich gewährt. "
-                "Verweigerte Berechtigungen überschreiben Rollenberechtigungen."
-            )
-        }),
-        ("OParl-Verknüpfung", {
-            "fields": ("oparl_person", "oparl_committees"),
-            "classes": ("collapse",),
-            "description": "Verknüpfung mit dem Ratsinformationssystem"
-        }),
-        ("Einladung", {
-            "fields": ("invited_by", "invitation_accepted_at"),
-            "classes": ("collapse",),
-        }),
-        ("System", {
-            "fields": ("joined_at", "updated_at"),
-            "classes": ("collapse",),
-        }),
+        (
+            "Mitgliedschaft",
+            {
+                "fields": ("user", "organization", "is_active"),
+            },
+        ),
+        (
+            "Rollen & Berechtigungen",
+            {
+                "fields": ("roles", "individual_permissions", "denied_permissions"),
+                "description": (
+                    "Rollen definieren die Hauptberechtigungen. "
+                    "Individuelle Berechtigungen werden zusätzlich gewährt. "
+                    "Verweigerte Berechtigungen überschreiben Rollenberechtigungen."
+                ),
+            },
+        ),
+        (
+            "OParl-Verknüpfung",
+            {
+                "fields": ("oparl_person", "oparl_committees"),
+                "classes": ("collapse",),
+                "description": "Verknüpfung mit dem Ratsinformationssystem",
+            },
+        ),
+        (
+            "Einladung",
+            {
+                "fields": ("invited_by", "invitation_accepted_at"),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "System",
+            {
+                "fields": ("joined_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     def user_display(self, obj):

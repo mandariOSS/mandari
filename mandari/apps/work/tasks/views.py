@@ -19,8 +19,9 @@ from django.utils import timezone
 from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
-from .forms import TaskForm, QuickTaskForm, TaskCommentForm
-from .models import Task, TaskComment, TaskShare
+
+from .forms import QuickTaskForm, TaskCommentForm, TaskForm
+from .models import Task, TaskShare
 
 
 class TaskListView(WorkViewMixin, TemplateView):
@@ -45,40 +46,34 @@ class TaskListView(WorkViewMixin, TemplateView):
         priority_filter = self.request.GET.get("priority", "")
 
         # Base queryset
-        tasks = Task.objects.filter(
-            organization=self.organization
-        ).select_related(
+        tasks = Task.objects.filter(organization=self.organization).select_related(
             "assigned_to__user",
             "created_by__user",
             "related_meeting",
             "related_motion",
-            "related_faction_meeting"
+            "related_faction_meeting",
         )
 
         # Apply filters based on visibility
         if view_mode == "my":
             # My tasks: tasks I created, am assigned to, or are shared with me
             tasks = tasks.filter(
-                Q(assigned_to=self.membership) |
-                Q(created_by=self.membership) |
-                Q(shares__membership=self.membership)
+                Q(assigned_to=self.membership) | Q(created_by=self.membership) | Q(shares__membership=self.membership)
             ).distinct()
             context["view_mode"] = "my"
         else:
             # All tasks: filter by visibility
             # Show: organization-wide tasks, tasks shared with me, and my own tasks
             tasks = tasks.filter(
-                Q(visibility="organization") |
-                Q(created_by=self.membership) |
-                Q(assigned_to=self.membership) |
-                Q(shares__membership=self.membership)
+                Q(visibility="organization")
+                | Q(created_by=self.membership)
+                | Q(assigned_to=self.membership)
+                | Q(shares__membership=self.membership)
             ).distinct()
             context["view_mode"] = "all"
 
         if search:
-            tasks = tasks.filter(
-                Q(title__icontains=search) | Q(description__icontains=search)
-            )
+            tasks = tasks.filter(Q(title__icontains=search) | Q(description__icontains=search))
             context["search_query"] = search
 
         if priority_filter:
@@ -99,28 +94,21 @@ class TaskListView(WorkViewMixin, TemplateView):
         # Statistics
         all_tasks = Task.objects.filter(organization=self.organization)
         if view_mode == "my":
-            all_tasks = all_tasks.filter(
-                Q(assigned_to=self.membership) | Q(created_by=self.membership)
-            )
+            all_tasks = all_tasks.filter(Q(assigned_to=self.membership) | Q(created_by=self.membership))
 
         context["stats"] = {
             "total": all_tasks.count(),
             "todo": all_tasks.filter(status="todo").count(),
             "in_progress": all_tasks.filter(status="in_progress").count(),
             "done": all_tasks.filter(status="done").count(),
-            "overdue": all_tasks.filter(
-                due_date__lt=timezone.now().date(),
-                status__in=["todo", "in_progress"]
-            ).count(),
+            "overdue": all_tasks.filter(due_date__lt=timezone.now().date(), status__in=["todo", "in_progress"]).count(),
         }
 
         # Form for quick add
         context["quick_form"] = QuickTaskForm()
 
         # All members for assignment
-        context["members"] = self.organization.memberships.filter(
-            is_active=True
-        ).select_related("user")
+        context["members"] = self.organization.memberships.filter(is_active=True).select_related("user")
 
         context["priority_choices"] = Task.PRIORITY_CHOICES
 
@@ -172,10 +160,11 @@ class TaskBoardAPIView(WorkViewMixin, View):
             task.save()
 
             # Reorder other tasks in the same column
-            tasks_in_column = Task.objects.filter(
-                organization=self.organization,
-                status=new_status
-            ).exclude(id=task_id).order_by("position")
+            tasks_in_column = (
+                Task.objects.filter(organization=self.organization, status=new_status)
+                .exclude(id=task_id)
+                .order_by("position")
+            )
 
             for idx, t in enumerate(tasks_in_column):
                 new_pos = idx if idx < new_position else idx + 1
@@ -183,12 +172,14 @@ class TaskBoardAPIView(WorkViewMixin, View):
                     t.position = new_pos
                     t.save(update_fields=["position"])
 
-            return JsonResponse({
-                "success": True,
-                "task_id": str(task.id),
-                "status": task.status,
-                "is_completed": task.is_completed,
-            })
+            return JsonResponse(
+                {
+                    "success": True,
+                    "task_id": str(task.id),
+                    "status": task.status,
+                    "is_completed": task.is_completed,
+                }
+            )
 
         except (json.JSONDecodeError, KeyError) as e:
             return JsonResponse({"error": str(e)}, status=400)
@@ -203,10 +194,7 @@ class TaskBoardAPIView(WorkViewMixin, View):
             return JsonResponse({"error": "Title required"}, status=400)
 
         # Get max position in the column
-        max_pos = Task.objects.filter(
-            organization=self.organization,
-            status=status
-        ).count()
+        max_pos = Task.objects.filter(organization=self.organization, status=status).count()
 
         task = Task.objects.create(
             organization=self.organization,
@@ -219,15 +207,17 @@ class TaskBoardAPIView(WorkViewMixin, View):
         )
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return JsonResponse({
-                "success": True,
-                "task": {
-                    "id": str(task.id),
-                    "title": task.title,
-                    "status": task.status,
-                    "priority": task.priority,
+            return JsonResponse(
+                {
+                    "success": True,
+                    "task": {
+                        "id": str(task.id),
+                        "title": task.title,
+                        "status": task.status,
+                        "priority": task.priority,
+                    },
                 }
-            })
+            )
 
         messages.success(request, "Aufgabe erstellt.")
         return redirect("work:tasks", org_slug=self.organization.slug)
@@ -268,11 +258,13 @@ class TaskBoardAPIView(WorkViewMixin, View):
 
         task.save()
 
-        return JsonResponse({
-            "success": True,
-            "is_completed": task.is_completed,
-            "status": task.status,
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "is_completed": task.is_completed,
+                "status": task.status,
+            }
+        )
 
 
 class TaskCreateView(WorkViewMixin, TemplateView):
@@ -290,18 +282,16 @@ class TaskCreateView(WorkViewMixin, TemplateView):
         from_protocol = self.request.GET.get("from_protocol")
         if from_protocol:
             from apps.work.faction.models import FactionProtocolEntry
+
             try:
-                entry = FactionProtocolEntry.objects.get(
-                    id=from_protocol,
-                    meeting__organization=self.organization
-                )
+                entry = FactionProtocolEntry.objects.get(id=from_protocol, meeting__organization=self.organization)
                 context["form"] = TaskForm(
                     organization=self.organization,
                     initial={
                         "title": entry.content[:500] if entry.content else "",
                         "assigned_to": entry.action_assignee,
                         "due_date": entry.action_due_date,
-                    }
+                    },
                 )
                 context["from_protocol_entry"] = entry
             except FactionProtocolEntry.DoesNotExist:
@@ -320,10 +310,7 @@ class TaskCreateView(WorkViewMixin, TemplateView):
                 task.assigned_to = self.membership
 
             # Set position
-            task.position = Task.objects.filter(
-                organization=self.organization,
-                status=task.status
-            ).count()
+            task.position = Task.objects.filter(organization=self.organization, status=task.status).count()
 
             task.save()
 
@@ -352,10 +339,10 @@ class TaskDetailView(WorkViewMixin, TemplateView):
                 "related_meeting",
                 "related_motion",
                 "related_faction_meeting",
-                "related_agenda_item"
+                "related_agenda_item",
             ),
             id=kwargs.get("task_id"),
-            organization=self.organization
+            organization=self.organization,
         )
 
         context["task"] = task
@@ -365,29 +352,21 @@ class TaskDetailView(WorkViewMixin, TemplateView):
 
         # Can edit
         context["can_edit"] = (
-            task.created_by == self.membership or
-            task.assigned_to == self.membership or
-            self.membership.has_permission("tasks.manage")
+            task.created_by == self.membership
+            or task.assigned_to == self.membership
+            or self.membership.has_permission("tasks.manage")
         )
 
         # Members for sharing
-        context["members"] = self.organization.memberships.filter(
-            is_active=True
-        ).select_related("user")
+        context["members"] = self.organization.memberships.filter(is_active=True).select_related("user")
 
         # Get IDs of members task is shared with
-        context["shared_member_ids"] = list(
-            task.shares.values_list("membership_id", flat=True)
-        )
+        context["shared_member_ids"] = list(task.shares.values_list("membership_id", flat=True))
 
         return context
 
     def post(self, request, *args, **kwargs):
-        task = get_object_or_404(
-            Task,
-            id=kwargs.get("task_id"),
-            organization=self.organization
-        )
+        task = get_object_or_404(Task, id=kwargs.get("task_id"), organization=self.organization)
 
         action = request.POST.get("action")
 
@@ -444,17 +423,13 @@ class TaskShareView(WorkViewMixin, View):
     permission_required = "tasks.manage"
 
     def post(self, request, *args, **kwargs):
-        task = get_object_or_404(
-            Task,
-            id=kwargs.get("task_id"),
-            organization=self.organization
-        )
+        task = get_object_or_404(Task, id=kwargs.get("task_id"), organization=self.organization)
 
         # Check permission
         can_edit = (
-            task.created_by == self.membership or
-            task.assigned_to == self.membership or
-            self.membership.has_permission("tasks.manage")
+            task.created_by == self.membership
+            or task.assigned_to == self.membership
+            or self.membership.has_permission("tasks.manage")
         )
         if not can_edit:
             messages.error(request, "Keine Berechtigung.")
@@ -471,16 +446,12 @@ class TaskShareView(WorkViewMixin, View):
             share_with_ids = request.POST.getlist("share_with[]")
 
             # Remove existing shares that are not in the new list
-            TaskShare.objects.filter(task=task).exclude(
-                membership_id__in=share_with_ids
-            ).delete()
+            TaskShare.objects.filter(task=task).exclude(membership_id__in=share_with_ids).delete()
 
             # Add new shares
             for member_id in share_with_ids:
                 TaskShare.objects.get_or_create(
-                    task=task,
-                    membership_id=member_id,
-                    defaults={"shared_by": self.membership}
+                    task=task, membership_id=member_id, defaults={"shared_by": self.membership}
                 )
         else:
             # If not shared, remove all shares
@@ -500,34 +471,37 @@ class TaskImportView(WorkViewMixin, View):
         from apps.work.faction.models import FactionProtocolEntry
 
         # Get action items that haven't been converted to tasks yet
-        action_items = FactionProtocolEntry.objects.filter(
-            meeting__organization=self.organization,
-            entry_type="action",
-            action_completed=False,
-        ).exclude(
-            # Exclude items that already have tasks (need to track this relationship)
-            id__in=Task.objects.filter(
-                organization=self.organization
-            ).values_list("related_faction_meeting", flat=True)
-        ).select_related(
-            "meeting",
-            "agenda_item",
-            "action_assignee__user"
-        ).order_by("-created_at")[:50]
+        action_items = (
+            FactionProtocolEntry.objects.filter(
+                meeting__organization=self.organization,
+                entry_type="action",
+                action_completed=False,
+            )
+            .exclude(
+                # Exclude items that already have tasks (need to track this relationship)
+                id__in=Task.objects.filter(organization=self.organization).values_list(
+                    "related_faction_meeting", flat=True
+                )
+            )
+            .select_related("meeting", "agenda_item", "action_assignee__user")
+            .order_by("-created_at")[:50]
+        )
 
-        return JsonResponse({
-            "items": [
-                {
-                    "id": str(item.id),
-                    "content": item.content[:200] if item.content else "",
-                    "meeting": item.meeting.title,
-                    "meeting_date": item.meeting.start.strftime("%d.%m.%Y") if item.meeting.start else "",
-                    "assignee": item.action_assignee.user.get_display_name() if item.action_assignee else None,
-                    "due_date": item.action_due_date.strftime("%Y-%m-%d") if item.action_due_date else None,
-                }
-                for item in action_items
-            ]
-        })
+        return JsonResponse(
+            {
+                "items": [
+                    {
+                        "id": str(item.id),
+                        "content": item.content[:200] if item.content else "",
+                        "meeting": item.meeting.title,
+                        "meeting_date": item.meeting.start.strftime("%d.%m.%Y") if item.meeting.start else "",
+                        "assignee": item.action_assignee.user.get_display_name() if item.action_assignee else None,
+                        "due_date": item.action_due_date.strftime("%Y-%m-%d") if item.action_due_date else None,
+                    }
+                    for item in action_items
+                ]
+            }
+        )
 
     def post(self, request, *args, **kwargs):
         """Import selected protocol entries as tasks."""
@@ -539,9 +513,7 @@ class TaskImportView(WorkViewMixin, View):
         for entry_id in entry_ids:
             try:
                 entry = FactionProtocolEntry.objects.get(
-                    id=entry_id,
-                    meeting__organization=self.organization,
-                    entry_type="action"
+                    id=entry_id, meeting__organization=self.organization, entry_type="action"
                 )
 
                 # Create task
@@ -553,10 +525,7 @@ class TaskImportView(WorkViewMixin, View):
                     due_date=entry.action_due_date,
                     status="todo",
                     priority="medium",
-                    position=Task.objects.filter(
-                        organization=self.organization,
-                        status="todo"
-                    ).count(),
+                    position=Task.objects.filter(organization=self.organization, status="todo").count(),
                     related_faction_meeting=entry.meeting,
                 )
                 created += 1
@@ -564,7 +533,9 @@ class TaskImportView(WorkViewMixin, View):
             except FactionProtocolEntry.DoesNotExist:
                 continue
 
-        return JsonResponse({
-            "success": True,
-            "created": created,
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "created": created,
+            }
+        )

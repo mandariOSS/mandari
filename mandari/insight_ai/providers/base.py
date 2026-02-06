@@ -5,12 +5,12 @@ Abstract base class for AI providers.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class ChatMessage:
     """A single chat message."""
+
     role: str  # "system", "user", or "assistant"
     content: str
 
@@ -18,6 +18,7 @@ class ChatMessage:
 @dataclass
 class ChatResponse:
     """Response from a chat completion."""
+
     content: str
     model: str
     input_tokens: int

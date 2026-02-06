@@ -7,11 +7,9 @@ Handles subdomain redirects for organizations.
 """
 
 import re
-from typing import Optional
 
 from django.conf import settings
-from django.http import Http404, HttpResponseRedirect
-from django.urls import reverse
+from django.http import HttpResponseRedirect
 
 
 class OrganizationMiddleware:
@@ -41,7 +39,7 @@ class OrganizationMiddleware:
         response = self.get_response(request)
         return response
 
-    def _get_org_slug(self, path: str) -> Optional[str]:
+    def _get_org_slug(self, path: str) -> str | None:
         """Extract organization slug from URL path."""
         match = self.WORK_URL_PATTERN.match(path)
         if match:
@@ -54,28 +52,16 @@ class OrganizationMiddleware:
         from apps.tenants.models import Membership, Organization
 
         try:
-            organization = Organization.objects.select_related(
-                "party_group",
-                "body"
-            ).get(
-                slug=org_slug,
-                is_active=True
-            )
+            organization = Organization.objects.select_related("party_group", "body").get(slug=org_slug, is_active=True)
             request.organization = organization
 
             # Get membership if user is authenticated
             if request.user.is_authenticated:
                 try:
-                    membership = Membership.objects.select_related(
-                        "organization"
-                    ).prefetch_related(
-                        "roles__permissions",
-                        "individual_permissions",
-                        "denied_permissions"
-                    ).get(
-                        user=request.user,
-                        organization=organization,
-                        is_active=True
+                    membership = (
+                        Membership.objects.select_related("organization")
+                        .prefetch_related("roles__permissions", "individual_permissions", "denied_permissions")
+                        .get(user=request.user, organization=organization, is_active=True)
                     )
                     request.membership = membership
                 except Membership.DoesNotExist:
@@ -102,8 +88,8 @@ class SubdomainRedirectMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         # Main domain without www (e.g., 'mandari.de')
-        self.main_domain = getattr(settings, 'MAIN_DOMAIN', 'mandari.de')
-        self.enabled = getattr(settings, 'SUBDOMAIN_REDIRECT_ENABLED', True)
+        self.main_domain = getattr(settings, "MAIN_DOMAIN", "mandari.de")
+        self.enabled = getattr(settings, "SUBDOMAIN_REDIRECT_ENABLED", True)
 
     def __call__(self, request):
         if not self.enabled:
@@ -113,19 +99,19 @@ class SubdomainRedirectMiddleware:
         host = request.get_host().lower()
 
         # Remove port if present
-        if ':' in host:
-            host = host.split(':')[0]
+        if ":" in host:
+            host = host.split(":")[0]
 
         # Check if this is a subdomain of our main domain
         subdomain = self._extract_subdomain(host)
 
-        if subdomain and subdomain not in ('www', 'mail', 'api', 'admin'):
+        if subdomain and subdomain not in ("www", "mail", "api", "admin"):
             # This is an organization subdomain - redirect to work portal
             return self._handle_subdomain_redirect(request, subdomain)
 
         return self.get_response(request)
 
-    def _extract_subdomain(self, host: str) -> Optional[str]:
+    def _extract_subdomain(self, host: str) -> str | None:
         """
         Extract subdomain from host.
 
@@ -136,19 +122,19 @@ class SubdomainRedirectMiddleware:
             'localhost' -> None
         """
         # Skip localhost and IP addresses
-        if host in ('localhost', '127.0.0.1') or host.startswith('192.168.'):
+        if host in ("localhost", "127.0.0.1") or host.startswith("192.168."):
             return None
 
         # Check if host ends with our main domain
         main_domain = self.main_domain.lower()
-        if not host.endswith(f'.{main_domain}'):
+        if not host.endswith(f".{main_domain}"):
             return None
 
         # Extract the subdomain part
-        subdomain = host[:-len(f'.{main_domain}')]
+        subdomain = host[: -len(f".{main_domain}")]
 
         # Only return if it's a simple subdomain (no dots)
-        if '.' in subdomain:
+        if "." in subdomain:
             return None
 
         return subdomain
@@ -170,22 +156,22 @@ class SubdomainRedirectMiddleware:
 
         # Build the redirect URL
         path = request.path
-        if path == '/' or path == '':
+        if path == "/" or path == "":
             # Root path -> redirect to dashboard
-            redirect_path = f'/work/{subdomain}/dashboard/'
-        elif path.startswith('/work/'):
+            redirect_path = f"/work/{subdomain}/dashboard/"
+        elif path.startswith("/work/"):
             # Already a work path - don't redirect
             return self.get_response(request)
         else:
             # Other paths -> redirect to work portal with same path
-            redirect_path = f'/work/{subdomain}{path}'
+            redirect_path = f"/work/{subdomain}{path}"
 
         # Build the full URL with the main domain
-        scheme = 'https' if request.is_secure() else 'http'
-        redirect_url = f'{scheme}://{self.main_domain}{redirect_path}'
+        scheme = "https" if request.is_secure() else "http"
+        redirect_url = f"{scheme}://{self.main_domain}{redirect_path}"
 
         # Preserve query string
-        if request.META.get('QUERY_STRING'):
-            redirect_url += f'?{request.META["QUERY_STRING"]}'
+        if request.META.get("QUERY_STRING"):
+            redirect_url += f"?{request.META['QUERY_STRING']}"
 
         return HttpResponseRedirect(redirect_url)

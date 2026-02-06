@@ -17,7 +17,6 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Optional
 
 import httpx
 from django.conf import settings
@@ -64,7 +63,7 @@ class ExtractedDocument:
     original_name: str
     source_url: str
     ocr_performed: bool = False
-    page_count: Optional[int] = None
+    page_count: int | None = None
     extraction_method: str = "none"  # pypdf, mistral, tesseract, none
 
 
@@ -90,7 +89,7 @@ def _http_get(url: str, timeout: float = 60.0) -> httpx.Response:
     return response
 
 
-def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, Optional[int], str]:
+def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int | None, str]:
     """
     Extrahiert Text aus einer PDF-Datei.
 
@@ -217,7 +216,7 @@ def extract_text_from_file(
     data: bytes,
     mime_type: str | None = None,
     file_name: str = "",
-) -> tuple[str, bool, Optional[int], str]:
+) -> tuple[str, bool, int | None, str]:
     """
     Extrahiert Text aus Binärdaten basierend auf MIME-Typ.
 
@@ -231,7 +230,7 @@ def extract_text_from_file(
     """
     text = ""
     ocr_used = False
-    page_count: Optional[int] = None
+    page_count: int | None = None
     extraction_method = "none"
 
     resolved_mime = mime_type or ""

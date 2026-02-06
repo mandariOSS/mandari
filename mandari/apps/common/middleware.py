@@ -5,6 +5,7 @@ Includes error handling for database connection issues.
 """
 
 import logging
+
 from django.db import OperationalError
 from django.shortcuts import render
 
@@ -61,5 +62,5 @@ class DatabaseErrorMiddleware:
             status=503,
             headers={
                 "Retry-After": "300",  # Suggest retry after 5 minutes
-            }
+            },
         )

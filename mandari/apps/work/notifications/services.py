@@ -26,8 +26,7 @@ Usage:
 """
 
 import logging
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.cache import cache
@@ -63,7 +62,7 @@ class NotificationHub:
         actor=None,  # Membership instance (optional)
         metadata: dict = None,
         send_email: bool = True,
-    ) -> Optional[Notification]:
+    ) -> Notification | None:
         """
         Send a notification to a single user.
 
@@ -102,9 +101,7 @@ class NotificationHub:
         if send_email:
             cls._queue_email(notification)
 
-        logger.info(
-            f"Notification sent: {notification_type} to {recipient.user.email}"
-        )
+        logger.info(f"Notification sent: {notification_type} to {recipient.user.email}")
 
         return notification
 
@@ -206,9 +203,7 @@ class NotificationHub:
         """
         try:
             # Quick check if email is enabled before queueing
-            prefs, _ = NotificationPreference.objects.get_or_create(
-                membership=notification.recipient
-            )
+            prefs, _ = NotificationPreference.objects.get_or_create(membership=notification.recipient)
 
             # Skip if email is disabled for this type
             if not prefs.is_type_enabled(notification.notification_type, "email"):
@@ -224,9 +219,11 @@ class NotificationHub:
 
             # Queue the email task
             from apps.work.background_tasks import send_notification_email_task
+
             try:
                 # Try using Django 6.0 background tasks
                 from django.tasks import enqueue
+
                 enqueue(send_notification_email_task, str(notification.id))
             except ImportError:
                 # Fallback to synchronous execution if tasks not available
@@ -271,10 +268,7 @@ class NotificationHub:
             "base_url": getattr(settings, "SITE_URL", "http://localhost:8000"),
         }
 
-        html_content = render_to_string(
-            "work/notifications/email/notification.html",
-            context
-        )
+        html_content = render_to_string("work/notifications/email/notification.html", context)
         text_content = strip_tags(html_content)
 
         # Send email
@@ -404,7 +398,7 @@ class NotificationHub:
             recipients=list(admins),
             notification_type=NotificationType.MEMBER_JOINED,
             title="Neues Mitglied",
-            message=f'{new_member.user.get_full_name() or new_member.user.email} ist der Organisation beigetreten.',
+            message=f"{new_member.user.get_full_name() or new_member.user.email} ist der Organisation beigetreten.",
             link=f"/work/{organization.slug}/organization/members/",
             actor=inviter,
             metadata={"member_id": str(new_member.id)},
