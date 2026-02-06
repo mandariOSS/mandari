@@ -127,3 +127,9 @@ Sicherheitslücken bitte **nicht** öffentlich melden. Siehe [SECURITY.md](SECUR
 <p align="center">
   <sub>Mit ❤️ für Demokratie und Transparenz</sub>
 </p>
+
+---
+
+<p align="center">
+  <sub>Copyright 2025 Sven Konopka and contributors. Licensed under <a href="LICENSE">AGPL-3.0-or-later</a>.</sub>
+</p>
