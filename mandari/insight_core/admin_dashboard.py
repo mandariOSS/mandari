@@ -20,7 +20,6 @@ def dashboard_callback(request, context):
     statistische Daten zum Template-Context hinzu.
     """
     from insight_content.models import BlogPost, Release
-
     from insight_core.models import (
         OParlAgendaItem,
         OParlBody,

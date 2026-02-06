@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from django.core.files.uploadedfile import UploadedFile
+
 from insight_core.services.document_extraction import extract_text_from_file
 
 if TYPE_CHECKING:

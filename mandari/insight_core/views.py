@@ -1268,8 +1268,9 @@ class KontaktView(TemplateView):
         """Verarbeitet das Kontaktformular."""
         import logging
 
-        from apps.common.email import send_template_email
         from django.contrib import messages
+
+        from apps.common.email import send_template_email
 
         from .models import ContactRequest
 

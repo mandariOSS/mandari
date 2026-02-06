@@ -36,9 +36,9 @@ class DashboardView(WorkViewMixin, TemplateView):
         Returns a unified list sorted by start time.
         """
         from django.db.models import Prefetch
-        from insight_core.models import OParlMeeting, OParlOrganization
 
         from apps.work.faction.models import FactionMeeting
+        from insight_core.models import OParlMeeting, OParlOrganization
 
         now = timezone.now()
         meetings = []

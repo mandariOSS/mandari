@@ -11,9 +11,9 @@ from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
-from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting, OParlOrganization
 
 from apps.common.mixins import WorkViewMixin
+from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting, OParlOrganization
 
 from .models import (
     AgendaDocumentLink,

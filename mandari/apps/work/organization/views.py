@@ -218,6 +218,7 @@ class MemberDetailView(WorkViewMixin, TemplateView):
     def _find_matching_persons(self, user, body):
         """Findet OParl-Personen anhand des Benutzernamens."""
         from django.db.models import Q
+
         from insight_core.models import OParlPerson
 
         first = user.first_name.strip() if user.first_name else ""
@@ -241,6 +242,7 @@ class MemberDetailView(WorkViewMixin, TemplateView):
     def _get_suggested_committees(self, oparl_person, body, today):
         """Holt aktive Gremienmitgliedschaften einer OParl-Person."""
         from django.db.models import Q
+
         from insight_core.models import OParlMembership
 
         memberships = (

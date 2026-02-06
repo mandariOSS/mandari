@@ -7,6 +7,7 @@ Struktur:
 """
 
 from django.urls import include, path
+
 from insight_content import views as content_views
 
 from . import views
