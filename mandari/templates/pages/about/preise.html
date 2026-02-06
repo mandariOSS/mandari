@@ -2,7 +2,7 @@
 
 {% block title %}Preise - Transparent und fair{% endblock %}
 
-{% block meta_description %}Mandari Preise: Insight kostenlos, Work ab 29,90€/Monat in der Beta. Alle Produkte sind Open Source.{% endblock %}
+{% block meta_description %}Mandari Preise: Insight kostenlos, Work ab 39,90€/Monat in der Beta. Alle Produkte sind Open Source.{% endblock %}
 
 {% block content %}
 <!-- Hero Section -->
@@ -83,7 +83,7 @@
             <div class="bg-white dark:bg-gray-800 rounded-2xl border-2 border-primary-500 p-8 relative shadow-xl scale-105">
                 <div class="absolute -top-3 left-6">
                     <span class="inline-block px-3 py-1 bg-primary-500 text-white text-sm font-medium rounded-full">
-                        Beta-Preis
+                        Beta
                     </span>
                 </div>
                 <div class="absolute -top-3 right-6">
@@ -95,13 +95,11 @@
                     <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Mandari Work</h3>
                     <p class="text-gray-500 dark:text-gray-400 text-sm mb-6">Für Fraktionen</p>
 
-                    <div class="mb-2">
-                        <span class="text-4xl font-bold text-gray-900 dark:text-white">29,90 €</span>
+                    <div class="mb-6">
+                        <span class="text-4xl font-bold text-gray-900 dark:text-white">39,90 €</span>
                         <span class="text-gray-500 dark:text-gray-400">/Monat</span>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">inkl. MwSt.</p>
                     </div>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-6">
-                        35,58 € inkl. MwSt. | Beta-Preis bis zum offiziellen Launch
-                    </p>
 
                     <p class="text-sm text-gray-600 dark:text-gray-300 mb-6">
                         Professionelle Sitzungsvorbereitung mit Team-Kollaboration und KI-Features.
@@ -347,24 +345,10 @@
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
                 <button @click="open = open === 2 ? null : 2"
                         class="w-full px-6 py-4 flex items-center justify-between text-left">
-                    <span class="font-medium text-gray-900 dark:text-white">Bleibt der Beta-Preis erhalten?</span>
+                    <span class="font-medium text-gray-900 dark:text-white">Gibt es Mengenrabatte?</span>
                     <i data-lucide="chevron-down" class="w-5 h-5 text-gray-500 transition-transform" :class="open === 2 ? 'rotate-180' : ''"></i>
                 </button>
                 <div x-show="open === 2" x-collapse class="px-6 pb-4">
-                    <p class="text-gray-600 dark:text-gray-300">
-                        Ja! Wer während der Beta-Phase einsteigt, behält den vergünstigten Preis dauerhaft -
-                        auch nach dem offiziellen Launch. Das ist unsere Art, frühe Unterstützer zu belohnen.
-                    </p>
-                </div>
-            </div>
-
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                <button @click="open = open === 3 ? null : 3"
-                        class="w-full px-6 py-4 flex items-center justify-between text-left">
-                    <span class="font-medium text-gray-900 dark:text-white">Gibt es Mengenrabatte?</span>
-                    <i data-lucide="chevron-down" class="w-5 h-5 text-gray-500 transition-transform" :class="open === 3 ? 'rotate-180' : ''"></i>
-                </button>
-                <div x-show="open === 3" x-collapse class="px-6 pb-4">
                     <p class="text-gray-600 dark:text-gray-300">
                         Für größere Teams oder mehrere Fraktionen bieten wir individuelle Konditionen an.
                         Kontaktieren Sie uns für ein maßgeschneidertes Angebot.
@@ -373,12 +357,12 @@
             </div>
 
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                <button @click="open = open === 4 ? null : 4"
+                <button @click="open = open === 3 ? null : 3"
                         class="w-full px-6 py-4 flex items-center justify-between text-left">
                     <span class="font-medium text-gray-900 dark:text-white">Kann ich kündigen?</span>
-                    <i data-lucide="chevron-down" class="w-5 h-5 text-gray-500 transition-transform" :class="open === 4 ? 'rotate-180' : ''"></i>
+                    <i data-lucide="chevron-down" class="w-5 h-5 text-gray-500 transition-transform" :class="open === 3 ? 'rotate-180' : ''"></i>
                 </button>
-                <div x-show="open === 4" x-collapse class="px-6 pb-4">
+                <div x-show="open === 3" x-collapse class="px-6 pb-4">
                     <p class="text-gray-600 dark:text-gray-300">
                         Ja, monatlich kündbar. Keine Mindestlaufzeit, keine versteckten Kosten.
                         Sie können Ihre Daten jederzeit exportieren.
