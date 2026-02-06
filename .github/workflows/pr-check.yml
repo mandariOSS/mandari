@@ -36,13 +36,15 @@ jobs:
           cache: 'pip'
 
       - name: Install linters
-        run: pip install ruff
+        run: pip install ruff==0.14.6
 
       - name: Run Ruff linter
-        run: ruff check mandari/
+        working-directory: mandari
+        run: ruff check .
 
       - name: Run Ruff formatter check
-        run: ruff format --check mandari/
+        working-directory: mandari
+        run: ruff format --check .
 
   # ===========================================================================
   # Django System Checks & Tests
