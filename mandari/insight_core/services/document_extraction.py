@@ -1,7 +1,13 @@
 """
 Dokument-Extraktion Service.
 
-Lädt Dokumente herunter und extrahiert Text aus PDFs (mit OCR-Fallback).
+Lädt Dokumente herunter und extrahiert Text aus PDFs.
+
+Fallback-Kette:
+1. pypdf (schnell, nur für Text-PDFs)
+2. Mistral OCR (API, hochwertig, wenn konfiguriert)
+3. Tesseract OCR (lokal, als letzter Fallback)
+
 Portiert von _old/insight_ai/services/document_extraction.py.
 """
 
@@ -14,6 +20,7 @@ from io import BytesIO
 from typing import Optional
 
 import httpx
+from django.conf import settings
 from django.utils.encoding import force_str
 
 try:
@@ -58,6 +65,7 @@ class ExtractedDocument:
     source_url: str
     ocr_performed: bool = False
     page_count: Optional[int] = None
+    extraction_method: str = "none"  # pypdf, mistral, tesseract, none
 
 
 class DocumentDownloadError(RuntimeError):
@@ -82,44 +90,66 @@ def _http_get(url: str, timeout: float = 60.0) -> httpx.Response:
     return response
 
 
-def _extract_text_from_pdf(data: bytes) -> tuple[str, Optional[int], bool]:
+def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, Optional[int], str]:
     """
     Extrahiert Text aus einer PDF-Datei.
 
-    Versucht zuerst textbasierte Extraktion mit pypdf,
-    fällt bei Bedarf auf OCR zurück.
+    Fallback-Kette:
+    1. pypdf (schnell, nur Text-PDFs)
+    2. Mistral OCR (API, wenn konfiguriert)
+    3. Tesseract OCR (lokal)
 
     Returns:
-        Tuple mit (text, page_count, ocr_used)
+        Tuple mit (text, page_count, extraction_method)
     """
-    if PdfReader is None:
-        logger.warning("pypdf nicht installiert, PDF-Extraktion nicht möglich.")
-        return "", None, False
+    page_count = None
 
-    try:
-        reader = PdfReader(BytesIO(data))
-    except Exception as exc:
-        logger.warning("PDF konnte nicht gelesen werden: %s", exc)
-        return "", None, False
-
-    text_fragments: list[str] = []
-    ocr_used = False
-    page_count = len(reader.pages)
-
-    for page in reader.pages:
+    # 1. Versuche pypdf (schnell, für Text-PDFs)
+    if PdfReader is not None:
         try:
-            page_text = page.extract_text() or ""
-        except Exception:
-            page_text = ""
-        text_fragments.append(page_text.strip())
+            reader = PdfReader(BytesIO(data))
+            page_count = len(reader.pages)
 
-    text = "\n\n".join(fragment for fragment in text_fragments if fragment)
+            text_fragments: list[str] = []
+            for page in reader.pages:
+                try:
+                    page_text = page.extract_text() or ""
+                except Exception:
+                    page_text = ""
+                text_fragments.append(page_text.strip())
 
-    # Falls kein Text extrahiert werden konnte, OCR versuchen
-    if not text.strip():
-        text, ocr_used = _extract_text_with_ocr(data)
+            text = "\n\n".join(fragment for fragment in text_fragments if fragment)
 
-    return text, page_count, ocr_used
+            if text.strip():
+                logger.debug(f"pypdf Extraktion erfolgreich: {len(text)} Zeichen")
+                return text, page_count, "pypdf"
+
+        except Exception as exc:
+            logger.warning("pypdf Extraktion fehlgeschlagen: %s", exc)
+
+    # 2. Versuche Mistral OCR (wenn konfiguriert)
+    mistral_api_key = getattr(settings, "MISTRAL_API_KEY", "")
+    if mistral_api_key:
+        try:
+            from .mistral_ocr import extract_text_with_mistral
+
+            text = extract_text_with_mistral(data, file_name or "document.pdf")
+            if text.strip():
+                logger.debug(f"Mistral OCR erfolgreich: {len(text)} Zeichen")
+                return text, page_count, "mistral"
+
+        except Exception as exc:
+            logger.warning("Mistral OCR fehlgeschlagen: %s", exc)
+
+    # 3. Fallback auf Tesseract OCR (lokal)
+    text, success = _extract_text_with_ocr(data)
+    if success and text.strip():
+        logger.debug(f"Tesseract OCR erfolgreich: {len(text)} Zeichen")
+        return text, page_count, "tesseract"
+
+    # Kein Text extrahiert
+    logger.warning("Keine Textextraktion möglich für PDF")
+    return "", page_count, "none"
 
 
 def _extract_text_with_ocr(data: bytes) -> tuple[str, bool]:
@@ -187,7 +217,7 @@ def extract_text_from_file(
     data: bytes,
     mime_type: str | None = None,
     file_name: str = "",
-) -> tuple[str, bool, Optional[int]]:
+) -> tuple[str, bool, Optional[int], str]:
     """
     Extrahiert Text aus Binärdaten basierend auf MIME-Typ.
 
@@ -197,35 +227,40 @@ def extract_text_from_file(
         file_name: Optionaler Dateiname für Fallback-Erkennung
 
     Returns:
-        Tuple mit (text, ocr_performed, page_count)
+        Tuple mit (text, ocr_performed, page_count, extraction_method)
     """
     text = ""
     ocr_used = False
     page_count: Optional[int] = None
+    extraction_method = "none"
 
     resolved_mime = mime_type or ""
 
     # PDF-Erkennung
     if resolved_mime in PDF_MIME_TYPES or file_name.lower().endswith(".pdf"):
-        text, page_count, ocr_used = _extract_text_from_pdf(data)
+        text, page_count, extraction_method = _extract_text_from_pdf(data, file_name)
+        ocr_used = extraction_method in ("mistral", "tesseract")
 
     # Textdateien
     elif resolved_mime.startswith("text/"):
         text = _extract_text_from_plain(data)
         if resolved_mime == "text/html":
             text = _strip_html_tags(text)
+        extraction_method = "text"
 
     # Word-Dokumente (OCR-Fallback)
     elif resolved_mime in WORD_MIME_TYPES:
         logger.info("Word-Datei erkannt, versuche OCR-Fallback.")
         text, ocr_used = _extract_text_with_ocr(data)
+        extraction_method = "tesseract" if ocr_used else "none"
 
     # Generischer Fallback
     else:
         text = _extract_text_from_plain(data)
+        extraction_method = "text" if text.strip() else "none"
 
     text = force_str(text or "").strip()
-    return text, ocr_used, page_count
+    return text, ocr_used, page_count, extraction_method
 
 
 def download_and_extract(
@@ -252,7 +287,7 @@ def download_and_extract(
     resolved_mime = mime_type or response.headers.get("Content-Type", "").split(";")[0]
     checksum = hashlib.sha256(binary).hexdigest()
 
-    text, ocr_used, page_count = extract_text_from_file(
+    text, ocr_used, page_count, extraction_method = extract_text_from_file(
         binary,
         mime_type=resolved_mime,
         file_name=original_name or url.split("/")[-1],
@@ -267,6 +302,7 @@ def download_and_extract(
         source_url=url,
         ocr_performed=ocr_used,
         page_count=page_count,
+        extraction_method=extraction_method,
     )
 
 
@@ -304,7 +340,7 @@ async def download_and_extract_async(
     resolved_mime = mime_type or response.headers.get("Content-Type", "").split(";")[0]
     checksum = hashlib.sha256(binary).hexdigest()
 
-    text, ocr_used, page_count = extract_text_from_file(
+    text, ocr_used, page_count, extraction_method = extract_text_from_file(
         binary,
         mime_type=resolved_mime,
         file_name=original_name or url.split("/")[-1],
@@ -319,4 +355,5 @@ async def download_and_extract_async(
         source_url=url,
         ocr_performed=ocr_used,
         page_count=page_count,
+        extraction_method=extraction_method,
     )

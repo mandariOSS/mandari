@@ -94,6 +94,12 @@ insight_patterns = [
 # Haupt-URL-Patterns
 # =============================================================================
 urlpatterns = [
+    # SEO: robots.txt und Sitemaps
+    path("robots.txt", views.robots_txt, name="robots_txt"),
+    path("sitemap.xml", views.sitemap_index, name="sitemap_index"),
+    path("sitemap-pages.xml", views.static_sitemap, name="static_sitemap"),
+    path("sitemap-insight-<slug:body_slug>.xml", views.body_sitemap, name="body_sitemap"),
+
     # Landingpage (Marketing)
     path("", views.HomeView.as_view(), name="home"),
 

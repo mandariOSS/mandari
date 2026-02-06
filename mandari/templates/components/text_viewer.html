@@ -1,0 +1,216 @@
+{% comment %}
+Text Viewer Component
+
+Zeigt extrahierten Text aus Dokumenten mit erweiterten Features:
+- Zeichenzähler
+- Kopieren-Button
+- Suche im Text mit Highlighting
+- Lazy Loading für große Texte
+- Responsive Design
+
+Verwendung:
+{% include "components/text_viewer.html" with file=file %}
+
+Erwartet:
+- file: OParlFile Objekt mit text_content
+{% endcomment %}
+
+<div x-data="textViewer('{{ file.id }}')"
+     class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+
+    <!-- Header mit Toolbar -->
+    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+            <!-- Datei-Icon & Name -->
+            <div class="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/50 flex items-center justify-center flex-shrink-0">
+                <i data-lucide="file-text" class="w-4 h-4 text-rose-600 dark:text-rose-400"></i>
+            </div>
+            <div>
+                <p class="font-medium text-gray-900 dark:text-white text-sm truncate max-w-xs">
+                    {{ file.name|default:file.file_name }}
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    <span x-text="formatNumber(charCount)"></span> Zeichen
+                    {% if file.page_count %}&middot; {{ file.page_count }} Seiten{% endif %}
+                    {% if file.text_extraction_method %}&middot; via {{ file.get_text_extraction_method_display }}{% endif %}
+                </p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <!-- Suche im Text -->
+            <div class="relative">
+                <input type="text"
+                       x-model="searchQuery"
+                       @input.debounce.300ms="highlightMatches()"
+                       placeholder="Im Text suchen..."
+                       class="w-40 sm:w-48 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <span x-show="matchCount > 0"
+                      x-cloak
+                      class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 dark:text-gray-400">
+                    <span x-text="currentMatch"></span>/<span x-text="matchCount"></span>
+                </span>
+            </div>
+
+            <!-- Prev/Next Buttons -->
+            <template x-if="matchCount > 0">
+                <div class="flex items-center gap-1">
+                    <button @click="prevMatch()"
+                            class="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                            title="Vorheriger Treffer">
+                        <i data-lucide="chevron-up" class="w-4 h-4"></i>
+                    </button>
+                    <button @click="nextMatch()"
+                            class="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                            title="Nächster Treffer">
+                        <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </template>
+
+            <!-- Kopieren-Button -->
+            <button @click="copyToClipboard()"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    :class="copied && 'text-green-600 dark:text-green-400'">
+                <i data-lucide="copy" class="w-4 h-4" x-show="!copied"></i>
+                <i data-lucide="check" class="w-4 h-4" x-show="copied" x-cloak></i>
+                <span x-text="copied ? 'Kopiert!' : 'Kopieren'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Text Content -->
+    <div class="relative">
+        <!-- Scroll Container -->
+        <div class="max-h-[600px] overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900"
+             x-ref="textContainer">
+            <pre x-ref="textContent"
+                 x-html="highlightedText"
+                 class="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-mono leading-relaxed break-anywhere"></pre>
+        </div>
+
+        <!-- Scroll Indicators -->
+        <div class="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-50 dark:from-gray-900 to-transparent pointer-events-none"
+             x-show="hasMoreContent"
+             x-cloak></div>
+    </div>
+
+    <!-- Footer mit Metadaten -->
+    {% if file.text_extracted_at %}
+    <div class="px-4 py-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+        Extrahiert am {{ file.text_extracted_at|date:"d.m.Y H:i" }}
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function textViewer(fileId) {
+    return {
+        fileId: fileId,
+        searchQuery: '',
+        originalText: "{{ file.text_content|escapejs|default:'' }}",
+        highlightedText: '',
+        charCount: 0,
+        matchCount: 0,
+        currentMatch: 0,
+        matches: [],
+        copied: false,
+        hasMoreContent: false,
+
+        init() {
+            this.highlightedText = this.escapeHtml(this.originalText);
+            this.charCount = this.originalText.length;
+
+            // Check if content overflows
+            this.$nextTick(() => {
+                const container = this.$refs.textContainer;
+                if (container) {
+                    this.hasMoreContent = container.scrollHeight > container.clientHeight;
+                }
+            });
+        },
+
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        },
+
+        formatNumber(num) {
+            return new Intl.NumberFormat('de-DE').format(num);
+        },
+
+        highlightMatches() {
+            if (!this.searchQuery || this.searchQuery.length < 2) {
+                this.highlightedText = this.escapeHtml(this.originalText);
+                this.matchCount = 0;
+                this.currentMatch = 0;
+                this.matches = [];
+                return;
+            }
+
+            const escapedQuery = this.searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${escapedQuery})`, 'gi');
+            const escapedText = this.escapeHtml(this.originalText);
+
+            let matchIndex = 0;
+            this.highlightedText = escapedText.replace(regex, (match) => {
+                matchIndex++;
+                return `<mark class="bg-yellow-200 dark:bg-yellow-800 text-gray-900 dark:text-white" data-match="${matchIndex}">${match}</mark>`;
+            });
+
+            this.matchCount = matchIndex;
+            this.currentMatch = matchIndex > 0 ? 1 : 0;
+            this.matches = Array.from({ length: matchIndex }, (_, i) => i + 1);
+
+            // Scroll to first match
+            if (this.matchCount > 0) {
+                this.$nextTick(() => this.scrollToMatch(1));
+            }
+        },
+
+        nextMatch() {
+            if (this.matchCount === 0) return;
+            this.currentMatch = this.currentMatch >= this.matchCount ? 1 : this.currentMatch + 1;
+            this.scrollToMatch(this.currentMatch);
+        },
+
+        prevMatch() {
+            if (this.matchCount === 0) return;
+            this.currentMatch = this.currentMatch <= 1 ? this.matchCount : this.currentMatch - 1;
+            this.scrollToMatch(this.currentMatch);
+        },
+
+        scrollToMatch(index) {
+            const mark = this.$refs.textContent.querySelector(`mark[data-match="${index}"]`);
+            if (mark) {
+                mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Highlight current match differently
+                this.$refs.textContent.querySelectorAll('mark').forEach(m => {
+                    m.classList.remove('ring-2', 'ring-primary-500');
+                });
+                mark.classList.add('ring-2', 'ring-primary-500');
+            }
+        },
+
+        async copyToClipboard() {
+            try {
+                await navigator.clipboard.writeText(this.originalText);
+                this.copied = true;
+                setTimeout(() => { this.copied = false; }, 2000);
+            } catch (err) {
+                console.error('Copy failed:', err);
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = this.originalText;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                this.copied = true;
+                setTimeout(() => { this.copied = false; }, 2000);
+            }
+        }
+    };
+}
+</script>

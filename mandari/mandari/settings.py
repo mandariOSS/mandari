@@ -261,9 +261,19 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Meilisearch
 MEILISEARCH_URL = os.environ.get("MEILISEARCH_URL", "http://localhost:7700")
 MEILISEARCH_KEY = os.environ.get("MEILISEARCH_KEY", "masterKey")
+MEILISEARCH_AUTO_INDEX = os.environ.get("MEILISEARCH_AUTO_INDEX", "True").lower() in ("true", "1", "yes")
 
 # Groq API (für KI-Features)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+
+# Mistral API (für OCR)
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
+MISTRAL_OCR_RATE_LIMIT = int(os.environ.get("MISTRAL_OCR_RATE_LIMIT", "60"))  # Requests pro Minute
+
+# Text Extraction
+TEXT_EXTRACTION_ENABLED = os.environ.get("TEXT_EXTRACTION_ENABLED", "True").lower() in ("true", "1", "yes")
+TEXT_EXTRACTION_ASYNC = os.environ.get("TEXT_EXTRACTION_ASYNC", "True").lower() in ("true", "1", "yes")
+TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", "50"))
 
 # Encryption Master Key (für Work-Module Datenverschlüsselung)
 # Generate with: python -c "import secrets; import base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"

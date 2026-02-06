@@ -9,8 +9,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="{% block meta_description %}Mandari - Kommunalpolitische Transparenz{% endblock %}">
     <meta name="theme-color" content="#4f46e5">
+    {% if seo.keywords %}<meta name="keywords" content="{{ seo.keywords }}">{% endif %}
+    {% if seo.author %}<meta name="author" content="{{ seo.author }}">{% endif %}
+    {% if seo.robots %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
 
     <title>{% block title %}Mandari{% endblock %} | Mandari Insight</title>
+
+    <!-- Canonical URL -->
+    {% if seo.canonical_url %}
+    <link rel="canonical" href="{{ seo.canonical_url }}">
+    {% endif %}
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="{% block og_title %}{% if seo.title %}{{ seo.title }}{% else %}Mandari{% endif %}{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}{% endblock %}">
+    <meta property="og:type" content="{% if seo.og_type %}{{ seo.og_type }}{% else %}website{% endif %}">
+    <meta property="og:url" content="{% if seo.canonical_url %}{{ seo.canonical_url }}{% else %}{{ request.build_absolute_uri }}{% endif %}">
+    <meta property="og:image" content="{% block og_image %}{% if seo.og_image %}{{ seo.og_image }}{% else %}{% static 'images/og-default.png' %}{% endif %}{% endblock %}">
+    <meta property="og:locale" content="de_DE">
+    <meta property="og:site_name" content="Mandari">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="{% if seo.twitter_card %}{{ seo.twitter_card }}{% else %}summary{% endif %}">
+    <meta name="twitter:title" content="{% if seo.title %}{{ seo.title }}{% else %}Mandari{% endif %}">
+    <meta name="twitter:description" content="{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}">
+    <meta name="twitter:image" content="{% if seo.og_image %}{{ seo.og_image }}{% else %}{% static 'images/og-default.png' %}{% endif %}">
+
+    <!-- JSON-LD Structured Data -->
+    {% if seo.json_ld %}
+    <script type="application/ld+json">{{ seo.json_ld|safe }}</script>
+    {% endif %}
 
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="{% static 'images/favicon.png' %}">

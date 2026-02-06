@@ -77,6 +77,10 @@ class HomeView(TemplateView):
         # Verfügbare Kommunen für die Landingpage
         context["available_bodies"] = OParlBody.objects.all().order_by("name")[:6]
 
+        # SEO-Kontext
+        from .seo import get_home_seo
+        context["seo"] = get_home_seo(self.request).to_dict()
+
         return context
 
 
@@ -127,6 +131,10 @@ class PortalHomeView(TemplateView):
             context["recent_papers"] = OParlPaper.objects.filter(
                 body=body
             ).order_by("-date", "-oparl_created")[:5]
+
+        # SEO-Kontext
+        from .seo import get_portal_home_seo
+        context["seo"] = get_portal_home_seo(self.request, body if not all_bodies_mode else None).to_dict()
 
         return context
 
@@ -252,6 +260,10 @@ class OrganizationDetailView(DetailView):
             Q(end_date__isnull=True) | Q(end_date__gte=timezone.now().date())
         ).order_by("person__family_name")
 
+        # SEO-Kontext
+        from .seo import get_organization_seo
+        context["seo"] = get_organization_seo(org, self.request).to_dict()
+
         return context
 
 
@@ -330,6 +342,10 @@ class PersonDetailView(DetailView):
         context["memberships"] = person.memberships.select_related(
             "organization"
         ).order_by("-start_date")
+
+        # SEO-Kontext
+        from .seo import get_person_seo
+        context["seo"] = get_person_seo(person, self.request).to_dict()
 
         return context
 
@@ -420,6 +436,10 @@ class PaperDetailView(DetailView):
 
         # Beratungsverlauf (Consultations mit Meeting-Info)
         context["consultations"] = self._get_consultations_with_meetings(paper)
+
+        # SEO-Kontext
+        from .seo import get_paper_seo
+        context["seo"] = get_paper_seo(paper, self.request).to_dict()
 
         return context
 
@@ -623,6 +643,10 @@ class MeetingDetailView(DetailView):
                 meeting.location_name
             )
             context["location_coordinates"] = coords
+
+        # SEO-Kontext
+        from .seo import get_meeting_seo
+        context["seo"] = get_meeting_seo(meeting, self.request).to_dict()
 
         return context
 
@@ -1514,3 +1538,204 @@ class PublicProtocolDetailView(TemplateView):
         ).order_by("start").first()
 
         return context
+
+
+# =============================================================================
+# SEO: robots.txt und Sitemaps
+# =============================================================================
+
+@require_GET
+def robots_txt(request):
+    """
+    Generiert die robots.txt Datei.
+
+    Erlaubt Crawling für öffentliche Bereiche,
+    blockiert private und administrative Bereiche.
+    """
+    from django.conf import settings
+
+    site_url = getattr(settings, "SITE_URL", "https://mandari.de")
+
+    content = f"""# Mandari Robots.txt
+# https://mandari.de
+
+User-agent: *
+Allow: /
+Allow: /insight/
+
+# Private Bereiche blockieren
+Disallow: /work/
+Disallow: /session/
+Disallow: /admin/
+Disallow: /accounts/
+
+# API Endpoints blockieren
+Disallow: /api/
+Disallow: /*?*  # Query Strings in einigen Bereichen
+
+# Statische Assets erlauben
+Allow: /static/
+
+# Sitemap
+Sitemap: {site_url}/sitemap.xml
+
+# Crawl-Delay für höfliches Crawling
+Crawl-delay: 1
+"""
+    return HttpResponse(content, content_type="text/plain; charset=utf-8")
+
+
+@require_GET
+def sitemap_index(request):
+    """
+    Generiert den Sitemap-Index.
+
+    Verweist auf alle Teil-Sitemaps.
+    """
+    from django.conf import settings
+    from django.utils import timezone
+
+    site_url = getattr(settings, "SITE_URL", "https://mandari.de")
+    now = timezone.now().strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+    # Basis-Sitemaps
+    sitemaps = [
+        {"loc": f"{site_url}/sitemap-pages.xml", "lastmod": now},
+    ]
+
+    # Kommune-spezifische Sitemaps
+    for body in OParlBody.objects.filter(slug__isnull=False):
+        lastmod = body.updated_at.strftime("%Y-%m-%dT%H:%M:%S+00:00") if body.updated_at else now
+        sitemaps.append({
+            "loc": f"{site_url}/sitemap-insight-{body.slug}.xml",
+            "lastmod": lastmod,
+        })
+
+    # XML generieren
+    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
+    xml_parts.append('<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+
+    for sm in sitemaps:
+        xml_parts.append("  <sitemap>")
+        xml_parts.append(f"    <loc>{sm['loc']}</loc>")
+        xml_parts.append(f"    <lastmod>{sm['lastmod']}</lastmod>")
+        xml_parts.append("  </sitemap>")
+
+    xml_parts.append("</sitemapindex>")
+
+    return HttpResponse(
+        "\n".join(xml_parts),
+        content_type="application/xml; charset=utf-8"
+    )
+
+
+@require_GET
+def static_sitemap(request):
+    """
+    Generiert die Sitemap für statische Seiten.
+    """
+    from django.conf import settings
+    from .sitemaps import StaticPagesSitemap
+
+    site_url = getattr(settings, "SITE_URL", "https://mandari.de")
+
+    sitemap = StaticPagesSitemap()
+
+    # XML generieren
+    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
+    xml_parts.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+
+    for item in sitemap.items():
+        url_name, priority = item
+        loc = f"{site_url}{sitemap.location(item)}"
+        xml_parts.append("  <url>")
+        xml_parts.append(f"    <loc>{loc}</loc>")
+        xml_parts.append(f"    <changefreq>{sitemap.changefreq}</changefreq>")
+        xml_parts.append(f"    <priority>{priority}</priority>")
+        xml_parts.append("  </url>")
+
+    xml_parts.append("</urlset>")
+
+    return HttpResponse(
+        "\n".join(xml_parts),
+        content_type="application/xml; charset=utf-8"
+    )
+
+
+@require_GET
+def body_sitemap(request, body_slug):
+    """
+    Generiert die Sitemap für eine Kommune.
+
+    Enthält alle Vorgänge, Sitzungen, Gremien und Personen.
+    """
+    from django.conf import settings
+    from django.http import Http404
+
+    site_url = getattr(settings, "SITE_URL", "https://mandari.de")
+
+    try:
+        body = OParlBody.objects.get(slug=body_slug)
+    except OParlBody.DoesNotExist:
+        raise Http404("Kommune nicht gefunden")
+
+    # XML generieren
+    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
+    xml_parts.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+
+    def add_url(loc, lastmod=None, changefreq="monthly", priority=0.5):
+        xml_parts.append("  <url>")
+        xml_parts.append(f"    <loc>{site_url}{loc}</loc>")
+        if lastmod:
+            xml_parts.append(f"    <lastmod>{lastmod.strftime('%Y-%m-%dT%H:%M:%S+00:00')}</lastmod>")
+        xml_parts.append(f"    <changefreq>{changefreq}</changefreq>")
+        xml_parts.append(f"    <priority>{priority}</priority>")
+        xml_parts.append("  </url>")
+
+    # Vorgänge (max 10000 pro Sitemap für Performance)
+    for paper in OParlPaper.objects.filter(body=body).order_by("-date")[:10000]:
+        add_url(
+            f"/insight/vorgaenge/{paper.id}/",
+            paper.oparl_modified or paper.updated_at,
+            "monthly",
+            0.6
+        )
+
+    # Sitzungen
+    for meeting in OParlMeeting.objects.filter(body=body).order_by("-start")[:10000]:
+        add_url(
+            f"/insight/termine/{meeting.id}/",
+            meeting.oparl_modified or meeting.updated_at,
+            "weekly",
+            0.7
+        )
+
+    # Gremien
+    for org in OParlOrganization.objects.filter(body=body).order_by("name")[:5000]:
+        add_url(
+            f"/insight/gremien/{org.id}/",
+            org.oparl_modified or org.updated_at,
+            "monthly",
+            0.5
+        )
+
+    # Personen
+    for person in OParlPerson.objects.filter(body=body).order_by("family_name")[:5000]:
+        add_url(
+            f"/insight/personen/{person.id}/",
+            person.oparl_modified or person.updated_at,
+            "monthly",
+            0.4
+        )
+
+    xml_parts.append("</urlset>")
+
+    response = HttpResponse(
+        "\n".join(xml_parts),
+        content_type="application/xml; charset=utf-8"
+    )
+
+    # Cache für 24 Stunden
+    response["Cache-Control"] = "public, max-age=86400"
+
+    return response

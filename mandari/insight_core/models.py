@@ -54,6 +54,14 @@ class OParlBody(models.Model):
 
     name = models.CharField(max_length=255)
     short_name = models.CharField(max_length=100, blank=True, null=True)
+    # URL-freundlicher Slug für Sitemaps und SEO
+    slug = models.SlugField(
+        max_length=100,
+        unique=True,
+        blank=True,
+        null=True,
+        help_text="URL-freundlicher Identifikator (z.B. 'muenster' für Münster)"
+    )
     # Anzeigename für das Frontend (manuell anpassbar)
     display_name = models.CharField(
         max_length=100,
@@ -413,6 +421,23 @@ class OParlAgendaItem(models.Model):
 class OParlFile(models.Model):
     """Eine Datei/Anlage."""
 
+    # Text extraction status choices
+    EXTRACTION_STATUS_CHOICES = [
+        ("pending", "Ausstehend"),
+        ("processing", "In Bearbeitung"),
+        ("completed", "Abgeschlossen"),
+        ("failed", "Fehlgeschlagen"),
+        ("skipped", "Übersprungen"),
+    ]
+
+    # Text extraction method choices
+    EXTRACTION_METHOD_CHOICES = [
+        ("pypdf", "pypdf (Text-PDF)"),
+        ("mistral", "Mistral OCR (API)"),
+        ("tesseract", "Tesseract OCR (lokal)"),
+        ("none", "Keine Extraktion"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     external_id = models.TextField(unique=True, db_index=True)
 
@@ -451,6 +476,42 @@ class OParlFile(models.Model):
     local_path = models.TextField(blank=True, null=True)
     text_content = models.TextField(blank=True, null=True)
     sha256_hash = models.CharField(max_length=64, blank=True, null=True)
+
+    # Text extraction tracking
+    text_extraction_status = models.CharField(
+        max_length=20,
+        choices=EXTRACTION_STATUS_CHOICES,
+        default="pending",
+        db_index=True,
+        verbose_name="Extraktionsstatus",
+        help_text="Status der Textextraktion"
+    )
+    text_extraction_method = models.CharField(
+        max_length=20,
+        choices=EXTRACTION_METHOD_CHOICES,
+        blank=True,
+        null=True,
+        verbose_name="Extraktionsmethode",
+        help_text="Methode die für die Textextraktion verwendet wurde"
+    )
+    text_extraction_error = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Extraktionsfehler",
+        help_text="Fehlermeldung falls Extraktion fehlschlug"
+    )
+    text_extracted_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Extrahiert am",
+        help_text="Zeitpunkt der letzten Textextraktion"
+    )
+    page_count = models.PositiveIntegerField(
+        blank=True,
+        null=True,
+        verbose_name="Seitenanzahl",
+        help_text="Anzahl der Seiten (bei PDFs)"
+    )
 
     # OParl-Zeitstempel
     oparl_created = models.DateTimeField(blank=True, null=True)

@@ -82,6 +82,12 @@ class MeilisearchService:
                     "limit": page_size * 2,  # Mehr laden für Merge
                     "offset": 0,
                     "showRankingScore": True,
+                    # Highlighting für bessere Suchergebnisse
+                    "attributesToHighlight": ["name", "text_content", "reference"],
+                    "highlightPreTag": "<mark class=\"bg-yellow-200 dark:bg-yellow-800\">",
+                    "highlightPostTag": "</mark>",
+                    "attributesToCrop": ["text_content"],
+                    "cropLength": 200,
                 }
                 if filter_str:
                     search_params["filter"] = filter_str
@@ -371,17 +377,23 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
     """
     result_type = hit.get("type", "unknown")
 
+    # Highlighted Felder extrahieren (falls vorhanden)
+    formatted = hit.get("_formatted", {})
+    highlighted_name = formatted.get("name", hit.get("name"))
+    highlighted_text = formatted.get("text_content", "")
+
     if result_type == "paper":
         return {
             "type": "paper",
-            "title": hit.get("name") or hit.get("reference", "Vorgang"),
+            "title": highlighted_name or hit.get("name") or hit.get("reference", "Vorgang"),
             "subtitle": hit.get("paper_type"),
-            "url": f"/vorgaenge/{hit.get('id')}/",
+            "url": f"/insight/vorgaenge/{hit.get('id')}/",
             "reference": hit.get("reference"),
+            "highlight": highlighted_text if highlighted_text else None,
         }
 
     elif result_type == "person":
-        title = hit.get("name")
+        title = highlighted_name or hit.get("name")
         if not title:
             parts = []
             if hit.get("given_name"):
@@ -393,15 +405,15 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
             "type": "person",
             "title": title,
             "subtitle": "Person",
-            "url": f"/personen/{hit.get('id')}/",
+            "url": f"/insight/personen/{hit.get('id')}/",
         }
 
     elif result_type == "organization":
         return {
             "type": "organization",
-            "title": hit.get("name", "Gremium"),
+            "title": highlighted_name or hit.get("name", "Gremium"),
             "subtitle": hit.get("organization_type"),
-            "url": f"/gremien/{hit.get('id')}/",
+            "url": f"/insight/gremien/{hit.get('id')}/",
         }
 
     elif result_type == "meeting":
@@ -415,19 +427,20 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
                 pass
         return {
             "type": "meeting",
-            "title": hit.get("name", "Sitzung"),
+            "title": highlighted_name or hit.get("name", "Sitzung"),
             "subtitle": subtitle,
-            "url": f"/termine/{hit.get('id')}/",
+            "url": f"/insight/termine/{hit.get('id')}/",
         }
 
     elif result_type == "file":
         return {
             "type": "file",
-            "title": hit.get("name") or hit.get("file_name", "Datei"),
+            "title": highlighted_name or hit.get("name") or hit.get("file_name", "Datei"),
             "subtitle": hit.get("paper_name") or hit.get("paper_reference"),
-            "url": f"/vorgaenge/{hit.get('paper_id')}/",
-            "text_preview": hit.get("text_preview", ""),
+            "url": f"/insight/vorgaenge/{hit.get('paper_id')}/",
+            "text_preview": highlighted_text or hit.get("text_preview", ""),
             "paper_id": hit.get("paper_id"),
+            "highlight": highlighted_text if highlighted_text else None,
         }
 
     return {
