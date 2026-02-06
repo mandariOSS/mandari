@@ -56,7 +56,7 @@ http://localhost {
 
 	# API routes
 	handle /api/* {
-		reverse_proxy api:8000 {
+		reverse_proxy mandari:8000 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}
@@ -65,7 +65,7 @@ http://localhost {
 
 	# Admin routes
 	handle /admin/* {
-		reverse_proxy api:8000 {
+		reverse_proxy mandari:8000 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}
@@ -74,7 +74,7 @@ http://localhost {
 
 	# Accounts routes (authentication)
 	handle /accounts/* {
-		reverse_proxy api:8000 {
+		reverse_proxy mandari:8000 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}
@@ -83,7 +83,7 @@ http://localhost {
 
 	# Work Portal
 	handle /work/* {
-		reverse_proxy api:8000 {
+		reverse_proxy mandari:8000 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}
@@ -92,7 +92,7 @@ http://localhost {
 
 	# Session RIS
 	handle /session/* {
-		reverse_proxy api:8000 {
+		reverse_proxy mandari:8000 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}
@@ -101,7 +101,7 @@ http://localhost {
 
 	# Static files (Django)
 	handle /static/* {
-		reverse_proxy api:8000 {
+		reverse_proxy mandari:8000 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}
@@ -110,7 +110,7 @@ http://localhost {
 
 	# Media files (uploaded content)
 	handle /media/* {
-		reverse_proxy api:8000 {
+		reverse_proxy mandari:8000 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}
@@ -119,7 +119,7 @@ http://localhost {
 
 	# WebSocket support
 	handle /ws/* {
-		reverse_proxy api:8000 {
+		reverse_proxy mandari:8000 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}
@@ -130,7 +130,7 @@ http://localhost {
 
 	# Public Portal (default - catch all)
 	handle {
-		reverse_proxy api:8000 {
+		reverse_proxy mandari:8000 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}

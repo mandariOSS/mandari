@@ -160,10 +160,10 @@ log "Waiting for services to start..."
 sleep 10
 
 log "Running database migrations..."
-if docker exec mandari-api python manage.py migrate --noinput 2>/dev/null; then
+if docker exec mandari python manage.py migrate --noinput 2>/dev/null; then
     log "Migrations completed successfully"
 else
-    warn "Migration failed or not needed. Check logs: docker logs mandari-api"
+    warn "Migration failed or not needed. Check logs: docker logs mandari"
 fi
 
 # =============================================================================
@@ -180,12 +180,12 @@ docker compose ps
 # Health Check
 # =============================================================================
 echo ""
-log "Checking API health..."
-if docker exec mandari-api curl -sf http://localhost:8000/health &>/dev/null; then
-    echo -e "  API: ${GREEN}healthy${NC}"
+log "Health Check..."
+if docker exec mandari curl -sf http://localhost:8000/health &>/dev/null; then
+    echo -e "  Mandari: ${GREEN}healthy${NC}"
 else
-    echo -e "  API: ${YELLOW}starting...${NC}"
-    warn "API is still starting. Check logs: docker logs mandari-api -f"
+    echo -e "  Mandari: ${YELLOW}starting...${NC}"
+    warn "Mandari is still starting. Check logs: docker logs mandari -f"
 fi
 
 # =============================================================================

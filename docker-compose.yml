@@ -41,7 +41,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - api
+      - mandari
     networks:
       - mandari
     healthcheck:
@@ -117,11 +117,11 @@ services:
       start_period: 30s
 
   # ===========================================================================
-  # Django API Backend
+  # Mandari (Django Backend)
   # ===========================================================================
-  api:
+  mandari:
     image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
-    container_name: mandari-api
+    container_name: mandari
     restart: unless-stopped
     environment:
       # Database

@@ -115,7 +115,7 @@ if [ "${1:-}" = "--restore" ]; then
 
     log "Restore completed!"
     log "Rebuilding search index..."
-    docker exec mandari-api python manage.py rebuild_search_index || warn "Search index rebuild may be needed"
+    docker exec mandari python manage.py rebuild_search_index || warn "Search index rebuild may be needed"
 
     exit 0
 fi

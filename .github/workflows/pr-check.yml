@@ -157,7 +157,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build API image
+      - name: Build mandari image
         uses: docker/build-push-action@v5
         with:
           context: ./mandari
@@ -166,7 +166,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build Ingestor image
+      - name: Build ingestor image
         uses: docker/build-push-action@v5
         with:
           context: ./ingestor

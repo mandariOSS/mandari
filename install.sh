@@ -333,12 +333,12 @@ wait_for_all_services() {
         echo -e " ${YELLOW}WAITING${NC}"
     fi
 
-    echo -n "  API"
-    if wait_for_healthy mandari-api 60; then
+    echo -n "  Mandari"
+    if wait_for_healthy mandari 60; then
         echo -e " ${GREEN}OK${NC}"
     else
         echo -e " ${YELLOW}STARTING${NC}"
-        warn "API is taking longer to start. Check logs: docker logs mandari-api"
+        warn "API is taking longer to start. Check logs: docker logs mandari"
     fi
 }
 
@@ -351,15 +351,15 @@ run_migrations() {
     # Wait a bit more for API to be fully ready
     sleep 5
 
-    if docker exec mandari-api python manage.py migrate --noinput 2>/dev/null; then
+    if docker exec mandari python manage.py migrate --noinput 2>/dev/null; then
         log "Migrations completed"
     else
         warn "Migration failed. The API may not be ready yet."
-        warn "Run manually: docker exec mandari-api python manage.py migrate"
+        warn "Run manually: docker exec mandari python manage.py migrate"
     fi
 
     log "Setting up default roles..."
-    if docker exec mandari-api python manage.py setup_roles 2>/dev/null; then
+    if docker exec mandari python manage.py setup_roles 2>/dev/null; then
         log "Roles created"
     else
         info "Roles may already exist or setup_roles command not available"
