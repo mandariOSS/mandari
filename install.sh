@@ -115,12 +115,16 @@ check_prerequisites() {
     # Check for existing installation
     if [ -f ".env" ]; then
         warn "Existing .env file found!"
-        echo ""
-        read -p "Overwrite existing configuration? [y/N]: " overwrite
-        if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
-            log "Keeping existing configuration."
-            log "To update, run: ./update.sh"
-            exit 0
+        if [ "${UNATTENDED:-false}" = "true" ]; then
+            log "Overwriting existing configuration (unattended mode)."
+        else
+            echo ""
+            read -p "Overwrite existing configuration? [y/N]: " overwrite
+            if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
+                log "Keeping existing configuration."
+                log "To update, run: ./update.sh"
+                exit 0
+            fi
         fi
     fi
 
@@ -407,11 +411,18 @@ show_summary() {
 # Main
 # =============================================================================
 main() {
+    # Set unattended flag early so check_prerequisites can use it
+    if [ "${1:-}" = "--unattended" ]; then
+        UNATTENDED=true
+    else
+        UNATTENDED=false
+    fi
+
     show_banner
     check_prerequisites
 
     # Check for unattended mode
-    if [ "${1:-}" = "--unattended" ]; then
+    if [ "$UNATTENDED" = "true" ]; then
         DOMAIN="${DOMAIN:-localhost}"
         ACME_EMAIL="${ACME_EMAIL:-}"
         TIMEZONE="${TZ:-Europe/Berlin}"
