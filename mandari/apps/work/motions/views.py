@@ -6,6 +6,8 @@ Motion/Antrag views for the Work module.
 import logging
 
 from django.contrib import messages
+
+logger = logging.getLogger("apps.work.motions")
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import JsonResponse
@@ -278,10 +280,6 @@ class MotionEditView(WorkViewMixin, TemplateView):
         return context
 
     def post(self, request, *args, **kwargs):
-        import logging
-
-        logger = logging.getLogger("apps.work.motions")
-
         motion_id = kwargs.get("motion_id")
         logger.info(f"[MotionEdit] POST request for motion {motion_id}")
         logger.info(f"[MotionEdit] User: {request.user.email}, Org: {self.organization.slug}")

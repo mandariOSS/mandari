@@ -108,7 +108,6 @@ def contact_submit(request):
 
     from django.core.exceptions import ValidationError
     from django.core.validators import validate_email
-    from django.views.decorators.csrf import csrf_exempt
 
     logger = logging.getLogger(__name__)
 
