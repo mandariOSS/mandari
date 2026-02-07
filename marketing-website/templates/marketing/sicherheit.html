@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+
+{% block title %}Sicherheit & Datenschutz | Mandari{% endblock %}
+
+{% block meta_description %}Mandari: DSGVO-konform, Hosting in Deutschland, verschlüsselte Datenübertragung, keine Tracker. Datenschutz by Design.{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="pt-16 pb-10 lg:pt-24 lg:pb-12 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-6">
+            <i data-lucide="shield-check" class="w-4 h-4"></i>
+            DSGVO-konform
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Sicherheit & Datenschutz
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mb-8">
+            <strong>Ihre Daten gehören Ihnen.</strong> Mandari wurde von Grund auf mit Datenschutz by Design entwickelt - DSGVO-konform, transparent und ohne Tracker.
+        </p>
+        <div class="flex flex-wrap gap-4">
+            <a href="/datenschutz/" class="inline-flex items-center px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl transition-colors">
+                Datenschutzerklärung
+            </a>
+            <a href="mailto:datenschutz@mandari.de" class="inline-flex items-center gap-2 px-6 py-3 border-2 border-primary-600 text-primary-700 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 font-medium rounded-xl transition-colors">
+                <i data-lucide="mail" class="w-5 h-5"></i>
+                Datenschutz-Anfrage
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Trust Banner -->
+<section class="py-8 bg-primary-50 dark:bg-primary-900/20 border-y border-primary-200 dark:border-primary-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-wrap items-center justify-center gap-8 lg:gap-16 text-center">
+            <div class="flex items-center gap-3">
+                <i data-lucide="flag" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>Hosting</strong> in Deutschland</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <i data-lucide="lock" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>TLS 1.3</strong> Verschlüsselung</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <i data-lucide="eye-off" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>Keine</strong> Tracker</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <i data-lucide="file-check" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                <span class="text-gray-700 dark:text-gray-300"><strong>AVV</strong> verfügbar</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Promise Section -->
+<section class="py-16 lg:py-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid lg:grid-cols-2 gap-12 items-center">
+            <div>
+                <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-6">Unser Versprechen</h2>
+                <p class="text-lg text-gray-600 dark:text-gray-300 mb-6">
+                    Mandari ist keine Datensammel-Plattform, sondern ein Werkzeug für <strong>bessere Ratsarbeit</strong>. Wir speichern nur, was für die Funktion notwendig ist, verschlüsseln alles und halten uns strikt an die DSGVO.
+                </p>
+                <p class="text-lg text-gray-600 dark:text-gray-300 mb-6">
+                    Als Open-Source-Projekt ist unser Code öffentlich einsehbar - Sie können selbst prüfen, wie wir mit Daten umgehen.
+                </p>
+                <ul class="space-y-3">
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Keine Weitergabe an Dritte</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Keine Nutzung für Werbezwecke</span>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Jederzeit Datenexport & Löschung möglich</span>
+                    </li>
+                </ul>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 border-2 border-green-200 dark:border-green-800">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-xl flex items-center justify-center">
+                        <i data-lucide="shield" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900 dark:text-white">Datenschutz by Design</h3>
+                        <p class="text-sm text-green-600 dark:text-green-400">Von Anfang an eingebaut</p>
+                    </div>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 mb-4">
+                    Datenschutz ist kein nachträglicher Add-on, sondern Teil der Architektur von Mandari:
+                </p>
+                <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        Minimale Datenerhebung
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        Zweckbindung bei allen Daten
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        Automatische Löschfristen
+                    </li>
+                    <li class="flex items-center gap-2">
+                        <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                        Pseudonymisierung wo möglich
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Technical Security -->
+<section class="py-16 lg:py-20 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-4">
+                <i data-lucide="server" class="w-4 h-4"></i>
+                Infrastruktur
+            </span>
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">Technische Sicherheit</h2>
+            <p class="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+                Modernste Sicherheitsstandards zum Schutz Ihrer Daten
+            </p>
+        </div>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="flag" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Hosting in Deutschland</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Alle Server stehen in zertifizierten deutschen Rechenzentren. Ihre Daten verlassen die EU nicht.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="lock" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Verschlüsselung</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">TLS 1.3 für alle Verbindungen. Daten werden auch im Speicher verschlüsselt (AES-256).</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="key" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Zugriffskontrolle</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Rollen- und Berechtigungsmanagement, 2FA-Option, Audit-Logs für alle kritischen Aktionen.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="shield-check" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Security-Audits</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Regelmäßige Sicherheitsüberprüfungen, Penetrationstests und Updates nach Best Practices.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="hard-drive" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Backup & Recovery</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Tägliche verschlüsselte Backups mit 30-Tage-Retention. Disaster-Recovery-Plan für alle Systeme.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="github" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Open Source</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Quellcode öffentlich einsehbar. Sicherheitslücken können von jedem gemeldet werden.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- DSGVO Section -->
+<section class="py-16 lg:py-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 text-sm font-medium mb-4">
+                <i data-lucide="scale" class="w-4 h-4"></i>
+                Rechtlich konform
+            </span>
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">DSGVO & Datenschutz</h2>
+            <p class="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+                Vollständige Umsetzung aller DSGVO-Anforderungen
+            </p>
+        </div>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="eye-off" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Keine Tracker</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Keine Google Analytics, keine Tracking-Cookies, keine Third-Party-Skripte. Kein Cookie-Banner nötig.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="minimize-2" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Datensparsamkeit</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Wir speichern nur, was für die Funktion notwendig ist. Keine Datensammlung für Werbezwecke.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="sparkles" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">KI-Transparenz</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Opt-in für alle KI-Features. Daten werden nur für die angeforderte Zusammenfassung genutzt.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="file-text" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">AVV verfügbar</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Auftragsverarbeitungsvertrag (AVV) für alle Organisationen - rechtskonform und transparent.</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="database" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Datenexport</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Jederzeit vollständiger Export Ihrer Daten in offenen Formaten (JSON, CSV, OParl).</p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="trash-2" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Löschung</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Vollständige Datenlöschung auf Anfrage. "Recht auf Vergessenwerden" wird umgesetzt.</p>
+            </div>
+        </div>
+
+        <!-- Your Rights Box -->
+        <div class="max-w-3xl mx-auto bg-white dark:bg-gray-800 rounded-2xl p-8 border-2 border-primary-200 dark:border-primary-800">
+            <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">Ihre Rechte nach DSGVO</h3>
+            <p class="text-gray-600 dark:text-gray-300 mb-6">
+                Als betroffene Person haben Sie jederzeit folgende Rechte:
+            </p>
+            <div class="grid sm:grid-cols-2 gap-4 mb-6">
+                <div class="flex items-start gap-3">
+                    <i data-lucide="search" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white">Auskunft</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">Welche Daten werden gespeichert?</p>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3">
+                    <i data-lucide="edit-3" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white">Berichtigung</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">Fehlerhafte Daten korrigieren</p>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3">
+                    <i data-lucide="trash-2" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white">Löschung</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">Daten vollständig löschen</p>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3">
+                    <i data-lucide="download" class="w-5 h-5 text-primary-500 mt-0.5 flex-shrink-0"></i>
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white">Datenübertragbarkeit</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">Export in maschinenlesbarem Format</p>
+                    </div>
+                </div>
+            </div>
+            <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                <p class="text-gray-600 dark:text-gray-300">
+                    Anfragen richten Sie bitte an:
+                    <a href="mailto:datenschutz@mandari.de" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">datenschutz@mandari.de</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="py-16 lg:py-20 bg-gradient-to-br from-primary-600 to-primary-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto text-center">
+            <h2 class="text-3xl font-bold text-white mb-6">Noch Fragen?</h2>
+            <p class="text-xl text-white/90 mb-10">
+                Unser Team beantwortet gerne alle Fragen zu Sicherheit, Datenschutz und DSGVO-Konformität.
+            </p>
+            <div class="flex flex-wrap justify-center gap-4">
+                <a href="/kontakt/" class="inline-flex items-center px-8 py-4 bg-white hover:bg-gray-100 text-primary-700 font-medium rounded-xl transition-colors text-lg">
+                    Kontakt aufnehmen
+                </a>
+                <a href="/datenschutz/" class="inline-flex items-center gap-2 px-8 py-4 bg-primary-500 hover:bg-primary-400 text-white font-medium rounded-xl transition-colors text-lg border border-white/20">
+                    <i data-lucide="file-text" class="w-5 h-5"></i>
+                    Datenschutzerklärung
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

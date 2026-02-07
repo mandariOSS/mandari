@@ -36,13 +36,15 @@ urlpatterns = [
     path("health/", health_check, name="health_check"),
     # Admin
     path("admin/", admin.site.urls),
+    # Public API (stats, contact form - consumed by Wagtail marketing site)
+    path("api/", include("insight_core.api_urls")),
     # Authentication (login, logout, password reset)
     path("accounts/", include("apps.accounts.urls", namespace="accounts")),
     # Session RIS (administrative portal)
     path("session/", include("apps.session.urls", namespace="session")),
     # Work module (portal for organizations)
     path("work/", include("apps.work.urls", namespace="work")),
-    # Main application (public RIS)
+    # Insight Core (RIS Portal, public protocols, body sitemaps)
     path("", include("insight_core.urls")),
 ]
 

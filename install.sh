@@ -192,6 +192,7 @@ generate_secrets() {
     POSTGRES_PASSWORD=$(generate_password 32)
     MEILISEARCH_KEY=$(generate_secret 32)
     ENCRYPTION_MASTER_KEY=$(generate_secret 32)
+    WEBSITE_SECRET_KEY=$(generate_secret 50)
 
     log "Secure keys generated"
 }
@@ -236,6 +237,7 @@ POSTGRES_DB=${POSTGRES_DB}
 SECRET_KEY=${SECRET_KEY}
 ENCRYPTION_MASTER_KEY=${ENCRYPTION_MASTER_KEY}
 MEILISEARCH_KEY=${MEILISEARCH_KEY}
+WEBSITE_SECRET_KEY=${WEBSITE_SECRET_KEY}
 
 # =============================================================================
 # Resources
@@ -355,7 +357,20 @@ start_services() {
 
     run_migrations
 
-    # --- Phase 3: Ingestor + Caddy (after migrations) ---
+    # --- Phase 3: Website (Wagtail) + Migrations ---
+    log "Starting Marketing Website..."
+    docker compose up -d website
+
+    echo -n "  Website"
+    if wait_for_healthy mandari-website 60; then
+        echo -e " ${GREEN}OK${NC}"
+    else
+        echo -e " ${YELLOW}STARTING${NC}"
+    fi
+
+    run_website_migrations
+
+    # --- Phase 4: Ingestor + Caddy (after migrations) ---
     log "Starting remaining services..."
     docker compose up -d
 
@@ -387,6 +402,19 @@ run_migrations() {
         log "Roles created"
     else
         info "Roles may already exist or setup_roles command not available"
+    fi
+}
+
+# =============================================================================
+# Run Website Migrations
+# =============================================================================
+run_website_migrations() {
+    log "Running website database migrations..."
+
+    if docker exec mandari-website python manage.py migrate --noinput 2>&1; then
+        log "Website migrations completed"
+    else
+        warn "Website migration failed. Check logs: docker logs mandari-website"
     fi
 }
 

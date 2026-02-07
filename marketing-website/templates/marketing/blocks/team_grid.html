@@ -1,0 +1,29 @@
+{% load wagtailcore_tags wagtailimages_tags %}
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {% if value.title %}
+        <h2 class="text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white text-center mb-12">{{ value.title }}</h2>
+        {% endif %}
+
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            {% for member in value.members %}
+            <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 text-center">
+                {% if member.value.image %}
+                {% image member.value.image fill-200x200 as member_photo %}
+                <img src="{{ member_photo.url }}" alt="{{ member.value.name }}"
+                     class="w-24 h-24 rounded-full mx-auto mb-4 object-cover">
+                {% else %}
+                <div class="w-24 h-24 rounded-full mx-auto mb-4 bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center">
+                    <i data-lucide="user" class="w-10 h-10 text-primary-500"></i>
+                </div>
+                {% endif %}
+                <h3 class="font-semibold text-gray-900 dark:text-white">{{ member.value.name }}</h3>
+                <p class="text-sm text-primary-600 dark:text-primary-400 mb-2">{{ member.value.role }}</p>
+                {% if member.value.bio %}
+                <p class="text-sm text-gray-600 dark:text-gray-300">{{ member.value.bio }}</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>

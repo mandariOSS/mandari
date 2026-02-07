@@ -1,0 +1,27 @@
+{% load wagtailcore_tags %}
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {% if value.title %}
+        <div class="text-center mb-12">
+            <h2 class="text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mb-4">{{ value.title }}</h2>
+            {% if value.subtitle %}
+            <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">{{ value.subtitle }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="grid md:grid-cols-{{ value.columns }} gap-8">
+            {% for feature in value.features %}
+            <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
+                {% if feature.value.icon %}
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-xl flex items-center justify-center mb-4">
+                    <i data-lucide="{{ feature.value.icon }}" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                {% endif %}
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{ feature.value.title }}</h3>
+                <p class="text-gray-600 dark:text-gray-300">{{ feature.value.description }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>

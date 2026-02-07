@@ -42,6 +42,7 @@ services:
       - caddy_config:/config
     depends_on:
       - mandari
+      - website
     networks:
       - mandari
     healthcheck:
@@ -64,6 +65,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-mandari}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-website-db.sh:/docker-entrypoint-initdb.d/init-website-db.sh:ro
     networks:
       - mandari
     healthcheck:
@@ -158,6 +160,34 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+
+  # ===========================================================================
+  # Marketing Website (Wagtail CMS)
+  # ===========================================================================
+  website:
+    image: ghcr.io/mandarioss/website:${IMAGE_TAG:-latest}
+    container_name: mandari-website
+    restart: unless-stopped
+    environment:
+      WEBSITE_DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${WEBSITE_DB:-mandari_website}
+      WEBSITE_SECRET_KEY: ${WEBSITE_SECRET_KEY:-${SECRET_KEY}}
+      MANDARI_API_URL: http://mandari:8000/api
+      DEBUG: "false"
+      ALLOWED_HOSTS: ${DOMAIN:-localhost}
+      CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
+      SITE_URL: https://${DOMAIN:-localhost}
+      TZ: ${TZ:-Europe/Berlin}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mandari
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8001/health/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   # ===========================================================================
   # OParl Ingestor (Data Synchronization)

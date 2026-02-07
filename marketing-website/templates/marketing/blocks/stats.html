@@ -1,0 +1,44 @@
+{% load wagtailcore_tags %}
+<section class="py-16 lg:py-24" x-data="mandariStats()" x-init="loadStats()">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {% if value.title %}
+        <h2 class="text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white text-center mb-12">{{ value.title }}</h2>
+        {% endif %}
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12" x-show="stats" x-cloak>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400" x-text="stats.bodies || '—'"></div>
+                <div class="text-sm text-gray-500 dark:text-gray-400">Kommunen</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400" x-text="stats.organizations || '—'"></div>
+                <div class="text-sm text-gray-500 dark:text-gray-400">Gremien</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400" x-text="stats.persons || '—'"></div>
+                <div class="text-sm text-gray-500 dark:text-gray-400">Personen</div>
+            </div>
+            <div class="text-center">
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400" x-text="stats.papers || '—'"></div>
+                <div class="text-sm text-gray-500 dark:text-gray-400">Vorgänge</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script>
+function mandariStats() {
+    return {
+        stats: null,
+        async loadStats() {
+            try {
+                const resp = await fetch('{{ MANDARI_API_URL }}/stats/');
+                if (resp.ok) this.stats = await resp.json();
+            } catch (e) {
+                console.warn('Stats not available:', e);
+            }
+        }
+    }
+}
+</script>

@@ -96,3 +96,20 @@ jobs:
             org.opencontainers.image.source=https://github.com/mandariOSS/mandari
             org.opencontainers.image.description=Mandari OParl Ingestor - Data Synchronization Service
             org.opencontainers.image.licenses=AGPL-3.0
+
+      - name: Build and push website image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./marketing-website
+          file: ./marketing-website/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${{ steps.version.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${{ steps.version.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=https://github.com/mandariOSS/mandari
+            org.opencontainers.image.description=Mandari Marketing Website - Wagtail CMS
+            org.opencontainers.image.licenses=AGPL-3.0

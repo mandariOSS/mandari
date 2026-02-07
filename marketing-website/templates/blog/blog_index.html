@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% load wagtailcore_tags wagtailimages_tags %}
+
+{% block title %}Blog{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<section class="pt-16 pb-10 lg:pt-24 lg:pb-12 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-6">
+            <i data-lucide="newspaper" class="w-4 h-4"></i>
+            Blog
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Blog & Neuigkeiten
+        </h1>
+        {% if page.intro %}
+        <div class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl">
+            {{ page.intro|richtext }}
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Blog Posts -->
+<section class="py-12 lg:py-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {% if blog_posts %}
+        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8">Beiträge</h2>
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
+            {% for post in blog_posts %}
+            <a href="{% pageurl post %}" class="block group">
+                <article class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-shadow h-full">
+                    {% if post.featured_image %}
+                    {% image post.featured_image fill-600x340 as post_img %}
+                    <img src="{{ post_img.url }}" alt="{{ post.title }}" class="w-full h-48 object-cover">
+                    {% else %}
+                    <div class="w-full h-48 bg-gradient-to-br from-primary-100 to-primary-200 dark:from-primary-900 dark:to-primary-800 flex items-center justify-center">
+                        <i data-lucide="newspaper" class="w-12 h-12 text-primary-400"></i>
+                    </div>
+                    {% endif %}
+                    <div class="p-6">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="px-2.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-xs font-medium rounded-full">
+                                {{ post.get_category_display }}
+                            </span>
+                            <time class="text-sm text-gray-500 dark:text-gray-400" datetime="{{ post.date|date:'Y-m-d' }}">
+                                {{ post.date|date:"d.m.Y" }}
+                            </time>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors mb-2">
+                            {{ post.title }}
+                        </h3>
+                        {% if post.excerpt %}
+                        <p class="text-gray-600 dark:text-gray-300 text-sm line-clamp-3">{{ post.excerpt }}</p>
+                        {% endif %}
+                    </div>
+                </article>
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if releases %}
+        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8">Releases</h2>
+        <div class="space-y-4">
+            {% for release in releases %}
+            <a href="{% pageurl release %}" class="block group">
+                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <span class="px-3 py-1 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 font-mono font-semibold rounded-lg">
+                                v{{ release.version }}
+                            </span>
+                            <div>
+                                <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                                    {{ release.title }}
+                                </h3>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">
+                                    {{ release.get_release_type_display }} &middot; {{ release.release_date|date:"d.m.Y" }}
+                                    {% if release.breaking_changes %}
+                                    <span class="text-red-500 font-medium ml-2">Breaking Changes</span>
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                        <i data-lucide="arrow-right" class="w-5 h-5 text-gray-400 group-hover:text-primary-500 transition-colors" aria-hidden="true"></i>
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

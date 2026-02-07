@@ -9,22 +9,15 @@ from .models import OParlBody
 
 def navigation_context(request):
     """
-    Erkennt den aktuellen Navigationskontext (Portal vs. Marketing).
+    Setzt den Navigationskontext.
 
-    Basierend auf dem URL-Pfad wird entschieden, welche Navigation angezeigt wird.
+    Mandari only serves portal pages now (under /insight/).
+    Marketing pages are served by the separate Wagtail site.
     """
-    path = request.path
-
-    # Portal-Kontext: Alles unter /insight/
-    is_portal = path.startswith("/insight/")
-
-    # Marketing-Kontext: Alles andere (Landingpage, Produkt, Preise, etc.)
-    is_marketing = not is_portal
-
     return {
-        "is_portal": is_portal,
-        "is_marketing": is_marketing,
-        "nav_context": "portal" if is_portal else "marketing",
+        "is_portal": True,
+        "is_marketing": False,
+        "nav_context": "portal",
     }
 
 

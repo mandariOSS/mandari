@@ -3,6 +3,10 @@
 # =============================================================================
 # Automatic HTTPS via Let's Encrypt (HTTP-01 Challenge)
 #
+# Routing:
+#   /insight/*, /work/*, /session/*, /accounts/*, /admin/*, /api/* → Mandari (Django)
+#   /*  (everything else)                                          → Website (Wagtail)
+#
 # Requirements:
 #   - Port 80 and 443 must be open and accessible from the internet
 #   - Domain must point to this server's IP
@@ -42,15 +46,32 @@
 		respond "OK" 200
 	}
 
-	# Proxy everything to Mandari (Django handles all routing)
-	handle {
+	# =========================================================================
+	# Mandari Core (Django) - explicit paths
+	# =========================================================================
+	@mandari {
+		path /insight/* /work/* /session/* /accounts/* /admin/* /api/* /public/*
+		path /static/admin/* /static/work/* /static/session/*
+		path /sitemap-insight-*
+	}
+	handle @mandari {
 		reverse_proxy mandari:8000 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}
-			# WebSocket support
 			header_up Connection {header.Connection}
 			header_up Upgrade {header.Upgrade}
+		}
+	}
+
+	# =========================================================================
+	# Marketing Website (Wagtail) - everything else
+	# =========================================================================
+	handle {
+		reverse_proxy website:8001 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Host {host}
 		}
 	}
 

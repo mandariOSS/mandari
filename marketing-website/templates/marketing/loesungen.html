@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}Lösungen für Fraktionen, Verwaltungen und Bürger | Mandari{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="py-16 lg:py-24 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Lösungen für alle Akteure
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto mb-8">
+            Fraktionen, Verwaltungen und Bürger*innen profitieren von Mandari - mit unterschiedlichen Schwerpunkten, aber einem gemeinsamen Ziel: bessere Ratsarbeit.
+        </p>
+        <a href="/kontakt/" class="inline-flex items-center px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl transition-colors">
+            Demo anfragen
+        </a>
+    </div>
+</section>
+
+<!-- Fraktionen Section -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto text-center mb-16">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-primary-100 dark:bg-primary-900/50 rounded-full mb-6">
+                <i data-lucide="landmark" class="w-8 h-8 text-primary-600 dark:text-primary-400"></i>
+            </div>
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-6">Für Fraktionen</h2>
+            <p class="text-xl text-gray-600 dark:text-gray-300">
+                <strong class="text-gray-900 dark:text-white">Mandari Work</strong> macht Fraktionsarbeit effizienter: Sitzungen vorbereiten, im Team abstimmen, Vorlagen verstehen - alles in einer modernen, intuitiven Plattform.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 mb-12">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="clipboard-list" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Alle Sitzungen im Blick</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Persönliche Dashboards zeigen anstehende Sitzungen, Tagesordnungen und relevante Vorlagen.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="users" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Team-Kollaboration</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Notizen teilen, Standpunkte sammeln, Abstimmungsverhalten klären - alles in einem geschützten Fraktionsbereich.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="sparkles" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">KI-Zusammenfassungen</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Lange Vorlagen in Sekunden verstehen. KI fasst komplexe Dokumente verständlich zusammen.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="bell" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Smart Notifications</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Automatische Benachrichtigungen zu neuen Sitzungen, Vorlagen und Fristen.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="map" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Geografischer Überblick</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Karten-Visualisierung zeigt, wo Anträge und Projekte verortet sind.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="shield" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Sichere Verwaltung</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Rollen- und Berechtigungsmanagement, DSGVO-konform, Hosting in Deutschland.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Verwaltungen Section -->
+<section class="py-16 lg:py-24 bg-gray-50 dark:bg-gray-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto text-center mb-16">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-100 dark:bg-blue-900/50 rounded-full mb-6">
+                <i data-lucide="building-2" class="w-8 h-8 text-blue-600 dark:text-blue-400"></i>
+            </div>
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-6">Für Verwaltungen</h2>
+            <p class="text-xl text-gray-600 dark:text-gray-300">
+                <strong class="text-gray-900 dark:text-white">Mandari Session</strong> bietet Verwaltungen vollständiges Sitzungsmanagement - von der Planung bis zum Protokoll mit OParl-Export.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 mb-12">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="calendar-plus" class="w-6 h-6 text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Sitzungsplanung</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Termine anlegen, Tagesordnungen erstellen, Räume und Ressourcen verwalten.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="mail" class="w-6 h-6 text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Einladungsmanagement</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Automatische Einladungen, Rückmeldungen erfassen, Anwesenheit dokumentieren.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="file-text" class="w-6 h-6 text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Vorlagenverwaltung</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Vorlagen erstellen, versionieren und Tagesordnungspunkten zuordnen.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="clipboard-check" class="w-6 h-6 text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Protokollierung</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Beschlüsse erfassen, Protokolle erstellen und automatisch veröffentlichen.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="refresh-cw" class="w-6 h-6 text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">OParl-Export</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Standardisierter Export für Drittsysteme und öffentliche Transparenz.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="cloud" class="w-6 h-6 text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Managed Hosting</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Wir übernehmen Setup, Wartung, Updates und Support.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Bürger*innen Section -->
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto text-center mb-16">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-green-100 dark:bg-green-900/50 rounded-full mb-6">
+                <i data-lucide="heart-handshake" class="w-8 h-8 text-green-600 dark:text-green-400"></i>
+            </div>
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-6">Für Bürger*innen</h2>
+            <p class="text-xl text-gray-600 dark:text-gray-300">
+                <strong class="text-gray-900 dark:text-white">Mandari Insight</strong> macht Ratsinformationen transparent, niedrigschwellig und ohne technische Hürden zugänglich - für alle.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 mb-12">
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="git-branch" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Open Source</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Der Bürger*innen-Viewer ist Open Source und kann kostenfrei genutzt werden.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="search" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Einfache Suche</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Durchsuchen Sie alle Sitzungen, Vorlagen und Anträge nach Stichworten.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="layout-list" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Übersichtliche Darstellung</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Klar strukturierte Sitzungsübersichten, Tagesordnungen und Beschlüsse.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="sparkles" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">KI-Zusammenfassungen</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Optional: Kommunen können KI-Zusammenfassungen für besseres Verständnis aktivieren.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="eye-off" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Keine Tracker</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Keine Cookies, kein Tracking, kein Login erforderlich - Datenschutz by Design.</p>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div class="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center mb-4">
+                    <i data-lucide="smartphone" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Responsive & Barrierefrei</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-sm">Funktioniert auf allen Geräten, barrierefrei gestaltet.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="py-16 lg:py-24 bg-gradient-to-br from-primary-600 to-primary-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-3xl mx-auto text-center">
+            <h2 class="text-3xl font-bold text-white mb-6">Welche Lösung passt zu Ihnen?</h2>
+            <p class="text-xl text-white/90 mb-10">
+                Lassen Sie uns gemeinsam herausfinden, wie Mandari Ihre Ratsarbeit unterstützen kann. Vereinbaren Sie ein unverbindliches Gespräch.
+            </p>
+            <a href="/kontakt/" class="inline-flex items-center px-8 py-4 bg-white hover:bg-gray-100 text-primary-700 font-medium rounded-xl transition-colors text-lg">
+                Jetzt Kontakt aufnehmen
+            </a>
+        </div>
+    </div>
+</section>
+{% endblock %}

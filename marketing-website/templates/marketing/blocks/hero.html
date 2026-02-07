@@ -1,0 +1,45 @@
+{% load wagtailcore_tags %}
+<section class="py-20 lg:py-32 bg-gradient-to-br from-primary-50 via-white to-blue-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 relative overflow-hidden">
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+        <div class="absolute -top-40 -right-40 w-80 h-80 bg-primary-200/30 dark:bg-primary-900/20 rounded-full blur-3xl"></div>
+        <div class="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-200/30 dark:bg-blue-900/20 rounded-full blur-3xl"></div>
+    </div>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+        <div class="text-center max-w-4xl mx-auto">
+            {% if value.badge_text %}
+            <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-sm font-medium mb-6">
+                {% if value.badge_icon %}<i data-lucide="{{ value.badge_icon }}" class="w-4 h-4"></i>{% endif %}
+                {{ value.badge_text }}
+            </span>
+            {% endif %}
+
+            <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 dark:text-white mb-6 leading-tight">
+                {{ value.title }}
+            </h1>
+
+            {% if value.subtitle %}
+            <p class="text-xl text-gray-600 dark:text-gray-300 mb-10 max-w-2xl mx-auto">
+                {{ value.subtitle }}
+            </p>
+            {% endif %}
+
+            {% if value.primary_cta_text or value.secondary_cta_text %}
+            <div class="flex flex-wrap justify-center gap-4 mb-12">
+                {% if value.primary_cta_text %}
+                <a href="{{ value.primary_cta_url }}"
+                   class="inline-flex items-center gap-2 px-8 py-4 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl transition-colors text-lg shadow-lg shadow-primary-500/25">
+                    {{ value.primary_cta_text }}
+                </a>
+                {% endif %}
+                {% if value.secondary_cta_text %}
+                <a href="{{ value.secondary_cta_url }}"
+                   class="inline-flex items-center gap-2 px-8 py-4 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white font-medium rounded-xl transition-colors text-lg border border-gray-200 dark:border-gray-700">
+                    {{ value.secondary_cta_text }}
+                </a>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</section>

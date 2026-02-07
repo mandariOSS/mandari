@@ -1,0 +1,313 @@
+{% load static %}
+<!-- Navigation Bar -->
+<nav class="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-lg border-b border-gray-200 dark:border-gray-800"
+     x-data="{ mobileMenuOpen: false }"
+     aria-label="Hauptnavigation">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center h-16">
+            <!-- Left Section: Logo -->
+            <div class="flex-1 flex items-center">
+                <a href="/"
+                   class="flex items-center gap-2 shrink-0"
+                   aria-label="Mandari Startseite">
+                    <span class="w-9 h-9 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center text-lg" aria-hidden="true">
+                        &#127963;
+                    </span>
+                    <span class="font-bold text-lg text-gray-900 dark:text-white hidden sm:inline">
+                        Mandari
+                    </span>
+                </a>
+            </div>
+
+            <!-- MARKETING NAVIGATION - Desktop -->
+            <nav class="hidden lg:flex items-center gap-1" aria-label="Hauptmenü">
+                <!-- Produkt Dropdown -->
+                <div class="relative" x-data="{ open: false }">
+                    <button @click="open = !open"
+                            @click.outside="open = false"
+                            @keydown.escape.prevent="open = false"
+                            class="flex items-center gap-1 px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors"
+                            :aria-expanded="open.toString()"
+                            aria-haspopup="true">
+                        <span>Produkt</span>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform" :class="open ? 'rotate-180' : ''" aria-hidden="true"></i>
+                    </button>
+                    <div x-show="open"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         class="absolute left-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50"
+                         role="menu"
+                         x-cloak>
+                        <a href="/produkt/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="layers" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Funktionen</span>
+                        </a>
+                        <a href="/loesungen/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="users" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Zielgruppen</span>
+                        </a>
+                        <a href="/kommunen/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="map-pin" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Kommunen</span>
+                        </a>
+                        <a href="/sicherheit/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="shield" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Sicherheit</span>
+                        </a>
+                        <a href="/open-source/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="github" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Open Source</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Preise -->
+                <a href="/preise/"
+                   class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors">
+                    Preise
+                </a>
+
+                <!-- Über uns Dropdown -->
+                <div class="relative" x-data="{ open: false }">
+                    <button @click="open = !open"
+                            @click.outside="open = false"
+                            @keydown.escape.prevent="open = false"
+                            class="flex items-center gap-1 px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors"
+                            :aria-expanded="open.toString()"
+                            aria-haspopup="true">
+                        <span>Über uns</span>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform" :class="open ? 'rotate-180' : ''" aria-hidden="true"></i>
+                    </button>
+                    <div x-show="open"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         class="absolute left-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50"
+                         role="menu"
+                         x-cloak>
+                        <a href="/ueber-uns/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="compass" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Mission & Werte</span>
+                        </a>
+                        <a href="/team/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="heart" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Team</span>
+                        </a>
+                        <a href="/partner/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="handshake" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Partner</span>
+                        </a>
+                        <a href="/mitmachen/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="git-pull-request" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Mitmachen</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Ressourcen Dropdown -->
+                <div class="relative" x-data="{ open: false }">
+                    <button @click="open = !open"
+                            @click.outside="open = false"
+                            @keydown.escape.prevent="open = false"
+                            class="flex items-center gap-1 px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors"
+                            :aria-expanded="open.toString()"
+                            aria-haspopup="true">
+                        <span>Ressourcen</span>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform" :class="open ? 'rotate-180' : ''" aria-hidden="true"></i>
+                    </button>
+                    <div x-show="open"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         class="absolute left-0 mt-1 w-44 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50"
+                         role="menu"
+                         x-cloak>
+                        <a href="/blog/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="newspaper" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Blog</span>
+                        </a>
+                        <a href="/releases/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="tag" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Releases</span>
+                        </a>
+                        <a href="/roadmap/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="map" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Roadmap</span>
+                        </a>
+                        <a href="/faq/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="help-circle" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>FAQ</span>
+                        </a>
+                        <a href="/presse/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="megaphone" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Presse</span>
+                        </a>
+                        <a href="/danksagungen/" role="menuitem" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="heart-handshake" class="w-4 h-4 text-primary-500" aria-hidden="true"></i>
+                            <span>Danksagungen</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Kontakt -->
+                <a href="/kontakt/"
+                   class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors">
+                    Kontakt
+                </a>
+            </nav>
+
+            <!-- Right Section: Actions -->
+            <div class="flex-1 flex items-center justify-end gap-2">
+                <!-- Insight Portal Button -->
+                <a href="/insight/"
+                   class="hidden md:inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors">
+                    <i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>
+                    <span>Insight öffnen</span>
+                </a>
+
+                <!-- Dark Mode Toggle -->
+                <button @click="darkMode = !darkMode"
+                        class="p-2.5 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target flex items-center justify-center"
+                        :aria-label="darkMode ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'"
+                        :aria-pressed="darkMode.toString()">
+                    <i x-show="!darkMode" data-lucide="moon" class="w-5 h-5" aria-hidden="true"></i>
+                    <i x-show="darkMode" data-lucide="sun" class="w-5 h-5" aria-hidden="true"></i>
+                </button>
+
+                <!-- Mobile Menu Button -->
+                <button @click="mobileMenuOpen = !mobileMenuOpen"
+                        class="lg:hidden p-2.5 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target flex items-center justify-center"
+                        :aria-expanded="mobileMenuOpen.toString()"
+                        aria-controls="mobile-menu"
+                        aria-label="Hauptmenü">
+                    <i x-show="!mobileMenuOpen" data-lucide="menu" class="w-6 h-6" aria-hidden="true"></i>
+                    <i x-show="mobileMenuOpen" data-lucide="x" class="w-6 h-6" aria-hidden="true"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Menu -->
+    <div x-show="mobileMenuOpen"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 -translate-y-4"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 translate-y-0"
+         x-transition:leave-end="opacity-0 -translate-y-4"
+         class="lg:hidden bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 max-h-[calc(100vh-4rem)] overflow-y-auto"
+         id="mobile-menu"
+         role="navigation"
+         aria-label="Mobiles Menü"
+         x-cloak>
+        <div class="px-4 py-4 space-y-2">
+            <!-- Context Switch -->
+            <a href="/insight/"
+               @click="mobileMenuOpen = false"
+               class="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary-600 text-white font-medium touch-target">
+                <i data-lucide="eye" class="w-5 h-5" aria-hidden="true"></i>
+                <span>Insight öffnen</span>
+                <i data-lucide="arrow-right" class="w-4 h-4 ml-auto opacity-70" aria-hidden="true"></i>
+            </a>
+
+            <hr class="border-gray-200 dark:border-gray-700" role="separator">
+
+            <!-- Produkt Section -->
+            <div class="py-2" role="group" aria-labelledby="mobile-nav-product">
+                <p id="mobile-nav-product" class="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Produkt</p>
+                <a href="/produkt/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="layers" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Funktionen</span>
+                </a>
+                <a href="/loesungen/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="users" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Zielgruppen</span>
+                </a>
+                <a href="/kommunen/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="map-pin" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Kommunen</span>
+                </a>
+                <a href="/sicherheit/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="shield" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Sicherheit</span>
+                </a>
+                <a href="/open-source/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="github" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Open Source</span>
+                </a>
+                <a href="/preise/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="credit-card" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Preise</span>
+                </a>
+            </div>
+
+            <hr class="border-gray-200 dark:border-gray-700" role="separator">
+
+            <!-- Über uns Section -->
+            <div class="py-2" role="group" aria-labelledby="mobile-nav-about">
+                <p id="mobile-nav-about" class="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Über uns</p>
+                <a href="/ueber-uns/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="compass" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Mission & Werte</span>
+                </a>
+                <a href="/team/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="heart" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Team</span>
+                </a>
+                <a href="/partner/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="handshake" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Partner</span>
+                </a>
+                <a href="/mitmachen/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="git-pull-request" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Mitmachen</span>
+                </a>
+            </div>
+
+            <hr class="border-gray-200 dark:border-gray-700" role="separator">
+
+            <!-- Ressourcen Section -->
+            <div class="py-2" role="group" aria-labelledby="mobile-nav-resources">
+                <p id="mobile-nav-resources" class="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Ressourcen</p>
+                <a href="/blog/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="newspaper" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Blog</span>
+                </a>
+                <a href="/releases/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="tag" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Releases</span>
+                </a>
+                <a href="/roadmap/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="map" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Roadmap</span>
+                </a>
+                <a href="/faq/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="help-circle" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>FAQ</span>
+                </a>
+                <a href="/presse/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="megaphone" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Presse</span>
+                </a>
+                <a href="/danksagungen/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="heart-handshake" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Danksagungen</span>
+                </a>
+                <a href="/kontakt/" @click="mobileMenuOpen = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="mail" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Kontakt</span>
+                </a>
+            </div>
+        </div>
+    </div>
+</nav>

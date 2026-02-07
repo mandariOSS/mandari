@@ -223,7 +223,25 @@ else
     warn "Migration failed or not needed. Check logs: docker logs mandari"
 fi
 
-# Phase 3: Start ingestor + caddy (after migrations)
+# Phase 3: Start website (Wagtail) + run migrations
+log "Starting Marketing Website..."
+docker compose up -d website
+
+echo -n "  Website"
+if wait_for_healthy mandari-website 60; then
+    echo -e " ${GREEN}OK${NC}"
+else
+    echo -e " ${YELLOW}STARTING${NC}"
+fi
+
+log "Running website database migrations..."
+if docker exec mandari-website python manage.py migrate --noinput 2>&1; then
+    log "Website migrations completed"
+else
+    warn "Website migration failed or not needed. Check logs: docker logs mandari-website"
+fi
+
+# Phase 4: Start ingestor + caddy (after migrations)
 log "Starting remaining services..."
 docker compose up -d
 
@@ -243,10 +261,16 @@ docker compose ps
 echo ""
 log "Health Check..."
 if docker exec mandari curl -sf http://localhost:8000/health &>/dev/null; then
-    echo -e "  Mandari: ${GREEN}healthy${NC}"
+    echo -e "  Mandari:  ${GREEN}healthy${NC}"
 else
-    echo -e "  Mandari: ${YELLOW}starting...${NC}"
+    echo -e "  Mandari:  ${YELLOW}starting...${NC}"
     warn "Mandari is still starting. Check logs: docker logs mandari -f"
+fi
+
+if docker exec mandari-website curl -sf http://localhost:8001/health/ &>/dev/null; then
+    echo -e "  Website:  ${GREEN}healthy${NC}"
+else
+    echo -e "  Website:  ${YELLOW}starting...${NC}"
 fi
 
 # =============================================================================

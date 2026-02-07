@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% load wagtailcore_tags %}
+
+{% block title %}{{ page.title }} (v{{ page.version }}){% endblock %}
+
+{% block content %}
+<article>
+    <!-- Hero -->
+    <section class="pt-16 pb-10 lg:pt-24 lg:pb-12 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center gap-3 mb-6">
+                <span class="px-3 py-1 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 font-mono font-semibold rounded-lg">
+                    v{{ page.version }}
+                </span>
+                <span class="px-3 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-sm rounded-full">
+                    {{ page.get_release_type_display }}
+                </span>
+                {% if page.breaking_changes %}
+                <span class="px-3 py-1 bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 text-sm font-medium rounded-full">
+                    Breaking Changes
+                </span>
+                {% endif %}
+            </div>
+            <h1 class="text-3xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+                {{ page.title }}
+            </h1>
+            <time class="text-gray-500 dark:text-gray-400" datetime="{{ page.release_date|date:'Y-m-d' }}">
+                {{ page.release_date|date:"d. F Y" }}
+            </time>
+            {% if page.github_url %}
+            <a href="{{ page.github_url }}" target="_blank" rel="noopener noreferrer"
+               class="ml-4 inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 text-sm font-medium transition-colors">
+                <i data-lucide="github" class="w-4 h-4" aria-hidden="true"></i>
+                Auf GitHub ansehen
+            </a>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- Content -->
+    <section class="py-8 lg:py-12">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="prose dark:prose-invert max-w-none">
+                {% for block in page.body %}
+                    {% include_block block %}
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Back to Blog -->
+    <section class="py-8">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <a href="{{ page.get_parent.url }}"
+               class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors">
+                <i data-lucide="arrow-left" class="w-4 h-4" aria-hidden="true"></i>
+                Zurück zum Blog
+            </a>
+        </div>
+    </section>
+</article>
+{% endblock %}

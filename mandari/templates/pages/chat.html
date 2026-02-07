@@ -30,14 +30,14 @@
                         Der KI-Assistent verwendet künstliche Intelligenz (Groq), um Ihre Fragen zu beantworten.
                         Ihre Anfragen werden an externe Server übermittelt und dort verarbeitet.
                         Mit der Nutzung stimmen Sie der Verarbeitung Ihrer Daten gemäß unserer
-                        <a href="{% url 'insight_core:datenschutz' %}" class="text-primary-600 dark:text-primary-400 hover:underline">Datenschutzerklärung</a> zu.
+                        <a href="/datenschutz/" class="text-primary-600 dark:text-primary-400 hover:underline">Datenschutzerklärung</a> zu.
                     </p>
                     <div class="flex gap-3">
                         <button @click="giveConsent()"
                                 class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
                             Ich stimme zu
                         </button>
-                        <a href="{% url 'insight_core:home' %}"
+                        <a href="/"
                            class="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-medium rounded-lg transition-colors">
                             Abbrechen
                         </a>

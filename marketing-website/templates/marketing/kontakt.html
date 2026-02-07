@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block title %}Kontakt | Mandari{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="pt-16 pb-10 lg:pt-24 lg:pb-12 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-6">
+            <i data-lucide="mail" class="w-4 h-4"></i>
+            Kontakt
+        </span>
+        <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+            Lassen Sie uns sprechen
+        </h1>
+        <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl">
+            Haben Sie Fragen zu Mandari? Möchten Sie eine Demo vereinbaren oder über individuelle Lösungen sprechen?
+            Wir freuen uns auf Ihre Nachricht!
+        </p>
+    </div>
+</section>
+
+<!-- Contact Section -->
+<section class="py-12 lg:py-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid lg:grid-cols-5 gap-12">
+
+            <!-- Contact Form (3 columns) -->
+            <div class="lg:col-span-3">
+                <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 lg:p-8">
+                    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Nachricht senden</h2>
+
+                    <form method="post" action="/kontakt/" class="space-y-5">
+                        {% csrf_token %}
+
+                        <!-- Name & Email Row -->
+                        <div class="grid sm:grid-cols-2 gap-5">
+                            <div>
+                                <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    Ihr Name *
+                                </label>
+                                <input type="text" name="name" id="name" required
+                                       class="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                                       placeholder="Max Mustermann">
+                            </div>
+                            <div>
+                                <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    E-Mail-Adresse *
+                                </label>
+                                <input type="email" name="email" id="email" required
+                                       class="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                                       placeholder="ihre@email.de">
+                            </div>
+                        </div>
+
+                        <!-- Organization & Subject Row -->
+                        <div class="grid sm:grid-cols-2 gap-5">
+                            <div>
+                                <label for="organization" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    Organisation
+                                </label>
+                                <input type="text" name="organization" id="organization"
+                                       class="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                                       placeholder="Fraktion / Verwaltung / Unternehmen">
+                            </div>
+                            <div>
+                                <label for="subject" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    Betreff *
+                                </label>
+                                <select name="subject" id="subject" required
+                                        class="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors">
+                                    <option value="">Bitte wählen...</option>
+                                    <option value="demo">Demo anfragen</option>
+                                    <option value="preise">Preisanfrage</option>
+                                    <option value="support">Technischer Support</option>
+                                    <option value="datenschutz">Datenschutz-Anfrage</option>
+                                    <option value="sonstiges">Sonstiges</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Message -->
+                        <div>
+                            <label for="message" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Ihre Nachricht *
+                            </label>
+                            <textarea name="message" id="message" rows="5" required
+                                      class="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors resize-none"
+                                      placeholder="Wie können wir Ihnen helfen?"></textarea>
+                        </div>
+
+                        <!-- Honeypot (anti-spam) -->
+                        <div class="hidden" aria-hidden="true">
+                            <input type="text" name="website" tabindex="-1" autocomplete="off">
+                        </div>
+
+                        <!-- Privacy Checkbox -->
+                        <div class="flex items-start gap-3">
+                            <input type="checkbox" name="privacy" id="privacy" required
+                                   class="mt-1 w-4 h-4 text-primary-600 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
+                            <label for="privacy" class="text-sm text-gray-600 dark:text-gray-400">
+                                Ich habe die <a href="/datenschutz/" class="text-primary-600 dark:text-primary-400 hover:underline">Datenschutzerklärung</a> gelesen und bin mit der Verarbeitung meiner Daten einverstanden. *
+                            </label>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <button type="submit"
+                                class="w-full sm:w-auto px-8 py-4 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl transition-colors flex items-center justify-center gap-2">
+                            <i data-lucide="send" class="w-5 h-5"></i>
+                            Nachricht senden
+                        </button>
+                    </form>
+
+                    {% if messages %}
+                    <div class="mt-6">
+                        {% for message in messages %}
+                        <div class="p-4 rounded-xl flex items-center gap-3 {% if message.tags == 'success' %}bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300{% else %}bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300{% endif %}">
+                            <i data-lucide="{% if message.tags == 'success' %}check-circle{% else %}alert-circle{% endif %}" class="w-5 h-5 flex-shrink-0"></i>
+                            {{ message }}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Sidebar (2 columns) -->
+            <div class="lg:col-span-2 space-y-6">
+
+                <!-- Direct Contact -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Direkter Kontakt</h3>
+                    <div class="space-y-4">
+                        <a href="mailto:kontakt@mandari.de" class="flex items-center gap-3 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                            <div class="w-10 h-10 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i data-lucide="mail" class="w-5 h-5 text-primary-600 dark:text-primary-400"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">E-Mail</p>
+                                <p class="font-medium">kontakt@mandari.de</p>
+                            </div>
+                        </a>
+                        <a href="mailto:support@mandari.de" class="flex items-center gap-3 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                            <div class="w-10 h-10 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i data-lucide="headphones" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Support</p>
+                                <p class="font-medium">support@mandari.de</p>
+                            </div>
+                        </a>
+                        <a href="mailto:datenschutz@mandari.de" class="flex items-center gap-3 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                            <div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i data-lucide="shield" class="w-5 h-5 text-purple-600 dark:text-purple-400"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Datenschutz</p>
+                                <p class="font-medium">datenschutz@mandari.de</p>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Response Time -->
+                <div class="bg-primary-50 dark:bg-primary-900/20 rounded-2xl border border-primary-200 dark:border-primary-800 p-6">
+                    <div class="flex items-start gap-4">
+                        <div class="w-10 h-10 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="clock" class="w-5 h-5 text-primary-600 dark:text-primary-400"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-gray-900 dark:text-white mb-1">Schnelle Antwort</h3>
+                            <p class="text-sm text-gray-600 dark:text-gray-300">
+                                Wir antworten in der Regel innerhalb von 24 Stunden auf Ihre Anfrage.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Links -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Hilfreiche Links</h3>
+                    <div class="space-y-2">
+                        <a href="/produkt/" class="flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors py-2">
+                            <i data-lucide="package" class="w-4 h-4"></i>
+                            Produkt-Übersicht
+                        </a>
+                        <a href="/preise/" class="flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors py-2">
+                            <i data-lucide="credit-card" class="w-4 h-4"></i>
+                            Preise & Pakete
+                        </a>
+                        <a href="/sicherheit/" class="flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors py-2">
+                            <i data-lucide="shield-check" class="w-4 h-4"></i>
+                            Sicherheit & DSGVO
+                        </a>
+                        <a href="/blog/" class="flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors py-2">
+                            <i data-lucide="newspaper" class="w-4 h-4"></i>
+                            Blog & Neuigkeiten
+                        </a>
+                    </div>
+                </div>
+
+                <!-- GitHub -->
+                <div class="bg-gray-900 dark:bg-gray-950 rounded-2xl p-6 text-white">
+                    <div class="flex items-start gap-4">
+                        <div class="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="github" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold mb-1">Open Source</h3>
+                            <p class="text-sm text-gray-300 mb-3">
+                                Bugs melden oder Features vorschlagen? Besuchen Sie unser GitHub Repository.
+                            </p>
+                            <a href="https://github.com/mandariOSS/mandari" target="_blank" rel="noopener noreferrer"
+                               class="inline-flex items-center gap-2 text-sm font-medium text-primary-400 hover:text-primary-300 transition-colors">
+                                Zu GitHub
+                                <i data-lucide="external-link" class="w-4 h-4"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

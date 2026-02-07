@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load wagtailcore_tags wagtailimages_tags %}
+
+{% block title %}{{ page.title }}{% endblock %}
+
+{% block content %}
+<article>
+    <!-- Hero -->
+    <section class="pt-16 pb-10 lg:pt-24 lg:pb-12 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center gap-3 mb-6">
+                <span class="px-3 py-1 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium rounded-full">
+                    {{ page.get_category_display }}
+                </span>
+                <time class="text-sm text-gray-500 dark:text-gray-400" datetime="{{ page.date|date:'Y-m-d' }}">
+                    {{ page.date|date:"d. F Y" }}
+                </time>
+            </div>
+            <h1 class="text-3xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+                {{ page.title }}
+            </h1>
+            {% if page.excerpt %}
+            <p class="text-xl text-gray-600 dark:text-gray-300">{{ page.excerpt }}</p>
+            {% endif %}
+        </div>
+    </section>
+
+    {% if page.featured_image %}
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 -mt-2 mb-8">
+        {% image page.featured_image width-1200 as hero_img %}
+        <img src="{{ hero_img.url }}" alt="{{ page.title }}" class="w-full rounded-2xl shadow-lg">
+    </div>
+    {% endif %}
+
+    <!-- Content -->
+    <section class="py-8 lg:py-12">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="prose dark:prose-invert max-w-none">
+                {% for block in page.body %}
+                    {% include_block block %}
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Back to Blog -->
+    <section class="py-8">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <a href="{{ page.get_parent.url }}"
+               class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors">
+                <i data-lucide="arrow-left" class="w-4 h-4" aria-hidden="true"></i>
+                Zurück zum Blog
+            </a>
+        </div>
+    </section>
+</article>
+{% endblock %}

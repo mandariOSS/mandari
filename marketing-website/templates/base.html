@@ -1,0 +1,139 @@
+{% load static wagtailcore_tags %}
+<!DOCTYPE html>
+<html lang="de" class="scroll-smooth"
+      x-data="{ darkMode: localStorage.getItem('darkMode') === 'true' }"
+      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))"
+      :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{% block meta_description %}Mandari - Kommunalpolitische Transparenz{% endblock %}">
+    <meta name="theme-color" content="#4f46e5">
+
+    <title>{% block title %}{% if self.seo_title %}{{ self.seo_title }}{% elif self.title %}{{ self.title }}{% else %}Mandari{% endif %}{% endblock %} | Mandari</title>
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="{% block canonical %}{{ request.build_absolute_uri }}{% endblock %}">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="{% block og_title %}{% if self.seo_title %}{{ self.seo_title }}{% elif self.title %}{{ self.title }}{% else %}Mandari{% endif %}{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}{% if self.search_description %}{{ self.search_description }}{% else %}Kommunalpolitische Transparenz{% endif %}{% endblock %}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ request.build_absolute_uri }}">
+    <meta property="og:image" content="{% block og_image %}{% static 'images/og-default.png' %}{% endblock %}">
+    <meta property="og:locale" content="de_DE">
+    <meta property="og:site_name" content="Mandari">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{% if self.seo_title %}{{ self.seo_title }}{% elif self.title %}{{ self.title }}{% else %}Mandari{% endif %}">
+    <meta name="twitter:description" content="{% if self.search_description %}{{ self.search_description }}{% else %}Kommunalpolitische Transparenz{% endif %}">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{% static 'images/favicon.png' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'images/favicon.ico' %}">
+
+    <!-- TailwindCSS (lokal kompiliert, DSGVO-konform) -->
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+    <!-- Alpine.js (lokal) -->
+    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
+
+    <!-- Lucide Icons (lokal) -->
+    <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>
+
+    <!-- Custom Styles -->
+    <style>
+        [x-cloak] { display: none !important; }
+
+        /* Skip Link - WCAG 2.1 */
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #4f46e5;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            text-decoration: none;
+            font-weight: 500;
+            z-index: 9999;
+            transition: top 0.2s;
+        }
+        .skip-link:focus {
+            top: 1rem;
+            outline: 2px solid white;
+            outline-offset: 2px;
+        }
+
+        /* Focus visible styles - WCAG 2.1 */
+        :focus-visible {
+            outline: 2px solid #4f46e5;
+            outline-offset: 2px;
+        }
+        .dark :focus-visible {
+            outline-color: #818cf8;
+        }
+
+        a:focus-visible,
+        button:focus-visible,
+        [role="button"]:focus-visible {
+            outline: 2px solid #4f46e5;
+            outline-offset: 2px;
+            border-radius: 0.25rem;
+        }
+        .dark a:focus-visible,
+        .dark button:focus-visible,
+        .dark [role="button"]:focus-visible {
+            outline-color: #818cf8;
+        }
+
+        .touch-target {
+            min-width: 44px;
+            min-height: 44px;
+        }
+
+        html, body {
+            overflow-x: hidden;
+            max-width: 100vw;
+        }
+
+        .break-anywhere {
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+    </style>
+
+    {% block extra_head %}{% endblock %}
+</head>
+
+<body class="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-x-hidden">
+    <!-- Skip Link for Accessibility -->
+    <a href="#main-content" class="skip-link">
+        Zum Hauptinhalt springen
+    </a>
+
+    <!-- Navigation -->
+    <header role="banner">
+        {% include "components/navbar.html" %}
+    </header>
+
+    <!-- Main Content -->
+    <main id="main-content" class="pt-16" role="main" tabindex="-1">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer role="contentinfo">
+        {% include "components/footer.html" %}
+    </footer>
+
+    <!-- Initialize Lucide icons -->
+    <script>
+        lucide.createIcons();
+    </script>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

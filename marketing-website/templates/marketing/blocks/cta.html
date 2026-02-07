@@ -1,0 +1,15 @@
+{% load wagtailcore_tags %}
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="{% if value.style == 'gradient' %}bg-gradient-to-r from-primary-600 to-primary-800{% elif value.style == 'dark' %}bg-gray-900 dark:bg-gray-800{% else %}bg-primary-600{% endif %} rounded-2xl p-8 lg:p-12 text-center">
+            <h2 class="text-2xl lg:text-3xl font-bold text-white mb-4">{{ value.title }}</h2>
+            {% if value.description %}
+            <p class="text-white/80 text-lg mb-8 max-w-2xl mx-auto">{{ value.description }}</p>
+            {% endif %}
+            <a href="{{ value.button_url }}"
+               class="inline-flex items-center gap-2 px-8 py-4 bg-white text-primary-600 hover:bg-gray-100 font-medium rounded-xl transition-colors text-lg">
+                {{ value.button_text }}
+            </a>
+        </div>
+    </div>
+</section>

@@ -1,0 +1,48 @@
+{% load wagtailcore_tags %}
+<section class="py-16 lg:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {% if value.title %}
+        <div class="text-center mb-12">
+            <h2 class="text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mb-4">{{ value.title }}</h2>
+            {% if value.subtitle %}
+            <p class="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">{{ value.subtitle }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="grid md:grid-cols-{{ value.tiers|length }} gap-8 max-w-5xl mx-auto">
+            {% for tier in value.tiers %}
+            <div class="{% if tier.value.is_highlighted == 'yes' %}border-2 border-primary-500 ring-2 ring-primary-500/20{% else %}border border-gray-200 dark:border-gray-700{% endif %} bg-white dark:bg-gray-800 rounded-2xl p-8 relative">
+                {% if tier.value.is_highlighted == 'yes' %}
+                <div class="absolute -top-4 left-1/2 -translate-x-1/2 bg-primary-500 text-white text-sm font-medium px-4 py-1 rounded-full">
+                    Empfohlen
+                </div>
+                {% endif %}
+
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">{{ tier.value.name }}</h3>
+                <div class="text-3xl font-bold text-primary-600 dark:text-primary-400 mb-4">{{ tier.value.price }}</div>
+
+                {% if tier.value.description %}
+                <p class="text-gray-600 dark:text-gray-300 mb-6">{{ tier.value.description }}</p>
+                {% endif %}
+
+                <ul class="space-y-3 mb-8">
+                    {% for feature in tier.value.features %}
+                    <li class="flex items-start gap-2 text-gray-600 dark:text-gray-300 text-sm">
+                        <i data-lucide="check" class="w-5 h-5 text-green-500 shrink-0 mt-0.5" aria-hidden="true"></i>
+                        <span>{{ feature.value }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+
+                {% if tier.value.cta_text %}
+                <a href="{{ tier.value.cta_url|default:'/kontakt/' }}"
+                   class="block w-full text-center px-6 py-3 {% if tier.value.is_highlighted == 'yes' %}bg-primary-600 hover:bg-primary-700 text-white{% else %}bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-900 dark:text-white{% endif %} font-medium rounded-xl transition-colors">
+                    {{ tier.value.cta_text }}
+                </a>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>

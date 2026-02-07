@@ -2,19 +2,19 @@
 Sitemap-Generierung für Mandari Insight.
 
 Hierarchische Sitemap-Struktur:
-/sitemap.xml                           (Index)
-├── /sitemap-pages.xml                 (Statische Seiten)
-└── /sitemap-insight-<body-slug>.xml   (Pro Kommune)
+/sitemap-insight-<body-slug>.xml   (Pro Kommune)
     ├── Vorgänge (Papers)
     ├── Termine (Meetings)
     ├── Gremien (Organizations)
     └── Personen (Persons)
+
+Note: /sitemap.xml, /sitemap-pages.xml, and /robots.txt are handled
+by the Wagtail marketing site.
 """
 
 from __future__ import annotations
 
 from django.contrib.sitemaps import Sitemap
-from django.urls import reverse
 
 from .models import (
     OParlBody,
@@ -23,47 +23,6 @@ from .models import (
     OParlPaper,
     OParlPerson,
 )
-
-
-class StaticPagesSitemap(Sitemap):
-    """Sitemap für statische Marketing- und Info-Seiten."""
-
-    changefreq = "weekly"
-    protocol = "https"
-
-    def items(self):
-        """Gibt Liste von (url_name, priority) Tupeln zurück."""
-        return [
-            ("insight_core:home", 1.0),
-            ("insight_core:insight:portal_home", 0.9),
-            ("insight_core:produkt", 0.8),
-            ("insight_core:loesungen", 0.8),
-            ("insight_core:sicherheit", 0.7),
-            ("insight_core:open_source", 0.7),
-            ("insight_core:preise", 0.8),
-            ("insight_core:mitmachen", 0.6),
-            ("insight_core:team", 0.5),
-            ("insight_core:faq", 0.6),
-            ("insight_core:partner", 0.5),
-            ("insight_core:kontakt", 0.7),
-            ("insight_core:blog", 0.6),
-            ("insight_core:ueber_uns", 0.6),
-            ("insight_core:kommunen", 0.7),
-            ("insight_core:roadmap", 0.5),
-            ("insight_core:impressum", 0.3),
-            ("insight_core:datenschutz", 0.3),
-            ("insight_core:agb", 0.3),
-        ]
-
-    def location(self, item):
-        """Gibt die URL für ein Item zurück."""
-        url_name, _ = item
-        return reverse(url_name)
-
-    def priority(self, item):
-        """Gibt die Priorität für ein Item zurück."""
-        _, priority = item
-        return priority
 
 
 class BodyListSitemap(Sitemap):
@@ -198,29 +157,6 @@ class PersonSitemap(BaseMunicipalSitemap):
     def lastmod(self, person):
         """Gibt das letzte Änderungsdatum zurück."""
         return person.oparl_modified or person.updated_at
-
-
-def get_all_sitemaps() -> dict[str, Sitemap]:
-    """
-    Gibt alle Sitemaps für die Django Sitemap-Registry zurück.
-
-    Returns:
-        Dict mit Sitemap-Name → Sitemap-Instanz
-    """
-    sitemaps = {
-        "static": StaticPagesSitemap,
-        "bodies": BodyListSitemap,
-    }
-
-    # Dynamisch Sitemaps für jede Kommune hinzufügen
-    for body in OParlBody.objects.filter(slug__isnull=False):
-        slug = body.slug
-        sitemaps[f"papers-{slug}"] = PaperSitemap(slug)
-        sitemaps[f"meetings-{slug}"] = MeetingSitemap(slug)
-        sitemaps[f"organizations-{slug}"] = OrganizationSitemap(slug)
-        sitemaps[f"persons-{slug}"] = PersonSitemap(slug)
-
-    return sitemaps
 
 
 def get_body_sitemap(body_slug: str) -> dict[str, Sitemap]:

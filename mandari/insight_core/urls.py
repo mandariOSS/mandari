@@ -2,13 +2,12 @@
 URL-Routing für Mandari Insight Core.
 
 Struktur:
-- /                 → Landingpage (Marketing)
 - /insight/         → RIS-Portal (Ratsinformationen)
+- /public/          → Öffentliche Protokolle
+- /sitemap-insight- → Body-Sitemaps
 """
 
 from django.urls import include, path
-
-from insight_content import views as content_views
 
 from . import views
 
@@ -67,40 +66,10 @@ insight_patterns = [
 # Haupt-URL-Patterns
 # =============================================================================
 urlpatterns = [
-    # SEO: robots.txt und Sitemaps
-    path("robots.txt", views.robots_txt, name="robots_txt"),
-    path("sitemap.xml", views.sitemap_index, name="sitemap_index"),
-    path("sitemap-pages.xml", views.static_sitemap, name="static_sitemap"),
+    # SEO: Body-Sitemaps (bleiben in Mandari, da OParl-Daten hier liegen)
     path("sitemap-insight-<slug:body_slug>.xml", views.body_sitemap, name="body_sitemap"),
-    # Landingpage (Marketing)
-    path("", views.HomeView.as_view(), name="home"),
     # Insight Portal (RIS) - alle unter /insight/
     path("insight/", include((insight_patterns, "insight"))),
-    # Rechtliche Seiten (global)
-    path("impressum/", views.ImpressumView.as_view(), name="impressum"),
-    path("datenschutz/", views.DatenschutzView.as_view(), name="datenschutz"),
-    path("agb/", views.AGBView.as_view(), name="agb"),
-    # Über Mandari (Marketing)
-    path("produkt/", views.ProduktView.as_view(), name="produkt"),
-    path("loesungen/", views.LoesungenView.as_view(), name="loesungen"),
-    path("sicherheit/", views.SicherheitView.as_view(), name="sicherheit"),
-    path("open-source/", views.OpenSourceView.as_view(), name="open_source"),
-    path("kontakt/", views.KontaktView.as_view(), name="kontakt"),
-    # Projekt-Seiten (Marketing)
-    path("preise/", views.PreiseView.as_view(), name="preise"),
-    path("mitmachen/", views.MitmachenView.as_view(), name="mitmachen"),
-    path("team/", views.TeamView.as_view(), name="team"),
-    path("faq/", views.FAQView.as_view(), name="faq"),
-    path("releases/", content_views.releases_list, name="releases"),
-    path("partner/", views.PartnerView.as_view(), name="partner"),
-    path("blog/", content_views.blog_list, name="blog"),
-    path("blog/<slug:slug>/", content_views.blog_detail, name="blog_detail"),
-    # Neue Seiten
-    path("ueber-uns/", views.UeberUnsView.as_view(), name="ueber_uns"),
-    path("kommunen/", views.KommunenView.as_view(), name="kommunen"),
-    path("roadmap/", views.RoadmapView.as_view(), name="roadmap"),
-    path("presse/", views.PresseView.as_view(), name="presse"),
-    path("danksagungen/", views.DanksagungenView.as_view(), name="danksagungen"),
     # Öffentliche Fraktionsprotokolle (ohne Login)
     path(
         "public/<slug:body_slug>/protokolle/",

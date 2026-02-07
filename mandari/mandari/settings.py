@@ -87,7 +87,6 @@ INSTALLED_APPS = [
     "django_htmx",
     # Mandari Insight apps (OSS)
     "insight_core",
-    "insight_content",
     "insight_sync",
     "insight_search",
     "insight_ai",
@@ -582,23 +581,6 @@ UNFOLD = {
                         "title": _("OParl Quellen"),
                         "icon": "database",
                         "link": reverse_lazy("admin:insight_core_oparlsource_changelist"),
-                    },
-                ],
-            },
-            {
-                "title": _("Content"),
-                "separator": True,
-                "collapsible": True,
-                "items": [
-                    {
-                        "title": _("Blog"),
-                        "icon": "edit_note",
-                        "link": reverse_lazy("admin:insight_content_blogpost_changelist"),
-                    },
-                    {
-                        "title": _("Releases"),
-                        "icon": "new_releases",
-                        "link": reverse_lazy("admin:insight_content_release_changelist"),
                     },
                 ],
             },
