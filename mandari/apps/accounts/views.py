@@ -122,7 +122,9 @@ class LoginView(View):
         if next_url:
             from django.utils.http import url_has_allowed_host_and_scheme
 
-            if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+            if url_has_allowed_host_and_scheme(
+                next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+            ):
                 return next_url
 
         # Default: redirect to work portal if user has memberships
