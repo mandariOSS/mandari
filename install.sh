@@ -115,7 +115,7 @@ check_prerequisites() {
     # Check for existing installation
     if [ -f ".env" ]; then
         warn "Existing .env file found!"
-        if [ "${UNATTENDED:-false}" = "true" ]; then
+        if [ "$UNATTENDED" = "true" ]; then
             log "Overwriting existing configuration (unattended mode)."
         else
             echo ""
@@ -215,7 +215,7 @@ create_env_file() {
 # Domain & SSL
 # =============================================================================
 DOMAIN=${DOMAIN}
-ACME_EMAIL=${ACME_EMAIL}
+ACME_EMAIL=${ACME_EMAIL:-noreply@example.com}
 
 # =============================================================================
 # Timezone
@@ -273,19 +273,6 @@ EOF
 }
 
 # =============================================================================
-# Start Services
-# =============================================================================
-start_services() {
-    log "Pulling Docker images..."
-    docker compose pull
-
-    log "Starting Mandari services..."
-    docker compose up -d
-
-    log "Waiting for services to be healthy..."
-}
-
-# =============================================================================
 # Wait for Health
 # =============================================================================
 wait_for_healthy() {
@@ -315,7 +302,24 @@ wait_for_healthy() {
     return 1
 }
 
-wait_for_all_services() {
+# =============================================================================
+# Start Services (correct order to avoid race conditions)
+# =============================================================================
+#
+# The ingestor creates oparl_* tables on startup. If it starts before
+# Django migrations run, we get "DuplicateTable" errors. So we must:
+#   1. Start infrastructure (postgres, redis, meilisearch)
+#   2. Start mandari (Django) and run migrations
+#   3. THEN start ingestor and caddy
+# =============================================================================
+start_services() {
+    log "Pulling Docker images..."
+    docker compose pull
+
+    # --- Phase 1: Infrastructure ---
+    log "Starting infrastructure services..."
+    docker compose up -d postgres redis meilisearch
+
     echo -n "  PostgreSQL"
     if wait_for_healthy mandari-postgres 30; then
         echo -e " ${GREEN}OK${NC}"
@@ -337,13 +341,32 @@ wait_for_all_services() {
         echo -e " ${YELLOW}WAITING${NC}"
     fi
 
+    # --- Phase 2: Mandari (Django) + Migrations ---
+    log "Starting Mandari..."
+    docker compose up -d mandari
+
     echo -n "  Mandari"
     if wait_for_healthy mandari 60; then
         echo -e " ${GREEN}OK${NC}"
     else
         echo -e " ${YELLOW}STARTING${NC}"
-        warn "API is taking longer to start. Check logs: docker logs mandari"
+        warn "Mandari is taking longer to start. Check logs: docker logs mandari"
     fi
+
+    run_migrations
+
+    # --- Phase 3: Ingestor + Caddy (after migrations) ---
+    log "Starting remaining services..."
+    docker compose up -d
+
+    echo -n "  Caddy"
+    if wait_for_healthy mandari-caddy 30; then
+        echo -e " ${GREEN}OK${NC}"
+    else
+        echo -e " ${YELLOW}STARTING${NC}"
+    fi
+
+    log "All services started"
 }
 
 # =============================================================================
@@ -352,18 +375,15 @@ wait_for_all_services() {
 run_migrations() {
     log "Running database migrations..."
 
-    # Wait a bit more for API to be fully ready
-    sleep 5
-
-    if docker exec mandari python manage.py migrate --noinput 2>/dev/null; then
+    if docker exec mandari python manage.py migrate --noinput 2>&1; then
         log "Migrations completed"
     else
-        warn "Migration failed. The API may not be ready yet."
+        warn "Migration failed. Check logs: docker logs mandari"
         warn "Run manually: docker exec mandari python manage.py migrate"
     fi
 
     log "Setting up default roles..."
-    if docker exec mandari python manage.py setup_roles 2>/dev/null; then
+    if docker exec mandari python manage.py setup_roles 2>&1; then
         log "Roles created"
     else
         info "Roles may already exist or setup_roles command not available"
@@ -438,8 +458,6 @@ main() {
     generate_secrets
     create_env_file
     start_services
-    wait_for_all_services
-    run_migrations
     show_summary
 }
 

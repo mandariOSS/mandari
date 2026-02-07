@@ -6,7 +6,7 @@
 # Requirements:
 #   - Port 80 and 443 must be open and accessible from the internet
 #   - Domain must point to this server's IP
-#   - For localhost: HTTPS is disabled, uses HTTP only
+#   - For localhost: uses HTTP only (no TLS)
 # =============================================================================
 
 {
@@ -15,22 +15,10 @@
 }
 
 # =============================================================================
-# Health Check Endpoint (for Docker/internal monitoring)
+# Main Site
 # =============================================================================
-http://localhost {
-	handle /health {
-		respond "OK" 200
-	}
-	handle /health/ {
-		respond "OK" 200
-	}
-	handle {
-		respond "Not Found" 404
-	}
-}
-
-# =============================================================================
-# Main Site - HTTPS with automatic TLS
+# When DOMAIN=localhost, Caddy serves HTTP only (no TLS for localhost).
+# When DOMAIN=example.com, Caddy automatically provisions HTTPS via Let's Encrypt.
 # =============================================================================
 {$DOMAIN:localhost} {
 	# Compression
@@ -46,7 +34,7 @@ http://localhost {
 		-Server
 	}
 
-	# Health check endpoint
+	# Health check endpoint (for Docker/internal monitoring)
 	handle /health {
 		respond "OK" 200
 	}
@@ -54,86 +42,15 @@ http://localhost {
 		respond "OK" 200
 	}
 
-	# API routes
-	handle /api/* {
-		reverse_proxy mandari:8000 {
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-			header_up Host {host}
-		}
-	}
-
-	# Admin routes
-	handle /admin/* {
-		reverse_proxy mandari:8000 {
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-			header_up Host {host}
-		}
-	}
-
-	# Accounts routes (authentication)
-	handle /accounts/* {
-		reverse_proxy mandari:8000 {
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-			header_up Host {host}
-		}
-	}
-
-	# Work Portal
-	handle /work/* {
-		reverse_proxy mandari:8000 {
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-			header_up Host {host}
-		}
-	}
-
-	# Session RIS
-	handle /session/* {
-		reverse_proxy mandari:8000 {
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-			header_up Host {host}
-		}
-	}
-
-	# Static files (Django)
-	handle /static/* {
-		reverse_proxy mandari:8000 {
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-			header_up Host {host}
-		}
-	}
-
-	# Media files (uploaded content)
-	handle /media/* {
-		reverse_proxy mandari:8000 {
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-			header_up Host {host}
-		}
-	}
-
-	# WebSocket support
-	handle /ws/* {
-		reverse_proxy mandari:8000 {
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-			header_up Host {host}
-			header_up Connection {header.Connection}
-			header_up Upgrade {header.Upgrade}
-		}
-	}
-
-	# Public Portal (default - catch all)
+	# Proxy everything to Mandari (Django handles all routing)
 	handle {
 		reverse_proxy mandari:8000 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}
+			# WebSocket support
+			header_up Connection {header.Connection}
+			header_up Upgrade {header.Upgrade}
 		}
 	}
 

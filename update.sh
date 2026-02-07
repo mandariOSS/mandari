@@ -41,6 +41,32 @@ error() {
     exit 1
 }
 
+wait_for_healthy() {
+    local container=$1
+    local max_attempts=${2:-60}
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        local status
+        status=$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "unknown")
+
+        if [ "$status" = "healthy" ]; then
+            return 0
+        fi
+
+        if [ "$status" = "unhealthy" ]; then
+            return 1
+        fi
+
+        attempt=$((attempt + 1))
+        printf "."
+        sleep 2
+    done
+
+    echo ""
+    return 1
+}
+
 # =============================================================================
 # Parse Arguments
 # =============================================================================
@@ -148,23 +174,58 @@ log "Pulling new Docker images..."
 docker compose pull
 
 # =============================================================================
-# Restart Services
+# Restart Services (correct order for migrations)
 # =============================================================================
-log "Restarting services with new images..."
-docker compose up -d
+# Stop all services first
+log "Stopping services..."
+docker compose down
 
-# =============================================================================
-# Run Migrations
-# =============================================================================
-log "Waiting for services to start..."
-sleep 10
+# Phase 1: Start infrastructure
+log "Starting infrastructure services..."
+docker compose up -d postgres redis meilisearch
+
+echo -n "  PostgreSQL"
+if wait_for_healthy mandari-postgres 30; then
+    echo -e " ${GREEN}OK${NC}"
+else
+    echo -e " ${YELLOW}WAITING${NC}"
+fi
+
+echo -n "  Redis"
+if wait_for_healthy mandari-redis 15; then
+    echo -e " ${GREEN}OK${NC}"
+else
+    echo -e " ${YELLOW}WAITING${NC}"
+fi
+
+echo -n "  Meilisearch"
+if wait_for_healthy mandari-meilisearch 30; then
+    echo -e " ${GREEN}OK${NC}"
+else
+    echo -e " ${YELLOW}WAITING${NC}"
+fi
+
+# Phase 2: Start mandari + run migrations
+log "Starting Mandari..."
+docker compose up -d mandari
+
+echo -n "  Mandari"
+if wait_for_healthy mandari 60; then
+    echo -e " ${GREEN}OK${NC}"
+else
+    echo -e " ${YELLOW}STARTING${NC}"
+fi
 
 log "Running database migrations..."
-if docker exec mandari python manage.py migrate --noinput 2>/dev/null; then
+if docker exec mandari python manage.py migrate --noinput 2>&1; then
     log "Migrations completed successfully"
 else
     warn "Migration failed or not needed. Check logs: docker logs mandari"
 fi
+
+# Phase 3: Start ingestor + caddy (after migrations)
+log "Starting remaining services..."
+docker compose up -d
 
 # =============================================================================
 # Verify
