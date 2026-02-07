@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="de" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Mandari - Kommunalpolitische Transparenz. Open Source Plattform für Ratsinformationssysteme.">
+    <meta name="theme-color" content="#4f46e5">
+    <title>Mandari - Kommunalpolitik transparent machen</title>
+
+    <!-- Prevent dark mode FOUC -->
+    <script>
+        (function(){
+            const d = localStorage.getItem('mandari-dark');
+            if (d === 'true' || (!d && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
+
+    <!-- Fonts: DM Sans for geometric clarity, Instrument Serif for editorial contrast -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        ink: {
+                            50: '#f6f7f9',
+                            100: '#eceef2',
+                            200: '#d5d9e2',
+                            300: '#b0b8c9',
+                            400: '#8593ab',
+                            500: '#667691',
+                            600: '#515e78',
+                            700: '#434d62',
+                            800: '#3a4253',
+                            900: '#343a47',
+                            950: '#14161c',
+                        },
+                        civic: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            200: '#c7d2fe',
+                            300: '#a5b4fc',
+                            400: '#818cf8',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            800: '#3730a3',
+                            900: '#312e81',
+                            950: '#1e1b4b',
+                        },
+                        leaf: {
+                            400: '#4ade80',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                        },
+                    },
+                    fontFamily: {
+                        sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+                        editorial: ['"Instrument Serif"', 'Georgia', 'serif'],
+                    },
+                },
+            },
+        }
+    </script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+    <!-- Alpine.js -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <style>
+        [x-cloak] { display: none !important; }
+
+        /* Skip link */
+        .skip-link {
+            position: absolute; top: -100%; left: 50%; transform: translateX(-50%);
+            background: #4f46e5; color: white; padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem; z-index: 9999; transition: top 0.2s;
+        }
+        .skip-link:focus { top: 1rem; outline: 2px solid white; outline-offset: 2px; }
+
+        /* Focus visible */
+        :focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; }
+        .dark :focus-visible { outline-color: #818cf8; }
+
+        /* Dot grid texture */
+        .dot-grid {
+            background-image: radial-gradient(circle, rgba(99,102,241,0.08) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .dark .dot-grid {
+            background-image: radial-gradient(circle, rgba(129,140,248,0.06) 1px, transparent 1px);
+        }
+
+        /* Scroll reveal */
+        .reveal {
+            opacity: 0;
+            transform: translateY(28px);
+            transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .reveal-delay-1 { transition-delay: 0.08s; }
+        .reveal-delay-2 { transition-delay: 0.16s; }
+        .reveal-delay-3 { transition-delay: 0.24s; }
+        .reveal-delay-4 { transition-delay: 0.32s; }
+
+        /* Stat counter animation */
+        @keyframes countUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .stat-num { animation: countUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .stat-num:nth-child(1) { animation-delay: 0.5s; }
+        .stat-num:nth-child(2) { animation-delay: 0.6s; }
+        .stat-num:nth-child(3) { animation-delay: 0.7s; }
+        .stat-num:nth-child(4) { animation-delay: 0.8s; }
+
+        /* Hero floating layers */
+        @keyframes floatDoc1 {
+            0%, 100% { transform: translate(0, 0) rotate(-2deg); }
+            50% { transform: translate(4px, -8px) rotate(-1deg); }
+        }
+        @keyframes floatDoc2 {
+            0%, 100% { transform: translate(0, 0) rotate(1.5deg); }
+            50% { transform: translate(-6px, -6px) rotate(2.5deg); }
+        }
+        @keyframes floatDoc3 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(3px, -10px) rotate(-0.5deg); }
+        }
+        .float-doc-1 { animation: floatDoc1 6s ease-in-out infinite; }
+        .float-doc-2 { animation: floatDoc2 7s ease-in-out infinite 0.5s; }
+        .float-doc-3 { animation: floatDoc3 8s ease-in-out infinite 1s; }
+
+        /* Card hover lift */
+        .card-lift {
+            transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .card-lift:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px -12px rgba(0,0,0,0.1);
+        }
+        .dark .card-lift:hover {
+            box-shadow: 0 20px 40px -12px rgba(0,0,0,0.4);
+        }
+
+        /* Navbar glass */
+        .nav-glass {
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+        }
+
+        /* Gradient line accent */
+        .gradient-line {
+            background: linear-gradient(90deg, #4f46e5, #818cf8, #4f46e5);
+            background-size: 200% 100%;
+            animation: shimmer 3s ease-in-out infinite;
+        }
+        @keyframes shimmer {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        /* Smooth number transition */
+        .tabular-nums { font-variant-numeric: tabular-nums; }
+
+        /* Touch targets */
+        .touch-target { min-width: 44px; min-height: 44px; }
+
+        html, body { overflow-x: hidden; max-width: 100vw; }
+    </style>
+</head>
+
+<body class="min-h-screen bg-ink-50 dark:bg-ink-950 text-ink-900 dark:text-ink-100 font-sans antialiased"
+      x-data="{ darkMode: document.documentElement.classList.contains('dark'), mobileMenu: false }"
+      x-init="$watch('darkMode', v => { document.documentElement.classList.toggle('dark', v); localStorage.setItem('mandari-dark', v); })">
+
+    <a href="#main" class="skip-link">Zum Hauptinhalt springen</a>
+
+    <!-- ═══════════════════════════════════════════════ NAVBAR ═══════════════════════════════════════════════ -->
+    <header class="fixed top-0 left-0 right-0 z-50 nav-glass bg-white/80 dark:bg-ink-950/80 border-b border-ink-200/60 dark:border-ink-800/60" role="banner">
+        <!-- Gradient accent line -->
+        <div class="gradient-line h-[2px] w-full"></div>
+
+        <div class="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8">
+            <div class="flex items-center h-16">
+                <!-- Logo -->
+                <div class="flex-1 flex items-center">
+                    <a href="#" class="flex items-center gap-2.5 group" aria-label="Mandari Startseite">
+                        <svg class="w-8 h-8" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                            <rect width="32" height="32" rx="8" fill="url(#logo-grad)"/>
+                            <path d="M8 22V12l4-4h8l4 4v10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+                            <path d="M10 22V14l3-3h6l3 3v8" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.75"/>
+                            <path d="M12 22V16l2-2h4l2 2v6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <defs>
+                                <linearGradient id="logo-grad" x1="0" y1="0" x2="32" y2="32">
+                                    <stop stop-color="#6366f1"/>
+                                    <stop offset="1" stop-color="#4338ca"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                        <span class="font-bold text-lg tracking-tight text-ink-900 dark:text-white hidden sm:block">Mandari</span>
+                    </a>
+                </div>
+
+                <!-- Desktop Nav -->
+                <nav class="hidden lg:flex items-center gap-0.5" aria-label="Hauptnavigation">
+                    <!-- Produkt Dropdown -->
+                    <div class="relative" x-data="{ open: false }">
+                        <button @click="open = !open" @click.outside="open = false" @keydown.escape="open = false"
+                                class="flex items-center gap-1 px-3 py-2 text-sm font-medium text-ink-600 dark:text-ink-300 hover:text-civic-600 dark:hover:text-civic-400 rounded-lg hover:bg-ink-100/60 dark:hover:bg-ink-800/60 transition-colors"
+                                :aria-expanded="open.toString()" aria-haspopup="true">
+                            Produkt
+                            <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform duration-200" :class="open && 'rotate-180'" aria-hidden="true"></i>
+                        </button>
+                        <div x-show="open" x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 translate-y-1" x-transition:enter-end="opacity-100 translate-y-0" x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+                             class="absolute left-0 mt-2 w-52 bg-white dark:bg-ink-900 rounded-xl shadow-xl shadow-ink-900/5 dark:shadow-black/30 border border-ink-200 dark:border-ink-800 py-1.5 z-50" role="menu" x-cloak>
+                            <a href="#module" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 hover:text-civic-700 dark:hover:text-civic-300 transition-colors">
+                                <i data-lucide="layers" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Funktionen
+                            </a>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 hover:text-civic-700 dark:hover:text-civic-300 transition-colors">
+                                <i data-lucide="users" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Zielgruppen
+                            </a>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 hover:text-civic-700 dark:hover:text-civic-300 transition-colors">
+                                <i data-lucide="map-pin" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Kommunen
+                            </a>
+                            <div class="border-t border-ink-100 dark:border-ink-800 my-1.5"></div>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 hover:text-civic-700 dark:hover:text-civic-300 transition-colors">
+                                <i data-lucide="shield" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Sicherheit
+                            </a>
+                            <a href="#opensource" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 hover:text-civic-700 dark:hover:text-civic-300 transition-colors">
+                                <i data-lucide="github" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Open Source
+                            </a>
+                        </div>
+                    </div>
+
+                    <a href="#" class="px-3 py-2 text-sm font-medium text-ink-600 dark:text-ink-300 hover:text-civic-600 dark:hover:text-civic-400 rounded-lg hover:bg-ink-100/60 dark:hover:bg-ink-800/60 transition-colors">Preise</a>
+
+                    <!-- Über uns Dropdown -->
+                    <div class="relative" x-data="{ open: false }">
+                        <button @click="open = !open" @click.outside="open = false" @keydown.escape="open = false"
+                                class="flex items-center gap-1 px-3 py-2 text-sm font-medium text-ink-600 dark:text-ink-300 hover:text-civic-600 dark:hover:text-civic-400 rounded-lg hover:bg-ink-100/60 dark:hover:bg-ink-800/60 transition-colors"
+                                :aria-expanded="open.toString()" aria-haspopup="true">
+                            Über uns
+                            <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform duration-200" :class="open && 'rotate-180'" aria-hidden="true"></i>
+                        </button>
+                        <div x-show="open" x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 translate-y-1" x-transition:enter-end="opacity-100 translate-y-0" x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+                             class="absolute left-0 mt-2 w-48 bg-white dark:bg-ink-900 rounded-xl shadow-xl shadow-ink-900/5 dark:shadow-black/30 border border-ink-200 dark:border-ink-800 py-1.5 z-50" role="menu" x-cloak>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 transition-colors">
+                                <i data-lucide="compass" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Mission & Werte
+                            </a>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 transition-colors">
+                                <i data-lucide="heart" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Team
+                            </a>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 transition-colors">
+                                <i data-lucide="handshake" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Partner
+                            </a>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 transition-colors">
+                                <i data-lucide="git-pull-request" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Mitmachen
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Ressourcen Dropdown -->
+                    <div class="relative" x-data="{ open: false }">
+                        <button @click="open = !open" @click.outside="open = false" @keydown.escape="open = false"
+                                class="flex items-center gap-1 px-3 py-2 text-sm font-medium text-ink-600 dark:text-ink-300 hover:text-civic-600 dark:hover:text-civic-400 rounded-lg hover:bg-ink-100/60 dark:hover:bg-ink-800/60 transition-colors"
+                                :aria-expanded="open.toString()" aria-haspopup="true">
+                            Ressourcen
+                            <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform duration-200" :class="open && 'rotate-180'" aria-hidden="true"></i>
+                        </button>
+                        <div x-show="open" x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 translate-y-1" x-transition:enter-end="opacity-100 translate-y-0" x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+                             class="absolute left-0 mt-2 w-48 bg-white dark:bg-ink-900 rounded-xl shadow-xl shadow-ink-900/5 dark:shadow-black/30 border border-ink-200 dark:border-ink-800 py-1.5 z-50" role="menu" x-cloak>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 transition-colors">
+                                <i data-lucide="newspaper" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Blog
+                            </a>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 transition-colors">
+                                <i data-lucide="tag" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Releases
+                            </a>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 transition-colors">
+                                <i data-lucide="map" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Roadmap
+                            </a>
+                            <div class="border-t border-ink-100 dark:border-ink-800 my-1.5"></div>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 transition-colors">
+                                <i data-lucide="help-circle" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>FAQ
+                            </a>
+                            <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 dark:text-ink-200 hover:bg-civic-50 dark:hover:bg-civic-950/30 transition-colors">
+                                <i data-lucide="megaphone" class="w-4 h-4 text-civic-500" aria-hidden="true"></i>Presse
+                            </a>
+                        </div>
+                    </div>
+
+                    <a href="#cta" class="px-3 py-2 text-sm font-medium text-ink-600 dark:text-ink-300 hover:text-civic-600 dark:hover:text-civic-400 rounded-lg hover:bg-ink-100/60 dark:hover:bg-ink-800/60 transition-colors">Kontakt</a>
+                </nav>
+
+                <!-- Right actions -->
+                <div class="flex-1 flex items-center justify-end gap-2">
+                    <a href="#" class="hidden md:inline-flex items-center gap-2 px-4 py-2 bg-civic-600 hover:bg-civic-700 text-white text-sm font-medium rounded-lg transition-all duration-200 hover:shadow-lg hover:shadow-civic-500/25">
+                        <i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>
+                        Insight öffnen
+                    </a>
+
+                    <button @click="darkMode = !darkMode"
+                            class="p-2.5 rounded-lg text-ink-500 hover:text-ink-700 dark:text-ink-400 dark:hover:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors touch-target flex items-center justify-center"
+                            :aria-label="darkMode ? 'Helles Design' : 'Dunkles Design'">
+                        <i x-show="!darkMode" data-lucide="moon" class="w-5 h-5" aria-hidden="true"></i>
+                        <i x-show="darkMode" data-lucide="sun" class="w-5 h-5" aria-hidden="true" x-cloak></i>
+                    </button>
+
+                    <button @click="mobileMenu = !mobileMenu"
+                            class="lg:hidden p-2.5 rounded-lg text-ink-500 hover:text-ink-700 dark:text-ink-400 dark:hover:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors touch-target flex items-center justify-center"
+                            :aria-expanded="mobileMenu.toString()" aria-label="Menü öffnen">
+                        <i x-show="!mobileMenu" data-lucide="menu" class="w-6 h-6" aria-hidden="true"></i>
+                        <i x-show="mobileMenu" data-lucide="x" class="w-6 h-6" aria-hidden="true" x-cloak></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile Menu -->
+        <div x-show="mobileMenu" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 -translate-y-2" x-transition:enter-end="opacity-100 translate-y-0" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0 -translate-y-2"
+             class="lg:hidden bg-white/95 dark:bg-ink-950/95 nav-glass border-b border-ink-200 dark:border-ink-800 max-h-[calc(100vh-4.5rem)] overflow-y-auto" x-cloak>
+            <div class="px-5 py-5 space-y-1.5">
+                <a href="#" @click="mobileMenu = false" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-civic-600 text-white font-medium">
+                    <i data-lucide="eye" class="w-5 h-5" aria-hidden="true"></i>Insight öffnen
+                    <i data-lucide="arrow-right" class="w-4 h-4 ml-auto opacity-60" aria-hidden="true"></i>
+                </a>
+                <div class="pt-3 pb-1"><p class="px-4 text-[11px] font-semibold text-ink-400 uppercase tracking-widest">Produkt</p></div>
+                <a href="#module" @click="mobileMenu = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors">
+                    <i data-lucide="layers" class="w-5 h-5 text-civic-500" aria-hidden="true"></i>Funktionen</a>
+                <a href="#" @click="mobileMenu = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors">
+                    <i data-lucide="users" class="w-5 h-5 text-civic-500" aria-hidden="true"></i>Zielgruppen</a>
+                <a href="#" @click="mobileMenu = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors">
+                    <i data-lucide="shield" class="w-5 h-5 text-civic-500" aria-hidden="true"></i>Sicherheit</a>
+                <div class="border-t border-ink-200 dark:border-ink-800 my-2"></div>
+                <div class="pt-1 pb-1"><p class="px-4 text-[11px] font-semibold text-ink-400 uppercase tracking-widest">Über uns</p></div>
+                <a href="#" @click="mobileMenu = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors">
+                    <i data-lucide="compass" class="w-5 h-5 text-civic-500" aria-hidden="true"></i>Mission</a>
+                <a href="#" @click="mobileMenu = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors">
+                    <i data-lucide="heart" class="w-5 h-5 text-civic-500" aria-hidden="true"></i>Team</a>
+                <a href="#" @click="mobileMenu = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors">
+                    <i data-lucide="git-pull-request" class="w-5 h-5 text-civic-500" aria-hidden="true"></i>Mitmachen</a>
+                <div class="border-t border-ink-200 dark:border-ink-800 my-2"></div>
+                <div class="pt-1 pb-1"><p class="px-4 text-[11px] font-semibold text-ink-400 uppercase tracking-widest">Ressourcen</p></div>
+                <a href="#" @click="mobileMenu = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors">
+                    <i data-lucide="newspaper" class="w-5 h-5 text-civic-500" aria-hidden="true"></i>Blog</a>
+                <a href="#" @click="mobileMenu = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors">
+                    <i data-lucide="tag" class="w-5 h-5 text-civic-500" aria-hidden="true"></i>Releases</a>
+                <a href="#cta" @click="mobileMenu = false" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-ink-700 dark:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors">
+                    <i data-lucide="mail" class="w-5 h-5 text-civic-500" aria-hidden="true"></i>Kontakt</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- ═══════════════════════════════════════════════ MAIN ═══════════════════════════════════════════════ -->
+    <main id="main" class="pt-[4.5rem]" role="main" tabindex="-1">
+
+        <!-- ─────────────────── HERO ─────────────────── -->
+        <section class="relative overflow-hidden dot-grid">
+            <!-- Background orbs -->
+            <div class="absolute inset-0 pointer-events-none overflow-hidden">
+                <div class="absolute top-20 right-[10%] w-[500px] h-[500px] bg-civic-400/10 dark:bg-civic-500/5 rounded-full blur-[120px]"></div>
+                <div class="absolute -bottom-20 left-[5%] w-[400px] h-[400px] bg-civic-300/10 dark:bg-civic-600/5 rounded-full blur-[100px]"></div>
+            </div>
+
+            <div class="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 relative">
+                <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center py-20 lg:py-32">
+                    <!-- Left: Copy -->
+                    <div class="max-w-xl">
+                        <div class="reveal">
+                            <span class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-civic-100 dark:bg-civic-950/60 text-civic-700 dark:text-civic-300 text-xs font-semibold tracking-wide uppercase border border-civic-200/60 dark:border-civic-800/60 mb-8">
+                                <span class="w-1.5 h-1.5 rounded-full bg-leaf-500 animate-pulse"></span>
+                                Beta &mdash; 100% Open Source
+                            </span>
+                        </div>
+
+                        <h1 class="reveal reveal-delay-1">
+                            <span class="block text-4xl sm:text-5xl lg:text-[3.5rem] font-bold leading-[1.1] tracking-tight text-ink-900 dark:text-white">
+                                Kommunalpolitik
+                            </span>
+                            <span class="block text-4xl sm:text-5xl lg:text-[3.5rem] font-editorial italic leading-[1.1] text-civic-600 dark:text-civic-400 mt-1">
+                                transparent machen
+                            </span>
+                        </h1>
+
+                        <p class="reveal reveal-delay-2 mt-6 text-lg text-ink-500 dark:text-ink-400 leading-relaxed max-w-lg">
+                            Mandari ist die Open-Source-Plattform für Ratsinformations&shy;systeme. Für Bürger*innen, Fraktionen und Verwaltungen.
+                        </p>
+
+                        <div class="reveal reveal-delay-3 mt-10 flex flex-wrap gap-3">
+                            <a href="#"
+                               class="inline-flex items-center gap-2.5 px-7 py-3.5 bg-civic-600 hover:bg-civic-700 text-white font-medium rounded-xl transition-all duration-200 text-[15px] shadow-lg shadow-civic-600/20 hover:shadow-xl hover:shadow-civic-600/30 hover:-translate-y-0.5">
+                                <i data-lucide="layout-dashboard" class="w-[18px] h-[18px]" aria-hidden="true"></i>
+                                Zum Bürgerportal
+                            </a>
+                            <a href="#module"
+                               class="inline-flex items-center gap-2 px-7 py-3.5 bg-white dark:bg-ink-800 hover:bg-ink-50 dark:hover:bg-ink-700 text-ink-900 dark:text-white font-medium rounded-xl transition-all duration-200 text-[15px] border border-ink-200 dark:border-ink-700 hover:-translate-y-0.5">
+                                Mehr erfahren
+                                <i data-lucide="arrow-down" class="w-4 h-4 opacity-50" aria-hidden="true"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Right: Floating document layers illustration -->
+                    <div class="hidden lg:flex items-center justify-center relative" aria-hidden="true">
+                        <div class="relative w-[420px] h-[340px]">
+                            <!-- Back layer -->
+                            <div class="float-doc-1 absolute top-4 left-4 w-[280px] h-[200px] rounded-2xl bg-white/60 dark:bg-ink-800/40 border border-ink-200/50 dark:border-ink-700/50 shadow-xl shadow-ink-900/5 dark:shadow-black/20 p-6">
+                                <div class="w-24 h-2.5 bg-ink-200 dark:bg-ink-700 rounded-full mb-3"></div>
+                                <div class="w-40 h-2 bg-ink-100 dark:bg-ink-800 rounded-full mb-2.5"></div>
+                                <div class="w-36 h-2 bg-ink-100 dark:bg-ink-800 rounded-full mb-2.5"></div>
+                                <div class="w-28 h-2 bg-ink-100 dark:bg-ink-800 rounded-full mb-5"></div>
+                                <div class="flex gap-2">
+                                    <div class="w-14 h-6 rounded-md bg-leaf-500/20 border border-leaf-500/30"></div>
+                                    <div class="w-14 h-6 rounded-md bg-ink-100 dark:bg-ink-700"></div>
+                                </div>
+                            </div>
+                            <!-- Middle layer -->
+                            <div class="float-doc-2 absolute top-16 left-20 w-[280px] h-[200px] rounded-2xl bg-white/80 dark:bg-ink-800/60 border border-ink-200/60 dark:border-ink-700/60 shadow-xl shadow-ink-900/5 dark:shadow-black/20 backdrop-blur-sm p-6">
+                                <div class="flex items-center gap-2 mb-4">
+                                    <div class="w-6 h-6 rounded-lg bg-civic-100 dark:bg-civic-900/50 flex items-center justify-center">
+                                        <i data-lucide="file-text" class="w-3 h-3 text-civic-600 dark:text-civic-400"></i>
+                                    </div>
+                                    <div class="w-20 h-2.5 bg-ink-200 dark:bg-ink-700 rounded-full"></div>
+                                </div>
+                                <div class="w-44 h-2 bg-ink-100 dark:bg-ink-800 rounded-full mb-2"></div>
+                                <div class="w-40 h-2 bg-ink-100 dark:bg-ink-800 rounded-full mb-2"></div>
+                                <div class="w-32 h-2 bg-ink-100 dark:bg-ink-800 rounded-full mb-4"></div>
+                                <div class="flex gap-3 items-center">
+                                    <div class="w-8 h-8 rounded-full bg-civic-100 dark:bg-civic-900/50"></div>
+                                    <div>
+                                        <div class="w-16 h-2 bg-ink-200 dark:bg-ink-700 rounded-full mb-1"></div>
+                                        <div class="w-12 h-1.5 bg-ink-100 dark:bg-ink-800 rounded-full"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Front layer -->
+                            <div class="float-doc-3 absolute top-28 left-36 w-[280px] h-[200px] rounded-2xl bg-white dark:bg-ink-900 border border-ink-200 dark:border-ink-700 shadow-2xl shadow-ink-900/10 dark:shadow-black/30 p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-civic-500 to-civic-700 flex items-center justify-center">
+                                            <i data-lucide="landmark" class="w-3.5 h-3.5 text-white"></i>
+                                        </div>
+                                        <div class="w-24 h-2.5 bg-ink-900 dark:bg-white rounded-full opacity-30"></div>
+                                    </div>
+                                    <div class="w-12 h-5 rounded-full bg-leaf-500/15 flex items-center justify-center">
+                                        <span class="text-[9px] font-semibold text-leaf-600 dark:text-leaf-400">Live</span>
+                                    </div>
+                                </div>
+                                <div class="space-y-2.5">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-civic-500"></div>
+                                        <div class="w-36 h-2 bg-ink-200 dark:bg-ink-700 rounded-full"></div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-civic-400"></div>
+                                        <div class="w-28 h-2 bg-ink-100 dark:bg-ink-800 rounded-full"></div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-civic-300"></div>
+                                        <div class="w-32 h-2 bg-ink-100 dark:bg-ink-800 rounded-full"></div>
+                                    </div>
+                                </div>
+                                <div class="mt-4 pt-3 border-t border-ink-100 dark:border-ink-800 flex justify-between items-center">
+                                    <div class="w-20 h-1.5 bg-ink-100 dark:bg-ink-800 rounded-full"></div>
+                                    <div class="w-6 h-6 rounded-md bg-civic-600 flex items-center justify-center">
+                                        <i data-lucide="arrow-right" class="w-3 h-3 text-white"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats bar -->
+                <div class="reveal border-t border-ink-200/60 dark:border-ink-800/60 py-10 lg:py-12">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-8 lg:gap-12">
+                        <div class="stat-num text-center md:text-left">
+                            <div class="text-3xl lg:text-4xl font-bold tabular-nums text-ink-900 dark:text-white">12</div>
+                            <div class="text-sm text-ink-500 dark:text-ink-400 mt-1 font-medium">Kommunen</div>
+                        </div>
+                        <div class="stat-num text-center md:text-left">
+                            <div class="text-3xl lg:text-4xl font-bold tabular-nums text-ink-900 dark:text-white">847</div>
+                            <div class="text-sm text-ink-500 dark:text-ink-400 mt-1 font-medium">Gremien</div>
+                        </div>
+                        <div class="stat-num text-center md:text-left">
+                            <div class="text-3xl lg:text-4xl font-bold tabular-nums text-ink-900 dark:text-white">3.204</div>
+                            <div class="text-sm text-ink-500 dark:text-ink-400 mt-1 font-medium">Personen</div>
+                        </div>
+                        <div class="stat-num text-center md:text-left">
+                            <div class="text-3xl lg:text-4xl font-bold tabular-nums text-ink-900 dark:text-white">42.516</div>
+                            <div class="text-sm text-ink-500 dark:text-ink-400 mt-1 font-medium">Vorgänge</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ─────────────────── MODULES ─────────────────── -->
+        <section id="module" class="py-24 lg:py-32 bg-white dark:bg-ink-900/50">
+            <div class="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8">
+                <div class="text-center mb-16 reveal">
+                    <p class="text-xs font-semibold text-civic-600 dark:text-civic-400 uppercase tracking-widest mb-3">Plattform</p>
+                    <h2 class="text-3xl lg:text-4xl font-bold text-ink-900 dark:text-white tracking-tight">Drei Module, ein Ziel</h2>
+                    <p class="mt-4 text-lg text-ink-500 dark:text-ink-400 max-w-xl mx-auto">
+                        Mandari verbindet Transparenz mit Effizienz &mdash; für jede Rolle im kommunalen Ökosystem.
+                    </p>
+                </div>
+
+                <div class="grid lg:grid-cols-3 gap-6 lg:gap-8">
+                    <!-- Insight -->
+                    <div class="reveal reveal-delay-1 card-lift group bg-ink-50 dark:bg-ink-900 rounded-2xl p-8 border border-ink-200 dark:border-ink-800 relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-leaf-500 to-leaf-400"></div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-11 h-11 rounded-xl bg-leaf-100 dark:bg-leaf-500/10 flex items-center justify-center">
+                                <i data-lucide="eye" class="w-5 h-5 text-leaf-600 dark:text-leaf-400"></i>
+                            </div>
+                            <span class="text-xs font-semibold text-leaf-600 dark:text-leaf-400 bg-leaf-100 dark:bg-leaf-500/10 px-2.5 py-1 rounded-full">Kostenlos</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-ink-900 dark:text-white mb-2">Mandari Insight</h3>
+                        <p class="text-ink-500 dark:text-ink-400 text-[15px] leading-relaxed mb-6">
+                            Das Bürger*innen-Portal. Öffentlicher Zugang zu allen Ratsinformationen &mdash; kostenlos und ohne Anmeldung.
+                        </p>
+                        <ul class="space-y-2.5 mb-8">
+                            <li class="flex items-center gap-2.5 text-sm text-ink-600 dark:text-ink-300">
+                                <i data-lucide="check" class="w-4 h-4 text-leaf-500 shrink-0" aria-hidden="true"></i>Volltextsuche in allen Dokumenten
+                            </li>
+                            <li class="flex items-center gap-2.5 text-sm text-ink-600 dark:text-ink-300">
+                                <i data-lucide="check" class="w-4 h-4 text-leaf-500 shrink-0" aria-hidden="true"></i>Interaktive Kartenansicht
+                            </li>
+                            <li class="flex items-center gap-2.5 text-sm text-ink-600 dark:text-ink-300">
+                                <i data-lucide="check" class="w-4 h-4 text-leaf-500 shrink-0" aria-hidden="true"></i>KI-gestützter Assistent
+                            </li>
+                        </ul>
+                        <a href="#" class="inline-flex items-center gap-2 text-sm font-semibold text-leaf-600 dark:text-leaf-400 group-hover:gap-3 transition-all">
+                            Portal öffnen <i data-lucide="arrow-right" class="w-4 h-4" aria-hidden="true"></i>
+                        </a>
+                    </div>
+
+                    <!-- Work -->
+                    <div class="reveal reveal-delay-2 card-lift group bg-ink-50 dark:bg-ink-900 rounded-2xl p-8 border border-ink-200 dark:border-ink-800 relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-civic-600 to-civic-400"></div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-11 h-11 rounded-xl bg-civic-100 dark:bg-civic-500/10 flex items-center justify-center">
+                                <i data-lucide="briefcase" class="w-5 h-5 text-civic-600 dark:text-civic-400"></i>
+                            </div>
+                            <span class="text-xs font-semibold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/10 px-2.5 py-1 rounded-full">Beta &mdash; ab 39,90&thinsp;&euro;</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-ink-900 dark:text-white mb-2">Mandari Work</h3>
+                        <p class="text-ink-500 dark:text-ink-400 text-[15px] leading-relaxed mb-6">
+                            Das Fraktions-Tool. Team-Kollaboration, KI-Zusammenfassungen und professionelle Sitzungsvorbereitung.
+                        </p>
+                        <ul class="space-y-2.5 mb-8">
+                            <li class="flex items-center gap-2.5 text-sm text-ink-600 dark:text-ink-300">
+                                <i data-lucide="check" class="w-4 h-4 text-civic-500 shrink-0" aria-hidden="true"></i>Team-Workspaces
+                            </li>
+                            <li class="flex items-center gap-2.5 text-sm text-ink-600 dark:text-ink-300">
+                                <i data-lucide="check" class="w-4 h-4 text-civic-500 shrink-0" aria-hidden="true"></i>KI-Zusammenfassungen
+                            </li>
+                            <li class="flex items-center gap-2.5 text-sm text-ink-600 dark:text-ink-300">
+                                <i data-lucide="check" class="w-4 h-4 text-civic-500 shrink-0" aria-hidden="true"></i>E-Mail-Benachrichtigungen
+                            </li>
+                        </ul>
+                        <a href="#" class="inline-flex items-center gap-2 text-sm font-semibold text-civic-600 dark:text-civic-400 group-hover:gap-3 transition-all">
+                            Preise ansehen <i data-lucide="arrow-right" class="w-4 h-4" aria-hidden="true"></i>
+                        </a>
+                    </div>
+
+                    <!-- Session -->
+                    <div class="reveal reveal-delay-3 card-lift group bg-ink-50 dark:bg-ink-900 rounded-2xl p-8 border border-ink-200 dark:border-ink-800 relative overflow-hidden opacity-[0.85]">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-blue-400 opacity-50"></div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-11 h-11 rounded-xl bg-blue-100 dark:bg-blue-500/10 flex items-center justify-center">
+                                <i data-lucide="gavel" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+                            </div>
+                            <span class="text-xs font-semibold text-ink-500 dark:text-ink-400 bg-ink-100 dark:bg-ink-800 px-2.5 py-1 rounded-full">In Entwicklung</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-ink-900 dark:text-white mb-2">Mandari Session</h3>
+                        <p class="text-ink-500 dark:text-ink-400 text-[15px] leading-relaxed mb-6">
+                            Das Verwaltungs-Modul. Vollständiges Sitzungsmanagement &mdash; von der Einladung bis zum Protokoll.
+                        </p>
+                        <ul class="space-y-2.5 mb-8">
+                            <li class="flex items-center gap-2.5 text-sm text-ink-400 dark:text-ink-500">
+                                <i data-lucide="clock" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Sitzungsplanung
+                            </li>
+                            <li class="flex items-center gap-2.5 text-sm text-ink-400 dark:text-ink-500">
+                                <i data-lucide="clock" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Einladungsversand
+                            </li>
+                            <li class="flex items-center gap-2.5 text-sm text-ink-400 dark:text-ink-500">
+                                <i data-lucide="clock" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Protokollierung
+                            </li>
+                        </ul>
+                        <span class="inline-flex items-center gap-2 text-sm font-medium text-ink-400 dark:text-ink-500">
+                            Kommt bald
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ─────────────────── OPEN SOURCE ─────────────────── -->
+        <section id="opensource" class="py-24 lg:py-32">
+            <div class="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8">
+                <div class="reveal relative rounded-3xl overflow-hidden">
+                    <!-- Dark panel background -->
+                    <div class="absolute inset-0 bg-ink-950 dark:bg-ink-900"></div>
+                    <!-- Subtle grid overlay -->
+                    <div class="absolute inset-0 opacity-[0.04]" style="background-image: linear-gradient(rgba(255,255,255,.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.15) 1px, transparent 1px); background-size: 40px 40px;"></div>
+                    <!-- Glow -->
+                    <div class="absolute top-0 right-0 w-[400px] h-[400px] bg-civic-600/15 rounded-full blur-[120px]"></div>
+
+                    <div class="relative px-8 py-16 lg:px-20 lg:py-24">
+                        <div class="grid lg:grid-cols-2 gap-12 items-center">
+                            <div>
+                                <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-white/80 text-xs font-semibold tracking-wide uppercase mb-6">
+                                    <i data-lucide="scale" class="w-3.5 h-3.5" aria-hidden="true"></i>
+                                    EUPL-1.2 Lizenz
+                                </span>
+                                <h2 class="text-3xl lg:text-4xl font-bold text-white tracking-tight mb-4">
+                                    100% Open Source
+                                </h2>
+                                <p class="text-lg text-ink-300 leading-relaxed max-w-lg">
+                                    Alle drei Mandari-Module sind vollständig quelloffen. Hosten Sie selbst oder nutzen Sie unseren Managed Service.
+                                </p>
+                            </div>
+                            <div class="flex flex-col sm:flex-row gap-3 lg:justify-end">
+                                <a href="https://github.com/mandariOSS/mandari" target="_blank" rel="noopener noreferrer"
+                                   class="inline-flex items-center justify-center gap-2.5 px-6 py-3.5 bg-white text-ink-900 font-medium rounded-xl hover:bg-ink-100 transition-all text-[15px] hover:-translate-y-0.5">
+                                    <i data-lucide="github" class="w-5 h-5" aria-hidden="true"></i>
+                                    GitHub Repository
+                                </a>
+                                <a href="#"
+                                   class="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-white/10 text-white font-medium rounded-xl hover:bg-white/[0.15] transition-all text-[15px] border border-white/10 hover:-translate-y-0.5">
+                                    Mehr erfahren
+                                    <i data-lucide="arrow-right" class="w-4 h-4" aria-hidden="true"></i>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ─────────────────── CTA ─────────────────── -->
+        <section id="cta" class="relative overflow-hidden">
+            <div class="absolute inset-0 bg-civic-600 dark:bg-civic-900"></div>
+            <div class="absolute inset-0 dot-grid" style="background-image: radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px); background-size: 24px 24px;"></div>
+
+            <div class="relative max-w-4xl mx-auto px-5 sm:px-6 lg:px-8 py-20 lg:py-28 text-center reveal">
+                <h2 class="text-3xl lg:text-4xl font-bold text-white tracking-tight mb-4">
+                    Bereit für mehr Transparenz?
+                </h2>
+                <p class="text-lg text-civic-100/80 mb-10 max-w-2xl mx-auto leading-relaxed">
+                    Starten Sie jetzt mit Mandari Insight &mdash; kostenlos und ohne Anmeldung.
+                    Oder kontaktieren Sie uns für Mandari Work.
+                </p>
+                <div class="flex flex-wrap justify-center gap-3">
+                    <a href="#"
+                       class="inline-flex items-center gap-2.5 px-7 py-3.5 bg-white text-civic-700 font-medium rounded-xl hover:bg-ink-50 transition-all text-[15px] hover:-translate-y-0.5 shadow-lg shadow-ink-950/10">
+                        <i data-lucide="layout-dashboard" class="w-[18px] h-[18px]" aria-hidden="true"></i>
+                        Zum Portal
+                    </a>
+                    <a href="#"
+                       class="inline-flex items-center gap-2.5 px-7 py-3.5 bg-white/10 text-white font-medium rounded-xl hover:bg-white/[0.18] transition-all text-[15px] border border-white/20 hover:-translate-y-0.5">
+                        <i data-lucide="mail" class="w-[18px] h-[18px]" aria-hidden="true"></i>
+                        Kontakt
+                    </a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ═══════════════════════════════════════════════ FOOTER ═══════════════════════════════════════════════ -->
+    <footer class="bg-white dark:bg-ink-950 border-t border-ink-200 dark:border-ink-800" role="contentinfo">
+        <div class="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 py-16">
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-10">
+                <!-- Brand -->
+                <div class="col-span-2">
+                    <div class="flex items-center gap-2.5 mb-4">
+                        <svg class="w-8 h-8" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                            <rect width="32" height="32" rx="8" fill="url(#logo-grad2)"/>
+                            <path d="M8 22V12l4-4h8l4 4v10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+                            <path d="M10 22V14l3-3h6l3 3v8" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.75"/>
+                            <path d="M12 22V16l2-2h4l2 2v6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <defs><linearGradient id="logo-grad2" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#6366f1"/><stop offset="1" stop-color="#4338ca"/></linearGradient></defs>
+                        </svg>
+                        <span class="font-bold text-lg tracking-tight text-ink-900 dark:text-white">Mandari</span>
+                    </div>
+                    <p class="text-sm text-ink-500 dark:text-ink-400 max-w-xs leading-relaxed mb-5">
+                        Kommunalpolitik transparent machen. Open-Source-Plattform für Ratsinformationssysteme.
+                    </p>
+                    <a href="https://github.com/mandariOSS/mandari" target="_blank" rel="noopener noreferrer"
+                       class="inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-400 hover:text-ink-600 dark:hover:text-ink-200 hover:bg-ink-100 dark:hover:bg-ink-800 transition-colors"
+                       aria-label="Mandari auf GitHub">
+                        <i data-lucide="github" class="w-5 h-5" aria-hidden="true"></i>
+                    </a>
+                </div>
+
+                <!-- Produkt -->
+                <nav aria-labelledby="footer-produkt">
+                    <h3 id="footer-produkt" class="text-sm font-semibold text-ink-900 dark:text-white mb-4">Produkt</h3>
+                    <ul class="space-y-2.5">
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Funktionen</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Zielgruppen</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Kommunen</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Preise</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Sicherheit</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Open Source</a></li>
+                    </ul>
+                </nav>
+
+                <!-- Über uns -->
+                <nav aria-labelledby="footer-about">
+                    <h3 id="footer-about" class="text-sm font-semibold text-ink-900 dark:text-white mb-4">Über uns</h3>
+                    <ul class="space-y-2.5">
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Mission & Werte</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Team</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Partner</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Mitmachen</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Roadmap</a></li>
+                    </ul>
+                </nav>
+
+                <!-- Ressourcen -->
+                <nav aria-labelledby="footer-resources">
+                    <h3 id="footer-resources" class="text-sm font-semibold text-ink-900 dark:text-white mb-4">Ressourcen</h3>
+                    <ul class="space-y-2.5">
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Blog</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Releases</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">FAQ</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Presse</a></li>
+                        <li><a href="#" class="text-sm text-ink-500 dark:text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Kontakt</a></li>
+                    </ul>
+                    <ul class="space-y-2 mt-5 pt-4 border-t border-ink-200 dark:border-ink-800" aria-label="Rechtliches">
+                        <li><a href="#" class="text-xs text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Impressum</a></li>
+                        <li><a href="#" class="text-xs text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">Datenschutz</a></li>
+                        <li><a href="#" class="text-xs text-ink-400 hover:text-civic-600 dark:hover:text-civic-400 transition-colors">AGB</a></li>
+                    </ul>
+                </nav>
+            </div>
+
+            <!-- Copyright -->
+            <div class="border-t border-ink-200 dark:border-ink-800 mt-12 pt-8 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <p class="text-sm text-ink-400 text-center sm:text-left">
+                    &copy; 2026 Mandari. Open Source unter EUPL-1.2 Lizenz.
+                </p>
+                <div class="flex items-center gap-4 text-sm text-ink-400">
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 bg-leaf-500 rounded-full" aria-hidden="true"></span>
+                        Beta
+                    </span>
+                    <a href="#" class="hover:text-civic-600 dark:hover:text-civic-400 transition-colors tabular-nums">v0.9.0</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- ═══════════════════════════════════════════════ SCRIPTS ═══════════════════════════════════════════════ -->
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Scroll reveal observer
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    revealObserver.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+        document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+    </script>
+</body>
+</html>
