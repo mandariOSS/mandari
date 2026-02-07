@@ -51,7 +51,7 @@
 	# =========================================================================
 	@mandari {
 		path /insight/* /work/* /session/* /accounts/* /admin/* /api/* /public/*
-		path /static/admin/* /static/work/* /static/session/*
+		path /static/*
 		path /sitemap-insight-*
 	}
 	handle @mandari {
