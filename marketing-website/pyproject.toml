@@ -7,7 +7,7 @@ license = {text = "EUPL-1.2"}
 
 dependencies = [
     "django>=6.0,<7.0",
-    "wagtail>=6.4,<7.0",
+    "wagtail>=7.0,<8.0",
     "dj-database-url>=2.3.0",
     "gunicorn>=23.0.0",
     "psycopg[binary]>=3.2.0",
