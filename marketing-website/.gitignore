@@ -10,6 +10,9 @@ db.sqlite3
 staticfiles/
 media/
 
+# Generated CSS (built by Tailwind)
+static/css/styles.css
+
 # Node
 node_modules/
 

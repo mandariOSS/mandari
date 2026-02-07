@@ -1,11 +1,15 @@
+# Mandari Marketing Website (Wagtail CMS)
+
 FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    DJANGO_SETTINGS_MODULE=website.settings
 
 WORKDIR /app
 
-# Install system dependencies (Pillow needs these)
+# Install system dependencies (Pillow + curl for healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg62-turbo-dev \
     zlib1g-dev \
@@ -25,25 +29,32 @@ RUN npm install
 
 COPY static/css/input.css ./static/css/input.css
 COPY templates/ ./templates/
-COPY marketing/templates/ ./marketing/templates/ 2>/dev/null || true
-COPY blog/templates/ ./blog/templates/ 2>/dev/null || true
 
 RUN npm run build:css
 
 # Final image
 FROM base AS final
 
+# Install Python dependencies (copy pyproject.toml + minimal package structure for caching)
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e .
+RUN mkdir -p website marketing blog && \
+    touch website/__init__.py marketing/__init__.py blog/__init__.py && \
+    pip install --no-cache-dir . && \
+    rm -rf build *.egg-info
 
+# Copy application code
 COPY . .
 COPY --from=css-builder /app/static/css/styles.css ./static/css/styles.css
 
-RUN python manage.py collectstatic --noinput 2>/dev/null || true
+# Create static directory
+RUN mkdir -p /app/staticfiles
+
+# Fix line endings and make entrypoint executable
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 8001
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=30s \
     CMD curl -sf http://localhost:8001/health/ || exit 1
 
-CMD ["gunicorn", "website.wsgi:application", "--bind", "0.0.0.0:8001", "--workers", "2", "--timeout", "120"]
+CMD ["/app/docker-entrypoint.sh"]
