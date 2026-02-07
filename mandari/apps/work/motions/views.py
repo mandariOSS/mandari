@@ -3,6 +3,8 @@
 Motion/Antrag views for the Work module.
 """
 
+import logging
+
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Q
@@ -321,7 +323,7 @@ class MotionEditView(WorkViewMixin, TemplateView):
             except Exception as e:
                 logger.exception(f"[MotionEdit] DELETE FAILED: {e}")
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                    return JsonResponse({"error": f"Löschen fehlgeschlagen: {str(e)}"}, status=500)
+                    return JsonResponse({"error": "Löschen fehlgeschlagen."}, status=500)
                 raise
 
         # Handle save action - simplified, only update content and title
@@ -383,8 +385,8 @@ class MotionEditView(WorkViewMixin, TemplateView):
             except Exception as e:
                 logger.exception(f"[MotionEdit] SAVE FAILED: {e}")
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                    return JsonResponse({"error": f"Speichern fehlgeschlagen: {str(e)}"}, status=500)
-                messages.error(request, f"Speichern fehlgeschlagen: {str(e)}")
+                    return JsonResponse({"error": "Speichern fehlgeschlagen."}, status=500)
+                messages.error(request, "Speichern fehlgeschlagen.")
                 return redirect("work:motion_edit", org_slug=self.organization.slug, motion_id=motion.id)
 
         # Default: use form for full updates
@@ -498,7 +500,8 @@ class MotionAIAssistantView(WorkViewMixin, View):
                 return JsonResponse({"error": result.error}, status=500)
 
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            logger.exception(f"[MotionAI] Action failed: {e}")
+            return JsonResponse({"error": "KI-Aktion fehlgeschlagen."}, status=500)
 
 
 class MotionCommentView(WorkViewMixin, View):
@@ -674,7 +677,8 @@ class MotionExportView(WorkViewMixin, View):
                 return response
 
             except Exception as e:
-                return JsonResponse({"error": f"PDF-Export fehlgeschlagen: {str(e)}"}, status=500)
+                logger.exception(f"[MotionExport] PDF export failed: {e}")
+                return JsonResponse({"error": "PDF-Export fehlgeschlagen."}, status=500)
 
         elif export_format == "docx":
             return JsonResponse({"error": "DOCX-Export wird noch implementiert"}, status=501)

@@ -17,6 +17,9 @@ on:
       - dev
       - main
 
+permissions:
+  contents: read
+
 jobs:
   # ===========================================================================
   # Code Quality (Linting)

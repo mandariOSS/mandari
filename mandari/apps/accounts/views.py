@@ -118,9 +118,12 @@ class LoginView(View):
 
     def get_success_url(self, request, next_url=None):
         """Determine where to redirect after login."""
-        # Check for safe next URL
-        if next_url and self.is_safe_url(next_url, request):
-            return next_url
+        # Validate next_url against open redirect attacks
+        if next_url:
+            from django.utils.http import url_has_allowed_host_and_scheme
+
+            if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+                return next_url
 
         # Default: redirect to work portal if user has memberships
         if hasattr(request.user, "memberships"):

@@ -5,6 +5,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 import json
+import logging
 from datetime import timedelta
 
 from django.core.paginator import Paginator
@@ -1055,7 +1056,8 @@ def tile_proxy(request, z, x, y):
     except Exception as e:
         from django.http import HttpResponseServerError
 
-        return HttpResponseServerError(f"Tile proxy error: {str(e)}")
+        logging.getLogger(__name__).exception(f"Tile proxy error: {e}")
+        return HttpResponseServerError("Tile proxy error")
 
 
 @require_GET
@@ -1097,7 +1099,8 @@ def style_proxy(request):
             else:
                 return JsonResponse({"error": "Style not found"}, status=404)
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+        logging.getLogger(__name__).exception(f"Style proxy error: {e}")
+        return JsonResponse({"error": "Style proxy error"}, status=500)
 
 
 @require_GET

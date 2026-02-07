@@ -10,6 +10,7 @@ Provides Kanban-style task management with:
 """
 
 import json
+import logging
 
 from django.contrib import messages
 from django.db.models import Q
@@ -182,7 +183,8 @@ class TaskBoardAPIView(WorkViewMixin, View):
             )
 
         except (json.JSONDecodeError, KeyError) as e:
-            return JsonResponse({"error": str(e)}, status=400)
+            logging.getLogger(__name__).warning(f"[Tasks] Invalid request: {e}")
+            return JsonResponse({"error": "Ungültige Anfrage."}, status=400)
 
     def _quick_add(self, request):
         """Quick add a task from the board."""
