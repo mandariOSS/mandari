@@ -122,7 +122,6 @@ services:
   # Mandari (Django Backend)
   # ===========================================================================
   mandari:
-    build: ./mandari
     image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
     container_name: mandari
     restart: unless-stopped
@@ -166,7 +165,6 @@ services:
   # Marketing Website (Wagtail CMS)
   # ===========================================================================
   website:
-    build: ./marketing-website
     image: ghcr.io/mandarioss/website:${IMAGE_TAG:-latest}
     container_name: mandari-website
     restart: unless-stopped
