@@ -35,12 +35,9 @@ RUN npm run build:css
 # Final image
 FROM base AS final
 
-# Install Python dependencies (copy pyproject.toml + minimal package structure for caching)
+# Install Python dependencies (pyproject.toml only for layer caching)
 COPY pyproject.toml ./
-RUN mkdir -p website marketing blog && \
-    touch website/__init__.py marketing/__init__.py blog/__init__.py && \
-    pip install --no-cache-dir . && \
-    rm -rf build *.egg-info
+RUN pip install --no-cache-dir .
 
 # Copy application code
 COPY . .
