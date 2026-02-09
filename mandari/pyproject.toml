@@ -8,6 +8,9 @@ requires-python = ">=3.12"
 authors = [{ name = "Mandari Contributors" }]
 
 dependencies = [
+    # Shared OParl types
+    "mandari-oparl",
+
     # Django 6.0 (released Dec 2025)
     "django>=6.0",
     "django-htmx>=1.19.0",

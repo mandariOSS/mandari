@@ -31,8 +31,7 @@ from src.config import settings
 from src.events import EventEmitter
 from src.metrics import metrics
 from src.storage.database import DatabaseStorage
-from src.sync.processor import (
-    OParlProcessor,
+from mandari_oparl import (
     ProcessedAgendaItem,
     ProcessedBody,
     ProcessedConsultation,
@@ -45,6 +44,7 @@ from src.sync.processor import (
     ProcessedPaper,
     ProcessedPerson,
 )
+from src.sync.processor import OParlProcessor
 
 console = Console()
 

@@ -1,0 +1,18 @@
+[project]
+name = "mandari-oparl"
+version = "0.1.0.dev0"
+description = "Shared OParl types for Mandari (Pydantic schemas)"
+license = { text = "AGPL-3.0" }
+requires-python = ">=3.12"
+authors = [{ name = "Mandari Contributors" }]
+
+dependencies = [
+    "pydantic>=2.10.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mandari_oparl"]

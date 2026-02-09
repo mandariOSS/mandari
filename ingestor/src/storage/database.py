@@ -30,7 +30,7 @@ from src.storage.models import (
     OParlPerson,
     OParlSource,
 )
-from src.sync.processor import (
+from mandari_oparl import (
     OParlType,
     ProcessedAgendaItem,
     ProcessedBody,

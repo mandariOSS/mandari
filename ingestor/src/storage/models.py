@@ -6,11 +6,12 @@ to ensure database compatibility while keeping the ingestor self-contained.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -207,7 +208,7 @@ class OParlPaper(Base):
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     paper_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
@@ -302,8 +303,8 @@ class OParlOrganization(Base):
     short_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     organization_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     classification: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    end_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     website: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # OParl timestamps
@@ -540,8 +541,8 @@ class OParlMembership(Base):
     organization_external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     role: Mapped[str | None] = mapped_column(String(255), nullable=True)
     voting_right: Mapped[bool] = mapped_column(Boolean, default=True)
-    start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    end_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
@@ -582,8 +583,8 @@ class OParlLegislativeTerm(Base):
     )
 
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    end_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(

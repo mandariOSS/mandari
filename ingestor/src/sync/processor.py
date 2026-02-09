@@ -5,214 +5,28 @@ Processes, validates, and normalizes OParl entities.
 Handles nested objects and extracts relationships.
 """
 
-from datetime import datetime, timezone
-from enum import Enum
 from typing import Any
-from uuid import UUID, uuid5, NAMESPACE_URL
+from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
-
-
-class OParlType(str, Enum):
-    """OParl entity types."""
-
-    SYSTEM = "System"
-    BODY = "Body"
-    ORGANIZATION = "Organization"
-    PERSON = "Person"
-    MEETING = "Meeting"
-    AGENDA_ITEM = "AgendaItem"
-    PAPER = "Paper"
-    CONSULTATION = "Consultation"
-    FILE = "File"
-    LOCATION = "Location"
-    MEMBERSHIP = "Membership"
-    LEGISLATIVE_TERM = "LegislativeTerm"
-
-
-# Map OParl type URLs to enum
-OPARL_TYPE_MAP: dict[str, OParlType] = {
-    "https://schema.oparl.org/1.0/System": OParlType.SYSTEM,
-    "https://schema.oparl.org/1.1/System": OParlType.SYSTEM,
-    "https://schema.oparl.org/1.0/Body": OParlType.BODY,
-    "https://schema.oparl.org/1.1/Body": OParlType.BODY,
-    "https://schema.oparl.org/1.0/Organization": OParlType.ORGANIZATION,
-    "https://schema.oparl.org/1.1/Organization": OParlType.ORGANIZATION,
-    "https://schema.oparl.org/1.0/Person": OParlType.PERSON,
-    "https://schema.oparl.org/1.1/Person": OParlType.PERSON,
-    "https://schema.oparl.org/1.0/Meeting": OParlType.MEETING,
-    "https://schema.oparl.org/1.1/Meeting": OParlType.MEETING,
-    "https://schema.oparl.org/1.0/AgendaItem": OParlType.AGENDA_ITEM,
-    "https://schema.oparl.org/1.1/AgendaItem": OParlType.AGENDA_ITEM,
-    "https://schema.oparl.org/1.0/Paper": OParlType.PAPER,
-    "https://schema.oparl.org/1.1/Paper": OParlType.PAPER,
-    "https://schema.oparl.org/1.0/Consultation": OParlType.CONSULTATION,
-    "https://schema.oparl.org/1.1/Consultation": OParlType.CONSULTATION,
-    "https://schema.oparl.org/1.0/File": OParlType.FILE,
-    "https://schema.oparl.org/1.1/File": OParlType.FILE,
-    "https://schema.oparl.org/1.0/Location": OParlType.LOCATION,
-    "https://schema.oparl.org/1.1/Location": OParlType.LOCATION,
-    "https://schema.oparl.org/1.0/Membership": OParlType.MEMBERSHIP,
-    "https://schema.oparl.org/1.1/Membership": OParlType.MEMBERSHIP,
-    "https://schema.oparl.org/1.0/LegislativeTerm": OParlType.LEGISLATIVE_TERM,
-    "https://schema.oparl.org/1.1/LegislativeTerm": OParlType.LEGISLATIVE_TERM,
-}
-
-
-class ProcessedEntity(BaseModel):
-    """Base class for all processed OParl entities."""
-
-    id: UUID
-    external_id: str
-    oparl_type: OParlType
-    raw_json: dict[str, Any]
-    body_external_id: str | None = None
-    oparl_created: datetime | None = None
-    oparl_modified: datetime | None = None
-
-    # Extracted nested entities
-    nested_entities: list["ProcessedEntity"] = Field(default_factory=list)
-
-    # Extracted references (external IDs)
-    references: dict[str, list[str]] = Field(default_factory=dict)
-
-
-class ProcessedBody(ProcessedEntity):
-    """Processed OParl Body."""
-
-    name: str
-    short_name: str | None = None
-    website: str | None = None
-    license: str | None = None
-    classification: str | None = None
-
-    # List URLs for fetching
-    organization_list_url: str | None = None
-    person_list_url: str | None = None
-    meeting_list_url: str | None = None
-    paper_list_url: str | None = None
-    membership_list_url: str | None = None
-    location_list_url: str | None = None
-    agenda_item_list_url: str | None = None
-    consultation_list_url: str | None = None
-    file_list_url: str | None = None
-    legislative_term_list_url: str | None = None
-
-
-class ProcessedMeeting(ProcessedEntity):
-    """Processed OParl Meeting."""
-
-    name: str | None = None
-    meeting_state: str | None = None
-    cancelled: bool = False
-    start: datetime | None = None
-    end: datetime | None = None
-    location_external_id: str | None = None
-    location_name: str | None = None
-    location_address: str | None = None
-
-
-class ProcessedPaper(ProcessedEntity):
-    """Processed OParl Paper."""
-
-    name: str | None = None
-    reference: str | None = None
-    paper_type: str | None = None
-    date: datetime | None = None
-
-
-class ProcessedPerson(ProcessedEntity):
-    """Processed OParl Person."""
-
-    name: str | None = None
-    family_name: str | None = None
-    given_name: str | None = None
-    title: str | None = None
-    gender: str | None = None
-    email: str | None = None
-    phone: str | None = None
-
-
-class ProcessedOrganization(ProcessedEntity):
-    """Processed OParl Organization."""
-
-    name: str | None = None
-    short_name: str | None = None
-    organization_type: str | None = None
-    classification: str | None = None
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-    website: str | None = None
-
-
-class ProcessedAgendaItem(ProcessedEntity):
-    """Processed OParl AgendaItem."""
-
-    number: str | None = None
-    order: int | None = None
-    name: str | None = None
-    public: bool = True
-    result: str | None = None
-    resolution_text: str | None = None
-    meeting_external_id: str | None = None
-
-
-class ProcessedFile(ProcessedEntity):
-    """Processed OParl File."""
-
-    name: str | None = None
-    file_name: str | None = None
-    mime_type: str | None = None
-    size: int | None = None
-    access_url: str | None = None
-    download_url: str | None = None
-    date: datetime | None = None
-
-    # Back-references (from standalone files fetched via /files endpoint)
-    # OParl spec: File objects contain 'paper' and 'meeting' arrays
-    # when fetched individually (not embedded)
-    paper_external_ids: list[str] = Field(default_factory=list)
-    meeting_external_ids: list[str] = Field(default_factory=list)
-
-
-class ProcessedLocation(ProcessedEntity):
-    """Processed OParl Location."""
-
-    description: str | None = None
-    street_address: str | None = None
-    room: str | None = None
-    postal_code: str | None = None
-    locality: str | None = None
-    geojson: dict[str, Any] | None = None
-
-
-class ProcessedConsultation(ProcessedEntity):
-    """Processed OParl Consultation."""
-
-    paper_external_id: str | None = None
-    meeting_external_id: str | None = None
-    agenda_item_external_id: str | None = None
-    role: str | None = None
-    authoritative: bool = False
-
-
-class ProcessedMembership(ProcessedEntity):
-    """Processed OParl Membership."""
-
-    person_external_id: str | None = None
-    organization_external_id: str | None = None
-    role: str | None = None
-    voting_right: bool = True
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-
-
-class ProcessedLegislativeTerm(ProcessedEntity):
-    """Processed OParl LegislativeTerm."""
-
-    name: str | None = None
-    start_date: datetime | None = None
-    end_date: datetime | None = None
+from mandari_oparl import (
+    OPARL_TYPE_MAP,
+    OParlType,
+    ProcessedAgendaItem,
+    ProcessedBody,
+    ProcessedConsultation,
+    ProcessedEntity,
+    ProcessedFile,
+    ProcessedLegislativeTerm,
+    ProcessedLocation,
+    ProcessedMeeting,
+    ProcessedMembership,
+    ProcessedOrganization,
+    ProcessedPaper,
+    ProcessedPerson,
+    generate_uuid,
+    parse_date,
+    parse_datetime,
+)
 
 
 class OParlProcessor:
@@ -235,27 +49,18 @@ class OParlProcessor:
         Generate a deterministic UUID from external ID.
 
         Uses UUID5 with URL namespace for consistency.
+        Caches results for performance.
         """
         if external_id in self._id_cache:
             return self._id_cache[external_id]
 
-        uuid = uuid5(NAMESPACE_URL, external_id)
+        uuid = generate_uuid(external_id)
         self._id_cache[external_id] = uuid
         return uuid
 
-    def parse_datetime(self, value: str | None) -> datetime | None:
+    def parse_datetime(self, value: str | None):
         """Parse OParl datetime string to datetime object."""
-        if not value:
-            return None
-        try:
-            # Handle various ISO 8601 formats
-            value = value.replace("Z", "+00:00")
-            # Handle dates without time
-            if "T" not in value:
-                return datetime.fromisoformat(f"{value}T00:00:00+00:00")
-            return datetime.fromisoformat(value)
-        except ValueError:
-            return None
+        return parse_datetime(value)
 
     def get_type(self, data: dict[str, Any]) -> OParlType | None:
         """Get OParl type from data."""
@@ -311,8 +116,8 @@ class OParlProcessor:
             oparl_type=oparl_type,
             raw_json=data,
             body_external_id=body_external_id or data.get("body"),
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
         )
 
     def process_body(
@@ -329,8 +134,8 @@ class OParlProcessor:
             oparl_type=OParlType.BODY,
             raw_json=data,
             body_external_id=external_id,  # Body references itself
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
             name=data.get("name", "Unknown"),
             short_name=data.get("shortName"),
             website=data.get("website"),
@@ -372,13 +177,13 @@ class OParlProcessor:
             oparl_type=OParlType.MEETING,
             raw_json=data,
             body_external_id=body_external_id or self._extract_body_id(data),
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
             name=data.get("name"),
             meeting_state=data.get("meetingState"),
             cancelled=data.get("cancelled", False),
-            start=self.parse_datetime(data.get("start")),
-            end=self.parse_datetime(data.get("end")),
+            start=parse_datetime(data.get("start")),
+            end=parse_datetime(data.get("end")),
         )
 
         # Extract location
@@ -432,12 +237,12 @@ class OParlProcessor:
             oparl_type=OParlType.PAPER,
             raw_json=data,
             body_external_id=body_external_id or self._extract_body_id(data),
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
             name=name,
             reference=data.get("reference"),
             paper_type=data.get("paperType"),
-            date=self.parse_datetime(data.get("date")),
+            date=parse_date(data.get("date")),
         )
 
         # Process nested files
@@ -485,8 +290,8 @@ class OParlProcessor:
             oparl_type=OParlType.PERSON,
             raw_json=data,
             body_external_id=body_external_id or self._extract_body_id(data),
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
             name=data.get("name"),
             family_name=data.get("familyName"),
             given_name=data.get("givenName"),
@@ -520,14 +325,14 @@ class OParlProcessor:
             oparl_type=OParlType.ORGANIZATION,
             raw_json=data,
             body_external_id=body_external_id or self._extract_body_id(data),
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
             name=data.get("name"),
             short_name=data.get("shortName"),
             organization_type=data.get("organizationType"),
             classification=data.get("classification"),
-            start_date=self.parse_datetime(data.get("startDate")),
-            end_date=self.parse_datetime(data.get("endDate")),
+            start_date=parse_date(data.get("startDate")),
+            end_date=parse_date(data.get("endDate")),
             website=data.get("website"),
         )
 
@@ -545,8 +350,8 @@ class OParlProcessor:
             oparl_type=OParlType.AGENDA_ITEM,
             raw_json=data,
             body_external_id=body_external_id,
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
             number=data.get("number"),
             order=data.get("order"),
             name=data.get("name"),
@@ -591,15 +396,15 @@ class OParlProcessor:
             oparl_type=OParlType.FILE,
             raw_json=data,
             body_external_id=body_external_id,
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
             name=name,
             file_name=file_name,
             mime_type=data.get("mimeType"),
             size=data.get("size"),
             access_url=data.get("accessUrl"),
             download_url=data.get("downloadUrl"),
-            date=self.parse_datetime(data.get("date")),
+            date=parse_datetime(data.get("date")),
             paper_external_ids=paper_external_ids,
             meeting_external_ids=meeting_external_ids,
         )
@@ -618,8 +423,8 @@ class OParlProcessor:
             oparl_type=OParlType.LOCATION,
             raw_json=data,
             body_external_id=body_external_id,
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
             description=data.get("description"),
             street_address=data.get("streetAddress"),
             room=data.get("room"),
@@ -642,8 +447,8 @@ class OParlProcessor:
             oparl_type=OParlType.CONSULTATION,
             raw_json=data,
             body_external_id=body_external_id,
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
             paper_external_id=data.get("paper") if isinstance(data.get("paper"), str) else None,
             meeting_external_id=data.get("meeting") if isinstance(data.get("meeting"), str) else None,
             agenda_item_external_id=data.get("agendaItem") if isinstance(data.get("agendaItem"), str) else None,
@@ -672,14 +477,14 @@ class OParlProcessor:
             oparl_type=OParlType.MEMBERSHIP,
             raw_json=data,
             body_external_id=body_external_id,
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
             person_external_id=data.get("person") if isinstance(data.get("person"), str) else None,
             organization_external_id=data.get("organization") if isinstance(data.get("organization"), str) else None,
             role=data.get("role"),
             voting_right=data.get("votingRight", True),
-            start_date=self.parse_datetime(data.get("startDate")),
-            end_date=self.parse_datetime(data.get("endDate")),
+            start_date=parse_date(data.get("startDate")),
+            end_date=parse_date(data.get("endDate")),
         )
 
     def process_legislative_term(
@@ -696,11 +501,11 @@ class OParlProcessor:
             oparl_type=OParlType.LEGISLATIVE_TERM,
             raw_json=data,
             body_external_id=body_external_id or self._extract_body_id(data),
-            oparl_created=self.parse_datetime(data.get("created")),
-            oparl_modified=self.parse_datetime(data.get("modified")),
+            oparl_created=parse_datetime(data.get("created")),
+            oparl_modified=parse_datetime(data.get("modified")),
             name=data.get("name"),
-            start_date=self.parse_datetime(data.get("startDate")),
-            end_date=self.parse_datetime(data.get("endDate")),
+            start_date=parse_date(data.get("startDate")),
+            end_date=parse_date(data.get("endDate")),
         )
 
     def _extract_body_id(self, data: dict[str, Any]) -> str | None:

@@ -8,6 +8,7 @@ requires-python = ">=3.12"
 authors = [{ name = "Mandari Contributors" }]
 
 dependencies = [
+    "mandari-oparl",
     "httpx>=0.28.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.6.0",
