@@ -33,6 +33,13 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
+# Install system packages for OCR
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    tesseract-ocr-deu \
+    poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy application code
 COPY ingestor/src/ src/
 

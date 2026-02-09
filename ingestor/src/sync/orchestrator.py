@@ -685,6 +685,89 @@ class SyncOrchestrator:
         # Update body sync time
         await self.storage.update_body_sync_time(body_id)
 
+        # Phase 2: Text Extraction
+        if settings.text_extraction_enabled:
+            try:
+                from src.extraction.extractor import TextExtractor
+
+                console.print(f"\n[bold yellow]Text Extraction...[/bold yellow]")
+                extractor = TextExtractor(self.storage)
+                extracted = await extractor.extract_pending_files(body_id)
+                stats["text_extracted"] = extracted
+                if extracted > 0:
+                    console.print(f"[green]  Extracted text from {extracted} files[/green]")
+            except Exception as e:
+                console.print(f"[red]  Text extraction error: {e}[/red]")
+                stats["errors"].append(f"Text extraction: {e}")
+
+        # Phase 3: Meilisearch Indexing
+        if settings.meilisearch_indexing_enabled:
+            try:
+                from src.indexing.document_builders import (
+                    file_to_doc,
+                    meeting_to_doc,
+                    organization_to_doc,
+                    paper_to_doc,
+                    person_to_doc,
+                )
+                from src.indexing.meilisearch import MeilisearchIndexer
+                from src.storage.models import (
+                    OParlMeeting as MeetingModel,
+                    OParlOrganization as OrgModel,
+                    OParlPaper as PaperModel,
+                    OParlPerson as PersonModel,
+                )
+
+                console.print(f"\n[bold yellow]Meilisearch Indexing...[/bold yellow]")
+                async with MeilisearchIndexer() as indexer:
+                    if not await indexer.is_healthy():
+                        console.print("[yellow]  Meilisearch not reachable, skipping indexing[/yellow]")
+                    else:
+                        batch_size = settings.meilisearch_batch_size
+                        indexed_total = 0
+
+                        # Index papers
+                        papers = await self.storage.get_all_for_body(body_id, PaperModel)
+                        for i in range(0, len(papers), batch_size):
+                            docs = [paper_to_doc(p) for p in papers[i:i + batch_size]]
+                            await indexer.index_documents("papers", docs)
+                            indexed_total += len(docs)
+
+                        # Index meetings
+                        meetings = await self.storage.get_all_for_body(body_id, MeetingModel)
+                        for i in range(0, len(meetings), batch_size):
+                            docs = [meeting_to_doc(m) for m in meetings[i:i + batch_size]]
+                            await indexer.index_documents("meetings", docs)
+                            indexed_total += len(docs)
+
+                        # Index persons
+                        persons = await self.storage.get_all_for_body(body_id, PersonModel)
+                        for i in range(0, len(persons), batch_size):
+                            docs = [person_to_doc(p) for p in persons[i:i + batch_size]]
+                            await indexer.index_documents("persons", docs)
+                            indexed_total += len(docs)
+
+                        # Index organizations
+                        orgs = await self.storage.get_all_for_body(body_id, OrgModel)
+                        for i in range(0, len(orgs), batch_size):
+                            docs = [organization_to_doc(o) for o in orgs[i:i + batch_size]]
+                            await indexer.index_documents("organizations", docs)
+                            indexed_total += len(docs)
+
+                        # Index files with text content
+                        files = await self.storage.get_files_with_text(body_id)
+                        for i in range(0, len(files), batch_size):
+                            docs = [file_to_doc(f) for f in files[i:i + batch_size]]
+                            await indexer.index_documents("files", docs)
+                            indexed_total += len(docs)
+
+                        stats["indexed"] = indexed_total
+                        console.print(f"[green]  Indexed {indexed_total} documents in Meilisearch[/green]")
+
+            except Exception as e:
+                console.print(f"[red]  Meilisearch indexing error: {e}[/red]")
+                stats["errors"].append(f"Meilisearch indexing: {e}")
+
         # Print summary
         console.print(f"[green]Body sync complete:[/green]")
         console.print(f"  Organizations: {stats['organizations']}")

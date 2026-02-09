@@ -80,6 +80,17 @@ class Settings(BaseSettings):
     circuit_breaker_recovery_timeout: float = 60.0  # Seconds to wait
     circuit_breaker_success_threshold: int = 2  # Successes to close
 
+    # Text Extraction
+    text_extraction_enabled: bool = True
+    text_extraction_max_size_mb: int = 50
+    text_extraction_concurrency: int = 4
+    text_extraction_timeout: float = 120.0
+    text_extraction_batch_size: int = 100
+
+    # Meilisearch Indexing
+    meilisearch_indexing_enabled: bool = True
+    meilisearch_batch_size: int = 500
+
 
 @lru_cache
 def get_settings() -> Settings:

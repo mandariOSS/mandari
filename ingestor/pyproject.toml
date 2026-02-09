@@ -21,6 +21,10 @@ dependencies = [
     # Monitoring & Resilience
     "prometheus-client>=0.21.0",
     "aiohttp>=3.11.0",
+    # Text Extraction
+    "pypdf>=4.0.0",
+    "pytesseract>=0.3.10",
+    "pdf2image>=1.17.0",
 ]
 
 [project.optional-dependencies]

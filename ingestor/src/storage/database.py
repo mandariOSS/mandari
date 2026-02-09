@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select, func, text
+from sqlalchemy import delete, or_, select, func, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from rich.console import Console
@@ -1070,6 +1070,114 @@ class DatabaseStorage:
                 select(OParlBody)
                 .where(OParlBody.source_id == source_id)
                 .order_by(OParlBody.name)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    # ========== Text Extraction Queries ==========
+
+    async def get_pending_files(
+        self,
+        body_id: UUID,
+        batch_size: int = 100,
+        max_size_bytes: int | None = None,
+    ) -> list[OParlFile]:
+        """
+        Get files pending text extraction.
+
+        Args:
+            body_id: Body to query files for
+            batch_size: Maximum number of files to return
+            max_size_bytes: Skip files larger than this (optional)
+        """
+        async with self.get_session() as session:
+            stmt = (
+                select(OParlFile)
+                .where(
+                    OParlFile.body_id == body_id,
+                    OParlFile.text_extraction_status == "pending",
+                    or_(
+                        OParlFile.download_url.isnot(None),
+                        OParlFile.access_url.isnot(None),
+                    ),
+                )
+            )
+
+            if max_size_bytes is not None:
+                stmt = stmt.where(
+                    or_(
+                        OParlFile.size.is_(None),
+                        OParlFile.size <= max_size_bytes,
+                    )
+                )
+
+            stmt = stmt.order_by(OParlFile.created_at).limit(batch_size)
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def update_file_text(
+        self,
+        file_id: UUID,
+        text_content: str | None = None,
+        method: str | None = None,
+        status: str = "completed",
+        error: str | None = None,
+        page_count: int | None = None,
+        sha256_hash: str | None = None,
+    ) -> None:
+        """Update a file with text extraction results."""
+        from datetime import datetime, timezone as tz
+
+        async with self.get_session() as session:
+            values: dict = {
+                "text_extraction_status": status,
+                "updated_at": func.now(),
+            }
+            if text_content is not None:
+                values["text_content"] = text_content
+            if method is not None:
+                values["text_extraction_method"] = method
+            if error is not None:
+                values["text_extraction_error"] = error
+            if page_count is not None:
+                values["page_count"] = page_count
+            if sha256_hash is not None:
+                values["sha256_hash"] = sha256_hash
+            if status == "completed":
+                values["text_extracted_at"] = datetime.now(tz.utc)
+
+            stmt = update(OParlFile).where(OParlFile.id == file_id).values(**values)
+            await session.execute(stmt)
+            await session.commit()
+
+    # ========== Meilisearch Query Helpers ==========
+
+    async def get_all_for_body(
+        self,
+        body_id: UUID,
+        model_class: type,
+        limit: int = 10000,
+    ) -> list:
+        """Generic query: all entities of a type for a body."""
+        async with self.get_session() as session:
+            stmt = (
+                select(model_class)
+                .where(model_class.body_id == body_id)
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    async def get_files_with_text(self, body_id: UUID) -> list[OParlFile]:
+        """Get files that have extracted text content."""
+        async with self.get_session() as session:
+            stmt = (
+                select(OParlFile)
+                .where(
+                    OParlFile.body_id == body_id,
+                    OParlFile.text_content.isnot(None),
+                    OParlFile.text_extraction_status == "completed",
+                )
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
