@@ -146,6 +146,8 @@ class DatabaseStorage:
                 name=name,
                 raw_json=raw_json or {},
                 is_active=True,
+                created_at=func.now(),
+                updated_at=func.now(),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["url"],
@@ -232,6 +234,8 @@ class DatabaseStorage:
                 oparl_created=body.oparl_created,
                 oparl_modified=body.oparl_modified,
                 raw_json=body.raw_json,
+                created_at=func.now(),
+                updated_at=func.now(),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -442,12 +446,13 @@ class DatabaseStorage:
                 cancelled=meeting.cancelled,
                 start=meeting.start,
                 end=meeting.end,
-                location_external_id=meeting.location_external_id,
                 location_name=meeting.location_name,
                 location_address=meeting.location_address,
                 oparl_created=meeting.oparl_created,
                 oparl_modified=meeting.oparl_modified,
                 raw_json=meeting.raw_json,
+                created_at=func.now(),
+                updated_at=func.now(),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -457,7 +462,6 @@ class DatabaseStorage:
                     "cancelled": stmt.excluded.cancelled,
                     "start": stmt.excluded.start,
                     "end": stmt.excluded.end,
-                    "location_external_id": stmt.excluded.location_external_id,
                     "location_name": stmt.excluded.location_name,
                     "location_address": stmt.excluded.location_address,
                     "oparl_created": stmt.excluded.oparl_created,
@@ -517,6 +521,8 @@ class DatabaseStorage:
                 oparl_created=paper.oparl_created,
                 oparl_modified=paper.oparl_modified,
                 raw_json=paper.raw_json,
+                created_at=func.now(),
+                updated_at=func.now(),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -583,6 +589,8 @@ class DatabaseStorage:
                 oparl_created=person.oparl_created,
                 oparl_modified=person.oparl_modified,
                 raw_json=person.raw_json,
+                created_at=func.now(),
+                updated_at=func.now(),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -631,6 +639,8 @@ class DatabaseStorage:
                 oparl_created=org.oparl_created,
                 oparl_modified=org.oparl_modified,
                 raw_json=org.raw_json,
+                created_at=func.now(),
+                updated_at=func.now(),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -678,6 +688,8 @@ class DatabaseStorage:
                 oparl_created=item.oparl_created,
                 oparl_modified=item.oparl_modified,
                 raw_json=item.raw_json,
+                created_at=func.now(),
+                updated_at=func.now(),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -728,6 +740,9 @@ class DatabaseStorage:
                 oparl_created=file.oparl_created,
                 oparl_modified=file.oparl_modified,
                 raw_json=file.raw_json,
+                text_extraction_status="pending",
+                created_at=func.now(),
+                updated_at=func.now(),
             )
 
             # Build update set - only update paper_id/meeting_id if we have values
@@ -785,6 +800,8 @@ class DatabaseStorage:
                 oparl_created=location.oparl_created,
                 oparl_modified=location.oparl_modified,
                 raw_json=location.raw_json,
+                created_at=func.now(),
+                updated_at=func.now(),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -830,6 +847,8 @@ class DatabaseStorage:
                 oparl_created=consultation.oparl_created,
                 oparl_modified=consultation.oparl_modified,
                 raw_json=consultation.raw_json,
+                created_at=func.now(),
+                updated_at=func.now(),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
@@ -858,9 +877,9 @@ class DatabaseStorage:
         self,
         membership: ProcessedMembership,
         body_id: UUID,
-    ) -> UUID:
-        """Insert or update a membership."""
-        # Try to resolve person and organization UUIDs
+    ) -> UUID | None:
+        """Insert or update a membership. Returns None if FKs can't be resolved."""
+        # Resolve person and organization UUIDs (both required by Django schema)
         person_id = None
         organization_id = None
 
@@ -872,15 +891,16 @@ class DatabaseStorage:
             if membership.organization_external_id in self._organization_uuid_cache:
                 organization_id = self._organization_uuid_cache[membership.organization_external_id]
 
+        # Both FKs are NOT NULL in Django schema - skip if unresolved
+        if not person_id or not organization_id:
+            return None
+
         async with self.get_session() as session:
             stmt = pg_insert(OParlMembership).values(
                 id=membership.id,
                 external_id=membership.external_id,
-                body_id=body_id,
                 person_id=person_id,
                 organization_id=organization_id,
-                person_external_id=membership.person_external_id,
-                organization_external_id=membership.organization_external_id,
                 role=membership.role,
                 voting_right=membership.voting_right,
                 start_date=membership.start_date,
@@ -888,14 +908,14 @@ class DatabaseStorage:
                 oparl_created=membership.oparl_created,
                 oparl_modified=membership.oparl_modified,
                 raw_json=membership.raw_json,
+                created_at=func.now(),
+                updated_at=func.now(),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_={
                     "person_id": person_id,
                     "organization_id": organization_id,
-                    "person_external_id": stmt.excluded.person_external_id,
-                    "organization_external_id": stmt.excluded.organization_external_id,
                     "role": stmt.excluded.role,
                     "voting_right": stmt.excluded.voting_right,
                     "start_date": stmt.excluded.start_date,
@@ -931,6 +951,8 @@ class DatabaseStorage:
                 oparl_created=term.oparl_created,
                 oparl_modified=term.oparl_modified,
                 raw_json=term.raw_json,
+                created_at=func.now(),
+                updated_at=func.now(),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],

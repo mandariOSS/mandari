@@ -10,6 +10,7 @@ from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -131,9 +132,6 @@ class OParlBody(Base):
     organizations: Mapped[list["OParlOrganization"]] = relationship(
         back_populates="body", cascade="all, delete-orphan"
     )
-    memberships: Mapped[list["OParlMembership"]] = relationship(
-        back_populates="body", cascade="all, delete-orphan"
-    )
     locations: Mapped[list["OParlLocation"]] = relationship(
         back_populates="body", cascade="all, delete-orphan"
     )
@@ -160,7 +158,6 @@ class OParlMeeting(Base):
     start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    location_external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     location_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     location_address: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -223,7 +220,7 @@ class OParlPaper(Base):
 
     # AI-enhanced fields
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    locations_extracted: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    locations: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -396,7 +393,7 @@ class OParlFile(Base):
     name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     access_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     download_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -405,6 +402,17 @@ class OParlFile(Base):
     local_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     sha256_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Text extraction tracking (managed by Django, populated here with defaults)
+    text_extraction_status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending"
+    )
+    text_extraction_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    text_extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    text_extracted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
@@ -527,9 +535,6 @@ class OParlMembership(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
-    body_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("oparl_bodies.id"), nullable=True
-    )
     person_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("oparl_persons.id"), nullable=True
     )
@@ -537,8 +542,6 @@ class OParlMembership(Base):
         ForeignKey("oparl_organizations.id"), nullable=True
     )
 
-    person_external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    organization_external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     role: Mapped[str | None] = mapped_column(String(255), nullable=True)
     voting_right: Mapped[bool] = mapped_column(Boolean, default=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -564,7 +567,6 @@ class OParlMembership(Base):
     )
 
     # Relationships
-    body: Mapped["OParlBody | None"] = relationship(back_populates="memberships")
     person: Mapped["OParlPerson | None"] = relationship(back_populates="memberships")
     organization: Mapped["OParlOrganization | None"] = relationship(back_populates="memberships")
 
