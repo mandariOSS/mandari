@@ -479,7 +479,7 @@ class OParlProcessor:
         """Process an OParl Person."""
         external_id = data.get("id", "")
 
-        return ProcessedPerson(
+        person = ProcessedPerson(
             id=self.generate_uuid(external_id),
             external_id=external_id,
             oparl_type=OParlType.PERSON,
@@ -495,6 +495,16 @@ class OParlProcessor:
             email=self._normalize_string_field(data.get("email")),
             phone=self._normalize_string_field(data.get("phone")),
         )
+
+        # Extract embedded memberships (OParl 1.0: memberships nested in Person)
+        for mem_data in data.get("membership", []):
+            if isinstance(mem_data, dict):
+                mem = self.process_membership(mem_data, body_external_id)
+                if not mem.person_external_id:
+                    mem.person_external_id = external_id
+                person.nested_entities.append(mem)
+
+        return person
 
     def process_organization(
         self,

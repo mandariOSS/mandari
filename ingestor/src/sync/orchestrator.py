@@ -163,6 +163,196 @@ class SyncOrchestrator:
             return [(source.id, source.name, source.url)]
         return []
 
+    # ========== URL Auto-Detection ==========
+
+    async def auto_detect_url(
+        self,
+        client: OParlClient,
+        url: str,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """
+        Detect whether a URL points to a Body, Body-List, or System.
+
+        Handles all known OParl server variants:
+        - Single Body object (ITK Rheinland: /Oparl/bodies/0015)
+        - Body list with data[] wrapper (Köln, Münster, Bonn, Aachen)
+        - System object with body reference
+
+        Args:
+            client: OParl HTTP client
+            url: The URL to detect
+
+        Returns:
+            Tuple of (type_name, list_of_body_dicts)
+
+        Raises:
+            ValueError: If URL is not a valid OParl endpoint
+        """
+        result = await client.fetch(url, use_cache=False, skip_wait=True)
+
+        if result.error or not result.data:
+            raise ValueError(f"Could not fetch OParl endpoint: {url} ({result.error})")
+
+        response = result.data
+
+        # Case 1: Single Body (ITK Rheinland pattern - no data[] wrapper)
+        type_str = response.get("type", "") if isinstance(response, dict) else ""
+        if type_str.endswith("/Body"):
+            console.print(f"[green]Detected: Single Body object[/green]")
+            return "body", [response]
+
+        # Case 2: Body list with data[] wrapper (standard OParl)
+        if isinstance(response, dict) and "data" in response:
+            items = response["data"]
+            if isinstance(items, list) and items:
+                first_type = items[0].get("type", "") if isinstance(items[0], dict) else ""
+                if first_type.endswith("/Body"):
+                    console.print(f"[green]Detected: Body list ({len(items)} bodies)[/green]")
+                    return "body_list", items
+
+        # Case 3: System object → follow body reference
+        if isinstance(response, dict) and type_str.endswith("/System"):
+            body_list_url = response.get("body")
+            if body_list_url:
+                console.print(f"[green]Detected: System → fetching bodies from {body_list_url}[/green]")
+                bodies = await client.fetch_list_all(body_list_url)
+                return "system", bodies
+
+        raise ValueError(
+            f"URL is neither Body, Body-List, nor System: {url}\n"
+            f"Response type: {type_str or 'unknown'}"
+        )
+
+    async def sync_body_url(
+        self,
+        url: str,
+        full: bool = False,
+        max_concurrent: int | None = None,
+    ) -> SyncResult:
+        """
+        Sync from any OParl URL (auto-detects Body, Body-List, or System).
+
+        This is the primary entry point for the Body-First architecture.
+
+        Args:
+            url: OParl URL (Body, Body-List, or System endpoint)
+            full: Whether to perform a full sync
+            max_concurrent: Max concurrent HTTP requests
+
+        Returns:
+            SyncResult with statistics
+        """
+        start_time = datetime.now(timezone.utc)
+        result = SyncResult(source_url=url, source_name="", success=False)
+        sync_type = "full" if full else "incremental"
+
+        try:
+            concurrent = max_concurrent or self.max_concurrent
+            async with OParlClient(
+                max_concurrent=concurrent,
+                source_name=url.split("/")[2] if "/" in url else "unknown",
+            ) as client:
+                # Auto-detect URL type
+                console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
+                url_type, bodies_data = await self.auto_detect_url(client, url)
+
+                if not bodies_data:
+                    result.errors.append(f"No bodies found at {url}")
+                    return result
+
+                # Use first body name as source name
+                result.source_name = bodies_data[0].get("name", "Unknown")
+                console.print(f"[green]Source: {result.source_name} ({url_type})[/green]")
+
+                # Emit sync started event
+                if self._event_emitter:
+                    await self._event_emitter.emit_sync_started(
+                        source_url=url,
+                        source_name=result.source_name,
+                        full_sync=full,
+                    )
+
+                # Ensure source exists in database (use URL as source identifier)
+                source_id = await self.storage.upsert_source(
+                    url=url,
+                    name=result.source_name,
+                    raw_json=bodies_data[0] if len(bodies_data) == 1 else {"bodies_count": len(bodies_data)},
+                )
+
+                # Sync bodies
+                if len(bodies_data) > 1:
+                    self._parallel_mode = True
+                    console.print(f"[bold green]Starting PARALLEL sync of {len(bodies_data)} bodies...[/bold green]")
+
+                async def sync_body_wrapper(body_data):
+                    try:
+                        return await self._sync_body(
+                            client=client,
+                            body_data=body_data,
+                            source_id=source_id,
+                            full=full,
+                        )
+                    except Exception as e:
+                        console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
+                        return {"errors": [str(e)]}
+
+                body_results = await asyncio.gather(
+                    *[sync_body_wrapper(bd) for bd in bodies_data],
+                    return_exceptions=False,
+                )
+
+                # Aggregate results
+                for body_result in body_results:
+                    result.bodies_synced += 1
+                    result.meetings_synced += body_result.get("meetings", 0)
+                    result.papers_synced += body_result.get("papers", 0)
+                    result.persons_synced += body_result.get("persons", 0)
+                    result.organizations_synced += body_result.get("organizations", 0)
+                    result.memberships_synced += body_result.get("memberships", 0)
+                    result.files_synced += body_result.get("files", 0)
+                    result.locations_synced += body_result.get("locations", 0)
+                    result.agenda_items_synced += body_result.get("agenda_items", 0)
+                    result.consultations_synced += body_result.get("consultations", 0)
+                    result.errors.extend(body_result.get("errors", []))
+
+                # Update sync timestamp
+                await self.storage.update_source_sync_time(source_id, full_sync=full)
+                result.http_stats = client.stats
+                result.success = True
+
+                total_synced = (
+                    result.meetings_synced + result.papers_synced
+                    + result.persons_synced + result.organizations_synced
+                    + result.memberships_synced + result.files_synced
+                    + result.agenda_items_synced + result.consultations_synced
+                )
+
+                if self._event_emitter:
+                    await self._event_emitter.emit_sync_completed(
+                        source_url=url,
+                        source_name=result.source_name,
+                        duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+                        entities_synced=total_synced,
+                        errors_count=len(result.errors),
+                    )
+
+                metrics.record_entities_batch(result.source_name, total_synced)
+
+        except Exception as e:
+            result.errors.append(str(e))
+            console.print(f"[red]Sync failed: {e}[/red]")
+
+            if self._event_emitter:
+                await self._event_emitter.emit_sync_failed(
+                    source_url=url,
+                    source_name=result.source_name or "Unknown",
+                    error=str(e),
+                    duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+                )
+
+        result.duration_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
+        return result
+
     # ========== Sync Operations ==========
 
     async def sync_source(
@@ -370,8 +560,28 @@ class SyncOrchestrator:
         else:
             console.print(f"[dim]Full sync: fetching ALL pages[/dim]")
 
+        # Detect server-side filter support for incremental sync
+        use_server_filter = False
+        if modified_since and not full:
+            use_server_filter = await self._detect_filter_support(
+                client, processed_body, modified_since,
+            )
+
+        # Helper to build common kwargs for _sync_entity_type
+        def sync_kwargs(list_url: str | None, entity_type: str) -> dict:
+            return dict(
+                client=client,
+                list_url=list_url,
+                entity_type=entity_type,
+                body_id=body_id,
+                body_external_id=body_external_id,
+                body_name=body_name,
+                modified_since=modified_since,
+                full=full,
+                use_server_filter=use_server_filter,
+            )
+
         # Create progress display (disabled when not running in terminal or in parallel mode)
-        # Rich doesn't support multiple live displays, so disable when syncing multiple sources
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -386,30 +596,10 @@ class SyncOrchestrator:
             task1 = progress.add_task("[cyan]Organizations...", total=None)
             task2 = progress.add_task("[cyan]Persons...", total=None)
 
-            org_task = self._sync_entity_type(
-                client=client,
-                list_url=processed_body.organization_list_url,
-                entity_type="organization",
-                body_id=body_id,
-                body_external_id=body_external_id,
-                body_name=body_name,
-                modified_since=modified_since,
-                full=full,
-            )
-
-            person_task = self._sync_entity_type(
-                client=client,
-                list_url=processed_body.person_list_url,
-                entity_type="person",
-                body_id=body_id,
-                body_external_id=body_external_id,
-                body_name=body_name,
-                modified_since=modified_since,
-                full=full,
-            )
-
             org_result, person_result = await asyncio.gather(
-                org_task, person_task, return_exceptions=True
+                self._sync_entity_type(**sync_kwargs(processed_body.organization_list_url, "organization")),
+                self._sync_entity_type(**sync_kwargs(processed_body.person_list_url, "person")),
+                return_exceptions=True,
             )
 
             if isinstance(org_result, Exception):
@@ -427,14 +617,7 @@ class SyncOrchestrator:
             # Second: Memberships (depends on persons + organizations)
             task3 = progress.add_task("[cyan]Memberships...", total=None)
             membership_result = await self._sync_entity_type(
-                client=client,
-                list_url=processed_body.membership_list_url,
-                entity_type="membership",
-                body_id=body_id,
-                body_external_id=body_external_id,
-                body_name=body_name,
-                modified_since=modified_since,
-                full=full,
+                **sync_kwargs(processed_body.membership_list_url, "membership")
             )
             stats["memberships"] = membership_result
             progress.update(task3, completed=membership_result, total=membership_result)
@@ -443,30 +626,10 @@ class SyncOrchestrator:
             task4 = progress.add_task("[cyan]Meetings...", total=None)
             task5 = progress.add_task("[cyan]Papers...", total=None)
 
-            meeting_task = self._sync_entity_type(
-                client=client,
-                list_url=processed_body.meeting_list_url,
-                entity_type="meeting",
-                body_id=body_id,
-                body_external_id=body_external_id,
-                body_name=body_name,
-                modified_since=modified_since,
-                full=full,
-            )
-
-            paper_task = self._sync_entity_type(
-                client=client,
-                list_url=processed_body.paper_list_url,
-                entity_type="paper",
-                body_id=body_id,
-                body_external_id=body_external_id,
-                body_name=body_name,
-                modified_since=modified_since,
-                full=full,
-            )
-
             meeting_result, paper_result = await asyncio.gather(
-                meeting_task, paper_task, return_exceptions=True
+                self._sync_entity_type(**sync_kwargs(processed_body.meeting_list_url, "meeting")),
+                self._sync_entity_type(**sync_kwargs(processed_body.paper_list_url, "paper")),
+                return_exceptions=True,
             )
 
             if isinstance(meeting_result, Exception):
@@ -487,52 +650,12 @@ class SyncOrchestrator:
             task8 = progress.add_task("[cyan]Files...", total=None)
             task9 = progress.add_task("[cyan]Consultations...", total=None)
 
-            location_task = self._sync_entity_type(
-                client=client,
-                list_url=processed_body.location_list_url,
-                entity_type="location",
-                body_id=body_id,
-                body_external_id=body_external_id,
-                body_name=body_name,
-                modified_since=modified_since,
-                full=full,
-            )
-
-            agenda_item_task = self._sync_entity_type(
-                client=client,
-                list_url=processed_body.agenda_item_list_url,
-                entity_type="agendaitem",
-                body_id=body_id,
-                body_external_id=body_external_id,
-                body_name=body_name,
-                modified_since=modified_since,
-                full=full,
-            )
-
-            file_task = self._sync_entity_type(
-                client=client,
-                list_url=processed_body.file_list_url,
-                entity_type="file",
-                body_id=body_id,
-                body_external_id=body_external_id,
-                body_name=body_name,
-                modified_since=modified_since,
-                full=full,
-            )
-
-            consultation_task = self._sync_entity_type(
-                client=client,
-                list_url=processed_body.consultation_list_url,
-                entity_type="consultation",
-                body_id=body_id,
-                body_external_id=body_external_id,
-                body_name=body_name,
-                modified_since=modified_since,
-                full=full,
-            )
-
             location_result, agenda_item_result, file_result, consultation_result = await asyncio.gather(
-                location_task, agenda_item_task, file_task, consultation_task, return_exceptions=True
+                self._sync_entity_type(**sync_kwargs(processed_body.location_list_url, "location")),
+                self._sync_entity_type(**sync_kwargs(processed_body.agenda_item_list_url, "agendaitem")),
+                self._sync_entity_type(**sync_kwargs(processed_body.file_list_url, "file")),
+                self._sync_entity_type(**sync_kwargs(processed_body.consultation_list_url, "consultation")),
+                return_exceptions=True,
             )
 
             if isinstance(location_result, Exception):
@@ -576,6 +699,73 @@ class SyncOrchestrator:
 
         return stats
 
+    async def _detect_filter_support(
+        self,
+        client: OParlClient,
+        processed_body: ProcessedBody,
+        modified_since: datetime,
+    ) -> bool:
+        """
+        Test if the OParl server supports ?modified_since= query parameter.
+
+        Tests by fetching one page with the filter and validating that all
+        returned items have modified dates >= modified_since.
+
+        Live test results (2026-02-09):
+        - Münster: ✅ all entity types
+        - Bonn, Aachen, Köln, Neuss: ✅ papers
+        - Düsseldorf: ❌ papers broken (returns old items), meetings OK
+
+        Args:
+            client: OParl HTTP client
+            processed_body: The body being synced
+            modified_since: The timestamp to test with
+
+        Returns:
+            True if server correctly supports modified_since
+        """
+        # Pick a test endpoint (prefer papers, fall back to meetings)
+        test_url = processed_body.paper_list_url or processed_body.meeting_list_url
+        if not test_url:
+            console.print("[dim]  No endpoint to test filter support[/dim]")
+            return False
+
+        try:
+            test_items: list[dict[str, Any]] = []
+            async for page in client.fetch_list(test_url, modified_since=modified_since, max_pages=1):
+                test_items.extend(page)
+                break
+
+            if not test_items:
+                # Empty result is valid - no items modified since last sync
+                console.print("[green]  Filter test: ✅ Server supports modified_since (0 items returned)[/green]")
+                return True
+
+            # Validate: ALL items should have modified >= modified_since
+            all_valid = True
+            for item in test_items:
+                item_modified = self.processor.parse_datetime(item.get("modified"))
+                if item_modified and item_modified < modified_since:
+                    all_valid = False
+                    break
+
+            if all_valid:
+                console.print(
+                    f"[green]  Filter test: ✅ Server supports modified_since "
+                    f"({len(test_items)} items, all valid)[/green]"
+                )
+            else:
+                console.print(
+                    f"[yellow]  Filter test: ❌ Server returns items older than filter date. "
+                    f"Falling back to client-side filtering.[/yellow]"
+                )
+
+            return all_valid
+
+        except Exception as e:
+            console.print(f"[yellow]  Filter test failed: {e}. Using client-side filtering.[/yellow]")
+            return False
+
     async def _sync_entity_type(
         self,
         client: OParlClient,
@@ -586,39 +776,52 @@ class SyncOrchestrator:
         body_name: str | None = None,
         modified_since: datetime | None = None,
         full: bool = False,
+        use_server_filter: bool = False,
     ) -> int:
         """
         Sync all entities of a specific type.
 
-        For incremental sync:
-        - Fetches pages and checks each item against DB
-        - New items (not in DB) → Save
-        - Changed items (modified date newer) → Update
-        - Unchanged items (in DB, same modified) → Skip
-        - Stops when a full page (25 items) is unchanged
-
         For full sync:
-        - Fetches all pages and saves everything
+        - Fetches all pages and upserts everything
 
-        Returns the number of entities synced.
+        For incremental sync with server filter (use_server_filter=True):
+        - Appends ?modified_since= to URL → server returns only changed items
+        - Upserts all returned items (they are all new/modified)
+        - Handles deleted items (OParl deleted=true flag)
+        - No stop condition needed (server filters for us)
+
+        For incremental sync without server filter (fallback):
+        - Fetches pages and compares modified dates against DB
+        - New items → Save, Modified items → Update, Deleted → Delete
+        - Stops after 5 consecutive pages with no changes
+
+        Returns the number of entities synced (new + updated).
         """
         if not list_url:
             return 0
 
         count = 0
+        updated_count = 0
+        deleted_count = 0
+        skipped_count = 0
         pages_checked = 0
-        consecutive_existing_pages = 0
-        min_pages_to_check = 10  # Always check at least 10 pages
-        existing_pages_to_stop = 3  # Stop after 3 consecutive pages where ALL items exist
+        consecutive_stale_pages = 0
+        min_pages_to_check = 10
+        stale_pages_to_stop = 5
 
-        async for page in client.fetch_list(list_url, max_pages=None):
+        # Pass modified_since to client only if server supports it
+        client_modified_since = modified_since if use_server_filter else None
+
+        async for page in client.fetch_list(list_url, modified_since=client_modified_since):
             pages_checked += 1
-            existing_on_page = 0
             new_on_page = 0
+            updated_on_page = 0
+            deleted_on_page = 0
+            unchanged_on_page = 0
             page_size = len(page)
 
             if full:
-                # Full sync: just save everything
+                # Full sync: upsert everything
                 for item in page:
                     try:
                         processed = self.processor.process(item, body_external_id)
@@ -627,8 +830,34 @@ class SyncOrchestrator:
                             count += 1
                     except Exception as e:
                         console.print(f"[red]Error processing {entity_type}: {e}[/red]")
+
+            elif use_server_filter:
+                # Server-filtered incremental: all items are new/modified/deleted
+                for item in page:
+                    try:
+                        external_id = item.get("id", "")
+                        if not external_id:
+                            continue
+
+                        # Handle deleted items
+                        if item.get("deleted") is True:
+                            if await self.storage.delete_entity(entity_type, external_id):
+                                deleted_on_page += 1
+                                deleted_count += 1
+                            continue
+
+                        # Upsert (the server already filtered to modified items)
+                        processed = self.processor.process(item, body_external_id)
+                        if processed:
+                            await self._store_entity(processed, body_id, entity_type, body_name)
+                            count += 1
+                            new_on_page += 1
+
+                    except Exception as e:
+                        console.print(f"[red]Error processing {entity_type}: {e}[/red]")
+
             else:
-                # Incremental sync: check if items EXIST in DB (not modified date!)
+                # Client-side incremental: compare modified dates against DB
                 external_ids = [item.get("id", "") for item in page if item.get("id")]
                 existing_ids = await self.storage.batch_check_entities_exist(
                     entity_type, external_ids
@@ -640,39 +869,72 @@ class SyncOrchestrator:
                         if not external_id:
                             continue
 
-                        # Check if item exists in DB (value is not None means it exists)
-                        exists_in_db = existing_ids.get(external_id) is not None
+                        # Handle deleted items (Bonn/Aachen/Köln/ITK send deleted flag)
+                        if item.get("deleted") is True:
+                            if await self.storage.delete_entity(entity_type, external_id):
+                                deleted_on_page += 1
+                                deleted_count += 1
+                            continue
 
-                        if exists_in_db:
-                            # Already in DB → skip (count for stop condition)
-                            existing_on_page += 1
-                        else:
+                        db_modified = existing_ids.get(external_id)
+                        item_modified = self.processor.parse_datetime(item.get("modified"))
+
+                        if db_modified is None:
                             # New item → save
                             new_on_page += 1
                             processed = self.processor.process(item, body_external_id)
                             if processed:
                                 await self._store_entity(processed, body_id, entity_type, body_name)
                                 count += 1
+                        elif item_modified and db_modified and item_modified > db_modified:
+                            # Modified item → update (upsert handles ON CONFLICT)
+                            updated_on_page += 1
+                            processed = self.processor.process(item, body_external_id)
+                            if processed:
+                                await self._store_entity(processed, body_id, entity_type, body_name)
+                                updated_count += 1
+                        else:
+                            # Unchanged → skip
+                            unchanged_on_page += 1
+                            skipped_count += 1
 
                     except Exception as e:
                         console.print(f"[red]Error processing {entity_type}: {e}[/red]")
 
-                # Track consecutive pages where ALL items already exist
-                if page_size > 0 and existing_on_page >= page_size:
-                    consecutive_existing_pages += 1
-                    console.print(f"[dim]  Page {pages_checked}: all {page_size} items exist in DB[/dim]")
-                else:
-                    consecutive_existing_pages = 0  # Reset if we found new items
+            # Log page results (skip for full sync to reduce noise)
+            if not full:
+                has_changes = new_on_page > 0 or updated_on_page > 0 or deleted_on_page > 0
+                if has_changes:
+                    parts = []
                     if new_on_page > 0:
-                        console.print(f"[green]  Page {pages_checked}: {new_on_page} new items saved[/green]")
+                        parts.append(f"{new_on_page} new")
+                    if updated_on_page > 0:
+                        parts.append(f"{updated_on_page} updated")
+                    if deleted_on_page > 0:
+                        parts.append(f"{deleted_on_page} deleted")
+                    console.print(f"[green]  Page {pages_checked}: {', '.join(parts)}[/green]")
+                    consecutive_stale_pages = 0
+                else:
+                    consecutive_stale_pages += 1
 
-                # Stop condition: after min pages, stop if N consecutive pages all exist
-                if (pages_checked >= min_pages_to_check and
-                    consecutive_existing_pages >= existing_pages_to_stop):
-                    console.print(f"[yellow]  Stopping {entity_type}: {consecutive_existing_pages} consecutive pages already in DB[/yellow]")
-                    break
+                # Stop condition: only for client-side filtering (server-filtered has no stale pages)
+                if not use_server_filter:
+                    if (pages_checked >= min_pages_to_check
+                            and consecutive_stale_pages >= stale_pages_to_stop):
+                        console.print(
+                            f"[yellow]  Stopping {entity_type}: "
+                            f"{consecutive_stale_pages} consecutive pages without changes[/yellow]"
+                        )
+                        break
 
-        return count
+        total = count + updated_count
+        if not full and (updated_count > 0 or deleted_count > 0 or skipped_count > 0):
+            console.print(
+                f"[dim]  {entity_type} summary: {count} new, {updated_count} updated, "
+                f"{deleted_count} deleted, {skipped_count} unchanged[/dim]"
+            )
+
+        return total
 
     async def _store_entity(
         self,
@@ -727,6 +989,11 @@ class SyncOrchestrator:
         elif isinstance(entity, ProcessedPerson):
             await self.storage.upsert_person(entity, body_id)
             metrics.record_entity_synced("person", body_name or "unknown")
+            # Process nested memberships (OParl 1.0: embedded in Person objects)
+            for nested in entity.nested_entities:
+                if isinstance(nested, ProcessedMembership):
+                    await self.storage.upsert_membership(nested, body_id)
+                    metrics.record_entity_synced("membership", body_name or "unknown")
         elif isinstance(entity, ProcessedOrganization):
             await self.storage.upsert_organization(entity, body_id)
             metrics.record_entity_synced("organization", body_name or "unknown")

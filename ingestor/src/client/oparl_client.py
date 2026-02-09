@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, AsyncIterator
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
 
 import httpx
 from rich.console import Console
@@ -324,8 +324,10 @@ class OParlClient:
 
         Args:
             url: The list URL
-            modified_since: Only fetch items modified after this date (used for filtering, not query param)
-            max_pages: Maximum number of pages to fetch (for incremental sync)
+            modified_since: Append as ?modified_since= query parameter (OParl 2.5.5).
+                           Most servers (5/6 tested) support this correctly.
+                           The orchestrator handles capability detection and fallback.
+            max_pages: Maximum number of pages to fetch
 
         Yields:
             Lists of items from each page
@@ -333,10 +335,9 @@ class OParlClient:
         current_url: str | None = url
         pages_fetched = 0
 
-        # NOTE: We do NOT use modified_since as query parameter because:
-        # 1. Not all OParl servers support it
-        # 2. New items appear on page 1 and push old items to later pages
-        # Instead, we fetch the first N pages and check each item's modified date
+        # Append modified_since as OParl query parameter if provided
+        if modified_since and current_url:
+            current_url = self._append_modified_since(current_url, modified_since)
 
         while current_url:
             result = await self.fetch(current_url, use_cache=False)
@@ -351,19 +352,23 @@ class OParlClient:
             self.stats.pages_fetched += 1
             pages_fetched += 1
 
-            # Extract data - OParl uses "data" for list items
-            items = result.data.get("data", [])
+            # Extract items - handle multiple OParl response formats
+            items = self._extract_items(result.data)
+
             if items:
                 self.stats.objects_processed += len(items)
                 yield items
 
-            # Check if we've reached max pages (for incremental sync)
+            # Check if we've reached max pages
             if max_pages and pages_fetched >= max_pages:
                 break
 
-            # Get next page URL
-            links = result.data.get("links", {})
-            current_url = links.get("next")
+            # Get next page URL (server preserves filter params in links.next)
+            if isinstance(result.data, dict):
+                links = result.data.get("links", {})
+                current_url = links.get("next")
+            else:
+                current_url = None
 
     async def fetch_list_all(
         self,
@@ -386,6 +391,42 @@ class OParlClient:
         async for page in self.fetch_list(url, modified_since, max_pages):
             all_items.extend(page)
         return all_items
+
+    @staticmethod
+    def _append_modified_since(url: str, modified_since: datetime) -> str:
+        """Append modified_since as OParl query parameter to URL."""
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        # OParl spec format: yyyy-mm-ddThh:mm:ss±hh:mm
+        params["modified_since"] = [modified_since.isoformat()]
+        new_query = urlencode(params, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
+
+    @staticmethod
+    def _extract_items(data: dict[str, Any] | list | Any) -> list[dict[str, Any]]:
+        """
+        Extract items from various OParl response formats.
+
+        Handles:
+        - Standard: {"data": [...], "links": {...}} (Köln, Münster, Bonn, Aachen)
+        - Single object: {"type": "...Body", ...} (ITK Rheinland direct body)
+        - Array without wrapper: [{...}, {...}] (some endpoints)
+        """
+        # Standard OParl list with data[] wrapper
+        if isinstance(data, dict):
+            items = data.get("data", [])
+            if items:
+                return items
+
+            # Single object without data[] wrapper (ITK Rheinland pattern)
+            if data.get("type"):
+                return [data]
+
+        # Array without data wrapper
+        if isinstance(data, list):
+            return data
+
+        return []
 
     async def fetch_many(
         self,

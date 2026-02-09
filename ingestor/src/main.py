@@ -48,8 +48,13 @@ def print_banner() -> None:
 
 @app.command()
 def sync(
+    body_url: Optional[list[str]] = typer.Option(
+        None, "--body", "-b",
+        help="Direct OParl Body URL(s). Auto-detects Body, Body-List, or System URLs.",
+    ),
     source_url: Optional[str] = typer.Option(
-        None, "--source", "-s", help="URL of specific OParl source to sync"
+        None, "--source", "-s",
+        help="Legacy: OParl System URL (prefer --body for direct Body URLs)",
     ),
     full: bool = typer.Option(
         False, "--full", "-f", help="Perform full sync (ignore last sync timestamp)"
@@ -58,38 +63,48 @@ def sync(
         False, "--all", "-a", help="Sync all registered sources"
     ),
     body_filter: Optional[str] = typer.Option(
-        None, "--body", "-b", help="Filter by body name (partial match)"
+        None, "--filter", help="Filter by body name when using --source (partial match)"
     ),
     max_concurrent: int = typer.Option(
         10, "--concurrent", "-c", help="Maximum concurrent HTTP requests"
     ),
 ) -> None:
     """
-    Synchronize OParl data from registered sources.
+    Synchronize OParl data.
 
-    By default, performs incremental sync (only fetches changes since last sync).
-    Use --full to fetch all data from scratch.
+    Supports three input modes:
+    1. --body URL  (recommended): Direct Body URL, auto-detects type
+    2. --source URL (legacy): System URL, discovers bodies
+    3. --all: Sync all registered sources
 
     Examples:
 
-        # Sync a specific source (incremental)
-        mandari-ingestor sync --source https://example.oparl.org/oparl/v1
+        # Sync a direct Body URL (recommended)
+        mandari-ingestor sync --body https://ris-oparl.itk-rheinland.de/Oparl/bodies/0015
 
-        # Full sync a specific source
-        mandari-ingestor sync --source https://example.oparl.org/oparl/v1 --full
+        # Sync multiple bodies
+        mandari-ingestor sync --body URL1 --body URL2
+
+        # Sync a Body-List URL (auto-detected)
+        mandari-ingestor sync --body https://oparl.stadt-muenster.de/bodies
+
+        # Full sync
+        mandari-ingestor sync --body URL --full
+
+        # Legacy: Sync via system URL
+        mandari-ingestor sync --source https://example.oparl.org/oparl/system
 
         # Sync all registered sources
         mandari-ingestor sync --all
-
-        # Sync specific body only
-        mandari-ingestor sync --source URL --body "Stadtrat"
     """
     print_banner()
 
-    if not source_url and not all_sources:
-        console.print("[red]Error:[/red] Please specify --source URL or --all")
+    if not body_url and not source_url and not all_sources:
+        console.print("[red]Error:[/red] Please specify --body URL, --source URL, or --all")
         console.print("\nExamples:")
-        console.print("  mandari-ingestor sync --source https://example.oparl.org/oparl/v1")
+        console.print("  mandari-ingestor sync --body https://oparl.stadt-muenster.de/bodies")
+        console.print("  mandari-ingestor sync --body https://ris-oparl.itk-rheinland.de/Oparl/bodies/0015")
+        console.print("  mandari-ingestor sync --source https://example.oparl.org/oparl/system")
         console.print("  mandari-ingestor sync --all")
         raise typer.Exit(1)
 
@@ -105,7 +120,18 @@ def sync(
                 results = await orchestrator.sync_all(full=full)
                 for result in results:
                     orchestrator.print_result(result)
+            elif body_url:
+                # Body-First: sync each body URL via auto-detection
+                for url in body_url:
+                    console.print(f"[blue]Syncing: {url}[/blue]")
+                    result = await orchestrator.sync_body_url(
+                        url=url,
+                        full=full,
+                        max_concurrent=max_concurrent,
+                    )
+                    orchestrator.print_result(result)
             else:
+                # Legacy: system URL
                 assert source_url is not None
                 result = await orchestrator.sync_source(
                     url=source_url,

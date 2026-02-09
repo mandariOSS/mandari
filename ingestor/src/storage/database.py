@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import delete, select, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from rich.console import Console
@@ -89,9 +89,26 @@ class DatabaseStorage:
         self._organization_uuid_cache: dict[str, UUID] = {}
 
     async def initialize(self) -> None:
-        """Create all tables if they don't exist."""
+        """
+        Verify database schema exists.
+
+        Django owns the schema via migrations. The ingestor must NOT create tables.
+        If tables are missing, raise an error pointing to Django migrate.
+        """
         async with self._engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            result = await conn.execute(text(
+                "SELECT EXISTS ("
+                "  SELECT 1 FROM information_schema.tables "
+                "  WHERE table_name = 'oparl_bodies'"
+                ")"
+            ))
+            exists = result.scalar()
+            if not exists:
+                raise RuntimeError(
+                    "Database schema not found! "
+                    "Django owns the schema. Please run: "
+                    "cd mandari && python manage.py migrate"
+                )
 
     async def close(self) -> None:
         """Close the database connection."""
@@ -365,6 +382,47 @@ class DatabaseStorage:
                 result_dict[external_id] = modified
 
             return result_dict
+
+    async def delete_entity(
+        self,
+        entity_type: str,
+        external_id: str,
+    ) -> bool:
+        """
+        Delete an entity by external ID.
+
+        Used when OParl servers return items with deleted=true
+        (Bonn, Aachen, Köln, ITK Rheinland support this).
+
+        Args:
+            entity_type: Type of entity
+            external_id: The OParl external ID
+
+        Returns:
+            True if entity was deleted, False if not found
+        """
+        model_map = {
+            "meeting": OParlMeeting,
+            "paper": OParlPaper,
+            "person": OParlPerson,
+            "organization": OParlOrganization,
+            "membership": OParlMembership,
+            "location": OParlLocation,
+            "agendaitem": OParlAgendaItem,
+            "consultation": OParlConsultation,
+            "file": OParlFile,
+            "legislativeterm": OParlLegislativeTerm,
+        }
+
+        model = model_map.get(entity_type)
+        if not model:
+            return False
+
+        async with self.get_session() as session:
+            stmt = delete(model).where(model.external_id == external_id)
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
 
     # ========== Meeting Operations ==========
 
