@@ -2,7 +2,7 @@
 # Mandari - CI Checks
 # =============================================================================
 # Runs linting, tests, and Docker build validation
-# Triggered on pushes to dev/main and pull requests
+# Triggered on pushes to dev/main/beta and pull requests
 # =============================================================================
 
 name: CI
@@ -12,10 +12,12 @@ on:
     branches:
       - dev
       - main
+      - beta
   pull_request:
     branches:
       - dev
       - main
+      - beta
 
 permissions:
   contents: read
@@ -101,6 +103,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip install shared/
           cd mandari
           pip install -r requirements.txt
           pip install pytest pytest-django
@@ -163,17 +166,17 @@ jobs:
       - name: Build mandari image
         uses: docker/build-push-action@v5
         with:
-          context: ./mandari
+          context: .
           file: ./mandari/Dockerfile
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=mandari
+          cache-to: type=gha,scope=mandari,mode=max
 
       - name: Build ingestor image
         uses: docker/build-push-action@v5
         with:
-          context: ./ingestor
+          context: .
           file: ./ingestor/Dockerfile
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=ingestor
+          cache-to: type=gha,scope=ingestor,mode=max

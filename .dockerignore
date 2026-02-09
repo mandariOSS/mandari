@@ -1,0 +1,47 @@
+# Git
+.git
+.gitignore
+
+# Private docs
+.private
+
+# Marketing website (has its own context)
+marketing-website
+
+# Python caches
+__pycache__
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.mypy_cache/
+.pytest_cache/
+.coverage
+
+# Virtual environments
+venv/
+.venv/
+
+# Node.js
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Media/static (mounted at runtime)
+mandari/media/
+mandari/staticfiles/

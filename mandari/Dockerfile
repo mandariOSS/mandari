@@ -1,4 +1,5 @@
 # Mandari Django Application
+# Build context: repo root (not ./mandari)
 # Dockerfile for staging/production with local assets (DSGVO-konform)
 
 FROM python:3.12-slim
@@ -36,22 +37,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash mandari
 
+# Install shared package first (mandari-oparl)
+COPY shared/ /tmp/shared/
+RUN pip install --no-cache-dir /tmp/shared/
+
 # Copy requirements first (for caching)
-COPY requirements.txt ./
+COPY mandari/requirements.txt ./
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy package.json and tailwind config first (for caching)
-COPY package.json tailwind.config.js ./
+COPY mandari/package.json mandari/tailwind.config.js ./
 
 # Install npm dependencies and build Tailwind CSS
 RUN npm install && \
     mkdir -p static/css
 
 # Copy application code
-COPY --chown=mandari:mandari . .
+COPY --chown=mandari:mandari mandari/ .
 
 # Build Tailwind CSS
 RUN npm run build:css

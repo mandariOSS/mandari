@@ -1,4 +1,5 @@
 # Mandari Ingestor - Dockerfile
+# Build context: repo root (not ./ingestor)
 # Optimized for faster builds with better caching
 
 FROM python:3.12-slim AS builder
@@ -13,8 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install uv for faster package management
 RUN pip install --no-cache-dir uv
 
-# Copy only dependency files first (for caching)
-COPY pyproject.toml README.md ./
+# Install shared package first (mandari-oparl)
+COPY shared/ /tmp/shared/
+RUN uv pip install --system /tmp/shared/
+
+# Copy only dependency files (for caching)
+COPY ingestor/pyproject.toml ingestor/README.md ./
 
 # Install dependencies (without editable mode for faster install)
 RUN uv pip install --system .
@@ -29,7 +34,7 @@ COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
-COPY src/ src/
+COPY ingestor/src/ src/
 
 # Create data directory and non-root user
 RUN mkdir -p /app/data && \

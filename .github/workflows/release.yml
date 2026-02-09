@@ -2,10 +2,13 @@
 # Mandari - Release Workflow
 # =============================================================================
 # Builds and publishes Docker images to GitHub Container Registry (ghcr.io)
-# Triggered on:
-#   - Push to main branch (builds :latest)
-#   - Published releases (builds :tag + :latest)
-#   - Manual dispatch
+#
+# Branch → Tag mapping:
+#   dev    → :dev, :dev-<sha>
+#   beta   → :beta, :beta-<sha>
+#   main   → :latest, :<sha>
+#   release → :<version>, :latest
+#   manual → :<input>
 # =============================================================================
 
 name: Release
@@ -15,6 +18,7 @@ on:
     branches:
       - main
       - dev
+      - beta
   release:
     types: [published]
   workflow_dispatch:
@@ -50,53 +54,90 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version tag
-        id: version
+      - name: Determine image tags
+        id: tags
         run: |
-          if [ "${{ github.event_name }}" == "release" ]; then
-            TAG="${{ github.event.release.tag_name }}"
-          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.tag }}"
-          else
-            TAG="latest"
-          fi
           SHORT_SHA=$(git rev-parse --short HEAD)
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          BRANCH="${GITHUB_REF_NAME}"
+
+          if [ "${{ github.event_name }}" == "release" ]; then
+            # Release: version tag + latest
+            VERSION="${{ github.event.release.tag_name }}"
+            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${VERSION},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest"
+            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${VERSION},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest"
+            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${VERSION},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:latest"
+
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # Manual: custom tag
+            TAG="${{ github.event.inputs.tag }}"
+            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${TAG}"
+            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${TAG}"
+            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${TAG}"
+
+          elif [ "$BRANCH" == "main" ]; then
+            # main: latest + sha
+            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${SHORT_SHA}"
+            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${SHORT_SHA}"
+            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:latest,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${SHORT_SHA}"
+
+          elif [ "$BRANCH" == "beta" ]; then
+            # beta: beta + beta-sha
+            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:beta,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:beta-${SHORT_SHA}"
+            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:beta,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:beta-${SHORT_SHA}"
+            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:beta,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:beta-${SHORT_SHA}"
+
+          elif [ "$BRANCH" == "dev" ]; then
+            # dev: dev + dev-sha
+            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:dev,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:dev-${SHORT_SHA}"
+            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:dev,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:dev-${SHORT_SHA}"
+            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:dev,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:dev-${SHORT_SHA}"
+
+          else
+            # Fallback
+            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${SHORT_SHA}"
+            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${SHORT_SHA}"
+            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${SHORT_SHA}"
+          fi
+
+          echo "mandari_tags=$MANDARI_TAGS" >> $GITHUB_OUTPUT
+          echo "ingestor_tags=$INGESTOR_TAGS" >> $GITHUB_OUTPUT
+          echo "website_tags=$WEBSITE_TAGS" >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+          echo "Branch: $BRANCH"
+          echo "Mandari tags: $MANDARI_TAGS"
+          echo "Ingestor tags: $INGESTOR_TAGS"
+          echo "Website tags: $WEBSITE_TAGS"
 
       - name: Build and push mandari image
         uses: docker/build-push-action@v5
         with:
-          context: ./mandari
+          context: .
           file: ./mandari/Dockerfile
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${{ steps.version.outputs.tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${{ steps.version.outputs.short_sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.tags.outputs.mandari_tags }}
+          cache-from: type=gha,scope=mandari
+          cache-to: type=gha,scope=mandari,mode=max
           labels: |
             org.opencontainers.image.source=https://github.com/mandariOSS/mandari
             org.opencontainers.image.description=Mandari - Open-Source Platform for Municipal Political Transparency
             org.opencontainers.image.licenses=AGPL-3.0
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build and push ingestor image
         uses: docker/build-push-action@v5
         with:
-          context: ./ingestor
+          context: .
           file: ./ingestor/Dockerfile
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${{ steps.version.outputs.tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${{ steps.version.outputs.short_sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.tags.outputs.ingestor_tags }}
+          cache-from: type=gha,scope=ingestor
+          cache-to: type=gha,scope=ingestor,mode=max
           labels: |
             org.opencontainers.image.source=https://github.com/mandariOSS/mandari
             org.opencontainers.image.description=Mandari OParl Ingestor - Data Synchronization Service
             org.opencontainers.image.licenses=AGPL-3.0
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build and push website image
         uses: docker/build-push-action@v5
@@ -104,13 +145,11 @@ jobs:
           context: ./marketing-website
           file: ./marketing-website/Dockerfile
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${{ steps.version.outputs.tag }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${{ steps.version.outputs.short_sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.tags.outputs.website_tags }}
+          cache-from: type=gha,scope=website
+          cache-to: type=gha,scope=website,mode=max
           labels: |
             org.opencontainers.image.source=https://github.com/mandariOSS/mandari
             org.opencontainers.image.description=Mandari Marketing Website - Wagtail CMS
             org.opencontainers.image.licenses=AGPL-3.0
+            org.opencontainers.image.revision=${{ github.sha }}
