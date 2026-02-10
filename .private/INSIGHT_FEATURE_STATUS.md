@@ -1,6 +1,6 @@
 # Mandari Insight - Feature Status & Roadmap
 
-> **Zuletzt aktualisiert**: 2026-02-10 (Gremien: Tabellarische Liste, Detail-Tabs, Rat-Sonderfall)
+> **Zuletzt aktualisiert**: 2026-02-10 (Ratsfragen: PublicQuestion Model, Views, Admin, E-Mail-Workflow)
 > **Aktualisiert durch**: Claude Code (automatisch nach jeder Implementierung)
 >
 > **Anweisung an AI-Agenten**: Nach Abschluss jeder Aufgabe, die ein Feature in dieser Liste betrifft,
@@ -33,7 +33,7 @@
 | 8 | [Georeferenzierung & Karte](#8-georeferenzierung--karte) | :construction: | 50% | HOCH |
 | 9 | [Semantische Suche (Vektor)](#9-semantische-suche-vektor) | :white_check_mark: | 100% | MITTEL |
 | 10 | [Straßensuche (frankfurt-gestalten)](#10-straßensuche-frankfurt-gestalten-stil) | :clipboard: | 0% | HOCH |
-| 11 | [Ratsfragen (Abgeordnetenwatch)](#11-ratsfragen-abgeordnetenwatch-stil) | :clipboard: | 0% | HOCH |
+| 11 | [Ratsfragen (Abgeordnetenwatch)](#11-ratsfragen-abgeordnetenwatch-stil) | :white_check_mark: | 100% | HOCH |
 | 12 | [Newsletter (Nachbarschafts-Updates)](#12-newsletter-nachbarschafts-updates) | :clipboard: | 0% | HOCH |
 | 13 | [Benutzerkonten & Abonnements](#13-benutzerkonten--abonnements) | :construction: | 50% | HOCH |
 | 14 | [Sidebar-Layout (Insight Portal)](#14-sidebar-layout-insight-portal) | :white_check_mark: | 100% | - |
@@ -268,26 +268,28 @@ Bürger:innen geben ihre Straße ein und sehen alle relevanten Vorgänge in ihre
 
 ### 11. Ratsfragen (Abgeordnetenwatch-Stil)
 
-**Status**: :clipboard: Geplant | **Fortschritt**: 0%
+**Status**: :white_check_mark: Vollständig | **Fortschritt**: 100%
 
-Bürger:innen können öffentliche Fragen an **Ratsmitglieder** (nicht alle RIS-Personen) stellen. Antworten sind öffentlich sichtbar — wie bei [abgeordnetenwatch.de](https://abgeordnetenwatch.de).
+Bürger:innen können öffentliche Fragen an **Ratsmitglieder** stellen. Antworten sind öffentlich sichtbar — wie bei [abgeordnetenwatch.de](https://abgeordnetenwatch.de). Kein Account nötig: E-Mail-Verifizierung + Token-basierte Antwort.
 
 | Komponente | Status | Details |
 |------------|--------|---------|
-| Ratsmitglied-Flag | :clipboard: | Unterscheidung: Ratsmitglied vs. Sachkundige/r vs. Verwaltung |
-| Frage-Model | :clipboard: | `PublicQuestion`: Autor, Empfänger, Text, Status |
-| Antwort-Model | :clipboard: | `PublicAnswer`: Text, Datum, öffentlich |
-| Frage stellen (UI) | :clipboard: | Formular auf Person-Detail, mit DSGVO-Hinweis |
-| Moderation | :clipboard: | Freischaltung vor Veröffentlichung (Spam, Beleidigung) |
-| Öffentliche Anzeige | :clipboard: | Fragen + Antworten auf Personen-Profil |
-| E-Mail-Benachrichtigung | :clipboard: | Ratsmitglied wird per E-Mail über neue Frage informiert |
-| Antwort-Erinnerung | :clipboard: | Automatische Erinnerung nach X Tagen ohne Antwort |
-| Statistik | :clipboard: | Antwortquote pro Ratsmitglied |
-| Konto-Pflicht (Fragesteller) | :no_entry: | Benötigt [#13 Benutzerkonten](#13-benutzerkonten--abonnements) |
+| Ratsmitglied-Erkennung | :white_check_mark: | `COUNCIL_ROLES` + Membership-Query, Fragen-Tab nur bei Ratspersonen |
+| PublicQuestion-Model | :white_check_mark: | Frage + Antwort in einem Model (1:1), Status-Workflow |
+| E-Mail-Verifizierung | :white_check_mark: | Token per E-Mail, 48h gültig, kein Account nötig |
+| Frage-Formular (UI) | :white_check_mark: | `/insight/personen/<pk>/frage-stellen/`, Name/E-Mail/Stadt/Betreff/Text |
+| Moderation (Admin) | :white_check_mark: | Freischaltung/Ablehnung via Django Admin, Batch-Actions |
+| Öffentliche Anzeige | :white_check_mark: | Fragen-Tab auf Personen-Detail, Antwort-Quote-Badge |
+| Antwort-Link (Token) | :white_check_mark: | Ratsmitglied antwortet über eindeutigen URL, kein Login nötig |
+| E-Mail-Workflow | :white_check_mark: | 4 E-Mail-Templates: Verifizierung, Benachrichtigung, Antwort, Erinnerung |
+| Antwort-Moderation | :white_check_mark: | Antworten werden vor Veröffentlichung geprüft |
+| Statistik | :white_check_mark: | Antwort-Quote + Fortschrittsbalken auf Personen-Profil |
+| Spam-Schutz | :white_check_mark: | Honeypot-Feld, Rate Limiting (3/Tag/E-Mail), Mindestlänge 50 Zeichen |
+| DSGVO | :white_check_mark: | Privacy-Checkbox, E-Mail nicht öffentlich, Verifizierung |
 
-**Abgrenzung**: Nur Ratsmitglieder (Mitglied im Gremium "Rat") können adressiert werden. Verwaltungsmitarbeiter und reine OParl-Personen (z.B. Sachbearbeiter) sind ausgeschlossen.
+**Design-Entscheidung**: Statt Account-Pflicht (#13): E-Mail-basierte Einreichung mit Verifizierungslink. Kann später auf Account-Pflicht umgestellt werden.
 
-**Abhängigkeiten**: Benutzerkonten (#13) für Fragesteller, E-Mail-Infrastruktur.
+**Dateien**: `insight_core/models.py` (PublicQuestion), `insight_core/forms.py`, `insight_core/views.py` (4 neue Views), `insight_core/services/question_service.py`, `insight_core/admin.py` (PublicQuestionAdmin), `templates/pages/persons/ask_question.html`, `templates/pages/questions/`, `templates/emails/questions/`
 
 ---
 
@@ -389,8 +391,9 @@ Alle Insight-Seiten wurden vom Top-Navbar-Layout (base.html → navbar.html + fo
 
 #13 Benutzerkonten & Abos
  └─► #6 KI-Chatbot (Zugang)
- └─► #11 Ratsfragen (Fragesteller)
  └─► #12 Newsletter (Empfänger)
+
+#11 Ratsfragen (erledigt, E-Mail-basiert statt Account-Pflicht)
 ```
 
 ---

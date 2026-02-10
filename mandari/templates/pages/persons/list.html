@@ -25,7 +25,7 @@
                    id="search-persons"
                    name="q"
                    value="{{ request.GET.q }}"
-                   placeholder="Person suchen..."
+                   placeholder="Name, Funktion oder Gremium suchen..."
                    hx-get="{% url 'insight_core:insight:person_list' %}"
                    hx-trigger="keyup changed delay:400ms, search"
                    hx-target="#persons-list"

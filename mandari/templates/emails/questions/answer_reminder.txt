@@ -1,0 +1,24 @@
+Erinnerung: Unbeantwortete Frage
+==================================
+
+Hallo {{ question.recipient.display_name }},
+
+Sie haben noch eine unbeantwortete Frage auf Mandari.
+
+Von: {{ question.questioner_name }}{% if question.questioner_city %} aus {{ question.questioner_city }}{% endif %}
+
+Betreff: {{ question.subject }}
+
+{{ question.question_text }}
+
+---
+
+Sie können die Frage über folgenden Link beantworten:
+{{ answer_url }}
+
+Mit freundlichen Grüßen,
+Das Mandari-Team
+
+--
+Mandari - Kommunalpolitische Transparenz
+{{ site_url }}

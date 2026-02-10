@@ -1,0 +1,25 @@
+Ihre Frage wurde beantwortet
+=============================
+
+Hallo {{ question.questioner_name }},
+
+{{ question.recipient.display_name }} hat Ihre Frage beantwortet.
+
+Ihre Frage:
+{{ question.subject }}
+{{ question.question_text }}
+
+Antwort:
+{{ question.answer_text }}
+
+---
+
+Die Frage und Antwort sind jetzt öffentlich einsehbar:
+{{ question_url }}
+
+Mit freundlichen Grüßen,
+Das Mandari-Team
+
+--
+Mandari - Kommunalpolitische Transparenz
+{{ site_url }}

@@ -975,3 +975,91 @@ class ContactRequest(models.Model):
         """Mark the request as replied."""
         self.status = "replied"
         self.save(update_fields=["status", "updated_at"])
+
+
+# =============================================================================
+# Public Questions (Ratsfragen - Abgeordnetenwatch-Stil)
+# =============================================================================
+
+
+class PublicQuestion(models.Model):
+    """
+    Öffentliche Frage an ein Ratsmitglied.
+
+    Workflow: Formular → E-Mail-Verifizierung → Moderation → Veröffentlichung
+    → Ratsmitglied antwortet über Token-Link → Antwort-Moderation → Öffentlich
+    """
+
+    STATUS_CHOICES = [
+        ("unverified", "E-Mail nicht bestätigt"),
+        ("pending", "Wartet auf Moderation"),
+        ("published", "Veröffentlicht"),
+        ("rejected", "Abgelehnt"),
+    ]
+
+    ANSWER_STATUS_CHOICES = [
+        ("none", "Keine Antwort"),
+        ("pending", "Antwort wartet auf Moderation"),
+        ("published", "Antwort veröffentlicht"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="public_questions")
+    recipient = models.ForeignKey(OParlPerson, on_delete=models.CASCADE, related_name="public_questions")
+
+    # Fragesteller:in (kein Account nötig)
+    questioner_name = models.CharField(max_length=200, verbose_name="Name")
+    questioner_email = models.EmailField(verbose_name="E-Mail")
+    questioner_city = models.CharField(max_length=100, blank=True, verbose_name="Wohnort")
+
+    # Inhalt
+    subject = models.CharField(max_length=300, verbose_name="Betreff")
+    question_text = models.TextField(verbose_name="Frage")
+
+    # Moderation
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="unverified")
+    moderated_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="moderated_questions",
+    )
+    moderated_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, verbose_name="Ablehnungsgrund")
+
+    # Antwort
+    answer_text = models.TextField(blank=True, verbose_name="Antwort")
+    answered_at = models.DateTimeField(null=True, blank=True)
+    answer_status = models.CharField(
+        max_length=20,
+        choices=ANSWER_STATUS_CHOICES,
+        default="none",
+    )
+
+    # Tokens
+    verification_token = models.UUIDField(default=uuid.uuid4, unique=True)
+    answer_token = models.UUIDField(default=uuid.uuid4, unique=True)
+
+    # DSGVO
+    privacy_accepted = models.BooleanField(default=False)
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    reminder_sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "insight_public_questions"
+        verbose_name = "Öffentliche Frage"
+        verbose_name_plural = "Öffentliche Fragen"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["recipient", "status"]),
+            models.Index(fields=["body", "status", "-created_at"]),
+            models.Index(fields=["verification_token"]),
+            models.Index(fields=["answer_token"]),
+        ]
+
+    def __str__(self):
+        return f"{self.subject} (von {self.questioner_name})"

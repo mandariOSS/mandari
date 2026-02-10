@@ -11,11 +11,11 @@ from datetime import timedelta
 from django.core.paginator import Paginator
 from django.db import models
 from django.db.models import Exists, OuterRef, Q, Subquery
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
-from django.views.generic import DetailView, ListView, TemplateView
+from django.views.generic import DetailView, FormView, ListView, TemplateView, View
 
 from .models import (
     OParlAgendaItem,
@@ -27,6 +27,7 @@ from .models import (
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    PublicQuestion,
     TileCache,
 )
 from .ranking import sort_organizations_by_ranking
@@ -386,12 +387,16 @@ class PersonListView(ListView):
             )
             qs = qs.annotate(council_role=council_role_sq)
 
-        # Suche
+        # Suche (Name + Funktion/Gremium über Mitgliedschaften)
         q = self.request.GET.get("q", "").strip()
         if q:
             qs = qs.filter(
-                Q(name__icontains=q) | Q(family_name__icontains=q) | Q(given_name__icontains=q)
-            )
+                Q(name__icontains=q)
+                | Q(family_name__icontains=q)
+                | Q(given_name__icontains=q)
+                | Q(memberships__role__icontains=q)
+                | Q(memberships__organization__name__icontains=q)
+            ).distinct()
 
         return qs.order_by("family_name", "given_name")
 
@@ -424,6 +429,23 @@ class PersonDetailView(DetailView):
             Q(end_date__isnull=True) | Q(end_date__gte=today)
         ).first()
         context["council_role"] = council_membership.role if council_membership else None
+
+        # Öffentliche Fragen (nur bei Ratsmitgliedern)
+        if council_membership:
+            published_questions = PublicQuestion.objects.filter(
+                recipient=person,
+                status="published",
+            ).order_by("-created_at")[:20]
+            context["published_questions"] = published_questions
+
+            total = published_questions.count()
+            answered = sum(
+                1 for q in published_questions if q.answer_status == "published"
+            )
+            context["answer_stats"] = {
+                "total": total,
+                "answered": answered,
+            }
 
         # SEO-Kontext
         from .seo import get_person_seo
@@ -1635,6 +1657,123 @@ class PublicProtocolDetailView(TemplateView):
         )
 
         return context
+
+
+# =============================================================================
+# Öffentliche Fragen (Ratsfragen)
+# =============================================================================
+
+
+class AskQuestionView(FormView):
+    """Formular zum Stellen einer öffentlichen Frage an ein Ratsmitglied."""
+
+    template_name = "pages/persons/ask_question.html"
+
+    def get_form_class(self):
+        from .forms import PublicQuestionForm
+
+        return PublicQuestionForm
+
+    def dispatch(self, request, *args, **kwargs):
+        self.active_body = get_active_body(request)
+        self.person = get_object_or_404(OParlPerson, pk=kwargs["pk"])
+        if self.active_body and self.person.body_id != self.active_body.id:
+            raise Http404
+        if not self._is_council_member(self.person):
+            raise Http404
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["person"] = self.person
+        return context
+
+    def form_valid(self, form):
+        from .services.question_service import check_rate_limit, send_verification_email
+
+        # Rate Limiting
+        email = form.cleaned_data["questioner_email"]
+        if not check_rate_limit(email):
+            form.add_error(
+                None,
+                "Sie haben heute bereits zu viele Fragen eingereicht. "
+                "Bitte versuchen Sie es morgen erneut.",
+            )
+            return self.form_invalid(form)
+
+        question = form.save(commit=False)
+        question.recipient = self.person
+        question.body = self.person.body
+        question.status = "unverified"
+        question.save()
+
+        send_verification_email(question)
+
+        return redirect("insight_core:insight:question_submitted")
+
+    def _is_council_member(self, person):
+        today = timezone.now().date()
+        return OParlMembership.objects.filter(
+            person=person,
+            organization__name="Rat",
+            role__in=COUNCIL_ROLES,
+        ).filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).exists()
+
+
+class VerifyQuestionView(View):
+    """E-Mail-Verifizierung einer eingereichten Frage."""
+
+    def get(self, request, token):
+        question = get_object_or_404(
+            PublicQuestion, verification_token=token, status="unverified"
+        )
+        question.status = "pending"
+        question.save(update_fields=["status", "updated_at"])
+        return render(request, "pages/questions/verified.html", {"question": question})
+
+
+class AnswerQuestionView(FormView):
+    """Antwort-Formular für Ratsmitglieder (Token-basiert, kein Login nötig)."""
+
+    template_name = "pages/questions/answer_form.html"
+
+    def get_form_class(self):
+        from .forms import PublicAnswerForm
+
+        return PublicAnswerForm
+
+    def dispatch(self, request, *args, **kwargs):
+        self.question = get_object_or_404(
+            PublicQuestion,
+            answer_token=kwargs["token"],
+            status="published",
+            answer_status="none",
+        )
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["question"] = self.question
+        return context
+
+    def form_valid(self, form):
+        self.question.answer_text = form.cleaned_data["answer_text"]
+        self.question.answered_at = timezone.now()
+        self.question.answer_status = "pending"
+        self.question.save(update_fields=[
+            "answer_text", "answered_at", "answer_status", "updated_at",
+        ])
+        return render(
+            self.request,
+            "pages/questions/answer_submitted.html",
+            {"question": self.question},
+        )
+
+
+class QuestionSubmittedView(TemplateView):
+    """Bestätigungsseite nach Absenden einer Frage."""
+
+    template_name = "pages/questions/submitted.html"
 
 
 # =============================================================================

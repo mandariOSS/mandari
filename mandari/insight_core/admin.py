@@ -473,3 +473,147 @@ class ContactRequestAdmin(ModelAdmin):
     def mark_as_closed(self, request, queryset):
         updated = queryset.update(status="closed")
         messages.success(request, f"{updated} Anfrage(n) geschlossen.")
+
+
+# =============================================================================
+# Public Questions Admin (Ratsfragen)
+# =============================================================================
+
+from .models import PublicQuestion
+
+
+@admin.register(PublicQuestion)
+class PublicQuestionAdmin(ModelAdmin):
+    """Admin für öffentliche Ratsfragen mit Moderationsaktionen."""
+
+    list_display = [
+        "subject",
+        "questioner_name",
+        "recipient_display",
+        "status_badge",
+        "answer_status_badge",
+        "created_at",
+    ]
+    list_filter = ["status", "answer_status", "body", "created_at"]
+    search_fields = ["subject", "question_text", "questioner_name", "questioner_email"]
+    readonly_fields = [
+        "id",
+        "verification_token",
+        "answer_token",
+        "created_at",
+        "updated_at",
+        "moderated_at",
+        "moderated_by",
+        "answered_at",
+    ]
+    date_hierarchy = "created_at"
+    ordering = ["-created_at"]
+    list_per_page = 25
+
+    actions = ["approve_questions", "reject_questions", "approve_answers", "send_reminders"]
+
+    fieldsets = (
+        (
+            "Frage",
+            {
+                "fields": ("recipient", "body", "subject", "question_text"),
+            },
+        ),
+        (
+            "Fragesteller:in",
+            {
+                "fields": ("questioner_name", "questioner_email", "questioner_city", "privacy_accepted"),
+            },
+        ),
+        (
+            "Moderation",
+            {
+                "fields": ("status", "rejection_reason", "moderated_by", "moderated_at"),
+            },
+        ),
+        (
+            "Antwort",
+            {
+                "fields": ("answer_text", "answer_status", "answered_at"),
+            },
+        ),
+        (
+            "Tokens & Zeitstempel",
+            {
+                "fields": ("id", "verification_token", "answer_token", "reminder_sent_at", "created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    @admin.display(description="Empfänger:in")
+    def recipient_display(self, obj):
+        return obj.recipient.display_name if obj.recipient else "-"
+
+    @admin.display(description="Status")
+    def status_badge(self, obj):
+        colors = {
+            "unverified": "#64748b",
+            "pending": "#f59e0b",
+            "published": "#16a34a",
+            "rejected": "#dc2626",
+        }
+        color = colors.get(obj.status, "#64748b")
+        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_status_display()}</span>')
+
+    @admin.display(description="Antwort")
+    def answer_status_badge(self, obj):
+        colors = {
+            "none": "#64748b",
+            "pending": "#f59e0b",
+            "published": "#16a34a",
+        }
+        color = colors.get(obj.answer_status, "#64748b")
+        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_answer_status_display()}</span>')
+
+    @admin.action(description="Fragen freischalten")
+    def approve_questions(self, request, queryset):
+        from .services.question_service import send_question_notification_to_recipient
+
+        count = 0
+        for q in queryset.filter(status="pending"):
+            q.status = "published"
+            q.moderated_by = request.user
+            q.moderated_at = timezone.now()
+            q.save(update_fields=["status", "moderated_by", "moderated_at", "updated_at"])
+            send_question_notification_to_recipient(q)
+            count += 1
+        messages.success(request, f"{count} Frage(n) freigeschaltet.")
+
+    @admin.action(description="Fragen ablehnen")
+    def reject_questions(self, request, queryset):
+        count = queryset.filter(status="pending").update(
+            status="rejected",
+            moderated_by=request.user,
+            moderated_at=timezone.now(),
+        )
+        messages.success(request, f"{count} Frage(n) abgelehnt.")
+
+    @admin.action(description="Antworten freischalten")
+    def approve_answers(self, request, queryset):
+        from .services.question_service import send_answer_notification_to_questioner
+
+        count = 0
+        for q in queryset.filter(answer_status="pending"):
+            q.answer_status = "published"
+            q.save(update_fields=["answer_status", "updated_at"])
+            send_answer_notification_to_questioner(q)
+            count += 1
+        messages.success(request, f"{count} Antwort(en) freigeschaltet.")
+
+    @admin.action(description="Erinnerung senden")
+    def send_reminders(self, request, queryset):
+        from .services.question_service import send_answer_reminder
+
+        count = 0
+        for q in queryset.filter(status="published", answer_status="none"):
+            if send_answer_reminder(q):
+                q.reminder_sent_at = timezone.now()
+                q.save(update_fields=["reminder_sent_at"])
+                count += 1
+        messages.success(request, f"Erinnerung an {count} Ratsmitglied(er) gesendet.")

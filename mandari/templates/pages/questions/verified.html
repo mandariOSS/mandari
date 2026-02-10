@@ -1,0 +1,31 @@
+{% extends "base_insight.html" %}
+
+{% block title %}Frage bestätigt{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto mt-8">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
+        <div class="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i data-lucide="check-circle" class="w-8 h-8 text-green-600 dark:text-green-400"></i>
+        </div>
+        <h1 class="text-xl font-bold text-gray-900 dark:text-white mb-2">
+            Frage erfolgreich bestätigt!
+        </h1>
+        <p class="text-gray-500 dark:text-gray-400 mb-4">
+            Ihre Frage an <strong class="text-gray-700 dark:text-gray-300">{{ question.recipient.display_name }}</strong>
+            wird nun von unserem Team geprüft.
+        </p>
+        <div class="px-4 py-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg text-left mb-6">
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ question.subject }}</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ question.question_text|truncatewords:30 }}</p>
+        </div>
+        <p class="text-sm text-gray-400 dark:text-gray-500 mb-6">
+            Sie werden per E-Mail benachrichtigt, sobald Ihre Frage freigeschaltet und beantwortet wurde.
+        </p>
+        <a href="{% url 'insight_core:insight:person_detail' question.recipient.id %}"
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors">
+            Zum Profil von {{ question.recipient.display_name }}
+        </a>
+    </div>
+</div>
+{% endblock %}

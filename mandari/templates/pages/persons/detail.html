@@ -70,7 +70,9 @@
                 :class="tab === 'questions' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
                 class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
             Fragen
-            <span class="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-400">Neu</span>
+            {% if answer_stats.total > 0 %}
+            <span class="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ answer_stats.total }}</span>
+            {% endif %}
         </button>
         {% endif %}
         <button @click="tab = 'info'"
@@ -156,52 +158,89 @@
     {# ── Tab: Fragen (Abgeordnetenwatch-Stil) — nur bei Ratspersonen ── #}
     {% if council_role %}
     <div x-show="tab === 'questions'" x-cloak>
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            {# Frage-Formular #}
-            <div class="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h3 class="font-semibold text-gray-900 dark:text-white mb-2">
-                    Frage an {% if person.title %}{{ person.title }} {% endif %}{{ person.display_name }} stellen
-                </h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                    Stellen Sie eine öffentliche Frage an dieses Ratsmitglied. Nach Prüfung wird Ihre Frage hier veröffentlicht.
-                    {{ person.display_name }} wird per E-Mail benachrichtigt und kann öffentlich antworten.
-                </p>
-                <div class="space-y-4">
-                    <div>
-                        <label for="question-subject" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Betreff</label>
-                        <input type="text" id="question-subject" disabled placeholder="Betreff Ihrer Frage..."
-                               class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white disabled:opacity-50">
-                    </div>
-                    <div>
-                        <label for="question-text" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ihre Frage</label>
-                        <textarea id="question-text" rows="4" disabled placeholder="Formulieren Sie Ihre Frage..."
-                                  class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white disabled:opacity-50 resize-y"></textarea>
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <p class="text-xs text-gray-400 dark:text-gray-500">
-                            Fragen werden vor Veröffentlichung moderiert.
-                        </p>
-                        <button disabled
-                                class="px-4 py-2 text-sm font-medium rounded-lg bg-primary-500 text-white opacity-50 cursor-not-allowed">
-                            Frage absenden
-                        </button>
-                    </div>
-                </div>
-                <div class="mt-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-                    <p class="text-sm text-amber-800 dark:text-amber-300">
-                        <strong>Demnächst verfügbar:</strong> Die Fragefunktion befindet sich in Entwicklung.
-                        Sie benötigen ein Benutzerkonto, um Fragen stellen zu können.
+        {# Header mit Stats + CTA #}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-4">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white mb-1">
+                        Öffentliche Fragen an {% if person.title %}{{ person.title }} {% endif %}{{ person.display_name }}
+                    </h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                        {% if answer_stats.total > 0 %}
+                            {{ answer_stats.answered }} von {{ answer_stats.total }} Frage{{ answer_stats.total|pluralize:"n" }} beantwortet
+                        {% else %}
+                            Noch keine Fragen gestellt
+                        {% endif %}
                     </p>
                 </div>
+                <a href="{% url 'insight_core:insight:ask_question' person.id %}"
+                   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors flex-shrink-0">
+                    <i data-lucide="message-circle-question" class="w-4 h-4"></i>
+                    Frage stellen
+                </a>
             </div>
-
-            {# Bisherige Fragen (Platzhalter) #}
-            <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                <i data-lucide="message-circle-question" class="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
-                <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">Noch keine Fragen</p>
-                <p class="text-sm">Seien Sie die erste Person, die eine Frage stellt!</p>
+            {% if answer_stats.total > 0 %}
+            <div class="mt-3 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div class="bg-green-500 h-2 rounded-full transition-all" style="width: {% widthratio answer_stats.answered answer_stats.total 100 %}%"></div>
             </div>
+            {% endif %}
         </div>
+
+        {# Fragen-Liste #}
+        {% if published_questions %}
+        <div class="space-y-4">
+            {% for q in published_questions %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                {# Frage #}
+                <div class="p-5">
+                    <div class="flex items-start gap-3">
+                        <div class="w-8 h-8 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <i data-lucide="message-circle-question" class="w-4 h-4 text-primary-600 dark:text-primary-400"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <h4 class="font-semibold text-gray-900 dark:text-white">{{ q.subject }}</h4>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                {{ q.questioner_name }}{% if q.questioner_city %} aus {{ q.questioner_city }}{% endif %}
+                                &middot; {{ q.created_at|date:"d.m.Y" }}
+                            </p>
+                            <p class="text-sm text-gray-700 dark:text-gray-300 mt-2 whitespace-pre-wrap">{{ q.question_text }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {# Antwort #}
+                {% if q.answer_status == "published" and q.answer_text %}
+                <div class="px-5 pb-5">
+                    <div class="flex items-start gap-3 pl-11">
+                        <div class="w-8 h-8 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <i data-lucide="message-circle" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
+                        </div>
+                        <div class="min-w-0 flex-1 bg-green-50 dark:bg-green-900/10 rounded-lg p-4 border border-green-100 dark:border-green-800">
+                            <p class="text-xs text-green-700 dark:text-green-400 font-medium mb-1">
+                                Antwort von {{ person.display_name }} &middot; {{ q.answered_at|date:"d.m.Y" }}
+                            </p>
+                            <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ q.answer_text }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="px-5 pb-4 pl-16">
+                    <p class="text-xs text-gray-400 dark:text-gray-500 italic">
+                        <i data-lucide="clock" class="w-3 h-3 inline-block mr-1"></i>
+                        Noch keine Antwort
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-6 py-8 text-center">
+            <i data-lucide="message-circle-question" class="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
+            <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">Noch keine Fragen</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Seien Sie die erste Person, die eine Frage stellt!</p>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 

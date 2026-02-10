@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background: #f8fafc; }
+        .container { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 40px 30px; text-align: center; }
+        .header h1 { margin: 0 0 10px 0; font-size: 24px; }
+        .header p { margin: 0; opacity: 0.9; }
+        .icon { width: 60px; height: 60px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 30px; }
+        .content { padding: 30px; }
+        .question-box { background: #f8fafc; border-left: 3px solid #6366f1; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0; }
+        .question-box .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; font-weight: 600; margin-bottom: 5px; }
+        .question-box .value { color: #1e293b; font-weight: 600; }
+        .question-text { color: #475569; font-size: 14px; white-space: pre-wrap; margin-top: 10px; }
+        .cta { text-align: center; margin: 30px 0; }
+        .cta a { display: inline-block; background: #6366f1; color: white !important; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px; }
+        .note { background: #fef3c7; border-radius: 8px; padding: 15px; margin-top: 20px; font-size: 14px; color: #92400e; }
+        .footer { background: #f8fafc; padding: 25px 30px; text-align: center; border-top: 1px solid #e2e8f0; }
+        .footer p { margin: 5px 0; font-size: 13px; color: #64748b; }
+        .footer a { color: #6366f1; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="icon">&#9993;</div>
+            <h1>E-Mail bestätigen</h1>
+            <p>Ihre Frage an {{ question.recipient.display_name }}</p>
+        </div>
+        <div class="content">
+            <p>Hallo {{ question.questioner_name }},</p>
+            <p>Sie haben eine Frage an <strong>{{ question.recipient.display_name }}</strong> gestellt. Bitte bestätigen Sie Ihre E-Mail-Adresse, damit Ihre Frage geprüft werden kann.</p>
+
+            <div class="question-box">
+                <div class="label">Betreff</div>
+                <div class="value">{{ question.subject }}</div>
+                <div class="question-text">{{ question.question_text|truncatewords:50 }}</div>
+            </div>
+
+            <div class="cta">
+                <a href="{{ verify_url }}">Frage bestätigen</a>
+            </div>
+
+            <div class="note">
+                <strong>Hinweis:</strong> Der Bestätigungslink ist 48 Stunden gültig.
+            </div>
+        </div>
+        <div class="footer">
+            <p><strong>Mandari</strong> - Kommunalpolitische Transparenz</p>
+            <p><a href="{{ site_url }}">{{ site_url }}</a></p>
+            <p style="margin-top: 15px; font-size: 11px;">Diese E-Mail wurde automatisch versendet.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,29 @@
+Bitte bestätigen Sie Ihre Frage
+=================================
+
+Hallo {{ question.questioner_name }},
+
+Sie haben eine Frage an {{ question.recipient.display_name }} gestellt.
+Bitte bestätigen Sie Ihre E-Mail-Adresse, damit Ihre Frage geprüft werden kann.
+
+Ihre Frage:
+-----------
+Betreff: {{ question.subject }}
+
+{{ question.question_text }}
+
+-----------
+
+Bitte klicken Sie auf folgenden Link zur Bestätigung:
+{{ verify_url }}
+
+Der Link ist 48 Stunden gültig.
+
+Mit freundlichen Grüßen,
+Das Mandari-Team
+
+--
+Mandari - Kommunalpolitische Transparenz
+{{ site_url }}
+
+Diese E-Mail wurde automatisch versendet. Bitte antworten Sie nicht direkt auf diese Nachricht.
