@@ -1,11 +1,11 @@
-{% extends "base_ris.html" %}
-{% load static %}
+{% extends "base_insight.html" %}
+{% load static tz %}
 
 {% block title %}{{ organization.name }}{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <!-- Breadcrumb -->
+<div x-data="{ tab: 'members' }">
+    {# Breadcrumb #}
     <nav class="mb-6">
         <ol class="flex items-center gap-2 text-sm">
             <li>
@@ -14,125 +14,322 @@
                 </a>
             </li>
             <li class="text-gray-400">/</li>
-            <li class="text-gray-900 dark:text-white font-medium truncate">
+            <li class="text-gray-900 dark:text-white font-medium">
                 {{ organization.name }}
             </li>
         </ol>
     </nav>
 
-    <div class="grid lg:grid-cols-3 gap-8">
-        <!-- Main Content -->
-        <div class="lg:col-span-2">
-            <!-- Header -->
-            <div class="flex items-start gap-4 mb-8">
-                <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
-                    {{ organization.short_name|default:organization.name|slice:":2"|upper }}
+    {# Header #}
+    <div class="mb-6">
+        <div class="flex items-center gap-3 mb-1">
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+                {{ organization.name }}
+            </h1>
+            {% if organization.is_active %}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">
+                Aktiv
+            </span>
+            {% else %}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                Beendet
+            </span>
+            {% endif %}
+        </div>
+        {% if organization.organization_type %}
+        <p class="text-gray-600 dark:text-gray-400">{{ organization.organization_type }}</p>
+        {% endif %}
+    </div>
+
+    {# Tabs #}
+    <div class="flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
+        <button @click="tab = 'members'"
+                :class="tab === 'members' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+                class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
+            Mitglieder &amp; Vertretungen
+        </button>
+        <button @click="tab = 'meetings'"
+                :class="tab === 'meetings' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+                class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
+            Sitzungskalender
+        </button>
+        <button @click="tab = 'info'"
+                :class="tab === 'info' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+                class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors">
+            Informationen
+        </button>
+    </div>
+
+    {# ── Tab: Mitglieder & Vertretungen ── #}
+    <div x-show="tab === 'members'" x-cloak>
+
+        {% if is_rat %}
+            {# === Rat: Ratsmitglieder gesondert === #}
+            {% if council_members %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-4">
+                <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                    <h3 class="font-semibold text-gray-900 dark:text-white">
+                        Ratsmitglieder ({{ council_members|length }})
+                    </h3>
                 </div>
-                <div>
-                    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-                        {{ organization.name }}
-                    </h1>
-                    {% if organization.organization_type %}
-                    <p class="text-gray-600 dark:text-gray-400">
-                        {{ organization.organization_type }}
-                    </p>
-                    {% endif %}
-                    <div class="flex items-center gap-3 mt-2">
-                        {% if organization.is_active %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">
-                            Aktiv
-                        </span>
-                        {% else %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
-                            Beendet
-                        </span>
-                        {% endif %}
-                    </div>
-                </div>
+                <table class="w-full">
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                        {% for m in council_members %}
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+                            onclick="window.location='{% url 'insight_core:insight:person_detail' m.person.id %}'">
+                            <td class="px-6 py-3">
+                                <a href="{% url 'insight_core:insight:person_detail' m.person.id %}"
+                                   class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                                    {{ m.person.display_name }}
+                                </a>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                                {{ m.role }}
+                            </td>
+                            <td class="px-2 py-3 max-sm:hidden">
+                                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
+            {% endif %}
 
-            <!-- Members -->
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                    <h2 class="font-semibold text-gray-900 dark:text-white">
-                        Mitglieder ({{ members|length }})
-                    </h2>
+            {% if other_members %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-4">
+                <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                    <h3 class="font-semibold text-gray-900 dark:text-white">
+                        Weitere Beteiligte ({{ other_members|length }})
+                    </h3>
                 </div>
+                <table class="w-full">
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                        {% for m in other_members %}
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+                            onclick="window.location='{% url 'insight_core:insight:person_detail' m.person.id %}'">
+                            <td class="px-6 py-3">
+                                <a href="{% url 'insight_core:insight:person_detail' m.person.id %}"
+                                   class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                                    {{ m.person.display_name }}
+                                </a>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                                {{ m.role|default:"—" }}
+                            </td>
+                            <td class="px-2 py-3 max-sm:hidden">
+                                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
 
-                {% if members %}
-                <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                    {% for membership in members %}
-                    <a href="{% url 'insight_core:insight:person_detail' membership.person.id %}"
-                       class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                        <div class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                            <i data-lucide="user" class="w-5 h-5 text-gray-500"></i>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <p class="font-medium text-gray-900 dark:text-white truncate">
-                                {{ membership.person.display_name }}
-                            </p>
-                            {% if membership.role %}
-                            <p class="text-sm text-gray-500 dark:text-gray-400">
-                                {{ membership.role }}
-                            </p>
-                            {% endif %}
-                        </div>
-                        <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400"></i>
-                    </a>
+        {% else %}
+            {# === Alle anderen Gremien === #}
+            {% if active_members %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-4">
+                <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                    <h3 class="font-semibold text-gray-900 dark:text-white">
+                        Aktive Mitglieder ({{ active_members|length }})
+                    </h3>
+                </div>
+                <table class="w-full">
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                        {% for m in active_members %}
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+                            onclick="window.location='{% url 'insight_core:insight:person_detail' m.person.id %}'">
+                            <td class="px-6 py-3">
+                                <a href="{% url 'insight_core:insight:person_detail' m.person.id %}"
+                                   class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                                    {{ m.person.display_name }}
+                                </a>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                                {{ m.role|default:"—" }}
+                            </td>
+                            <td class="px-2 py-3 max-sm:hidden">
+                                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-6 py-8 text-center text-gray-500 dark:text-gray-400 mb-4">
+                Keine aktiven Mitglieder
+            </div>
+            {% endif %}
+        {% endif %}
+
+        {# Ehemalige Mitglieder (collapsible) #}
+        {% if past_members %}
+        <details class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <summary class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 cursor-pointer select-none font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                Ehemalige Mitglieder ({{ past_members|length }})
+            </summary>
+            <table class="w-full">
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    {% for m in past_members %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+                        onclick="window.location='{% url 'insight_core:insight:person_detail' m.person.id %}'">
+                        <td class="px-6 py-3">
+                            <a href="{% url 'insight_core:insight:person_detail' m.person.id %}"
+                               class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                                {{ m.person.display_name }}
+                            </a>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                            {{ m.role|default:"—" }}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-400 dark:text-gray-500 max-sm:hidden">
+                            {% if m.end_date %}bis {{ m.end_date|date:"d.m.Y" }}{% endif %}
+                        </td>
+                        <td class="px-2 py-3 max-sm:hidden">
+                            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                        </td>
+                    </tr>
                     {% endfor %}
-                </div>
-                {% else %}
-                <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                    Keine Mitglieder gefunden
+                </tbody>
+            </table>
+        </details>
+        {% endif %}
+    </div>
+
+    {# ── Tab: Sitzungskalender ── #}
+    <div x-show="tab === 'meetings'" x-cloak>
+
+        {# Kommende Sitzungen #}
+        {% if upcoming_meetings %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-4">
+            <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="font-semibold text-gray-900 dark:text-white">Kommende Sitzungen</h3>
+            </div>
+            <table class="w-full">
+                <thead>
+                    <tr class="border-b border-gray-200 dark:border-gray-700">
+                        <th class="text-left px-6 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Datum</th>
+                        <th class="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Uhrzeit</th>
+                        <th class="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Bezeichnung</th>
+                        <th class="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Ort</th>
+                        <th class="w-10 px-2 py-2"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    {% for meeting in upcoming_meetings %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+                        onclick="window.location='{% url 'insight_core:insight:meeting_detail' meeting.id %}'">
+                        <td class="px-6 py-3">
+                            <span class="font-medium text-primary-600 dark:text-primary-400">
+                                {{ meeting.start|date:"d.m.Y" }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                            {{ meeting.start|date:"H:i" }} Uhr
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 max-sm:hidden">
+                            {{ meeting.name|default:"—" }}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                            {{ meeting.location_name|default:"—" }}
+                        </td>
+                        <td class="px-2 py-3">
+                            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-6 py-8 text-center text-gray-500 dark:text-gray-400 mb-4">
+            Keine kommenden Sitzungen geplant
+        </div>
+        {% endif %}
+
+        {# Vergangene Sitzungen (collapsible) #}
+        {% if past_meetings %}
+        <details class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <summary class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 cursor-pointer select-none font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                Vergangene Sitzungen
+            </summary>
+            <table class="w-full">
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    {% for meeting in past_meetings %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+                        onclick="window.location='{% url 'insight_core:insight:meeting_detail' meeting.id %}'">
+                        <td class="px-6 py-3">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">
+                                {{ meeting.start|date:"d.m.Y" }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                            {{ meeting.start|date:"H:i" }} Uhr
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                            {{ meeting.name|default:"—" }}
+                        </td>
+                        <td class="px-2 py-3">
+                            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </details>
+        {% endif %}
+    </div>
+
+    {# ── Tab: Informationen ── #}
+    <div x-show="tab === 'info'" x-cloak>
+        {% if organization.short_name or organization.classification or organization.start_date or organization.end_date or organization.website %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <dl class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-4">
+                {% if organization.short_name %}
+                <div>
+                    <dt class="text-sm text-gray-500 dark:text-gray-400">Kurzname</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ organization.short_name }}</dd>
                 </div>
                 {% endif %}
-            </div>
+                {% if organization.classification %}
+                <div>
+                    <dt class="text-sm text-gray-500 dark:text-gray-400">Klassifikation</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ organization.classification }}</dd>
+                </div>
+                {% endif %}
+                {% if organization.start_date %}
+                <div>
+                    <dt class="text-sm text-gray-500 dark:text-gray-400">Beginn</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ organization.start_date|date:"d.m.Y" }}</dd>
+                </div>
+                {% endif %}
+                {% if organization.end_date %}
+                <div>
+                    <dt class="text-sm text-gray-500 dark:text-gray-400">Ende</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ organization.end_date|date:"d.m.Y" }}</dd>
+                </div>
+                {% endif %}
+                {% if organization.website %}
+                <div class="sm:col-span-2">
+                    <dt class="text-sm text-gray-500 dark:text-gray-400">Website</dt>
+                    <dd>
+                        <a href="{{ organization.website }}" target="_blank" rel="noopener noreferrer"
+                           class="text-primary-600 dark:text-primary-400 hover:underline break-all">
+                            {{ organization.website }}
+                        </a>
+                    </dd>
+                </div>
+                {% endif %}
+            </dl>
         </div>
-
-        <!-- Sidebar -->
-        <div class="space-y-6">
-            <!-- Info Card -->
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Details</h3>
-                <dl class="space-y-4">
-                    {% if organization.short_name %}
-                    <div>
-                        <dt class="text-sm text-gray-500 dark:text-gray-400">Kurzname</dt>
-                        <dd class="font-medium text-gray-900 dark:text-white">{{ organization.short_name }}</dd>
-                    </div>
-                    {% endif %}
-                    {% if organization.classification %}
-                    <div>
-                        <dt class="text-sm text-gray-500 dark:text-gray-400">Klassifikation</dt>
-                        <dd class="font-medium text-gray-900 dark:text-white">{{ organization.classification }}</dd>
-                    </div>
-                    {% endif %}
-                    {% if organization.start_date %}
-                    <div>
-                        <dt class="text-sm text-gray-500 dark:text-gray-400">Beginn</dt>
-                        <dd class="font-medium text-gray-900 dark:text-white">{{ organization.start_date|date:"d.m.Y" }}</dd>
-                    </div>
-                    {% endif %}
-                    {% if organization.end_date %}
-                    <div>
-                        <dt class="text-sm text-gray-500 dark:text-gray-400">Ende</dt>
-                        <dd class="font-medium text-gray-900 dark:text-white">{{ organization.end_date|date:"d.m.Y" }}</dd>
-                    </div>
-                    {% endif %}
-                    {% if organization.website %}
-                    <div>
-                        <dt class="text-sm text-gray-500 dark:text-gray-400">Website</dt>
-                        <dd>
-                            <a href="{{ organization.website }}" target="_blank" rel="noopener noreferrer"
-                               class="text-primary-600 dark:text-primary-400 hover:underline break-all">
-                                {{ organization.website }}
-                            </a>
-                        </dd>
-                    </div>
-                    {% endif %}
-                </dl>
-            </div>
+        {% else %}
+        <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+            Keine weiteren Informationen vorhanden
         </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

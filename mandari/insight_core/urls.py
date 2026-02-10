@@ -8,6 +8,7 @@ Struktur:
 """
 
 from django.urls import include, path
+from django.views.generic import TemplateView
 
 from . import views
 
@@ -45,6 +46,8 @@ insight_patterns = [
     path("termine/<uuid:pk>/", views.MeetingDetailView.as_view(), name="meeting_detail"),
     path("termine/partials/list/", views.MeetingListPartial.as_view(), name="meeting_list_partial"),
     path("termine/partials/calendar-events/", views.calendar_events, name="calendar_events"),
+    # Dokumente (Files)
+    path("dokumente/", views.FileListView.as_view(), name="file_list"),
     # Suche
     path("suche/", views.SearchView.as_view(), name="search"),
     path("suche/partials/results/", views.search_results, name="search_results"),
@@ -57,9 +60,52 @@ insight_patterns = [
     path("map-assets/sprite<path:filename>", views.map_sprite, name="map_sprite"),
     path("map-assets/sprite", views.map_sprite, name="map_sprite_base"),
     path("map-assets/glyphs/<str:fontstack>/<str:range_>.pbf", views.map_glyphs, name="map_glyphs"),
+    # Meine Stadt (Placeholder)
+    path(
+        "nachbarschaft/",
+        TemplateView.as_view(
+            template_name="pages/coming_soon.html",
+            extra_context={
+                "page_title": "Nachbarschaft",
+                "page_icon": "home",
+                "page_description": "Finde Vorgänge, Sitzungen und Beschlüsse in deiner Nachbarschaft. Gib deine Straße oder deinen Stadtteil ein und bleibe informiert.",
+            },
+        ),
+        name="neighborhood",
+    ),
+    path(
+        "gespeichert/",
+        TemplateView.as_view(
+            template_name="pages/coming_soon.html",
+            extra_context={
+                "page_title": "Gespeichert",
+                "page_icon": "bookmark",
+                "page_description": "Speichere Vorgänge, Sitzungen und Gremien, die dich interessieren, und finde sie hier schnell wieder.",
+            },
+        ),
+        name="saved",
+    ),
+    path(
+        "benachrichtigungen/",
+        TemplateView.as_view(
+            template_name="pages/coming_soon.html",
+            extra_context={
+                "page_title": "Benachrichtigungen",
+                "page_icon": "bell",
+                "page_description": "Erhalte Benachrichtigungen über neue Vorgänge, Sitzungstermine und Änderungen in deiner Kommune.",
+            },
+        ),
+        name="notifications",
+    ),
     # Chat (KI-Assistent)
     path("chat/", views.ChatView.as_view(), name="chat"),
     path("chat/api/message/", views.chat_message, name="chat_message"),
+    # Design Preview (temporary)
+    path("preview/1/", TemplateView.as_view(template_name="insight/preview/variant_1.html"), name="preview_1"),
+    path("preview/2/", TemplateView.as_view(template_name="insight/preview/variant_2.html"), name="preview_2"),
+    path("preview/3/", TemplateView.as_view(template_name="insight/preview/variant_3.html"), name="preview_3"),
+    path("preview/4/", TemplateView.as_view(template_name="insight/preview/variant_4.html"), name="preview_4"),
+    path("preview/5/", TemplateView.as_view(template_name="insight/preview/variant_5.html"), name="preview_5"),
 ]
 
 # =============================================================================

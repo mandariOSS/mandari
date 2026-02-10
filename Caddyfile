@@ -46,6 +46,15 @@
 		respond "OK" 200
 	}
 
+	# Design preview (temporary)
+	handle /preview {
+		header Content-Type "text/html; charset=utf-8"
+		file_server {
+			root /data
+		}
+		rewrite * /preview.html
+	}
+
 	# =========================================================================
 	# Mandari Core (Django) - explicit paths
 	# =========================================================================

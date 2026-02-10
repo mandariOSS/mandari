@@ -48,6 +48,10 @@ wait_for_db
 # This avoids race conditions and duplicate migration runs
 # See: infrastructure/ansible/playbooks/deploy.yml
 
+# Configure Meilisearch indexes (idempotent, includes synonyms)
+echo "Configuring Meilisearch..."
+python manage.py setup_meilisearch 2>&1 || echo "Meilisearch setup skipped (not available)"
+
 # Start gunicorn
 echo "Starting gunicorn..."
 exec gunicorn --bind 0.0.0.0:8000 --workers 2 --threads 2 --timeout 120 mandari.wsgi:application

@@ -4,7 +4,7 @@ Context Processors für Mandari Insight.
 Stellt globale Context-Variablen für alle Templates bereit.
 """
 
-from .models import OParlBody
+from .models import OParlBody, OParlMeeting
 
 
 def navigation_context(request):
@@ -57,8 +57,18 @@ def active_body(request):
         # Datenbank noch nicht migriert oder andere Fehler
         pass
 
+    # Count upcoming meetings for sidebar badge
+    upcoming_count = 0
+    if body:
+        from django.utils import timezone
+
+        upcoming_count = OParlMeeting.objects.filter(
+            body=body, start__gte=timezone.now(), cancelled=False
+        ).count()
+
     return {
         "active_body": body,
         "available_bodies": bodies,
         "show_all_bodies": show_all_bodies,
+        "upcoming_meeting_count": upcoming_count,
     }

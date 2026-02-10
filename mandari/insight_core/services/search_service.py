@@ -469,11 +469,29 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
         }
 
     elif result_type == "file":
+        # Build enriched subtitle: V/2025/1234 · Jugendhilfeausschuss · 12.03.2026
+        subtitle_parts = []
+        if hit.get("paper_reference"):
+            subtitle_parts.append(hit["paper_reference"])
+        elif hit.get("paper_name"):
+            subtitle_parts.append(hit["paper_name"])
+        org_names = hit.get("organization_names")
+        if org_names and isinstance(org_names, list) and org_names[0]:
+            subtitle_parts.append(org_names[0])
+        if hit.get("meeting_date"):
+            try:
+                from datetime import datetime
+
+                dt = datetime.fromisoformat(str(hit["meeting_date"]).replace("Z", "+00:00"))
+                subtitle_parts.append(dt.strftime("%d.%m.%Y"))
+            except (ValueError, AttributeError):
+                pass
         return {
             "type": "file",
             "title": highlighted_name or escape(hit.get("name") or hit.get("file_name", "Datei")),
-            "subtitle": hit.get("paper_name") or hit.get("paper_reference"),
+            "subtitle": " \u00b7 ".join(subtitle_parts) if subtitle_parts else None,
             "url": f"/insight/vorgaenge/{hit.get('paper_id')}/",
+            "access_url": hit.get("access_url", ""),
             "text_preview": highlighted_text or escape(hit.get("text_preview", "")),
             "paper_id": hit.get("paper_id"),
             "highlight": highlighted_text if highlighted_text else None,

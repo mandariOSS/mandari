@@ -1,0 +1,148 @@
+{% load static %}
+{# Sidebar-Navigation für das Insight Portal #}
+
+{# Mobile sidebar overlay #}
+<div x-show="sidebarOpen" x-transition.opacity @click="sidebarOpen=false"
+    class="fixed inset-0 z-40 bg-black/40 lg:hidden" x-cloak></div>
+
+<aside :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
+    class="fixed inset-y-0 left-0 z-50 flex flex-col bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transition-transform duration-300"
+    style="width:260px;">
+
+    {# Kommune-Switcher #}
+    <button @click="cityModalOpen=true; $nextTick(() => $refs.citySearchInput.focus())"
+        class="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left">
+        <div class="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center flex-shrink-0">
+            <svg class="w-[18px] h-[18px] text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+        </div>
+        <div class="flex-1 min-w-0">
+            <div class="text-[15px] font-bold text-gray-900 dark:text-white leading-tight truncate">
+                {% if active_body %}{{ active_body.get_display_name }}{% else %}Alle Kommunen{% endif %}
+            </div>
+            <div class="text-[11px] text-gray-500 dark:text-gray-400">Kommune wechseln</div>
+        </div>
+        <i data-lucide="chevrons-up-down" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+    </button>
+
+    {# Navigation #}
+    {% with nav=request.resolver_match.url_name %}
+    <nav class="flex-1 overflow-y-auto pt-2 px-2" aria-label="Hauptnavigation">
+
+        {# Portal Section #}
+        <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 px-3 pt-3 pb-1.5">Portal</div>
+
+        <a href="{% url 'insight_core:insight:portal_home' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'portal_home' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'portal_home' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="layout-dashboard" class="w-[18px] h-[18px] {% if nav != 'portal_home' %}opacity-50{% endif %}"></i> Übersicht
+        </a>
+
+        <a href="{% url 'insight_core:insight:meeting_list' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'meeting_list' or nav == 'meeting_detail' or nav == 'meeting_calendar' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'meeting_list' or nav == 'meeting_detail' or nav == 'meeting_calendar' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="calendar-days" class="w-[18px] h-[18px] {% if nav != 'meeting_list' and nav != 'meeting_detail' and nav != 'meeting_calendar' %}opacity-50{% endif %}"></i> Sitzungen
+            {% if upcoming_meeting_count %}<span class="ml-auto text-[10px] font-bold bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 px-2 py-0.5 rounded-full">{{ upcoming_meeting_count }}</span>{% endif %}
+        </a>
+
+        <a href="{% url 'insight_core:insight:paper_list' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'paper_list' or nav == 'paper_detail' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'paper_list' or nav == 'paper_detail' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="file-text" class="w-[18px] h-[18px] {% if nav != 'paper_list' and nav != 'paper_detail' %}opacity-50{% endif %}"></i> Vorgänge
+        </a>
+
+        <a href="{% url 'insight_core:insight:organization_list' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'organization_list' or nav == 'organization_detail' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'organization_list' or nav == 'organization_detail' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="building-2" class="w-[18px] h-[18px] {% if nav != 'organization_list' and nav != 'organization_detail' %}opacity-50{% endif %}"></i> Gremien
+        </a>
+
+        <a href="{% url 'insight_core:insight:person_list' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'person_list' or nav == 'person_detail' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'person_list' or nav == 'person_detail' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="users" class="w-[18px] h-[18px] {% if nav != 'person_list' and nav != 'person_detail' %}opacity-50{% endif %}"></i> Personen
+        </a>
+
+        <a href="{% url 'insight_core:insight:file_list' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'file_list' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'file_list' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="files" class="w-[18px] h-[18px] {% if nav != 'file_list' %}opacity-50{% endif %}"></i> Dokumente
+        </a>
+
+        {# Entdecken Section #}
+        <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 px-3 pt-4 pb-1.5">Entdecken</div>
+
+        <a href="{% url 'insight_core:insight:search' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'search' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'search' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="search" class="w-[18px] h-[18px] {% if nav != 'search' %}opacity-50{% endif %}"></i> Suche
+        </a>
+
+        <a href="{% url 'insight_core:insight:map' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'map' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'map' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="map" class="w-[18px] h-[18px] {% if nav != 'map' %}opacity-50{% endif %}"></i> Karte
+        </a>
+
+        <a href="{% url 'insight_core:insight:chat' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'chat' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'chat' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="sparkles" class="w-[18px] h-[18px] {% if nav != 'chat' %}opacity-50{% endif %}"></i> KI-Chat
+            <span class="ml-auto text-[10px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full">Neu</span>
+        </a>
+
+        {# Meine Stadt Section #}
+        <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 px-3 pt-4 pb-1.5">Meine Stadt</div>
+
+        <a href="{% url 'insight_core:insight:neighborhood' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'neighborhood' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'neighborhood' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="home" class="w-[18px] h-[18px] {% if nav != 'neighborhood' %}opacity-50{% endif %}"></i> Nachbarschaft
+        </a>
+
+        <a href="{% url 'insight_core:insight:saved' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'saved' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'saved' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="bookmark" class="w-[18px] h-[18px] {% if nav != 'saved' %}opacity-50{% endif %}"></i> Gespeichert
+        </a>
+
+        <a href="{% url 'insight_core:insight:notifications' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'notifications' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'notifications' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="bell" class="w-[18px] h-[18px] {% if nav != 'notifications' %}opacity-50{% endif %}"></i> Benachrichtigungen
+        </a>
+    </nav>
+    {% endwith %}
+
+    {# User / Login #}
+    <div class="border-t border-gray-200 dark:border-gray-700 px-3 py-3">
+        {% if request.user.is_authenticated %}
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                <span class="text-xs font-bold text-primary-600 dark:text-primary-400">{{ request.user.get_short_name|default:request.user.email|truncatechars:2|upper }}</span>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ request.user.get_full_name|default:request.user.email }}</div>
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ request.user.email|truncatechars:25 }}</span>
+            </div>
+            <a href="{% url 'accounts:logout' %}" class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Abmelden">
+                <i data-lucide="log-out" class="w-4 h-4 text-gray-400"></i>
+            </a>
+        </div>
+        {% else %}
+        <a href="{% url 'accounts:login' %}"
+            class="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
+            <i data-lucide="log-in" class="w-4 h-4"></i> Anmelden
+        </a>
+        {% endif %}
+    </div>
+
+    {# OParl Info #}
+    {% if active_body %}
+    <div class="border-t border-gray-200 dark:border-gray-700 px-4 py-2.5 flex items-center gap-2">
+        <i data-lucide="database" class="w-3.5 h-3.5 text-gray-400"></i>
+        <span class="text-[11px] text-gray-400">OParl</span>
+        <span class="text-[11px] text-gray-300 dark:text-gray-600">&middot;</span>
+        <span class="text-[11px] text-gray-400">{% if active_body.last_sync %}Sync: {{ active_body.last_sync|date:"d.m. H:i" }}{% else %}Noch nicht synchronisiert{% endif %}</span>
+    </div>
+    {% endif %}
+</aside>

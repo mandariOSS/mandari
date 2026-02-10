@@ -1,0 +1,110 @@
+{% if files %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for file in files %}
+        <div class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors {% if file.access_url %}cursor-pointer{% endif %}"
+             {% if file.access_url %}
+             @click="openDoc('{{ file.access_url|escapejs }}', '{{ file.name|default:file.file_name|default:"Dokument"|escapejs }}', '{% if file.context_info.organization_name %}{{ file.context_info.organization_name|escapejs }}{% endif %}{% if file.paper.reference %}{% if file.context_info.organization_name %} · {% endif %}{{ file.paper.reference|escapejs }}{% endif %}{% if file.context_info.meeting_date %} · Sitzung {{ file.context_info.meeting_date|date:"d.m.Y" }}{% endif %}{% if file.size %} · {{ file.size|filesizeformat }}{% endif %}')"
+             {% endif %}>
+            {# File type icon #}
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+                {% if file.mime_type == 'application/pdf' %}bg-red-100 dark:bg-red-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                {% if file.mime_type == 'application/pdf' %}
+                <i data-lucide="file-text" class="w-5 h-5 text-red-500 dark:text-red-400"></i>
+                {% else %}
+                <i data-lucide="file" class="w-5 h-5 text-gray-500 dark:text-gray-400"></i>
+                {% endif %}
+            </div>
+
+            <div class="flex-1 min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white truncate md:whitespace-normal md:overflow-visible">
+                    {{ file.name|default:file.file_name|default:"Unbenanntes Dokument" }}
+                </p>
+                {# Zeile 1: Vorlage, Veröffentlichungsdatum, Größe #}
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    {% if file.paper %}
+                    <a href="{% url 'insight_core:insight:paper_detail' file.paper.pk %}" class="hover:text-primary-600 dark:hover:text-primary-400 truncate md:whitespace-normal md:overflow-visible" @click.stop>
+                        {{ file.paper.name|default:file.paper.reference }}
+                    </a>
+                    <span class="text-gray-300 dark:text-gray-600">|</span>
+                    {% endif %}
+                    {% if file.file_date %}
+                    <span>Veröffentlicht {{ file.file_date|date:"d.m.Y" }}</span>
+                    {% endif %}
+                    {% if file.size %}
+                    <span>{{ file.size|filesizeformat }}</span>
+                    {% endif %}
+                </div>
+                {# Zeile 2: Gremium, Sitzungstermin, TOP #}
+                {% if file.context_info %}
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-gray-600 dark:text-gray-300 mt-1">
+                    {% if file.context_info.organization_name %}
+                    <span class="inline-flex items-center gap-1.5">
+                        <i data-lucide="users" class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"></i>
+                        {{ file.context_info.organization_name }}
+                    </span>
+                    {% endif %}
+                    {% if file.context_info.meeting_date %}
+                    <a href="{% url 'insight_core:insight:meeting_detail' file.context_info.meeting.id %}"
+                       class="inline-flex items-center gap-1.5 hover:text-primary-600 dark:hover:text-primary-400" @click.stop>
+                        <i data-lucide="calendar" class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"></i>
+                        Sitzung {{ file.context_info.meeting_date|date:"d.m.Y" }}
+                    </a>
+                    {% endif %}
+                    {% if file.context_info.agenda_number %}
+                    <span class="text-gray-500 dark:text-gray-400">TOP {{ file.context_info.agenda_number }}</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="flex items-center gap-2 flex-shrink-0">
+                {% if file.text_extraction_status == 'completed' %}
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" title="Text extrahiert">OCR</span>
+                {% endif %}
+                {% if file.access_url %}
+                <a href="{{ file.access_url }}" target="_blank" rel="noopener noreferrer" @click.stop
+                    class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="In neuem Tab öffnen">
+                    <i data-lucide="external-link" class="w-4 h-4 text-gray-400"></i>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+{# Pagination #}
+{% if files.has_other_pages %}
+<div class="flex justify-center gap-2 mt-6">
+    {% if files.has_previous %}
+    <a href="?page={{ files.previous_page_number }}{% if query %}&q={{ query }}{% endif %}"
+        class="px-4 py-2 text-sm font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">
+        Zurück
+    </a>
+    {% endif %}
+    <span class="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+        Seite {{ files.number }} von {{ files.paginator.num_pages }}
+    </span>
+    {% if files.has_next %}
+    <a href="?page={{ files.next_page_number }}{% if query %}&q={{ query }}{% endif %}"
+        class="px-4 py-2 text-sm font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors">
+        Weiter
+    </a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="files" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Dokumente gefunden</h3>
+    <p class="text-gray-500 dark:text-gray-400">
+        {% if query %}
+            Ihre Suche ergab keine Treffer. Versuchen Sie einen anderen Suchbegriff.
+        {% else %}
+            Es gibt noch keine Dokumente.
+        {% endif %}
+    </p>
+</div>
+{% endif %}

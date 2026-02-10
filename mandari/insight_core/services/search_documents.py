@@ -125,21 +125,29 @@ def organization_to_doc(org) -> dict[str, Any]:
     }
 
 
-def file_to_doc(file) -> dict[str, Any]:
-    """Convert an OParlFile to a Meilisearch document."""
+def file_to_doc(file, context_info: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Convert an OParlFile to a Meilisearch document.
+
+    Args:
+        file: OParlFile instance.
+        context_info: Optional pre-computed context dict with organization_names,
+                      meeting_name, meeting_date, agenda_number.
+                      If None, attempts to resolve via DB queries.
+    """
     text_preview = ""
     if file.text_content:
         text_preview = file.text_content[:500].strip()
         if len(file.text_content) > 500:
             text_preview += "..."
 
-    return {
+    doc = {
         "id": str(file.id),
         "type": "file",
         "body_id": str(file.body_id) if file.body_id else None,
         "name": file.name or "",
         "file_name": file.file_name or "",
         "mime_type": file.mime_type or "",
+        "access_url": file.access_url or "",
         "text_content": file.text_content or "",
         "text_preview": text_preview,
         "paper_id": str(file.paper_id) if file.paper_id else None,
@@ -147,4 +155,71 @@ def file_to_doc(file) -> dict[str, Any]:
         "paper_reference": file.paper.reference if file.paper else None,
         "meeting_id": str(file.meeting_id) if file.meeting_id else None,
         "oparl_modified": file.oparl_modified.isoformat() if file.oparl_modified else None,
+        # Context fields (Gremium, Sitzung, TOP)
+        "organization_names": [],
+        "meeting_name": None,
+        "meeting_date": None,
+        "agenda_number": None,
     }
+
+    if context_info:
+        doc["organization_names"] = context_info.get("organization_names", [])
+        doc["meeting_name"] = context_info.get("meeting_name")
+        doc["meeting_date"] = context_info.get("meeting_date")
+        doc["agenda_number"] = context_info.get("agenda_number")
+    else:
+        # Resolve context from DB (used by signal-based indexing)
+        _resolve_file_context(file, doc)
+
+    return doc
+
+
+def _resolve_file_context(file, doc: dict[str, Any]) -> None:
+    """Resolve file context (organization, meeting, agenda) from DB."""
+    try:
+        from insight_core.models import OParlConsultation, OParlMeeting, OParlAgendaItem
+
+        meeting = None
+        agenda_number = None
+
+        if file.paper_id:
+            # File → Paper → Consultation → Meeting
+            consultation = (
+                OParlConsultation.objects.filter(paper_id=file.paper_id)
+                .order_by("-authoritative")
+                .first()
+            )
+            if consultation and consultation.meeting_external_id:
+                meeting = (
+                    OParlMeeting.objects.filter(
+                        external_id=consultation.meeting_external_id
+                    )
+                    .prefetch_related("organizations")
+                    .first()
+                )
+                if consultation.agenda_item_external_id:
+                    ai = OParlAgendaItem.objects.filter(
+                        external_id=consultation.agenda_item_external_id
+                    ).first()
+                    if ai:
+                        agenda_number = ai.number
+
+        if not meeting and file.meeting_id:
+            meeting = (
+                OParlMeeting.objects.filter(pk=file.meeting_id)
+                .prefetch_related("organizations")
+                .first()
+            )
+
+        if meeting:
+            org_names = [
+                org.name
+                for org in meeting.organizations.all()
+                if org.name
+            ]
+            doc["organization_names"] = org_names
+            doc["meeting_name"] = meeting.get_display_name()
+            doc["meeting_date"] = meeting.start.isoformat() if meeting.start else None
+            doc["agenda_number"] = agenda_number
+    except Exception:
+        pass

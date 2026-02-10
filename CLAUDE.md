@@ -707,8 +707,17 @@ Das `.private/` Verzeichnis enthält interne Planungsdokumente:
 | `DJANGO_PERFORMANCE_OPTIMIZATION_PLAN.md` | Performance-Optimierungen |
 | `PLAN_TEXT_EXTRACTION_SEO_SEARCH.md` | Text-Extraktion, SEO, Suche |
 | `SPDX_AND_COPYRIGHT_PLAN.md` | Lizenz & Copyright Headers |
+| `INSIGHT_FEATURE_STATUS.md` | **Feature-Status Insight Portal** (Pflichtdoku) |
 
 **Wichtig**: Bei neuen Features zuerst `.private/MASTER_FEATURE_LIST.md` prüfen!
+
+### Pflicht: Feature-Status aktualisieren
+
+Nach **jeder abgeschlossenen Aufgabe**, die ein Insight-Feature betrifft, MUSS `.private/INSIGHT_FEATURE_STATUS.md` aktualisiert werden:
+- Status-Emoji anpassen (:white_check_mark: / :construction: / :clipboard:)
+- Fortschritts-Prozent aktualisieren
+- Neue Unter-Komponenten eintragen falls hinzugefügt
+- Datum "Zuletzt aktualisiert" setzen
 
 ---
 

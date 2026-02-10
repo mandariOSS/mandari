@@ -477,6 +477,33 @@ class DatabaseStorage:
 
             self._meeting_uuid_cache[meeting.external_id] = meeting_id
 
+            # Link M2M organizations from raw_json
+            org_urls = (meeting.raw_json or {}).get("organization", [])
+            if isinstance(org_urls, str):
+                org_urls = [org_urls]
+            if org_urls:
+                org_ids = []
+                for url in org_urls:
+                    oid = self._organization_uuid_cache.get(url)
+                    if oid:
+                        org_ids.append(oid)
+                if org_ids:
+                    # Clear existing M2M links
+                    await session.execute(
+                        text("DELETE FROM oparl_meetings_organizations WHERE oparlmeeting_id = :mid"),
+                        {"mid": meeting_id},
+                    )
+                    # Insert new M2M links
+                    for oid in org_ids:
+                        await session.execute(
+                            text(
+                                "INSERT INTO oparl_meetings_organizations (oparlmeeting_id, oparlorganization_id) "
+                                "VALUES (:mid, :oid) ON CONFLICT DO NOTHING"
+                            ),
+                            {"mid": meeting_id, "oid": oid},
+                        )
+                    await session.commit()
+
             # Process nested entities
             for nested in meeting.nested_entities:
                 if isinstance(nested, ProcessedAgendaItem):

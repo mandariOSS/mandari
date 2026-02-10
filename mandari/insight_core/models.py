@@ -293,20 +293,44 @@ class OParlMeeting(models.Model):
         return self.get_display_name()
 
     def get_display_name(self):
-        """Gibt den Namen des Gremiums zurück (IMMER, wenn vorhanden)."""
-        # Gremiennamen verwenden (vollständiger Name, keine Abkürzung)
+        """Gibt den Gremiennamen zurück statt des generischen 'Sitzung'."""
+        # 1. M2M-Beziehung (Django-Signals, manuell gepflegt)
         orgs = self.organizations.all()[:2]
         if orgs:
             org_names = [org.name for org in orgs if org.name]
             if org_names:
                 return ", ".join(org_names)
 
-        # Fallback zum Meeting-Namen
-        return self.name or "Sitzung"
+        # 2. Auflösung über raw_json.organization URLs → DB-Lookup
+        org_urls = self.raw_json.get("organization", []) if self.raw_json else []
+        if org_urls:
+            from .models import OParlOrganization as OrgModel
+            resolved = OrgModel.objects.filter(
+                external_id__in=org_urls[:2]
+            ).values_list("name", flat=True)
+            names = [n for n in resolved if n]
+            if names:
+                return ", ".join(names)
+
+        # 3. Fallback
+        if self.name and self.name.lower() != "sitzung":
+            return self.name
+        return "Sitzung"
 
     def get_organization_names(self):
         """Gibt die Namen der beteiligten Gremien zurück."""
-        return [org.short_name or org.name for org in self.organizations.all()]
+        orgs = self.organizations.all()
+        if orgs:
+            return [org.short_name or org.name for org in orgs]
+        # Fallback: raw_json
+        org_urls = self.raw_json.get("organization", []) if self.raw_json else []
+        if org_urls:
+            from .models import OParlOrganization as OrgModel
+            return list(
+                OrgModel.objects.filter(external_id__in=org_urls)
+                .values_list("name", flat=True)
+            )
+        return []
 
 
 class OParlPaper(models.Model):
@@ -387,6 +411,9 @@ class OParlAgendaItem(models.Model):
 
     def get_papers(self):
         """Liefert alle Papers/Vorgänge, die mit diesem TOP verknüpft sind."""
+        # Nutze prefetched Daten wenn vorhanden (von MeetingDetailView)
+        if hasattr(self, "_prefetched_papers"):
+            return self._prefetched_papers
         return OParlPaper.objects.filter(consultations__agenda_item_external_id=self.external_id).distinct()
 
     def get_consultations(self):

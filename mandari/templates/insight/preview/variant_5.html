@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mandari Insight – Münster | Variante 5: Midnight Glass</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Outfit', 'system-ui', 'sans-serif'],
+      },
+      colors: {
+        midnight: {
+          50: '#eef0f6',
+          100: '#d0d4e4',
+          200: '#a3aac6',
+          300: '#7681a8',
+          400: '#545e85',
+          500: '#3d4567',
+          600: '#2d3351',
+          700: '#1e2340',
+          800: '#151933',
+          900: '#0d1025',
+          950: '#080a18',
+        },
+        neon: {
+          blue: '#60a5fa',
+          cyan: '#22d3ee',
+          purple: '#a78bfa',
+          green: '#34d399',
+          pink: '#f472b6',
+          amber: '#fbbf24',
+        },
+      },
+    },
+  },
+}
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { background: #0d1025; margin: 0; }
+
+  /* Mesh gradient background */
+  .mesh-bg {
+    background:
+      radial-gradient(ellipse 600px 400px at 70% 10%, rgba(96,165,250,0.07) 0%, transparent 70%),
+      radial-gradient(ellipse 500px 350px at 25% 75%, rgba(167,139,250,0.05) 0%, transparent 70%);
+  }
+
+  /* Glassmorphism layers */
+  .glass {
+    background: rgba(30, 35, 64, 0.6);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border: 1px solid rgba(96, 165, 250, 0.1);
+  }
+  .glass-strong {
+    background: rgba(30, 35, 64, 0.8);
+    backdrop-filter: blur(24px) saturate(1.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    border: 1px solid rgba(96, 165, 250, 0.12);
+  }
+  .glass-sidebar {
+    background: rgba(13, 16, 37, 0.88);
+    backdrop-filter: blur(30px) saturate(1.6);
+    -webkit-backdrop-filter: blur(30px) saturate(1.6);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .glass-input {
+    background: rgba(21, 25, 51, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(96, 165, 250, 0.12);
+  }
+
+  /* Glow effects */
+  .glow-blue { box-shadow: 0 0 20px rgba(96, 165, 250, 0.2), 0 0 60px rgba(96, 165, 250, 0.06); }
+  .glow-purple { box-shadow: 0 0 20px rgba(167, 139, 250, 0.2), 0 0 60px rgba(167, 139, 250, 0.06); }
+  .glow-cyan { box-shadow: 0 0 20px rgba(34, 211, 238, 0.15); }
+  .glow-green { box-shadow: 0 0 12px rgba(52, 211, 153, 0.3); }
+  .glow-text { text-shadow: 0 0 30px rgba(96, 165, 250, 0.3); }
+
+  /* Navigation items */
+  .nav-item {
+    position: relative;
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 16px;
+    border-radius: 12px;
+    transition: all 0.2s ease;
+  }
+  .nav-item.active {
+    background: linear-gradient(135deg, rgba(96,165,250,0.15) 0%, rgba(167,139,250,0.08) 100%);
+    color: #60a5fa;
+  }
+  .nav-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 3px;
+    background: linear-gradient(180deg, #60a5fa, #a78bfa);
+    border-radius: 0 2px 2px 0;
+  }
+  .nav-item:not(.active) {
+    color: #7681a8;
+  }
+  .nav-item:not(.active):hover {
+    background: rgba(96, 165, 250, 0.06);
+    color: #a3aac6;
+  }
+
+  /* Card hover glow */
+  .card-glow {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .card-glow:hover {
+    border-color: rgba(96, 165, 250, 0.25);
+    box-shadow: 0 8px 32px rgba(96, 165, 250, 0.08), 0 0 0 1px rgba(96, 165, 250, 0.05);
+    transform: translateY(-1px);
+  }
+
+  /* Gradient text for stat numbers */
+  .stat-gradient {
+    background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #22d3ee 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Pulse animation for live dot */
+  .pulse-dot {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 4px rgba(52, 211, 153, 0.4); opacity: 1; }
+    50% { box-shadow: 0 0 12px rgba(52, 211, 153, 0.6); opacity: 0.7; }
+  }
+
+  /* Fade-up entrance animation */
+  .fade-up {
+    animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .d1 { animation-delay: 0.05s; }
+  .d2 { animation-delay: 0.10s; }
+  .d3 { animation-delay: 0.15s; }
+  .d4 { animation-delay: 0.20s; }
+  .d5 { animation-delay: 0.25s; }
+  .d6 { animation-delay: 0.30s; }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(96,165,250,0.15); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(96,165,250,0.3); }
+
+  /* Section labels */
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #545e85;
+    padding: 0 16px;
+    margin-bottom: 6px;
+  }
+
+  /* Ambient shimmer on glass panels */
+  .shimmer-edge {
+    position: relative;
+  }
+  .shimmer-edge::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(96,165,250,0.15), rgba(167,139,250,0.1), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  .shimmer-edge:hover::after {
+    opacity: 1;
+  }
+
+  /* Status dot colors with glow */
+  .status-green { background: #34d399; box-shadow: 0 0 8px rgba(52,211,153,0.4); }
+  .status-blue { background: #60a5fa; box-shadow: 0 0 8px rgba(96,165,250,0.4); }
+  .status-purple { background: #a78bfa; box-shadow: 0 0 8px rgba(167,139,250,0.4); }
+  .status-cyan { background: #22d3ee; box-shadow: 0 0 8px rgba(34,211,238,0.4); }
+  .status-pink { background: #f472b6; box-shadow: 0 0 8px rgba(244,114,182,0.4); }
+  .status-amber { background: #fbbf24; box-shadow: 0 0 8px rgba(251,191,36,0.4); }
+</style>
+</head>
+<body class="text-midnight-100 font-sans antialiased min-h-screen mesh-bg" x-data="{ sidebarOpen: false }">
+
+<!-- Mobile overlay -->
+<div x-show="sidebarOpen"
+     x-transition:enter="transition-opacity duration-300"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition-opacity duration-200"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     @click="sidebarOpen = false"
+     class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+     style="display: none;"></div>
+
+<!-- Sidebar -->
+<aside :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+       class="w-[260px] fixed inset-y-0 left-0 glass-sidebar flex flex-col z-50 transition-transform duration-300 lg:translate-x-0">
+
+  <!-- Org Header -->
+  <div class="px-5 pt-6 pb-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-blue to-neon-purple flex items-center justify-center glow-blue shrink-0">
+        <i data-lucide="landmark" class="w-5 h-5 text-white"></i>
+      </div>
+      <div class="min-w-0">
+        <span class="text-[17px] font-bold text-white glow-text block leading-tight">Mandari Insight</span>
+        <span class="text-[11px] text-midnight-300 font-medium block mt-0.5">Stadt Münster</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search -->
+  <div class="px-4 mb-4">
+    <div class="relative group">
+      <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-midnight-400 group-focus-within:text-neon-blue transition-colors duration-200"></i>
+      <input type="text" placeholder="Suchen..."
+             class="w-full pl-10 pr-4 py-2.5 text-[13px] glass-input rounded-xl text-midnight-50 placeholder-midnight-400 focus:outline-none focus:border-neon-blue/30 focus:ring-1 focus:ring-neon-blue/20 transition-all duration-200">
+    </div>
+  </div>
+
+  <!-- Navigation -->
+  <nav class="flex-1 px-3 overflow-y-auto">
+    <!-- Main section -->
+    <div class="section-label mt-1">Portal</div>
+    <div class="space-y-0.5 mb-4">
+      <a href="#" class="nav-item active flex items-center gap-3">
+        <i data-lucide="layout-grid" class="w-[18px] h-[18px]"></i>
+        <span>Übersicht</span>
+      </a>
+      <a href="#" class="nav-item flex items-center gap-3">
+        <i data-lucide="calendar" class="w-[18px] h-[18px] opacity-50"></i>
+        <span>Sitzungen</span>
+        <span class="ml-auto text-[10px] font-semibold bg-neon-blue/15 text-neon-blue px-2 py-0.5 rounded-full">3</span>
+      </a>
+      <a href="#" class="nav-item flex items-center gap-3">
+        <i data-lucide="file-text" class="w-[18px] h-[18px] opacity-50"></i>
+        <span>Vorgänge</span>
+      </a>
+      <a href="#" class="nav-item flex items-center gap-3">
+        <i data-lucide="building-2" class="w-[18px] h-[18px] opacity-50"></i>
+        <span>Gremien</span>
+      </a>
+      <a href="#" class="nav-item flex items-center gap-3">
+        <i data-lucide="users" class="w-[18px] h-[18px] opacity-50"></i>
+        <span>Personen</span>
+      </a>
+    </div>
+
+    <!-- Resources section -->
+    <div class="section-label">Erkunden</div>
+    <div class="space-y-0.5">
+      <a href="#" class="nav-item flex items-center gap-3">
+        <i data-lucide="map" class="w-[18px] h-[18px] opacity-50"></i>
+        <span>Karte</span>
+      </a>
+      <a href="#" class="nav-item flex items-center gap-3">
+        <i data-lucide="bar-chart-3" class="w-[18px] h-[18px] opacity-50"></i>
+        <span>Statistiken</span>
+      </a>
+      <a href="#" class="nav-item flex items-center gap-3">
+        <i data-lucide="rss" class="w-[18px] h-[18px] opacity-50"></i>
+        <span>Neuigkeiten</span>
+      </a>
+    </div>
+  </nav>
+
+  <!-- Sidebar Footer -->
+  <div class="px-5 py-4 border-t" style="border-color: rgba(255,255,255,0.06);">
+    <div class="flex items-center gap-2 text-[11px] text-midnight-400">
+      <span class="w-2 h-2 rounded-full bg-neon-green pulse-dot shrink-0"></span>
+      <span>OParl v1.1 · Synchronisiert</span>
+    </div>
+    <div class="text-[10px] text-midnight-500 mt-1.5 pl-4">
+      Letzte Aktualisierung: vor 12 Min.
+    </div>
+  </div>
+</aside>
+
+<!-- Mobile hamburger -->
+<button @click="sidebarOpen = true"
+        class="fixed top-4 left-4 z-30 lg:hidden w-10 h-10 glass rounded-xl flex items-center justify-center card-glow">
+  <i data-lucide="menu" class="w-5 h-5 text-midnight-200"></i>
+</button>
+
+<!-- Main Content -->
+<main class="lg:ml-[260px] min-h-screen">
+  <div class="px-6 py-6 lg:px-8 lg:py-8">
+    <div class="max-w-[1120px] mx-auto">
+
+      <!-- Page Header -->
+      <div class="mb-8 fade-up pt-10 lg:pt-0">
+        <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+          <div>
+            <h1 class="text-[28px] lg:text-[32px] font-bold text-white glow-text leading-tight">Ratsinformationen</h1>
+            <p class="text-[15px] text-midnight-300 mt-1">Stadt Münster &middot; Transparenzportal</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="glass rounded-xl px-4 py-2.5 text-[13px] font-medium text-midnight-200 card-glow flex items-center gap-2">
+              <i data-lucide="download" class="w-4 h-4"></i>
+              Export
+            </button>
+            <button class="rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white bg-gradient-to-r from-neon-blue to-neon-purple glow-blue flex items-center gap-2 hover:opacity-90 transition-opacity">
+              <i data-lucide="bell" class="w-4 h-4"></i>
+              Benachrichtigungen
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats Row -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 fade-up d1">
+        <!-- Stat: Sitzungen -->
+        <div class="glass rounded-2xl p-5 card-glow shimmer-edge">
+          <div class="flex items-center justify-between mb-3">
+            <div class="w-10 h-10 rounded-xl bg-neon-blue/10 flex items-center justify-center">
+              <i data-lucide="calendar" class="w-[18px] h-[18px] text-neon-blue"></i>
+            </div>
+            <span class="text-[11px] font-semibold text-neon-green bg-neon-green/10 px-2 py-0.5 rounded-full">+12</span>
+          </div>
+          <div class="stat-gradient text-[30px] font-bold leading-none">48</div>
+          <div class="text-[12px] text-midnight-400 mt-1.5">Sitzungen im Februar</div>
+        </div>
+
+        <!-- Stat: Vorgänge -->
+        <div class="glass rounded-2xl p-5 card-glow shimmer-edge">
+          <div class="flex items-center justify-between mb-3">
+            <div class="w-10 h-10 rounded-xl bg-neon-purple/10 flex items-center justify-center">
+              <i data-lucide="file-stack" class="w-[18px] h-[18px] text-neon-purple"></i>
+            </div>
+            <span class="text-[11px] font-semibold text-neon-purple bg-neon-purple/10 px-2 py-0.5 rounded-full">+23</span>
+          </div>
+          <div class="stat-gradient text-[30px] font-bold leading-none">127</div>
+          <div class="text-[12px] text-midnight-400 mt-1.5">Neue Vorgänge</div>
+        </div>
+
+        <!-- Stat: Beschlüsse -->
+        <div class="glass rounded-2xl p-5 card-glow shimmer-edge">
+          <div class="flex items-center justify-between mb-3">
+            <div class="w-10 h-10 rounded-xl bg-neon-green/10 flex items-center justify-center">
+              <i data-lucide="check-circle-2" class="w-[18px] h-[18px] text-neon-green"></i>
+            </div>
+            <span class="text-[11px] font-semibold text-neon-cyan bg-neon-cyan/10 px-2 py-0.5 rounded-full">89%</span>
+          </div>
+          <div class="stat-gradient text-[30px] font-bold leading-none">83</div>
+          <div class="text-[12px] text-midnight-400 mt-1.5">Beschlüsse gefasst</div>
+        </div>
+
+        <!-- Stat: Gremien -->
+        <div class="glass rounded-2xl p-5 card-glow shimmer-edge">
+          <div class="flex items-center justify-between mb-3">
+            <div class="w-10 h-10 rounded-xl bg-neon-cyan/10 flex items-center justify-center">
+              <i data-lucide="building-2" class="w-[18px] h-[18px] text-neon-cyan"></i>
+            </div>
+          </div>
+          <div class="stat-gradient text-[30px] font-bold leading-none">78</div>
+          <div class="text-[12px] text-midnight-400 mt-1.5">Aktive Gremien</div>
+        </div>
+      </div>
+
+      <!-- Main Grid -->
+      <div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
+
+        <!-- Left: Upcoming Meetings -->
+        <div class="xl:col-span-3 fade-up d2">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-[17px] font-semibold text-white">Kommende Sitzungen</h2>
+            <a href="#" class="text-[13px] text-neon-blue hover:text-neon-blue/80 font-medium flex items-center gap-1 transition-colors">
+              Alle anzeigen <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+            </a>
+          </div>
+
+          <div class="space-y-3">
+            <!-- Meeting: Today -->
+            <a href="#" class="group block glass rounded-2xl p-5 card-glow shimmer-edge" style="border-color: rgba(52,211,153,0.2);">
+              <div class="flex gap-4">
+                <div class="flex flex-col items-center justify-center min-w-[56px] h-[56px] rounded-xl bg-neon-green/10 border border-neon-green/20">
+                  <span class="text-[22px] font-bold text-neon-green leading-none">08</span>
+                  <span class="text-[9px] font-semibold text-neon-green/70 uppercase tracking-wide">Feb</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <h3 class="text-[15px] font-semibold text-white group-hover:text-neon-blue transition-colors">Umweltausschuss</h3>
+                    <span class="text-[10px] font-bold text-neon-green bg-neon-green/10 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shrink-0">
+                      <span class="w-1.5 h-1.5 rounded-full bg-neon-green pulse-dot"></span>
+                      Heute
+                    </span>
+                  </div>
+                  <p class="text-[12px] text-midnight-400 flex items-center gap-3 flex-wrap">
+                    <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> 15:00 Uhr</span>
+                    <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> Stadthaus 3, Raum 201</span>
+                    <span class="flex items-center gap-1"><i data-lucide="users" class="w-3 h-3"></i> 17 Mitglieder</span>
+                  </p>
+                  <div class="flex gap-2 mt-3 flex-wrap">
+                    <span class="text-[10px] font-medium px-2.5 py-1 bg-midnight-700/50 text-midnight-200 rounded-lg">9 Tagesordnungspunkte</span>
+                    <span class="text-[10px] font-medium px-2.5 py-1 bg-neon-green/8 text-neon-green/80 rounded-lg border border-neon-green/10">Klimabericht 2025</span>
+                    <span class="text-[10px] font-medium px-2.5 py-1 bg-midnight-700/50 text-midnight-200 rounded-lg">2 Vorlagen</span>
+                  </div>
+                </div>
+              </div>
+            </a>
+
+            <!-- Meeting 2 -->
+            <a href="#" class="group block glass rounded-2xl p-5 card-glow shimmer-edge">
+              <div class="flex gap-4">
+                <div class="flex flex-col items-center justify-center min-w-[56px] h-[56px] rounded-xl bg-neon-blue/10 border border-neon-blue/15">
+                  <span class="text-[22px] font-bold text-neon-blue leading-none">12</span>
+                  <span class="text-[9px] font-semibold text-neon-blue/70 uppercase tracking-wide">Feb</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <h3 class="text-[15px] font-semibold text-white group-hover:text-neon-blue transition-colors mb-1.5">Rat der Stadt Münster</h3>
+                  <p class="text-[12px] text-midnight-400 flex items-center gap-3 flex-wrap">
+                    <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> 16:00 Uhr</span>
+                    <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> Rathaus, Prinzipalmarkt</span>
+                    <span class="flex items-center gap-1"><i data-lucide="users" class="w-3 h-3"></i> 86 Mitglieder</span>
+                  </p>
+                  <div class="flex gap-2 mt-3 flex-wrap">
+                    <span class="text-[10px] font-medium px-2.5 py-1 bg-midnight-700/50 text-midnight-200 rounded-lg">12 Tagesordnungspunkte</span>
+                    <span class="text-[10px] font-medium px-2.5 py-1 bg-midnight-700/50 text-midnight-200 rounded-lg">3 Vorlagen</span>
+                    <span class="text-[10px] font-medium px-2.5 py-1 bg-neon-purple/8 text-neon-purple/80 rounded-lg border border-neon-purple/10">Haushalt</span>
+                  </div>
+                </div>
+              </div>
+            </a>
+
+            <!-- Meeting 3 -->
+            <a href="#" class="group block glass rounded-2xl p-5 card-glow shimmer-edge">
+              <div class="flex gap-4">
+                <div class="flex flex-col items-center justify-center min-w-[56px] h-[56px] rounded-xl bg-neon-purple/10 border border-neon-purple/15">
+                  <span class="text-[22px] font-bold text-neon-purple leading-none">14</span>
+                  <span class="text-[9px] font-semibold text-neon-purple/70 uppercase tracking-wide">Feb</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <h3 class="text-[15px] font-semibold text-white group-hover:text-neon-blue transition-colors mb-1.5">Ausschuss für Stadtentwicklung</h3>
+                  <p class="text-[12px] text-midnight-400 flex items-center gap-3 flex-wrap">
+                    <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> 17:00 Uhr</span>
+                    <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> Stadthaus 3</span>
+                  </p>
+                  <div class="flex gap-2 mt-3 flex-wrap">
+                    <span class="text-[10px] font-medium px-2.5 py-1 bg-midnight-700/50 text-midnight-200 rounded-lg">8 Tagesordnungspunkte</span>
+                    <span class="text-[10px] font-medium px-2.5 py-1 bg-neon-cyan/8 text-neon-cyan/80 rounded-lg border border-neon-cyan/10">Aaseepromenade</span>
+                  </div>
+                </div>
+              </div>
+            </a>
+
+            <!-- Meeting 4 -->
+            <a href="#" class="group block glass rounded-2xl p-5 card-glow shimmer-edge">
+              <div class="flex gap-4">
+                <div class="flex flex-col items-center justify-center min-w-[56px] h-[56px] rounded-xl bg-neon-cyan/10 border border-neon-cyan/15">
+                  <span class="text-[22px] font-bold text-neon-cyan leading-none">18</span>
+                  <span class="text-[9px] font-semibold text-neon-cyan/70 uppercase tracking-wide">Feb</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <h3 class="text-[15px] font-semibold text-white group-hover:text-neon-blue transition-colors mb-1.5">Finanzausschuss</h3>
+                  <p class="text-[12px] text-midnight-400 flex items-center gap-3 flex-wrap">
+                    <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> 15:30 Uhr</span>
+                    <span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> Rathaus, Stadthausturm</span>
+                  </p>
+                  <div class="flex gap-2 mt-3 flex-wrap">
+                    <span class="text-[10px] font-medium px-2.5 py-1 bg-midnight-700/50 text-midnight-200 rounded-lg">6 Tagesordnungspunkte</span>
+                    <span class="text-[10px] font-medium px-2.5 py-1 bg-neon-amber/8 text-neon-amber/80 rounded-lg border border-neon-amber/10">Nachtragshaushalt</span>
+                  </div>
+                </div>
+              </div>
+            </a>
+          </div>
+        </div>
+
+        <!-- Right Column -->
+        <div class="xl:col-span-2 space-y-6">
+
+          <!-- Papers / Vorgänge -->
+          <div class="fade-up d3">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-[17px] font-semibold text-white">Aktuelle Vorgänge</h2>
+              <a href="#" class="text-[13px] text-neon-blue font-medium hover:text-neon-blue/80 transition-colors">Alle</a>
+            </div>
+
+            <div class="glass-strong rounded-2xl overflow-hidden divide-y" style="divide-color: rgba(96,165,250,0.06);">
+              <a href="#" class="group block px-5 py-3.5 hover:bg-neon-blue/5 transition-colors">
+                <div class="flex items-start gap-3">
+                  <div class="w-2 h-2 rounded-full status-purple mt-1.5 shrink-0"></div>
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-medium text-midnight-100 group-hover:text-neon-blue transition-colors leading-snug truncate">Neugestaltung Aaseepromenade</p>
+                    <p class="text-[11px] text-midnight-500 mt-1">V/0847 &middot; Stadtentwicklung &middot; <span class="text-neon-purple">In Beratung</span></p>
+                  </div>
+                </div>
+              </a>
+              <a href="#" class="group block px-5 py-3.5 hover:bg-neon-blue/5 transition-colors">
+                <div class="flex items-start gap-3">
+                  <div class="w-2 h-2 rounded-full status-green mt-1.5 shrink-0"></div>
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-medium text-midnight-100 group-hover:text-neon-blue transition-colors leading-snug truncate">Radwegeausbau Weseler Straße</p>
+                    <p class="text-[11px] text-midnight-500 mt-1">A/0312 &middot; Mobilität &middot; <span class="text-neon-green">Beschlossen</span></p>
+                  </div>
+                </div>
+              </a>
+              <a href="#" class="group block px-5 py-3.5 hover:bg-neon-blue/5 transition-colors">
+                <div class="flex items-start gap-3">
+                  <div class="w-2 h-2 rounded-full status-blue mt-1.5 shrink-0"></div>
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-medium text-midnight-100 group-hover:text-neon-blue transition-colors leading-snug truncate">Digitalisierung der Schulen</p>
+                    <p class="text-[11px] text-midnight-500 mt-1">AN/0156 &middot; Bildung &middot; <span class="text-neon-blue">Eingereicht</span></p>
+                  </div>
+                </div>
+              </a>
+              <a href="#" class="group block px-5 py-3.5 hover:bg-neon-blue/5 transition-colors">
+                <div class="flex items-start gap-3">
+                  <div class="w-2 h-2 rounded-full status-amber mt-1.5 shrink-0"></div>
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-medium text-midnight-100 group-hover:text-neon-blue transition-colors leading-snug truncate">Haushaltssicherung 2027</p>
+                    <p class="text-[11px] text-midnight-500 mt-1">V/0821 &middot; Finanzen &middot; <span class="text-neon-amber">In Beratung</span></p>
+                  </div>
+                </div>
+              </a>
+              <a href="#" class="group block px-5 py-3.5 hover:bg-neon-blue/5 transition-colors">
+                <div class="flex items-start gap-3">
+                  <div class="w-2 h-2 rounded-full status-cyan mt-1.5 shrink-0"></div>
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-medium text-midnight-100 group-hover:text-neon-blue transition-colors leading-snug truncate">Klimaschutzbericht 2025</p>
+                    <p class="text-[11px] text-midnight-500 mt-1">M/0094 &middot; Umwelt &middot; <span class="text-neon-cyan">Kenntnisnahme</span></p>
+                  </div>
+                </div>
+              </a>
+              <a href="#" class="group block px-5 py-3.5 hover:bg-neon-blue/5 transition-colors">
+                <div class="flex items-start gap-3">
+                  <div class="w-2 h-2 rounded-full status-pink mt-1.5 shrink-0"></div>
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-medium text-midnight-100 group-hover:text-neon-blue transition-colors leading-snug truncate">Kita-Ausbau Hiltrup-Ost</p>
+                    <p class="text-[11px] text-midnight-500 mt-1">V/0903 &middot; Jugend &middot; <span class="text-neon-pink">Vorberatung</span></p>
+                  </div>
+                </div>
+              </a>
+            </div>
+          </div>
+
+          <!-- Committees / Gremien -->
+          <div class="fade-up d4">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-[17px] font-semibold text-white">Gremien</h2>
+              <a href="#" class="text-[13px] text-neon-blue font-medium hover:text-neon-blue/80 transition-colors">Alle 78</a>
+            </div>
+
+            <div class="space-y-2">
+              <!-- Each committee with unique gradient accent bar -->
+              <a href="#" class="group glass rounded-xl px-4 py-3.5 card-glow flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-[3px] h-9 rounded-full bg-gradient-to-b from-neon-blue to-neon-purple"></div>
+                  <div>
+                    <span class="text-[13px] font-medium text-midnight-100 group-hover:text-white transition-colors block">Rat der Stadt</span>
+                    <span class="text-[10px] text-midnight-500">Nächste Sitzung: 12. Feb</span>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <span class="text-[13px] font-semibold text-midnight-300">86</span>
+                  <span class="text-[10px] text-midnight-500 block">Mitglieder</span>
+                </div>
+              </a>
+              <a href="#" class="group glass rounded-xl px-4 py-3.5 card-glow flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-[3px] h-9 rounded-full bg-gradient-to-b from-neon-purple to-neon-pink"></div>
+                  <div>
+                    <span class="text-[13px] font-medium text-midnight-100 group-hover:text-white transition-colors block">Hauptausschuss</span>
+                    <span class="text-[10px] text-midnight-500">Nächste Sitzung: 20. Feb</span>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <span class="text-[13px] font-semibold text-midnight-300">19</span>
+                  <span class="text-[10px] text-midnight-500 block">Mitglieder</span>
+                </div>
+              </a>
+              <a href="#" class="group glass rounded-xl px-4 py-3.5 card-glow flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-[3px] h-9 rounded-full bg-gradient-to-b from-neon-cyan to-neon-green"></div>
+                  <div>
+                    <span class="text-[13px] font-medium text-midnight-100 group-hover:text-white transition-colors block">Umweltausschuss</span>
+                    <span class="text-[10px] text-midnight-500">Heute, 15:00 Uhr</span>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <span class="text-[13px] font-semibold text-midnight-300">17</span>
+                  <span class="text-[10px] text-midnight-500 block">Mitglieder</span>
+                </div>
+              </a>
+              <a href="#" class="group glass rounded-xl px-4 py-3.5 card-glow flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-[3px] h-9 rounded-full bg-gradient-to-b from-neon-green to-neon-blue"></div>
+                  <div>
+                    <span class="text-[13px] font-medium text-midnight-100 group-hover:text-white transition-colors block">Finanzausschuss</span>
+                    <span class="text-[10px] text-midnight-500">Nächste Sitzung: 18. Feb</span>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <span class="text-[13px] font-semibold text-midnight-300">17</span>
+                  <span class="text-[10px] text-midnight-500 block">Mitglieder</span>
+                </div>
+              </a>
+              <a href="#" class="group glass rounded-xl px-4 py-3.5 card-glow flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-[3px] h-9 rounded-full bg-gradient-to-b from-neon-amber to-neon-pink"></div>
+                  <div>
+                    <span class="text-[13px] font-medium text-midnight-100 group-hover:text-white transition-colors block">Schulausschuss</span>
+                    <span class="text-[10px] text-midnight-500">Nächste Sitzung: 25. Feb</span>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <span class="text-[13px] font-semibold text-midnight-300">15</span>
+                  <span class="text-[10px] text-midnight-500 block">Mitglieder</span>
+                </div>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Persons Section -->
+      <section class="mt-8 fade-up d5">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-[17px] font-semibold text-white">Ratsmitglieder</h2>
+          <a href="#" class="text-[13px] text-neon-blue font-medium flex items-center gap-1 hover:text-neon-blue/80 transition-colors">
+            Alle 412 Personen <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+          </a>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <!-- Person 1 -->
+          <a href="#" class="group glass rounded-2xl p-5 card-glow shimmer-edge text-center">
+            <div class="w-14 h-14 rounded-full bg-gradient-to-br from-neon-blue/25 to-neon-purple/25 border border-neon-blue/20 flex items-center justify-center mx-auto mb-3 text-[16px] font-bold text-neon-blue group-hover:from-neon-blue/40 group-hover:to-neon-purple/40 group-hover:border-neon-blue/30 transition-all">
+              ML
+            </div>
+            <div class="text-[13px] font-semibold text-midnight-100 group-hover:text-white transition-colors">Markus Lewe</div>
+            <div class="text-[11px] text-midnight-500 mt-0.5">Oberbürgermeister</div>
+            <div class="inline-block mt-2 text-[10px] font-semibold text-midnight-300 bg-midnight-700/60 px-2.5 py-0.5 rounded-full">CDU</div>
+          </a>
+
+          <!-- Person 2 -->
+          <a href="#" class="group glass rounded-2xl p-5 card-glow shimmer-edge text-center">
+            <div class="w-14 h-14 rounded-full bg-gradient-to-br from-neon-purple/25 to-neon-pink/25 border border-neon-purple/20 flex items-center justify-center mx-auto mb-3 text-[16px] font-bold text-neon-purple group-hover:from-neon-purple/40 group-hover:to-neon-pink/40 group-hover:border-neon-purple/30 transition-all">
+              AS
+            </div>
+            <div class="text-[13px] font-semibold text-midnight-100 group-hover:text-white transition-colors">Angela Stähler</div>
+            <div class="text-[11px] text-midnight-500 mt-0.5">Bürgermeisterin</div>
+            <div class="inline-block mt-2 text-[10px] font-semibold text-midnight-300 bg-midnight-700/60 px-2.5 py-0.5 rounded-full">CDU</div>
+          </a>
+
+          <!-- Person 3 -->
+          <a href="#" class="group glass rounded-2xl p-5 card-glow shimmer-edge text-center">
+            <div class="w-14 h-14 rounded-full bg-gradient-to-br from-neon-green/25 to-neon-cyan/25 border border-neon-green/20 flex items-center justify-center mx-auto mb-3 text-[16px] font-bold text-neon-green group-hover:from-neon-green/40 group-hover:to-neon-cyan/40 group-hover:border-neon-green/30 transition-all">
+              RD
+            </div>
+            <div class="text-[13px] font-semibold text-midnight-100 group-hover:text-white transition-colors">Robin Denstorff</div>
+            <div class="text-[11px] text-midnight-500 mt-0.5">Stadtbaurat</div>
+            <div class="inline-block mt-2 text-[10px] font-semibold text-midnight-300 bg-midnight-700/60 px-2.5 py-0.5 rounded-full">Grüne</div>
+          </a>
+
+          <!-- Person 4 -->
+          <a href="#" class="group glass rounded-2xl p-5 card-glow shimmer-edge text-center">
+            <div class="w-14 h-14 rounded-full bg-gradient-to-br from-neon-cyan/25 to-neon-blue/25 border border-neon-cyan/20 flex items-center justify-center mx-auto mb-3 text-[16px] font-bold text-neon-cyan group-hover:from-neon-cyan/40 group-hover:to-neon-blue/40 group-hover:border-neon-cyan/30 transition-all">
+              TH
+            </div>
+            <div class="text-[13px] font-semibold text-midnight-100 group-hover:text-white transition-colors">Thomas Hechtner</div>
+            <div class="text-[11px] text-midnight-500 mt-0.5">Fraktionsvorsitz</div>
+            <div class="inline-block mt-2 text-[10px] font-semibold text-midnight-300 bg-midnight-700/60 px-2.5 py-0.5 rounded-full">SPD</div>
+          </a>
+
+          <!-- Person 5 -->
+          <a href="#" class="group glass rounded-2xl p-5 card-glow shimmer-edge text-center">
+            <div class="w-14 h-14 rounded-full bg-gradient-to-br from-neon-pink/25 to-neon-purple/25 border border-neon-pink/20 flex items-center justify-center mx-auto mb-3 text-[16px] font-bold text-neon-pink group-hover:from-neon-pink/40 group-hover:to-neon-purple/40 group-hover:border-neon-pink/30 transition-all">
+              JT
+            </div>
+            <div class="text-[13px] font-semibold text-midnight-100 group-hover:text-white transition-colors">Jörg Tiemann</div>
+            <div class="text-[11px] text-midnight-500 mt-0.5">Fraktionsvorsitz</div>
+            <div class="inline-block mt-2 text-[10px] font-semibold text-midnight-300 bg-midnight-700/60 px-2.5 py-0.5 rounded-full">FDP</div>
+          </a>
+        </div>
+      </section>
+
+      <!-- Recent Activity / Timeline -->
+      <section class="mt-8 fade-up d6">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-[17px] font-semibold text-white">Letzte Aktivitäten</h2>
+          <a href="#" class="text-[13px] text-neon-blue font-medium hover:text-neon-blue/80 transition-colors">Alle</a>
+        </div>
+
+        <div class="glass-strong rounded-2xl overflow-hidden">
+          <div class="divide-y" style="--tw-divide-opacity: 1; divide-color: rgba(96,165,250,0.06);">
+            <div class="px-5 py-4 flex items-center gap-4">
+              <div class="w-9 h-9 rounded-xl bg-neon-green/10 flex items-center justify-center shrink-0">
+                <i data-lucide="check-circle-2" class="w-4 h-4 text-neon-green"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-[13px] text-midnight-100 truncate"><span class="font-medium text-white">Beschluss gefasst</span> &middot; Radwegeausbau Weseler Straße</p>
+                <p class="text-[11px] text-midnight-500 mt-0.5">Mobilitätsausschuss &middot; Einstimmig angenommen</p>
+              </div>
+              <span class="text-[11px] text-midnight-500 shrink-0">vor 2 Std.</span>
+            </div>
+            <div class="px-5 py-4 flex items-center gap-4">
+              <div class="w-9 h-9 rounded-xl bg-neon-blue/10 flex items-center justify-center shrink-0">
+                <i data-lucide="file-plus" class="w-4 h-4 text-neon-blue"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-[13px] text-midnight-100 truncate"><span class="font-medium text-white">Neue Vorlage</span> &middot; Kita-Ausbau Hiltrup-Ost</p>
+                <p class="text-[11px] text-midnight-500 mt-0.5">V/0903 &middot; Dezernat V &middot; 3 Anlagen</p>
+              </div>
+              <span class="text-[11px] text-midnight-500 shrink-0">vor 4 Std.</span>
+            </div>
+            <div class="px-5 py-4 flex items-center gap-4">
+              <div class="w-9 h-9 rounded-xl bg-neon-purple/10 flex items-center justify-center shrink-0">
+                <i data-lucide="calendar-plus" class="w-4 h-4 text-neon-purple"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-[13px] text-midnight-100 truncate"><span class="font-medium text-white">Sitzung einberufen</span> &middot; Ausschuss für Stadtentwicklung</p>
+                <p class="text-[11px] text-midnight-500 mt-0.5">14. Februar 2026 &middot; 17:00 Uhr &middot; 8 TOPs</p>
+              </div>
+              <span class="text-[11px] text-midnight-500 shrink-0">vor 6 Std.</span>
+            </div>
+            <div class="px-5 py-4 flex items-center gap-4">
+              <div class="w-9 h-9 rounded-xl bg-neon-cyan/10 flex items-center justify-center shrink-0">
+                <i data-lucide="message-square" class="w-4 h-4 text-neon-cyan"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-[13px] text-midnight-100 truncate"><span class="font-medium text-white">Anfrage eingereicht</span> &middot; Digitalisierung der Schulen</p>
+                <p class="text-[11px] text-midnight-500 mt-0.5">AN/0156 &middot; SPD-Fraktion</p>
+              </div>
+              <span class="text-[11px] text-midnight-500 shrink-0">Gestern</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="mt-12 mb-6 pt-6 border-t" style="border-color: rgba(96,165,250,0.08);">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-[12px] text-midnight-500">
+          <div class="flex items-center gap-3">
+            <span class="font-semibold text-midnight-300">Mandari Insight</span>
+            <span>&middot;</span>
+            <span>Open-Source Transparenzportal</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <a href="#" class="hover:text-neon-blue transition-colors">Impressum</a>
+            <a href="#" class="hover:text-neon-blue transition-colors">Datenschutz</a>
+            <a href="#" class="hover:text-neon-blue transition-colors">API</a>
+            <a href="#" class="flex items-center gap-1 hover:text-neon-blue transition-colors">
+              <i data-lucide="github" class="w-3.5 h-3.5"></i> GitHub
+            </a>
+          </div>
+        </div>
+      </footer>
+
+    </div>
+  </div>
+</main>
+
+<script>
+  lucide.createIcons();
+</script>
+</body>
+</html>

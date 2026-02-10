@@ -18,7 +18,13 @@ Usage:
 """
 
 import asyncio
+import sys
 from typing import Optional
+
+# Fix Windows console encoding - prevents UnicodeEncodeError with charmap codec
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import typer
 from rich.console import Console

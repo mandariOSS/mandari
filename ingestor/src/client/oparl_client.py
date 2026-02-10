@@ -105,11 +105,19 @@ class OParlClient:
         self._client: httpx.AsyncClient | None = None
 
         # Circuit breaker per source host
+        # Only count HTTP errors as failures, not local errors (encoding, etc.)
         self._circuit_breakers: dict[str, CircuitBreaker] = {}
         self._circuit_breaker_config = CircuitBreakerConfig(
             failure_threshold=settings.circuit_breaker_failure_threshold,
             recovery_timeout=settings.circuit_breaker_recovery_timeout,
             success_threshold=settings.circuit_breaker_success_threshold,
+            failure_exceptions=(
+                httpx.HTTPStatusError,
+                httpx.RequestError,
+                httpx.TimeoutException,
+                ConnectionError,
+                TimeoutError,
+            ),
         )
 
         # Statistics

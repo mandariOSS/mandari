@@ -34,6 +34,15 @@ console = Console()
 T = TypeVar("T")
 
 
+def _safe_print(message: str) -> None:
+    """Print to console with encoding error protection."""
+    try:
+        console.print(message)
+    except UnicodeEncodeError:
+        ascii_msg = message.encode("ascii", "replace").decode("ascii")
+        console.print(ascii_msg)
+
+
 class CircuitState(str, Enum):
     """Circuit breaker states."""
 
@@ -167,8 +176,8 @@ class CircuitBreaker:
             self._state.success_count = 0
 
         # Log and record metrics
-        console.print(
-            f"[yellow]Circuit breaker '{self.name}': {old_state.value} → {new_state.value}[/yellow]"
+        _safe_print(
+            f"[yellow]Circuit breaker '{self.name}': {old_state.value} -> {new_state.value}[/yellow]"
         )
         metrics.record_circuit_breaker_state(self.name, new_state.value)
 

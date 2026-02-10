@@ -1,0 +1,33 @@
+{% extends "base_insight.html" %}
+
+{% block title %}{{ page_title }} - Demnächst{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto py-16 px-4 text-center">
+    <div class="w-20 h-20 mx-auto mb-6 rounded-2xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+        <i data-lucide="{{ page_icon }}" class="w-10 h-10 text-primary-500 dark:text-primary-400"></i>
+    </div>
+
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">{{ page_title }}</h1>
+    <p class="text-gray-600 dark:text-gray-400 mb-8 max-w-md mx-auto">{{ page_description }}</p>
+
+    <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-sm font-medium">
+        <i data-lucide="construction" class="w-4 h-4"></i>
+        Dieses Feature wird gerade entwickelt
+    </div>
+
+    <div class="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700">
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">In der Zwischenzeit:</p>
+        <div class="flex flex-wrap justify-center gap-3">
+            <a href="{% url 'insight_core:insight:search' %}"
+                class="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
+                <i data-lucide="search" class="w-4 h-4"></i> Suche nutzen
+            </a>
+            <a href="{% url 'insight_core:insight:portal_home' %}"
+                class="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
+                <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Zur Übersicht
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

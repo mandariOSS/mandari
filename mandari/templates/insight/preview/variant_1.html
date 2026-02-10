@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="de" class="scroll-smooth">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mandari Insight – Münster | Variante 1: Clean Minimal</title>
+<meta name="description" content="Transparenzportal der Stadt Münster – Ratsinformationen, Sitzungen, Vorlagen und Gremien auf einen Blick.">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['DM Sans', 'system-ui', 'sans-serif'],
+        display: ['DM Serif Display', 'Georgia', 'serif'],
+      },
+      colors: {
+        primary: {
+          50: '#eef2ff',
+          100: '#e0e7ff',
+          200: '#c7d2fe',
+          300: '#a5b4fc',
+          400: '#818cf8',
+          500: '#6366f1',
+          600: '#4f46e5',
+          700: '#4338ca',
+          800: '#3730a3',
+          900: '#312e81',
+        },
+        sage: {
+          50: '#f4f7f5',
+          100: '#e0ebe3',
+          200: '#c3d7c9',
+          300: '#97bba2',
+          400: '#6a9b79',
+          500: '#4e8060',
+          600: '#3d664c',
+          700: '#33523f',
+          800: '#2b4335',
+          900: '#24372c',
+        },
+      }
+    }
+  }
+}
+</script>
+<style>
+  body { font-feature-settings: 'ss01', 'ss02'; }
+
+  /* Skip link */
+  .skip-link { position: absolute; left: -9999px; top: 0; z-index: 100; }
+  .skip-link:focus { left: 8px; top: 8px; background: #4f46e5; color: #fff; padding: 8px 16px; border-radius: 8px; outline: 2px solid #4f46e5; outline-offset: 2px; }
+
+  /* Focus visible */
+  *:focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; border-radius: 4px; }
+
+  /* Sidebar nav */
+  .sidebar-nav-item {
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 16px;
+    border-radius: 8px;
+    margin: 2px 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #6b7280;
+    transition: all 0.15s ease;
+    min-height: 44px;
+    border-left: 3px solid transparent;
+  }
+  .sidebar-nav-item:hover {
+    background: #f3f4f6;
+    color: #111827;
+  }
+  .sidebar-nav-item.active {
+    border-left-color: #4f46e5;
+    background: #eef2ff;
+    color: #4f46e5;
+  }
+  .sidebar-nav-item i, .sidebar-nav-item svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  /* Section labels */
+  .section-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: #9ca3af;
+  }
+
+  /* Fade animations */
+  .fade-in { animation: fadeIn 0.4s ease both; }
+  .fade-in-up { animation: fadeInUp 0.5s ease both; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  .stagger-1 { animation-delay: 0.05s; }
+  .stagger-2 { animation-delay: 0.1s; }
+  .stagger-3 { animation-delay: 0.15s; }
+  .stagger-4 { animation-delay: 0.2s; }
+  .stagger-5 { animation-delay: 0.25s; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+  /* Sidebar transition for mobile */
+  .sidebar-panel { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+
+  /* Overlay */
+  .sidebar-overlay { transition: opacity 0.3s ease; }
+</style>
+</head>
+
+<body class="bg-[#f9fafb] text-[#111827] font-sans antialiased">
+
+<!-- Skip Link -->
+<a href="#main-content" class="skip-link">Zum Inhalt springen</a>
+
+<!-- Mobile Overlay -->
+<div id="sidebar-overlay" class="sidebar-overlay fixed inset-0 bg-black/50 z-30 hidden lg:hidden" onclick="closeSidebar()" aria-hidden="true"></div>
+
+<!-- Sidebar -->
+<aside id="sidebar" class="sidebar-panel fixed inset-y-0 left-0 w-[260px] bg-white border-r border-[#e5e7eb] flex flex-col z-40 -translate-x-full lg:translate-x-0" role="navigation" aria-label="Hauptnavigation">
+
+  <!-- Org Header -->
+  <div class="flex items-center gap-3 p-4 border-b border-[#e5e7eb]">
+    <div class="w-10 h-10 rounded-lg bg-primary-600 flex items-center justify-center flex-shrink-0">
+      <span class="text-white text-lg font-display leading-none">M</span>
+    </div>
+    <div class="min-w-0">
+      <div class="text-[16px] font-semibold text-[#111827] leading-tight truncate">Mandari Insight</div>
+      <div class="text-[12px] text-[#6b7280] leading-tight truncate">Stadt Münster</div>
+    </div>
+    <!-- Mobile close button -->
+    <button onclick="closeSidebar()" class="lg:hidden ml-auto p-1 rounded-lg hover:bg-gray-100 min-w-[44px] min-h-[44px] flex items-center justify-center" aria-label="Menü schließen">
+      <i data-lucide="x" class="w-5 h-5 text-[#6b7280]"></i>
+    </button>
+  </div>
+
+  <!-- Search -->
+  <div class="px-4 pt-4 pb-2">
+    <div class="relative">
+      <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9ca3af]"></i>
+      <input type="search" placeholder="Suchen..." aria-label="Suche" class="w-full pl-10 pr-3 py-2.5 text-[14px] bg-[#f9fafb] border border-[#e5e7eb] rounded-lg placeholder-[#9ca3af] focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent transition min-h-[44px]">
+    </div>
+  </div>
+
+  <!-- Navigation -->
+  <nav class="flex-1 overflow-y-auto pt-2 pb-4" aria-label="Seitennavigation">
+    <div class="px-4 pt-2 pb-1">
+      <span class="section-label">Navigation</span>
+    </div>
+    <a href="#" class="sidebar-nav-item active" aria-current="page">
+      <i data-lucide="layout-dashboard"></i>
+      Übersicht
+    </a>
+    <a href="#" class="sidebar-nav-item">
+      <i data-lucide="calendar"></i>
+      Sitzungen
+    </a>
+    <a href="#" class="sidebar-nav-item">
+      <i data-lucide="file-text"></i>
+      Vorgänge
+    </a>
+    <a href="#" class="sidebar-nav-item">
+      <i data-lucide="users"></i>
+      Gremien
+    </a>
+    <a href="#" class="sidebar-nav-item">
+      <i data-lucide="user"></i>
+      Personen
+    </a>
+    <a href="#" class="sidebar-nav-item">
+      <i data-lucide="map-pin"></i>
+      Karte
+    </a>
+
+    <!-- Stats Section -->
+    <div class="px-4 pt-6 pb-1">
+      <span class="section-label">Statistik</span>
+    </div>
+    <div class="mx-4 mt-1 space-y-3 text-[13px]">
+      <div class="flex justify-between items-center">
+        <span class="text-[#6b7280]">Sitzungen</span>
+        <span class="text-[#111827] font-semibold tabular-nums">2.847</span>
+      </div>
+      <div class="flex justify-between items-center">
+        <span class="text-[#6b7280]">Vorgänge</span>
+        <span class="text-[#111827] font-semibold tabular-nums">14.392</span>
+      </div>
+      <div class="flex justify-between items-center">
+        <span class="text-[#6b7280]">Gremien</span>
+        <span class="text-[#111827] font-semibold tabular-nums">78</span>
+      </div>
+      <div class="flex justify-between items-center">
+        <span class="text-[#6b7280]">Personen</span>
+        <span class="text-[#111827] font-semibold tabular-nums">412</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Footer / OParl Info -->
+  <div class="border-t border-[#e5e7eb] p-4">
+    <div class="flex items-center gap-2 mb-2">
+      <div class="w-2 h-2 rounded-full bg-sage-500"></div>
+      <span class="text-[11px] text-[#6b7280] font-medium">OParl v1.1</span>
+    </div>
+    <p class="text-[11px] text-[#9ca3af] leading-relaxed">Daten via OParl-Schnittstelle der Stadt Münster</p>
+    <p class="text-[11px] text-[#9ca3af] mt-1">Letzte Aktualisierung: Heute, 08:15</p>
+  </div>
+</aside>
+
+<!-- Main Content -->
+<div class="lg:ml-[260px] min-h-screen">
+
+  <!-- Mobile Top Bar -->
+  <header class="lg:hidden sticky top-0 z-20 bg-white border-b border-[#e5e7eb] px-4 py-3 flex items-center gap-3">
+    <button onclick="openSidebar()" class="p-2 rounded-lg hover:bg-gray-100 min-w-[44px] min-h-[44px] flex items-center justify-center" aria-label="Menü öffnen">
+      <i data-lucide="menu" class="w-5 h-5 text-[#111827]"></i>
+    </button>
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center">
+        <span class="text-white text-sm font-display leading-none">M</span>
+      </div>
+      <span class="text-[15px] font-semibold text-[#111827]">Mandari Insight</span>
+    </div>
+  </header>
+
+  <main id="main-content" class="px-4 py-6 lg:px-8 lg:py-8">
+    <div class="max-w-7xl mx-auto">
+
+      <!-- Page Header -->
+      <div class="mb-10 fade-in">
+        <h1 class="font-display text-[24px] lg:text-[28px] font-bold text-[#111827] mb-2">Ratsinformationen</h1>
+        <p class="text-[14px] lg:text-[15px] text-[#6b7280] max-w-xl">Transparenzportal der Stadt Münster -- Sitzungen, Vorlagen und Gremien für Bürgerinnen und Bürger.</p>
+      </div>
+
+
+      <!-- Upcoming Meetings -->
+      <section class="mb-12 fade-in-up stagger-1" aria-labelledby="meetings-heading">
+        <div class="flex items-baseline justify-between mb-5">
+          <h2 id="meetings-heading" class="section-label">Kommende Sitzungen</h2>
+          <a href="#" class="text-[12px] text-sage-600 hover:text-sage-700 font-medium transition-colors">Alle anzeigen &rarr;</a>
+        </div>
+
+        <div class="space-y-3">
+          <!-- Meeting 1 -->
+          <a href="#" class="group block bg-white border border-[#e5e7eb] rounded-lg p-5 hover:border-primary-400 transition-all focus-visible:outline-2 focus-visible:outline-primary-600">
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex gap-5 items-start">
+                <div class="text-center min-w-[52px] pt-0.5">
+                  <div class="text-[26px] font-display text-sage-500 leading-none">12</div>
+                  <div class="text-[11px] text-[#9ca3af] mt-1 tracking-wide">Feb 2026</div>
+                </div>
+                <div>
+                  <h3 class="text-[15px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors">Rat der Stadt Münster</h3>
+                  <p class="text-[13px] text-[#6b7280] mt-1">16:00 Uhr &middot; Rathaus, Prinzipalmarkt 10</p>
+                  <div class="flex flex-wrap gap-2 mt-3">
+                    <span class="text-xs px-2 py-0.5 rounded bg-sage-50 text-sage-600 font-medium">12 TOPs</span>
+                    <span class="text-xs px-2 py-0.5 rounded bg-gray-100 text-[#6b7280]">3 Vorlagen</span>
+                  </div>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="w-5 h-5 text-[#e5e7eb] group-hover:text-primary-400 transition-colors mt-1 flex-shrink-0"></i>
+            </div>
+          </a>
+
+          <!-- Meeting 2 -->
+          <a href="#" class="group block bg-white border border-[#e5e7eb] rounded-lg p-5 hover:border-primary-400 transition-all">
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex gap-5 items-start">
+                <div class="text-center min-w-[52px] pt-0.5">
+                  <div class="text-[26px] font-display text-sage-500 leading-none">14</div>
+                  <div class="text-[11px] text-[#9ca3af] mt-1 tracking-wide">Feb 2026</div>
+                </div>
+                <div>
+                  <h3 class="text-[15px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors">Ausschuss für Stadtentwicklung</h3>
+                  <p class="text-[13px] text-[#6b7280] mt-1">17:00 Uhr &middot; Stadthaus 3, Albersloher Weg 33</p>
+                  <div class="flex flex-wrap gap-2 mt-3">
+                    <span class="text-xs px-2 py-0.5 rounded bg-sage-50 text-sage-600 font-medium">8 TOPs</span>
+                    <span class="text-xs px-2 py-0.5 rounded bg-gray-100 text-[#6b7280]">5 Vorlagen</span>
+                  </div>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="w-5 h-5 text-[#e5e7eb] group-hover:text-primary-400 transition-colors mt-1 flex-shrink-0"></i>
+            </div>
+          </a>
+
+          <!-- Meeting 3 -->
+          <a href="#" class="group block bg-white border border-[#e5e7eb] rounded-lg p-5 hover:border-primary-400 transition-all">
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex gap-5 items-start">
+                <div class="text-center min-w-[52px] pt-0.5">
+                  <div class="text-[26px] font-display text-sage-500 leading-none">18</div>
+                  <div class="text-[11px] text-[#9ca3af] mt-1 tracking-wide">Feb 2026</div>
+                </div>
+                <div>
+                  <h3 class="text-[15px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors">Finanzausschuss</h3>
+                  <p class="text-[13px] text-[#6b7280] mt-1">15:30 Uhr &middot; Rathaus, Prinzipalmarkt 10</p>
+                  <div class="flex flex-wrap gap-2 mt-3">
+                    <span class="text-xs px-2 py-0.5 rounded bg-sage-50 text-sage-600 font-medium">6 TOPs</span>
+                    <span class="text-xs px-2 py-0.5 rounded bg-gray-100 text-[#6b7280]">2 Vorlagen</span>
+                  </div>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="w-5 h-5 text-[#e5e7eb] group-hover:text-primary-400 transition-colors mt-1 flex-shrink-0"></i>
+            </div>
+          </a>
+
+          <!-- Meeting 4 -->
+          <a href="#" class="group block bg-white border border-[#e5e7eb] rounded-lg p-5 hover:border-primary-400 transition-all">
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex gap-5 items-start">
+                <div class="text-center min-w-[52px] pt-0.5">
+                  <div class="text-[26px] font-display text-sage-500 leading-none">20</div>
+                  <div class="text-[11px] text-[#9ca3af] mt-1 tracking-wide">Feb 2026</div>
+                </div>
+                <div>
+                  <h3 class="text-[15px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors">Umweltausschuss</h3>
+                  <p class="text-[13px] text-[#6b7280] mt-1">16:30 Uhr &middot; Stadthaus 1, Klemensstraße 10</p>
+                  <div class="flex flex-wrap gap-2 mt-3">
+                    <span class="text-xs px-2 py-0.5 rounded bg-sage-50 text-sage-600 font-medium">9 TOPs</span>
+                    <span class="text-xs px-2 py-0.5 rounded bg-gray-100 text-[#6b7280]">4 Vorlagen</span>
+                  </div>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="w-5 h-5 text-[#e5e7eb] group-hover:text-primary-400 transition-colors mt-1 flex-shrink-0"></i>
+            </div>
+          </a>
+        </div>
+      </section>
+
+
+      <!-- Two Column: Papers + Committees -->
+      <div class="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-12">
+
+        <!-- Recent Papers (clean list, not cards) -->
+        <section class="lg:col-span-3 fade-in-up stagger-2" aria-labelledby="papers-heading">
+          <div class="flex items-baseline justify-between mb-5">
+            <h2 id="papers-heading" class="section-label">Aktuelle Vorgänge</h2>
+            <a href="#" class="text-[12px] text-sage-600 hover:text-sage-700 font-medium transition-colors">Alle anzeigen &rarr;</a>
+          </div>
+
+          <div class="divide-y divide-[#e5e7eb]">
+            <!-- Paper 1 -->
+            <a href="#" class="group flex items-start gap-4 py-4 hover:bg-white hover:px-4 hover:-mx-4 rounded-lg transition-all">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start justify-between gap-3">
+                  <h3 class="text-[14px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors leading-snug">Neugestaltung Aaseepromenade</h3>
+                  <span class="text-xs px-2 py-0.5 rounded bg-amber-50 text-[#d97706] font-medium flex-shrink-0">Beratung</span>
+                </div>
+                <p class="text-[13px] text-[#6b7280] mt-1">V/0847/2026 &middot; Ausschuss für Stadtentwicklung</p>
+                <p class="text-[12px] text-[#9ca3af] mt-0.5 font-display tabular-nums">06.02.2026</p>
+              </div>
+            </a>
+
+            <!-- Paper 2 -->
+            <a href="#" class="group flex items-start gap-4 py-4 hover:bg-white hover:px-4 hover:-mx-4 rounded-lg transition-all">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start justify-between gap-3">
+                  <h3 class="text-[14px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors leading-snug">Radwegeausbau Weseler Straße</h3>
+                  <span class="text-xs px-2 py-0.5 rounded bg-green-50 text-[#16a34a] font-medium flex-shrink-0">Beschlossen</span>
+                </div>
+                <p class="text-[13px] text-[#6b7280] mt-1">A/0312/2026 &middot; Ausschuss für Verkehr</p>
+                <p class="text-[12px] text-[#9ca3af] mt-0.5 font-display tabular-nums">04.02.2026</p>
+              </div>
+            </a>
+
+            <!-- Paper 3 -->
+            <a href="#" class="group flex items-start gap-4 py-4 hover:bg-white hover:px-4 hover:-mx-4 rounded-lg transition-all">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start justify-between gap-3">
+                  <h3 class="text-[14px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors leading-snug">Sachstand Digitalisierung Schulen</h3>
+                  <span class="text-xs px-2 py-0.5 rounded bg-blue-50 text-[#2563eb] font-medium flex-shrink-0">Eingereicht</span>
+                </div>
+                <p class="text-[13px] text-[#6b7280] mt-1">AN/0156/2026 &middot; Schulausschuss</p>
+                <p class="text-[12px] text-[#9ca3af] mt-0.5 font-display tabular-nums">03.02.2026</p>
+              </div>
+            </a>
+
+            <!-- Paper 4 -->
+            <a href="#" class="group flex items-start gap-4 py-4 hover:bg-white hover:px-4 hover:-mx-4 rounded-lg transition-all">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start justify-between gap-3">
+                  <h3 class="text-[14px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors leading-snug">Haushaltssicherungskonzept 2027</h3>
+                  <span class="text-xs px-2 py-0.5 rounded bg-amber-50 text-[#d97706] font-medium flex-shrink-0">Beratung</span>
+                </div>
+                <p class="text-[13px] text-[#6b7280] mt-1">V/0821/2026 &middot; Finanzausschuss</p>
+                <p class="text-[12px] text-[#9ca3af] mt-0.5 font-display tabular-nums">01.02.2026</p>
+              </div>
+            </a>
+
+            <!-- Paper 5 -->
+            <a href="#" class="group flex items-start gap-4 py-4 hover:bg-white hover:px-4 hover:-mx-4 rounded-lg transition-all">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start justify-between gap-3">
+                  <h3 class="text-[14px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors leading-snug">Klimaschutzbericht 2025</h3>
+                  <span class="text-xs px-2 py-0.5 rounded bg-gray-100 text-[#6b7280] font-medium flex-shrink-0">Kenntnisnahme</span>
+                </div>
+                <p class="text-[13px] text-[#6b7280] mt-1">M/0094/2026 &middot; Umweltausschuss</p>
+                <p class="text-[12px] text-[#9ca3af] mt-0.5 font-display tabular-nums">30.01.2026</p>
+              </div>
+            </a>
+
+            <!-- Paper 6 -->
+            <a href="#" class="group flex items-start gap-4 py-4 hover:bg-white hover:px-4 hover:-mx-4 rounded-lg transition-all">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start justify-between gap-3">
+                  <h3 class="text-[14px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors leading-snug">Sanierung Annette-von-Droste-Hülshoff-Gymnasium</h3>
+                  <span class="text-xs px-2 py-0.5 rounded bg-red-50 text-[#dc2626] font-medium flex-shrink-0">Abgelehnt</span>
+                </div>
+                <p class="text-[13px] text-[#6b7280] mt-1">V/0798/2026 &middot; Schulausschuss</p>
+                <p class="text-[12px] text-[#9ca3af] mt-0.5 font-display tabular-nums">28.01.2026</p>
+              </div>
+            </a>
+          </div>
+        </section>
+
+        <!-- Committees (simple bordered items) -->
+        <section class="lg:col-span-2 fade-in-up stagger-3" aria-labelledby="committees-heading">
+          <div class="flex items-baseline justify-between mb-5">
+            <h2 id="committees-heading" class="section-label">Gremien</h2>
+            <a href="#" class="text-[12px] text-sage-600 hover:text-sage-700 font-medium transition-colors">Alle &rarr;</a>
+          </div>
+
+          <div class="space-y-2">
+            <a href="#" class="group block bg-white border border-[#e5e7eb] rounded-lg px-4 py-3.5 hover:border-primary-400 transition-all min-h-[44px]">
+              <div class="flex items-center justify-between">
+                <span class="text-[14px] text-[#111827] group-hover:text-primary-600 font-medium transition-colors">Rat der Stadt</span>
+                <span class="text-[12px] text-[#9ca3af]">86 Mitgl.</span>
+              </div>
+            </a>
+
+            <a href="#" class="group block bg-white border border-[#e5e7eb] rounded-lg px-4 py-3.5 hover:border-primary-400 transition-all min-h-[44px]">
+              <div class="flex items-center justify-between">
+                <span class="text-[14px] text-[#111827] group-hover:text-primary-600 font-medium transition-colors">Hauptausschuss</span>
+                <span class="text-[12px] text-[#9ca3af]">19 Mitgl.</span>
+              </div>
+            </a>
+
+            <a href="#" class="group block bg-white border border-[#e5e7eb] rounded-lg px-4 py-3.5 hover:border-primary-400 transition-all min-h-[44px]">
+              <div class="flex items-center justify-between">
+                <span class="text-[14px] text-[#111827] group-hover:text-primary-600 font-medium transition-colors">Finanzausschuss</span>
+                <span class="text-[12px] text-[#9ca3af]">17 Mitgl.</span>
+              </div>
+            </a>
+
+            <a href="#" class="group block bg-white border border-[#e5e7eb] rounded-lg px-4 py-3.5 hover:border-primary-400 transition-all min-h-[44px]">
+              <div class="flex items-center justify-between">
+                <span class="text-[14px] text-[#111827] group-hover:text-primary-600 font-medium transition-colors">Umweltausschuss</span>
+                <span class="text-[12px] text-[#9ca3af]">17 Mitgl.</span>
+              </div>
+            </a>
+
+            <a href="#" class="group block bg-white border border-[#e5e7eb] rounded-lg px-4 py-3.5 hover:border-primary-400 transition-all min-h-[44px]">
+              <div class="flex items-center justify-between">
+                <span class="text-[14px] text-[#111827] group-hover:text-primary-600 font-medium transition-colors">Schulausschuss</span>
+                <span class="text-[12px] text-[#9ca3af]">17 Mitgl.</span>
+              </div>
+            </a>
+
+            <a href="#" class="group block bg-white border border-[#e5e7eb] rounded-lg px-4 py-3.5 hover:border-primary-400 transition-all min-h-[44px]">
+              <div class="flex items-center justify-between">
+                <span class="text-[14px] text-[#111827] group-hover:text-primary-600 font-medium transition-colors">Ausschuss für Stadtentwicklung</span>
+                <span class="text-[12px] text-[#9ca3af]">17 Mitgl.</span>
+              </div>
+            </a>
+          </div>
+
+          <!-- Factions sub-section -->
+          <div class="mt-8">
+            <div class="flex items-baseline justify-between mb-4">
+              <h3 class="section-label">Fraktionen</h3>
+            </div>
+            <div class="space-y-2">
+              <div class="flex items-center justify-between px-4 py-2.5 bg-white border border-[#e5e7eb] rounded-lg">
+                <span class="text-[13px] text-[#111827] font-medium">CDU</span>
+                <span class="text-[12px] text-[#9ca3af]">18 Sitze</span>
+              </div>
+              <div class="flex items-center justify-between px-4 py-2.5 bg-white border border-[#e5e7eb] rounded-lg">
+                <span class="text-[13px] text-[#111827] font-medium">Grüne</span>
+                <span class="text-[12px] text-[#9ca3af]">16 Sitze</span>
+              </div>
+              <div class="flex items-center justify-between px-4 py-2.5 bg-white border border-[#e5e7eb] rounded-lg">
+                <span class="text-[13px] text-[#111827] font-medium">SPD</span>
+                <span class="text-[12px] text-[#9ca3af]">11 Sitze</span>
+              </div>
+              <div class="flex items-center justify-between px-4 py-2.5 bg-white border border-[#e5e7eb] rounded-lg">
+                <span class="text-[13px] text-[#111827] font-medium">FDP</span>
+                <span class="text-[12px] text-[#9ca3af]">5 Sitze</span>
+              </div>
+              <div class="flex items-center justify-between px-4 py-2.5 bg-white border border-[#e5e7eb] rounded-lg">
+                <span class="text-[13px] text-[#111827] font-medium">Volt</span>
+                <span class="text-[12px] text-[#9ca3af]">4 Sitze</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+
+      <!-- Persons Section -->
+      <section class="mt-12 fade-in-up stagger-4" aria-labelledby="persons-heading">
+        <div class="flex items-baseline justify-between mb-5">
+          <h2 id="persons-heading" class="section-label">Ratsmitglieder</h2>
+          <a href="#" class="text-[12px] text-sage-600 hover:text-sage-700 font-medium transition-colors">Alle anzeigen &rarr;</a>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <!-- Person 1 -->
+          <a href="#" class="group bg-white border border-[#e5e7eb] rounded-lg p-5 hover:border-primary-400 transition-all text-center min-h-[44px]">
+            <div class="w-12 h-12 rounded-full bg-primary-50 text-primary-600 flex items-center justify-center mx-auto mb-3 text-[15px] font-display">ML</div>
+            <div class="text-[14px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors">Markus Lewe</div>
+            <div class="text-[12px] text-[#6b7280] mt-1">Oberbürgermeister</div>
+            <div class="text-[11px] text-[#9ca3af] mt-1.5 font-medium">CDU</div>
+          </a>
+
+          <!-- Person 2 -->
+          <a href="#" class="group bg-white border border-[#e5e7eb] rounded-lg p-5 hover:border-primary-400 transition-all text-center">
+            <div class="w-12 h-12 rounded-full bg-primary-50 text-primary-600 flex items-center justify-center mx-auto mb-3 text-[15px] font-display">AS</div>
+            <div class="text-[14px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors">Angela Stähler</div>
+            <div class="text-[12px] text-[#6b7280] mt-1">Bürgermeisterin</div>
+            <div class="text-[11px] text-[#9ca3af] mt-1.5 font-medium">CDU</div>
+          </a>
+
+          <!-- Person 3 -->
+          <a href="#" class="group bg-white border border-[#e5e7eb] rounded-lg p-5 hover:border-primary-400 transition-all text-center">
+            <div class="w-12 h-12 rounded-full bg-sage-50 text-sage-600 flex items-center justify-center mx-auto mb-3 text-[15px] font-display">RD</div>
+            <div class="text-[14px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors">Robin Denstorff</div>
+            <div class="text-[12px] text-[#6b7280] mt-1">Beigeordneter</div>
+            <div class="text-[11px] text-[#9ca3af] mt-1.5 font-medium">Grüne</div>
+          </a>
+
+          <!-- Person 4 -->
+          <a href="#" class="group bg-white border border-[#e5e7eb] rounded-lg p-5 hover:border-primary-400 transition-all text-center">
+            <div class="w-12 h-12 rounded-full bg-red-50 text-red-500 flex items-center justify-center mx-auto mb-3 text-[15px] font-display">TH</div>
+            <div class="text-[14px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors">Thomas Hechtner</div>
+            <div class="text-[12px] text-[#6b7280] mt-1">Fraktionsvorsitz</div>
+            <div class="text-[11px] text-[#9ca3af] mt-1.5 font-medium">SPD</div>
+          </a>
+
+          <!-- Person 5 -->
+          <a href="#" class="group bg-white border border-[#e5e7eb] rounded-lg p-5 hover:border-primary-400 transition-all text-center">
+            <div class="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3 text-[15px] font-display">JB</div>
+            <div class="text-[14px] font-medium text-[#111827] group-hover:text-primary-600 transition-colors">Jörg Berens</div>
+            <div class="text-[12px] text-[#6b7280] mt-1">Fraktionsvorsitz</div>
+            <div class="text-[11px] text-[#9ca3af] mt-1.5 font-medium">FDP</div>
+          </a>
+        </div>
+      </section>
+
+
+      <!-- Footer -->
+      <footer class="mt-16 pt-8 border-t border-[#e5e7eb] fade-in-up stagger-5">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-[12px] text-[#9ca3af]">
+          <div class="flex items-center gap-4">
+            <span>Mandari Insight</span>
+            <span class="hidden sm:inline">&middot;</span>
+            <span>Daten via OParl v1.1</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <a href="#" class="hover:text-[#6b7280] transition-colors">Datenschutz</a>
+            <a href="#" class="hover:text-[#6b7280] transition-colors">Impressum</a>
+            <a href="#" class="hover:text-[#6b7280] transition-colors">API</a>
+          </div>
+        </div>
+        <p class="text-[11px] text-[#d1d5db] mt-3 mb-6">Alle Daten stammen aus dem Ratsinformationssystem der Stadt Münster und werden automatisiert synchronisiert.</p>
+      </footer>
+
+    </div><!-- max-w-7xl -->
+  </main>
+</div>
+
+<!-- Sidebar toggle scripts -->
+<script>
+  function openSidebar() {
+    document.getElementById('sidebar').classList.remove('-translate-x-full');
+    document.getElementById('sidebar-overlay').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.add('-translate-x-full');
+    document.getElementById('sidebar-overlay').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  // Close sidebar on Escape key
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeSidebar();
+  });
+
+  // Close sidebar when resizing to desktop
+  window.addEventListener('resize', function() {
+    if (window.innerWidth >= 1024) {
+      closeSidebar();
+    }
+  });
+</script>
+
+<!-- Initialize Lucide icons -->
+<script>lucide.createIcons();</script>
+
+</body>
+</html>

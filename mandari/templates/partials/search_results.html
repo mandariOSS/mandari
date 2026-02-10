@@ -8,8 +8,13 @@
     </p>
 
     {% for result in results %}
+    {% if result.type == 'file' and result.access_url %}
+    <div @click="openDoc('{{ result.access_url|escapejs }}', '{{ result.title|striptags|escapejs }}', '{{ result.subtitle|default:""|escapejs }}')"
+       class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+    {% else %}
     <a href="{{ result.url }}"
        class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+    {% endif %}
         <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0
                     {% if result.type == 'paper' %}bg-amber-100 dark:bg-amber-900/50{% endif %}
                     {% if result.type == 'person' %}bg-green-100 dark:bg-green-900/50{% endif %}
@@ -50,7 +55,11 @@
             {% if result.type == 'meeting' %}Sitzung{% endif %}
             {% if result.type == 'file' %}Dokument{% endif %}
         </span>
+    {% if result.type == 'file' and result.access_url %}
+    </div>
+    {% else %}
     </a>
+    {% endif %}
     {% endfor %}
 
     {% if total > 3 %}
@@ -77,8 +86,13 @@
 {% endif %}
 
     {% for result in results %}
+    {% if result.type == 'file' and result.access_url %}
+    <div @click="openDoc('{{ result.access_url|escapejs }}', '{{ result.title|striptags|escapejs }}', '{{ result.subtitle|default:""|escapejs }}')"
+       class="block p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all cursor-pointer">
+    {% else %}
     <a href="{{ result.url }}"
        class="block p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all">
+    {% endif %}
         <div class="flex items-start gap-4">
             <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
                         {% if result.type == 'paper' %}bg-amber-100 dark:bg-amber-900/50{% endif %}
@@ -126,7 +140,11 @@
                 {% if result.type == 'file' %}Dokument{% endif %}
             </span>
         </div>
+    {% if result.type == 'file' and result.access_url %}
+    </div>
+    {% else %}
     </a>
+    {% endif %}
     {% endfor %}
 
     {% if pages > 1 and page < pages %}

@@ -20,6 +20,8 @@ from django.views.generic import DetailView, ListView, TemplateView
 from .models import (
     OParlAgendaItem,
     OParlBody,
+    OParlConsultation,
+    OParlFile,
     OParlMeeting,
     OParlOrganization,
     OParlPaper,
@@ -173,7 +175,7 @@ def clear_body(request):
 
 
 class OrganizationListView(TemplateView):
-    """Liste aller Gremien mit Aktiv/Vergangen-Tabs."""
+    """Liste aller Gremien mit Aktiv/Alle-Tabs."""
 
     template_name = "pages/organizations/list.html"
 
@@ -193,39 +195,33 @@ class OrganizationListView(TemplateView):
             today = timezone.now().date()
             now = timezone.now()
 
-            # Annotate nächste und letzte Sitzung via RawSQL
-            # (Django's __contains with OuterRef can't serialize to JSON)
-            from django.db.models.expressions import RawSQL
-            next_meeting_sql = RawSQL(
-                """(
-                    SELECT m.start FROM oparl_meetings m
-                    WHERE m.raw_json->'organization' @> to_jsonb(ARRAY[oparl_organizations.external_id])
-                    AND m.start >= %s
-                    AND m.cancelled = false
-                    ORDER BY m.start ASC
-                    LIMIT 1
-                )""",
-                [now],
-                output_field=models.DateTimeField(),
+            # Annotate next/last meeting via M2M Subquery (fast, uses proper indexes)
+            from django.db.models import Subquery, OuterRef, Exists
+
+            next_meeting_sq = Subquery(
+                OParlMeeting.objects.filter(
+                    organizations=OuterRef("pk"),
+                    start__gte=now,
+                    cancelled=False,
+                ).order_by("start").values("start")[:1]
             )
-            last_meeting_sql = RawSQL(
-                """(
-                    SELECT m.start FROM oparl_meetings m
-                    WHERE m.raw_json->'organization' @> to_jsonb(ARRAY[oparl_organizations.external_id])
-                    AND m.start < %s
-                    ORDER BY m.start DESC
-                    LIMIT 1
-                )""",
-                [now],
-                output_field=models.DateTimeField(),
+            last_meeting_sq = Subquery(
+                OParlMeeting.objects.filter(
+                    organizations=OuterRef("pk"),
+                    start__lt=now,
+                ).order_by("-start").values("start")[:1]
+            )
+            has_any_meeting = Exists(
+                OParlMeeting.objects.filter(organizations=OuterRef("pk"))
             )
 
             base_qs = (
                 OParlOrganization.objects
                 .filter(body=body)
                 .annotate(
-                    next_meeting=next_meeting_sql,
-                    last_meeting=last_meeting_sql,
+                    next_meeting=next_meeting_sq,
+                    last_meeting=last_meeting_sq,
+                    has_meetings=has_any_meeting,
                 )
             )
 
@@ -234,16 +230,26 @@ class OrganizationListView(TemplateView):
                 base_qs = base_qs.filter(Q(name__icontains=q) | Q(short_name__icontains=q))
 
             if tab == "active":
-                orgs = base_qs.filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+                # Aktiv = nicht abgelaufen UND hat mindestens eine Sitzung
+                orgs = base_qs.filter(
+                    Q(end_date__isnull=True) | Q(end_date__gte=today),
+                    has_meetings=True,
+                )
             else:
-                orgs = base_qs.filter(end_date__lt=today)
+                # Alle = sämtliche Gremien
+                orgs = base_qs
 
             context["organizations"] = sort_organizations_by_ranking(orgs)
 
             # Counts ohne Suchfilter
-            all_orgs = OParlOrganization.objects.filter(body=body)
-            context["active_count"] = all_orgs.filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).count()
-            context["past_count"] = all_orgs.filter(end_date__lt=today).count()
+            all_orgs = OParlOrganization.objects.filter(body=body).annotate(
+                has_meetings=has_any_meeting,
+            )
+            context["active_count"] = all_orgs.filter(
+                Q(end_date__isnull=True) | Q(end_date__gte=today),
+                has_meetings=True,
+            ).count()
+            context["all_count"] = all_orgs.count()
 
         context["tab"] = tab
         return context
@@ -259,12 +265,45 @@ class OrganizationDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         org = self.object
+        today = timezone.now().date()
+        now = timezone.now()
 
-        # Mitglieder
-        context["members"] = (
-            org.memberships.select_related("person")
-            .filter(Q(end_date__isnull=True) | Q(end_date__gte=timezone.now().date()))
-            .order_by("person__family_name")
+        all_memberships = org.memberships.select_related("person")
+        active_qs = all_memberships.filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=today)
+        ).order_by("person__family_name")
+        past_qs = all_memberships.filter(
+            end_date__lt=today
+        ).order_by("person__family_name")
+
+        # Sonderfall "Rat": Ratsmitglieder von anderen trennen
+        is_rat = org.name == "Rat"
+        context["is_rat"] = is_rat
+
+        if is_rat:
+            council_roles = [
+                "Ratsmitglied",
+                "Oberbürgermeister",
+                "Bürgermeister/in",
+                "Fraktionsvorsitzende/r Rat",
+            ]
+            context["council_members"] = active_qs.filter(role__in=council_roles)
+            context["other_members"] = active_qs.exclude(role__in=council_roles)
+        else:
+            context["active_members"] = active_qs
+
+        context["past_members"] = past_qs
+
+        # Sitzungen
+        context["upcoming_meetings"] = (
+            OParlMeeting.objects.filter(
+                organizations=org, start__gte=now, cancelled=False,
+            ).order_by("start")[:10]
+        )
+        context["past_meetings"] = (
+            OParlMeeting.objects.filter(
+                organizations=org, start__lt=now,
+            ).order_by("-start")[:10]
         )
 
         # SEO-Kontext
@@ -438,7 +477,22 @@ class PaperDetailView(DetailView):
         context["files_with_text"] = [f for f in files if f.text_content and f.text_content.strip()]
 
         # Beratungsverlauf (Consultations mit Meeting-Info)
-        context["consultations"] = self._get_consultations_with_meetings(paper)
+        consultations = self._get_consultations_with_meetings(paper)
+        context["consultations"] = consultations
+
+        # Kontext-Summary für Dokumente-Tab (nächste zukünftige Beratung, Fallback neueste)
+        if consultations:
+            now = timezone.now()
+            with_meeting = [item for item in consultations if item.get("meeting") and item.get("date")]
+            if with_meeting:
+                future = [item for item in with_meeting if item["date"] >= now]
+                if future:
+                    # Nächste zukünftige (früheste)
+                    best = min(future, key=lambda x: x["date"])
+                else:
+                    # Neueste vergangene
+                    best = max(with_meeting, key=lambda x: x["date"])
+                context["file_context_summary"] = best
 
         # SEO-Kontext
         from .seo import get_paper_seo
@@ -663,8 +717,24 @@ class MeetingDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         meeting = self.object
 
-        # Tagesordnungspunkte
-        context["agenda_items"] = meeting.agenda_items.all().order_by("order", "number")
+        # Tagesordnungspunkte mit batch-loaded Papers (vermeidet N+1 Queries)
+        agenda_items = list(meeting.agenda_items.all().order_by("order", "number"))
+        if agenda_items:
+            ext_ids = [item.external_id for item in agenda_items]
+            # Alle Consultations + Papers in 1 Query laden
+            consultations = (
+                OParlConsultation.objects.filter(agenda_item_external_id__in=ext_ids)
+                .select_related("paper")
+            )
+            # Papers pro AgendaItem zuordnen
+            papers_by_agenda = {}
+            for c in consultations:
+                if c.paper:
+                    papers_by_agenda.setdefault(c.agenda_item_external_id, []).append(c.paper)
+            # An jedes AgendaItem anhängen
+            for item in agenda_items:
+                item._prefetched_papers = papers_by_agenda.get(item.external_id, [])
+        context["agenda_items"] = agenda_items
 
         # Location Koordinaten für Karte
         if meeting.location_name and meeting.body:
@@ -925,6 +995,172 @@ def search_results(request):
                 "is_dropdown": is_dropdown,
             },
         )
+
+
+# =============================================================================
+# Dokumente (Files)
+# =============================================================================
+
+
+def _annotate_files_with_context(files):
+    """
+    Annotiert Dateien mit Kontext-Info (Gremium, Sitzung, TOP).
+
+    Löst die Kette File → Paper → Consultation → Meeting → Organization auf.
+    Hängt `context_info` Dict an jede Datei: {organization_name, meeting, meeting_date, agenda_number}
+    """
+    # Sammle paper_ids und meeting_ids
+    paper_ids = set()
+    meeting_fk_ids = set()
+    for f in files:
+        if f.paper_id:
+            paper_ids.add(f.paper_id)
+        if f.meeting_id:
+            meeting_fk_ids.add(f.meeting_id)
+
+    if not paper_ids and not meeting_fk_ids:
+        return
+
+    # 1. Consultations für alle Papers
+    consultations_by_paper = {}
+    if paper_ids:
+        consultations = OParlConsultation.objects.filter(paper_id__in=paper_ids)
+        for c in consultations:
+            consultations_by_paper.setdefault(c.paper_id, []).append(c)
+
+    # 2. Meetings (aus Consultations + direkte FKs)
+    meeting_ext_ids = set()
+    for cons_list in consultations_by_paper.values():
+        for c in cons_list:
+            if c.meeting_external_id:
+                meeting_ext_ids.add(c.meeting_external_id)
+
+    meetings_by_ext_id = {}
+    meetings_by_pk = {}
+    all_meeting_pks = set()
+
+    if meeting_ext_ids:
+        meetings = OParlMeeting.objects.filter(
+            external_id__in=meeting_ext_ids
+        ).prefetch_related("organizations")
+        for m in meetings:
+            meetings_by_ext_id[m.external_id] = m
+            meetings_by_pk[m.pk] = m
+            all_meeting_pks.add(m.pk)
+
+    if meeting_fk_ids:
+        missing = meeting_fk_ids - all_meeting_pks
+        if missing:
+            fk_meetings = OParlMeeting.objects.filter(
+                pk__in=missing
+            ).prefetch_related("organizations")
+            for m in fk_meetings:
+                meetings_by_pk[m.pk] = m
+
+    # 3. AgendaItems für die Consultations
+    agenda_ext_ids = set()
+    for cons_list in consultations_by_paper.values():
+        for c in cons_list:
+            if c.agenda_item_external_id:
+                agenda_ext_ids.add(c.agenda_item_external_id)
+
+    agenda_items_by_ext_id = {}
+    if agenda_ext_ids:
+        for ai in OParlAgendaItem.objects.filter(external_id__in=agenda_ext_ids):
+            agenda_items_by_ext_id[ai.external_id] = ai
+
+    # 4. Pro Paper die nächste (zukünftige) Consultation wählen, Fallback auf neueste
+    now = timezone.now()
+    best_by_paper = {}
+    for paper_id, cons_list in consultations_by_paper.items():
+        # Alle Consultations mit aufgelöstem Meeting sammeln
+        candidates = []
+        for c in cons_list:
+            meeting = meetings_by_ext_id.get(c.meeting_external_id)
+            if meeting and meeting.start:
+                candidates.append((c, meeting))
+
+        if not candidates:
+            continue
+
+        # Bevorzuge nächste zukünftige Sitzung
+        future = [(c, m) for c, m in candidates if m.start >= now]
+        if future:
+            # Nächste zukünftige (früheste)
+            future.sort(key=lambda x: x[1].start)
+            best = future[0]
+        else:
+            # Keine zukünftige → neueste vergangene
+            candidates.sort(key=lambda x: x[1].start, reverse=True)
+            best = candidates[0]
+
+        consultation, meeting = best
+        agenda_item = agenda_items_by_ext_id.get(consultation.agenda_item_external_id)
+        orgs = meeting.organizations.all()
+        org_name = orgs[0].name if orgs else None
+        best_by_paper[paper_id] = {
+            "organization_name": org_name,
+            "meeting": meeting,
+            "meeting_date": meeting.start,
+            "agenda_number": agenda_item.number if agenda_item else None,
+        }
+
+    # 5. Annotiere jede Datei
+    for f in files:
+        ctx = best_by_paper.get(f.paper_id)
+        if not ctx and f.meeting_id:
+            # Fallback: Datei hat direkten Meeting-FK (ohne Paper-Kette)
+            meeting = meetings_by_pk.get(f.meeting_id)
+            if meeting:
+                orgs = meeting.organizations.all()
+                org_name = orgs[0].name if orgs else None
+                ctx = {
+                    "organization_name": org_name,
+                    "meeting": meeting,
+                    "meeting_date": meeting.start,
+                    "agenda_number": None,
+                }
+        f.context_info = ctx
+
+
+class FileListView(TemplateView):
+    """Liste aller Dokumente/Dateien."""
+
+    template_name = "pages/files/list.html"
+
+    def get_template_names(self):
+        if self.request.headers.get("HX-Request"):
+            return ["partials/file_list_items.html"]
+        return [self.template_name]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        body = get_active_body(self.request)
+        q = self.request.GET.get("q", "").strip()
+        page_num = int(self.request.GET.get("page", 1))
+
+        if body:
+            qs = OParlFile.objects.filter(body=body).select_related("paper").order_by("-file_date", "-created_at")
+
+            if q:
+                qs = qs.filter(
+                    Q(name__icontains=q)
+                    | Q(file_name__icontains=q)
+                    | Q(paper__name__icontains=q)
+                )
+
+            paginator = Paginator(qs, 30)
+            page = paginator.get_page(page_num)
+
+            # Annotiere Dateien mit Kontext (Gremium, Sitzung, TOP)
+            _annotate_files_with_context(page.object_list)
+
+            context["files"] = page
+            context["paginator"] = paginator
+            context["total_count"] = paginator.count
+
+        context["query"] = q
+        return context
 
 
 # =============================================================================

@@ -1,0 +1,102 @@
+{# Document Viewer Modal - öffnet Dokumente (PDFs) im iframe #}
+<div x-show="docViewerUrl" x-cloak
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-150"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     @keydown.escape.window="docViewerUrl=''"
+     class="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 lg:p-8">
+
+    {# Backdrop #}
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="docViewerUrl=''"></div>
+
+    {# Modal Panel #}
+    <div x-show="docViewerUrl"
+         x-transition:enter="transition ease-out duration-200 delay-75"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-100"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         class="relative w-full h-full max-w-7xl max-h-[95vh] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+
+        {# Header #}
+        <div class="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex-shrink-0">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+                <div class="w-9 h-9 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-5 h-5 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                    </svg>
+                </div>
+                <div class="min-w-0">
+                    <p class="font-semibold text-gray-900 dark:text-white text-sm truncate" x-text="docViewerName || 'Dokument'"></p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 truncate" x-text="docViewerMeta || ''"></p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0 ml-4">
+                {# Open in new tab #}
+                <a :href="docViewerUrl" target="_blank" rel="noopener noreferrer"
+                   class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                   title="In neuem Tab öffnen">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                    <span class="hidden sm:inline">Neuer Tab</span>
+                </a>
+                {# Close #}
+                <button @click="docViewerUrl=''"
+                        class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        title="Schließen">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        {# iframe Container #}
+        <div class="flex-1 relative bg-gray-100 dark:bg-gray-800">
+            {# Loading indicator #}
+            <div x-show="docViewerLoading"
+                 class="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10">
+                <svg class="animate-spin h-10 w-10 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Dokument wird geladen...</p>
+            </div>
+
+            {# iframe #}
+            <template x-if="docViewerUrl">
+                <iframe :src="docViewerUrl"
+                        @load="docViewerLoading=false"
+                        class="w-full h-full border-0"
+                        :class="docViewerLoading ? 'opacity-0' : 'opacity-100'"
+                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                        loading="eager">
+                </iframe>
+            </template>
+
+            {# Fallback message if iframe can't load #}
+            <div x-show="docViewerError" x-cloak
+                 class="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10 bg-gray-100 dark:bg-gray-800">
+                <svg class="w-16 h-16 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                <div class="text-center">
+                    <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">Vorschau nicht verfügbar</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Das Dokument kann nicht eingebettet angezeigt werden.</p>
+                    <a :href="docViewerUrl" target="_blank" rel="noopener noreferrer"
+                       class="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                        </svg>
+                        Dokument öffnen
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

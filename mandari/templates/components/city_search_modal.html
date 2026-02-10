@@ -1,0 +1,68 @@
+{# Kommunen-Suche Modal (Command-Palette Style) #}
+<div x-show="cityModalOpen" x-transition.opacity class="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh]"
+    style="background:rgba(0,0,0,.45);backdrop-filter:blur(2px);" @keydown.escape.window="cityModalOpen=false" x-cloak>
+    <div x-show="cityModalOpen" @click.outside="cityModalOpen=false; citySearch=''"
+        x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="opacity-0 scale-95 translate-y-2"
+        x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+        x-transition:leave="transition ease-in duration-150"
+        x-transition:leave-start="opacity-100 scale-100"
+        x-transition:leave-end="opacity-0 scale-95"
+        class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full overflow-hidden"
+        style="max-width:480px;">
+
+        {# Search input #}
+        <div class="flex items-center gap-3 border-b border-gray-200 dark:border-gray-700 px-5 py-4">
+            <svg class="w-5 h-5 text-gray-400 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input x-ref="citySearchInput" x-model="citySearch" type="text" placeholder="Kommune suchen..."
+                class="flex-1 bg-transparent text-base text-gray-900 dark:text-white placeholder-gray-400 outline-none">
+            <kbd class="hidden sm:inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-gray-400 bg-gray-100 dark:bg-gray-700 rounded">Esc</kbd>
+        </div>
+
+        {# Results #}
+        <div class="max-h-[50vh] overflow-y-auto py-2">
+            {# "Alle Kommunen" option #}
+            <a href="{% url 'insight_core:insight:clear_body' %}"
+                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                :class="!activeBodyId ? 'bg-primary-50 dark:bg-primary-900/20' : ''">
+                <div class="w-9 h-9 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-4 h-4 text-primary-500 dark:text-primary-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-sm font-semibold text-gray-900 dark:text-white">Alle Kommunen</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400">Alle verfügbaren Kommunen anzeigen</div>
+                </div>
+                <template x-if="!activeBodyId">
+                    <svg class="w-4 h-4 text-primary-500 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                </template>
+            </a>
+
+            {# Municipality list #}
+            {% for body in available_bodies %}
+            <a href="{% url 'insight_core:insight:set_body' body.id %}"
+                x-show="!citySearch || '{{ body.name|lower }}'.includes(citySearch.toLowerCase()) || '{{ body.short_name|default:""|lower }}'.includes(citySearch.toLowerCase())"
+                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                :class="activeBodyId === '{{ body.id }}' ? 'bg-primary-50 dark:bg-primary-900/20' : ''">
+                <div class="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-4 h-4 text-gray-500 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ body.get_display_name }}</div>
+                    {% if body.classification %}
+                    <div class="text-xs text-gray-500 dark:text-gray-400">{{ body.classification }}</div>
+                    {% endif %}
+                </div>
+                <template x-if="activeBodyId === '{{ body.id }}'">
+                    <svg class="w-4 h-4 text-primary-500 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                </template>
+            </a>
+            {% endfor %}
+
+            {# Empty state #}
+            <div x-show="citySearch && document.querySelectorAll('[x-show*=citySearch]:not([style*=none])').length <= 1"
+                class="px-5 py-8 text-center text-sm text-gray-400" x-cloak>
+                Keine Kommune gefunden.
+            </div>
+        </div>
+    </div>
+</div>

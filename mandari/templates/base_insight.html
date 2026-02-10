@@ -1,0 +1,259 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="de" class="scroll-smooth"
+      x-data="{
+          darkMode: localStorage.getItem('darkMode') === 'true',
+          sidebarOpen: false,
+          cityModalOpen: false,
+          citySearch: '',
+          activeBodyId: '{% if active_body %}{{ active_body.id }}{% endif %}',
+          docViewerUrl: '',
+          docViewerName: '',
+          docViewerMeta: '',
+          docViewerLoading: false,
+          docViewerError: false,
+          openDoc(url, name, meta) {
+              this.docViewerUrl = url;
+              this.docViewerName = name || 'Dokument';
+              this.docViewerMeta = meta || '';
+              this.docViewerLoading = true;
+              this.docViewerError = false;
+          }
+      }"
+      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))"
+      :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{% block meta_description %}Mandari - Kommunalpolitische Transparenz{% endblock %}">
+    <meta name="theme-color" content="#4f46e5">
+    {% if seo.keywords %}<meta name="keywords" content="{{ seo.keywords }}">{% endif %}
+    {% if seo.author %}<meta name="author" content="{{ seo.author }}">{% endif %}
+    {% if seo.robots %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
+
+    <title>{% block title %}Mandari{% endblock %} | Mandari Insight</title>
+
+    <!-- Canonical URL -->
+    {% if seo.canonical_url %}
+    <link rel="canonical" href="{{ seo.canonical_url }}">
+    {% endif %}
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="{% block og_title %}{% if seo.title %}{{ seo.title }}{% else %}Mandari{% endif %}{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}{% endblock %}">
+    <meta property="og:type" content="{% if seo.og_type %}{{ seo.og_type }}{% else %}website{% endif %}">
+    <meta property="og:url" content="{% if seo.canonical_url %}{{ seo.canonical_url }}{% else %}{{ request.build_absolute_uri }}{% endif %}">
+    <meta property="og:image" content="{% block og_image %}{% if seo.og_image %}{{ seo.og_image }}{% else %}{% static 'images/og-default.png' %}{% endif %}{% endblock %}">
+    <meta property="og:locale" content="de_DE">
+    <meta property="og:site_name" content="Mandari">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="{% if seo.twitter_card %}{{ seo.twitter_card }}{% else %}summary{% endif %}">
+    <meta name="twitter:title" content="{% if seo.title %}{{ seo.title }}{% else %}Mandari{% endif %}">
+    <meta name="twitter:description" content="{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}">
+    <meta name="twitter:image" content="{% if seo.og_image %}{{ seo.og_image }}{% else %}{% static 'images/og-default.png' %}{% endif %}">
+
+    <!-- JSON-LD Structured Data -->
+    {% if seo.json_ld %}
+    <script type="application/ld+json">{{ seo.json_ld|safe }}</script>
+    {% endif %}
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{% static 'images/favicon.png' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'images/favicon.ico' %}">
+
+    <!-- TailwindCSS (lokal kompiliert, DSGVO-konform) -->
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+    <!-- HTMX (lokal) -->
+    <script src="{% static 'vendor/htmx/htmx.min.js' %}"></script>
+
+    <!-- Alpine.js (lokal) -->
+    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
+
+    <!-- Lucide Icons (lokal) -->
+    <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>
+
+    <!-- Custom Styles -->
+    <style>
+        [x-cloak] { display: none !important; }
+
+        /* Loading indicator for HTMX */
+        .htmx-request .htmx-indicator {
+            display: inline-flex;
+        }
+        .htmx-indicator {
+            display: none;
+        }
+
+        /* Smooth transitions */
+        .htmx-swapping {
+            opacity: 0;
+            transition: opacity 0.2s ease-out;
+        }
+
+        /* Skip Link - WCAG 2.1 */
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #4f46e5;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            text-decoration: none;
+            font-weight: 500;
+            z-index: 9999;
+            transition: top 0.2s;
+        }
+        .skip-link:focus {
+            top: 1rem;
+            outline: 2px solid white;
+            outline-offset: 2px;
+        }
+
+        /* Focus visible styles - WCAG 2.1 */
+        :focus-visible {
+            outline: 2px solid #4f46e5;
+            outline-offset: 2px;
+        }
+        .dark :focus-visible {
+            outline-color: #818cf8;
+        }
+
+        /* Improved focus for buttons and links */
+        a:focus-visible,
+        button:focus-visible,
+        [role="button"]:focus-visible {
+            outline: 2px solid #4f46e5;
+            outline-offset: 2px;
+            border-radius: 0.25rem;
+        }
+        .dark a:focus-visible,
+        .dark button:focus-visible,
+        .dark [role="button"]:focus-visible {
+            outline-color: #818cf8;
+        }
+
+        /* Touch target minimum size - WCAG 2.1 AAA */
+        .touch-target {
+            min-width: 44px;
+            min-height: 44px;
+        }
+
+        /* Word breaking for long content */
+        .break-anywhere {
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+
+        /* Sidebar layout responsive */
+        @media(max-width:1024px) {
+            .sidebar-push { margin-left: 0 !important; }
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+        .dark ::-webkit-scrollbar-thumb { background: #4b5563; }
+        ::-webkit-scrollbar-track { background: transparent; }
+
+        /* Fade-up animation */
+        .fade-up { animation: fadeUp .5s cubic-bezier(.16,1,.3,1) both; }
+        @keyframes fadeUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+        .d1{animation-delay:.04s} .d2{animation-delay:.08s} .d3{animation-delay:.12s} .d4{animation-delay:.16s}
+    </style>
+
+    {% block extra_head %}{% endblock %}
+</head>
+
+<body class="min-h-screen bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <!-- Skip Link for Accessibility - WCAG 2.1 AA -->
+    <a href="#main-content" class="skip-link">
+        Zum Hauptinhalt springen
+    </a>
+
+    <!-- City Search Modal -->
+    {% include "components/city_search_modal.html" %}
+
+    <!-- Sidebar -->
+    {% include "components/insight_sidebar.html" %}
+
+    <!-- Main Content Area -->
+    <main id="main-content" class="min-h-screen sidebar-push" style="margin-left:260px;" role="main" tabindex="-1">
+
+        <!-- Top bar (mobile menu + dark mode) -->
+        <div class="sticky top-0 z-30 bg-[#faf9f7]/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 lg:px-8"
+            style="height:52px;">
+            <button @click="sidebarOpen=true" class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" aria-label="Menü öffnen">
+                <i data-lucide="menu" class="w-5 h-5 text-gray-600 dark:text-gray-400"></i>
+            </button>
+            <div class="lg:hidden text-sm font-bold text-gray-900 dark:text-white truncate">
+                {% if active_body %}{{ active_body.get_display_name }}{% else %}Mandari Insight{% endif %}
+            </div>
+            <div class="hidden lg:block"></div>
+            <!-- Dark mode toggle -->
+            <button @click="darkMode=!darkMode"
+                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                :aria-label="darkMode ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'"
+                :aria-pressed="darkMode.toString()">
+                <i x-show="!darkMode" data-lucide="moon" class="w-5 h-5 text-gray-500"></i>
+                <i x-show="darkMode" data-lucide="sun" class="w-5 h-5 text-gray-400" x-cloak></i>
+            </button>
+        </div>
+
+        <!-- Page content -->
+        <div class="px-4 lg:px-8 py-6">
+            {% block content %}{% endblock %}
+
+            {% include "components/insight_footer.html" %}
+        </div>
+    </main>
+
+    <!-- Document Viewer Modal -->
+    {% include "components/document_viewer.html" %}
+
+    <!-- Chatbot Popup -->
+    {% block chatbot %}{% include "components/chatbot_popup.html" %}{% endblock %}
+
+    <!-- HTMX Configuration -->
+    <script>
+        document.body.addEventListener('htmx:configRequest', (event) => {
+            // CSRF Token für POST requests
+            event.detail.headers['X-CSRFToken'] = '{{ csrf_token }}';
+        });
+
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Re-initialize icons after HTMX swap
+        document.body.addEventListener('htmx:afterSwap', () => {
+            lucide.createIcons();
+        });
+
+        // Announce dynamic content changes for screen readers
+        document.body.addEventListener('htmx:afterSwap', (event) => {
+            const announcement = document.createElement('div');
+            announcement.setAttribute('role', 'status');
+            announcement.setAttribute('aria-live', 'polite');
+            announcement.setAttribute('aria-atomic', 'true');
+            announcement.className = 'sr-only';
+            announcement.textContent = 'Inhalt wurde aktualisiert';
+            document.body.appendChild(announcement);
+            setTimeout(() => announcement.remove(), 1000);
+        });
+
+        // Close sidebar on navigation (mobile)
+        document.addEventListener('click', (e) => {
+            const link = e.target.closest('aside a[href]');
+            if (link) {
+                const alpine = document.querySelector('html').__x.$data;
+                if (alpine) alpine.sidebarOpen = false;
+            }
+        });
+    </script>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

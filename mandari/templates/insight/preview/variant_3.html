@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mandari Insight &ndash; M&uuml;nster | Variante 3: Redaktion</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        serif: ['Newsreader', 'Georgia', 'Times New Roman', 'serif'],
+        sans: ['Source Sans 3', 'system-ui', 'sans-serif'],
+      },
+      colors: {
+        primary: {
+          50: '#eef2ff',
+          100: '#e0e7ff',
+          200: '#c7d2fe',
+          300: '#a5b4fc',
+          400: '#818cf8',
+          500: '#4f46e5',
+          600: '#4338ca',
+          700: '#3730a3',
+          800: '#312e81',
+          900: '#1e1b4e',
+        },
+        paper: {
+          50: '#faf9f7',
+          100: '#f5f3ef',
+          200: '#ebe7df',
+          300: '#d9d3c7',
+          400: '#b8b0a0',
+          500: '#9a9081',
+          600: '#807667',
+          700: '#685f52',
+          800: '#574f44',
+          900: '#4a443b',
+          950: '#28241f',
+        },
+      }
+    }
+  }
+}
+</script>
+<style>
+  body {
+    -webkit-font-smoothing: auto;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Newspaper rules */
+  .rule { border-bottom: 1px solid #d9d3c7; }
+  .rule-double { border-bottom: 3px double #28241f; }
+  .rule-thick { border-bottom: 2px solid #28241f; }
+  .rule-section { border-bottom: 1px solid #e5e7eb; }
+
+  /* Headline typography */
+  .headline {
+    font-family: 'Newsreader', Georgia, serif;
+    letter-spacing: -0.01em;
+  }
+
+  /* Sidebar navigation */
+  .sidebar-nav a {
+    font-family: 'Source Sans 3', sans-serif;
+  }
+
+  /* Link color: classic blue */
+  a.link-classic { color: #3366cc; }
+  a.link-classic:hover { color: #1f3d7a; }
+
+  /* Animations */
+  .fade-in { animation: fadeIn 0.5s ease both; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .d1{animation-delay:.06s}
+  .d2{animation-delay:.12s}
+  .d3{animation-delay:.18s}
+  .d4{animation-delay:.24s}
+  .d5{animation-delay:.30s}
+
+  /* Selection */
+  ::selection { background: #c7d2fe; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 7px; }
+  ::-webkit-scrollbar-track { background: #f5f3ef; }
+  ::-webkit-scrollbar-thumb { background: #d9d3c7; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #b8b0a0; }
+
+  /* Newspaper columns */
+  .news-columns-3 {
+    column-count: 3;
+    column-gap: 24px;
+    column-rule: 1px solid #d9d3c7;
+  }
+  .news-columns-2 {
+    column-count: 2;
+    column-gap: 24px;
+    column-rule: 1px solid #d9d3c7;
+  }
+  .news-item {
+    break-inside: avoid;
+    margin-bottom: 20px;
+  }
+
+  /* Table styling */
+  .editorial-table th {
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    color: #6b7280;
+    padding: 6px 0;
+  }
+  .editorial-table td {
+    padding: 8px 0;
+    font-size: 13px;
+    border-bottom: 1px solid #ebe7df;
+  }
+  .editorial-table tr:last-child td {
+    border-bottom: none;
+  }
+  .editorial-table tbody tr {
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .editorial-table tbody tr:hover {
+    background: #faf9f7;
+  }
+
+  /* Active sidebar indicator */
+  .nav-active {
+    border-left: 3px solid #4f46e5;
+    background: #eef2ff;
+    color: #4f46e5;
+  }
+
+  @media (max-width: 1023px) {
+    .news-columns-3 { column-count: 2; }
+  }
+  @media (max-width: 639px) {
+    .news-columns-3 { column-count: 1; }
+    .news-columns-2 { column-count: 1; }
+  }
+</style>
+</head>
+<body class="bg-paper-50 text-gray-900 font-sans antialiased" x-data="{ sidebarOpen: false }">
+
+<!-- Mobile Overlay -->
+<div x-show="sidebarOpen"
+     x-transition:enter="transition-opacity ease-out duration-300"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition-opacity ease-in duration-200"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     @click="sidebarOpen = false"
+     class="fixed inset-0 bg-black/40 z-40 lg:hidden"
+     style="display: none;"></div>
+
+<!-- Mobile Hamburger -->
+<button @click="sidebarOpen = true"
+        class="fixed top-4 left-4 z-50 lg:hidden w-10 h-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center shadow-sm">
+  <i data-lucide="menu" class="w-5 h-5 text-gray-700"></i>
+</button>
+
+<div class="flex min-h-screen">
+
+  <!-- ==================== SIDEBAR ==================== -->
+  <aside :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+         class="w-[220px] fixed inset-y-0 left-0 bg-white border-r border-gray-200 flex flex-col z-50
+                lg:translate-x-0 transition-transform duration-300 ease-in-out">
+
+    <!-- Org Header: 40x40 logo -->
+    <div class="px-4 pt-5 pb-4 border-b border-gray-200">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-primary-500 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="landmark" class="w-5 h-5 text-white"></i>
+        </div>
+        <div class="min-w-0">
+          <div class="text-[16px] font-semibold text-gray-900 headline leading-tight">Insight</div>
+          <div class="text-[11px] text-gray-500 font-sans uppercase tracking-wide leading-tight">M&uuml;nster</div>
+        </div>
+      </div>
+      <!-- Mobile close -->
+      <button @click="sidebarOpen = false" class="lg:hidden absolute top-4 right-3 w-8 h-8 flex items-center justify-center rounded-md hover:bg-gray-100">
+        <i data-lucide="x" class="w-4 h-4 text-gray-500"></i>
+      </button>
+    </div>
+
+    <!-- Search -->
+    <div class="px-3 pt-3 pb-2">
+      <div class="relative">
+        <i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"></i>
+        <input type="text" placeholder="Suchen..."
+               class="w-full pl-8 pr-3 py-[7px] text-[13px] bg-gray-50 border border-gray-200 rounded-lg
+                      placeholder-gray-400 focus:outline-none focus:border-primary-300 focus:bg-white
+                      transition-all font-sans">
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="sidebar-nav flex-1 px-2 py-2 overflow-y-auto">
+      <!-- Section: Portal -->
+      <div class="px-2 pt-2 pb-1.5">
+        <span class="text-[11px] uppercase font-semibold tracking-[0.05em] text-gray-400">Portal</span>
+      </div>
+
+      <a href="#" class="nav-active flex items-center gap-2.5 px-3 py-[10px] mx-1 text-[14px] font-medium rounded-lg mb-0.5">
+        <i data-lucide="newspaper" class="w-4 h-4 opacity-70"></i>
+        &Uuml;bersicht
+      </a>
+      <a href="#" class="flex items-center gap-2.5 px-3 py-[10px] mx-1 text-[14px] font-medium text-gray-600 rounded-lg mb-0.5 hover:bg-gray-50 transition-colors">
+        <i data-lucide="calendar" class="w-4 h-4 opacity-50"></i>
+        Sitzungen
+      </a>
+      <a href="#" class="flex items-center gap-2.5 px-3 py-[10px] mx-1 text-[14px] font-medium text-gray-600 rounded-lg mb-0.5 hover:bg-gray-50 transition-colors">
+        <i data-lucide="file-text" class="w-4 h-4 opacity-50"></i>
+        Vorg&auml;nge
+      </a>
+      <a href="#" class="flex items-center gap-2.5 px-3 py-[10px] mx-1 text-[14px] font-medium text-gray-600 rounded-lg mb-0.5 hover:bg-gray-50 transition-colors">
+        <i data-lucide="building-2" class="w-4 h-4 opacity-50"></i>
+        Gremien
+      </a>
+      <a href="#" class="flex items-center gap-2.5 px-3 py-[10px] mx-1 text-[14px] font-medium text-gray-600 rounded-lg mb-0.5 hover:bg-gray-50 transition-colors">
+        <i data-lucide="users" class="w-4 h-4 opacity-50"></i>
+        Personen
+      </a>
+
+      <!-- Section: Mehr -->
+      <div class="px-2 pt-5 pb-1.5">
+        <span class="text-[11px] uppercase font-semibold tracking-[0.05em] text-gray-400">Mehr</span>
+      </div>
+
+      <a href="#" class="flex items-center gap-2.5 px-3 py-[10px] mx-1 text-[14px] font-medium text-gray-600 rounded-lg mb-0.5 hover:bg-gray-50 transition-colors">
+        <i data-lucide="map" class="w-4 h-4 opacity-50"></i>
+        Karte
+      </a>
+      <a href="#" class="flex items-center gap-2.5 px-3 py-[10px] mx-1 text-[14px] font-medium text-gray-600 rounded-lg mb-0.5 hover:bg-gray-50 transition-colors">
+        <i data-lucide="bar-chart-3" class="w-4 h-4 opacity-50"></i>
+        Statistiken
+      </a>
+    </nav>
+
+    <!-- OParl Footer -->
+    <div class="px-4 py-3 border-t border-gray-200">
+      <div class="flex items-center gap-2 mb-1">
+        <div class="w-2 h-2 rounded-full bg-emerald-400"></div>
+        <span class="text-[11px] text-gray-500 font-medium">OParl v1.1</span>
+      </div>
+      <div class="text-[10px] text-gray-400">Letzte Sync: heute, 06:12</div>
+    </div>
+  </aside>
+
+  <!-- ==================== MAIN CONTENT ==================== -->
+  <main class="lg:ml-[220px] flex-1 min-w-0">
+    <div class="max-w-[1060px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 pt-16 lg:pt-8">
+
+      <!-- Dateline bar -->
+      <div class="flex items-center justify-between mb-3 fade-in">
+        <div class="text-[11px] uppercase tracking-[0.12em] text-gray-400 font-semibold font-sans">
+          Sonntag, 8. Februar 2026
+        </div>
+        <div class="text-[11px] text-gray-400 tracking-wide font-sans">
+          Ausgabe Nr. 2.847 &middot; Mandari Insight
+        </div>
+      </div>
+
+      <!-- Masthead -->
+      <div class="rule-double pb-1 mb-1 fade-in"></div>
+      <div class="text-center py-3 fade-in">
+        <h1 class="headline text-[38px] sm:text-[46px] font-bold leading-[1.1] text-paper-950">
+          Ratsinformationen
+        </h1>
+        <div class="text-[15px] text-gray-500 font-light mt-1 font-sans tracking-wide">
+          Stadt M&uuml;nster &middot; Transparenzportal
+        </div>
+      </div>
+      <div class="rule-thick mb-6 fade-in"></div>
+
+      <!-- ===== LEAD STORY: Next major meeting ===== -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-0 mb-0 fade-in d1">
+
+        <!-- Lead article (wide) -->
+        <div class="lg:col-span-7 lg:pr-6 lg:border-r lg:border-paper-300 pb-5 lg:pb-0">
+          <div class="text-[10px] uppercase tracking-[0.1em] text-primary-500 font-bold mb-2 font-sans">N&auml;chste Sitzung</div>
+          <a href="#" class="group block">
+            <h2 class="headline text-[28px] sm:text-[32px] font-semibold leading-[1.15] mb-3 group-hover:text-primary-600 transition-colors">
+              Rat der Stadt M&uuml;nster tagt am 12.&nbsp;Februar mit 14&nbsp;Tagesordnungspunkten
+            </h2>
+            <p class="text-[15px] text-gray-600 leading-[1.7] mb-3 font-sans">
+              Auf der Tagesordnung der kommenden Ratssitzung stehen unter anderem die Entwurfsplanung zur Neugestaltung der Aaseepromenade, das Haushaltssicherungskonzept 2027 sowie der Klimaschutzbericht 2025. Ein Schwerpunkt der Beratungen wird zudem der Antrag zum Radwegeausbau an der Weseler Stra&szlig;e sein, der bereits im Verkehrsausschuss vorberaten wurde.
+            </p>
+            <p class="text-[14px] text-gray-500 leading-[1.65] mb-4 font-sans">
+              Die &ouml;ffentliche Sitzung beginnt um 16:00 Uhr im Ratssaal des historischen Rathauses am Prinzipalmarkt. B&uuml;rger k&ouml;nnen die Sitzung von der Besuchertrib&uuml;ne aus verfolgen.
+            </p>
+            <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-[12px] text-gray-400 font-sans">
+              <span class="flex items-center gap-1.5"><i data-lucide="calendar" class="w-3.5 h-3.5"></i> 12. Feb 2026, 16:00 Uhr</span>
+              <span class="flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i> Rathaus, Prinzipalmarkt 10</span>
+              <span class="flex items-center gap-1.5"><i data-lucide="file-text" class="w-3.5 h-3.5"></i> 14 TOPs, 5 Vorlagen</span>
+            </div>
+          </a>
+        </div>
+
+        <!-- Sidebar: upcoming meetings -->
+        <div class="lg:col-span-5 lg:pl-6 pt-5 lg:pt-0 border-t lg:border-t-0 border-paper-200">
+          <div class="text-[10px] uppercase tracking-[0.1em] text-gray-400 font-bold mb-3 font-sans">Weitere Termine diese Woche</div>
+
+          <a href="#" class="group block pb-3 mb-3 border-b border-paper-200">
+            <div class="flex items-baseline justify-between mb-0.5">
+              <span class="text-[11px] text-gray-400 font-sans font-medium">09. Feb &middot; 15:00</span>
+              <span class="text-[10px] text-gray-400 font-sans">9 TOPs</span>
+            </div>
+            <div class="headline text-[16px] font-medium group-hover:text-primary-600 transition-colors">Umweltausschuss</div>
+            <div class="text-[12px] text-gray-500 mt-0.5 font-sans">Klimaschutzbericht 2025, Baumschutzsatzung</div>
+          </a>
+
+          <a href="#" class="group block pb-3 mb-3 border-b border-paper-200">
+            <div class="flex items-baseline justify-between mb-0.5">
+              <span class="text-[11px] text-gray-400 font-sans font-medium">10. Feb &middot; 17:00</span>
+              <span class="text-[10px] text-gray-400 font-sans">8 TOPs</span>
+            </div>
+            <div class="headline text-[16px] font-medium group-hover:text-primary-600 transition-colors">Ausschuss f&uuml;r Stadtentwicklung</div>
+            <div class="text-[12px] text-gray-500 mt-0.5 font-sans">Aaseepromenade Entwurf, Bebauungsplan Hafen</div>
+          </a>
+
+          <a href="#" class="group block pb-3 mb-3 border-b border-paper-200">
+            <div class="flex items-baseline justify-between mb-0.5">
+              <span class="text-[11px] text-gray-400 font-sans font-medium">11. Feb &middot; 15:30</span>
+              <span class="text-[10px] text-gray-400 font-sans">6 TOPs</span>
+            </div>
+            <div class="headline text-[16px] font-medium group-hover:text-primary-600 transition-colors">Finanzausschuss</div>
+            <div class="text-[12px] text-gray-500 mt-0.5 font-sans">Haushaltssicherungskonzept 2027</div>
+          </a>
+
+          <a href="#" class="group block pb-3 mb-3 border-b border-paper-200">
+            <div class="flex items-baseline justify-between mb-0.5">
+              <span class="text-[11px] text-gray-400 font-sans font-medium">13. Feb &middot; 16:00</span>
+              <span class="text-[10px] text-gray-400 font-sans">7 TOPs</span>
+            </div>
+            <div class="headline text-[16px] font-medium group-hover:text-primary-600 transition-colors">Schulausschuss</div>
+            <div class="text-[12px] text-gray-500 mt-0.5 font-sans">Digitalpakt Schulen, Mensaversorgung</div>
+          </a>
+
+          <a href="#" class="group block">
+            <div class="flex items-baseline justify-between mb-0.5">
+              <span class="text-[11px] text-gray-400 font-sans font-medium">14. Feb &middot; 14:00</span>
+              <span class="text-[10px] text-gray-400 font-sans">5 TOPs</span>
+            </div>
+            <div class="headline text-[16px] font-medium group-hover:text-primary-600 transition-colors">Jugendhilfeausschuss</div>
+            <div class="text-[12px] text-gray-500 mt-0.5 font-sans">Kitapl&auml;tze, offene Jugendarbeit</div>
+          </a>
+        </div>
+      </div>
+
+      <div class="rule-double mt-6 mb-6 fade-in d1"></div>
+
+      <!-- ===== PAPERS: Newspaper columns ===== -->
+      <div class="fade-in d2">
+        <div class="text-[10px] uppercase tracking-[0.1em] text-primary-500 font-bold mb-4 font-sans">Aktuelle Vorg&auml;nge &middot; Vorlagen &amp; Antr&auml;ge</div>
+
+        <div class="news-columns-3">
+
+          <!-- Paper 1 - Feature paper -->
+          <div class="news-item">
+            <a href="#" class="group block">
+              <div class="bg-primary-50 border border-primary-100 rounded h-28 mb-2.5 flex items-center justify-center">
+                <i data-lucide="file-text" class="w-7 h-7 text-primary-300"></i>
+              </div>
+              <div class="text-[10px] uppercase tracking-[0.06em] text-gray-400 font-semibold mb-1 font-sans">Vorlage V/0847/2026</div>
+              <h3 class="headline text-[18px] font-semibold leading-snug group-hover:text-primary-600 transition-colors mb-1.5">
+                Neugestaltung der Aaseepromenade &ndash; Entwurfsplanung
+              </h3>
+              <p class="text-[13px] text-gray-500 leading-relaxed font-sans">
+                Der Ausschuss f&uuml;r Stadtentwicklung ber&auml;t &uuml;ber die Entwurfsplanung zur barrierefreien Neugestaltung der Promenade am Aasee mit Radwegetrennung und neuen Gr&uuml;nfl&auml;chen.
+              </p>
+              <div class="flex items-center gap-2 mt-2">
+                <span class="inline-block text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">In Beratung</span>
+                <span class="text-[11px] text-gray-400 font-sans">Stadtentwicklung</span>
+              </div>
+            </a>
+          </div>
+
+          <!-- Paper 2 -->
+          <div class="news-item">
+            <a href="#" class="group block">
+              <div class="text-[10px] uppercase tracking-[0.06em] text-gray-400 font-semibold mb-1 font-sans">Antrag A/0312/2026</div>
+              <h3 class="headline text-[17px] font-medium leading-snug group-hover:text-primary-600 transition-colors mb-1.5">
+                Radwegeausbau Weseler Stra&szlig;e einstimmig beschlossen
+              </h3>
+              <p class="text-[13px] text-gray-500 leading-relaxed font-sans">
+                Der Verkehrsausschuss hat den Ausbau der gesch&uuml;tzten Radwege an der Weseler Stra&szlig;e beschlossen. Die Umsetzung beginnt im Fr&uuml;hjahr 2026.
+              </p>
+              <div class="flex items-center gap-2 mt-2">
+                <span class="inline-block text-[10px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">Beschlossen</span>
+              </div>
+            </a>
+          </div>
+
+          <!-- Paper 3 -->
+          <div class="news-item">
+            <a href="#" class="group block">
+              <div class="text-[10px] uppercase tracking-[0.06em] text-gray-400 font-semibold mb-1 font-sans">Vorlage V/0821/2026</div>
+              <h3 class="headline text-[17px] font-medium leading-snug group-hover:text-primary-600 transition-colors mb-1.5">
+                Haushaltssicherungskonzept 2027 vorgelegt
+              </h3>
+              <p class="text-[13px] text-gray-500 leading-relaxed font-sans">
+                Die K&auml;mmerei hat den Entwurf des HSK f&uuml;r 2027 mit einem Konsolidierungsvolumen von 28,4 Mio. Euro vorgelegt.
+              </p>
+              <div class="flex items-center gap-2 mt-2">
+                <span class="inline-block text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">In Beratung</span>
+                <span class="text-[11px] text-gray-400 font-sans">Finanzausschuss</span>
+              </div>
+            </a>
+          </div>
+
+          <!-- Paper 4 -->
+          <div class="news-item">
+            <a href="#" class="group block">
+              <div class="text-[10px] uppercase tracking-[0.06em] text-gray-400 font-semibold mb-1 font-sans">Mitteilung M/0094/2026</div>
+              <h3 class="headline text-[16px] font-medium leading-snug group-hover:text-primary-600 transition-colors">
+                Klimaschutzbericht 2025 ver&ouml;ffentlicht
+              </h3>
+              <div class="text-[12px] text-gray-400 mt-1 font-sans">Umweltausschuss &middot; Kenntnisnahme</div>
+            </a>
+          </div>
+
+          <!-- Paper 5 -->
+          <div class="news-item">
+            <a href="#" class="group block">
+              <div class="text-[10px] uppercase tracking-[0.06em] text-gray-400 font-semibold mb-1 font-sans">Anfrage AN/0156/2026</div>
+              <h3 class="headline text-[16px] font-medium leading-snug group-hover:text-primary-600 transition-colors">
+                Sachstand Digitalisierung an M&uuml;nsteraner Schulen
+              </h3>
+              <div class="text-[12px] text-gray-400 mt-1 font-sans">Schulausschuss &middot; Eingereicht</div>
+            </a>
+          </div>
+
+          <!-- Paper 6 -->
+          <div class="news-item">
+            <a href="#" class="group block">
+              <div class="text-[10px] uppercase tracking-[0.06em] text-gray-400 font-semibold mb-1 font-sans">Antrag A/0298/2026</div>
+              <h3 class="headline text-[16px] font-medium leading-snug group-hover:text-primary-600 transition-colors">
+                Barrierefreiheit an Bushaltestellen
+              </h3>
+              <p class="text-[13px] text-gray-500 leading-relaxed font-sans mt-1">
+                Der Antrag fordert den barrierefreien Umbau von 42 weiteren Bushaltestellen im Stadtgebiet bis&nbsp;Ende&nbsp;2027.
+              </p>
+              <div class="flex items-center gap-2 mt-2">
+                <span class="inline-block text-[10px] font-semibold uppercase tracking-wide text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">Eingereicht</span>
+                <span class="text-[11px] text-gray-400 font-sans">Sozialausschuss</span>
+              </div>
+            </a>
+          </div>
+
+          <!-- Paper 7 -->
+          <div class="news-item">
+            <a href="#" class="group block">
+              <div class="text-[10px] uppercase tracking-[0.06em] text-gray-400 font-semibold mb-1 font-sans">Vorlage V/0863/2026</div>
+              <h3 class="headline text-[16px] font-medium leading-snug group-hover:text-primary-600 transition-colors">
+                Sanierung Turnhalle Uppenberg
+              </h3>
+              <div class="text-[12px] text-gray-400 mt-1 font-sans">Sportausschuss &middot; In Beratung</div>
+            </a>
+          </div>
+
+          <!-- Paper 8 -->
+          <div class="news-item">
+            <a href="#" class="group block">
+              <div class="text-[10px] uppercase tracking-[0.06em] text-gray-400 font-semibold mb-1 font-sans">Antrag A/0331/2026</div>
+              <h3 class="headline text-[16px] font-medium leading-snug group-hover:text-primary-600 transition-colors">
+                Tempo 30 auf dem Hansaring
+              </h3>
+              <div class="text-[12px] text-gray-400 mt-1 font-sans">Verkehrsausschuss &middot; Eingereicht</div>
+            </a>
+          </div>
+
+        </div>
+
+        <div class="mt-3">
+          <a href="#" class="link-classic text-[13px] font-medium font-sans hover:underline">Alle 1.247 Vorg&auml;nge anzeigen &rarr;</a>
+        </div>
+      </div>
+
+      <div class="rule-double mt-6 mb-6 fade-in d2"></div>
+
+      <!-- ===== COMMITTEES TABLE + PERSONS ===== -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-0 fade-in d3">
+
+        <!-- Gremien: Data Table -->
+        <div class="lg:col-span-5 lg:pr-6 lg:border-r lg:border-paper-300 pb-6 lg:pb-0">
+          <div class="text-[10px] uppercase tracking-[0.1em] text-primary-500 font-bold mb-3 font-sans">Gremien der Stadt</div>
+
+          <table class="editorial-table w-full">
+            <thead>
+              <tr class="border-b-2 border-paper-950">
+                <th class="text-left">Gremium</th>
+                <th class="text-right pr-3">Mitgl.</th>
+                <th class="text-right">Sitzungen</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a href="#" class="link-classic font-medium hover:underline">Rat der Stadt</a></td>
+                <td class="text-right text-gray-500 pr-3">86</td>
+                <td class="text-right text-gray-500">24</td>
+              </tr>
+              <tr>
+                <td><a href="#" class="link-classic font-medium hover:underline">Hauptausschuss</a></td>
+                <td class="text-right text-gray-500 pr-3">19</td>
+                <td class="text-right text-gray-500">36</td>
+              </tr>
+              <tr>
+                <td><a href="#" class="link-classic font-medium hover:underline">Finanzausschuss</a></td>
+                <td class="text-right text-gray-500 pr-3">17</td>
+                <td class="text-right text-gray-500">18</td>
+              </tr>
+              <tr>
+                <td><a href="#" class="link-classic font-medium hover:underline">Stadtentwicklung</a></td>
+                <td class="text-right text-gray-500 pr-3">17</td>
+                <td class="text-right text-gray-500">12</td>
+              </tr>
+              <tr>
+                <td><a href="#" class="link-classic font-medium hover:underline">Umweltausschuss</a></td>
+                <td class="text-right text-gray-500 pr-3">17</td>
+                <td class="text-right text-gray-500">15</td>
+              </tr>
+              <tr>
+                <td><a href="#" class="link-classic font-medium hover:underline">Verkehrsausschuss</a></td>
+                <td class="text-right text-gray-500 pr-3">17</td>
+                <td class="text-right text-gray-500">14</td>
+              </tr>
+              <tr>
+                <td><a href="#" class="link-classic font-medium hover:underline">Schulausschuss</a></td>
+                <td class="text-right text-gray-500 pr-3">17</td>
+                <td class="text-right text-gray-500">10</td>
+              </tr>
+              <tr>
+                <td><a href="#" class="link-classic font-medium hover:underline">Sozialausschuss</a></td>
+                <td class="text-right text-gray-500 pr-3">17</td>
+                <td class="text-right text-gray-500">11</td>
+              </tr>
+              <tr>
+                <td><a href="#" class="link-classic font-medium hover:underline">Kulturausschuss</a></td>
+                <td class="text-right text-gray-500 pr-3">17</td>
+                <td class="text-right text-gray-500">9</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <a href="#" class="link-classic inline-block mt-3 text-[12px] font-medium font-sans hover:underline">Alle 78 Gremien anzeigen &rarr;</a>
+        </div>
+
+        <!-- Personen: Compact grid with initials -->
+        <div class="lg:col-span-7 lg:pl-6 pt-6 lg:pt-0 border-t lg:border-t-0 border-paper-200">
+          <div class="text-[10px] uppercase tracking-[0.1em] text-primary-500 font-bold mb-3 font-sans">Pers&ouml;nlichkeiten</div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-0">
+
+            <a href="#" class="group flex items-center gap-3 py-2.5 border-b border-paper-200">
+              <div class="w-9 h-9 rounded-full bg-paper-200 flex items-center justify-center text-[12px] font-bold text-paper-600 flex-shrink-0">ML</div>
+              <div class="min-w-0">
+                <div class="headline text-[14px] font-medium group-hover:text-primary-600 transition-colors truncate">Markus Lewe</div>
+                <div class="text-[11px] text-gray-400 font-sans">Oberb&uuml;rgermeister &middot; CDU</div>
+              </div>
+            </a>
+
+            <a href="#" class="group flex items-center gap-3 py-2.5 border-b border-paper-200">
+              <div class="w-9 h-9 rounded-full bg-paper-200 flex items-center justify-center text-[12px] font-bold text-paper-600 flex-shrink-0">AS</div>
+              <div class="min-w-0">
+                <div class="headline text-[14px] font-medium group-hover:text-primary-600 transition-colors truncate">Angela St&auml;hler</div>
+                <div class="text-[11px] text-gray-400 font-sans">B&uuml;rgermeisterin &middot; CDU</div>
+              </div>
+            </a>
+
+            <a href="#" class="group flex items-center gap-3 py-2.5 border-b border-paper-200">
+              <div class="w-9 h-9 rounded-full bg-paper-200 flex items-center justify-center text-[12px] font-bold text-paper-600 flex-shrink-0">RD</div>
+              <div class="min-w-0">
+                <div class="headline text-[14px] font-medium group-hover:text-primary-600 transition-colors truncate">Robin Denstorff</div>
+                <div class="text-[11px] text-gray-400 font-sans">Beigeordneter &middot; Gr&uuml;ne</div>
+              </div>
+            </a>
+
+            <a href="#" class="group flex items-center gap-3 py-2.5 border-b border-paper-200">
+              <div class="w-9 h-9 rounded-full bg-paper-200 flex items-center justify-center text-[12px] font-bold text-paper-600 flex-shrink-0">TH</div>
+              <div class="min-w-0">
+                <div class="headline text-[14px] font-medium group-hover:text-primary-600 transition-colors truncate">Thomas Hechtner</div>
+                <div class="text-[11px] text-gray-400 font-sans">Fraktionsvorsitz &middot; SPD</div>
+              </div>
+            </a>
+
+            <a href="#" class="group flex items-center gap-3 py-2.5 border-b border-paper-200">
+              <div class="w-9 h-9 rounded-full bg-paper-200 flex items-center justify-center text-[12px] font-bold text-paper-600 flex-shrink-0">SK</div>
+              <div class="min-w-0">
+                <div class="headline text-[14px] font-medium group-hover:text-primary-600 transition-colors truncate">Sylvia Kamp</div>
+                <div class="text-[11px] text-gray-400 font-sans">Fraktionsvorsitz &middot; Gr&uuml;ne</div>
+              </div>
+            </a>
+
+            <a href="#" class="group flex items-center gap-3 py-2.5 border-b border-paper-200">
+              <div class="w-9 h-9 rounded-full bg-paper-200 flex items-center justify-center text-[12px] font-bold text-paper-600 flex-shrink-0">JT</div>
+              <div class="min-w-0">
+                <div class="headline text-[14px] font-medium group-hover:text-primary-600 transition-colors truncate">J&ouml;rg Tiemann</div>
+                <div class="text-[11px] text-gray-400 font-sans">Fraktionsvorsitz &middot; FDP</div>
+              </div>
+            </a>
+
+            <a href="#" class="group flex items-center gap-3 py-2.5 border-b border-paper-200">
+              <div class="w-9 h-9 rounded-full bg-paper-200 flex items-center justify-center text-[12px] font-bold text-paper-600 flex-shrink-0">MB</div>
+              <div class="min-w-0">
+                <div class="headline text-[14px] font-medium group-hover:text-primary-600 transition-colors truncate">Maria B&ouml;rger-Keupp</div>
+                <div class="text-[11px] text-gray-400 font-sans">Stv. Vorsitz &middot; CDU</div>
+              </div>
+            </a>
+
+            <a href="#" class="group flex items-center gap-3 py-2.5 border-b border-paper-200">
+              <div class="w-9 h-9 rounded-full bg-paper-200 flex items-center justify-center text-[12px] font-bold text-paper-600 flex-shrink-0">PS</div>
+              <div class="min-w-0">
+                <div class="headline text-[14px] font-medium group-hover:text-primary-600 transition-colors truncate">Peter Schneider</div>
+                <div class="text-[11px] text-gray-400 font-sans">Sachkundiger B&uuml;rger &middot; Gr&uuml;ne</div>
+              </div>
+            </a>
+
+          </div>
+
+          <a href="#" class="link-classic inline-block mt-3 text-[12px] font-medium font-sans hover:underline">Alle 412 Personen anzeigen &rarr;</a>
+        </div>
+
+      </div>
+
+      <div class="rule-double mt-6 mb-5 fade-in d3"></div>
+
+      <!-- ===== STATS BAR ===== -->
+      <div class="fade-in d4">
+        <div class="text-[10px] uppercase tracking-[0.1em] text-primary-500 font-bold mb-3 font-sans">Datenbestand</div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div class="text-center py-3 border border-paper-200 rounded bg-white">
+            <div class="headline text-[28px] font-bold text-paper-950">1.247</div>
+            <div class="text-[11px] text-gray-500 uppercase tracking-wide font-semibold font-sans mt-0.5">Vorg&auml;nge</div>
+          </div>
+          <div class="text-center py-3 border border-paper-200 rounded bg-white">
+            <div class="headline text-[28px] font-bold text-paper-950">384</div>
+            <div class="text-[11px] text-gray-500 uppercase tracking-wide font-semibold font-sans mt-0.5">Sitzungen</div>
+          </div>
+          <div class="text-center py-3 border border-paper-200 rounded bg-white">
+            <div class="headline text-[28px] font-bold text-paper-950">78</div>
+            <div class="text-[11px] text-gray-500 uppercase tracking-wide font-semibold font-sans mt-0.5">Gremien</div>
+          </div>
+          <div class="text-center py-3 border border-paper-200 rounded bg-white">
+            <div class="headline text-[28px] font-bold text-paper-950">412</div>
+            <div class="text-[11px] text-gray-500 uppercase tracking-wide font-semibold font-sans mt-0.5">Personen</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== FOOTER ===== -->
+      <div class="mt-8 pt-4 rule-double fade-in d5">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-[10px] text-gray-400 uppercase tracking-[0.08em] font-sans">
+          <span>Mandari Insight &middot; Transparenzportal</span>
+          <span>Daten via OParl-Schnittstelle &middot; Stadt M&uuml;nster &middot; 2026</span>
+        </div>
+        <div class="mt-2 pb-4 text-[10px] text-gray-300 font-sans">
+          Alle Angaben ohne Gew&auml;hr. Datenquelle: Ratsinformationssystem der Stadt M&uuml;nster.
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+</div>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>

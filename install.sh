@@ -403,6 +403,13 @@ run_migrations() {
     else
         info "Roles may already exist or setup_roles command not available"
     fi
+
+    log "Configuring Meilisearch indexes..."
+    if docker exec mandari python manage.py setup_meilisearch 2>&1; then
+        log "Meilisearch indexes configured"
+    else
+        info "Meilisearch setup skipped or already configured"
+    fi
 }
 
 # =============================================================================

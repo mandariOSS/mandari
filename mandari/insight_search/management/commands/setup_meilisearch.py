@@ -227,6 +227,7 @@ class Command(BaseCommand):
                     "text_content",
                     "paper_name",
                     "paper_reference",
+                    "organization_names",
                 ],
                 "filterableAttributes": [
                     "body_id",
@@ -236,6 +237,7 @@ class Command(BaseCommand):
                 ],
                 "sortableAttributes": [
                     "oparl_modified",
+                    "meeting_date",
                 ],
                 "displayedAttributes": [
                     "id",
@@ -248,6 +250,11 @@ class Command(BaseCommand):
                     "paper_reference",
                     "meeting_id",
                     "body_id",
+                    "access_url",
+                    "organization_names",
+                    "meeting_name",
+                    "meeting_date",
+                    "agenda_number",
                 ],
             },
         }

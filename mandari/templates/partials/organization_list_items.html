@@ -1,31 +1,70 @@
+{% load tz %}
 {% if organizations %}
-<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    {% for org in organizations %}
-    <a href="{% url 'insight_core:insight:organization_detail' org.id %}"
-       class="group p-5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all hover:shadow-lg">
-        <div class="flex items-start gap-4">
-            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-medium flex-shrink-0">
-                {{ org.short_name|default:org.name|slice:":2"|upper }}
-            </div>
-            <div class="flex-1 min-w-0">
-                <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">
-                    {{ org.name }}
-                </h3>
-                {% if org.organization_type %}
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    {{ org.organization_type }}
-                </p>
-                {% endif %}
-                {% if org.start_date or org.end_date %}
-                <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                    {% if org.start_date %}{{ org.start_date|date:"d.m.Y" }}{% endif %}
-                    {% if org.end_date %} - {{ org.end_date|date:"d.m.Y" }}{% endif %}
-                </p>
-                {% endif %}
-            </div>
-        </div>
-    </a>
-    {% endfor %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Gremium</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Nächste Sitzung</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Letzte Sitzung</th>
+                <th class="w-12 px-2 py-3 max-sm:hidden"><span class="sr-only">Aktionen</span></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for org in organizations %}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+                onclick="window.location='{% url 'insight_core:insight:organization_detail' org.id %}'">
+                {# Gremium #}
+                <td class="px-6 py-4">
+                    <a href="{% url 'insight_core:insight:organization_detail' org.id %}"
+                       class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                        {{ org.name }}
+                    </a>
+                    {% if org.organization_type %}
+                    <p class="text-sm text-gray-500 dark:text-gray-400">{{ org.organization_type }}</p>
+                    {% endif %}
+                    {# Mobile: Sitzungsdaten unter dem Namen #}
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 sm:hidden text-sm">
+                        {% if org.next_meeting %}
+                        <span class="text-primary-600 dark:text-primary-400">
+                            <span class="text-gray-400 dark:text-gray-500">Nächste:</span> {{ org.next_meeting|date:"d.m.Y" }}
+                        </span>
+                        {% endif %}
+                        {% if org.last_meeting %}
+                        <span class="text-gray-500 dark:text-gray-400">
+                            <span class="text-gray-400 dark:text-gray-500">Letzte:</span> {{ org.last_meeting|date:"d.m.Y" }}
+                        </span>
+                        {% endif %}
+                    </div>
+                </td>
+                {# Nächste Sitzung #}
+                <td class="px-4 py-4 max-sm:hidden">
+                    {% if org.next_meeting %}
+                    <span class="text-sm font-medium text-primary-600 dark:text-primary-400">
+                        {{ org.next_meeting|date:"d.m.Y" }}
+                    </span>
+                    {% else %}
+                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
+                    {% endif %}
+                </td>
+                {# Letzte Sitzung #}
+                <td class="px-4 py-4 max-sm:hidden">
+                    {% if org.last_meeting %}
+                    <span class="text-sm text-gray-500 dark:text-gray-400">
+                        {{ org.last_meeting|date:"d.m.Y" }}
+                    </span>
+                    {% else %}
+                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
+                    {% endif %}
+                </td>
+                {# Chevron #}
+                <td class="px-2 py-4 max-sm:hidden">
+                    <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 dark:group-hover:text-primary-400 transition-colors"></i>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 {% else %}
 <div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
@@ -34,8 +73,8 @@
     <p class="text-gray-500 dark:text-gray-400">
         {% if request.GET.q %}
             Ihre Suche ergab keine Treffer. Versuchen Sie einen anderen Suchbegriff.
-        {% elif tab == 'past' %}
-            Es gibt keine vergangenen Gremien.
+        {% elif tab == 'all' %}
+            Es gibt keine Gremien.
         {% else %}
             Es gibt keine aktiven Gremien.
         {% endif %}
