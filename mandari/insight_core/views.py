@@ -10,7 +10,7 @@ from datetime import timedelta
 
 from django.core.paginator import Paginator
 from django.db import models
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q, Subquery
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -23,6 +23,7 @@ from .models import (
     OParlConsultation,
     OParlFile,
     OParlMeeting,
+    OParlMembership,
     OParlOrganization,
     OParlPaper,
     OParlPerson,
@@ -196,8 +197,6 @@ class OrganizationListView(TemplateView):
             now = timezone.now()
 
             # Annotate next/last meeting via M2M Subquery (fast, uses proper indexes)
-            from django.db.models import Subquery, OuterRef, Exists
-
             next_meeting_sq = Subquery(
                 OParlMeeting.objects.filter(
                     organizations=OuterRef("pk"),
@@ -343,8 +342,16 @@ class OrganizationListPartial(ListView):
 # =============================================================================
 
 
+COUNCIL_ROLES = [
+    "Ratsmitglied",
+    "Oberbürgermeister",
+    "Bürgermeister/in",
+    "Fraktionsvorsitzende/r Rat",
+]
+
+
 class PersonListView(ListView):
-    """Liste aller Personen."""
+    """Liste aller Personen mit Ratsrolle-Annotation."""
 
     model = OParlPerson
     template_name = "pages/persons/list.html"
@@ -352,7 +359,6 @@ class PersonListView(ListView):
     paginate_by = 50
 
     def get_template_names(self):
-        # Für HTMX-Requests nur das Partial zurückgeben
         if self.request.headers.get("HX-Request"):
             return ["partials/person_list_items.html"]
         return [self.template_name]
@@ -362,12 +368,30 @@ class PersonListView(ListView):
         if not body:
             return OParlPerson.objects.none()
 
+        today = timezone.now().date()
+
         qs = OParlPerson.objects.filter(body=body)
+
+        # Ratsrolle als Annotation (falls vorhanden)
+        rat = OParlOrganization.objects.filter(body=body, name="Rat").first()
+        if rat:
+            council_role_sq = Subquery(
+                OParlMembership.objects.filter(
+                    person=OuterRef("pk"),
+                    organization=rat,
+                    role__in=COUNCIL_ROLES,
+                ).filter(
+                    Q(end_date__isnull=True) | Q(end_date__gte=today)
+                ).values("role")[:1]
+            )
+            qs = qs.annotate(council_role=council_role_sq)
 
         # Suche
         q = self.request.GET.get("q", "").strip()
         if q:
-            qs = qs.filter(Q(name__icontains=q) | Q(family_name__icontains=q) | Q(given_name__icontains=q))
+            qs = qs.filter(
+                Q(name__icontains=q) | Q(family_name__icontains=q) | Q(given_name__icontains=q)
+            )
 
         return qs.order_by("family_name", "given_name")
 
@@ -382,9 +406,24 @@ class PersonDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         person = self.object
+        today = timezone.now().date()
 
-        # Mitgliedschaften
-        context["memberships"] = person.memberships.select_related("organization").order_by("-start_date")
+        all_memberships = person.memberships.select_related("organization")
+        context["active_memberships"] = all_memberships.filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=today)
+        ).order_by("organization__name")
+        context["past_memberships"] = all_memberships.filter(
+            end_date__lt=today
+        ).order_by("organization__name")
+
+        # Ratsrolle ermitteln (für Hero-Anzeige)
+        council_membership = all_memberships.filter(
+            organization__name="Rat",
+            role__in=COUNCIL_ROLES,
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=today)
+        ).first()
+        context["council_role"] = council_membership.role if council_membership else None
 
         # SEO-Kontext
         from .seo import get_person_seo
