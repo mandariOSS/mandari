@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     meilisearch_indexing_enabled: bool = True
     meilisearch_batch_size: int = 500
     meilisearch_embedding_model: str = "BAAI/bge-m3"
-    meilisearch_semantic_ratio: float = 0.5
+    meilisearch_semantic_ratio: float = 0.0
 
 
 @lru_cache

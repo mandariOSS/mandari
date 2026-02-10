@@ -137,12 +137,27 @@ class MeilisearchIndexer:
         """Configure all index settings (idempotent).
 
         Sets searchable/filterable/sortable attributes, typo tolerance,
-        and ranking rules for every index. Safe to call repeatedly —
+        ranking rules, and embedders for every index. Safe to call repeatedly —
         Meilisearch accepts duplicate PUT requests without error.
         """
         if not self._client:
             logger.warning("Meilisearch client not initialized, skipping settings")
             return
+
+        # Enable vector store only when semantic search is active
+        use_embedders = settings.meilisearch_semantic_ratio > 0
+        if use_embedders:
+            try:
+                resp = await self._client.patch(
+                    "/experimental-features",
+                    json={"vectorStore": True},
+                )
+                if resp.status_code == 200:
+                    logger.info("Vector store experimental feature enabled")
+                else:
+                    logger.warning("Failed to enable vector store: %d %s", resp.status_code, resp.text[:200])
+            except Exception as e:
+                logger.warning("Failed to enable vector store: %s", e)
 
         for index_name, cfg in INDEX_SETTINGS.items():
             try:
@@ -180,8 +195,8 @@ class MeilisearchIndexer:
                         index_name, resp.status_code,
                     )
 
-                # Embedder for hybrid search (Meilisearch v1.10+)
-                if index_name in EMBEDDER_TEMPLATES:
+                # Embedder for hybrid search (Meilisearch v1.10+) — only when enabled
+                if use_embedders and index_name in EMBEDDER_TEMPLATES:
                     template = EMBEDDER_TEMPLATES[index_name]
                     embedder_payload = {
                         "default": {

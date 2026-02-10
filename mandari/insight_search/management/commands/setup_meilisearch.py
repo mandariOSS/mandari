@@ -57,6 +57,41 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("Meilisearch verbunden"))
 
+        # Enable vector store experimental feature only when semantic search is active
+        semantic_ratio = getattr(settings, "MEILISEARCH_SEMANTIC_RATIO", 0.0)
+        if semantic_ratio > 0:
+            self.stdout.write("Aktiviere Vector Store Feature...")
+            try:
+                import httpx
+                resp = httpx.patch(
+                    f"{url}/experimental-features",
+                    json={"vectorStore": True},
+                    headers={"Authorization": f"Bearer {key}"},
+                    timeout=10.0,
+                )
+                if resp.status_code == 200:
+                    self.stdout.write(self.style.SUCCESS("  Vector Store aktiviert"))
+                else:
+                    self.stdout.write(self.style.WARNING(f"  Vector Store Aktivierung fehlgeschlagen: {resp.text[:200]}"))
+            except ImportError:
+                import json
+                import urllib.request
+                req = urllib.request.Request(
+                    f"{url}/experimental-features",
+                    data=json.dumps({"vectorStore": True}).encode(),
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                    method="PATCH",
+                )
+                try:
+                    urllib.request.urlopen(req, timeout=10)
+                    self.stdout.write(self.style.SUCCESS("  Vector Store aktiviert"))
+                except Exception as e:
+                    self.stdout.write(self.style.WARNING(f"  Vector Store Aktivierung fehlgeschlagen: {e}"))
+            except Exception as e:
+                self.stdout.write(self.style.WARNING(f"  Vector Store Aktivierung fehlgeschlagen: {e}"))
+        else:
+            self.stdout.write("Semantic Search deaktiviert (MEILISEARCH_SEMANTIC_RATIO=0.0), Embedder werden übersprungen")
+
         # Index-Konfigurationen
         index_configs = self._get_index_configs()
 
@@ -353,21 +388,22 @@ class Command(BaseCommand):
             # Newer meilisearch-python versions use update_settings
             index.update_settings({"pagination": {"maxTotalHits": 100000}})
 
-        # Embedder für Hybrid Search (Meilisearch v1.10+)
-        embedder_configs = self._get_embedder_configs()
-        if index_name in embedder_configs:
-            self.stdout.write("  Konfiguriere Embedder für Hybrid Search...")
-            try:
-                index.update_embedders(embedder_configs[index_name])
-                self.stdout.write(f"    Embedder 'default' gesetzt")
-            except AttributeError:
-                # Fallback for older meilisearch-python without update_embedders
+        # Embedder für Hybrid Search (Meilisearch v1.10+) — nur wenn aktiviert
+        semantic_ratio = getattr(settings, "MEILISEARCH_SEMANTIC_RATIO", 0.0)
+        if semantic_ratio > 0:
+            embedder_configs = self._get_embedder_configs()
+            if index_name in embedder_configs:
+                self.stdout.write("  Konfiguriere Embedder für Hybrid Search...")
                 try:
-                    index.update_settings({"embedders": embedder_configs[index_name]})
-                    self.stdout.write(f"    Embedder 'default' gesetzt (via update_settings)")
+                    index.update_embedders(embedder_configs[index_name])
+                    self.stdout.write(f"    Embedder 'default' gesetzt")
+                except AttributeError:
+                    try:
+                        index.update_settings({"embedders": embedder_configs[index_name]})
+                        self.stdout.write(f"    Embedder 'default' gesetzt (via update_settings)")
+                    except Exception as e:
+                        self.stdout.write(self.style.WARNING(f"    Embedder-Konfiguration fehlgeschlagen: {e}"))
                 except Exception as e:
                     self.stdout.write(self.style.WARNING(f"    Embedder-Konfiguration fehlgeschlagen: {e}"))
-            except Exception as e:
-                self.stdout.write(self.style.WARNING(f"    Embedder-Konfiguration fehlgeschlagen: {e}"))
 
         self.stdout.write(self.style.SUCCESS(f"  {index_name} konfiguriert"))

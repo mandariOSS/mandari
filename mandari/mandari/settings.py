@@ -261,7 +261,7 @@ MEILISEARCH_AUTO_INDEX = os.environ.get("MEILISEARCH_AUTO_INDEX", "True").lower(
     "yes",
 )
 MEILISEARCH_EMBEDDING_MODEL = os.environ.get("MEILISEARCH_EMBEDDING_MODEL", "BAAI/bge-m3")
-MEILISEARCH_SEMANTIC_RATIO = float(os.environ.get("MEILISEARCH_SEMANTIC_RATIO", "0.5"))
+MEILISEARCH_SEMANTIC_RATIO = float(os.environ.get("MEILISEARCH_SEMANTIC_RATIO", "0.0"))
 
 # Groq API (für KI-Features)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
