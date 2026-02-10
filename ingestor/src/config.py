@@ -85,11 +85,13 @@ class Settings(BaseSettings):
     text_extraction_max_size_mb: int = 50
     text_extraction_concurrency: int = 4
     text_extraction_timeout: float = 120.0
-    text_extraction_batch_size: int = 100
+    text_extraction_batch_size: int = 500
 
     # Meilisearch Indexing
     meilisearch_indexing_enabled: bool = True
     meilisearch_batch_size: int = 500
+    meilisearch_embedding_model: str = "BAAI/bge-m3"
+    meilisearch_semantic_ratio: float = 0.5
 
 
 @lru_cache

@@ -86,6 +86,8 @@ class Command(BaseCommand):
                     "name",
                     "reference",
                     "paper_type",
+                    "file_contents_preview",
+                    "file_names",
                 ],
                 "filterableAttributes": [
                     "body_id",
@@ -104,6 +106,8 @@ class Command(BaseCommand):
                     "paper_type",
                     "date",
                     "body_id",
+                    "file_contents_preview",
+                    "file_names",
                 ],
             },
             "meetings": {
@@ -213,6 +217,52 @@ class Command(BaseCommand):
             },
         }
 
+    def _get_embedder_configs(self):
+        """Returns embedder configurations per index for hybrid search."""
+        model = getattr(settings, "MEILISEARCH_EMBEDDING_MODEL", "BAAI/bge-m3")
+        return {
+            "papers": {
+                "default": {
+                    "source": "huggingFace",
+                    "model": model,
+                    "documentTemplate": "{{ doc.name }} {{ doc.reference }} {{ doc.paper_type }} {{ doc.file_contents_preview }}",
+                    "documentTemplateMaxBytes": 2048,
+                }
+            },
+            "files": {
+                "default": {
+                    "source": "huggingFace",
+                    "model": model,
+                    "documentTemplate": "{{ doc.name }} {{ doc.file_name }} {{ doc.text_content }}",
+                    "documentTemplateMaxBytes": 4096,
+                }
+            },
+            "meetings": {
+                "default": {
+                    "source": "huggingFace",
+                    "model": model,
+                    "documentTemplate": "{{ doc.name }} {{ doc.organization_names }} {{ doc.location_name }}",
+                    "documentTemplateMaxBytes": 400,
+                }
+            },
+            "persons": {
+                "default": {
+                    "source": "huggingFace",
+                    "model": model,
+                    "documentTemplate": "{{ doc.name }} {{ doc.given_name }} {{ doc.family_name }}",
+                    "documentTemplateMaxBytes": 400,
+                }
+            },
+            "organizations": {
+                "default": {
+                    "source": "huggingFace",
+                    "model": model,
+                    "documentTemplate": "{{ doc.name }} {{ doc.short_name }} {{ doc.organization_type }} {{ doc.classification }}",
+                    "documentTemplateMaxBytes": 400,
+                }
+            },
+        }
+
     def _reset_index(self, client, index_name):
         """Löscht und erstellt einen Index neu."""
         self.stdout.write(f"  Lösche Index: {index_name}")
@@ -297,6 +347,27 @@ class Command(BaseCommand):
 
         # Pagination (großzügige Limits)
         self.stdout.write("  Konfiguriere Pagination...")
-        index.update_pagination({"maxTotalHits": 100000})
+        try:
+            index.update_pagination({"maxTotalHits": 100000})
+        except AttributeError:
+            # Newer meilisearch-python versions use update_settings
+            index.update_settings({"pagination": {"maxTotalHits": 100000}})
+
+        # Embedder für Hybrid Search (Meilisearch v1.10+)
+        embedder_configs = self._get_embedder_configs()
+        if index_name in embedder_configs:
+            self.stdout.write("  Konfiguriere Embedder für Hybrid Search...")
+            try:
+                index.update_embedders(embedder_configs[index_name])
+                self.stdout.write(f"    Embedder 'default' gesetzt")
+            except AttributeError:
+                # Fallback for older meilisearch-python without update_embedders
+                try:
+                    index.update_settings({"embedders": embedder_configs[index_name]})
+                    self.stdout.write(f"    Embedder 'default' gesetzt (via update_settings)")
+                except Exception as e:
+                    self.stdout.write(self.style.WARNING(f"    Embedder-Konfiguration fehlgeschlagen: {e}"))
+            except Exception as e:
+                self.stdout.write(self.style.WARNING(f"    Embedder-Konfiguration fehlgeschlagen: {e}"))
 
         self.stdout.write(self.style.SUCCESS(f"  {index_name} konfiguriert"))

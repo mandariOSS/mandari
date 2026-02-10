@@ -149,6 +149,7 @@ def index_file(sender, instance, **kwargs):
     Indexiert eine Datei nach dem Speichern.
 
     Nur wenn text_content vorhanden ist.
+    Aktualisiert auch das Parent-Paper (file_contents_preview).
     """
     # Nur indexieren wenn Text vorhanden
     if not instance.text_content:
@@ -156,6 +157,19 @@ def index_file(sender, instance, **kwargs):
 
     doc = _file_to_doc(instance)
     _index_document("files", str(instance.id), doc)
+
+    # Re-index parent paper so file_contents_preview stays current
+    if instance.paper_id:
+        try:
+            paper = OParlPaper.objects.get(id=instance.paper_id)
+            files = paper.files.filter(
+                text_content__isnull=False,
+                text_extraction_status="completed",
+            )
+            paper_doc = _paper_to_doc(paper, files=files)
+            _index_document("papers", str(paper.id), paper_doc)
+        except OParlPaper.DoesNotExist:
+            pass
 
 
 @receiver(post_delete, sender=OParlFile)

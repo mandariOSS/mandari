@@ -10,8 +10,42 @@ from __future__ import annotations
 from typing import Any
 
 
-def paper_to_doc(paper) -> dict[str, Any]:
-    """Convert an OParlPaper to a Meilisearch document."""
+def paper_to_doc(paper, files=None) -> dict[str, Any]:
+    """Convert an OParlPaper to a Meilisearch document.
+
+    Args:
+        paper: OParlPaper instance.
+        files: Optional queryset/list of related OParlFile objects with text_content.
+               If None, auto-fetches from DB via paper.files.
+    """
+    # Build file contents preview for semantic search / paper-boosting
+    if files is None:
+        try:
+            files = paper.files.filter(
+                text_content__isnull=False,
+                text_extraction_status="completed",
+            )
+        except Exception:
+            files = []
+
+    file_names: list[str] = []
+    file_texts: list[str] = []
+    total_len = 0
+    max_per_file = 5000
+    max_total = 25000
+
+    for f in files:
+        if f.file_name:
+            file_names.append(f.file_name)
+        if f.text_content and total_len < max_total:
+            chunk = f.text_content[:max_per_file].strip()
+            file_texts.append(chunk)
+            total_len += len(chunk)
+
+    file_contents_preview = "\n\n".join(file_texts)
+    if len(file_contents_preview) > max_total:
+        file_contents_preview = file_contents_preview[:max_total]
+
     return {
         "id": str(paper.id),
         "type": "paper",
@@ -22,6 +56,8 @@ def paper_to_doc(paper) -> dict[str, Any]:
         "date": paper.date.isoformat() if paper.date else None,
         "oparl_created": paper.oparl_created.isoformat() if paper.oparl_created else None,
         "oparl_modified": paper.oparl_modified.isoformat() if paper.oparl_modified else None,
+        "file_contents_preview": file_contents_preview,
+        "file_names": file_names,
     }
 
 

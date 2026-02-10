@@ -37,7 +37,7 @@ INDEX_CONFIG = {
     "papers": {
         "model": OParlPaper,
         "builder": paper_to_doc,
-        "queryset_filter": None,
+        "queryset_filter": lambda qs: qs.prefetch_related("files"),
     },
     "meetings": {
         "model": OParlMeeting,
@@ -171,7 +171,14 @@ class Command(BaseCommand):
                 docs = []
                 for obj in batch:
                     try:
-                        docs.append(builder(obj))
+                        if index_name == "papers":
+                            files = obj.files.filter(
+                                text_content__isnull=False,
+                                text_extraction_status="completed",
+                            )
+                            docs.append(builder(obj, files=files))
+                        else:
+                            docs.append(builder(obj))
                     except Exception as e:
                         self.stderr.write(self.style.WARNING(
                             f"  Error building doc for {obj.id}: {e}"

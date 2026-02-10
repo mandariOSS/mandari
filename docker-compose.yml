@@ -100,7 +100,7 @@ services:
   # Meilisearch (Full-text search)
   # ===========================================================================
   meilisearch:
-    image: getmeili/meilisearch:v1.6
+    image: getmeili/meilisearch:v1.12
     container_name: mandari-meilisearch
     restart: unless-stopped
     environment:

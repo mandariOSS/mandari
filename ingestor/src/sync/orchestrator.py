@@ -210,11 +210,11 @@ class SyncOrchestrator:
                     console.print(f"[green]Detected: Body list ({len(items)} bodies)[/green]")
                     return "body_list", items
 
-        # Case 3: System object → follow body reference
+        # Case 3: System object -> follow body reference
         if isinstance(response, dict) and type_str.endswith("/System"):
             body_list_url = response.get("body")
             if body_list_url:
-                console.print(f"[green]Detected: System → fetching bodies from {body_list_url}[/green]")
+                console.print(f"[green]Detected: System -> fetching bodies from {body_list_url}[/green]")
                 bodies = await client.fetch_list_all(body_list_url)
                 return "system", bodies
 
@@ -712,6 +712,7 @@ class SyncOrchestrator:
                 )
                 from src.indexing.meilisearch import MeilisearchIndexer
                 from src.storage.models import (
+                    OParlFile as FileModel,
                     OParlMeeting as MeetingModel,
                     OParlOrganization as OrgModel,
                     OParlPaper as PaperModel,
@@ -723,13 +724,26 @@ class SyncOrchestrator:
                     if not await indexer.is_healthy():
                         console.print("[yellow]  Meilisearch not reachable, skipping indexing[/yellow]")
                     else:
+                        # Ensure index settings before first indexing
+                        await indexer.ensure_index_settings()
                         batch_size = settings.meilisearch_batch_size
                         indexed_total = 0
 
-                        # Index papers
+                        # Index papers (with file contents for paper-boosting)
                         papers = await self.storage.get_all_for_body(body_id, PaperModel)
+                        # Build paper_id → files lookup from already-loaded files
+                        files_with_text = await self.storage.get_files_with_text(body_id)
+                        files_by_paper: dict[str, list] = {}
+                        for f in files_with_text:
+                            if f.paper_id:
+                                pid = str(f.paper_id)
+                                files_by_paper.setdefault(pid, []).append(f)
+
                         for i in range(0, len(papers), batch_size):
-                            docs = [paper_to_doc(p) for p in papers[i:i + batch_size]]
+                            docs = [
+                                paper_to_doc(p, files=files_by_paper.get(str(p.id), []))
+                                for p in papers[i:i + batch_size]
+                            ]
                             await indexer.index_documents("papers", docs)
                             indexed_total += len(docs)
 
@@ -795,9 +809,9 @@ class SyncOrchestrator:
         returned items have modified dates >= modified_since.
 
         Live test results (2026-02-09):
-        - Münster: ✅ all entity types
-        - Bonn, Aachen, Köln, Neuss: ✅ papers
-        - Düsseldorf: ❌ papers broken (returns old items), meetings OK
+        - Muenster: OK - all entity types
+        - Bonn, Aachen, Koeln, Neuss: OK - papers
+        - Duesseldorf: FAIL - papers broken (returns old items), meetings OK
 
         Args:
             client: OParl HTTP client
@@ -821,7 +835,7 @@ class SyncOrchestrator:
 
             if not test_items:
                 # Empty result is valid - no items modified since last sync
-                console.print("[green]  Filter test: ✅ Server supports modified_since (0 items returned)[/green]")
+                console.print("[green]  Filter test: OK - Server supports modified_since (0 items returned)[/green]")
                 return True
 
             # Validate: ALL items should have modified >= modified_since
@@ -834,12 +848,12 @@ class SyncOrchestrator:
 
             if all_valid:
                 console.print(
-                    f"[green]  Filter test: ✅ Server supports modified_since "
+                    f"[green]  Filter test: OK - Server supports modified_since "
                     f"({len(test_items)} items, all valid)[/green]"
                 )
             else:
                 console.print(
-                    f"[yellow]  Filter test: ❌ Server returns items older than filter date. "
+                    f"[yellow]  Filter test: FAIL - Server returns items older than filter date. "
                     f"Falling back to client-side filtering.[/yellow]"
                 )
 
@@ -868,14 +882,14 @@ class SyncOrchestrator:
         - Fetches all pages and upserts everything
 
         For incremental sync with server filter (use_server_filter=True):
-        - Appends ?modified_since= to URL → server returns only changed items
+        - Appends ?modified_since= to URL, server returns only changed items
         - Upserts all returned items (they are all new/modified)
         - Handles deleted items (OParl deleted=true flag)
         - No stop condition needed (server filters for us)
 
         For incremental sync without server filter (fallback):
         - Fetches pages and compares modified dates against DB
-        - New items → Save, Modified items → Update, Deleted → Delete
+        - New items: Save, Modified items: Update, Deleted: Delete
         - Stops after 5 consecutive pages with no changes
 
         Returns the number of entities synced (new + updated).
@@ -963,21 +977,21 @@ class SyncOrchestrator:
                         item_modified = self.processor.parse_datetime(item.get("modified"))
 
                         if db_modified is None:
-                            # New item → save
+                            # New item: save
                             new_on_page += 1
                             processed = self.processor.process(item, body_external_id)
                             if processed:
                                 await self._store_entity(processed, body_id, entity_type, body_name)
                                 count += 1
                         elif item_modified and db_modified and item_modified > db_modified:
-                            # Modified item → update (upsert handles ON CONFLICT)
+                            # Modified item: update (upsert handles ON CONFLICT)
                             updated_on_page += 1
                             processed = self.processor.process(item, body_external_id)
                             if processed:
                                 await self._store_entity(processed, body_id, entity_type, body_name)
                                 updated_count += 1
                         else:
-                            # Unchanged → skip
+                            # Unchanged: skip
                             unchanged_on_page += 1
                             skipped_count += 1
 

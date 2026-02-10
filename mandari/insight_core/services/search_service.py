@@ -9,7 +9,11 @@ from typing import Any
 
 import meilisearch
 from django.conf import settings
+from django.utils.html import escape
 from meilisearch.errors import MeilisearchApiError
+
+HIGHLIGHT_PRE = '<mark class="bg-yellow-200 dark:bg-yellow-800">'
+HIGHLIGHT_POST = "</mark>"
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +96,23 @@ class MeilisearchService:
                 if filter_str:
                     search_params["filter"] = filter_str
 
-                result = index.search(query, search_params)
+                # Hybrid search (keyword + vector) via Meilisearch embedders
+                semantic_ratio = getattr(settings, "MEILISEARCH_SEMANTIC_RATIO", 0.5)
+                if semantic_ratio > 0:
+                    search_params["hybrid"] = {
+                        "semanticRatio": semantic_ratio,
+                        "embedder": "default",
+                    }
+
+                try:
+                    result = index.search(query, search_params)
+                except MeilisearchApiError:
+                    # Graceful degradation: retry without hybrid if embedders not configured
+                    if "hybrid" in search_params:
+                        del search_params["hybrid"]
+                        result = index.search(query, search_params)
+                    else:
+                        raise
 
                 # Typ zu jedem Treffer hinzufügen
                 for hit in result.get("hits", []):
@@ -368,6 +388,21 @@ def get_search_service() -> MeilisearchService:
     return _search_service
 
 
+def _safe_highlight(text: str | None) -> str:
+    """Sanitize highlighted text: escape HTML, restore only <mark> tags."""
+    if not text:
+        return text or ""
+    # Replace highlight tags with placeholders
+    text = text.replace(HIGHLIGHT_PRE, "\x00MARK_START\x00")
+    text = text.replace(HIGHLIGHT_POST, "\x00MARK_END\x00")
+    # Escape all remaining HTML
+    text = escape(text)
+    # Restore highlight tags
+    text = text.replace("\x00MARK_START\x00", HIGHLIGHT_PRE)
+    text = text.replace("\x00MARK_END\x00", HIGHLIGHT_POST)
+    return text
+
+
 def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
     """
     Formatiert ein Meilisearch-Treffer für die Template-Anzeige.
@@ -379,8 +414,8 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
 
     # Highlighted Felder extrahieren (falls vorhanden)
     formatted = hit.get("_formatted", {})
-    highlighted_name = formatted.get("name", hit.get("name"))
-    highlighted_text = formatted.get("text_content", "")
+    highlighted_name = _safe_highlight(formatted.get("name", hit.get("name")))
+    highlighted_text = _safe_highlight(formatted.get("text_content", ""))
 
     if result_type == "paper":
         return {
@@ -436,10 +471,10 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
     elif result_type == "file":
         return {
             "type": "file",
-            "title": highlighted_name or hit.get("name") or hit.get("file_name", "Datei"),
+            "title": highlighted_name or escape(hit.get("name") or hit.get("file_name", "Datei")),
             "subtitle": hit.get("paper_name") or hit.get("paper_reference"),
             "url": f"/insight/vorgaenge/{hit.get('paper_id')}/",
-            "text_preview": highlighted_text or hit.get("text_preview", ""),
+            "text_preview": highlighted_text or escape(hit.get("text_preview", "")),
             "paper_id": hit.get("paper_id"),
             "highlight": highlighted_text if highlighted_text else None,
         }
