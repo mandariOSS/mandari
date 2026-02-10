@@ -1,4 +1,72 @@
 {% if results %}
+
+{% if is_dropdown %}
+{# ── Dropdown mode: compact results + "Alle Ergebnisse" button ── #}
+<div class="py-2">
+    <p class="px-4 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+        {{ total }} Ergebnis{% if total != 1 %}se{% endif %}
+    </p>
+
+    {% for result in results %}
+    <a href="{{ result.url }}"
+       class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0
+                    {% if result.type == 'paper' %}bg-amber-100 dark:bg-amber-900/50{% endif %}
+                    {% if result.type == 'person' %}bg-green-100 dark:bg-green-900/50{% endif %}
+                    {% if result.type == 'organization' %}bg-blue-100 dark:bg-blue-900/50{% endif %}
+                    {% if result.type == 'meeting' %}bg-purple-100 dark:bg-purple-900/50{% endif %}
+                    {% if result.type == 'file' %}bg-rose-100 dark:bg-rose-900/50{% endif %}">
+            {% if result.type == 'paper' %}
+                <i data-lucide="file-text" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+            {% elif result.type == 'person' %}
+                <i data-lucide="user" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
+            {% elif result.type == 'organization' %}
+                <i data-lucide="users" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+            {% elif result.type == 'meeting' %}
+                <i data-lucide="calendar" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
+            {% elif result.type == 'file' %}
+                <i data-lucide="file-search" class="w-4 h-4 text-rose-600 dark:text-rose-400"></i>
+            {% endif %}
+        </div>
+        <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                {{ result.title|safe }}
+            </p>
+            {% if result.subtitle %}
+            <p class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                {{ result.subtitle }}
+            </p>
+            {% endif %}
+        </div>
+        <span class="px-2 py-0.5 rounded-full text-[10px] font-medium flex-shrink-0
+                     {% if result.type == 'paper' %}bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400{% endif %}
+                     {% if result.type == 'person' %}bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400{% endif %}
+                     {% if result.type == 'organization' %}bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400{% endif %}
+                     {% if result.type == 'meeting' %}bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-400{% endif %}
+                     {% if result.type == 'file' %}bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-400{% endif %}">
+            {% if result.type == 'paper' %}Vorgang{% endif %}
+            {% if result.type == 'person' %}Person{% endif %}
+            {% if result.type == 'organization' %}Gremium{% endif %}
+            {% if result.type == 'meeting' %}Sitzung{% endif %}
+            {% if result.type == 'file' %}Dokument{% endif %}
+        </span>
+    </a>
+    {% endfor %}
+
+    {% if total > 3 %}
+    <div class="border-t border-gray-100 dark:border-gray-700 mt-1 px-4 py-2.5">
+        <a href="{% url 'insight_core:insight:search' %}?q={{ query|urlencode }}"
+           class="flex items-center justify-center gap-2 w-full py-2 text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors">
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+            Alle {{ total }} Ergebnisse anzeigen
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+{% else %}
+{# ── Full page mode: original rich result cards ── #}
+{% if not page or page == 1 %}
 <div class="space-y-3">
     <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
         {{ total }} Ergebnis{% if total != 1 %}se{% endif %} für "<strong>{{ query }}</strong>"
@@ -6,6 +74,7 @@
         <span class="ml-2">(Seite {{ page }} von {{ pages }})</span>
         {% endif %}
     </p>
+{% endif %}
 
     {% for result in results %}
     <a href="{{ result.url }}"
@@ -31,7 +100,7 @@
             </div>
             <div class="flex-1 min-w-0">
                 <p class="font-medium text-gray-900 dark:text-white truncate">
-                    {{ result.title }}
+                    {{ result.title|safe }}
                 </p>
                 {% if result.subtitle %}
                 <p class="text-sm text-gray-500 dark:text-gray-400">
@@ -40,7 +109,7 @@
                 {% endif %}
                 {% if result.text_preview %}
                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-2 line-clamp-2">
-                    "...{{ result.text_preview }}..."
+                    "...{{ result.text_preview|safe }}..."
                 </p>
                 {% endif %}
             </div>
@@ -61,11 +130,11 @@
     {% endfor %}
 
     {% if pages > 1 and page < pages %}
-    <!-- Load More Button -->
-    <div class="text-center pt-4">
-        <button hx-get="{% url 'insight_core:insight:search_results' %}?q={{ query }}&page={{ page|add:1 }}{% if search_type %}&type={{ search_type }}{% endif %}"
-                hx-target="#search-results"
-                hx-swap="innerHTML"
+    <!-- Load More: replaces itself with new items + next button -->
+    <div id="load-more-area" class="text-center pt-4">
+        <button hx-get="{% url 'insight_core:insight:search_results' %}?q={{ query|urlencode }}&page={{ page|add:1 }}{% if search_type %}&type={{ search_type }}{% endif %}"
+                hx-target="#load-more-area"
+                hx-swap="outerHTML"
                 hx-indicator="#search-loading"
                 class="inline-flex items-center gap-2 px-6 py-3 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors">
             <i data-lucide="chevron-down" class="w-4 h-4"></i>
@@ -73,7 +142,12 @@
         </button>
     </div>
     {% endif %}
+
+{% if not page or page == 1 %}
 </div>
+{% endif %}
+{% endif %}{# end is_dropdown #}
+
 {% elif query %}
 <div class="text-center py-12">
     <i data-lucide="search-x" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>

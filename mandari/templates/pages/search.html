@@ -25,7 +25,7 @@
                    placeholder="Suchen Sie nach Themen, Vorlagen, Personen..."
                    autocomplete="off"
                    hx-get="{% url 'insight_core:insight:search_results' %}"
-                   hx-trigger="keyup changed delay:300ms, search"
+                   hx-trigger="keyup changed delay:300ms, search{% if query %}, load{% endif %}"
                    hx-target="#search-results"
                    hx-indicator="#search-loading"
                    hx-include="#search-type-filter"
@@ -76,7 +76,12 @@
     <!-- Search Results -->
     <div id="search-results">
         {% if query %}
-            {% include "partials/search_results.html" %}
+            <div class="text-center py-12">
+                <svg class="animate-spin h-8 w-8 mx-auto text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
         {% else %}
             <div class="text-center py-12">
                 <i data-lucide="search" class="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4"></i>

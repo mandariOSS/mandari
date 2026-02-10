@@ -11,7 +11,7 @@
                @click.outside="isOpen = false"
                @keydown.escape="isOpen = false"
                @keydown.enter="if(query.length >= 2) window.location.href = '{% url 'insight_core:insight:search' %}?q=' + encodeURIComponent(query)"
-               hx-get="{% url 'insight_core:insight:search_results' %}"
+               hx-get="{% url 'insight_core:insight:search_results' %}?dropdown=1"
                hx-trigger="keyup changed delay:300ms"
                hx-target="#search-dropdown"
                hx-indicator="#search-spinner"
@@ -43,7 +43,7 @@
          x-transition:leave="transition ease-in duration-75"
          x-transition:leave-start="opacity-100 scale-100"
          x-transition:leave-end="opacity-0 scale-95"
-         class="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 max-h-[60vh] overflow-y-auto"
+         class="absolute top-full left-0 mt-2 bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 min-w-[480px] w-[min(600px,90vw)]"
          role="listbox"
          aria-label="Suchergebnisse"
          x-cloak>

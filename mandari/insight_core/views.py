@@ -9,6 +9,7 @@ import logging
 from datetime import timedelta
 
 from django.core.paginator import Paginator
+from django.db import models
 from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -190,7 +191,43 @@ class OrganizationListView(TemplateView):
 
         if body:
             today = timezone.now().date()
-            base_qs = OParlOrganization.objects.filter(body=body)
+            now = timezone.now()
+
+            # Annotate nächste und letzte Sitzung via RawSQL
+            # (Django's __contains with OuterRef can't serialize to JSON)
+            from django.db.models.expressions import RawSQL
+            next_meeting_sql = RawSQL(
+                """(
+                    SELECT m.start FROM oparl_meetings m
+                    WHERE m.raw_json->'organization' @> to_jsonb(ARRAY[oparl_organizations.external_id])
+                    AND m.start >= %s
+                    AND m.cancelled = false
+                    ORDER BY m.start ASC
+                    LIMIT 1
+                )""",
+                [now],
+                output_field=models.DateTimeField(),
+            )
+            last_meeting_sql = RawSQL(
+                """(
+                    SELECT m.start FROM oparl_meetings m
+                    WHERE m.raw_json->'organization' @> to_jsonb(ARRAY[oparl_organizations.external_id])
+                    AND m.start < %s
+                    ORDER BY m.start DESC
+                    LIMIT 1
+                )""",
+                [now],
+                output_field=models.DateTimeField(),
+            )
+
+            base_qs = (
+                OParlOrganization.objects
+                .filter(body=body)
+                .annotate(
+                    next_meeting=next_meeting_sql,
+                    last_meeting=last_meeting_sql,
+                )
+            )
 
             # Suche
             if q:
@@ -742,6 +779,7 @@ def search_results(request):
     query = request.GET.get("q", "").strip()
     search_type = request.GET.get("type", "all")
     page = int(request.GET.get("page", 1))
+    is_dropdown = request.GET.get("dropdown") == "1"
     body = get_active_body(request)
 
     if not query or len(query) < 2:
@@ -783,11 +821,12 @@ def search_results(request):
         index_names = index_map.get(search_type)
 
         # Suche ausführen
+        page_size = 3 if is_dropdown else 20
         search_result = search_service.search_all(
             query=query,
             body_id=body_id,
             page=page,
-            page_size=20,
+            page_size=page_size,
             index_names=index_names,
         )
 
@@ -804,6 +843,7 @@ def search_results(request):
                 "page": search_result["page"],
                 "pages": search_result["pages"],
                 "search_type": search_type,
+                "is_dropdown": is_dropdown,
             },
         )
 
@@ -873,6 +913,8 @@ def search_results(request):
                     }
                 )
 
+        if is_dropdown:
+            results = results[:3]
         return render(
             request,
             "partials/search_results.html",
@@ -880,6 +922,7 @@ def search_results(request):
                 "results": results,
                 "query": query,
                 "total": len(results),
+                "is_dropdown": is_dropdown,
             },
         )
 
