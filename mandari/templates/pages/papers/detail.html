@@ -5,7 +5,7 @@
 
 {% block content %}
 <div>
-    <!-- Breadcrumb -->
+    {# Breadcrumb #}
     <nav class="mb-6">
         <ol class="flex items-center gap-2 text-sm">
             <li>
@@ -20,40 +20,33 @@
         </ol>
     </nav>
 
-    <div class="grid lg:grid-cols-3 gap-8">
-        <!-- Main Content -->
-        <div class="lg:col-span-2 space-y-6">
-            <!-- Header -->
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                <div class="flex items-start gap-4 mb-4">
-                    <div class="w-14 h-14 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
-                        <i data-lucide="file-text" class="w-7 h-7 text-amber-600 dark:text-amber-400"></i>
-                    </div>
-                    <div>
-                        {% if paper.reference %}
-                        <p class="text-sm font-mono text-gray-500 dark:text-gray-400 mb-1">{{ paper.reference }}</p>
-                        {% endif %}
-                        <h1 class="text-xl font-bold text-gray-900 dark:text-white">
-                            {{ paper.name|default:"Vorgang" }}
-                        </h1>
-                    </div>
-                </div>
-
-                <div class="flex flex-wrap gap-2">
+    {# Hero #}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+                {% if paper.reference %}
+                <p class="text-sm font-mono text-gray-500 dark:text-gray-400 mb-1">{{ paper.reference }}</p>
+                {% endif %}
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+                    {{ paper.name|default:"Vorgang" }}
+                </h1>
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
                     {% if paper.paper_type %}
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-400">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-400">
                         {{ paper.paper_type }}
                     </span>
                     {% endif %}
                     {% if paper.date %}
-                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
-                        <i data-lucide="calendar" class="w-4 h-4"></i>
-                        {{ paper.date|date:"d.m.Y" }}
-                    </span>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">{{ paper.date|date:"d.m.Y" }}</span>
                     {% endif %}
                 </div>
             </div>
+        </div>
+    </div>
 
+    <div class="grid lg:grid-cols-3 gap-8">
+        <!-- Main Content -->
+        <div class="lg:col-span-2 space-y-6">
             <!-- AI Summary -->
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">

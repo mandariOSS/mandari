@@ -1,56 +1,62 @@
 {% if meetings %}
-<div class="space-y-3">
-    {% for meeting in meetings %}
-    <a href="{% url 'insight_core:insight:meeting_detail' meeting.id %}"
-       class="block p-5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all hover:shadow-lg">
-        <div class="flex items-start gap-4">
-            {% if meeting.start %}
-            <div class="flex-shrink-0 w-14 h-14 rounded-xl bg-primary-100 dark:bg-primary-900/50 flex flex-col items-center justify-center">
-                <span class="text-xs font-medium text-primary-600 dark:text-primary-400 uppercase">
-                    {{ meeting.start|date:"M" }}
-                </span>
-                <span class="text-xl font-bold text-primary-700 dark:text-primary-300">
-                    {{ meeting.start|date:"d" }}
-                </span>
-            </div>
-            {% else %}
-            <div class="flex-shrink-0 w-14 h-14 rounded-xl bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                <i data-lucide="calendar" class="w-6 h-6 text-gray-400"></i>
-            </div>
-            {% endif %}
-
-            <div class="flex-1 min-w-0">
-                <div class="flex items-start justify-between gap-4">
-                    <div class="min-w-0">
-                        <h3 class="font-semibold text-gray-900 dark:text-white mb-1 truncate">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Sitzung</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Datum</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Uhrzeit</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Ort</th>
+                <th class="w-10 px-2 py-3"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for meeting in meetings %}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer {% if meeting.cancelled %}opacity-60{% endif %}"
+                onclick="window.location='{% url 'insight_core:insight:meeting_detail' meeting.id %}'">
+                <td class="px-6 py-3">
+                    <div class="flex items-center gap-2">
+                        <a href="{% url 'insight_core:insight:meeting_detail' meeting.id %}"
+                           class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
                             {{ meeting.get_display_name }}
-                        </h3>
-                        <p class="text-sm text-gray-500 dark:text-gray-400">
-                            {% if meeting.start %}
-                                {{ meeting.start|date:"H:i" }} Uhr
-                            {% endif %}
-                            {% if meeting.location_name %}
-                                &middot; {{ meeting.location_name }}
-                            {% endif %}
-                        </p>
+                        </a>
+                        {% if meeting.cancelled %}
+                        <span class="px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 shrink-0">Abgesagt</span>
+                        {% endif %}
                     </div>
-                    {% if meeting.cancelled %}
-                    <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-400 shrink-0">
-                        Abgesagt
-                    </span>
+                    <div class="sm:hidden text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                        {% if meeting.start %}{{ meeting.start|date:"d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% endif %}
+                        {% if meeting.location_name %} &middot; {{ meeting.location_name }}{% endif %}
+                    </div>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                    {% if meeting.start %}
+                    <time datetime="{{ meeting.start|date:'Y-m-d' }}">{{ meeting.start|date:"d.m.Y" }}</time>
+                    {% else %}
+                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
                     {% endif %}
-                </div>
-            </div>
-
-            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
-        </div>
-    </a>
-    {% endfor %}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                    {% if meeting.start %}
+                    {{ meeting.start|date:"H:i" }} Uhr
+                    {% else %}
+                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                    {{ meeting.location_name|default:"—" }}
+                </td>
+                <td class="px-2 py-3">
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 
-<!-- Pagination -->
 {% if page_obj.has_other_pages %}
-<nav class="mt-8 flex justify-center">
+<nav class="mt-6 flex justify-center">
     <ul class="flex items-center gap-1">
         {% if page_obj.has_previous %}
         <li>
@@ -60,22 +66,16 @@
             </a>
         </li>
         {% endif %}
-
         {% for num in page_obj.paginator.page_range %}
             {% if page_obj.number == num %}
-            <li>
-                <span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span>
-            </li>
+            <li><span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span></li>
             {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
             <li>
                 <a href="?period={{ request.GET.period|default:'upcoming' }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}&page={{ num }}"
-                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
-                    {{ num }}
-                </a>
+                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">{{ num }}</a>
             </li>
             {% endif %}
         {% endfor %}
-
         {% if page_obj.has_next %}
         <li>
             <a href="?period={{ request.GET.period|default:'upcoming' }}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}&page={{ page_obj.next_page_number }}"

@@ -20,25 +20,29 @@
         </ol>
     </nav>
 
-    {# Header #}
-    <div class="mb-6">
-        <div class="flex items-center gap-3 mb-1">
-            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
-                {{ organization.name }}
-            </h1>
-            {% if organization.is_active %}
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">
-                Aktiv
-            </span>
-            {% else %}
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
-                Beendet
-            </span>
-            {% endif %}
+    {# Hero #}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+                    {{ organization.name }}
+                </h1>
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+                    {% if organization.is_active %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400">
+                        Aktiv
+                    </span>
+                    {% else %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                        Beendet
+                    </span>
+                    {% endif %}
+                    {% if organization.organization_type %}
+                    <span class="text-sm text-gray-500 dark:text-gray-400">{{ organization.organization_type }}</span>
+                    {% endif %}
+                </div>
+            </div>
         </div>
-        {% if organization.organization_type %}
-        <p class="text-gray-600 dark:text-gray-400">{{ organization.organization_type }}</p>
-        {% endif %}
     </div>
 
     {# Tabs #}
@@ -86,7 +90,7 @@
                             <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
                                 {{ m.role }}
                             </td>
-                            <td class="px-2 py-3 max-sm:hidden">
+                            <td class="px-2 py-3">
                                 <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
                             </td>
                         </tr>
@@ -117,7 +121,7 @@
                             <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
                                 {{ m.role|default:"—" }}
                             </td>
-                            <td class="px-2 py-3 max-sm:hidden">
+                            <td class="px-2 py-3">
                                 <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
                             </td>
                         </tr>
@@ -150,7 +154,7 @@
                             <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
                                 {{ m.role|default:"—" }}
                             </td>
-                            <td class="px-2 py-3 max-sm:hidden">
+                            <td class="px-2 py-3">
                                 <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
                             </td>
                         </tr>

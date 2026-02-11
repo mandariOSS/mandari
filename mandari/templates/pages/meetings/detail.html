@@ -103,71 +103,55 @@
 
 {% block content %}
 <div>
-    <!-- Breadcrumb -->
-    <nav class="mb-6" aria-label="Breadcrumb">
+    {# Breadcrumb #}
+    <nav class="mb-6">
         <ol class="flex items-center gap-2 text-sm">
             <li>
                 <a href="{% url 'insight_core:insight:meeting_list' %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
                     Sitzungen
                 </a>
             </li>
-            <li class="text-gray-400" aria-hidden="true">/</li>
+            <li class="text-gray-400">/</li>
             <li class="text-gray-900 dark:text-white font-medium truncate">
                 {{ meeting.get_display_name|truncatechars:50 }}
             </li>
         </ol>
     </nav>
 
-    <div class="grid lg:grid-cols-3 gap-8">
-        <!-- Main Content -->
-        <div class="lg:col-span-2 space-y-6">
-            <!-- Header -->
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                <div class="flex items-start gap-4 mb-4">
-                    {% if meeting.start %}
-                    <div class="flex-shrink-0 w-16 h-16 rounded-xl bg-primary-100 dark:bg-primary-900/50 flex flex-col items-center justify-center">
-                        <span class="text-xs font-medium text-primary-600 dark:text-primary-400 uppercase">
-                            {{ meeting.start|date:"M" }}
-                        </span>
-                        <span class="text-2xl font-bold text-primary-700 dark:text-primary-300">
-                            {{ meeting.start|date:"d" }}
-                        </span>
-                    </div>
-                    {% endif %}
-                    <div class="min-w-0 flex-1">
-                        <h1 class="text-xl font-bold text-gray-900 dark:text-white mb-1">
-                            {{ meeting.get_display_name }}
-                        </h1>
-                        <p class="text-gray-600 dark:text-gray-400">
-                            {% if meeting.start %}
-                                {{ meeting.start|date:"l, d. F Y" }}
-                                um {{ meeting.start|date:"H:i" }} Uhr
-                            {% endif %}
-                        </p>
-                    </div>
-                </div>
-
-                <div class="flex flex-wrap gap-2">
+    {# Hero #}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div class="flex-1 min-w-0">
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+                    {{ meeting.get_display_name }}
+                </h1>
+                {% if meeting.start %}
+                <p class="text-gray-600 dark:text-gray-400 mt-1">
+                    {{ meeting.start|date:"l, d. F Y" }} um {{ meeting.start|date:"H:i" }} Uhr
+                </p>
+                {% endif %}
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
                     {% if meeting.cancelled %}
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-400">
-                        <i data-lucide="x-circle" class="w-4 h-4 mr-1"></i>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-400">
                         Abgesagt
                     </span>
                     {% endif %}
                     {% if meeting.meeting_state %}
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
                         {{ meeting.meeting_state }}
                     </span>
                     {% endif %}
                     {% if meeting.location_name %}
-                    <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700">
-                        <i data-lucide="map-pin" class="w-4 h-4"></i>
-                        {{ meeting.location_name }}
-                    </span>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">{{ meeting.location_name }}</span>
                     {% endif %}
                 </div>
             </div>
+        </div>
+    </div>
 
+    <div class="grid lg:grid-cols-3 gap-8">
+        <!-- Main Content -->
+        <div class="lg:col-span-2 space-y-6">
             <!-- Agenda Items -->
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">

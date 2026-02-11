@@ -12,12 +12,20 @@
           docViewerMeta: '',
           docViewerLoading: false,
           docViewerError: false,
+          _docTimeout: null,
           openDoc(url, name, meta) {
               this.docViewerUrl = url;
               this.docViewerName = name || 'Dokument';
               this.docViewerMeta = meta || '';
               this.docViewerLoading = true;
               this.docViewerError = false;
+              clearTimeout(this._docTimeout);
+              this._docTimeout = setTimeout(() => {
+                  if (this.docViewerLoading) {
+                      this.docViewerLoading = false;
+                      this.docViewerError = true;
+                  }
+              }, 8000);
           }
       }"
       x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))"

@@ -179,10 +179,13 @@ def clear_body(request):
 # =============================================================================
 
 
-class OrganizationListView(TemplateView):
+class OrganizationListView(ListView):
     """Liste aller Gremien mit Aktiv/Alle-Tabs."""
 
+    model = OParlOrganization
     template_name = "pages/organizations/list.html"
+    context_object_name = "organizations"
+    paginate_by = 50
 
     def get_template_names(self):
         # Für HTMX-Requests nur das Partial zurückgeben
@@ -190,59 +193,67 @@ class OrganizationListView(TemplateView):
             return ["partials/organization_list_items.html"]
         return [self.template_name]
 
+    def get_queryset(self):
+        body = get_active_body(self.request)
+        if not body:
+            return OParlOrganization.objects.none()
+
+        tab = self.request.GET.get("tab", "active")
+        q = self.request.GET.get("q", "").strip()
+        today = timezone.now().date()
+        now = timezone.now()
+
+        # Annotate next/last meeting via M2M Subquery (fast, uses proper indexes)
+        next_meeting_sq = Subquery(
+            OParlMeeting.objects.filter(
+                organizations=OuterRef("pk"),
+                start__gte=now,
+                cancelled=False,
+            ).order_by("start").values("start")[:1]
+        )
+        last_meeting_sq = Subquery(
+            OParlMeeting.objects.filter(
+                organizations=OuterRef("pk"),
+                start__lt=now,
+            ).order_by("-start").values("start")[:1]
+        )
+        has_any_meeting = Exists(
+            OParlMeeting.objects.filter(organizations=OuterRef("pk"))
+        )
+
+        base_qs = (
+            OParlOrganization.objects
+            .filter(body=body)
+            .annotate(
+                next_meeting=next_meeting_sq,
+                last_meeting=last_meeting_sq,
+                has_meetings=has_any_meeting,
+            )
+        )
+
+        # Suche
+        if q:
+            base_qs = base_qs.filter(Q(name__icontains=q) | Q(short_name__icontains=q))
+
+        if tab == "active":
+            # Aktiv = nicht abgelaufen UND hat mindestens eine Sitzung
+            base_qs = base_qs.filter(
+                Q(end_date__isnull=True) | Q(end_date__gte=today),
+                has_meetings=True,
+            )
+
+        return sort_organizations_by_ranking(base_qs)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         body = get_active_body(self.request)
         tab = self.request.GET.get("tab", "active")
-        q = self.request.GET.get("q", "").strip()
 
         if body:
             today = timezone.now().date()
-            now = timezone.now()
-
-            # Annotate next/last meeting via M2M Subquery (fast, uses proper indexes)
-            next_meeting_sq = Subquery(
-                OParlMeeting.objects.filter(
-                    organizations=OuterRef("pk"),
-                    start__gte=now,
-                    cancelled=False,
-                ).order_by("start").values("start")[:1]
-            )
-            last_meeting_sq = Subquery(
-                OParlMeeting.objects.filter(
-                    organizations=OuterRef("pk"),
-                    start__lt=now,
-                ).order_by("-start").values("start")[:1]
-            )
             has_any_meeting = Exists(
                 OParlMeeting.objects.filter(organizations=OuterRef("pk"))
             )
-
-            base_qs = (
-                OParlOrganization.objects
-                .filter(body=body)
-                .annotate(
-                    next_meeting=next_meeting_sq,
-                    last_meeting=last_meeting_sq,
-                    has_meetings=has_any_meeting,
-                )
-            )
-
-            # Suche
-            if q:
-                base_qs = base_qs.filter(Q(name__icontains=q) | Q(short_name__icontains=q))
-
-            if tab == "active":
-                # Aktiv = nicht abgelaufen UND hat mindestens eine Sitzung
-                orgs = base_qs.filter(
-                    Q(end_date__isnull=True) | Q(end_date__gte=today),
-                    has_meetings=True,
-                )
-            else:
-                # Alle = sämtliche Gremien
-                orgs = base_qs
-
-            context["organizations"] = sort_organizations_by_ranking(orgs)
 
             # Counts ohne Suchfilter
             all_orgs = OParlOrganization.objects.filter(body=body).annotate(
