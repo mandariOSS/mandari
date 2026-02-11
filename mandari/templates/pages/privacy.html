@@ -38,7 +38,8 @@
         <ul>
             <li>Session-Verwaltung</li>
             <li>Speicherung der ausgewählten Kommune</li>
-            <li>Speicherung des Dark-Mode-Präferenz</li>
+            <li>Speicherung der Dark-Mode-Präferenz</li>
+            <li>DSGVO-Einwilligung für den KI-Assistenten</li>
         </ul>
         <p>
             Es werden keine Tracking-Cookies verwendet.
@@ -46,9 +47,27 @@
 
         <h3>2.3 KI-Assistent</h3>
         <p>
-            Bei Nutzung des KI-Assistenten werden Ihre Anfragen an den Dienst Groq übermittelt.
-            Die Nutzung erfolgt nur nach ausdrücklicher Einwilligung. Groq verarbeitet Ihre Daten
-            gemäß deren Datenschutzrichtlinien.
+            Bei Nutzung des KI-Assistenten werden Ihre Anfragen an den Dienst
+            <strong>Nebius AI</strong> (Modelle: Kimi K2 / GLM-4.5) übermittelt und dort verarbeitet.
+            Die Nutzung erfolgt nur nach ausdrücklicher Einwilligung über eine aktive Checkbox.
+        </p>
+        <p>
+            Folgende Daten werden dabei verarbeitet:
+        </p>
+        <ul>
+            <li>Ihre Frage/Nachricht (wird an die Nebius TokenFactory API übermittelt)</li>
+            <li>Kontext aus öffentlichen Ratsdokumenten (zur Beantwortung Ihrer Frage)</li>
+            <li>IP-Adresse und Session-ID (für Rate Limiting und Missbrauchsschutz)</li>
+        </ul>
+        <p>
+            Zur Sicherstellung eines fairen Zugangs und zum Schutz vor Missbrauch werden
+            Nutzungsdaten (IP-Adresse, Session-ID, Nachricht, Zeitstempel) gespeichert.
+            Diese Daten werden nach <strong>30 Tagen automatisch gelöscht</strong>.
+        </p>
+        <p>
+            Ein Inhaltsfilter prüft Nachrichten vor der Verarbeitung auf personenbezogene Daten
+            (E-Mail, Telefon, IBAN). Nachrichten mit erkannten personenbezogenen Daten werden
+            blockiert und nicht an den KI-Dienst weitergeleitet.
         </p>
 
         <h2>3. Öffentliche Daten aus Ratsinformationssystemen</h2>
@@ -88,7 +107,7 @@
         </p>
 
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-8">
-            Stand: Januar 2025
+            Stand: Februar 2026
         </p>
     </div>
 </div>

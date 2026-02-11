@@ -8,47 +8,58 @@
          x-transition:leave="transition ease-in duration-150"
          x-transition:leave-start="opacity-100 scale-100 translate-y-0"
          x-transition:leave-end="opacity-0 scale-95 translate-y-4"
-         class="mb-4 w-80 sm:w-96 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+         class="mb-3 w-80 sm:w-96 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl shadow-gray-900/10 dark:shadow-black/30 border border-gray-200 dark:border-gray-700 overflow-hidden"
          x-cloak>
 
         <!-- Header -->
-        <div class="bg-gradient-to-r from-primary-600 to-primary-700 px-4 py-3 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                    <i data-lucide="sparkles" class="w-4 h-4 text-white"></i>
+        <div class="relative overflow-hidden">
+            <div class="absolute inset-0 bg-gradient-to-br from-primary-600 via-primary-600 to-primary-700"></div>
+            <div class="relative px-4 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-white/15 backdrop-blur-sm flex items-center justify-center">
+                        <svg class="w-4 h-4 text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="text-white font-semibold text-[13px]">KI-Assistent</h3>
+                        <p class="text-white/60 text-[11px]">Fragen zu Ratsinformationen</p>
+                    </div>
                 </div>
-                <div>
-                    <h3 class="text-white font-medium text-sm">KI-Assistent</h3>
-                    <p class="text-white/70 text-xs">Fragen zu Ratsinformationen</p>
-                </div>
+                <button @click="isOpen = false" class="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+                    <svg class="w-4 h-4 text-white/80" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>
+                </button>
             </div>
-            <button @click="isOpen = false" class="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
-                <i data-lucide="x" class="w-5 h-5 text-white"></i>
-            </button>
         </div>
 
         <!-- Consent Screen -->
         <template x-if="!hasConsent">
             <div class="p-4">
-                <div class="flex items-start gap-3 mb-4">
-                    <div class="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
-                        <i data-lucide="shield-alert" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+                <div class="flex items-start gap-3 mb-3">
+                    <div class="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-100 dark:border-amber-800/50 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-4 h-4 text-amber-600 dark:text-amber-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
                     </div>
                     <div>
-                        <h4 class="font-medium text-gray-900 dark:text-white text-sm mb-1">Datenschutzhinweis</h4>
-                        <p class="text-gray-600 dark:text-gray-400 text-xs leading-relaxed">
-                            Der KI-Assistent nutzt externe KI-Dienste. Ihre Anfragen werden verarbeitet und nicht gespeichert.
-                            <a href="/datenschutz/" target="_blank" class="text-primary-600 dark:text-primary-400 hover:underline">Mehr erfahren</a>
+                        <h4 class="font-semibold text-gray-900 dark:text-white text-[13px] mb-1">Datenschutzhinweis</h4>
+                        <p class="text-gray-500 dark:text-gray-400 text-[11px] leading-relaxed">
+                            Der KI-Assistent nutzt <strong class="text-gray-600 dark:text-gray-300">Nebius AI</strong> (Kimi K2). Ihre Anfragen werden an externe Server übermittelt.
+                            <a href="/datenschutz/" target="_blank" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Mehr erfahren</a>
                         </p>
                     </div>
                 </div>
+                <label class="flex items-start gap-2.5 p-2 -mx-2 mb-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750 cursor-pointer select-none transition-colors">
+                    <input type="checkbox" x-model="consentChecked"
+                           class="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                    <span class="text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed">
+                        Ich stimme der Verarbeitung meiner Anfragen durch Nebius AI zu.
+                    </span>
+                </label>
                 <div class="flex gap-2">
                     <button @click="giveConsent()"
-                            class="flex-1 px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors">
+                            :disabled="!consentChecked"
+                            class="flex-1 px-3 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 dark:disabled:text-gray-500 text-white text-[12px] font-semibold rounded-lg transition-all disabled:cursor-not-allowed">
                         Zustimmen
                     </button>
                     <button @click="isOpen = false"
-                            class="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg transition-colors">
+                            class="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 text-[12px] font-medium rounded-lg transition-colors">
                         Schließen
                     </button>
                 </div>
@@ -59,21 +70,23 @@
         <template x-if="hasConsent">
             <div>
                 <!-- Messages -->
-                <div class="h-72 overflow-y-auto p-4 space-y-3" id="chatbot-popup-messages">
-                    <!-- Welcome Message -->
+                <div class="h-72 overflow-y-auto px-4 py-3 space-y-3" x-ref="popupMessages">
+                    <!-- Welcome -->
                     <template x-if="messages.length === 0">
-                        <div class="text-center py-4">
-                            <p class="text-gray-600 dark:text-gray-400 text-sm mb-3">
-                                Wie kann ich Ihnen helfen?
-                            </p>
-                            <div class="flex flex-wrap justify-center gap-2">
-                                <button @click="sendMessage('Was bedeutet dieser Vorgang?')"
-                                        class="px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                                    Vorgang erklären
+                        <div class="flex flex-col items-center justify-center h-full -mt-2">
+                            <div class="w-10 h-10 rounded-full bg-primary-50 dark:bg-primary-900/30 border border-primary-100 dark:border-primary-800/40 flex items-center justify-center mb-3">
+                                <svg class="w-4 h-4 text-primary-500 dark:text-primary-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+                            </div>
+                            <p class="text-[13px] font-medium text-gray-900 dark:text-white mb-1">Wie kann ich helfen?</p>
+                            <p class="text-[11px] text-gray-400 dark:text-gray-500 mb-4">Fragen zu Ratsinformationen</p>
+                            <div class="flex flex-wrap justify-center gap-1.5">
+                                <button @click="sendMessage('Welche Sitzungen finden diese Woche statt?')"
+                                        class="px-2.5 py-1.5 text-[11px] font-medium bg-gray-50 dark:bg-gray-750 border border-gray-100 dark:border-gray-700 text-gray-600 dark:text-gray-400 rounded-lg hover:border-primary-200 dark:hover:border-primary-800/50 hover:text-primary-600 dark:hover:text-primary-400 transition-all">
+                                    Sitzungen diese Woche
                                 </button>
-                                <button @click="sendMessage('Wie funktioniert der Stadtrat?')"
-                                        class="px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                                    Stadtrat erklärt
+                                <button @click="sendMessage('Welche Ausschüsse gibt es?')"
+                                        class="px-2.5 py-1.5 text-[11px] font-medium bg-gray-50 dark:bg-gray-750 border border-gray-100 dark:border-gray-700 text-gray-600 dark:text-gray-400 rounded-lg hover:border-primary-200 dark:hover:border-primary-800/50 hover:text-primary-600 dark:hover:text-primary-400 transition-all">
+                                    Ausschüsse
                                 </button>
                             </div>
                         </div>
@@ -81,41 +94,102 @@
 
                     <!-- Message List -->
                     <template x-for="(msg, index) in messages" :key="index">
-                        <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
-                            <div :class="msg.role === 'user'
-                                         ? 'bg-primary-600 text-white rounded-2xl rounded-br-sm px-3 py-2 max-w-[85%]'
-                                         : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-2xl rounded-bl-sm px-3 py-2 max-w-[85%]'">
-                                <p class="text-sm whitespace-pre-wrap" x-text="msg.content"></p>
-                            </div>
+                        <div>
+                            <!-- User -->
+                            <template x-if="msg.role === 'user'">
+                                <div class="flex justify-end">
+                                    <div class="bg-primary-600 text-white rounded-2xl rounded-br-md px-3 py-2 max-w-[85%] shadow-sm">
+                                        <p class="text-[13px] whitespace-pre-wrap leading-relaxed" x-text="msg.content"></p>
+                                    </div>
+                                </div>
+                            </template>
+                            <!-- Assistant -->
+                            <template x-if="msg.role === 'assistant'">
+                                <div class="flex justify-start gap-2">
+                                    <div class="w-6 h-6 rounded-md bg-primary-50 dark:bg-primary-900/30 border border-primary-100 dark:border-primary-800/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                        <svg class="w-3 h-3 text-primary-500 dark:text-primary-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+                                    </div>
+                                    <div class="max-w-[88%] min-w-0">
+                                        <div class="bg-gray-50 dark:bg-gray-750 text-gray-900 dark:text-gray-100 border border-gray-100 dark:border-gray-700 rounded-2xl rounded-tl-md px-3 py-2">
+                                            <div class="prose prose-xs dark:prose-invert max-w-none text-[12.5px]
+                                                        prose-p:my-0.5 prose-p:leading-relaxed
+                                                        prose-headings:my-1 prose-headings:text-[13px]
+                                                        prose-ul:my-0.5 prose-li:my-0
+                                                        prose-a:text-primary-600 dark:prose-a:text-primary-400 prose-a:no-underline"
+                                                 x-html="renderMarkdown(msg.content)"></div>
+                                        </div>
+                                        <!-- Sources -->
+                                        <template x-if="msg.sources && msg.sources.length > 0">
+                                            <div class="mt-1 flex flex-wrap gap-1">
+                                                <template x-for="(src, si) in msg.sources" :key="si">
+                                                    <a :href="src.url"
+                                                       class="group inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 text-gray-500 dark:text-gray-400 rounded-md hover:border-primary-200 dark:hover:border-primary-700 hover:text-primary-600 dark:hover:text-primary-400 transition-all">
+                                                        <svg class="w-2.5 h-2.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 13H8"/><path d="M16 17H8"/><path d="M16 13h-2"/></svg>
+                                                        <span x-text="src.title.substring(0, 30) + (src.title.length > 30 ? '...' : '')"></span>
+                                                    </a>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                            <!-- Error -->
+                            <template x-if="msg.role === 'error'">
+                                <div class="flex justify-start gap-2">
+                                    <div class="w-6 h-6 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                        <svg class="w-3 h-3 text-red-500 dark:text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+                                    </div>
+                                    <div class="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 border border-red-100 dark:border-red-800/40 rounded-2xl rounded-tl-md px-3 py-2 max-w-[85%]">
+                                        <p class="text-[11px] leading-relaxed" x-text="msg.content"></p>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
                     </template>
 
                     <!-- Loading -->
                     <template x-if="isLoading">
-                        <div class="flex justify-start">
-                            <div class="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-bl-sm px-3 py-2">
-                                <div class="flex items-center gap-1.5">
-                                    <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></div>
-                                    <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
-                                    <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                        <div class="flex justify-start gap-2">
+                            <div class="w-6 h-6 rounded-md bg-primary-50 dark:bg-primary-900/30 border border-primary-100 dark:border-primary-800/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <svg class="w-3 h-3 text-primary-500 dark:text-primary-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+                            </div>
+                            <div class="bg-gray-50 dark:bg-gray-750 border border-gray-100 dark:border-gray-700 rounded-2xl rounded-tl-md px-3 py-2.5">
+                                <div class="flex items-center gap-1">
+                                    <div class="w-1.5 h-1.5 bg-primary-400/60 rounded-full animate-bounce"></div>
+                                    <div class="w-1.5 h-1.5 bg-primary-400/60 rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
+                                    <div class="w-1.5 h-1.5 bg-primary-400/60 rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
                                 </div>
                             </div>
                         </div>
                     </template>
                 </div>
 
+                <!-- Rate limit info -->
+                <template x-if="remainingToday !== null">
+                    <div class="px-4 py-1.5 border-t border-gray-100 dark:border-gray-700 text-center">
+                        <span class="text-[10px] text-gray-400 dark:text-gray-500" x-text="remainingToday + ' Fragen heute'"></span>
+                        <template x-if="remainingToday <= 2 && !isRegistered">
+                            <span class="text-[10px] text-gray-400"> &mdash; <a href="/accounts/register/" class="text-primary-500 hover:underline font-medium">Konto erstellen</a></span>
+                        </template>
+                    </div>
+                </template>
+
                 <!-- Input -->
-                <div class="border-t border-gray-200 dark:border-gray-700 p-3">
-                    <form @submit.prevent="sendMessage(input); input = ''" class="flex gap-2">
-                        <input type="text"
-                               x-model="input"
-                               placeholder="Frage stellen..."
-                               :disabled="isLoading"
-                               class="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 border-0 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500/20 outline-none disabled:opacity-50">
+                <div class="border-t border-gray-100 dark:border-gray-700 p-3">
+                    <form @submit.prevent="handleSubmit()" class="flex items-end gap-2">
+                        <textarea x-model="input"
+                                  x-ref="popupInput"
+                                  @keydown.enter.exact.prevent="handleSubmit()"
+                                  placeholder="Frage stellen..."
+                                  :disabled="isLoading"
+                                  rows="1"
+                                  class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-750 border border-gray-200 dark:border-gray-700 rounded-lg text-[13px] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-300 dark:focus:border-primary-700 outline-none disabled:opacity-50 resize-none overflow-hidden transition-colors"
+                                  style="min-height: 36px; max-height: 80px;"
+                                  @input="$event.target.style.height = 'auto'; $event.target.style.height = Math.min($event.target.scrollHeight, 80) + 'px'"></textarea>
                         <button type="submit"
                                 :disabled="!input.trim() || isLoading"
-                                class="px-3 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg transition-colors disabled:cursor-not-allowed">
-                            <i data-lucide="send" class="w-4 h-4"></i>
+                                class="w-9 h-9 flex items-center justify-center bg-primary-600 hover:bg-primary-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 text-white disabled:text-gray-400 dark:disabled:text-gray-500 rounded-lg transition-all disabled:cursor-not-allowed">
+                            <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
                         </button>
                     </form>
                 </div>
@@ -125,52 +199,88 @@
 
     <!-- Toggle Button -->
     <button @click="isOpen = !isOpen"
-            class="group w-14 h-14 bg-gradient-to-br from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center"
-            :class="{ 'ring-4 ring-primary-500/30': isOpen }">
-        <i x-show="!isOpen" data-lucide="message-circle" class="w-6 h-6 group-hover:scale-110 transition-transform"></i>
-        <i x-show="isOpen" data-lucide="chevron-down" class="w-6 h-6"></i>
+            class="group relative w-14 h-14 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center"
+            :class="isOpen ? 'bg-gray-800 dark:bg-gray-700 hover:bg-gray-700 dark:hover:bg-gray-600' : 'bg-gradient-to-br from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800'">
+        <svg x-show="!isOpen" class="w-6 h-6 text-white group-hover:scale-110 transition-transform" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+        <svg x-show="isOpen" class="w-5 h-5 text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        <!-- Pulse indicator when closed -->
+        <span x-show="!isOpen && !hasConsent" class="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-400 rounded-full border-2 border-white dark:border-gray-900"></span>
     </button>
 </div>
 
 <script>
+if (typeof marked === 'undefined') {
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
+    document.head.appendChild(s);
+}
+
 function chatbotPopup() {
     return {
         isOpen: false,
-        hasConsent: localStorage.getItem('chat_consent') === 'true',
+        hasConsent: {{ has_chat_consent|default:"false"|yesno:"true,false" }},
+        consentChecked: false,
         messages: [],
         input: '',
         isLoading: false,
+        remainingToday: null,
+        remainingWeek: null,
+        isRegistered: {{ user.is_authenticated|yesno:"true,false" }},
 
-        giveConsent() {
-            localStorage.setItem('chat_consent', 'true');
-            this.hasConsent = true;
+        renderMarkdown(text) {
+            if (!text) return '';
+            try {
+                if (typeof marked !== 'undefined') {
+                    return marked.parse(text, { breaks: true, gfm: true });
+                }
+            } catch (e) {}
+            return text.replace(/\n/g, '<br>');
+        },
 
-            // Set server-side session
-            fetch('{% url "insight_core:insight:chat_message" %}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                },
-                body: JSON.stringify({ consent: true })
+        scrollToBottom() {
+            this.$nextTick(() => {
+                const container = this.$refs.popupMessages;
+                if (container) container.scrollTop = container.scrollHeight;
             });
+        },
 
-            // Reinitialize icons
-            this.$nextTick(() => lucide.createIcons());
+        async giveConsent() {
+            if (!this.consentChecked) return;
+            try {
+                await fetch('{% url "insight_core:insight:chat_message" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({ consent: true })
+                });
+            } catch (e) {}
+            this.hasConsent = true;
+        },
+
+        handleSubmit() {
+            const content = this.input.trim();
+            if (!content || this.isLoading) return;
+            this.input = '';
+            if (this.$refs.popupInput) {
+                this.$refs.popupInput.style.height = '36px';
+            }
+            this.sendMessage(content);
+        },
+
+        getChatHistory() {
+            return this.messages
+                .filter(m => m.role === 'user' || m.role === 'assistant')
+                .map(m => ({ role: m.role, content: m.content }));
         },
 
         async sendMessage(content) {
-            if (!content.trim()) return;
+            if (!content.trim() || this.isLoading) return;
 
-            // Add user message
             this.messages.push({ role: 'user', content: content });
             this.isLoading = true;
-
-            // Scroll to bottom
-            this.$nextTick(() => {
-                const container = document.getElementById('chatbot-popup-messages');
-                if (container) container.scrollTop = container.scrollHeight;
-            });
+            this.scrollToBottom();
 
             try {
                 const response = await fetch('{% url "insight_core:insight:chat_message" %}', {
@@ -179,39 +289,48 @@ function chatbotPopup() {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': '{{ csrf_token }}'
                     },
-                    body: JSON.stringify({ message: content })
+                    body: JSON.stringify({
+                        message: content,
+                        history: this.getChatHistory()
+                    })
                 });
 
                 const data = await response.json();
 
                 if (data.error === 'consent_required') {
                     this.hasConsent = false;
-                    localStorage.removeItem('chat_consent');
                     this.messages.pop();
+                } else if (data.error === 'rate_limited') {
+                    this.remainingToday = data.remaining_today;
+                    this.remainingWeek = data.remaining_week;
+                    this.messages.push({ role: 'error', content: data.message });
+                } else if (data.error === 'content_blocked') {
+                    this.messages.push({ role: 'error', content: data.message });
+                    if (data.remaining_today !== undefined) {
+                        this.remainingToday = data.remaining_today;
+                        this.remainingWeek = data.remaining_week;
+                    }
                 } else if (data.error) {
-                    this.messages.push({
-                        role: 'assistant',
-                        content: 'Entschuldigung, es ist ein Fehler aufgetreten: ' + data.error
-                    });
+                    this.messages.push({ role: 'error', content: data.message || data.error });
                 } else {
                     this.messages.push({
                         role: 'assistant',
-                        content: data.response
+                        content: data.response,
+                        sources: data.sources || []
                     });
+                    if (data.remaining_today !== undefined) {
+                        this.remainingToday = data.remaining_today;
+                        this.remainingWeek = data.remaining_week;
+                    }
                 }
             } catch (error) {
                 this.messages.push({
-                    role: 'assistant',
-                    content: 'Entschuldigung, es ist ein Verbindungsfehler aufgetreten.'
+                    role: 'error',
+                    content: 'Verbindungsfehler.'
                 });
             } finally {
                 this.isLoading = false;
-
-                this.$nextTick(() => {
-                    const container = document.getElementById('chatbot-popup-messages');
-                    if (container) container.scrollTop = container.scrollHeight;
-                    lucide.createIcons();
-                });
+                this.scrollToBottom();
             }
         }
     }

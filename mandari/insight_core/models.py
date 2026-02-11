@@ -1080,3 +1080,52 @@ class PublicQuestion(models.Model):
 
     def __str__(self):
         return f"{self.subject} (von {self.questioner_name})"
+
+
+# =============================================================================
+# Chat Usage (Rate Limiting & Abuse Review)
+# =============================================================================
+
+
+class ChatUsage(models.Model):
+    """Tracks chat usage for rate limiting and abuse review."""
+
+    FILTER_RESULT_CHOICES = [
+        ("passed", "Bestanden"),
+        ("pii_blocked", "PII blockiert"),
+        ("spam_blocked", "Spam blockiert"),
+        ("injection_blocked", "Injection blockiert"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session_key = models.CharField(max_length=40, db_index=True)
+    ip_address = models.GenericIPAddressField(db_index=True)
+    user = models.ForeignKey(
+        "accounts.User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="chat_usage",
+    )
+    message = models.TextField(verbose_name="Nachricht")
+    filter_result = models.CharField(
+        max_length=20,
+        choices=FILTER_RESULT_CHOICES,
+        default="passed",
+        verbose_name="Filter-Ergebnis",
+    )
+    tokens_used = models.IntegerField(default=0, verbose_name="Tokens verbraucht")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "chat_usage"
+        verbose_name = "Chat-Nutzung"
+        verbose_name_plural = "Chat-Nutzungen"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["ip_address", "created_at"]),
+            models.Index(fields=["session_key", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Chat {self.created_at:%d.%m.%Y %H:%M} ({self.filter_result})"

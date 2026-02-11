@@ -18,6 +18,7 @@ def navigation_context(request):
         "is_portal": True,
         "is_marketing": False,
         "nav_context": "portal",
+        "has_chat_consent": request.session.get("chat_consent", False),
     }
 
 

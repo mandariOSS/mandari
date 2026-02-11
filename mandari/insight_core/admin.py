@@ -13,6 +13,7 @@ from unfold.admin import ModelAdmin
 from unfold.decorators import action
 
 from .models import (
+    ChatUsage,
     OParlAgendaItem,
     OParlBody,
     OParlConsultation,
@@ -621,3 +622,32 @@ class PublicQuestionAdmin(ModelAdmin):
                 q.save(update_fields=["reminder_sent_at"])
                 count += 1
         messages.success(request, f"Erinnerung an {count} Ratsmitglied(er) gesendet.")
+
+
+# =============================================================================
+# Chat Usage Admin
+# =============================================================================
+
+
+@admin.register(ChatUsage)
+class ChatUsageAdmin(ModelAdmin):
+    list_display = ["created_at", "ip_address", "filter_result", "tokens_used", "user", "short_message"]
+    list_filter = ["filter_result", "created_at"]
+    search_fields = ["ip_address", "session_key", "message"]
+    readonly_fields = [
+        "id", "session_key", "ip_address", "user", "message",
+        "filter_result", "tokens_used", "created_at",
+    ]
+    ordering = ["-created_at"]
+    list_per_page = 50
+
+    def short_message(self, obj):
+        """Truncated message for list display."""
+        return obj.message[:80] + "..." if len(obj.message) > 80 else obj.message
+    short_message.short_description = "Nachricht"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

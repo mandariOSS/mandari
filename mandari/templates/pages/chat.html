@@ -3,45 +3,62 @@
 
 {% block title %}KI-Assistent{% endblock %}
 
-{% block content %}
-<div x-data="chatApp()">
-    <div class="max-w-4xl mx-auto">
-        <!-- Header -->
-        <div class="mb-8 text-center">
-            <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
-                <i data-lucide="message-circle" class="w-8 h-8 text-white"></i>
-            </div>
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">KI-Assistent</h1>
-            <p class="text-gray-600 dark:text-gray-400 max-w-xl mx-auto">
-                Stellen Sie Fragen zu kommunalpolitischen Themen und erhalten Sie verständliche Antworten.
-            </p>
-        </div>
+{% block chatbot %}{% endblock %}
 
-        <!-- GDPR Consent Modal -->
-        <template x-if="!hasConsent">
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-8">
-            <div class="flex items-start gap-4">
-                <div class="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
-                    <i data-lucide="shield-alert" class="w-6 h-6 text-amber-600 dark:text-amber-400"></i>
-                </div>
-                <div>
-                    <h2 class="font-semibold text-gray-900 dark:text-white mb-2">Datenschutzhinweis</h2>
-                    <p class="text-gray-600 dark:text-gray-400 text-sm mb-4">
-                        Der KI-Assistent verwendet künstliche Intelligenz (Groq), um Ihre Fragen zu beantworten.
-                        Ihre Anfragen werden an externe Server übermittelt und dort verarbeitet.
-                        Mit der Nutzung stimmen Sie der Verarbeitung Ihrer Daten gemäß unserer
-                        <a href="/datenschutz/" class="text-primary-600 dark:text-primary-400 hover:underline">Datenschutzerklärung</a> zu.
-                    </p>
-                    <div class="flex gap-3">
-                        <button @click="giveConsent()"
-                                class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
-                            Ich stimme zu
-                        </button>
-                        <a href="/"
-                           class="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-medium rounded-lg transition-colors">
-                            Abbrechen
-                        </a>
+{% block content %}
+<div x-data="chatApp()" class="flex flex-col flex-1 min-h-0">
+
+    <!-- DSGVO Consent Card -->
+    <template x-if="!hasConsent">
+        <div class="max-w-2xl mx-auto w-full fade-up" x-init="$nextTick(() => lucide.createIcons())">
+            <!-- Header -->
+            <div class="mb-8 text-center">
+                <div class="relative w-16 h-16 mx-auto mb-5">
+                    <div class="absolute inset-0 rounded-2xl bg-primary-500/20 blur-lg"></div>
+                    <div class="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/20">
+                        <svg class="w-8 h-8 text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
                     </div>
+                </div>
+                <h1 class="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mb-2">KI-Assistent</h1>
+                <p class="text-sm lg:text-base text-gray-500 dark:text-gray-400 max-w-lg mx-auto">
+                    Stellen Sie Fragen zu kommunalpolitischen Themen und erhalten Sie verständliche Antworten auf Basis öffentlicher Ratsdokumente.
+                </p>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="p-6 lg:p-8">
+                    <div class="flex items-start gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800/50 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Datenschutzhinweis</h2>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed mb-5">
+                                Der KI-Assistent nutzt <strong class="text-gray-700 dark:text-gray-300">Nebius AI</strong> (Kimi K2) zur Verarbeitung Ihrer Anfragen.
+                                Ihre Fragen werden an die Nebius TokenFactory API übermittelt.
+                                Es gelten die Bestimmungen unserer
+                                <a href="/datenschutz/" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Datenschutzerklärung</a>.
+                            </p>
+                            <label class="flex items-start gap-3 p-3 -mx-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750 cursor-pointer select-none transition-colors">
+                                <input type="checkbox" x-model="consentChecked"
+                                       class="mt-1 w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                                <span class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+                                    Ich habe die Datenschutzerklärung gelesen und stimme der Verarbeitung meiner Anfragen durch Nebius AI zu.
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="px-6 lg:px-8 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700 flex items-center justify-end gap-3">
+                    <a href="/insight/"
+                       class="px-5 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
+                        Abbrechen
+                    </a>
+                    <button @click="giveConsent()"
+                            :disabled="!consentChecked"
+                            class="px-6 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 dark:disabled:text-gray-500 text-white text-sm font-semibold rounded-lg transition-all disabled:cursor-not-allowed shadow-sm hover:shadow-md disabled:shadow-none">
+                        Zustimmen &amp; Chat starten
+                    </button>
                 </div>
             </div>
         </div>
@@ -49,114 +66,272 @@
 
     <!-- Chat Interface -->
     <template x-if="hasConsent">
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <!-- Messages -->
-            <div class="h-[500px] overflow-y-auto p-6 space-y-4" id="chat-messages">
-                <!-- Welcome Message -->
-                <template x-if="messages.length === 0">
-                    <div class="text-center py-8">
-                        <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center">
-                            <i data-lucide="sparkles" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
-                        </div>
-                        <p class="text-gray-600 dark:text-gray-400">
-                            Hallo! Ich bin Ihr KI-Assistent für kommunalpolitische Themen.<br>
-                            Wie kann ich Ihnen helfen?
-                        </p>
-                        <div class="mt-4 flex flex-wrap justify-center gap-2">
-                            <button @click="sendMessage('Was sind die wichtigsten aktuellen Themen?')"
-                                    class="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                                Aktuelle Themen
-                            </button>
-                            <button @click="sendMessage('Wie funktioniert der Stadtrat?')"
-                                    class="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                                Wie funktioniert der Stadtrat?
-                            </button>
-                        </div>
+        <div class="flex flex-col flex-1 min-h-0 fade-up" x-init="$nextTick(() => lucide.createIcons())">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm flex flex-col flex-1 min-h-0">
+                <!-- Chat Header -->
+                <div class="px-6 lg:px-8 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center gap-4 flex-shrink-0">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-sm">
+                        <svg class="w-5 h-5 text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
                     </div>
-                </template>
-
-                <!-- Message List -->
-                <template x-for="(msg, index) in messages" :key="index">
-                    <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
-                        <div :class="msg.role === 'user'
-                                     ? 'bg-primary-500 text-white rounded-2xl rounded-br-md px-4 py-3 max-w-[80%]'
-                                     : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-2xl rounded-bl-md px-4 py-3 max-w-[80%]'">
-                            <p class="whitespace-pre-wrap" x-text="msg.content"></p>
-                        </div>
+                    <div class="flex-1 min-w-0">
+                        <h1 class="text-base font-semibold text-gray-900 dark:text-white leading-tight">KI-Assistent</h1>
+                        <p class="text-sm text-gray-400 dark:text-gray-500">Antworten auf Basis öffentlicher Ratsdokumente</p>
                     </div>
-                </template>
+                </div>
 
-                <!-- Loading -->
-                <template x-if="isLoading">
-                    <div class="flex justify-start">
-                        <div class="bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-bl-md px-4 py-3">
-                            <div class="flex items-center gap-2">
-                                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
-                                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                <!-- Messages -->
+                <div class="flex-1 overflow-y-auto" x-ref="chatMessages">
+                    <div class="max-w-3xl mx-auto px-6 lg:px-8 py-6 space-y-6">
+                        <!-- Welcome State -->
+                        <template x-if="messages.length === 0">
+                            <div class="flex flex-col items-center justify-center py-16">
+                                <div class="relative mb-6">
+                                    <div class="absolute inset-0 rounded-full bg-primary-100 dark:bg-primary-900/30 scale-150 opacity-50"></div>
+                                    <div class="relative w-16 h-16 rounded-full bg-primary-50 dark:bg-primary-900/40 border border-primary-100 dark:border-primary-800/50 flex items-center justify-center">
+                                        <svg class="w-7 h-7 text-primary-500 dark:text-primary-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+                                    </div>
+                                </div>
+                                <p class="text-xl font-semibold text-gray-900 dark:text-white mb-2">Wie kann ich Ihnen helfen?</p>
+                                <p class="text-sm text-gray-400 dark:text-gray-500 mb-8 text-center max-w-md">Fragen zu Sitzungen, Vorlagen, Gremien und kommunalpolitischen Themen</p>
+                                <div class="grid grid-cols-2 gap-3 w-full max-w-lg">
+                                    <button @click="sendMessage('Welche Sitzungen finden diese Woche statt?')"
+                                            class="group text-left p-4 bg-gray-50 dark:bg-gray-750 hover:bg-primary-50 dark:hover:bg-primary-900/20 border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-800/50 rounded-xl transition-all">
+                                        <div class="flex items-center gap-2.5 mb-1.5">
+                                            <svg class="w-4 h-4 text-gray-400 group-hover:text-primary-500 transition-colors" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+                                            <span class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Sitzungen</span>
+                                        </div>
+                                        <span class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Diese Woche anstehende Termine</span>
+                                    </button>
+                                    <button @click="sendMessage('Was sind aktuelle Themen im Stadtrat?')"
+                                            class="group text-left p-4 bg-gray-50 dark:bg-gray-750 hover:bg-primary-50 dark:hover:bg-primary-900/20 border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-800/50 rounded-xl transition-all">
+                                        <div class="flex items-center gap-2.5 mb-1.5">
+                                            <svg class="w-4 h-4 text-gray-400 group-hover:text-primary-500 transition-colors" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/></svg>
+                                            <span class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Aktuelle Themen</span>
+                                        </div>
+                                        <span class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Themen im Stadtrat</span>
+                                    </button>
+                                    <button @click="sendMessage('Erkläre mir, wie ein Antrag eingebracht wird')"
+                                            class="group text-left p-4 bg-gray-50 dark:bg-gray-750 hover:bg-primary-50 dark:hover:bg-primary-900/20 border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-800/50 rounded-xl transition-all">
+                                        <div class="flex items-center gap-2.5 mb-1.5">
+                                            <svg class="w-4 h-4 text-gray-400 group-hover:text-primary-500 transition-colors" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 18v-6"/></svg>
+                                            <span class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Anträge</span>
+                                        </div>
+                                        <span class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Wie ein Antrag funktioniert</span>
+                                    </button>
+                                    <button @click="sendMessage('Welche Ausschüsse gibt es?')"
+                                            class="group text-left p-4 bg-gray-50 dark:bg-gray-750 hover:bg-primary-50 dark:hover:bg-primary-900/20 border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-800/50 rounded-xl transition-all">
+                                        <div class="flex items-center gap-2.5 mb-1.5">
+                                            <svg class="w-4 h-4 text-gray-400 group-hover:text-primary-500 transition-colors" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                                            <span class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Ausschüsse</span>
+                                        </div>
+                                        <span class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Gremien und ihre Aufgaben</span>
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                </template>
-            </div>
+                        </template>
 
-            <!-- Input -->
-            <div class="border-t border-gray-200 dark:border-gray-700 p-4">
-                <form @submit.prevent="sendMessage(input); input = ''" class="flex gap-3">
-                    <input type="text"
-                           x-model="input"
-                           placeholder="Ihre Frage eingeben..."
-                           :disabled="isLoading"
-                           class="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 border-0 rounded-xl text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500/20 outline-none disabled:opacity-50">
-                    <button type="submit"
-                            :disabled="!input.trim() || isLoading"
-                            class="px-4 py-3 bg-primary-500 hover:bg-primary-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-xl transition-colors disabled:cursor-not-allowed">
-                        <i data-lucide="send" class="w-5 h-5"></i>
-                    </button>
-                </form>
+                        <!-- Message List -->
+                        <template x-for="(msg, index) in messages" :key="index">
+                            <div>
+                                <!-- User Message -->
+                                <template x-if="msg.role === 'user'">
+                                    <div class="flex justify-end">
+                                        <div class="bg-primary-600 text-white rounded-2xl rounded-br-md px-5 py-3 max-w-[75%] shadow-sm">
+                                            <p class="text-[15px] leading-relaxed whitespace-pre-wrap" x-text="msg.content"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                                <!-- Assistant Message -->
+                                <template x-if="msg.role === 'assistant'">
+                                    <div class="flex justify-start gap-3">
+                                        <div class="w-9 h-9 rounded-xl bg-primary-50 dark:bg-primary-900/30 border border-primary-100 dark:border-primary-800/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            <svg class="w-[18px] h-[18px] text-primary-500 dark:text-primary-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+                                        </div>
+                                        <div class="max-w-[85%] min-w-0">
+                                            <div class="bg-gray-50 dark:bg-gray-750 text-gray-900 dark:text-gray-100 rounded-2xl rounded-tl-md px-5 py-3.5 border border-gray-100 dark:border-gray-700">
+                                                <div class="prose dark:prose-invert max-w-none
+                                                            prose-p:my-1.5 prose-p:leading-relaxed prose-p:text-[15px]
+                                                            prose-headings:my-2.5 prose-headings:text-base prose-headings:font-semibold
+                                                            prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-li:text-[15px]
+                                                            prose-strong:text-gray-900 dark:prose-strong:text-white
+                                                            prose-a:text-primary-600 dark:prose-a:text-primary-400 prose-a:font-medium prose-a:no-underline hover:prose-a:underline
+                                                            prose-code:text-sm prose-code:bg-gray-100 dark:prose-code:bg-gray-800 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded"
+                                                     x-html="renderMarkdown(msg.content)"></div>
+                                            </div>
+                                            <!-- Sources -->
+                                            <template x-if="msg.sources && msg.sources.length > 0">
+                                                <div class="mt-2.5 space-y-1.5">
+                                                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 pl-1">Quellen</p>
+                                                    <div class="flex flex-wrap gap-2">
+                                                        <template x-for="(src, si) in msg.sources" :key="si">
+                                                            <a :href="src.url"
+                                                               class="group inline-flex items-center gap-2 pl-2 pr-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 rounded-lg hover:border-primary-300 dark:hover:border-primary-700 hover:text-primary-600 dark:hover:text-primary-400 transition-all">
+                                                                <svg class="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 13H8"/><path d="M16 17H8"/><path d="M16 13h-2"/></svg>
+                                                                <span x-text="src.title.substring(0, 60) + (src.title.length > 60 ? '...' : '')"></span>
+                                                            </a>
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                                <!-- Error Message -->
+                                <template x-if="msg.role === 'error'">
+                                    <div class="flex justify-start gap-3">
+                                        <div class="w-9 h-9 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            <svg class="w-[18px] h-[18px] text-red-500 dark:text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+                                        </div>
+                                        <div class="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-800/40 rounded-2xl rounded-tl-md px-5 py-3 max-w-[80%]">
+                                            <p class="text-sm leading-relaxed" x-text="msg.content"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+
+                        <!-- Loading -->
+                        <template x-if="isLoading">
+                            <div class="flex justify-start gap-3">
+                                <div class="w-9 h-9 rounded-xl bg-primary-50 dark:bg-primary-900/30 border border-primary-100 dark:border-primary-800/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                    <svg class="w-[18px] h-[18px] text-primary-500 dark:text-primary-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+                                </div>
+                                <div class="bg-gray-50 dark:bg-gray-750 border border-gray-100 dark:border-gray-700 rounded-2xl rounded-tl-md px-5 py-4">
+                                    <div class="flex items-center gap-1.5">
+                                        <div class="w-2 h-2 bg-primary-400/60 rounded-full animate-bounce"></div>
+                                        <div class="w-2 h-2 bg-primary-400/60 rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
+                                        <div class="w-2 h-2 bg-primary-400/60 rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Footer: Rate Limit + Input -->
+                <div class="border-t border-gray-100 dark:border-gray-700 flex-shrink-0">
+                    <!-- Rate limit bar -->
+                    <template x-if="remainingToday !== null">
+                        <div class="max-w-3xl mx-auto px-6 lg:px-8 py-2 flex items-center justify-center gap-4 border-b border-gray-100 dark:border-gray-700">
+                            <span class="text-xs text-gray-400 dark:text-gray-500">
+                                Noch <span x-text="remainingToday" class="font-semibold text-gray-500 dark:text-gray-400"></span> Fragen heute
+                                <template x-if="remainingToday <= 2 && !isRegistered">
+                                    <span class="ml-1">&mdash; <a href="/accounts/register/" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Konto erstellen</a> für mehr</span>
+                                </template>
+                            </span>
+                            <span class="text-xs text-gray-300 dark:text-gray-600">&middot;</span>
+                            <span class="text-xs text-gray-400 dark:text-gray-500">
+                                <span x-text="remainingWeek"></span>/Woche
+                            </span>
+                        </div>
+                    </template>
+
+                    <!-- Input area -->
+                    <div class="max-w-3xl mx-auto px-6 lg:px-8 py-4">
+                        <form @submit.prevent="handleSubmit()" class="flex items-end gap-3">
+                            <div class="flex-1">
+                                <textarea x-model="input"
+                                          x-ref="chatInput"
+                                          @keydown.enter.exact.prevent="handleSubmit()"
+                                          placeholder="Ihre Frage eingeben..."
+                                          :disabled="isLoading"
+                                          rows="1"
+                                          class="w-full px-5 bg-gray-50 dark:bg-gray-750 border border-gray-200 dark:border-gray-700 rounded-xl text-base text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-300 dark:focus:border-primary-700 outline-none disabled:opacity-50 resize-none overflow-hidden transition-colors"
+                                          @input="autoResize($event.target)"
+                                          style="min-height: 56px; max-height: 140px; padding-top: 16px; padding-bottom: 16px;"></textarea>
+                            </div>
+                            <button type="submit"
+                                    :disabled="!input.trim() || isLoading"
+                                    class="flex items-center justify-center bg-primary-600 hover:bg-primary-700 disabled:bg-gray-100 dark:disabled:bg-gray-700 text-white disabled:text-gray-300 dark:disabled:text-gray-500 rounded-xl transition-all disabled:cursor-not-allowed shadow-sm hover:shadow-md disabled:shadow-none flex-shrink-0"
+                                    style="width: 56px; height: 56px;">
+                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+                            </button>
+                        </form>
+                        <p class="text-xs text-gray-400 dark:text-gray-600 mt-2.5 text-center">
+                            Antworten basieren auf öffentlichen Ratsdokumenten und können unvollständig sein.
+                        </p>
+                    </div>
+                </div>
             </div>
         </div>
     </template>
-    </div>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
 function chatApp() {
     return {
-        hasConsent: localStorage.getItem('chat_consent') === 'true',
+        hasConsent: {{ has_chat_consent|yesno:"true,false" }},
+        consentChecked: false,
         messages: [],
         input: '',
         isLoading: false,
+        remainingToday: null,
+        remainingWeek: null,
+        isRegistered: {{ user.is_authenticated|yesno:"true,false" }},
 
-        giveConsent() {
-            localStorage.setItem('chat_consent', 'true');
-            this.hasConsent = true;
+        autoResize(el) {
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+        },
 
-            // Also set server-side session
-            fetch('{% url "insight_core:insight:chat_message" %}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                },
-                body: JSON.stringify({ consent: true })
+        minInputHeight: 56,
+
+        scrollToBottom() {
+            this.$nextTick(() => {
+                const container = this.$refs.chatMessages;
+                if (container) container.scrollTop = container.scrollHeight;
             });
         },
 
-        async sendMessage(content) {
-            if (!content.trim()) return;
+        renderMarkdown(text) {
+            if (!text) return '';
+            try {
+                return marked.parse(text, { breaks: true, gfm: true });
+            } catch (e) {
+                return text.replace(/\n/g, '<br>');
+            }
+        },
 
-            // Add user message
+        async giveConsent() {
+            if (!this.consentChecked) return;
+            try {
+                await fetch('{% url "insight_core:insight:chat_message" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({ consent: true })
+                });
+            } catch (e) { /* consent will be checked server-side anyway */ }
+            this.hasConsent = true;
+        },
+
+        handleSubmit() {
+            const content = this.input.trim();
+            if (!content || this.isLoading) return;
+            this.input = '';
+            if (this.$refs.chatInput) {
+                this.$refs.chatInput.style.height = '56px';
+            }
+            this.sendMessage(content);
+        },
+
+        getChatHistory() {
+            return this.messages
+                .filter(m => m.role === 'user' || m.role === 'assistant')
+                .map(m => ({ role: m.role, content: m.content }));
+        },
+
+        async sendMessage(content) {
+            if (!content.trim() || this.isLoading) return;
+
             this.messages.push({ role: 'user', content: content });
             this.isLoading = true;
-
-            // Scroll to bottom
-            this.$nextTick(() => {
-                const container = document.getElementById('chat-messages');
-                container.scrollTop = container.scrollHeight;
-            });
+            this.scrollToBottom();
 
             try {
                 const response = await fetch('{% url "insight_core:insight:chat_message" %}', {
@@ -165,40 +340,48 @@ function chatApp() {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': '{{ csrf_token }}'
                     },
-                    body: JSON.stringify({ message: content })
+                    body: JSON.stringify({
+                        message: content,
+                        history: this.getChatHistory()
+                    })
                 });
 
                 const data = await response.json();
 
                 if (data.error === 'consent_required') {
                     this.hasConsent = false;
-                    localStorage.removeItem('chat_consent');
-                    this.messages.pop(); // Remove user message
+                    this.messages.pop();
+                } else if (data.error === 'rate_limited') {
+                    this.remainingToday = data.remaining_today;
+                    this.remainingWeek = data.remaining_week;
+                    this.messages.push({ role: 'error', content: data.message });
+                } else if (data.error === 'content_blocked') {
+                    this.messages.push({ role: 'error', content: data.message });
+                    if (data.remaining_today !== undefined) {
+                        this.remainingToday = data.remaining_today;
+                        this.remainingWeek = data.remaining_week;
+                    }
                 } else if (data.error) {
-                    this.messages.push({
-                        role: 'assistant',
-                        content: 'Entschuldigung, es ist ein Fehler aufgetreten: ' + data.error
-                    });
+                    this.messages.push({ role: 'error', content: data.message || data.error });
                 } else {
                     this.messages.push({
                         role: 'assistant',
-                        content: data.response
+                        content: data.response,
+                        sources: data.sources || []
                     });
+                    if (data.remaining_today !== undefined) {
+                        this.remainingToday = data.remaining_today;
+                        this.remainingWeek = data.remaining_week;
+                    }
                 }
             } catch (error) {
                 this.messages.push({
-                    role: 'assistant',
-                    content: 'Entschuldigung, es ist ein Verbindungsfehler aufgetreten.'
+                    role: 'error',
+                    content: 'Verbindungsfehler. Bitte prüfen Sie Ihre Internetverbindung.'
                 });
             } finally {
                 this.isLoading = false;
-
-                // Scroll to bottom
-                this.$nextTick(() => {
-                    const container = document.getElementById('chat-messages');
-                    container.scrollTop = container.scrollHeight;
-                    lucide.createIcons();
-                });
+                this.scrollToBottom();
             }
         }
     }
