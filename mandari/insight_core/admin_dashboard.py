@@ -19,7 +19,12 @@ def dashboard_callback(request, context):
     Diese Funktion wird von Unfold aufgerufen und fügt
     statistische Daten zum Template-Context hinzu.
     """
-    from insight_content.models import BlogPost, Release
+    from django.apps import apps as django_apps
+
+    has_content = django_apps.is_installed("insight_content")
+    if has_content:
+        from insight_content.models import BlogPost, Release
+
     from insight_core.models import (
         OParlAgendaItem,
         OParlBody,
@@ -53,12 +58,15 @@ def dashboard_callback(request, context):
     }
 
     # Content Statistiken
-    context["content_stats"] = {
-        "blog_posts": BlogPost.objects.count(),
-        "blog_published": BlogPost.objects.filter(status=BlogPost.Status.PUBLISHED).count(),
-        "releases": Release.objects.count(),
-        "releases_published": Release.objects.filter(is_published=True).count(),
-    }
+    if has_content:
+        context["content_stats"] = {
+            "blog_posts": BlogPost.objects.count(),
+            "blog_published": BlogPost.objects.filter(status=BlogPost.Status.PUBLISHED).count(),
+            "releases": Release.objects.count(),
+            "releases_published": Release.objects.filter(is_published=True).count(),
+        }
+    else:
+        context["content_stats"] = {}
 
     # Letzte Sync-Aktivität mit Stunden-Berechnung
     sources = OParlSource.objects.filter(is_active=True).order_by("-last_sync")[:5]
@@ -69,6 +77,21 @@ def dashboard_callback(request, context):
         else:
             source.hours_since_sync = 999
     context["recent_sources"] = sources
+
+    # Sync-Verwaltung: Logs, Config, laufender Sync, Daemon-Status
+    try:
+        from insight_sync import daemon
+        from insight_sync.models import SyncConfig, SyncLog
+
+        context["recent_sync_logs"] = SyncLog.objects.order_by("-started_at")[:5]
+        context["sync_config"] = SyncConfig.get()
+        context["is_syncing"] = SyncLog.objects.filter(status=SyncLog.Status.RUNNING).exists()
+        context["daemon_running"] = daemon.is_running()
+    except Exception:
+        context["recent_sync_logs"] = []
+        context["sync_config"] = None
+        context["is_syncing"] = False
+        context["daemon_running"] = False
 
     # Anstehende Sitzungen
     context["upcoming_meetings"] = OParlMeeting.objects.filter(start__gte=timezone.now(), cancelled=False).order_by(

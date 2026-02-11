@@ -210,11 +210,103 @@
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
                     Sync-Status
                 </h2>
-                <a href="{% url 'admin:insight_core_oparlsource_changelist' %}"
-                   class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400">
-                    Alle anzeigen →
-                </a>
+                <div class="flex items-center gap-3">
+                    <a href="{% url 'admin:insight_sync_synclog_changelist' %}"
+                       class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400">
+                        Alle Logs →
+                    </a>
+                    <a href="{% url 'admin:insight_sync_syncconfig_changelist' %}"
+                       class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400">
+                        Einstellungen →
+                    </a>
+                </div>
             </div>
+
+            <!-- Daemon-Status -->
+            <div class="mb-3 flex items-center gap-2 text-sm">
+                {% if daemon_running %}
+                <span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                <span class="text-green-700 dark:text-green-400 font-medium">Daemon aktiv</span>
+                {% if sync_config %}
+                <span class="text-gray-400 dark:text-gray-500">
+                    (alle {{ sync_config.interval_minutes }} Min.{% if not sync_config.sync_enabled %}, pausiert{% endif %})
+                </span>
+                {% endif %}
+                {% else %}
+                <span class="w-2.5 h-2.5 rounded-full bg-gray-400"></span>
+                <span class="text-gray-500 dark:text-gray-400">Daemon inaktiv</span>
+                <span class="text-gray-400 dark:text-gray-500 text-xs">(SYNC_DAEMON_AUTOSTART=true in .env)</span>
+                {% endif %}
+            </div>
+
+            <!-- Sync-Button -->
+            <div class="mb-4 flex items-center gap-2">
+                {% if is_syncing %}
+                <div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium">
+                    <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                    Sync läuft...
+                </div>
+                {% else %}
+                <form method="post" action="{% url 'insight_sync_trigger_sync' %}" class="inline">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors">
+                        Jetzt synchronisieren
+                    </button>
+                </form>
+                <form method="post" action="{% url 'insight_sync_trigger_sync' %}" class="inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="full" value="1">
+                    <button type="submit"
+                            class="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium transition-colors">
+                        Full Sync
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+
+            <!-- Letzte Sync-Logs -->
+            {% if recent_sync_logs %}
+            <div class="mb-4">
+                <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Letzte Syncs</h3>
+                <div class="space-y-1.5">
+                    {% for log in recent_sync_logs %}
+                    <div class="flex items-center justify-between py-1.5 px-2 rounded text-sm">
+                        <div class="flex items-center gap-2">
+                            {% if log.status == "running" %}
+                            <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+                            {% elif log.status == "success" %}
+                            <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                            {% else %}
+                            <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                            {% endif %}
+                            <span class="text-gray-700 dark:text-gray-300">
+                                {{ log.get_sync_type_display }}
+                            </span>
+                            <span class="text-gray-400 dark:text-gray-500">
+                                {% if log.source %}{{ log.source.name }}{% else %}Alle{% endif %}
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                            {% if log.duration_seconds %}
+                            <span>{{ log.duration_seconds|floatformat:1 }}s</span>
+                            {% endif %}
+                            {% if log.entities_synced %}
+                            <span>{{ log.entities_synced }} Ent.</span>
+                            {% endif %}
+                            <span>{{ log.started_at|timesince }} her</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Quellen-Status -->
+            <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Quellen</h3>
             {% if recent_sources %}
             <div class="space-y-2">
                 {% for source in recent_sources %}

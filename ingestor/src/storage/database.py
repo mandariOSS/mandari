@@ -693,6 +693,32 @@ class DatabaseStorage:
             self._organization_uuid_cache[org.external_id] = org_id
             return org_id
 
+    async def load_fk_caches(self) -> None:
+        """Pre-populate person and organization UUID caches from DB.
+
+        Must be called before syncing memberships in incremental mode,
+        because the caches are otherwise only filled during upsert operations.
+        """
+        async with self.get_session() as session:
+            # Load all persons: external_id -> UUID
+            result = await session.execute(
+                select(OParlPerson.external_id, OParlPerson.id)
+            )
+            for ext_id, uuid in result.all():
+                self._person_uuid_cache[ext_id] = uuid
+
+            # Load all organizations: external_id -> UUID
+            result = await session.execute(
+                select(OParlOrganization.external_id, OParlOrganization.id)
+            )
+            for ext_id, uuid in result.all():
+                self._organization_uuid_cache[ext_id] = uuid
+
+            console.print(
+                f"[dim]  FK caches loaded: {len(self._person_uuid_cache)} persons, "
+                f"{len(self._organization_uuid_cache)} organizations[/dim]"
+            )
+
     # ========== Agenda Item Operations ==========
 
     async def upsert_agenda_item(

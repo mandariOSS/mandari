@@ -97,9 +97,17 @@ class Command(BaseCommand):
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
-        # Add ingestor to path
-        ingestor_path = settings.BASE_DIR.parent / "apps" / "ingestor"
-        sys.path.insert(0, str(ingestor_path))
+        # Add ingestor to path (wird auch von _get_sync_orchestrator() gemacht,
+        # aber hier für direkten Import via _sync_all)
+        from pathlib import Path
+
+        for path in [
+            settings.BASE_DIR.parent / "ingestor",
+            settings.BASE_DIR.parent / "apps" / "ingestor",
+            Path("/ingestor"),
+        ]:
+            if path.is_dir() and str(path) not in sys.path:
+                sys.path.insert(0, str(path))
 
         if once:
             # Einmalige Ausführung
@@ -113,11 +121,20 @@ class Command(BaseCommand):
         self.stdout.write("\n" + self.style.WARNING("Shutdown Signal empfangen..."))
         self._running = False
 
+    def _get_config(self):
+        """Liest die Sync-Konfiguration aus der Datenbank."""
+        try:
+            from insight_sync.models import SyncConfig
+
+            return SyncConfig.get()
+        except Exception:
+            return None
+
     def _run_once(self, full: bool, concurrent: int):
         """Führt einen einzelnen Sync aus."""
         sync_type = "Full" if full else "Incremental"
         self.stdout.write(f"Starte {sync_type} Sync...")
-        asyncio.run(self._sync_all(full, concurrent))
+        self._sync_all_with_logging(full, concurrent)
 
     def _run_daemon(self, interval: int, full_hour: int, concurrent: int):
         """Läuft als Daemon mit periodischen Syncs."""
@@ -138,10 +155,28 @@ class Command(BaseCommand):
         """Haupt-Loop des Daemons."""
         # Initialer Sync
         self.stdout.write("Führe initialen Incremental Sync aus...")
-        await self._sync_all(full=False, concurrent=concurrent)
+        self._sync_all_with_logging(full=False, concurrent=concurrent)
 
         while self._running:
             try:
+                # Konfiguration aus DB lesen (überschreibt CLI-Werte)
+                config = self._get_config()
+                if config:
+                    interval = config.interval_minutes
+                    full_hour = config.full_sync_hour
+                    concurrent = config.max_concurrent
+
+                    if not config.sync_enabled:
+                        self.stdout.write(
+                            f"[{datetime.now().strftime('%H:%M:%S')}] "
+                            f"Sync pausiert (über Admin deaktiviert). Prüfe in 60s erneut..."
+                        )
+                        for _ in range(60):
+                            if not self._running:
+                                break
+                            await asyncio.sleep(1)
+                        continue
+
                 # Warte bis zum nächsten Sync
                 next_sync = datetime.now().replace(second=0, microsecond=0)
                 minutes_to_wait = interval - (next_sync.minute % interval)
@@ -177,11 +212,11 @@ class Command(BaseCommand):
                     self.stdout.write(
                         self.style.WARNING(f"\n[{now.strftime('%H:%M:%S')}] Starte täglichen Full Sync...")
                     )
-                    await self._sync_all(full=True, concurrent=concurrent)
+                    self._sync_all_with_logging(full=True, concurrent=concurrent)
                     self._last_full_sync_date = now.date()
                 else:
                     self.stdout.write(f"\n[{now.strftime('%H:%M:%S')}] Starte Incremental Sync...")
-                    await self._sync_all(full=False, concurrent=concurrent)
+                    self._sync_all_with_logging(full=False, concurrent=concurrent)
 
             except Exception as e:
                 self.stdout.write(self.style.ERROR(f"Sync Fehler: {e}"))
@@ -189,6 +224,21 @@ class Command(BaseCommand):
                 await asyncio.sleep(60)
 
         self.stdout.write(self.style.SUCCESS("Daemon beendet."))
+
+    def _sync_all_with_logging(self, full: bool, concurrent: int):
+        """Führt den Sync aus und schreibt ein SyncLog."""
+        try:
+            from insight_sync.tasks import run_sync_with_logging
+
+            run_sync_with_logging(
+                full=full,
+                triggered_by="daemon",
+                max_concurrent=concurrent,
+            )
+            sync_type = "Full" if full else "Incremental"
+            self.stdout.write(self.style.SUCCESS(f"{sync_type} Sync abgeschlossen (mit Logging)."))
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"Sync fehlgeschlagen: {e}"))
 
     async def _sync_all(self, full: bool, concurrent: int):
         """Führt den Sync aller Quellen aus."""

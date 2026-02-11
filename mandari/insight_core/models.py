@@ -66,6 +66,23 @@ class OParlBody(models.Model):
         null=True,
         help_text="Kurzer Anzeigename für das Frontend (z.B. 'Köln' statt 'Stadt Köln, kreisfreie Stadt')",
     )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Kurze Beschreibung der Kommune für die Portalseite (2-3 Sätze, z.B. 'Willkommen im Ratsinformationssystem der Stadt Münster...')",
+    )
+    hero_image = models.ImageField(
+        upload_to="bodies/heroes/",
+        blank=True,
+        null=True,
+        help_text="Bild der Kommune für die Portalseite (z.B. Stadtansicht, Rathaus). Empfohlen: 1920×1080px, Querformat.",
+    )
+    hero_image_credit = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Bildnachweis (z.B. 'Foto: Max Mustermann, CC BY-SA 4.0')",
+    )
     website = models.URLField(blank=True, null=True)
     license = models.TextField(blank=True, null=True)
     license_valid_since = models.DateTimeField(blank=True, null=True)

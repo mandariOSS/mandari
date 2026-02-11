@@ -1,6 +1,6 @@
 # Mandari Insight - Feature Status & Roadmap
 
-> **Zuletzt aktualisiert**: 2026-02-10 (Ratsfragen: PublicQuestion Model, Views, Admin, E-Mail-Workflow)
+> **Zuletzt aktualisiert**: 2026-02-11 (Inkrementeller Sync optimiert: modified_since Server-Filter, FK-Cache, Meilisearch-Skip, Full-Sync deaktiviert)
 > **Aktualisiert durch**: Claude Code (automatisch nach jeder Implementierung)
 >
 > **Anweisung an AI-Agenten**: Nach Abschluss jeder Aufgabe, die ein Feature in dieser Liste betrifft,
@@ -29,7 +29,7 @@
 | 4 | [SEO & Sitemaps](#4-seo--sitemaps) | :white_check_mark: | 100% | - |
 | 5 | [KI-Zusammenfassungen](#5-ki-zusammenfassungen) | :white_check_mark: | 100% | - |
 | 6 | [KI-Chatbot (RAG)](#6-ki-chatbot-rag) | :construction: | 10% | HOCH |
-| 7 | [Statistiken & Dashboard](#7-statistiken--dashboard) | :construction: | 40% | MITTEL |
+| 7 | [Statistiken & Dashboard](#7-statistiken--dashboard) | :construction: | 60% | MITTEL |
 | 8 | [Georeferenzierung & Karte](#8-georeferenzierung--karte) | :construction: | 50% | HOCH |
 | 9 | [Semantische Suche (Vektor)](#9-semantische-suche-vektor) | :white_check_mark: | 100% | MITTEL |
 | 10 | [Straßensuche (frankfurt-gestalten)](#10-straßensuche-frankfurt-gestalten-stil) | :clipboard: | 0% | HOCH |
@@ -50,7 +50,7 @@ Mandari Insight spiegelt OParl-Ratsinformationssysteme (1.0 + 1.1) und stellt si
 
 | Komponente | Status | Details |
 |------------|--------|---------|
-| Ingestor (Metadata-Sync) | :white_check_mark: | Async Python, 20 concurrent requests, inkrementell + full |
+| Ingestor (Metadata-Sync) | :white_check_mark: | Async Python, 20 concurrent requests, inkrementell + full, `modified_since` Server-Pre-Filter (7 Tage), FK-Cache für Memberships |
 | Body (Kommune) | :white_check_mark: | Portal-Startseite mit Body-Auswahl |
 | Organizations (Gremien) | :white_check_mark: | Tabellarische Liste (Aktiv/Alle), Detail mit Tabs (Mitglieder, Sitzungskalender, Infos), Rat-Sonderfall (Ratsmitglieder/Weitere getrennt, OB+BM+Fraktionsvorsitz bei Ratsmitgliedern), ehemalige Mitglieder collapsible |
 | Persons (Personen) | :white_check_mark: | Liste + Detail, Mitgliedschaften, Suche |
@@ -64,8 +64,10 @@ Mandari Insight spiegelt OParl-Ratsinformationssysteme (1.0 + 1.1) und stellt si
 | Memberships | :white_check_mark: | In Person- und Organization-Detail |
 | Multi-Body-Support | :white_check_mark: | Session-basierte Body-Auswahl |
 | HTMX-Partials | :white_check_mark: | Dynamisches Nachladen aller Listen |
+| Sync-Verwaltung (Admin) | :white_check_mark: | SyncLog (Protokoll), SyncConfig (Singleton), Dashboard-Button, Daemon liest DB-Config, Full-Sync deaktivierbar (Stunde > 23) |
+| Inkrementeller Sync (Optimierung) | :white_check_mark: | `modified_since` Server-Pre-Filter (letzte 7 Tage) + Client-Side batch_check, Meilisearch-Indexing nur bei Änderungen, FK-UUID-Cache-Vorladen aus DB |
 
-**Dateien**: `insight_core/views.py`, `insight_core/models.py`, `insight_core/urls.py`, `templates/pages/`
+**Dateien**: `insight_core/views.py`, `insight_core/models.py`, `insight_core/urls.py`, `templates/pages/`, `insight_sync/models.py`, `insight_sync/admin.py`
 
 **Getestete OParl-Server**: Münster (1.1), Bonn, Aachen (ITK Rheinland), Berlin Pankow (1.0), München Transparent (1.0)
 
@@ -178,20 +180,24 @@ Ein KI-Chatbot, der Bürger:innen Fragen zu kommunalpolitischen Daten beantworte
 
 ### 7. Statistiken & Dashboard
 
-**Status**: :construction: Basis | **Fortschritt**: 40%
+**Status**: :construction: Erweitert | **Fortschritt**: 60%
 
 | Komponente | Status | Details |
 |------------|--------|---------|
-| Entity-Counts pro Body | :white_check_mark: | Startseite: Gremien, Personen, Sitzungen, Vorgänge |
-| Kommende Sitzungen (Top 5) | :white_check_mark: | Startseite |
-| Aktuelle Vorgänge (Top 5) | :white_check_mark: | Startseite |
+| Entity-Counts pro Body (6 Werte) | :white_check_mark: | Gremien, Personen, Sitzungen, Vorgänge, Dokumente, Ratsfragen |
+| Kommende Sitzungen (Top 3) | :white_check_mark: | Startseite, Side-by-side mit Vorgängen |
+| Aktuelle Vorgänge (Top 5) | :white_check_mark: | Startseite, Side-by-side mit Sitzungen |
+| Side-by-side Layout | :white_check_mark: | Sitzungen + Vorgänge nebeneinander (2-Spalten Grid) |
+| Feature-Highlights | :white_check_mark: | Ratsfragen + Nachbarschaft Cards (frankfurt-gestalten-Stil) |
+| Body-Beschreibung | :white_check_mark: | Individuelle Einleitung pro Kommune (description Feld) |
+| Alle-Kommunen-Stats (6 Werte) | :white_check_mark: | Inkl. Dokumente |
 | Vorgänge nach Typ (Chart) | :clipboard: | Kuchendiagramm / Balkendiagramm |
 | Sitzungen nach Monat (Chart) | :clipboard: | Zeitverlauf |
 | Aktivitäts-Timeline | :clipboard: | Chronologische Übersicht aller Änderungen |
 | Top-Gremien nach Aktivität | :clipboard: | Ranking nach Sitzungshäufigkeit |
 | Abstimmungsstatistiken | :clipboard: | Benötigt Abstimmungsdaten (selten in OParl) |
 
-**Dateien**: `insight_core/views.py:63-111` (PortalHomeView)
+**Dateien**: `insight_core/views.py:63-115` (PortalHomeView), `templates/pages/portal/home.html`
 
 ---
 
@@ -424,6 +430,7 @@ Alle Insight-Seiten wurden vom Top-Navbar-Layout (base.html → navbar.html + fo
 | HTMX + Alpine.js | :white_check_mark: | Frontend-Interaktivität |
 | Tailwind CSS | :white_check_mark: | Styling |
 | Ingestor (Python async) | :white_check_mark: | OParl-Sync |
+| Sync-Verwaltung (Admin) | :white_check_mark: | SyncLog, SyncConfig, Dashboard-Button, Daemon DB-Config, modified_since Pre-Filter, FK-Cache |
 | insight_ai (Nebius) | :white_check_mark: | KI-Zusammenfassungen |
 | Tesseract OCR | :white_check_mark: | Lokale Text-Extraktion |
 | Celery / Task Queue | :clipboard: | Für Newsletter, Bulk-Extraktion |

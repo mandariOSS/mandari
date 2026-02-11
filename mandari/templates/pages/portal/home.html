@@ -1,159 +1,247 @@
 {% extends "base_insight.html" %}
 
-{% block title %}{% if active_body %}{{ active_body.name }} - {% endif %}Mandari Insight Portal{% endblock %}
+{% block title %}{% if active_body %}{{ active_body.get_display_name }} - Ratsinformationen{% else %}Mandari Insight Portal{% endif %}{% endblock %}
 
-{% block meta_description %}Ratsinformationssystem: Gremien, Personen, Vorgänge und Termine transparent einsehen.{% endblock %}
+{% block meta_description %}{% if active_body %}Ratsinformationen für {{ active_body.get_display_name }}: Sitzungen, Vorgänge, Gremien und Personen transparent einsehen.{% else %}Kommunalpolitische Transparenz: Ratsinformationen durchsuchen und verstehen.{% endif %}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .item-list a, .item-list a:visited { color: inherit; }
+</style>
+{% endblock %}
 
 {% block content %}
 {% if active_body %}
-{# ─── Kommune ausgewählt ─── #}
 
-{# 1. Hero + Search #}
-<section class="fade-up mb-8">
-    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-        Ratsinformationen {{ active_body.get_display_name }}
-    </h1>
-    <div class="relative">
-        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
-        <input type="text" placeholder="Sitzungen, Vorgänge, Personen durchsuchen..."
-            hx-get="{% url 'insight_core:insight:search' %}"
-            hx-trigger="keyup changed delay:500ms"
-            hx-target="#search-results-preview"
-            name="q"
-            class="w-full pl-12 pr-4 py-3.5 text-base bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm text-gray-900 dark:text-white placeholder-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all outline-none">
-    </div>
-    <div id="search-results-preview"></div>
-</section>
-
-{# 2. Kommende Sitzungen #}
-<section class="fade-up d1 mb-8">
-    <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-bold text-gray-900 dark:text-white">Kommende Sitzungen</h2>
-        <a href="{% url 'insight_core:insight:meeting_list' %}" class="text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1">
-            Alle Termine <i data-lucide="arrow-right" class="w-4 h-4"></i>
-        </a>
-    </div>
-    {% if upcoming_meetings %}
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {% for meeting in upcoming_meetings %}
-        <a href="{% url 'insight_core:insight:meeting_detail' meeting.pk %}" class="group block bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-primary-300 dark:hover:border-primary-600 transition-all p-5">
-            <div class="flex items-start gap-4">
-                <div class="flex flex-col items-center justify-center flex-shrink-0 w-14 h-14 rounded-xl bg-primary-50 dark:bg-primary-900/20">
-                    <span class="text-xl font-extrabold text-primary-600 dark:text-primary-400 leading-none">{{ meeting.start|date:"d" }}</span>
-                    <span class="text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wide">{{ meeting.start|date:"M" }}</span>
-                </div>
-                <div class="min-w-0">
-                    <h3 class="text-sm font-bold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors line-clamp-2">{{ meeting.get_display_name }}</h3>
-                    {% if meeting.start %}
-                    <p class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 mb-0.5">
-                        <i data-lucide="clock" class="w-3 h-3"></i> {{ meeting.start|date:"H:i" }} Uhr
-                    </p>
-                    {% endif %}
-                    {% if meeting.location_name %}
-                    <p class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                        <i data-lucide="map-pin" class="w-3 h-3"></i> {{ meeting.location_name|truncatechars:30 }}
-                    </p>
-                    {% endif %}
-                </div>
+<section class="fade-up mb-10">
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-center">
+        <div class="lg:col-span-3">
+            <h1 class="text-3xl lg:text-4xl font-extrabold text-gray-900 dark:text-white mb-3">
+                {{ active_body.get_display_name }} transparent
+            </h1>
+            {% if active_body.description %}
+            <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-6">{{ active_body.description }}</p>
+            {% else %}
+            <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-6">Hier findest du alle öffentlichen Ratsinformationen deiner Stadt &ndash; Sitzungen, Vorgänge, Gremien und die Menschen, die Entscheidungen treffen. Offen für alle.</p>
+            {% endif %}
+            <div class="relative max-w-xl">
+                <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-400 pointer-events-none"></i>
+                <input type="text"
+                    placeholder="Was suchst du? Thema, Straße, Gremium ..."
+                    hx-get="{% url 'insight_core:insight:search' %}"
+                    hx-trigger="keyup changed delay:500ms"
+                    hx-target="#search-results-preview"
+                    hx-vals='{"dropdown":"1"}'
+                    name="q"
+                    autocomplete="off"
+                    class="w-full pl-12 pr-4 py-3.5 text-[15px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all outline-none shadow-sm">
             </div>
-        </a>
-        {% endfor %}
+            <div id="search-results-preview"></div>
+        </div>
+        {% if active_body.hero_image %}
+        <div class="lg:col-span-2 hidden lg:block">
+            <div class="relative overflow-hidden rounded-2xl shadow-lg">
+                <img src="{{ active_body.hero_image.url }}" alt="{{ active_body.get_display_name }}" class="w-full h-64 object-cover">
+                {% if active_body.hero_image_credit %}
+                <p class="absolute bottom-0 right-0 px-2 py-1 text-[10px] text-white/70 bg-black/30 rounded-tl-lg">{{ active_body.hero_image_credit }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
     </div>
-    {% else %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
-        <p class="text-gray-500 dark:text-gray-400">Keine anstehenden Sitzungen</p>
-    </div>
-    {% endif %}
 </section>
 
-{# 3. Neueste Vorgänge #}
-<section class="fade-up d2 mb-8">
-    <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-bold text-gray-900 dark:text-white">Neueste Vorgänge</h2>
-        <a href="{% url 'insight_core:insight:paper_list' %}" class="text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1">
-            Alle <i data-lucide="arrow-right" class="w-4 h-4"></i>
-        </a>
-    </div>
-    {% if recent_papers %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        {% for paper in recent_papers %}
-        <a href="{% url 'insight_core:insight:paper_detail' paper.pk %}" class="flex items-center gap-4 px-5 py-3.5 {% if not forloop.last %}border-b border-gray-100 dark:border-gray-700/50{% endif %} hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-            <span class="w-2 h-2 rounded-full bg-primary-500 shadow-[0_0_0_3px_rgba(99,102,241,.12)] flex-shrink-0"></span>
-            <span class="text-sm font-medium text-gray-900 dark:text-white flex-1 min-w-0 truncate">{{ paper.name|default:paper.reference }}</span>
-            {% if paper.reference %}
-            <span class="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 hidden sm:inline">{{ paper.reference }}</span>
+<section class="fade-up d1 mb-10">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <div>
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="calendar-days" class="w-4 h-4 text-primary-500"></i>
+                    Kommende Sitzungen
+                </h2>
+                <a href="{% url 'insight_core:insight:meeting_list' %}" class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-0.5">
+                    Alle ansehen <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+                </a>
+            </div>
+            {% if upcoming_meetings %}
+            <div class="item-list bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">
+                {% for meeting in upcoming_meetings %}
+                <a href="{% url 'insight_core:insight:meeting_detail' meeting.pk %}"
+                    class="group flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
+                    <div class="flex flex-col items-center justify-center flex-shrink-0 w-12 h-12 rounded-lg bg-primary-50 dark:bg-primary-900/20 leading-none">
+                        <span class="text-lg font-extrabold text-primary-600 dark:text-primary-400">{{ meeting.start|date:"d" }}</span>
+                        <span class="text-[10px] font-bold text-primary-500 dark:text-primary-400 uppercase tracking-wide mt-0.5">{{ meeting.start|date:"M" }}</span>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">{{ meeting.get_display_name }}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2.5 mt-0.5">
+                            {% if meeting.start %}<span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> {{ meeting.start|date:"H:i" }}</span>{% endif %}
+                            {% if meeting.location_name %}<span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> {{ meeting.location_name|truncatechars:25 }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0"></i>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
+                <p class="text-sm text-gray-400 dark:text-gray-500">Keine anstehenden Sitzungen</p>
+            </div>
             {% endif %}
-            {% if paper.date %}
-            <span class="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">{{ paper.date|date:"d.m." }}</span>
+        </div>
+
+        <div>
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="file-text" class="w-4 h-4 text-primary-500"></i>
+                    Neueste Vorgänge
+                </h2>
+                <a href="{% url 'insight_core:insight:paper_list' %}" class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-0.5">
+                    Alle ansehen <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+                </a>
+            </div>
+            {% if recent_papers %}
+            <div class="item-list bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">
+                {% for paper in recent_papers %}
+                <a href="{% url 'insight_core:insight:paper_detail' paper.pk %}"
+                    class="group flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
+                    {% if paper.date %}
+                    <div class="flex flex-col items-center justify-center flex-shrink-0 w-12 h-12 rounded-lg bg-primary-50 dark:bg-primary-900/20 leading-none">
+                        <span class="text-lg font-extrabold text-primary-600 dark:text-primary-400">{{ paper.date|date:"d" }}</span>
+                        <span class="text-[10px] font-bold text-primary-500 dark:text-primary-400 uppercase tracking-wide mt-0.5">{{ paper.date|date:"M" }}</span>
+                    </div>
+                    {% else %}
+                    <div class="flex items-center justify-center flex-shrink-0 w-12 h-12 rounded-lg bg-primary-50 dark:bg-primary-900/20">
+                        <i data-lucide="file-text" class="w-5 h-5 text-primary-400"></i>
+                    </div>
+                    {% endif %}
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">{{ paper.name|default:paper.reference }}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2.5 mt-0.5">
+                            {% if paper.reference %}<span>{{ paper.reference }}</span>{% endif %}
+                            {% if paper.paper_type %}<span>{{ paper.paper_type }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0"></i>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
+                <p class="text-sm text-gray-400 dark:text-gray-500">Keine Vorgänge vorhanden</p>
+            </div>
             {% endif %}
-        </a>
-        {% endfor %}
+        </div>
+
     </div>
-    {% else %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
-        <p class="text-gray-500 dark:text-gray-400">Keine Vorgänge vorhanden</p>
-    </div>
-    {% endif %}
 </section>
 
-{# 4. Quick Stats #}
-<section class="fade-up d3 mb-8">
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <a href="{% url 'insight_core:insight:organization_list' %}"
-            class="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-primary-300 dark:hover:border-primary-600 transition-all text-center group">
-            <div class="text-2xl font-bold text-primary-600 dark:text-primary-400 mb-1">{{ stats.organizations }}</div>
-            <div class="text-sm text-gray-600 dark:text-gray-400 group-hover:text-primary-600">Gremien</div>
-        </a>
+<section class="fade-up d2 mb-10">
+    <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Was möchtest du wissen?</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
         <a href="{% url 'insight_core:insight:person_list' %}"
-            class="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-primary-300 dark:hover:border-primary-600 transition-all text-center group">
-            <div class="text-2xl font-bold text-primary-600 dark:text-primary-400 mb-1">{{ stats.persons }}</div>
-            <div class="text-sm text-gray-600 dark:text-gray-400 group-hover:text-primary-600">Personen</div>
+            class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-md transition-all flex items-start gap-4">
+            <div class="w-11 h-11 rounded-xl bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <i data-lucide="message-circle-question" class="w-5 h-5 text-primary-500"></i>
+            </div>
+            <div class="min-w-0">
+                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Frag deine Ratsmitglieder</div>
+                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">Stelle öffentliche Fragen an die Menschen, die in deiner Stadt Entscheidungen treffen &ndash; und erhalte transparente Antworten.</p>
+            </div>
+            <i data-lucide="arrow-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0 mt-1"></i>
         </a>
-        <a href="{% url 'insight_core:insight:paper_list' %}"
-            class="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-primary-300 dark:hover:border-primary-600 transition-all text-center group">
-            <div class="text-2xl font-bold text-primary-600 dark:text-primary-400 mb-1">{{ stats.papers }}</div>
-            <div class="text-sm text-gray-600 dark:text-gray-400 group-hover:text-primary-600">Vorgänge</div>
+
+        <a href="{% url 'insight_core:insight:neighborhood' %}"
+            class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-md transition-all flex items-start gap-4">
+            <div class="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <i data-lucide="map-pin" class="w-5 h-5 text-amber-500"></i>
+            </div>
+            <div class="min-w-0">
+                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Was passiert in deiner Nähe?</div>
+                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">Finde Entscheidungen, die dich und dein Viertel betreffen &ndash; Vorgänge, Sitzungen und Projekte auf der Karte.</p>
+            </div>
+            <i data-lucide="arrow-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0 mt-1"></i>
         </a>
-        <a href="{% url 'insight_core:insight:meeting_list' %}"
-            class="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-primary-300 dark:hover:border-primary-600 transition-all text-center group">
-            <div class="text-2xl font-bold text-primary-600 dark:text-primary-400 mb-1">{{ stats.meetings }}</div>
-            <div class="text-sm text-gray-600 dark:text-gray-400 group-hover:text-primary-600">Sitzungen</div>
+
+        <a href="{% url 'insight_core:insight:file_list' %}"
+            class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-md transition-all flex items-start gap-4">
+            <div class="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <i data-lucide="file-search" class="w-5 h-5 text-emerald-500"></i>
+            </div>
+            <div class="min-w-0">
+                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Alle Dokumente durchsuchen</div>
+                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{{ stats.files }} Dokumente mit Volltextsuche &ndash; finde Beschlüsse, Anträge und Berichte in Sekunden.</p>
+            </div>
+            <i data-lucide="arrow-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0 mt-1"></i>
         </a>
+
+        <a href="{% url 'insight_core:insight:organization_list' %}"
+            class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-md transition-all flex items-start gap-4">
+            <div class="w-11 h-11 rounded-xl bg-sky-50 dark:bg-sky-900/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <i data-lucide="building-2" class="w-5 h-5 text-sky-500"></i>
+            </div>
+            <div class="min-w-0">
+                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Gremien & Ausschüsse</div>
+                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{{ stats.organizations }} Gremien &ndash; erfahre, wer in deiner Stadt worüber entscheidet und wer dort sitzt.</p>
+            </div>
+            <i data-lucide="arrow-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0 mt-1"></i>
+        </a>
+
+    </div>
+</section>
+
+<section class="fade-up d3">
+    <div class="border-t border-gray-200 dark:border-gray-700 pt-5 pb-2">
+        <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
+            <span class="text-xs font-medium text-gray-400 dark:text-gray-500">{{ active_body.get_display_name }} in Zahlen</span>
+            <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.organizations }}</strong> Gremien</span>
+            <span class="text-gray-300 dark:text-gray-600">&middot;</span>
+            <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.persons }}</strong> Personen</span>
+            <span class="text-gray-300 dark:text-gray-600">&middot;</span>
+            <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.meetings }}</strong> Sitzungen</span>
+            <span class="text-gray-300 dark:text-gray-600">&middot;</span>
+            <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.papers }}</strong> Vorgänge</span>
+            <span class="text-gray-300 dark:text-gray-600">&middot;</span>
+            <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.files }}</strong> Dokumente</span>
+            {% if stats.public_questions %}
+            <span class="text-gray-300 dark:text-gray-600">&middot;</span>
+            <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.public_questions }}</strong> Ratsfragen</span>
+            {% endif %}
+        </div>
     </div>
 </section>
 
 {% else %}
-{# ─── Alle Kommunen Modus ─── #}
 
 <section class="fade-up mb-8">
     <div class="text-center mb-8">
-        <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium mb-4">
-            <i data-lucide="globe" class="w-4 h-4"></i>
-            Alle Kommunen
-        </span>
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-            Mandari Insight Portal
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+            Lokalpolitik, die alle verstehen
         </h1>
-        <p class="text-gray-600 dark:text-gray-300 mb-6">
-            Wählen Sie eine Kommune aus, um Ratsinformationen einzusehen
+        <p class="text-[15px] text-gray-600 dark:text-gray-300 max-w-lg mx-auto">
+            Wähle deine Kommune und entdecke Sitzungen, Vorgänge und die Menschen hinter den Entscheidungen.
         </p>
     </div>
 
     {% if available_bodies %}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl mx-auto">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl mx-auto">
         {% for body in available_bodies %}
         <a href="{% url 'insight_core:insight:set_body' body.id %}"
-            class="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:shadow-lg hover:border-primary-300 dark:hover:border-primary-700 transition-all group">
-            <div class="flex items-center gap-4">
-                <div class="w-12 h-12 bg-primary-100 dark:bg-primary-900/50 rounded-lg flex items-center justify-center shrink-0">
-                    <i data-lucide="landmark" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+            class="group bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-primary-300 dark:hover:border-primary-600 transition-all">
+            <div class="flex items-center gap-3.5">
+                {% if body.logo %}
+                <img src="{{ body.logo.url }}" alt="" class="w-10 h-10 rounded-lg object-contain flex-shrink-0">
+                {% else %}
+                <div class="w-10 h-10 rounded-lg bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center flex-shrink-0">
+                    <span class="text-sm font-bold text-primary-600 dark:text-primary-400">{{ body.get_initials }}</span>
                 </div>
+                {% endif %}
                 <div class="min-w-0">
-                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 truncate">
-                        {{ body.get_display_name }}
-                    </h3>
+                    <div class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">{{ body.get_display_name }}</div>
                     {% if body.classification %}
-                    <p class="text-sm text-gray-500 dark:text-gray-400 truncate">{{ body.classification }}</p>
+                    <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ body.classification }}</div>
                     {% endif %}
                 </div>
             </div>
@@ -162,37 +250,41 @@
     </div>
     {% else %}
     <div class="text-center py-12">
-        <div class="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full mx-auto mb-4 flex items-center justify-center">
-            <i data-lucide="database" class="w-8 h-8 text-gray-400"></i>
+        <div class="w-14 h-14 bg-gray-100 dark:bg-gray-800 rounded-full mx-auto mb-3 flex items-center justify-center">
+            <i data-lucide="database" class="w-6 h-6 text-gray-400"></i>
         </div>
-        <h3 class="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">Keine Kommunen verfügbar</h3>
-        <p class="text-gray-500 dark:text-gray-400">Es wurden noch keine Kommunen synchronisiert.</p>
+        <h3 class="text-base font-medium text-gray-700 dark:text-gray-300 mb-1">Keine Kommunen verfügbar</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Es wurden noch keine Kommunen synchronisiert.</p>
     </div>
     {% endif %}
 
     {% if stats.bodies > 0 %}
-    <div class="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700">
-        <p class="text-center text-sm text-gray-500 dark:text-gray-400 mb-4">Insgesamt verfügbar:</p>
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 max-w-3xl mx-auto text-center">
+    <div class="mt-10 pt-6 border-t border-gray-200 dark:border-gray-700">
+        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 text-center">Insgesamt verfügbar</p>
+        <div class="grid grid-cols-3 md:grid-cols-6 gap-4 text-center">
             <div>
-                <div class="text-xl font-bold text-gray-700 dark:text-gray-300">{{ stats.bodies }}</div>
-                <div class="text-xs text-gray-500">Kommunen</div>
+                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.bodies }}</div>
+                <div class="text-xs text-gray-400 dark:text-gray-500">Kommunen</div>
             </div>
             <div>
-                <div class="text-xl font-bold text-gray-700 dark:text-gray-300">{{ stats.organizations }}</div>
-                <div class="text-xs text-gray-500">Gremien</div>
+                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.organizations }}</div>
+                <div class="text-xs text-gray-400 dark:text-gray-500">Gremien</div>
             </div>
             <div>
-                <div class="text-xl font-bold text-gray-700 dark:text-gray-300">{{ stats.persons }}</div>
-                <div class="text-xs text-gray-500">Personen</div>
+                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.persons }}</div>
+                <div class="text-xs text-gray-400 dark:text-gray-500">Personen</div>
             </div>
             <div>
-                <div class="text-xl font-bold text-gray-700 dark:text-gray-300">{{ stats.meetings }}</div>
-                <div class="text-xs text-gray-500">Sitzungen</div>
+                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.meetings }}</div>
+                <div class="text-xs text-gray-400 dark:text-gray-500">Sitzungen</div>
             </div>
             <div>
-                <div class="text-xl font-bold text-gray-700 dark:text-gray-300">{{ stats.papers }}</div>
-                <div class="text-xs text-gray-500">Vorgänge</div>
+                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.papers }}</div>
+                <div class="text-xs text-gray-400 dark:text-gray-500">Vorgänge</div>
+            </div>
+            <div>
+                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.files }}</div>
+                <div class="text-xs text-gray-400 dark:text-gray-500">Dokumente</div>
             </div>
         </div>
     </div>

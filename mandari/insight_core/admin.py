@@ -28,15 +28,19 @@ from .models import (
 )
 
 
-def run_sync_in_thread(source_url: str, full: bool = False):
-    """Run sync in a separate thread to not block the admin."""
+def run_sync_in_thread(source, full: bool = False):
+    """Run sync in a separate thread to not block the admin.
+
+    Args:
+        source: OParlSource instance
+        full: True für Full Sync
+    """
 
     def sync_task():
         try:
-            from insight_sync.tasks import sync_source
+            from insight_sync.tasks import run_sync_with_logging
 
-            result = sync_source(source_url, full=full)
-            print(f"Sync completed: {result}")
+            run_sync_with_logging(source=source, full=full, triggered_by="admin")
         except Exception as e:
             print(f"Sync error: {e}")
 
@@ -98,27 +102,27 @@ class OParlSourceAdmin(ModelAdmin):
     @action(description="Inkrementeller Sync", url_path="sync-incremental")
     def sync_incremental_action(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
-        run_sync_in_thread(obj.url, full=False)
+        run_sync_in_thread(obj, full=False)
         messages.success(request, f"Inkrementeller Sync für '{obj.name}' gestartet. Läuft im Hintergrund.")
         return None
 
     @action(description="Vollständiger Sync", url_path="sync-full")
     def sync_full_action(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
-        run_sync_in_thread(obj.url, full=True)
+        run_sync_in_thread(obj, full=True)
         messages.success(request, f"Vollständiger Sync für '{obj.name}' gestartet. Läuft im Hintergrund.")
         return None
 
     @admin.action(description="Inkrementeller Sync (ausgewählte)")
     def sync_all_incremental(self, request, queryset):
         for source in queryset:
-            run_sync_in_thread(source.url, full=False)
+            run_sync_in_thread(source, full=False)
         messages.success(request, f"Inkrementeller Sync für {queryset.count()} Quellen gestartet.")
 
     @admin.action(description="Vollständiger Sync (ausgewählte)")
     def sync_all_full(self, request, queryset):
         for source in queryset:
-            run_sync_in_thread(source.url, full=True)
+            run_sync_in_thread(source, full=True)
         messages.success(request, f"Vollständiger Sync für {queryset.count()} Quellen gestartet.")
 
 
@@ -149,7 +153,7 @@ class OParlBodyAdmin(ModelAdmin):
         (
             "Anzeige im Frontend",
             {
-                "fields": ("display_name", "logo"),
+                "fields": ("display_name", "description", "logo", "hero_image", "hero_image_credit"),
                 "description": "Diese Felder bestimmen, wie die Kommune im Frontend angezeigt wird.",
             },
         ),

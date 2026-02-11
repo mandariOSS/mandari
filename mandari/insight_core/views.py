@@ -84,6 +84,7 @@ class PortalHomeView(TemplateView):
                 "persons": OParlPerson.objects.count(),
                 "meetings": OParlMeeting.objects.count(),
                 "papers": OParlPaper.objects.count(),
+                "files": OParlFile.objects.count(),
             }
             context["upcoming_meetings"] = None
             context["recent_papers"] = None
@@ -95,9 +96,11 @@ class PortalHomeView(TemplateView):
                 "persons": OParlPerson.objects.filter(body=body).count(),
                 "meetings": OParlMeeting.objects.filter(body=body).count(),
                 "papers": OParlPaper.objects.filter(body=body).count(),
+                "files": OParlFile.objects.filter(paper__body=body).count(),
+                "public_questions": PublicQuestion.objects.filter(body=body, status="published").count(),
             }
 
-            # Nächste Sitzungen
+            # Nächste Sitzungen (5 für einheitliche Listen)
             context["upcoming_meetings"] = (
                 OParlMeeting.objects.filter(body=body, start__gte=timezone.now(), cancelled=False)
                 .prefetch_related("organizations")

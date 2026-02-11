@@ -551,21 +551,19 @@ class SyncOrchestrator:
         body_id = await self.storage.upsert_body(processed_body, source_id)
 
         # Determine modified_since for incremental sync
+        # Uses 7 days ago at 00:00 — wide enough to catch corrections,
+        # small enough to reduce traffic vs full scan.
+        # The server pre-filters, client-side batch_check verifies against DB.
+        # Uses naive datetime (no timezone) — some OParl servers reject timezone offsets.
         modified_since: datetime | None = None
         if not full:
-            body_db = await self.storage.get_body_by_external_id(body_external_id)
-            if body_db and body_db.last_sync:
-                modified_since = body_db.last_sync
-                console.print(f"[dim]Incremental sync since {modified_since}[/dim]")
+            from datetime import timedelta
+            modified_since = (datetime.now() - timedelta(days=7)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            console.print(f"[dim]Incremental sync: modified_since={modified_since.isoformat()}[/dim]")
         else:
             console.print(f"[dim]Full sync: fetching ALL pages[/dim]")
-
-        # Detect server-side filter support for incremental sync
-        use_server_filter = False
-        if modified_since and not full:
-            use_server_filter = await self._detect_filter_support(
-                client, processed_body, modified_since,
-            )
 
         # Helper to build common kwargs for _sync_entity_type
         def sync_kwargs(list_url: str | None, entity_type: str) -> dict:
@@ -578,7 +576,6 @@ class SyncOrchestrator:
                 body_name=body_name,
                 modified_since=modified_since,
                 full=full,
-                use_server_filter=use_server_filter,
             )
 
         # Create progress display (disabled when not running in terminal or in parallel mode)
@@ -613,6 +610,9 @@ class SyncOrchestrator:
             else:
                 stats["persons"] = person_result
                 progress.update(task2, completed=person_result, total=person_result)
+
+            # Pre-populate FK caches from DB (needed for membership FK resolution)
+            await self.storage.load_fk_caches()
 
             # Second: Memberships (depends on persons + organizations)
             task3 = progress.add_task("[cyan]Memberships...", total=None)
@@ -686,22 +686,31 @@ class SyncOrchestrator:
         await self.storage.update_body_sync_time(body_id)
 
         # Phase 2: Text Extraction
+        # Processes files with status='pending' only — never re-processes completed ones.
+        # Batch size limits per-cycle work, backlog clears gradually over multiple syncs.
         if settings.text_extraction_enabled:
             try:
                 from src.extraction.extractor import TextExtractor
 
-                console.print(f"\n[bold yellow]Text Extraction...[/bold yellow]")
                 extractor = TextExtractor(self.storage)
                 extracted = await extractor.extract_pending_files(body_id)
                 stats["text_extracted"] = extracted
                 if extracted > 0:
                     console.print(f"[green]  Extracted text from {extracted} files[/green]")
+                else:
+                    console.print(f"[dim]  No pending files for text extraction[/dim]")
             except Exception as e:
                 console.print(f"[red]  Text extraction error: {e}[/red]")
                 stats["errors"].append(f"Text extraction: {e}")
 
         # Phase 3: Meilisearch Indexing
-        if settings.meilisearch_indexing_enabled:
+        # Only re-index during full sync or when entities actually changed.
+        total_synced = sum(
+            stats.get(k, 0) for k in
+            ("organizations", "persons", "memberships", "meetings", "papers",
+             "files", "agenda_items", "consultations", "locations")
+        )
+        if settings.meilisearch_indexing_enabled and (full or total_synced > 0):
             try:
                 from src.indexing.document_builders import (
                     file_to_doc,
@@ -781,6 +790,8 @@ class SyncOrchestrator:
             except Exception as e:
                 console.print(f"[red]  Meilisearch indexing error: {e}[/red]")
                 stats["errors"].append(f"Meilisearch indexing: {e}")
+        elif settings.meilisearch_indexing_enabled and not full:
+            console.print(f"[dim]  Meilisearch indexing skipped (no changes)[/dim]")
 
         # Print summary
         console.print(f"[green]Body sync complete:[/green]")
@@ -796,73 +807,6 @@ class SyncOrchestrator:
 
         return stats
 
-    async def _detect_filter_support(
-        self,
-        client: OParlClient,
-        processed_body: ProcessedBody,
-        modified_since: datetime,
-    ) -> bool:
-        """
-        Test if the OParl server supports ?modified_since= query parameter.
-
-        Tests by fetching one page with the filter and validating that all
-        returned items have modified dates >= modified_since.
-
-        Live test results (2026-02-09):
-        - Muenster: OK - all entity types
-        - Bonn, Aachen, Koeln, Neuss: OK - papers
-        - Duesseldorf: FAIL - papers broken (returns old items), meetings OK
-
-        Args:
-            client: OParl HTTP client
-            processed_body: The body being synced
-            modified_since: The timestamp to test with
-
-        Returns:
-            True if server correctly supports modified_since
-        """
-        # Pick a test endpoint (prefer papers, fall back to meetings)
-        test_url = processed_body.paper_list_url or processed_body.meeting_list_url
-        if not test_url:
-            console.print("[dim]  No endpoint to test filter support[/dim]")
-            return False
-
-        try:
-            test_items: list[dict[str, Any]] = []
-            async for page in client.fetch_list(test_url, modified_since=modified_since, max_pages=1):
-                test_items.extend(page)
-                break
-
-            if not test_items:
-                # Empty result is valid - no items modified since last sync
-                console.print("[green]  Filter test: OK - Server supports modified_since (0 items returned)[/green]")
-                return True
-
-            # Validate: ALL items should have modified >= modified_since
-            all_valid = True
-            for item in test_items:
-                item_modified = self.processor.parse_datetime(item.get("modified"))
-                if item_modified and item_modified < modified_since:
-                    all_valid = False
-                    break
-
-            if all_valid:
-                console.print(
-                    f"[green]  Filter test: OK - Server supports modified_since "
-                    f"({len(test_items)} items, all valid)[/green]"
-                )
-            else:
-                console.print(
-                    f"[yellow]  Filter test: FAIL - Server returns items older than filter date. "
-                    f"Falling back to client-side filtering.[/yellow]"
-                )
-
-            return all_valid
-
-        except Exception as e:
-            console.print(f"[yellow]  Filter test failed: {e}. Using client-side filtering.[/yellow]")
-            return False
-
     async def _sync_entity_type(
         self,
         client: OParlClient,
@@ -873,7 +817,6 @@ class SyncOrchestrator:
         body_name: str | None = None,
         modified_since: datetime | None = None,
         full: bool = False,
-        use_server_filter: bool = False,
     ) -> int:
         """
         Sync all entities of a specific type.
@@ -881,18 +824,13 @@ class SyncOrchestrator:
         For full sync:
         - Fetches all pages and upserts everything
 
-        For incremental sync with server filter (use_server_filter=True):
-        - Appends ?modified_since= to URL, server returns only changed items
-        - Upserts all returned items (they are all new/modified)
-        - Handles deleted items (OParl deleted=true flag)
-        - No stop condition needed (server filters for us)
-
-        For incremental sync without server filter (fallback):
-        - Fetches pages and compares modified dates against DB
+        For incremental sync (hybrid approach):
+        - Sends ?modified_since= to server (pre-filter, reduces traffic)
+        - Compares returned items against DB (batch_check for exact detection)
         - New items: Save, Modified items: Update, Deleted: Delete
-        - Stops after 5 consecutive pages with no changes
+        - Stops after 5 consecutive pages with no changes (safety net)
 
-        Returns the number of entities synced (new + updated).
+        Returns the number of entities actually synced (new + updated).
         """
         if not list_url:
             return 0
@@ -903,19 +841,17 @@ class SyncOrchestrator:
         skipped_count = 0
         pages_checked = 0
         consecutive_stale_pages = 0
-        min_pages_to_check = 10
         stale_pages_to_stop = 5
 
-        # Pass modified_since to client only if server supports it
-        client_modified_since = modified_since if use_server_filter else None
+        # For incremental: send modified_since to server as pre-filter
+        server_modified_since = modified_since if not full else None
 
-        async for page in client.fetch_list(list_url, modified_since=client_modified_since):
+        async for page in client.fetch_list(list_url, modified_since=server_modified_since):
             pages_checked += 1
             new_on_page = 0
             updated_on_page = 0
             deleted_on_page = 0
             unchanged_on_page = 0
-            page_size = len(page)
 
             if full:
                 # Full sync: upsert everything
@@ -923,38 +859,14 @@ class SyncOrchestrator:
                     try:
                         processed = self.processor.process(item, body_external_id)
                         if processed:
-                            await self._store_entity(processed, body_id, entity_type, body_name)
-                            count += 1
-                    except Exception as e:
-                        console.print(f"[red]Error processing {entity_type}: {e}[/red]")
-
-            elif use_server_filter:
-                # Server-filtered incremental: all items are new/modified/deleted
-                for item in page:
-                    try:
-                        external_id = item.get("id", "")
-                        if not external_id:
-                            continue
-
-                        # Handle deleted items
-                        if item.get("deleted") is True:
-                            if await self.storage.delete_entity(entity_type, external_id):
-                                deleted_on_page += 1
-                                deleted_count += 1
-                            continue
-
-                        # Upsert (the server already filtered to modified items)
-                        processed = self.processor.process(item, body_external_id)
-                        if processed:
-                            await self._store_entity(processed, body_id, entity_type, body_name)
-                            count += 1
-                            new_on_page += 1
-
+                            stored = await self._store_entity(processed, body_id, entity_type, body_name)
+                            if stored:
+                                count += 1
                     except Exception as e:
                         console.print(f"[red]Error processing {entity_type}: {e}[/red]")
 
             else:
-                # Client-side incremental: compare modified dates against DB
+                # Incremental hybrid: server pre-filtered + client-side comparison
                 external_ids = [item.get("id", "") for item in page if item.get("id")]
                 existing_ids = await self.storage.batch_check_entities_exist(
                     entity_type, external_ids
@@ -978,18 +890,20 @@ class SyncOrchestrator:
 
                         if db_modified is None:
                             # New item: save
-                            new_on_page += 1
                             processed = self.processor.process(item, body_external_id)
                             if processed:
-                                await self._store_entity(processed, body_id, entity_type, body_name)
-                                count += 1
+                                stored = await self._store_entity(processed, body_id, entity_type, body_name)
+                                if stored:
+                                    new_on_page += 1
+                                    count += 1
                         elif item_modified and db_modified and item_modified > db_modified:
                             # Modified item: update (upsert handles ON CONFLICT)
-                            updated_on_page += 1
                             processed = self.processor.process(item, body_external_id)
                             if processed:
-                                await self._store_entity(processed, body_id, entity_type, body_name)
-                                updated_count += 1
+                                stored = await self._store_entity(processed, body_id, entity_type, body_name)
+                                if stored:
+                                    updated_on_page += 1
+                                    updated_count += 1
                         else:
                             # Unchanged: skip
                             unchanged_on_page += 1
@@ -1014,18 +928,16 @@ class SyncOrchestrator:
                 else:
                     consecutive_stale_pages += 1
 
-                # Stop condition: only for client-side filtering (server-filtered has no stale pages)
-                if not use_server_filter:
-                    if (pages_checked >= min_pages_to_check
-                            and consecutive_stale_pages >= stale_pages_to_stop):
-                        console.print(
-                            f"[yellow]  Stopping {entity_type}: "
-                            f"{consecutive_stale_pages} consecutive pages without changes[/yellow]"
-                        )
-                        break
+                # Safety stop: 5 consecutive pages without changes
+                if consecutive_stale_pages >= stale_pages_to_stop:
+                    console.print(
+                        f"[yellow]  Stopping {entity_type}: "
+                        f"{consecutive_stale_pages} consecutive pages without changes[/yellow]"
+                    )
+                    break
 
         total = count + updated_count
-        if not full and (updated_count > 0 or deleted_count > 0 or skipped_count > 0):
+        if not full and (count > 0 or updated_count > 0 or deleted_count > 0 or skipped_count > 0):
             console.print(
                 f"[dim]  {entity_type} summary: {count} new, {updated_count} updated, "
                 f"{deleted_count} deleted, {skipped_count} unchanged[/dim]"
@@ -1039,8 +951,12 @@ class SyncOrchestrator:
         body_id: UUID,
         entity_type: str,
         body_name: str | None = None,
-    ) -> None:
-        """Store a processed entity to the database and emit events."""
+    ) -> bool:
+        """Store a processed entity to the database and emit events.
+
+        Returns True if the entity was actually stored, False if skipped
+        (e.g. membership with unresolvable FK references).
+        """
         entity_id: str | None = None
 
         if isinstance(entity, ProcessedMeeting):
@@ -1095,7 +1011,9 @@ class SyncOrchestrator:
             await self.storage.upsert_organization(entity, body_id)
             metrics.record_entity_synced("organization", body_name or "unknown")
         elif isinstance(entity, ProcessedMembership):
-            await self.storage.upsert_membership(entity, body_id)
+            result = await self.storage.upsert_membership(entity, body_id)
+            if result is None:
+                return False  # FK resolution failed (person/org not found)
             metrics.record_entity_synced("membership", body_name or "unknown")
         elif isinstance(entity, ProcessedLocation):
             await self.storage.upsert_location(entity, body_id)
@@ -1137,6 +1055,8 @@ class SyncOrchestrator:
         elif isinstance(entity, ProcessedPaper):
             metrics.record_entity_synced("paper", body_name or "unknown")
 
+        return True
+
     # ========== Sync All Sources ==========
 
     async def sync_all(
@@ -1170,7 +1090,7 @@ class SyncOrchestrator:
             async def sync_source_wrapper(source):
                 """Wrapper to catch exceptions per source."""
                 try:
-                    return await self.sync_source(source.url, full=full)
+                    return await self.sync_body_url(source.url, full=full)
                 except Exception as e:
                     console.print(f"[red]Error syncing {source.name}: {e}[/red]")
                     return SyncResult(
@@ -1192,7 +1112,7 @@ class SyncOrchestrator:
             # Sequential sync (fallback)
             results = []
             for source in sources:
-                result = await self.sync_source(source.url, full=full)
+                result = await self.sync_body_url(source.url, full=full)
                 results.append(result)
             return results
 

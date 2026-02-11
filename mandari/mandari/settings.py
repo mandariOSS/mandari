@@ -294,16 +294,20 @@ OPARL_MAX_RETRIES = int(os.environ.get("OPARL_MAX_RETRIES", "5"))
 # Sync-Einstellungen (alle 10 Minuten inkrementell, Full-Sync um 3 Uhr)
 SYNC_INTERVAL_MINUTES = int(os.environ.get("SYNC_INTERVAL_MINUTES", "10"))
 SYNC_FULL_HOUR = int(os.environ.get("SYNC_FULL_HOUR", "3"))
+# Daemon startet automatisch als Background-Thread mit runserver
+# Steuerung (Pause/Intervall/Full-Hour) über Admin → Sync-Einstellungen
+SYNC_DAEMON_AUTOSTART = os.environ.get("SYNC_DAEMON_AUTOSTART", "false").lower() in ("true", "1", "yes")
 
 # Django 6.0 Background Tasks
 # https://docs.djangoproject.com/en/6.0/topics/tasks/
 TASKS = {
     "default": {
-        # Development: Immediate execution (synchronous)
-        # Production: Use "django.tasks.backends.database.DatabaseBackend"
-        "BACKEND": "django.tasks.backends.immediate.ImmediateBackend"
-        if DEBUG
-        else "django.tasks.backends.database.DatabaseBackend",
+        # ImmediateBackend: Synchrone Ausführung (funktioniert immer)
+        # DatabaseBackend: Async via DB — erfordert `manage.py db_worker`
+        "BACKEND": os.environ.get(
+            "TASKS_BACKEND",
+            "django.tasks.backends.immediate.ImmediateBackend",
+        ),
     }
 }
 
@@ -583,6 +587,16 @@ UNFOLD = {
                         "title": _("OParl Quellen"),
                         "icon": "database",
                         "link": reverse_lazy("admin:insight_core_oparlsource_changelist"),
+                    },
+                    {
+                        "title": _("Sync-Protokoll"),
+                        "icon": "history",
+                        "link": reverse_lazy("admin:insight_sync_synclog_changelist"),
+                    },
+                    {
+                        "title": _("Sync-Einstellungen"),
+                        "icon": "settings",
+                        "link": reverse_lazy("admin:insight_sync_syncconfig_changelist"),
                     },
                 ],
             },

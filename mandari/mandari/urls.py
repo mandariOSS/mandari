@@ -34,6 +34,8 @@ def health_check(request):
 urlpatterns = [
     # Health check (for Docker/Kubernetes)
     path("health/", health_check, name="health_check"),
+    # Admin custom endpoints (must come before admin.site.urls)
+    path("admin/insight_sync/trigger-sync/", include("insight_sync.admin_urls")),
     # Admin
     path("admin/", admin.site.urls),
     # Public API (stats, contact form - consumed by Wagtail marketing site)
