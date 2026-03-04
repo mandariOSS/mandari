@@ -22,6 +22,15 @@
 
 name: mandari
 
+# =============================================================================
+# Logging defaults (all services)
+# =============================================================================
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   # ===========================================================================
   # Reverse Proxy with automatic SSL (Let's Encrypt)
@@ -45,8 +54,12 @@ services:
       - website
     networks:
       - mandari
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
     healthcheck:
-      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:2019/config/"]
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1/health"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -68,14 +81,18 @@ services:
       - ./scripts/init-website-db.sh:/docker-entrypoint-initdb.d/init-website-db.sh:ro
     networks:
       - mandari
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mandari}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mandari} -d ${POSTGRES_DB:-mandari}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   # ===========================================================================
-  # Redis Cache
+  # Redis Cache (password-protected)
   # ===========================================================================
   redis:
     image: redis:7-alpine
@@ -83,6 +100,7 @@ services:
     restart: unless-stopped
     command: >
       redis-server
+      --requirepass ${REDIS_PASSWORD:?Redis password required}
       --appendonly yes
       --maxmemory ${REDIS_MAXMEMORY:-256mb}
       --maxmemory-policy allkeys-lru
@@ -90,8 +108,12 @@ services:
       - redis_data:/data
     networks:
       - mandari
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -111,6 +133,10 @@ services:
       - meilisearch_data:/meili_data
     networks:
       - mandari
+    mem_limit: 2g
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:7700/health"]
       interval: 30s
@@ -128,8 +154,8 @@ services:
     environment:
       # Database
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
-      # Cache
-      REDIS_URL: redis://redis:6379
+      # Cache (password-protected)
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       # Search
       MEILISEARCH_URL: http://meilisearch:7700
       MEILISEARCH_KEY: ${MEILISEARCH_KEY}
@@ -154,6 +180,10 @@ services:
         condition: service_healthy
     networks:
       - mandari
+    mem_limit: 1g
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8000/health/ || exit 1"]
       interval: 5s
@@ -182,6 +212,10 @@ services:
         condition: service_healthy
     networks:
       - mandari
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8001/health/ || exit 1"]
       interval: 5s
@@ -203,7 +237,7 @@ services:
       --concurrent ${INGESTOR_CONCURRENT:-10}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       MEILISEARCH_URL: http://meilisearch:7700
       MEILISEARCH_KEY: ${MEILISEARCH_KEY}
       TZ: ${TZ:-Europe/Berlin}
@@ -216,11 +250,10 @@ services:
         condition: service_healthy
     networks:
       - mandari
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
 
 # =============================================================================
 # Volumes (Persistent Data)

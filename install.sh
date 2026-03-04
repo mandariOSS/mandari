@@ -193,6 +193,7 @@ generate_secrets() {
     MEILISEARCH_KEY=$(generate_secret 32)
     ENCRYPTION_MASTER_KEY=$(generate_secret 32)
     WEBSITE_SECRET_KEY=$(generate_secret 50)
+    REDIS_PASSWORD=$(generate_password 32)
 
     log "Secure keys generated"
 }
@@ -238,6 +239,7 @@ SECRET_KEY=${SECRET_KEY}
 ENCRYPTION_MASTER_KEY=${ENCRYPTION_MASTER_KEY}
 MEILISEARCH_KEY=${MEILISEARCH_KEY}
 WEBSITE_SECRET_KEY=${WEBSITE_SECRET_KEY}
+REDIS_PASSWORD=${REDIS_PASSWORD}
 
 # =============================================================================
 # Resources
