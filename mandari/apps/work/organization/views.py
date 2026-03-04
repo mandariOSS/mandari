@@ -1451,52 +1451,6 @@ class SecurityView(WorkViewMixin, TemplateView):
         return redirect("work:security", org_slug=self.organization.slug)
 
 
-class SecurityAPIView(WorkViewMixin, View):
-    """API endpoints for security settings."""
-
-    permission_required = "dashboard.view"
-
-    def post(self, request, *args, **kwargs):
-        """Handle API requests."""
-        action = kwargs.get("action")
-        user = request.user
-
-        if action == "setup_2fa":
-            tfa_service = TwoFactorService()
-            setup_data = tfa_service.setup_2fa(user)
-            request.session["2fa_setup"] = {
-                "secret": setup_data["secret"],
-                "backup_codes": setup_data["backup_codes"],
-            }
-            return JsonResponse(
-                {
-                    "success": True,
-                    "qr_code": setup_data["qr_code"],
-                    "secret": setup_data["secret"],
-                    "backup_codes": setup_data["backup_codes"],
-                }
-            )
-
-        elif action == "verify_2fa":
-            data = json.loads(request.body) if request.content_type == "application/json" else request.POST
-            code = data.get("code", "").strip()
-
-            tfa_service = TwoFactorService()
-            if tfa_service.confirm_2fa(user, code):
-                request.session.pop("2fa_setup", None)
-                return JsonResponse({"success": True})
-            else:
-                return JsonResponse({"success": False, "error": "Ungültiger Code"})
-
-        elif action == "check_password":
-            data = json.loads(request.body) if request.content_type == "application/json" else request.POST
-            password = data.get("password", "")
-            result = PasswordService.check_strength(password)
-            return JsonResponse(result)
-
-        return JsonResponse({"error": "Unknown action"}, status=400)
-
-
 # =============================================================================
 # COUNCIL PARTY MANAGEMENT
 # =============================================================================

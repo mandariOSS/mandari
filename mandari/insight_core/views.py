@@ -20,7 +20,6 @@ from django.views.generic import DetailView, FormView, ListView, TemplateView, V
 from .models import (
     Bookmark,
     ChatUsage,
-    DigestLog,
     InsightSubscriber,
     OParlAgendaItem,
     OParlBody,
@@ -32,7 +31,6 @@ from .models import (
     OParlPaper,
     OParlPerson,
     PublicQuestion,
-    SubscriptionAlert,
     TileCache,
 )
 from .ranking import sort_organizations_by_ranking
@@ -1627,10 +1625,6 @@ def _check_rate_limit(request) -> tuple[bool, dict]:
     Returns:
         (is_allowed, info_dict) where info_dict has remaining_today, remaining_week, resets_at
     """
-    from datetime import timedelta
-
-    from .models import ChatUsage
-
     now = timezone.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
@@ -1704,8 +1698,6 @@ def chat_message(request):
     8. Log ChatUsage
     9. Return response + sources + remaining counts
     """
-    from .models import ChatUsage
-
     # 1. Parse JSON
     try:
         data = json.loads(request.body)

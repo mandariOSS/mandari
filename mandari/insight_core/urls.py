@@ -8,7 +8,6 @@ Struktur:
 """
 
 from django.urls import include, path
-from django.views.generic import TemplateView
 
 from . import views
 
@@ -83,12 +82,6 @@ insight_patterns = [
     # Chat (KI-Assistent)
     path("chat/", views.ChatView.as_view(), name="chat"),
     path("chat/api/message/", views.chat_message, name="chat_message"),
-    # Design Preview (temporary)
-    path("preview/1/", TemplateView.as_view(template_name="insight/preview/variant_1.html"), name="preview_1"),
-    path("preview/2/", TemplateView.as_view(template_name="insight/preview/variant_2.html"), name="preview_2"),
-    path("preview/3/", TemplateView.as_view(template_name="insight/preview/variant_3.html"), name="preview_3"),
-    path("preview/4/", TemplateView.as_view(template_name="insight/preview/variant_4.html"), name="preview_4"),
-    path("preview/5/", TemplateView.as_view(template_name="insight/preview/variant_5.html"), name="preview_5"),
 ]
 
 # =============================================================================

@@ -36,8 +36,7 @@ dependencies = [
     # Search
     "meilisearch>=0.31.5",
 
-    # AI
-    "groq>=0.11.0",
+    # AI / HTTP
     "httpx>=0.28.0",
 
     # Django 6.0 has built-in background tasks - no Celery needed!
