@@ -14,6 +14,9 @@
 # =============================================================================
 
 {
+	# Disable admin API (security: prevents config changes at runtime)
+	admin off
+
 	# Email for Let's Encrypt certificate notifications
 	email {$EMAIL:admin@example.com}
 }
@@ -32,11 +35,16 @@
 	header {
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "SAMEORIGIN"
-		X-XSS-Protection "1; mode=block"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'self';"
 		-Server
+		-X-Powered-By
 	}
+
+	# HSTS only for production domains (not localhost)
+	@production not host localhost
+	header @production Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 
 	# Health check endpoint (for Docker/internal monitoring)
 	handle /health {
