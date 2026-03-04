@@ -1,0 +1,22 @@
+{# Merkliste partial: Organizations #}
+{% if items %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden divide-y divide-gray-200 dark:divide-gray-700">
+    {% for org in items %}
+    <a href="{% url 'insight_core:insight:organization_detail' org.id %}"
+       class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
+        <div class="flex-1 min-w-0">
+            <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                {{ org.name }}
+            </p>
+            {% if org.organization_type %}
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{{ org.organization_type }}</p>
+            {% endif %}
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            {% include "components/bookmark_star.html" with entity_type="organization" entity_id=org.id size="sm" %}
+            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}

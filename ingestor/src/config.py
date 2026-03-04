@@ -46,8 +46,8 @@ class Settings(BaseSettings):
     meilisearch_key: str = "masterKey"
 
     # OParl Sync Settings
-    oparl_request_timeout: int = 300
-    oparl_max_retries: int = 5
+    oparl_request_timeout: int = 60  # Sekunden pro HTTP-Request (zuvor 300)
+    oparl_max_retries: int = 3  # Wiederholungsversuche bei Fehlern (zuvor 5)
     oparl_retry_backoff: float = 2.0
     oparl_wait_time: float = 0.05  # Seconds between requests (reduced from 0.2)
     oparl_etag_cache_enabled: bool = True

@@ -8,9 +8,9 @@
 {% endblock %}
 
 {% block work_content %}
-<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 fade-up">
     <!-- Document Types -->
-    <a href="{% url 'work:motion_type_list' org_slug=organization.slug %}"
+    <a href="{% url 'work:document_type_list' org_slug=organization.slug %}"
        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
         <div class="flex items-center gap-4 mb-4">
             <div class="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
@@ -27,7 +27,7 @@
     </a>
 
     <!-- Templates -->
-    <a href="{% url 'work:motion_template_list' org_slug=organization.slug %}"
+    <a href="{% url 'work:document_template_list' org_slug=organization.slug %}"
        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
         <div class="flex items-center gap-4 mb-4">
             <div class="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
@@ -44,7 +44,7 @@
     </a>
 
     <!-- Letterheads -->
-    <a href="{% url 'work:letterhead_list' org_slug=organization.slug %}"
+    <a href="{% url 'work:document_letterhead_list' org_slug=organization.slug %}"
        class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
         <div class="flex items-center gap-4 mb-4">
             <div class="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">

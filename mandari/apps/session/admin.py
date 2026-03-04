@@ -112,7 +112,7 @@ class SessionTenantAdmin(ModelAdmin):
 
     @admin.display(description="Benutzer")
     def user_count(self, obj):
-        return obj.session_users.filter(is_active=True).count()
+        return obj.users.filter(is_active=True).count()
 
     @admin.display(description="Aktiv", boolean=True)
     def is_active_display(self, obj):

@@ -14,8 +14,11 @@ Provides motion management with:
 """
 
 import uuid
+from datetime import timedelta
 
 from django.db import models
+from django.db.models import F
+from django.utils import timezone
 
 from apps.common.encryption import EncryptedTextField, EncryptionMixin
 
@@ -762,6 +765,9 @@ class MotionComment(models.Model):
     selection_end = models.PositiveIntegerField(null=True, blank=True, verbose_name="Auswahl Ende")
     selected_text = models.TextField(blank=True, verbose_name="Ausgewählter Text")
 
+    # TipTap mark ID for inline comment highlighting
+    mark_id = models.UUIDField(null=True, blank=True, verbose_name="Editor Mark ID")
+
     # Content
     content = models.TextField(verbose_name="Kommentar")
 
@@ -847,3 +853,87 @@ class MotionApproval(models.Model):
     def is_pending(self) -> bool:
         """Check if this approval is still pending."""
         return self.approved is None
+
+
+class OrganizationAITokenUsage(models.Model):
+    """
+    Aggregated AI token usage for organization-level budgeting.
+
+    Stores token consumption per organization and period to enforce
+    daily/weekly/monthly limits configured on the organization model.
+    """
+
+    PERIOD_DAY = "day"
+    PERIOD_WEEK = "week"
+    PERIOD_MONTH = "month"
+    PERIOD_CHOICES = [
+        (PERIOD_DAY, "Tag"),
+        (PERIOD_WEEK, "Woche"),
+        (PERIOD_MONTH, "Monat"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        "tenants.Organization",
+        on_delete=models.CASCADE,
+        related_name="ai_token_usage_entries",
+        verbose_name="Organisation",
+    )
+    period_type = models.CharField(max_length=10, choices=PERIOD_CHOICES, verbose_name="Periode")
+    period_start = models.DateField(verbose_name="Periodenbeginn")
+    tokens_used = models.PositiveIntegerField(default=0, verbose_name="Verbrauchte Tokens")
+    requests_count = models.PositiveIntegerField(default=0, verbose_name="Anfragen")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "KI Tokenverbrauch"
+        verbose_name_plural = "KI Tokenverbraeuche"
+        unique_together = [["organization", "period_type", "period_start"]]
+        indexes = [
+            models.Index(fields=["organization", "period_type", "period_start"]),
+        ]
+        ordering = ["-period_start", "period_type"]
+
+    def __str__(self):
+        return f"{self.organization.name} {self.period_type} {self.period_start}: {self.tokens_used}"
+
+    @classmethod
+    def _period_start(cls, period_type: str, ref_date):
+        if period_type == cls.PERIOD_DAY:
+            return ref_date
+        if period_type == cls.PERIOD_WEEK:
+            return ref_date - timedelta(days=ref_date.weekday())
+        if period_type == cls.PERIOD_MONTH:
+            return ref_date.replace(day=1)
+        return ref_date
+
+    @classmethod
+    def get_tokens_used(cls, organization, period_type: str, ref_date=None) -> int:
+        ref_date = ref_date or timezone.localdate()
+        period_start = cls._period_start(period_type, ref_date)
+        entry = cls.objects.filter(
+            organization=organization,
+            period_type=period_type,
+            period_start=period_start,
+        ).only("tokens_used").first()
+        return int(entry.tokens_used) if entry else 0
+
+    @classmethod
+    def increment_usage(cls, organization, total_tokens: int, ref_date=None) -> None:
+        if total_tokens <= 0:
+            return
+
+        ref_date = ref_date or timezone.localdate()
+        for period_type in (cls.PERIOD_DAY, cls.PERIOD_WEEK, cls.PERIOD_MONTH):
+            period_start = cls._period_start(period_type, ref_date)
+            obj, created = cls.objects.get_or_create(
+                organization=organization,
+                period_type=period_type,
+                period_start=period_start,
+                defaults={"tokens_used": total_tokens, "requests_count": 1},
+            )
+            if not created:
+                cls.objects.filter(pk=obj.pk).update(
+                    tokens_used=F("tokens_used") + total_tokens,
+                    requests_count=F("requests_count") + 1,
+                )

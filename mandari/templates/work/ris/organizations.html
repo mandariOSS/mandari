@@ -1,0 +1,170 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Gremien{% endblock %}
+
+{% block header_title %}Gremien{% endblock %}
+{% block header_subtitle %}
+{% if body %}
+<p class="work-page-subtitle">{{ body.get_display_name }}</p>
+{% endif %}
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Zurück
+</a>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
+    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
+    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Keine Kommune verknüpft</h3>
+    <p class="text-amber-700 dark:text-amber-300">
+        Dieser Organisation ist noch keine Kommune zugewiesen.
+    </p>
+</div>
+{% else %}
+
+<!-- Search -->
+<div class="fade-up mb-6">
+    <form method="get">
+        <input type="hidden" name="tab" value="{{ tab }}">
+        <div class="relative max-w-md">
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
+            <input type="text" name="q" value="{{ search_query|default:'' }}"
+                   placeholder="Gremium suchen..."
+                   class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+        </div>
+    </form>
+</div>
+
+<!-- Tabs -->
+<div class="fade-up d1 flex gap-2 mb-6 border-b border-gray-200 dark:border-gray-700">
+    <a href="?tab=active{% if search_query %}&q={{ search_query }}{% endif %}"
+       class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if tab == 'active' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
+        Aktiv ({{ active_count|default:0 }})
+    </a>
+    <a href="?tab=all{% if search_query %}&q={{ search_query }}{% endif %}"
+       class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if tab == 'all' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
+        Alle ({{ all_count|default:0 }})
+    </a>
+</div>
+
+<!-- Organizations Table -->
+{% if organizations %}
+<div class="fade-up d2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Gremium</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Nächste Sitzung</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Letzte Sitzung</th>
+                <th class="w-10 px-2 py-3"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for org in organizations %}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+                onclick="window.location='{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=org.id %}'">
+                <td class="px-6 py-4">
+                    <a href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=org.id %}"
+                       class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                        {{ org.name }}
+                    </a>
+                    {% if org.organization_type %}
+                    <p class="text-sm text-gray-500 dark:text-gray-400">{{ org.organization_type }}</p>
+                    {% endif %}
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 sm:hidden text-sm">
+                        {% if org.next_meeting %}
+                        <span class="text-primary-600 dark:text-primary-400">
+                            <span class="text-gray-400 dark:text-gray-500">Nächste:</span> {{ org.next_meeting|date:"d.m.Y" }}
+                        </span>
+                        {% endif %}
+                        {% if org.last_meeting %}
+                        <span class="text-gray-500 dark:text-gray-400">
+                            <span class="text-gray-400 dark:text-gray-500">Letzte:</span> {{ org.last_meeting|date:"d.m.Y" }}
+                        </span>
+                        {% endif %}
+                    </div>
+                </td>
+                <td class="px-4 py-4 max-sm:hidden">
+                    {% if org.next_meeting %}
+                    <span class="text-sm font-medium text-primary-600 dark:text-primary-400">
+                        {{ org.next_meeting|date:"d.m.Y" }}
+                    </span>
+                    {% else %}
+                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-4 max-sm:hidden">
+                    {% if org.last_meeting %}
+                    <span class="text-sm text-gray-500 dark:text-gray-400">
+                        {{ org.last_meeting|date:"d.m.Y" }}
+                    </span>
+                    {% else %}
+                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td class="px-2 py-4">
+                    <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 dark:group-hover:text-primary-400 transition-colors"></i>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if organizations.has_other_pages %}
+<nav class="fade-up d3 mt-6 flex justify-center">
+    <ul class="flex items-center gap-1">
+        {% if organizations.has_previous %}
+        <li>
+            <a href="?page={{ organizations.previous_page_number }}&tab={{ tab }}{% if search_query %}&q={{ search_query }}{% endif %}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+        {% for num in organizations.paginator.page_range %}
+            {% if organizations.number == num %}
+            <li><span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span></li>
+            {% elif num > organizations.number|add:'-3' and num < organizations.number|add:'3' %}
+            <li>
+                <a href="?page={{ num }}&tab={{ tab }}{% if search_query %}&q={{ search_query }}{% endif %}"
+                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">{{ num }}</a>
+            </li>
+            {% endif %}
+        {% endfor %}
+        {% if organizations.has_next %}
+        <li>
+            <a href="?page={{ organizations.next_page_number }}&tab={{ tab }}{% if search_query %}&q={{ search_query }}{% endif %}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="fade-up d2 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="users" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Gremien gefunden</h3>
+    <p class="text-gray-500 dark:text-gray-400">
+        {% if search_query %}
+        Ihre Suche ergab keine Treffer. Versuchen Sie einen anderen Suchbegriff.
+        {% elif tab == 'all' %}
+        Es gibt keine Gremien.
+        {% else %}
+        Es gibt keine aktiven Gremien.
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

@@ -1,6 +1,15 @@
 #!/bin/bash
 set -e
 
+# =============================================================================
+# Mandari - Docker Entrypoint
+# =============================================================================
+# Optimiert für schnellen Startup (Zero-Downtime Updates):
+#   - collectstatic nur wenn nötig
+#   - Meilisearch-Setup im Hintergrund
+#   - Gunicorn mit --preload für schnelleren Worker-Start
+# =============================================================================
+
 # Function to wait for database
 wait_for_db() {
     echo "Waiting for database to be ready..."
@@ -37,21 +46,31 @@ except Exception as e:
     return 1
 }
 
-# Collect static files (to shared volume)
-echo "Collecting static files..."
-python manage.py collectstatic --noinput
+# Static Files: nur wenn Verzeichnis leer (im Docker-Image bereits vorhanden)
+if [ -z "$(ls -A /app/staticfiles/ 2>/dev/null)" ]; then
+    echo "Collecting static files..."
+    python manage.py collectstatic --noinput
+else
+    echo "Static files already present, skipping collectstatic."
+fi
 
 # Wait for database
 wait_for_db
 
-# NOTE: Migrations are handled by Ansible on PRIMARY only
-# This avoids race conditions and duplicate migration runs
-# See: infrastructure/ansible/playbooks/deploy.yml
+# NOTE: Migrationen werden via update.sh BEVOR der Container-Swap ausgeführt.
+# Beim Erststart via install.sh werden sie nach dem Start ausgeführt.
 
-# Configure Meilisearch indexes (idempotent, includes synonyms)
-echo "Configuring Meilisearch..."
-python manage.py setup_meilisearch 2>&1 || echo "Meilisearch setup skipped (not available)"
+# Meilisearch im Hintergrund konfigurieren (blockiert nicht den Start)
+(python manage.py setup_meilisearch 2>&1 || echo "Meilisearch setup skipped (not available)") &
 
-# Start gunicorn
+# Start gunicorn mit --preload für schnelleren Worker-Start (~2-3s gespart)
 echo "Starting gunicorn..."
-exec gunicorn --bind 0.0.0.0:8000 --workers 2 --threads 2 --timeout 120 mandari.wsgi:application
+exec gunicorn \
+    --bind 0.0.0.0:8000 \
+    --workers 2 \
+    --threads 2 \
+    --timeout 120 \
+    --preload \
+    --access-logfile - \
+    --error-logfile - \
+    mandari.wsgi:application

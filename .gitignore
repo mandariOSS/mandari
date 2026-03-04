@@ -61,7 +61,9 @@ terraform.tfvars
 **/letsencrypt/
 
 # Database dumps and backups
+database/
 *.sql
+*.sql.gz
 *.dump
 *.backup
 **/backup*.sql

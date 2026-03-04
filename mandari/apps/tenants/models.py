@@ -211,6 +211,60 @@ class Organization(models.Model):
     smtp_from_email = models.EmailField(blank=True)
     smtp_from_name = models.CharField(max_length=200, blank=True)
 
+    # === AI Provider Settings (Work DMS) ===
+    AI_PROVIDER_NEBIUS = "nebius"
+    AI_PROVIDER_OVH = "ovh"
+    AI_PROVIDER_IONOS = "ionos"
+    AI_PROVIDER_CHOICES = [
+        (AI_PROVIDER_NEBIUS, "Nebius TokenFactory (Standard)"),
+        (AI_PROVIDER_OVH, "OVHcloud AI Endpoints"),
+        (AI_PROVIDER_IONOS, "IONOS AI Model Hub"),
+    ]
+
+    ai_enabled = models.BooleanField(
+        default=True,
+        verbose_name="KI im DMS aktiviert",
+        help_text="Erlaubt KI-Chat und KI-Aktionen im Dokumenten-Editor.",
+    )
+    ai_provider = models.CharField(
+        max_length=20,
+        choices=AI_PROVIDER_CHOICES,
+        default=AI_PROVIDER_NEBIUS,
+        verbose_name="KI-Anbieter",
+    )
+    ai_base_url = models.URLField(
+        blank=True,
+        verbose_name="KI API Base URL",
+        help_text=(
+            "Optional fuer OpenAI-kompatible Endpunkte. "
+            "Bei Nebius wird standardmaessig https://api.tokenfactory.nebius.com/v1/ genutzt."
+        ),
+    )
+    ai_model = models.CharField(
+        max_length=100,
+        default="openai/gpt-oss-120b",
+        verbose_name="KI-Modell",
+        help_text="Standard fuer Work: openai/gpt-oss-120b (Nebius).",
+    )
+    ai_api_key_encrypted = models.BinaryField(
+        blank=True,
+        null=True,
+        verbose_name="KI API Key (verschluesselt)",
+        help_text="Wird tenant-spezifisch AES-256-GCM verschluesselt gespeichert.",
+    )
+    ai_token_limit_daily = models.PositiveIntegerField(
+        default=250000,
+        verbose_name="Token-Limit pro Tag",
+    )
+    ai_token_limit_weekly = models.PositiveIntegerField(
+        default=1000000,
+        verbose_name="Token-Limit pro Woche",
+    )
+    ai_token_limit_monthly = models.PositiveIntegerField(
+        default=3000000,
+        verbose_name="Token-Limit pro Monat",
+    )
+
     # === ENCRYPTION ===
 
     encryption_key = models.BinaryField(
@@ -339,6 +393,38 @@ class Organization(models.Model):
 
         encryption = TenantEncryption(self)
         return encryption.decrypt(self.smtp_password_encrypted)
+
+    def set_ai_api_key(self, api_key: str):
+        """Encrypt and store organization-specific AI API key."""
+        from apps.common.encryption import TenantEncryption
+
+        if not api_key:
+            self.ai_api_key_encrypted = None
+            return
+
+        encryption = TenantEncryption(self)
+        self.ai_api_key_encrypted = encryption.encrypt(api_key)
+
+    def get_ai_api_key(self) -> str:
+        """Get decrypted organization-specific AI API key."""
+        from apps.common.encryption import TenantEncryption
+
+        if not self.ai_api_key_encrypted:
+            return ""
+
+        encryption = TenantEncryption(self)
+        return encryption.decrypt(self.ai_api_key_encrypted)
+
+    def get_effective_ai_base_url(self) -> str:
+        """Resolve provider endpoint with sensible defaults."""
+        if self.ai_base_url:
+            return self.ai_base_url
+
+        if self.ai_provider == self.AI_PROVIDER_NEBIUS:
+            return "https://api.tokenfactory.nebius.com/v1/"
+
+        # For other providers, admins should set a concrete endpoint.
+        return ""
 
 
 class Permission(models.Model):

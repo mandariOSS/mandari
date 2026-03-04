@@ -53,6 +53,13 @@ class PartyGroupAdmin(ModelAdmin):
 class OrganizationAdminForm(forms.ModelForm):
     """Custom form for Organization admin with owner selection."""
 
+    ai_api_key = forms.CharField(
+        required=False,
+        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
+        label="KI API Key",
+        help_text="Leer lassen, um den bestehenden Key unverändert zu lassen.",
+    )
+
     class Meta:
         model = Organization
         fields = "__all__"
@@ -63,6 +70,21 @@ class OrganizationAdminForm(forms.ModelForm):
         # This enables initial setup before members are added
         self.fields["owner"].queryset = User.objects.filter(is_active=True).order_by("email")
         self.fields["owner"].required = False
+
+        if self.instance and self.instance.pk and self.instance.ai_api_key_encrypted:
+            self.fields["ai_api_key"].help_text = (
+                "Ein Key ist gesetzt. Für Rotation neuen Key eintragen, sonst leer lassen."
+            )
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        api_key = self.cleaned_data.get("ai_api_key", "").strip()
+        if api_key:
+            obj.set_ai_api_key(api_key)
+        if commit:
+            obj.save()
+            self.save_m2m()
+        return obj
 
 
 @admin.register(Organization)
@@ -135,6 +157,26 @@ class OrganizationAdmin(ModelAdmin):
                     "smtp_use_tls",
                     "smtp_from_email",
                     "smtp_from_name",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "KI (DMS-Editor)",
+            {
+                "fields": (
+                    "ai_enabled",
+                    "ai_provider",
+                    "ai_base_url",
+                    "ai_model",
+                    "ai_api_key",
+                    "ai_token_limit_daily",
+                    "ai_token_limit_weekly",
+                    "ai_token_limit_monthly",
+                ),
+                "description": (
+                    "Provider- und Budget-Steuerung fuer den KI-Chat im Dokumenten-Editor. "
+                    "Standard ist Nebius GPT-OSS."
                 ),
                 "classes": ("collapse",),
             },

@@ -146,6 +146,9 @@
                     {% endif %}
                 </div>
             </div>
+            <div class="flex-shrink-0">
+                {% include "components/bookmark_star.html" with entity_type="meeting" entity_id=meeting.id size="lg" %}
+            </div>
         </div>
     </div>
 

@@ -29,6 +29,7 @@ from django.views.generic import TemplateView
 
 from .forms import LoginForm, PasswordResetForm, RegistrationForm, SetPasswordForm
 from .models import LoginAttempt
+from .services import SessionService
 
 
 class LoginView(View):
@@ -98,6 +99,10 @@ class LoginView(View):
             else:
                 # Session expires in 30 days
                 request.session.set_expiry(60 * 60 * 24 * 30)
+
+            # Track session
+            if request.session.session_key:
+                SessionService.create_session(user, request, request.session.session_key)
 
             messages.success(request, "Erfolgreich angemeldet.")
 
@@ -217,6 +222,13 @@ class LogoutView(View):
         return render(request, self.template_name)
 
     def post(self, request):
+        # Clean up UserSession before logout destroys session_key
+        session_key = request.session.session_key
+        if session_key and request.user.is_authenticated:
+            from .models import UserSession
+
+            UserSession.objects.filter(session_key=session_key).delete()
+
         auth_logout(request)
         return redirect("accounts:logged_out")
 
@@ -334,6 +346,10 @@ class RegisterView(View):
 
             # Log the user in
             auth_login(request, user)
+
+            # Track session
+            if request.session.session_key:
+                SessionService.create_session(user, request, request.session.session_key)
 
             # Redirect to accept invitation
             messages.success(request, f"Willkommen, {user.first_name}! Ihr Konto wurde erstellt.")

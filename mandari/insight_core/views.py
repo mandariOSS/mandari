@@ -18,7 +18,10 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import DetailView, FormView, ListView, TemplateView, View
 
 from .models import (
+    Bookmark,
     ChatUsage,
+    DigestLog,
+    InsightSubscriber,
     OParlAgendaItem,
     OParlBody,
     OParlConsultation,
@@ -29,6 +32,7 @@ from .models import (
     OParlPaper,
     OParlPerson,
     PublicQuestion,
+    SubscriptionAlert,
     TileCache,
 )
 from .ranking import sort_organizations_by_ranking
@@ -110,6 +114,18 @@ class PortalHomeView(TemplateView):
 
             # Neueste Vorgänge
             context["recent_papers"] = OParlPaper.objects.filter(body=body).order_by("-date", "-oparl_created")[:5]
+
+            # Stadtteile für Nachbarschafts-Schnellwahl
+            import os
+
+            data_path = os.path.join(
+                os.path.dirname(__file__), "data", "stadtteile.json"
+            )
+            if os.path.exists(data_path):
+                with open(data_path, "r", encoding="utf-8") as f:
+                    all_districts = json.load(f)
+                slug = body.slug or ""
+                context["home_districts"] = all_districts.get(slug, [])
 
         # SEO-Kontext
         from .seo import get_portal_home_seo
@@ -283,7 +299,7 @@ class OrganizationDetailView(DetailView):
         today = timezone.now().date()
         now = timezone.now()
 
-        all_memberships = org.memberships.select_related("person")
+        all_memberships = org.memberships.select_related("person", "person__body")
         active_qs = all_memberships.filter(
             Q(end_date__isnull=True) | Q(end_date__gte=today)
         ).order_by("person__family_name")
@@ -386,7 +402,7 @@ class PersonListView(ListView):
 
         today = timezone.now().date()
 
-        qs = OParlPerson.objects.filter(body=body)
+        qs = OParlPerson.objects.filter(body=body).select_related("body")
 
         # Ratsrolle als Annotation (falls vorhanden)
         rat = OParlOrganization.objects.filter(body=body, name="Rat").first()
@@ -409,6 +425,7 @@ class PersonListView(ListView):
                 Q(name__icontains=q)
                 | Q(family_name__icontains=q)
                 | Q(given_name__icontains=q)
+                | Q(email__icontains=q)
                 | Q(memberships__role__icontains=q)
                 | Q(memberships__organization__name__icontains=q)
             ).distinct()
@@ -1013,7 +1030,7 @@ def search_results(request):
                         "type": "paper",
                         "title": paper.name or paper.reference,
                         "subtitle": paper.paper_type,
-                        "url": f"/vorgaenge/{paper.id}/",
+                        "url": f"/insight/vorgaenge/{paper.id}/",
                     }
                 )
 
@@ -1027,7 +1044,7 @@ def search_results(request):
                         "type": "person",
                         "title": person.display_name,
                         "subtitle": "Person",
-                        "url": f"/personen/{person.id}/",
+                        "url": f"/insight/personen/{person.id}/",
                     }
                 )
 
@@ -1041,7 +1058,7 @@ def search_results(request):
                         "type": "organization",
                         "title": org.name,
                         "subtitle": org.organization_type,
-                        "url": f"/gremien/{org.id}/",
+                        "url": f"/insight/gremien/{org.id}/",
                     }
                 )
 
@@ -1055,7 +1072,7 @@ def search_results(request):
                         "type": "meeting",
                         "title": meeting.name or "Sitzung",
                         "subtitle": meeting.start.strftime("%d.%m.%Y") if meeting.start else None,
-                        "url": f"/termine/{meeting.id}/",
+                        "url": f"/insight/termine/{meeting.id}/",
                     }
                 )
 
@@ -1277,15 +1294,24 @@ class MapView(TemplateView):
 
 @require_GET
 def map_markers(request):
-    """GeoJSON-Endpoint für Karten-Marker."""
+    """GeoJSON-Endpoint für Karten-Marker.
+
+    Query-Parameter:
+        weeks: Anzahl Wochen zurück (Standard: 4, Max: 52)
+        all: Wenn "1", alle Papers mit Locations (kein Zeitfilter)
+    """
     body = get_active_body(request)
     if not body:
         return JsonResponse({"type": "FeatureCollection", "features": []})
 
-    # Vorgänge der letzten 4 Wochen mit Geo-Daten
-    four_weeks_ago = timezone.now() - timedelta(weeks=4)
+    papers = OParlPaper.objects.filter(body=body, locations__isnull=False)
 
-    papers = OParlPaper.objects.filter(body=body, date__gte=four_weeks_ago, locations__isnull=False)
+    # Zeitfilter: ?all=1 deaktiviert den Filter
+    show_all = request.GET.get("all") == "1"
+    if not show_all:
+        weeks = min(int(request.GET.get("weeks", "4") or "4"), 52)
+        cutoff = timezone.now() - timedelta(weeks=weeks)
+        papers = papers.filter(date__gte=cutoff)
 
     features = []
     for paper in papers:
@@ -1300,7 +1326,7 @@ def map_markers(request):
                                 "id": str(paper.id),
                                 "title": paper.name,
                                 "reference": paper.reference,
-                                "url": f"/vorgaenge/{paper.id}/",
+                                "url": f"/insight/vorgaenge/{paper.id}/",
                                 "location_name": loc.get("name", ""),
                             },
                         }
@@ -1310,11 +1336,99 @@ def map_markers(request):
 
 
 # =============================================================================
-# Tile Proxy (DSGVO-konform)
+# File Proxy (DSGVO-konform - PDFs im iframe anzeigbar)
 # =============================================================================
 
 import httpx
 from django.views.decorators.cache import cache_page
+
+
+from django.views.decorators.clickjacking import xframe_options_exempt
+
+
+def _file_proxy_error(title, message):
+    """Return a styled HTML error page for the file proxy iframe."""
+    html = f"""<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f9fafb;color:#374151;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem}}
+.card{{max-width:28rem;text-align:center}}
+.icon{{width:3rem;height:3rem;margin:0 auto 1rem;color:#9ca3af}}
+h1{{font-size:1.125rem;font-weight:600;margin-bottom:.5rem;color:#111827}}
+p{{font-size:.875rem;line-height:1.625;color:#6b7280}}
+a{{color:#4f46e5;text-decoration:underline}}
+@media(prefers-color-scheme:dark){{body{{background:#111827;color:#d1d5db}}h1{{color:#f9fafb}}p{{color:#9ca3af}}.icon{{color:#6b7280}}}}
+</style></head>
+<body><div class="card">
+<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+<h1>{title}</h1>
+<p>{message}</p>
+</div></body></html>"""
+    response = HttpResponse(html, content_type="text/html; charset=utf-8")
+    response["X-Frame-Options"] = "ALLOWALL"
+    return response
+
+
+@require_GET
+@xframe_options_exempt
+def file_proxy(request, file_id):
+    """
+    Proxy für OParl-Dateien (PDFs etc.) — ermöglicht iframe-Embedding.
+
+    Externe Server setzen X-Frame-Options, wodurch PDFs nicht im iframe
+    angezeigt werden können. Dieser Proxy lädt die Datei und liefert sie
+    mit korrekten Headern aus.
+
+    Auch DSGVO-konform: Browser verbindet sich nicht direkt mit dem RIS-Server.
+    """
+    file_obj = get_object_or_404(OParlFile, id=file_id)
+
+    url = file_obj.download_url or file_obj.access_url
+    if not url:
+        raise Http404("Keine Download-URL verfügbar")
+
+    try:
+        upstream = httpx.get(
+            url,
+            timeout=60.0,
+            follow_redirects=True,
+            headers={"User-Agent": "Mandari/1.0 (https://mandari.de)"},
+        )
+        upstream.raise_for_status()
+
+        content_type = (
+            file_obj.mime_type
+            or upstream.headers.get("content-type", "application/octet-stream")
+        )
+
+        response = HttpResponse(upstream.content, content_type=content_type)
+        response["Content-Disposition"] = "inline"
+        response["Cache-Control"] = "public, max-age=86400"  # 1 Tag
+        # Kein X-Frame-Options → iframe-Embedding erlaubt
+        return response
+
+    except httpx.HTTPStatusError as e:
+        return _file_proxy_error(
+            "Datei nicht gefunden" if e.response.status_code == 404 else f"Fehler {e.response.status_code}",
+            "Die Datei konnte auf dem OParl-Server nicht gefunden werden. "
+            "Das liegt oft an veränderten Daten und URLs auf dem Quell-Server. "
+            "Die Probleme werden nach unserem nächsten Scan in der Regel gelöst. "
+            "Bei längerfristigen Problemen mit bestimmten Dokumenten melde dich bitte bei "
+            'unserem Support unter <a href="mailto:support@mandari.de">support@mandari.de</a>.',
+        )
+    except httpx.RequestError:
+        return _file_proxy_error(
+            "Server nicht erreichbar",
+            "Der OParl-Server ist momentan nicht erreichbar. Bitte versuche es später erneut.",
+        )
+
+
+# =============================================================================
+# Tile Proxy (DSGVO-konform)
+# =============================================================================
 
 
 @require_GET
@@ -2000,6 +2114,548 @@ class QuestionSubmittedView(TemplateView):
     """Bestätigungsseite nach Absenden einer Frage."""
 
     template_name = "pages/questions/submitted.html"
+
+
+# =============================================================================
+# SEO: robots.txt und Sitemaps
+# =============================================================================
+
+
+# =============================================================================
+# Merkliste (Bookmarks)
+# =============================================================================
+
+
+class MerklisteView(TemplateView):
+    """Merkliste-Seite: Gespeicherte Vorgänge, Sitzungen, Gremien, Personen."""
+
+    template_name = "pages/merkliste.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+
+        if user.is_authenticated:
+            bookmarks = Bookmark.objects.filter(user=user)
+            bookmark_ids = {}
+            for b in bookmarks:
+                bookmark_ids.setdefault(b.entity_type, []).append(b.entity_id)
+
+            context["bookmarked_papers"] = (
+                OParlPaper.objects.filter(id__in=bookmark_ids.get("paper", []))
+                .order_by("-date", "-oparl_created")
+            )
+            context["bookmarked_meetings"] = (
+                OParlMeeting.objects.filter(id__in=bookmark_ids.get("meeting", []))
+                .prefetch_related("organizations")
+                .order_by("-start")
+            )
+            context["bookmarked_organizations"] = (
+                OParlOrganization.objects.filter(id__in=bookmark_ids.get("organization", []))
+                .order_by("name")
+            )
+            context["bookmarked_persons"] = (
+                OParlPerson.objects.filter(id__in=bookmark_ids.get("person", []))
+                .select_related("body")
+                .order_by("family_name", "given_name")
+            )
+            context["has_bookmarks"] = bookmarks.exists()
+
+        return context
+
+
+@require_POST
+def bookmark_toggle(request):
+    """Toggle-Endpoint: Bookmark hinzufügen oder entfernen."""
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Login erforderlich"}, status=401)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    entity_type = data.get("type", "")
+    entity_id = data.get("id", "")
+
+    if entity_type not in ("person", "paper", "meeting", "organization"):
+        return JsonResponse({"error": "Ungültiger Typ"}, status=400)
+
+    if not entity_id:
+        return JsonResponse({"error": "ID fehlt"}, status=400)
+
+    bookmark, created = Bookmark.objects.get_or_create(
+        user=request.user,
+        entity_type=entity_type,
+        entity_id=entity_id,
+    )
+
+    if not created:
+        bookmark.delete()
+
+    return JsonResponse({"bookmarked": created})
+
+
+@require_GET
+def bookmark_ids(request):
+    """Gibt alle Bookmark-IDs des Users zurück."""
+    if not request.user.is_authenticated:
+        return JsonResponse({"person": [], "paper": [], "meeting": [], "organization": []})
+
+    bookmarks = Bookmark.objects.filter(user=request.user).values_list("entity_type", "entity_id")
+    result = {"person": [], "paper": [], "meeting": [], "organization": []}
+    for entity_type, entity_id in bookmarks:
+        if entity_type in result:
+            result[entity_type].append(str(entity_id))
+
+    return JsonResponse(result)
+
+
+@require_GET
+def bookmark_entities(request):
+    """Rendert HTML-Partial für gegebene Entity-IDs (für anonyme Merkliste)."""
+    entity_type = request.GET.get("type", "")
+    ids_str = request.GET.get("ids", "")
+
+    if not entity_type or not ids_str:
+        return HttpResponse("")
+
+    try:
+        ids = [id.strip() for id in ids_str.split(",") if id.strip()]
+    except Exception:
+        return HttpResponse("")
+
+    if not ids:
+        return HttpResponse("")
+
+    template_map = {
+        "paper": ("partials/merkliste_papers.html", OParlPaper.objects.filter(id__in=ids).order_by("-date", "-oparl_created")),
+        "meeting": ("partials/merkliste_meetings.html", OParlMeeting.objects.filter(id__in=ids).prefetch_related("organizations").order_by("-start")),
+        "organization": ("partials/merkliste_organizations.html", OParlOrganization.objects.filter(id__in=ids).order_by("name")),
+        "person": ("partials/merkliste_persons.html", OParlPerson.objects.filter(id__in=ids).select_related("body").order_by("family_name", "given_name")),
+    }
+
+    if entity_type not in template_map:
+        return HttpResponse("")
+
+    template_name, queryset = template_map[entity_type]
+    return render(request, template_name, {"items": queryset})
+
+
+# =============================================================================
+# Nachbarschaft (Neighborhood)
+# =============================================================================
+
+
+class NeighborhoodView(TemplateView):
+    """Nachbarschaft-Seite: Vorgänge in der Nähe finden."""
+
+    template_name = "pages/neighborhood.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        body = get_active_body(self.request)
+        context["active_body"] = body
+
+        if body:
+            # Geodaten für initiale Kartenansicht
+            if body.latitude and body.longitude:
+                context["map_center"] = {
+                    "lat": float(body.latitude),
+                    "lng": float(body.longitude),
+                }
+            if body.bbox_north and body.bbox_south and body.bbox_east and body.bbox_west:
+                context["map_bounds"] = {
+                    "north": float(body.bbox_north),
+                    "south": float(body.bbox_south),
+                    "east": float(body.bbox_east),
+                    "west": float(body.bbox_west),
+                }
+
+            # Stadtteile laden
+            import json as json_mod
+            import os
+
+            data_path = os.path.join(
+                os.path.dirname(__file__), "data", "stadtteile.json"
+            )
+            if os.path.exists(data_path):
+                with open(data_path, "r", encoding="utf-8") as f:
+                    all_districts = json_mod.load(f)
+                slug = body.slug or ""
+                context["districts"] = all_districts.get(slug, [])
+
+        return context
+
+
+@require_GET
+def neighborhood_autocomplete(request):
+    """Proxy zu Photon API für Adress-Autocomplete mit Body-Location-Bias."""
+    import httpx as httpx_client
+
+    query = request.GET.get("q", "").strip()
+    if not query or len(query) < 2:
+        return JsonResponse([], safe=False)
+
+    body = get_active_body(request)
+
+    params = {
+        "q": query,
+        "limit": 5,
+        "lang": "de",
+    }
+
+    # Location-Bias auf Body-Zentrum
+    if body and body.latitude and body.longitude:
+        params["lat"] = str(body.latitude)
+        params["lon"] = str(body.longitude)
+
+    try:
+        from django.conf import settings as django_settings
+
+        photon_url = getattr(django_settings, "PHOTON_API_URL", "https://photon.komoot.io/api/")
+
+        headers = {"User-Agent": "Mandari/2.0 (https://mandari.de)"}
+        resp = httpx_client.get(photon_url, params=params, timeout=5.0, headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+
+        results = []
+        for feature in data.get("features", []):
+            props = feature.get("properties", {})
+            coords = feature.get("geometry", {}).get("coordinates", [])
+            if len(coords) < 2:
+                continue
+
+            lon, lat = coords[0], coords[1]
+
+            # BBox-Filter: Nur Ergebnisse innerhalb Body-Grenzen
+            if body and body.bbox_north and body.bbox_south:
+                if not (
+                    float(body.bbox_south) <= lat <= float(body.bbox_north)
+                    and float(body.bbox_west) <= lon <= float(body.bbox_east)
+                ):
+                    continue
+
+            # Name zusammenbauen
+            parts = []
+            if props.get("name"):
+                parts.append(props["name"])
+            if props.get("street"):
+                parts.append(props["street"])
+            if props.get("housenumber"):
+                parts[-1] = parts[-1] + " " + props["housenumber"] if parts else props["housenumber"]
+            if props.get("city"):
+                parts.append(props["city"])
+
+            name = ", ".join(parts) if parts else props.get("name", query)
+
+            results.append({
+                "name": name,
+                "lat": lat,
+                "lon": lon,
+            })
+
+        return JsonResponse(results, safe=False)
+
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Photon autocomplete error: {e}")
+        return JsonResponse([], safe=False)
+
+
+@require_GET
+def neighborhood_results(request):
+    """HTMX Partial: Papers in der Nähe per Haversine-Query auf JSONB locations."""
+    lat_str = request.GET.get("lat")
+    lon_str = request.GET.get("lon")
+    radius_str = request.GET.get("radius", "500")
+    limit_str = request.GET.get("limit", "50")
+
+    if not lat_str or not lon_str:
+        return HttpResponse("")
+
+    try:
+        lat = float(lat_str)
+        lon = float(lon_str)
+        radius = int(radius_str)
+        result_limit = min(int(limit_str), 50)
+    except (ValueError, TypeError):
+        return HttpResponse("")
+
+    body = get_active_body(request)
+    if not body:
+        return HttpResponse("")
+
+    # Haversine-Query auf JSONB locations
+    from django.db import connection
+
+    sql = """
+        SELECT DISTINCT ON (p.id) p.id, p.name, p.reference, p.paper_type, p.date,
+               d.dist AS distance,
+               (loc->>'lat')::float AS loc_lat,
+               (loc->>'lon')::float AS loc_lon
+        FROM oparl_papers p,
+             LATERAL jsonb_array_elements(p.locations) AS loc,
+             LATERAL (
+                 SELECT 6371000 * acos(
+                     LEAST(1.0, GREATEST(-1.0,
+                         cos(radians(%s)) * cos(radians((loc->>'lat')::float))
+                         * cos(radians((loc->>'lon')::float) - radians(%s))
+                         + sin(radians(%s)) * sin(radians((loc->>'lat')::float))
+                     ))
+                 ) AS dist
+             ) d
+        WHERE p.body_id = %s
+          AND p.locations IS NOT NULL
+          AND jsonb_array_length(p.locations) > 0
+          AND d.dist <= %s
+        ORDER BY p.id, d.dist
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(sql, [lat, lon, lat, str(body.id), radius])
+        rows = cursor.fetchall()
+
+    # Sortiere nach Entfernung und limitiere
+    rows.sort(key=lambda r: r[5])
+    rows = rows[:result_limit]
+
+    results = []
+    for row in rows:
+        paper_id, name, reference, paper_type, date, distance, loc_lat, loc_lon = row
+        dist_int = int(distance)
+        results.append({
+            "id": str(paper_id),
+            "name": name,
+            "reference": reference,
+            "paper_type": paper_type,
+            "date": date,
+            "distance": dist_int,
+            "distance_km": f"{dist_int / 1000:.1f}",
+            "lat": loc_lat,
+            "lon": loc_lon,
+            "url": f"/insight/vorgaenge/{paper_id}/",
+        })
+
+    return render(request, "partials/neighborhood_results.html", {
+        "results": results,
+        "lat": lat,
+        "lon": lon,
+        "radius": radius,
+    })
+
+
+# =============================================================================
+# Benachrichtigungen (Subscriptions)
+# =============================================================================
+
+
+class SubscribeView(TemplateView):
+    """Abo-Formular für E-Mail-Benachrichtigungen."""
+
+    template_name = "pages/subscribe.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        body = get_active_body(self.request)
+        context["active_body"] = body
+
+        # Vorausgefüllte Werte aus Query-Parametern
+        context["prefill_type"] = self.request.GET.get("type", "")
+        context["prefill_keyword"] = self.request.GET.get("keyword", "")
+        context["prefill_lat"] = self.request.GET.get("lat", "")
+        context["prefill_lon"] = self.request.GET.get("lon", "")
+        context["prefill_name"] = self.request.GET.get("name", "")
+
+        return context
+
+    def post(self, request, *args, **kwargs):
+        """Erstellt Subscriber + sendet Bestätigungsmail."""
+        body = get_active_body(request)
+        if not body:
+            return JsonResponse({"error": "Keine Kommune ausgewählt"}, status=400)
+
+        email = request.POST.get("email", "").strip().lower()
+        if not email or "@" not in email:
+            return render(request, "partials/subscribe_error.html", {
+                "error": "Bitte geben Sie eine gültige E-Mail-Adresse ein."
+            })
+
+        # Abo-Typen aus Feldinhalt ableiten (kein Checkbox mehr)
+        neighborhood_name = request.POST.get("neighborhood_name", "").strip()
+        neighborhood_lat = request.POST.get("neighborhood_lat", "").strip()
+        neighborhood_lon = request.POST.get("neighborhood_lon", "").strip()
+        keyword = request.POST.get("keyword", "").strip()
+        digest_frequency = request.POST.get("digest_frequency", "weekly")
+
+        if digest_frequency not in ("weekly", "biweekly"):
+            digest_frequency = "weekly"
+
+        neighborhood_active = bool(neighborhood_lat and neighborhood_lon)
+        keyword_active = bool(keyword)
+
+        if not neighborhood_active and not keyword_active:
+            return render(request, "partials/subscribe_error.html", {
+                "error": "Bitte geben Sie eine Adresse oder einen Suchbegriff ein."
+            })
+
+        # Subscriber erstellen oder aktualisieren
+        subscriber, created = InsightSubscriber.objects.get_or_create(
+            email=email,
+            body=body,
+            defaults={
+                "digest_frequency": digest_frequency,
+            },
+        )
+
+        if not created and subscriber.confirmed and subscriber.unsubscribed_at is None:
+            # Bereits bestätigt und aktiv → zur Verwaltungsseite leiten
+            return render(request, "partials/subscribe_success.html", {
+                "message": "Sie haben bereits ein aktives Abo. Überprüfen Sie Ihre E-Mail für den Verwaltungslink.",
+                "already_exists": True,
+            })
+
+        # Abo-Daten aktualisieren
+        subscriber.neighborhood_active = neighborhood_active
+        if neighborhood_active:
+            subscriber.neighborhood_lat = neighborhood_lat or None
+            subscriber.neighborhood_lon = neighborhood_lon or None
+            subscriber.neighborhood_name = neighborhood_name or None
+            try:
+                subscriber.neighborhood_radius = int(request.POST.get("neighborhood_radius", "500"))
+            except (ValueError, TypeError):
+                subscriber.neighborhood_radius = 500
+        else:
+            subscriber.neighborhood_lat = None
+            subscriber.neighborhood_lon = None
+            subscriber.neighborhood_name = None
+
+        subscriber.keyword_active = keyword_active
+        subscriber.keyword = keyword or None
+
+        subscriber.digest_frequency = digest_frequency
+        subscriber.unsubscribed_at = None  # Resubscribe falls abgemeldet
+        subscriber.save()
+
+        # Bestätigungsmail senden
+        _send_confirmation_email(subscriber)
+
+        return render(request, "partials/subscribe_success.html", {
+            "message": "Fast geschafft! Bitte bestätigen Sie Ihr Abo über den Link in der E-Mail.",
+        })
+
+
+def _send_confirmation_email(subscriber):
+    """Sendet Double-Opt-In-Bestätigungsmail."""
+    from django.conf import settings as django_settings
+    from django.core.mail import send_mail
+    from django.template.loader import render_to_string
+
+    site_url = getattr(django_settings, "SITE_URL", "http://localhost:8000")
+    confirm_url = f"{site_url}/insight/abo/bestaetigen/{subscriber.token}/"
+
+    subject = "Bitte bestätigen Sie Ihr Mandari-Abo"
+
+    html_message = render_to_string("emails/insight_confirm.html", {
+        "subscriber": subscriber,
+        "confirm_url": confirm_url,
+        "site_url": site_url,
+    })
+
+    from_email = (
+        getattr(django_settings, "INSIGHT_DIGEST_FROM_EMAIL", "")
+        or getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de")
+    )
+
+    try:
+        send_mail(
+            subject=subject,
+            message=f"Bestätigen Sie Ihr Abo: {confirm_url}",
+            from_email=from_email,
+            recipient_list=[subscriber.email],
+            html_message=html_message,
+            fail_silently=True,
+        )
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Failed to send confirmation email: {e}")
+
+
+@require_GET
+def confirm_subscription(request, token):
+    """Bestätigt Double Opt-In."""
+    subscriber = get_object_or_404(InsightSubscriber, token=token)
+
+    if subscriber.confirmed:
+        return render(request, "pages/subscription_confirmed.html", {
+            "subscriber": subscriber,
+            "already_confirmed": True,
+        })
+
+    subscriber.confirmed = True
+    subscriber.confirmed_at = timezone.now()
+    subscriber.save(update_fields=["confirmed", "confirmed_at", "updated_at"])
+
+    return render(request, "pages/subscription_confirmed.html", {
+        "subscriber": subscriber,
+        "already_confirmed": False,
+    })
+
+
+def manage_subscription(request, token):
+    """Abo verwalten (GET zeigt Formular, POST aktualisiert)."""
+    subscriber = get_object_or_404(InsightSubscriber, token=token)
+
+    if request.method == "POST":
+        # Abo-Typen aus Feldinhalt ableiten (kein Checkbox mehr)
+        neighborhood_name = request.POST.get("neighborhood_name", "").strip()
+        neighborhood_lat = request.POST.get("neighborhood_lat", "").strip()
+        neighborhood_lon = request.POST.get("neighborhood_lon", "").strip()
+        keyword = request.POST.get("keyword", "").strip()
+
+        subscriber.neighborhood_active = bool(neighborhood_lat and neighborhood_lon)
+        if subscriber.neighborhood_active:
+            subscriber.neighborhood_lat = neighborhood_lat or None
+            subscriber.neighborhood_lon = neighborhood_lon or None
+            subscriber.neighborhood_name = neighborhood_name or None
+            try:
+                subscriber.neighborhood_radius = int(request.POST.get("neighborhood_radius", "500"))
+            except (ValueError, TypeError):
+                subscriber.neighborhood_radius = 500
+        else:
+            subscriber.neighborhood_lat = None
+            subscriber.neighborhood_lon = None
+            subscriber.neighborhood_name = None
+
+        subscriber.keyword_active = bool(keyword)
+        subscriber.keyword = keyword or None
+
+        freq = request.POST.get("digest_frequency", "weekly")
+        subscriber.digest_frequency = freq if freq in ("weekly", "biweekly") else "weekly"
+
+        subscriber.save()
+
+        return render(request, "pages/subscription_manage.html", {
+            "subscriber": subscriber,
+            "saved": True,
+        })
+
+    return render(request, "pages/subscription_manage.html", {
+        "subscriber": subscriber,
+    })
+
+
+@require_GET
+def unsubscribe(request, token):
+    """Sofort abmelden (1-Klick)."""
+    subscriber = get_object_or_404(InsightSubscriber, token=token)
+
+    if subscriber.unsubscribed_at is None:
+        subscriber.unsubscribed_at = timezone.now()
+        subscriber.save(update_fields=["unsubscribed_at", "updated_at"])
+
+    return render(request, "pages/subscription_unsubscribed.html", {
+        "subscriber": subscriber,
+    })
 
 
 # =============================================================================

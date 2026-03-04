@@ -578,6 +578,23 @@ class SyncOrchestrator:
                 full=full,
             )
 
+        # Phase 2 (parallel): Start text extraction as background task
+        # Processes already-pending files while entity sync runs concurrently.
+        # New files synced in this cycle will be picked up in the next cycle.
+        extraction_task: asyncio.Task | None = None
+        if settings.text_extraction_enabled:
+            async def _run_extraction():
+                try:
+                    from src.extraction.extractor import TextExtractor
+                    extractor = TextExtractor(self.storage)
+                    return await extractor.extract_pending_files(body_id)
+                except Exception as e:
+                    console.print(f"[red]  Text extraction error: {e}[/red]")
+                    return e
+
+            extraction_task = asyncio.create_task(_run_extraction())
+            console.print(f"[dim]  Text extraction started in background[/dim]")
+
         # Create progress display (disabled when not running in terminal or in parallel mode)
         with Progress(
             SpinnerColumn(),
@@ -685,23 +702,17 @@ class SyncOrchestrator:
         # Update body sync time
         await self.storage.update_body_sync_time(body_id)
 
-        # Phase 2: Text Extraction
-        # Processes files with status='pending' only — never re-processes completed ones.
-        # Batch size limits per-cycle work, backlog clears gradually over multiple syncs.
-        if settings.text_extraction_enabled:
-            try:
-                from src.extraction.extractor import TextExtractor
-
-                extractor = TextExtractor(self.storage)
-                extracted = await extractor.extract_pending_files(body_id)
-                stats["text_extracted"] = extracted
-                if extracted > 0:
-                    console.print(f"[green]  Extracted text from {extracted} files[/green]")
+        # Await background text extraction (started before entity sync)
+        if extraction_task is not None:
+            result = await extraction_task
+            if isinstance(result, Exception):
+                stats["errors"].append(f"Text extraction: {result}")
+            elif isinstance(result, int):
+                stats["text_extracted"] = result
+                if result > 0:
+                    console.print(f"[green]  Extracted text from {result} files (parallel)[/green]")
                 else:
                     console.print(f"[dim]  No pending files for text extraction[/dim]")
-            except Exception as e:
-                console.print(f"[red]  Text extraction error: {e}[/red]")
-                stats["errors"].append(f"Text extraction: {e}")
 
         # Phase 3: Meilisearch Indexing
         # Only re-index during full sync or when entities actually changed.

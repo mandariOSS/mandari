@@ -8,18 +8,18 @@
 {% endblock %}
 
 {% block header_actions %}
-<a href="{% url 'work:motion_trash' org_slug=organization.slug %}"
+<a href="{% url 'work:document_trash' org_slug=organization.slug %}"
    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
     <i data-lucide="trash-2" class="w-4 h-4"></i>
     Papierkorb
 </a>
-<a href="{% url 'work:motion_import' org_slug=organization.slug %}"
+<a href="{% url 'work:document_import' org_slug=organization.slug %}"
    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
     <i data-lucide="upload" class="w-4 h-4"></i>
     PDF importieren
 </a>
-<a href="{% url 'work:motion_create' org_slug=organization.slug %}"
-   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+<a href="{% url 'work:document_create' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
     <i data-lucide="plus" class="w-4 h-4"></i>
     Neues Dokument
 </a>
@@ -28,21 +28,21 @@
 {% block work_content %}
 <div x-data="documentManager()">
     <!-- Filters & View Toggle -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
+    <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
         <form method="get" class="flex flex-wrap items-center gap-4">
             <!-- Search -->
             <div class="flex-1 min-w-[200px]">
                 <div class="relative">
+                    <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
                     <input type="text" name="q" value="{{ search_query|default:'' }}"
                            placeholder="Dokument suchen..."
-                           class="w-full px-4 py-2.5 pl-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
-                    <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                           class="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                 </div>
             </div>
 
             <!-- Type Filter -->
             <select name="type" onchange="this.form.submit()"
-                    class="px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                    class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                 <option value="">Alle Typen</option>
                 {% for doc_type in document_types %}
                 <option value="{{ doc_type.id }}" {% if selected_type == doc_type.id|stringformat:"s" %}selected{% endif %}>{{ doc_type.name }}</option>
@@ -55,7 +55,7 @@
 
             <!-- Status Filter -->
             <select name="status" onchange="this.form.submit()"
-                    class="px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                    class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                 <option value="">Alle Status</option>
                 {% for value, label in status_choices %}
                 <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
@@ -89,10 +89,10 @@
     </div>
 
     <!-- Grid View -->
-    <div x-show="viewMode === 'grid'" x-cloak class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+    <div x-show="viewMode === 'grid'" x-cloak class="fade-up d1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {% for motion in motions %}
-        <a href="{% url 'work:motion_detail' org_slug=organization.slug motion_id=motion.id %}"
-           class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-lg transition-all">
+        <div class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md transition-all cursor-pointer"
+             @click="window.location.href='{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}'">
             <!-- Document Icon -->
             <div class="aspect-[4/3] bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800 rounded-lg mb-3 flex items-center justify-center relative overflow-hidden">
                 <i data-lucide="{{ motion.get_type_icon }}"
@@ -113,14 +113,13 @@
                 </div>
 
                 <!-- Hover Actions -->
-                <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2" @click.stop>
                     <button type="button"
-                            @click.prevent="openShareModal('{{ motion.id }}', '{{ motion.title|escapejs }}', '{{ motion.visibility }}')"
+                            @click="openShareModal('{{ motion.id }}', '{{ motion.title|escapejs }}', '{{ motion.visibility }}')"
                             class="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors">
                         <i data-lucide="share-2" class="w-4 h-4 text-gray-700"></i>
                     </button>
-                    <a href="{% url 'work:motion_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf"
-                       @click.stop
+                    <a href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf"
                        class="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors">
                         <i data-lucide="download" class="w-4 h-4 text-gray-700"></i>
                     </a>
@@ -146,32 +145,26 @@
             <p class="text-xs text-gray-500 mt-2">
                 {{ motion.updated_at|timesince }}
             </p>
-        </a>
+        </div>
         {% empty %}
         <div class="col-span-full">
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-5 py-12 text-center">
-                <div class="w-16 h-16 mx-auto mb-4 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
-                    <i data-lucide="file-text" class="w-8 h-8 text-green-500 dark:text-green-400"></i>
-                </div>
-                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Dokumente vorhanden</h3>
-                <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
+                <p class="text-sm text-gray-400 dark:text-gray-500">
                     {% if search_query or selected_status or selected_type or filter_mine %}
                     Keine Dokumente mit diesen Filterkriterien gefunden.
                     {% else %}
-                    Erstellen Sie Ihr erstes Dokument, um loszulegen.
+                    Noch keine Dokumente vorhanden.
                     {% endif %}
                 </p>
                 {% if not search_query and not selected_status and not selected_type and not filter_mine %}
-                <div class="flex items-center justify-center gap-3 mt-6">
-                    <a href="{% url 'work:motion_import' org_slug=organization.slug %}"
-                       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <i data-lucide="upload" class="w-4 h-4"></i>
-                        PDF importieren
+                <div class="flex items-center justify-center gap-3 mt-3">
+                    <a href="{% url 'work:document_import' org_slug=organization.slug %}"
+                       class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 hover:underline">
+                        <i data-lucide="upload" class="w-3.5 h-3.5"></i> PDF importieren
                     </a>
-                    <a href="{% url 'work:motion_create' org_slug=organization.slug %}"
-                       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
-                        <i data-lucide="plus" class="w-4 h-4"></i>
-                        Neues Dokument
+                    <a href="{% url 'work:document_create' org_slug=organization.slug %}"
+                       class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+                        <i data-lucide="plus" class="w-3.5 h-3.5"></i> Neues Dokument
                     </a>
                 </div>
                 {% endif %}
@@ -181,104 +174,95 @@
     </div>
 
     <!-- List View -->
-    <div x-show="viewMode === 'list'" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div class="divide-y divide-gray-100 dark:divide-gray-700">
+    <div x-show="viewMode === 'list'" class="fade-up d1 item-list bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
             {% for motion in motions %}
-            <div class="group relative">
-                <a href="{% url 'work:motion_detail' org_slug=organization.slug motion_id=motion.id %}"
-                   class="block px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
-                    <div class="flex items-start gap-4">
-                        <!-- Icon -->
-                        <div class="flex-shrink-0 p-2 rounded-lg
-                            {% if motion.status == 'draft' %}bg-gray-100 dark:bg-gray-700
-                            {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30
-                            {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30
-                            {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30
-                            {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30
-                            {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30
-                            {% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
-                            <i data-lucide="{{ motion.get_type_icon }}"
-                               class="w-5 h-5
-                                {% if motion.status == 'draft' %}text-gray-500
-                                {% elif motion.status == 'review' %}text-amber-600 dark:text-amber-400
-                                {% elif motion.status == 'approved' %}text-green-600 dark:text-green-400
-                                {% elif motion.status == 'submitted' %}text-blue-600 dark:text-blue-400
-                                {% elif motion.status == 'completed' %}text-purple-600 dark:text-purple-400
-                                {% elif motion.status == 'rejected' %}text-red-600 dark:text-red-400
-                                {% else %}text-gray-500{% endif %}"></i>
-                        </div>
-
-                        <!-- Content -->
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2">
-                                <h3 class="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600">{{ motion.title }}</h3>
-                                <!-- Visibility Badge -->
-                                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs {{ motion.get_visibility_badge_class }}">
-                                    <i data-lucide="{{ motion.get_visibility_icon }}" class="w-3 h-3"></i>
-                                </span>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2 mt-1">
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
-                                    {% if motion.status == 'draft' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
-                                    {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
-                                    {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
-                                    {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
-                                    {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
-                                    {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
-                                    {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
-                                    {{ motion.get_status_display }}
-                                </span>
-                                <span class="text-xs text-gray-500">{{ motion.get_type_display }}</span>
-                                <span class="text-xs text-gray-500">·</span>
-                                <span class="text-xs text-gray-500">{{ motion.author.user.get_display_name }}</span>
-                            </div>
-                            <p class="text-sm text-gray-500 mt-1">
-                                Zuletzt bearbeitet {{ motion.updated_at|timesince }}
-                            </p>
-                        </div>
-
-                        <!-- Actions (visible on hover) -->
-                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button type="button"
-                                    @click.prevent="openShareModal('{{ motion.id }}', '{{ motion.title|escapejs }}', '{{ motion.visibility }}')"
-                                    class="p-2 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                                <i data-lucide="share-2" class="w-4 h-4"></i>
-                            </button>
-                            <a href="{% url 'work:motion_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf"
-                               @click.stop
-                               class="p-2 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                                <i data-lucide="download" class="w-4 h-4"></i>
-                            </a>
-                        </div>
-
-                        <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+            <div class="group relative cursor-pointer px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                 @click="window.location.href='{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}'">
+                <div class="flex items-start gap-4">
+                    <!-- Icon -->
+                    <div class="flex-shrink-0 p-2 rounded-lg
+                        {% if motion.status == 'draft' %}bg-gray-100 dark:bg-gray-700
+                        {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30
+                        {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30
+                        {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30
+                        {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30
+                        {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30
+                        {% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                        <i data-lucide="{{ motion.get_type_icon }}"
+                           class="w-5 h-5
+                            {% if motion.status == 'draft' %}text-gray-500
+                            {% elif motion.status == 'review' %}text-amber-600 dark:text-amber-400
+                            {% elif motion.status == 'approved' %}text-green-600 dark:text-green-400
+                            {% elif motion.status == 'submitted' %}text-blue-600 dark:text-blue-400
+                            {% elif motion.status == 'completed' %}text-purple-600 dark:text-purple-400
+                            {% elif motion.status == 'rejected' %}text-red-600 dark:text-red-400
+                            {% else %}text-gray-500{% endif %}"></i>
                     </div>
-                </a>
+
+                    <!-- Content -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <h3 class="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600">{{ motion.title }}</h3>
+                            <!-- Visibility Badge -->
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs {{ motion.get_visibility_badge_class }}">
+                                <i data-lucide="{{ motion.get_visibility_icon }}" class="w-3 h-3"></i>
+                            </span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2 mt-1">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                {% if motion.status == 'draft' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
+                                {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
+                                {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
+                                {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
+                                {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+                                {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
+                                {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                                {{ motion.get_status_display }}
+                            </span>
+                            <span class="text-xs text-gray-500">{{ motion.get_type_display }}</span>
+                            <span class="text-xs text-gray-500">·</span>
+                            <span class="text-xs text-gray-500">{{ motion.author.user.get_display_name }}</span>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-1">
+                            Zuletzt bearbeitet {{ motion.updated_at|timesince }}
+                        </p>
+                    </div>
+
+                    <!-- Actions (visible on hover) -->
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" @click.stop>
+                        <button type="button"
+                                @click="openShareModal('{{ motion.id }}', '{{ motion.title|escapejs }}', '{{ motion.visibility }}')"
+                                class="p-2 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="share-2" class="w-4 h-4"></i>
+                        </button>
+                        <a href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf"
+                           class="p-2 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                        </a>
+                    </div>
+
+                    <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+                </div>
             </div>
             {% empty %}
-            <div class="px-5 py-12 text-center">
-                <div class="w-16 h-16 mx-auto mb-4 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
-                    <i data-lucide="file-text" class="w-8 h-8 text-green-500 dark:text-green-400"></i>
-                </div>
-                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Dokumente vorhanden</h3>
-                <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+            <div class="px-4 py-8 text-center">
+                <p class="text-sm text-gray-400 dark:text-gray-500">
                     {% if search_query or selected_status or selected_type or filter_mine %}
                     Keine Dokumente mit diesen Filterkriterien gefunden.
                     {% else %}
-                    Erstellen Sie Ihr erstes Dokument, um loszulegen.
+                    Noch keine Dokumente vorhanden.
                     {% endif %}
                 </p>
                 {% if not search_query and not selected_status and not selected_type and not filter_mine %}
-                <div class="flex items-center justify-center gap-3 mt-6">
-                    <a href="{% url 'work:motion_import' org_slug=organization.slug %}"
-                       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <i data-lucide="upload" class="w-4 h-4"></i>
-                        PDF importieren
+                <div class="flex items-center justify-center gap-3 mt-3">
+                    <a href="{% url 'work:document_import' org_slug=organization.slug %}"
+                       class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 hover:underline">
+                        <i data-lucide="upload" class="w-3.5 h-3.5"></i> PDF importieren
                     </a>
-                    <a href="{% url 'work:motion_create' org_slug=organization.slug %}"
-                       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
-                        <i data-lucide="plus" class="w-4 h-4"></i>
-                        Neues Dokument
+                    <a href="{% url 'work:document_create' org_slug=organization.slug %}"
+                       class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+                        <i data-lucide="plus" class="w-3.5 h-3.5"></i> Neues Dokument
                     </a>
                 </div>
                 {% endif %}

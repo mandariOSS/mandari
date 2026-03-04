@@ -1,0 +1,122 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Team{% endblock %}
+
+{% block header_title %}Team{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ member_count }} aktive Mitglieder in {{ organization.name }}</p>
+{% endblock %}
+
+{% block work_content %}
+<!-- Search -->
+<div class="fade-up mb-6">
+    <form method="get">
+        <div class="relative max-w-md">
+            <i data-lucide="search" class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+            <input type="text" name="q" value="{{ search_query }}"
+                   placeholder="Name oder E-Mail suchen..."
+                   class="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow dark:text-white">
+            {% if search_query %}
+            <a href="{% url 'work:team' org_slug=organization.slug %}"
+               class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+{% if search_query and not members %}
+<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="search-x" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Mitglieder gefunden</h3>
+    <p class="text-gray-500 dark:text-gray-400">Ihre Suche nach &ldquo;{{ search_query }}&rdquo; ergab keine Treffer.</p>
+</div>
+{% elif members %}
+<!-- Members Table -->
+<div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Name</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Rollen</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-lg:hidden">Status</th>
+                <th class="w-10 px-2 py-3"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for member in members %}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+                onclick="window.location='{% url 'work:team_profile' org_slug=organization.slug member_id=member.id %}'">
+                <td class="px-6 py-3">
+                    <div class="flex items-center gap-3">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-sm">
+                            {% if member.user.avatar %}
+                            <img src="{{ member.user.avatar.url }}" alt="" class="w-8 h-8 rounded-full object-cover">
+                            {% else %}
+                            {{ member.user.first_name|slice:":1"|upper|default:member.user.email|slice:":1"|upper }}
+                            {% endif %}
+                        </div>
+                        <div>
+                            <a href="{% url 'work:team_profile' org_slug=organization.slug member_id=member.id %}"
+                               class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                                {{ member.user.get_full_name|default:member.user.email }}
+                            </a>
+                            {% if is_owner_user == member.user %}
+                            <span class="ml-1.5 px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded">Eigentümer</span>
+                            {% endif %}
+                            {% if member.is_sworn_in %}
+                            <i data-lucide="shield-check" class="w-3.5 h-3.5 text-green-500 inline -mt-0.5 ml-1" title="Vereidigt"></i>
+                            {% endif %}
+                            <p class="text-sm text-gray-500 dark:text-gray-400 sm:hidden mt-0.5">
+                                {% if member.roles.exists %}
+                                    {% for role in member.roles.all %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                                {% else %}
+                                    Keine Rollen
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+                </td>
+                <td class="px-4 py-3 max-sm:hidden">
+                    {% if member.roles.exists %}
+                    <div class="flex flex-wrap gap-1">
+                        {% for role in member.roles.all %}
+                        <span class="px-2 py-0.5 text-xs rounded-full" style="background-color: {{ role.color }}20; color: {{ role.color }}">
+                            {{ role.name }}
+                        </span>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 max-lg:hidden">
+                    {% if member.current_absence %}
+                    <span class="inline-flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
+                        <span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></span>
+                        Abwesend bis {{ member.current_absence.end_date|date:"d.m." }}
+                    </span>
+                    {% else %}
+                    <span class="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                        <span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
+                        Verfügbar
+                    </span>
+                    {% endif %}
+                </td>
+                <td class="px-2 py-3">
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="users" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Noch keine Mitglieder</h3>
+    <p class="text-gray-500 dark:text-gray-400">Es sind noch keine Mitglieder vorhanden.</p>
+</div>
+{% endif %}
+{% endblock %}

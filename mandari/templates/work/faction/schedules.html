@@ -85,8 +85,8 @@
                             {% csrf_token %}
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
-                            <button type="submit"
-                                    onclick="return confirm('Sitzungsplan wirklich löschen?')"
+                            <button type="button"
+                                    @click="confirmAction({title: 'Sitzungsplan löschen', message: 'Möchten Sie diesen Sitzungsplan wirklich löschen?', confirmText: 'Löschen', variant: 'danger'}).then(ok => ok && $el.closest('form').submit())"
                                     class="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2">
                                 <i data-lucide="trash-2" class="w-4 h-4"></i>
                                 Löschen

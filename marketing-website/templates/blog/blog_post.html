@@ -3,24 +3,54 @@
 
 {% block title %}{{ page.title }}{% endblock %}
 
+{% block extra_head %}
+<meta property="og:type" content="article">
+<meta property="article:published_time" content="{{ page.date|date:'Y-m-d' }}">
+{% if page.author %}<meta property="article:author" content="{{ page.author.name }}">{% endif %}
+{% endblock %}
+
 {% block content %}
 <article>
     <!-- Hero -->
     <section class="pt-16 pb-10 lg:pt-24 lg:pb-12 bg-gradient-to-br from-primary-50 to-white dark:from-gray-800 dark:to-gray-900">
         <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center gap-3 mb-6">
+            <div class="flex flex-wrap items-center gap-3 mb-6">
                 <span class="px-3 py-1 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-sm font-medium rounded-full">
                     {{ page.get_category_display }}
                 </span>
                 <time class="text-sm text-gray-500 dark:text-gray-400" datetime="{{ page.date|date:'Y-m-d' }}">
                     {{ page.date|date:"d. F Y" }}
                 </time>
+                <span class="text-sm text-gray-400 dark:text-gray-500 flex items-center gap-1">
+                    <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+                    {{ page.reading_time }} Min. Lesezeit
+                </span>
             </div>
             <h1 class="text-3xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6">
                 {{ page.title }}
             </h1>
             {% if page.excerpt %}
             <p class="text-xl text-gray-600 dark:text-gray-300">{{ page.excerpt }}</p>
+            {% endif %}
+
+            <!-- Autor-Card -->
+            {% if page.author %}
+            <div class="flex items-center gap-4 mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                {% if page.author.image %}
+                {% image page.author.image fill-48x48 as author_img %}
+                <img src="{{ author_img.url }}" alt="{{ page.author.name }}" class="w-12 h-12 rounded-full object-cover">
+                {% else %}
+                <span class="w-12 h-12 rounded-full bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center text-lg font-semibold text-primary-700 dark:text-primary-300">
+                    {{ page.author.name|truncatechars:1 }}
+                </span>
+                {% endif %}
+                <div>
+                    <p class="font-semibold text-gray-900 dark:text-white">{{ page.author.name }}</p>
+                    {% if page.author.role %}
+                    <p class="text-sm text-gray-500 dark:text-gray-400">{{ page.author.role }}</p>
+                    {% endif %}
+                </div>
+            </div>
             {% endif %}
         </div>
     </section>
@@ -40,10 +70,69 @@
                     {% include_block block %}
                 {% endfor %}
             </div>
+
+            <!-- Tags -->
+            {% if page.tags.all %}
+            <div class="flex flex-wrap gap-2 mt-10 pt-6 border-t border-gray-200 dark:border-gray-700">
+                {% for tag in page.tags.all %}
+                <span class="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-full">
+                    #{{ tag }}
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Share / Link kopieren -->
+            <div class="flex items-center gap-4 mt-6" x-data="{ copied: false }">
+                <button @click="navigator.clipboard.writeText(window.location.href); copied = true; setTimeout(() => copied = false, 2000)"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                    <i data-lucide="link" class="w-4 h-4" aria-hidden="true"></i>
+                    <span x-show="!copied">Link kopieren</span>
+                    <span x-show="copied" x-cloak class="text-green-600 dark:text-green-400">Kopiert!</span>
+                </button>
+            </div>
         </div>
     </section>
 
-    <!-- Back to Blog -->
+    <!-- Weitere Beiträge -->
+    {% if related_posts %}
+    <section class="py-12 border-t border-gray-200 dark:border-gray-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8">Weitere Beiträge</h2>
+            <div class="grid md:grid-cols-3 gap-8">
+                {% for post in related_posts %}
+                <a href="{% pageurl post %}" class="block group">
+                    <article class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-shadow h-full">
+                        {% if post.featured_image %}
+                        {% image post.featured_image fill-600x340 as rel_img %}
+                        <img src="{{ rel_img.url }}" alt="{{ post.title }}" class="w-full h-40 object-cover">
+                        {% else %}
+                        <div class="w-full h-40 bg-gradient-to-br from-primary-100 to-primary-200 dark:from-primary-900 dark:to-primary-800 flex items-center justify-center">
+                            <i data-lucide="newspaper" class="w-10 h-10 text-primary-400"></i>
+                        </div>
+                        {% endif %}
+                        <div class="p-5">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="px-2 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-xs font-medium rounded-full">
+                                    {{ post.get_category_display }}
+                                </span>
+                                <time class="text-xs text-gray-500 dark:text-gray-400" datetime="{{ post.date|date:'Y-m-d' }}">
+                                    {{ post.date|date:"d.m.Y" }}
+                                </time>
+                            </div>
+                            <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                                {{ post.title }}
+                            </h3>
+                        </div>
+                    </article>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- Zurück zum Blog -->
     <section class="py-8">
         <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <a href="{{ page.get_parent.url }}"

@@ -1,5 +1,5 @@
 {% extends "base_insight.html" %}
-{% load static %}
+{% load static l10n %}
 
 {% block title %}Karte{% endblock %}
 
@@ -9,12 +9,12 @@
 <link rel="stylesheet" href="{% static 'vendor/leaflet/MarkerCluster.Default.css' %}" />
 <style>
     #map {
-        height: calc(100vh - 280px);
-        min-height: 450px;
-        border-radius: 0.75rem;
+        height: calc(100vh - 200px);
+        min-height: 500px;
+        border-radius: 0 0 0.75rem 0.75rem;
     }
 
-    /* Leaflet Controls anpassen */
+    /* Leaflet Controls */
     .leaflet-control-zoom {
         border: none !important;
         box-shadow: 0 1px 3px rgba(0,0,0,0.12) !important;
@@ -29,16 +29,9 @@
         height: 32px !important;
         line-height: 32px !important;
     }
-    .leaflet-control-zoom a:hover {
-        background: #f3f4f6 !important;
-    }
-    .dark .leaflet-control-zoom a {
-        background: #374151 !important;
-        color: #e5e7eb !important;
-    }
-    .dark .leaflet-control-zoom a:hover {
-        background: #4b5563 !important;
-    }
+    .leaflet-control-zoom a:hover { background: #f3f4f6 !important; }
+    .dark .leaflet-control-zoom a { background: #374151 !important; color: #e5e7eb !important; }
+    .dark .leaflet-control-zoom a:hover { background: #4b5563 !important; }
 
     .leaflet-control-attribution {
         background: rgba(255,255,255,0.85) !important;
@@ -46,90 +39,59 @@
         font-size: 10px !important;
         border-radius: 4px !important;
     }
-    .dark .leaflet-control-attribution {
-        background: rgba(31,41,55,0.85) !important;
-        color: #9ca3af !important;
-    }
+    .dark .leaflet-control-attribution { background: rgba(31,41,55,0.85) !important; color: #9ca3af !important; }
 
-    /* Popup Styling */
+    /* Popup */
     .leaflet-popup-content-wrapper {
         border-radius: 12px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         padding: 0;
     }
-    .leaflet-popup-content {
-        margin: 0;
-        min-width: 220px;
-    }
-    .dark .leaflet-popup-content-wrapper {
-        background: #1f2937;
-        color: #f3f4f6;
-    }
-    .dark .leaflet-popup-tip {
-        background: #1f2937;
-    }
+    .leaflet-popup-content { margin: 0; min-width: 220px; }
+    .dark .leaflet-popup-content-wrapper { background: #1f2937; color: #f3f4f6; }
+    .dark .leaflet-popup-tip { background: #1f2937; }
 
     /* Marker */
-    .custom-marker {
-        background: transparent !important;
-        border: none !important;
-    }
+    .custom-marker { background: transparent !important; border: none !important; }
     .marker-dot {
-        width: 24px;
-        height: 24px;
+        width: 22px; height: 22px;
         background: #6366f1;
         border: 3px solid white;
         border-radius: 50%;
         box-shadow: 0 2px 8px rgba(99,102,241,0.4);
+        transition: transform 0.15s;
     }
-    .marker-dot:hover {
-        transform: scale(1.15);
-    }
+    .marker-dot:hover { transform: scale(1.2); }
 
     /* Cluster */
-    .marker-cluster {
-        background: rgba(99,102,241,0.2) !important;
-    }
+    .marker-cluster { background: rgba(99,102,241,0.15) !important; }
     .marker-cluster div {
-        background: #6366f1 !important;
-        color: white !important;
-        font-weight: 600 !important;
-        font-size: 13px !important;
+        background: #6366f1 !important; color: white !important;
+        font-weight: 600 !important; font-size: 13px !important;
     }
 
-    /* Empty State */
-    .map-container.is-empty #map {
-        filter: grayscale(0.8) opacity(0.5);
+    /* Empty / Loading */
+    .map-overlay {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        z-index: 500; pointer-events: none;
     }
-    .empty-overlay {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 500;
-        pointer-events: none;
+    .map-overlay-card {
+        background: white; padding: 20px 28px;
+        border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        text-align: center; pointer-events: auto;
     }
-    .empty-card {
-        background: white;
-        padding: 24px 32px;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        text-align: center;
-        pointer-events: auto;
-    }
-    .dark .empty-card {
-        background: #1f2937;
-    }
+    .dark .map-overlay-card { background: #1f2937; }
+    .map-container.is-empty #map { filter: grayscale(0.6) opacity(0.5); }
 </style>
 {% endblock %}
 
 {% block content %}
-<div>
-    <!-- Header (wie andere Insight-Seiten) -->
-    <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Karte</h1>
-        <p class="text-gray-600 dark:text-gray-400">
+<div x-data="mapApp()">
+    <!-- Header -->
+    <div class="mb-5">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Karte</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400">
             {% if active_body %}
                 Vorgänge mit Ortsbezug in {{ active_body.get_display_name }}
             {% else %}
@@ -139,30 +101,72 @@
     </div>
 
     {% if active_body %}
-    <!-- Info Bar -->
-    <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-            <span class="flex items-center gap-1.5">
-                <span class="w-3 h-3 rounded-full bg-primary-500"></span>
-                Vorgang mit Ortsbezug
-            </span>
-            <span id="marker-count" class="hidden">
-                · <span class="font-medium text-gray-700 dark:text-gray-300">0</span> Einträge
-            </span>
+    <!-- Map Card -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <!-- Toolbar -->
+        <div class="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-700">
+            <div class="flex items-center gap-4">
+                <!-- Zeitraum-Filter -->
+                <div class="flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                    <template x-for="opt in timeOptions" :key="opt.value">
+                        <button
+                            @click="setTimeRange(opt.value)"
+                            :class="timeRange === opt.value
+                                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'"
+                            class="px-2.5 py-1 text-xs font-medium rounded-md transition-all"
+                            x-text="opt.label"
+                        ></button>
+                    </template>
+                </div>
+
+                <!-- Marker-Legende -->
+                <span class="hidden sm:flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
+                    <span class="w-2.5 h-2.5 rounded-full bg-primary-500 border-2 border-white dark:border-gray-800 shadow-sm"></span>
+                    Vorgang
+                </span>
+            </div>
+
+            <!-- Counter / Status -->
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+                <span x-show="loading" class="flex items-center gap-1.5">
+                    <svg class="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Lade...
+                </span>
+                <span x-show="!loading && markerCount > 0" x-cloak>
+                    <span class="font-semibold text-gray-700 dark:text-gray-300" x-text="markerCount"></span> Orte
+                </span>
+                <span x-show="!loading && markerCount === 0" x-cloak class="text-gray-400">
+                    Keine Ergebnisse
+                </span>
+            </div>
         </div>
-        <span class="text-xs text-gray-400">Letzte 4 Wochen</span>
-    </div>
 
-    <!-- Map Container -->
-    <div id="map-container" class="map-container relative bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div id="map"></div>
+        <!-- Map -->
+        <div id="map-container" class="map-container relative" :class="{ 'is-empty': !loading && markerCount === 0 }">
+            <div id="map"></div>
 
-        <!-- Empty Overlay (hidden by default) -->
-        <div id="empty-overlay" class="empty-overlay hidden">
-            <div class="empty-card">
-                <i data-lucide="map-pin-off" class="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
-                <p class="text-gray-900 dark:text-white font-medium mb-1">Keine Vorgänge mit Ortsbezug</p>
-                <p class="text-sm text-gray-500 dark:text-gray-400">in den letzten 4 Wochen</p>
+            <!-- Empty State -->
+            <div x-show="!loading && markerCount === 0" x-cloak class="map-overlay">
+                <div class="map-overlay-card">
+                    <svg class="w-8 h-8 mx-auto text-gray-300 dark:text-gray-600 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" /></svg>
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-0.5">Keine Vorgänge mit Ortsbezug</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500" x-text="timeRange === 'all' ? 'in dieser Kommune' : 'im gewählten Zeitraum'"></p>
+                </div>
+            </div>
+
+            <!-- Loading State -->
+            <div x-show="loading" class="map-overlay">
+                <div class="map-overlay-card">
+                    <svg class="animate-spin w-6 h-6 mx-auto text-primary-500 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Lade Vorgänge...</p>
+                </div>
             </div>
         </div>
     </div>
@@ -170,7 +174,7 @@
     {% else %}
     <!-- No Body Selected -->
     <div class="text-center py-16 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
-        <i data-lucide="map" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+        <svg class="w-12 h-12 mx-auto text-gray-400 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" /></svg>
         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Kommune auswählen</h3>
         <p class="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
             Wählen Sie oben eine Kommune aus, um die Karte mit Vorgängen zu sehen.
@@ -185,115 +189,121 @@
 <script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
 <script src="{% static 'vendor/leaflet/leaflet.markercluster.js' %}"></script>
 <script>
-(function() {
-    const mapEl = document.getElementById('map');
-    const container = document.getElementById('map-container');
-    const emptyOverlay = document.getElementById('empty-overlay');
-    const countEl = document.getElementById('marker-count');
+function mapApp() {
+    return {
+        timeRange: '12',
+        markerCount: 0,
+        loading: true,
+        _map: null,
+        _markers: null,
+        _markerIcon: null,
 
-    // Karten-Bounds der Kommune
-    {% if map_bounds %}
-    const bounds = L.latLngBounds(
-        [{{ map_bounds.south }}, {{ map_bounds.west }}],
-        [{{ map_bounds.north }}, {{ map_bounds.east }}]
-    );
-    {% elif map_center %}
-    const bounds = null;
-    const center = [{{ map_center.lat }}, {{ map_center.lng }}];
-    {% else %}
-    const bounds = null;
-    const center = [51.1657, 10.4515];
-    {% endif %}
+        timeOptions: [
+            { value: '4', label: '4 Wo.' },
+            { value: '12', label: '3 Mo.' },
+            { value: '26', label: '6 Mo.' },
+            { value: '52', label: '1 Jahr' },
+            { value: 'all', label: 'Alle' },
+        ],
 
-    // Map initialisieren
-    const map = L.map('map', {
-        zoomControl: true,
-        attributionControl: true
-    });
+        init() {
+            this._initMap();
+            this.loadMarkers();
+        },
 
-    // Initiale Ansicht
-    {% if map_bounds %}
-    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
-    {% elif map_center %}
-    map.setView(center, 12);
-    {% else %}
-    map.setView([51.1657, 10.4515], 6);
-    {% endif %}
+        _initMap() {
+            this._map = L.map('map', { zoomControl: true, attributionControl: true });
 
-    // Tile Layer (lokaler Proxy)
-    L.tileLayer('{% url "insight_core:insight:tile_proxy" z=0 x=0 y=0 %}'.replace('/0/0/0', '/{z}/{x}/{y}'), {
-        attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 18
-    }).addTo(map);
+            {% localize off %}
+            {% if map_bounds %}
+            const bounds = L.latLngBounds(
+                [{{ map_bounds.south }}, {{ map_bounds.west }}],
+                [{{ map_bounds.north }}, {{ map_bounds.east }}]
+            );
+            this._map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
+            {% elif map_center %}
+            this._map.setView([{{ map_center.lat }}, {{ map_center.lng }}], 12);
+            {% else %}
+            this._map.setView([51.1657, 10.4515], 6);
+            {% endif %}
+            {% endlocalize %}
 
-    // Marker Cluster
-    const markers = L.markerClusterGroup({
-        maxClusterRadius: 50,
-        spiderfyOnMaxZoom: true,
-        showCoverageOnHover: false
-    });
+            L.tileLayer('{% url "insight_core:insight:tile_proxy" z=0 x=0 y=0 %}'.replace('/0/0/0', '/{z}/{x}/{y}'), {
+                attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
+                maxZoom: 18
+            }).addTo(this._map);
 
-    // Marker Icon
-    const markerIcon = L.divIcon({
-        className: 'custom-marker',
-        html: '<div class="marker-dot"></div>',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-        popupAnchor: [0, -12]
-    });
+            this._markers = L.markerClusterGroup({
+                maxClusterRadius: 50,
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: false
+            });
+            this._map.addLayer(this._markers);
 
-    // Marker laden
-    fetch('{% url "insight_core:insight:map_markers" %}')
-        .then(r => r.json())
-        .then(data => {
-            const features = data.features || [];
-
-            if (features.length === 0) {
-                // Keine Marker - Karte ausgrauen
-                container.classList.add('is-empty');
-                emptyOverlay.classList.remove('hidden');
-                return;
-            }
-
-            // Marker Count anzeigen
-            countEl.querySelector('span').textContent = features.length;
-            countEl.classList.remove('hidden');
-
-            // Marker hinzufügen
-            features.forEach(f => {
-                const [lng, lat] = f.geometry.coordinates;
-                const p = f.properties;
-
-                const marker = L.marker([lat, lng], { icon: markerIcon });
-                marker.bindPopup(`
-                    <div class="p-3">
-                        <p class="font-medium text-gray-900 dark:text-white text-sm mb-1">${p.title || 'Vorgang'}</p>
-                        ${p.reference ? `<p class="text-xs text-gray-500 font-mono mb-2">${p.reference}</p>` : ''}
-                        ${p.location_name ? `<p class="text-xs text-gray-500 mb-2"><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${p.location_name}</p>` : ''}
-                        <a href="${p.url}" class="text-xs text-primary-600 hover:text-primary-700 font-medium">Details →</a>
-                    </div>
-                `, { maxWidth: 280 });
-
-                markers.addLayer(marker);
+            this._markerIcon = L.divIcon({
+                className: 'custom-marker',
+                html: '<div class="marker-dot"></div>',
+                iconSize: [22, 22],
+                iconAnchor: [11, 11],
+                popupAnchor: [0, -11]
             });
 
-            map.addLayer(markers);
-
-            // Auf Marker zoomen falls vorhanden
-            if (markers.getLayers().length > 0) {
-                const markerBounds = markers.getBounds();
-                map.fitBounds(markerBounds, { padding: [40, 40], maxZoom: 14 });
-            }
-
-            // Lucide Icons in Popups initialisieren
-            map.on('popupopen', () => {
+            this._map.on('popupopen', () => {
                 if (window.lucide) lucide.createIcons();
             });
-        })
-        .catch(err => {
-            console.error('Map markers error:', err);
-        });
-})();
+        },
+
+        setTimeRange(value) {
+            if (this.timeRange === value) return;
+            this.timeRange = value;
+            this.loadMarkers();
+        },
+
+        loadMarkers() {
+            this.loading = true;
+            const baseUrl = '{% url "insight_core:insight:map_markers" %}';
+            const params = this.timeRange === 'all' ? '?all=1' : `?weeks=${this.timeRange}`;
+
+            fetch(baseUrl + params)
+                .then(r => r.json())
+                .then(data => {
+                    const features = data.features || [];
+                    this._markers.clearLayers();
+                    this.markerCount = features.length;
+                    this.loading = false;
+
+                    if (features.length === 0) return;
+
+                    features.forEach(f => {
+                        const [lng, lat] = f.geometry.coordinates;
+                        const p = f.properties;
+                        const marker = L.marker([lat, lng], { icon: this._markerIcon });
+                        marker.bindPopup(`
+                            <div class="p-3">
+                                <p class="font-medium text-gray-900 dark:text-white text-sm leading-snug mb-1">${p.title || 'Vorgang'}</p>
+                                ${p.reference ? `<p class="text-xs text-gray-500 font-mono mb-1.5">${p.reference}</p>` : ''}
+                                ${p.location_name ? `<p class="text-xs text-gray-400 mb-2 flex items-center gap-1"><svg class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z"/></svg> ${p.location_name}</p>` : ''}
+                                <a href="${p.url}" class="inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium">
+                                    Details ansehen
+                                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+                                </a>
+                            </div>
+                        `, { maxWidth: 280 });
+                        this._markers.addLayer(marker);
+                    });
+
+                    // Zoom to markers
+                    if (this._markers.getLayers().length > 0) {
+                        this._map.fitBounds(this._markers.getBounds(), { padding: [40, 40], maxZoom: 14 });
+                    }
+                })
+                .catch(err => {
+                    console.error('Map markers error:', err);
+                    this.loading = false;
+                });
+        }
+    };
+}
 </script>
 {% endif %}
 {% endblock %}

@@ -305,6 +305,21 @@ wait_for_healthy() {
 }
 
 # =============================================================================
+# Setup Automatic Daily Backup
+# =============================================================================
+setup_cron_backup() {
+    if [ -x "./backup.sh" ]; then
+        local cron_line="0 2 * * * cd $SCRIPT_DIR && ./backup.sh --quiet >> /var/log/mandari-backup.log 2>&1"
+        if crontab -l 2>/dev/null | grep -q "mandari.*backup"; then
+            info "Tägliches Backup bereits in Crontab eingerichtet"
+        else
+            (crontab -l 2>/dev/null; echo "$cron_line") | crontab -
+            log "Tägliches Backup eingerichtet (2:00 Uhr)"
+        fi
+    fi
+}
+
+# =============================================================================
 # Start Services (correct order to avoid race conditions)
 # =============================================================================
 #
@@ -382,6 +397,9 @@ start_services() {
     fi
 
     log "All services started"
+
+    # Tägliches Backup um 2:00 Uhr einrichten
+    setup_cron_backup
 }
 
 # =============================================================================
@@ -459,6 +477,17 @@ show_summary() {
     fi
 
     echo ""
+    echo -e "  ${BLUE}Empfohlen: Firewall einrichten${NC}"
+    echo "    sudo ufw allow 22/tcp"
+    echo "    sudo ufw allow 80/tcp"
+    echo "    sudo ufw allow 443/tcp"
+    echo "    sudo ufw enable"
+    echo ""
+    echo -e "  ${BLUE}Empfohlen: Automatische Sicherheitsupdates${NC}"
+    echo "    sudo apt install unattended-upgrades"
+    echo "    sudo dpkg-reconfigure -plow unattended-upgrades"
+    echo ""
+
     docker compose ps
 }
 

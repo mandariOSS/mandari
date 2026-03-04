@@ -23,9 +23,10 @@
     {# ── Hero ── #}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
         <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+            {% include "components/person_avatar.html" with person=person size="lg" %}
             <div class="flex-1 min-w-0">
                 <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
-                    {% if person.title %}{{ person.title }} {% endif %}{{ person.display_name }}
+                    {{ person.display_name }}
                 </h1>
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
                     {% if council_role %}
@@ -54,6 +55,7 @@
                     {{ person.phone }}
                 </a>
                 {% endif %}
+                {% include "components/bookmark_star.html" with entity_type="person" entity_id=person.id size="lg" %}
             </div>
         </div>
     </div>
@@ -163,7 +165,7 @@
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h3 class="font-semibold text-gray-900 dark:text-white mb-1">
-                        Öffentliche Fragen an {% if person.title %}{{ person.title }} {% endif %}{{ person.display_name }}
+                        Öffentliche Fragen an {{ person.display_name }}
                     </h3>
                     <p class="text-sm text-gray-500 dark:text-gray-400">
                         {% if answer_stats.total > 0 %}

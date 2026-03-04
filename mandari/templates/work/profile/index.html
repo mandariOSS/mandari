@@ -4,92 +4,273 @@
 
 {% block header_title %}Mein Profil{% endblock %}
 {% block header_subtitle %}
-<p class="work-page-subtitle">Persönliche Einstellungen</p>
+<p class="work-page-subtitle">Persönliche Einstellungen und Kontoinformationen</p>
 {% endblock %}
 
 {% block work_content %}
-<!-- Navigation -->
-<div class="mb-8 border-b border-gray-200 dark:border-gray-700">
-    <nav class="flex gap-4">
-        <a href="{% url 'work:profile' org_slug=organization.slug %}" class="px-4 py-2 text-sm font-medium border-b-2 border-primary-500 text-primary-600 dark:text-primary-400">
-            Profil
-        </a>
-        <a href="{% url 'work:security' org_slug=organization.slug %}" class="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
-            Sicherheit
-        </a>
-    </nav>
+{% include "work/profile/_tabs.html" with active_tab="profile" %}
+
+{% if messages %}
+<div class="space-y-2 mb-6">
+    {% for message in messages %}
+    <div class="p-3 rounded-lg flex items-center gap-3 {% if message.tags == 'success' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400{% elif message.tags == 'error' %}bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400{% else %}bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400{% endif %}">
+        <i data-lucide="{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}alert-circle{% else %}info{% endif %}" class="w-4 h-4 flex-shrink-0"></i>
+        <span class="text-sm">{{ message }}</span>
+    </div>
+    {% endfor %}
 </div>
+{% endif %}
 
-<div class="max-w-2xl space-y-6">
-    <!-- Profile Info -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Persönliche Daten</h3>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6" x-data="{ avatarPreview: null }">
+    <!-- Left Column: Avatar & Quick Info -->
+    <div class="space-y-4">
+        <!-- Avatar Card -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
+            <div class="flex flex-col items-center text-center">
+                <!-- Avatar -->
+                <div class="relative group mb-4">
+                    {% if request.user.avatar %}
+                    <img src="{{ request.user.avatar.url }}" alt="Profilbild"
+                         class="w-20 h-20 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
+                         x-show="!avatarPreview">
+                    {% else %}
+                    <div class="w-20 h-20 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center text-primary-600 dark:text-primary-400 font-bold text-xl border-2 border-primary-200 dark:border-primary-800"
+                         x-show="!avatarPreview">
+                        {% if request.user.get_initials %}{{ request.user.get_initials }}{% else %}{{ request.user.email|slice:":2"|upper }}{% endif %}
+                    </div>
+                    {% endif %}
+                    <img :src="avatarPreview" alt="Vorschau"
+                         class="w-20 h-20 rounded-full object-cover border-2 border-primary-400"
+                         x-show="avatarPreview" x-cloak>
+                </div>
 
-        <div class="flex items-center gap-6 mb-6">
-            <div class="w-20 h-20 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center text-primary-600 dark:text-primary-400 font-bold text-2xl">
-                {% if request.user.get_initials %}{{ request.user.get_initials }}{% else %}{{ request.user.email|slice:":2"|upper }}{% endif %}
-            </div>
-            <div>
-                <div class="text-lg font-medium text-gray-900 dark:text-white">
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white leading-tight">
                     {% if request.user.display_name %}{{ request.user.display_name }}{% else %}{{ request.user.email }}{% endif %}
+                </h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{{ request.user.email }}</p>
+
+                <!-- Avatar Upload -->
+                <div class="mt-4 w-full space-y-2">
+                    <form method="post" enctype="multipart/form-data" id="avatar-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="update_profile">
+                        <input type="hidden" name="first_name" value="{{ request.user.first_name }}">
+                        <input type="hidden" name="last_name" value="{{ request.user.last_name }}">
+                        <input type="hidden" name="phone" value="{{ request.user.phone }}">
+                        <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp"
+                               class="hidden" id="avatar-input"
+                               @change="
+                                   const file = $event.target.files[0];
+                                   if (file) {
+                                       const reader = new FileReader();
+                                       reader.onload = e => avatarPreview = e.target.result;
+                                       reader.readAsDataURL(file);
+                                       $nextTick(() => document.getElementById('avatar-form').submit());
+                                   }
+                               ">
+                        <button type="button" onclick="document.getElementById('avatar-input').click()"
+                                class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+                            Bild ändern
+                        </button>
+                    </form>
+                    {% if request.user.avatar %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="remove_avatar">
+                        <button type="submit"
+                                class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i>
+                            Entfernen
+                        </button>
+                    </form>
+                    {% endif %}
+                    <p class="text-[11px] text-gray-400 dark:text-gray-500 text-center">JPG, PNG oder WebP · Max. 5 MB</p>
                 </div>
-                <div class="text-gray-500">{{ request.user.email }}</div>
             </div>
         </div>
 
-        <div class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">E-Mail</label>
-                <input type="email" value="{{ request.user.email }}" readonly
-                       class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg">
+        <!-- Security Quick Status -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Sicherheitsstatus</h4>
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Vorname</label>
-                    <input type="text" value="{{ request.user.first_name }}" readonly
-                           class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg">
+            <div class="px-6 py-4 space-y-3">
+                <!-- 2FA Status -->
+                <div class="flex items-center gap-3">
+                    {% if is_2fa_enabled %}
+                    <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="shield-check" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-gray-700 dark:text-gray-300">2FA aktiviert</p>
+                    </div>
+                    {% else %}
+                    <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="shield-alert" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-amber-700 dark:text-amber-400">2FA nicht aktiv</p>
+                    </div>
+                    {% endif %}
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nachname</label>
-                    <input type="text" value="{{ request.user.last_name }}" readonly
-                           class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg">
+
+                <!-- Email Verified -->
+                <div class="flex items-center gap-3">
+                    {% if request.user.email_verified %}
+                    <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="mail-check" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
+                    </div>
+                    <p class="text-sm text-gray-700 dark:text-gray-300">E-Mail verifiziert</p>
+                    {% else %}
+                    <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="mail-x" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                    </div>
+                    <p class="text-sm text-amber-700 dark:text-amber-400">E-Mail nicht verifiziert</p>
+                    {% endif %}
                 </div>
+
+                <!-- Active Sessions -->
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="monitor" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+                    </div>
+                    <p class="text-sm text-gray-700 dark:text-gray-300">{{ sessions_count }} aktive Sitzung{{ sessions_count|pluralize:"en" }}</p>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                <a href="{% url 'work:security' org_slug=organization.slug %}"
+                   class="inline-flex items-center gap-1.5 text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300">
+                    Sicherheitseinstellungen
+                    <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+                </a>
             </div>
         </div>
 
-        <p class="mt-4 text-sm text-gray-500">
-            Profiländerungen werden derzeit nicht unterstützt. Kontaktieren Sie den Support für Änderungen.
-        </p>
+        <!-- Account Info (compact) -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-6 py-4 fade-up" style="animation-delay: 100ms">
+            <div class="flex items-center gap-3">
+                <div class="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 flex-shrink-0">
+                    <i data-lucide="info" class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"></i>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+                    <p>ID: <code class="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded text-[11px]">{{ request.user.id|truncatechars:13 }}</code></p>
+                    <p>Registriert seit {{ request.user.date_joined|date:"d.m.Y" }}</p>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Membership Info -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Mitgliedschaft</h3>
+    <!-- Right Column: Profile Form & Membership -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Personal Data Form -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 25ms">
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update_profile">
 
-        <div class="space-y-3">
-            <div class="flex justify-between">
-                <span class="text-gray-500">Organisation</span>
-                <span class="font-medium text-gray-900 dark:text-white">{{ organization.name }}</span>
-            </div>
-            <div class="flex justify-between">
-                <span class="text-gray-500">Mitglied seit</span>
-                <span class="font-medium text-gray-900 dark:text-white">
-                    {% if membership.joined_at %}{{ membership.joined_at|date:"d.m.Y" }}{% else %}-{% endif %}
-                </span>
-            </div>
-            <div class="flex justify-between items-start">
-                <span class="text-gray-500">Rollen</span>
-                <div class="flex flex-wrap gap-2 justify-end">
-                    {% for role in membership.roles.all %}
-                    <span class="px-2 py-1 text-xs font-medium rounded-full"
-                          style="background: {{ role.color|default:'#6b7280' }}20; color: {{ role.color|default:'#6b7280' }};">
-                        {{ role.name }}
-                    </span>
-                    {% empty %}
-                    <span class="text-gray-400">Keine Rollen</span>
-                    {% endfor %}
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Persönliche Daten</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Verwalten Sie Ihre persönlichen Informationen</p>
                 </div>
+
+                <div class="px-6 py-6 space-y-4">
+                    <!-- Email (readonly) -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">E-Mail-Adresse</label>
+                        <div class="flex items-center gap-2">
+                            <input type="email" value="{{ request.user.email }}" readonly
+                                   class="flex-1 px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-500 dark:text-gray-400 cursor-not-allowed">
+                            {% if request.user.email_verified %}
+                            <span class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full whitespace-nowrap">
+                                <i data-lucide="check" class="w-3 h-3"></i> Verifiziert
+                            </span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Name -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Vorname</label>
+                            <input type="text" name="first_name" value="{{ request.user.first_name }}"
+                                   placeholder="Vorname eingeben"
+                                   class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nachname</label>
+                            <input type="text" name="last_name" value="{{ request.user.last_name }}"
+                                   placeholder="Nachname eingeben"
+                                   class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow">
+                        </div>
+                    </div>
+
+                    <!-- Phone -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Telefon</label>
+                        <input type="tel" name="phone" value="{{ request.user.phone }}"
+                               placeholder="+49 ..."
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow">
+                        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Optional · Wird nur intern verwendet</p>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-end">
+                    <button type="submit"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+                        <i data-lucide="save" class="w-4 h-4"></i>
+                        Speichern
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Membership Info -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 75ms">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Mitgliedschaft</h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Ihre Zugehörigkeit und Rollen in der Organisation</p>
+            </div>
+
+            <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                <dl class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                    <div class="px-6 py-4 flex items-center justify-between">
+                        <dt class="text-sm text-gray-500 dark:text-gray-400">Organisation</dt>
+                        <dd class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                            {% if organization.effective_logo %}
+                            <img src="{{ organization.effective_logo.url }}" alt="" class="w-5 h-5 rounded object-contain">
+                            {% endif %}
+                            {{ organization.name }}
+                        </dd>
+                    </div>
+                    <div class="px-6 py-4 flex items-center justify-between">
+                        <dt class="text-sm text-gray-500 dark:text-gray-400">Mitglied seit</dt>
+                        <dd class="text-sm font-medium text-gray-900 dark:text-white">
+                            {% if membership.joined_at %}{{ membership.joined_at|date:"d. F Y" }}{% else %}–{% endif %}
+                        </dd>
+                    </div>
+                    <div class="px-6 py-4 flex items-center justify-between">
+                        <dt class="text-sm text-gray-500 dark:text-gray-400">Letzter Login</dt>
+                        <dd class="text-sm font-medium text-gray-900 dark:text-white">
+                            {% if request.user.last_login %}{{ request.user.last_login|date:"d.m.Y H:i" }}{% else %}–{% endif %}
+                        </dd>
+                    </div>
+                    <div class="px-6 py-4 flex items-start justify-between">
+                        <dt class="text-sm text-gray-500 dark:text-gray-400 pt-0.5">Rollen</dt>
+                        <dd class="flex flex-wrap gap-1.5 justify-end">
+                            {% for role in membership.roles.all %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full"
+                                  style="background: {{ role.color|default:'#6b7280' }}15; color: {{ role.color|default:'#6b7280' }}; border: 1px solid {{ role.color|default:'#6b7280' }}30;">
+                                {{ role.name }}
+                            </span>
+                            {% empty %}
+                            <span class="text-sm text-gray-400 dark:text-gray-500">Keine Rollen zugewiesen</span>
+                            {% endfor %}
+                        </dd>
+                    </div>
+                </dl>
             </div>
         </div>
     </div>

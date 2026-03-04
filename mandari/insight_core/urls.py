@@ -53,6 +53,7 @@ insight_patterns = [
     path("termine/partials/calendar-events/", views.calendar_events, name="calendar_events"),
     # Dokumente (Files)
     path("dokumente/", views.FileListView.as_view(), name="file_list"),
+    path("dokumente/<uuid:file_id>/preview/", views.file_proxy, name="file_proxy"),
     # Suche
     path("suche/", views.SearchView.as_view(), name="search"),
     path("suche/partials/results/", views.search_results, name="search_results"),
@@ -65,43 +66,20 @@ insight_patterns = [
     path("map-assets/sprite<path:filename>", views.map_sprite, name="map_sprite"),
     path("map-assets/sprite", views.map_sprite, name="map_sprite_base"),
     path("map-assets/glyphs/<str:fontstack>/<str:range_>.pbf", views.map_glyphs, name="map_glyphs"),
-    # Meine Stadt (Placeholder)
-    path(
-        "nachbarschaft/",
-        TemplateView.as_view(
-            template_name="pages/coming_soon.html",
-            extra_context={
-                "page_title": "Nachbarschaft",
-                "page_icon": "home",
-                "page_description": "Finde Vorgänge, Sitzungen und Beschlüsse in deiner Nachbarschaft. Gib deine Straße oder deinen Stadtteil ein und bleibe informiert.",
-            },
-        ),
-        name="neighborhood",
-    ),
-    path(
-        "gespeichert/",
-        TemplateView.as_view(
-            template_name="pages/coming_soon.html",
-            extra_context={
-                "page_title": "Gespeichert",
-                "page_icon": "bookmark",
-                "page_description": "Speichere Vorgänge, Sitzungen und Gremien, die dich interessieren, und finde sie hier schnell wieder.",
-            },
-        ),
-        name="saved",
-    ),
-    path(
-        "benachrichtigungen/",
-        TemplateView.as_view(
-            template_name="pages/coming_soon.html",
-            extra_context={
-                "page_title": "Benachrichtigungen",
-                "page_icon": "bell",
-                "page_description": "Erhalte Benachrichtigungen über neue Vorgänge, Sitzungstermine und Änderungen in deiner Kommune.",
-            },
-        ),
-        name="notifications",
-    ),
+    # Nachbarschaft
+    path("nachbarschaft/", views.NeighborhoodView.as_view(), name="neighborhood"),
+    path("nachbarschaft/autocomplete/", views.neighborhood_autocomplete, name="neighborhood_autocomplete"),
+    path("nachbarschaft/partials/results/", views.neighborhood_results, name="neighborhood_results"),
+    # Merkliste (Bookmarks)
+    path("gespeichert/", views.MerklisteView.as_view(), name="saved"),
+    path("merkliste/api/toggle/", views.bookmark_toggle, name="bookmark_toggle"),
+    path("merkliste/api/ids/", views.bookmark_ids, name="bookmark_ids"),
+    path("merkliste/api/entities/", views.bookmark_entities, name="bookmark_entities"),
+    # Benachrichtigungen (Subscriptions)
+    path("benachrichtigungen/", views.SubscribeView.as_view(), name="notifications"),
+    path("abo/bestaetigen/<uuid:token>/", views.confirm_subscription, name="confirm_subscription"),
+    path("abo/verwalten/<uuid:token>/", views.manage_subscription, name="manage_subscription"),
+    path("abo/abmelden/<uuid:token>/", views.unsubscribe, name="unsubscribe"),
     # Chat (KI-Assistent)
     path("chat/", views.ChatView.as_view(), name="chat"),
     path("chat/api/message/", views.chat_message, name="chat_message"),

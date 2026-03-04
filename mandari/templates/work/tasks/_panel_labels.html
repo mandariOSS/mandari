@@ -1,0 +1,93 @@
+{% load i18n %}
+<div x-data="labelPicker()" class="relative">
+    <div class="flex items-center gap-2 mb-3">
+        <div class="flex items-center gap-1.5">
+            <i data-lucide="tag" class="w-4 h-4 text-purple-500"></i>
+            <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Labels</span>
+        </div>
+        {% if can_edit %}
+        <button type="button" @click="open = !open"
+                class="p-0.5 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded transition-colors">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+        </button>
+        {% endif %}
+    </div>
+
+    {# Aktive Labels #}
+    {% if task.labels.all %}
+    <div class="flex flex-wrap gap-1.5 mb-2">
+        {% for label in task.labels.all %}
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-{{ label.color }}-100 dark:bg-{{ label.color }}-900/30 text-{{ label.color }}-700 dark:text-{{ label.color }}-300 ring-1 ring-{{ label.color }}-200/50 dark:ring-{{ label.color }}-700/30">
+            <span class="w-2 h-2 rounded-full bg-{{ label.color }}-500"></span>
+            {{ label.name }}
+            {% if can_edit %}
+            <button type="button"
+                    hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+                    hx-vals='{"action": "toggle_label", "label_id": "{{ label.id }}"}'
+                    hx-target="#panel-labels"
+                    hx-swap="innerHTML"
+                    class="hover:text-{{ label.color }}-900 dark:hover:text-{{ label.color }}-100 transition-colors ml-0.5">
+                <i data-lucide="x" class="w-3 h-3"></i>
+            </button>
+            {% endif %}
+        </span>
+        {% endfor %}
+    </div>
+    {% else %}
+    {% if not can_edit %}
+    <p class="text-xs text-gray-400 dark:text-gray-500 italic">Keine Labels</p>
+    {% endif %}
+    {% endif %}
+
+    {# Dropdown #}
+    {% if can_edit %}
+    <div x-show="open" x-cloak x-transition @click.outside="open = false"
+         class="absolute z-10 left-0 mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
+        <div class="p-2 border-b border-gray-100 dark:border-gray-700">
+            <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2 px-2">Verfügbare Labels</p>
+            {% for label in available_labels %}
+            <button type="button"
+                    hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+                    hx-vals='{"action": "toggle_label", "label_id": "{{ label.id }}"}'
+                    hx-target="#panel-labels"
+                    hx-swap="innerHTML"
+                    class="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left group">
+                <span class="w-3.5 h-3.5 rounded-full bg-{{ label.color }}-500 flex-shrink-0 ring-2 ring-{{ label.color }}-200/50 dark:ring-{{ label.color }}-700/30"></span>
+                <span class="text-sm text-gray-700 dark:text-gray-300 flex-1">{{ label.name }}</span>
+                {% if label.id in task_label_ids %}
+                <i data-lucide="check" class="w-4 h-4 text-green-500"></i>
+                {% endif %}
+            </button>
+            {% empty %}
+            <p class="text-xs text-gray-400 dark:text-gray-500 px-2 py-2">Noch keine Labels erstellt</p>
+            {% endfor %}
+        </div>
+        {# Neues Label erstellen #}
+        <div class="p-2 bg-gray-50/50 dark:bg-gray-900/30">
+            <p class="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2 px-2">Neues Label</p>
+            <form @submit.prevent="createLabel($event)"
+                  hx-post="{% url 'work:task_labels' org_slug=organization.slug %}"
+                  hx-swap="none"
+                  class="flex items-center gap-1.5">
+                <input type="text" name="name" placeholder="Name..." required maxlength="50"
+                       class="flex-1 min-w-0 px-2 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-400 outline-none">
+                <select name="color" class="px-1.5 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none">
+                    <option value="blue">Blau</option>
+                    <option value="green">Grün</option>
+                    <option value="red">Rot</option>
+                    <option value="orange">Orange</option>
+                    <option value="amber">Gelb</option>
+                    <option value="purple">Lila</option>
+                    <option value="pink">Rosa</option>
+                    <option value="teal">Türkis</option>
+                    <option value="indigo">Indigo</option>
+                    <option value="gray">Grau</option>
+                </select>
+                <button type="submit" class="p-1.5 text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
+                    <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+</div>

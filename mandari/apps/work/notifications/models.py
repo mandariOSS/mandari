@@ -49,6 +49,13 @@ class NotificationType(models.TextChoices):
     SUPPORT_TICKET_RESOLVED = "support_resolved", "Ticket gelöst"
     SUPPORT_TICKET_ESCALATED = "support_escalated", "Ticket eskaliert"
 
+    # Change Requests
+    CHANGE_REQUEST_NEW = "change_request_new", "Neuer Änderungsantrag"
+    CHANGE_REQUEST_DECIDED = "change_request_decided", "Änderungsantrag entschieden"
+
+    # Absence
+    ABSENCE_DEPUTY = "absence_deputy", "Stellvertretung zugewiesen"
+
     # System
     SYSTEM_MESSAGE = "system", "Systemnachricht"
     ANNOUNCEMENT = "announcement", "Ankündigung"
@@ -152,6 +159,9 @@ class Notification(models.Model):
             NotificationType.SUPPORT_TICKET_STATUS: "refresh-cw",
             NotificationType.SUPPORT_TICKET_RESOLVED: "check-circle-2",
             NotificationType.SUPPORT_TICKET_ESCALATED: "alert-triangle",
+            NotificationType.CHANGE_REQUEST_NEW: "git-pull-request",
+            NotificationType.CHANGE_REQUEST_DECIDED: "git-merge",
+            NotificationType.ABSENCE_DEPUTY: "user-check",
             NotificationType.SYSTEM_MESSAGE: "info",
             NotificationType.ANNOUNCEMENT: "megaphone",
         }
@@ -180,6 +190,9 @@ class Notification(models.Model):
             NotificationType.SUPPORT_TICKET_STATUS: "yellow",
             NotificationType.SUPPORT_TICKET_RESOLVED: "green",
             NotificationType.SUPPORT_TICKET_ESCALATED: "red",
+            NotificationType.CHANGE_REQUEST_NEW: "indigo",
+            NotificationType.CHANGE_REQUEST_DECIDED: "indigo",
+            NotificationType.ABSENCE_DEPUTY: "blue",
             NotificationType.SYSTEM_MESSAGE: "gray",
             NotificationType.ANNOUNCEMENT: "blue",
         }

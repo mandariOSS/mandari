@@ -1,0 +1,213 @@
+{# Single agenda item with accordion, protocol entries, and inline forms #}
+{# Variables: item, meeting, can_edit, can_view_internal, attendances, is_internal, is_first, is_last #}
+{% load permission_tags %}
+
+<div class="group border-b border-gray-200 dark:border-gray-700 last:border-b-0 {% if is_internal %}bg-amber-50/30 dark:bg-amber-900/10{% endif %}"
+     x-data="{ expanded: false }">
+
+    {# Collapsed header #}
+    <div class="p-4 flex items-start gap-3 hover:bg-gray-50 dark:hover:bg-gray-900/30 transition-colors">
+
+        {# Move buttons #}
+        {% if can_edit and not item.is_approval_item %}
+        <div class="flex flex-col gap-0.5 flex-shrink-0">
+            <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+                    hx-vals='{"action": "move_item", "item_id": "{{ item.id }}", "direction": "up"}'
+                    hx-target="#agenda-container"
+                    hx-swap="innerHTML"
+                    class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                    {% if is_first %}disabled{% endif %}
+                    title="Nach oben">
+                <i data-lucide="chevron-up" class="w-4 h-4"></i>
+            </button>
+            <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+                    hx-vals='{"action": "move_item", "item_id": "{{ item.id }}", "direction": "down"}'
+                    hx-target="#agenda-container"
+                    hx-swap="innerHTML"
+                    class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                    {% if is_last %}disabled{% endif %}
+                    title="Nach unten">
+                <i data-lucide="chevron-down" class="w-4 h-4"></i>
+            </button>
+        </div>
+        {% endif %}
+
+        {# Number badge #}
+        <span class="flex-shrink-0 min-w-[2.5rem] h-10 px-3 rounded-lg flex items-center justify-center text-sm font-semibold
+            {% if item.is_approval_item %}bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400
+            {% elif is_internal %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400
+            {% else %}bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400{% endif %}">
+            {{ item.number }}
+        </span>
+
+        {# Title + description + badges #}
+        <div class="flex-1 min-w-0 cursor-pointer"
+             @click="$dispatch('open-item-panel', { id: '{{ item.id }}' })">
+            <div class="flex items-start justify-between gap-2">
+                <div>
+                    <h4 class="font-medium text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 transition-colors">{{ item.title }}</h4>
+                    {% if item.is_approval_item and item.approves_meeting %}
+                    <p class="text-xs text-purple-600 dark:text-purple-400 mt-0.5">
+                        Genehmigt: {{ item.approves_meeting.title }} ({{ item.approves_meeting.start|date:"d.m.Y" }})
+                    </p>
+                    {% endif %}
+                    {% with desc=item.get_description_decrypted %}
+                    {% if desc %}
+                    <p class="text-sm text-gray-500 mt-0.5">{{ desc|truncatewords:20 }}</p>
+                    {% endif %}
+                    {% endwith %}
+                </div>
+                <div class="flex items-center gap-2" @click.stop>
+                    {% if item.has_decision %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                        <i data-lucide="check-circle" class="w-3 h-3"></i>
+                        {{ item.votes_for }}/{{ item.votes_against }}/{{ item.votes_abstain }}
+                    </span>
+                    {% endif %}
+                    {% if item.protocol_entries.all|length > 0 %}
+                    <span class="text-xs text-gray-400">{{ item.protocol_entries.all|length }}</span>
+                    {% endif %}
+                    <button type="button" @click="expanded = !expanded" class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                        <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 transition-transform" :class="expanded ? 'rotate-180' : ''"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Expanded content #}
+    <div x-show="expanded" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="border-t {% if is_internal %}border-amber-100 dark:border-amber-800 bg-amber-50/20 dark:bg-amber-900/5{% else %}border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50{% endif %}">
+
+        {# Sub-items #}
+        {% for child in item.children.all %}
+        <div class="mx-4 mt-3 first:mt-3 p-3 bg-white dark:bg-gray-800 rounded-lg border-l-2 {% if is_internal %}border-amber-300{% else %}border-primary-300{% endif %} cursor-pointer hover:shadow-sm transition-shadow"
+             @click="$dispatch('open-item-panel', { id: '{{ child.id }}' })">
+            <div class="flex items-start justify-between gap-3">
+                <div class="flex items-start gap-2 flex-1 min-w-0">
+                    <span class="flex-shrink-0 px-2 py-0.5 text-xs font-medium rounded
+                        {% if is_internal %}bg-amber-100 text-amber-700{% else %}bg-gray-200 text-gray-600{% endif %}">
+                        {{ child.number }}
+                    </span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-gray-800 dark:text-gray-200 hover:text-primary-600 transition-colors">{{ child.title }}</p>
+                        {% with desc=child.get_description_decrypted %}
+                        {% if desc %}
+                        <p class="text-xs text-gray-500 mt-0.5">{{ desc|truncatewords:20 }}</p>
+                        {% endif %}
+                        {% endwith %}
+                    </div>
+                </div>
+                {% if can_edit %}
+                <div class="flex items-center gap-1 flex-shrink-0" @click.stop>
+                    <button @click="$dispatch('open-edit-item', { id: '{{ child.id }}', title: '{{ child.title|escapejs }}', description: '{{ child.get_description_decrypted|default:""|escapejs }}' })"
+                            class="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Bearbeiten">
+                        <i data-lucide="edit-2" class="w-3 h-3"></i>
+                    </button>
+                    <button @click="$dispatch('open-delete-item', { id: '{{ child.id }}', title: '{{ child.title|escapejs }}' })"
+                            class="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Löschen">
+                        <i data-lucide="trash-2" class="w-3 h-3"></i>
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+
+        {# Protocol entries #}
+        {% for entry in item.protocol_entries.all %}
+        <div class="px-4 py-2 flex items-start gap-3 text-sm border-b {% if is_internal %}border-amber-100 dark:border-amber-800{% else %}border-gray-200 dark:border-gray-700{% endif %} last:border-0">
+            <span class="flex-shrink-0 mt-0.5">
+                {% if entry.entry_type == 'speech' %}<i data-lucide="mic" class="w-4 h-4 text-blue-500"></i>
+                {% elif entry.entry_type == 'decision' %}<i data-lucide="gavel" class="w-4 h-4 text-green-500"></i>
+                {% elif entry.entry_type == 'action' %}<i data-lucide="check-square" class="w-4 h-4 text-orange-500"></i>
+                {% else %}<i data-lucide="file-text" class="w-4 h-4 text-gray-400"></i>{% endif %}
+            </span>
+            <div class="flex-1 min-w-0">
+                {% if entry.speaker %}<span class="font-medium text-gray-700 dark:text-gray-300">{{ entry.speaker.user.get_display_name }}:</span>{% endif %}
+                <span class="text-gray-600 dark:text-gray-400">{{ entry.get_content_decrypted }}</span>
+            </div>
+            {% if can_edit %}
+            <div class="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100" @click.stop>
+                <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+                        hx-vals='{"action": "delete_entry", "entry_id": "{{ entry.id }}"}'
+                        hx-target="#agenda-container"
+                        hx-swap="innerHTML"
+                        hx-confirm="Protokolleintrag löschen?"
+                        class="p-1 text-gray-400 hover:text-red-600 rounded">
+                    <i data-lucide="x" class="w-3 h-3"></i>
+                </button>
+            </div>
+            {% endif %}
+        </div>
+        {% empty %}
+        {% if meeting.status == 'ongoing' or meeting.status == 'completed' and not meeting.protocol_approved %}
+        <div class="px-4 py-4 text-center">
+            <p class="text-xs text-gray-400 dark:text-gray-500">Noch keine Protokolleinträge</p>
+        </div>
+        {% endif %}
+        {% endfor %}
+
+        {# Add protocol entry form #}
+        {% if meeting.status == 'ongoing' or meeting.status == 'completed' and not meeting.protocol_approved %}
+        <div class="p-3 border-t {% if is_internal %}border-amber-200 dark:border-amber-700{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+            <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+                  hx-target="#agenda-container"
+                  hx-swap="innerHTML"
+                  class="space-y-2">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_entry">
+                <input type="hidden" name="agenda_item_id" value="{{ item.id }}">
+                <div class="flex gap-2">
+                    <select name="entry_type" class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                        <option value="note">Notiz</option>
+                        <option value="speech">Redebeitrag</option>
+                        <option value="decision">Beschluss</option>
+                        <option value="action">Aufgabe</option>
+                    </select>
+                    <select name="speaker" class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none flex-1">
+                        <option value="">-- Sprecher --</option>
+                        {% for att in attendances %}
+                        {% if att.membership and att.status == 'present' %}
+                        <option value="{{ att.membership.id }}">{{ att.membership.user.get_display_name }}</option>
+                        {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" name="content" placeholder="Protokolleintrag..." required
+                           class="flex-1 text-sm px-3 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    <button type="submit" class="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 shadow-sm rounded-lg hover:bg-primary-700">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+
+        {# Item action buttons #}
+        {% if can_edit and not item.is_approval_item %}
+        <div class="px-4 py-3 border-t {% if is_internal %}border-amber-200 dark:border-amber-700{% else %}border-gray-200 dark:border-gray-700{% endif %} flex items-center justify-between" @click.stop>
+            <button @click="$dispatch('open-add-sub', { parent_id: '{{ item.id }}', visibility: '{% if is_internal %}internal{% else %}public{% endif %}' })"
+                    class="px-3 py-1.5 text-xs text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg flex items-center gap-1.5">
+                <i data-lucide="plus" class="w-3 h-3"></i> Unterpunkt
+            </button>
+            <div class="flex gap-2">
+                <button @click="$dispatch('open-edit-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}', description: '{{ item.get_description_decrypted|default:""|escapejs }}' })"
+                        class="px-3 py-1.5 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1.5">
+                    <i data-lucide="edit" class="w-3 h-3"></i> Bearbeiten
+                </button>
+                {% if meeting.status == 'ongoing' or meeting.status == 'completed' and not meeting.protocol_approved %}
+                <button @click="$dispatch('open-decision', { item_id: '{{ item.id }}', title: '{{ item.title|escapejs }}' })"
+                        class="px-3 py-1.5 text-xs text-green-600 hover:bg-green-50 rounded-lg flex items-center gap-1.5">
+                    <i data-lucide="vote" class="w-3 h-3"></i> Abstimmung
+                </button>
+                {% endif %}
+                <button @click="$dispatch('open-delete-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}' })"
+                        class="px-3 py-1.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-1.5">
+                    <i data-lucide="trash-2" class="w-3 h-3"></i> Löschen
+                </button>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>

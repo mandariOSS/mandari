@@ -73,6 +73,25 @@
         </div>
     </div>
 
+    <!-- Subscribe CTA -->
+    {% if query %}
+    <div class="mb-4 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-3">
+        <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2 min-w-0">
+                <i data-lucide="bell" class="w-4 h-4 text-primary-500 shrink-0"></i>
+                <p class="text-sm text-primary-800 dark:text-primary-200 truncate">
+                    Neue Treffer f&uuml;r <strong>&bdquo;{{ query }}&ldquo;</strong> per E-Mail erhalten?
+                </p>
+            </div>
+            <a href="{% url 'insight_core:insight:notifications' %}?keyword={{ query|urlencode }}"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium rounded-lg transition-colors shrink-0 whitespace-nowrap">
+                <i data-lucide="mail" class="w-3.5 h-3.5"></i>
+                Abonnieren
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Search Results -->
     <div id="search-results">
         {% if query %}

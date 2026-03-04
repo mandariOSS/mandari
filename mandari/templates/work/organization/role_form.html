@@ -1,0 +1,268 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}{% if is_edit %}{{ role.name }} bearbeiten{% else %}Neue Rolle{% endif %}{% endblock %}
+
+{% block header_title %}{% if is_edit %}Rolle bearbeiten{% else %}Neue Rolle{% endif %}{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">
+    {% if is_edit %}{{ role.name }} bearbeiten{% else %}Neue Rolle mit Berechtigungen erstellen{% endif %}
+</p>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-3xl" x-data="permissionsManager()">
+    <form method="post" action="" class="space-y-6">
+        {% csrf_token %}
+
+        <!-- Section 1: Basics -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Grundeinstellungen</h3>
+
+            <div class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Name <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" name="name" value="{{ role.name|default:'' }}" required
+                               placeholder="z.B. Fraktionsmitglied"
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    </div>
+
+                    <div x-data="colorPicker('{{ role.color|default:'#6b7280' }}')">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Farbe</label>
+                        <div class="flex items-center gap-3">
+                            <div class="relative">
+                                <div class="w-10 h-10 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer shadow-sm hover:border-primary-400 transition-colors"
+                                     :style="'background-color: ' + color"
+                                     @click="$refs.nativePicker.click()"></div>
+                                <input type="color" x-ref="nativePicker" :value="color"
+                                       @input="color = $event.target.value"
+                                       class="sr-only">
+                            </div>
+                            <div class="flex items-center w-32 border border-gray-300 dark:border-gray-600 rounded-xl overflow-hidden focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/20">
+                                <span class="pl-3 pr-1 text-gray-400 text-sm font-mono select-none">#</span>
+                                <input type="text" x-model="hex" @input="onHexInput()" maxlength="6"
+                                       placeholder="6b7280"
+                                       class="w-full py-2 pr-3 bg-transparent outline-none text-sm font-mono text-gray-900 dark:text-white">
+                            </div>
+                        </div>
+                        <input type="hidden" name="color" :value="color">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                    <textarea name="description" rows="2"
+                              placeholder="Optionale Beschreibung der Rolle..."
+                              class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">{{ role.description|default:'' }}</textarea>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Prioritaet</label>
+                        <input type="number" name="priority" value="{{ role.priority|default:50 }}" min="0" max="100"
+                               {% if is_edit and role.is_system_role %}readonly{% endif %}
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none {% if is_edit and role.is_system_role %}bg-gray-50 dark:bg-gray-900 text-gray-500{% endif %}">
+                        <p class="mt-1 text-xs text-gray-500">Hoehere Prioritaet bei Berechtigungskonflikten (0-100)</p>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="flex items-start gap-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg w-full">
+                            <input type="checkbox" name="require_2fa" id="require_2fa"
+                                   {% if role.require_2fa %}checked{% endif %}
+                                   class="mt-1 w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
+                            <div>
+                                <label for="require_2fa" class="font-medium text-gray-900 dark:text-white cursor-pointer text-sm">
+                                    2FA erforderlich
+                                </label>
+                                <p class="text-xs text-gray-500">Mitglieder muessen 2-Faktor-Authentifizierung aktivieren</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: Administrator -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
+            <div class="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <input type="checkbox" name="is_admin" id="is_admin"
+                       {% if role.is_admin %}checked{% endif %}
+                       {% if is_edit and role.is_system_role %}disabled{% endif %}
+                       x-model="isAdmin"
+                       class="mt-1 w-4 h-4 text-amber-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-amber-500">
+                <div>
+                    <label for="is_admin" class="font-medium text-amber-900 dark:text-amber-200 cursor-pointer">
+                        Administrator-Rolle
+                    </label>
+                    <p class="text-sm text-amber-700 dark:text-amber-400 mt-0.5">
+                        Administratoren haben automatisch alle Berechtigungen. Die manuelle Berechtigungsauswahl unten wird ignoriert.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 3: Permissions -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up"
+             x-show="!isAdmin" x-transition>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Berechtigungen</h3>
+            <p class="text-sm text-gray-500 mb-6">Wählen Sie die Berechtigungen für diese Rolle aus.</p>
+
+            <div class="space-y-2">
+                {% for cat_code, cat in permission_categories.items %}
+                <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                    <!-- Category header -->
+                    <button type="button"
+                            class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                            @click="toggleCategory('{{ cat_code }}')">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400 transition-transform duration-200"
+                               :class="{ 'rotate-90': openCategories.includes('{{ cat_code }}') }"></i>
+                            <span class="font-medium text-gray-900 dark:text-white text-sm">{{ cat.name }}</span>
+                            <span class="text-xs text-gray-500">({{ cat.permissions|length }})</span>
+                        </div>
+                        <label class="flex items-center gap-2" @click.stop>
+                            <span class="text-xs text-gray-500">Alle</span>
+                            <input type="checkbox"
+                                   :checked="allChecked('{{ cat_code }}')"
+                                   :indeterminate.prop="someChecked('{{ cat_code }}') && !allChecked('{{ cat_code }}')"
+                                   @change="toggleAll('{{ cat_code }}', $event.target.checked)"
+                                   class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
+                        </label>
+                    </button>
+
+                    <!-- Category permissions -->
+                    <div x-show="openCategories.includes('{{ cat_code }}')" x-transition class="px-4 py-3 space-y-2 border-t border-gray-200 dark:border-gray-700">
+                        {% for perm in cat.permissions %}
+                        <label class="flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 -mx-2 px-2 py-1 rounded">
+                            <input type="checkbox" name="permissions" value="{{ perm.code }}"
+                                   data-category="{{ cat_code }}"
+                                   {% if perm.code in role_permissions %}checked{% endif %}
+                                   @change="updateState()"
+                                   class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
+                            <div>
+                                <span class="text-sm text-gray-900 dark:text-white">{{ perm.name }}</span>
+                                <span class="text-xs text-gray-400 ml-1">({{ perm.code }})</span>
+                            </div>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Section 4: Actions -->
+        <div class="flex items-center justify-between pt-2">
+            <a href="{% url 'work:roles' org_slug=organization.slug %}"
+               class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                Abbrechen
+            </a>
+
+            <div class="flex items-center gap-3">
+                {% if is_edit and not role.is_system_role %}
+                <button type="button" id="role-delete-btn"
+                        class="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
+                    Löschen
+                </button>
+                {% endif %}
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    {% if is_edit %}Speichern{% else %}Erstellen{% endif %}
+                </button>
+            </div>
+        </div>
+    </form>
+
+    {% if is_edit and not role.is_system_role %}
+    <form id="role-delete-form" method="post" action="{% url 'work:role_delete' org_slug=organization.slug role_id=role.id %}" class="hidden">
+        {% csrf_token %}
+    </form>
+    {% endif %}
+</div>
+
+<script>
+{% if is_edit and not role.is_system_role %}
+document.addEventListener('DOMContentLoaded', function() {
+    const deleteBtn = document.getElementById('role-delete-btn');
+    const deleteForm = document.getElementById('role-delete-form');
+    if (deleteBtn && deleteForm) {
+        deleteBtn.addEventListener('click', function() {
+            confirmAction({
+                title: 'Rolle löschen',
+                message: 'Möchten Sie die Rolle «{{ role.name }}» wirklich löschen?',
+                confirmText: 'Löschen',
+                variant: 'danger'
+            }).then(function(ok) {
+                if (ok) deleteForm.submit();
+            });
+        });
+    }
+});
+{% endif %}
+
+function permissionsManager() {
+    return {
+        isAdmin: {{ role.is_admin|yesno:"true,false" }},
+        openCategories: [],
+        categoryState: {},
+
+        init() {
+            this.updateState();
+        },
+
+        toggleCategory(cat) {
+            const idx = this.openCategories.indexOf(cat);
+            if (idx === -1) {
+                this.openCategories.push(cat);
+            } else {
+                this.openCategories.splice(idx, 1);
+            }
+        },
+
+        getCheckboxes(cat) {
+            return [...document.querySelectorAll(`input[data-category="${cat}"]`)];
+        },
+
+        allChecked(cat) {
+            const boxes = this.getCheckboxes(cat);
+            return boxes.length > 0 && boxes.every(b => b.checked);
+        },
+
+        someChecked(cat) {
+            return this.getCheckboxes(cat).some(b => b.checked);
+        },
+
+        toggleAll(cat, checked) {
+            this.getCheckboxes(cat).forEach(b => { b.checked = checked; });
+            this.updateState();
+        },
+
+        updateState() {
+            // Trigger reactivity for Alpine
+            this.categoryState = Object.assign({}, this.categoryState, { _t: Date.now() });
+        }
+    }
+}
+
+function colorPicker(initial) {
+    return {
+        color: initial || '#6b7280',
+        hex: (initial || '#6b7280').replace('#', ''),
+        onHexInput() {
+            const clean = this.hex.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
+            this.hex = clean;
+            if (clean.length === 6) {
+                this.color = '#' + clean;
+            }
+        },
+        init() {
+            this.$watch('color', (val) => {
+                this.hex = val.replace('#', '');
+            });
+        }
+    }
+}
+</script>
+{% endblock %}

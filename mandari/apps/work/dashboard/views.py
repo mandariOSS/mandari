@@ -18,6 +18,7 @@ class DashboardView(WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "dashboard"
+        context["today"] = timezone.now()
 
         # Upcoming meetings (faction + RIS)
         context["upcoming_meetings"] = self.get_upcoming_meetings()

@@ -6,12 +6,13 @@ Notification views for the Work module.
 from datetime import datetime
 
 from django.http import JsonResponse
+from django.shortcuts import redirect
 from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 
-from .models import Notification, NotificationPreference, NotificationType
+from .models import Notification, NotificationType
 from .services import NotificationHub
 
 
@@ -46,70 +47,16 @@ class NotificationCenterView(WorkViewMixin, TemplateView):
         return context
 
 
-class NotificationPreferencesView(WorkViewMixin, TemplateView):
-    """Notification preferences/settings page."""
+class NotificationPreferencesView(WorkViewMixin, View):
+    """Redirect to profile notification settings."""
 
-    template_name = "work/notifications/preferences.html"
     permission_required = None
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["active_nav"] = "notifications"
-
-        # Get or create preferences
-        prefs, _ = NotificationPreference.objects.get_or_create(membership=self.membership)
-        context["preferences"] = prefs
-        # Create list of notification types with their enabled status
-        notification_types_with_settings = []
-        for ntype, label in NotificationType.choices:
-            notification_types_with_settings.append(
-                {
-                    "value": ntype,
-                    "label": label,
-                    "in_app_enabled": prefs.is_type_enabled(ntype, "in_app"),
-                    "email_enabled": prefs.is_type_enabled(ntype, "email"),
-                }
-            )
-        context["notification_types"] = notification_types_with_settings
-
-        return context
+    def get(self, request, *args, **kwargs):
+        return redirect("work:profile_notifications", org_slug=self.organization.slug)
 
     def post(self, request, *args, **kwargs):
-        """Update notification preferences."""
-        prefs, _ = NotificationPreference.objects.get_or_create(membership=self.membership)
-
-        # Update global settings
-        prefs.email_enabled = request.POST.get("email_enabled") == "on"
-        prefs.push_enabled = request.POST.get("push_enabled") == "on"
-        prefs.email_digest = request.POST.get("email_digest", "instant")
-
-        # Update quiet hours
-        prefs.quiet_hours_enabled = request.POST.get("quiet_hours_enabled") == "on"
-        if prefs.quiet_hours_enabled:
-            start = request.POST.get("quiet_hours_start")
-            end = request.POST.get("quiet_hours_end")
-            if start:
-                prefs.quiet_hours_start = start
-            if end:
-                prefs.quiet_hours_end = end
-
-        # Update per-type settings
-        type_settings = {}
-        for ntype, _ in NotificationType.choices:
-            type_settings[ntype] = {
-                "in_app": request.POST.get(f"type_{ntype}_in_app") == "on",
-                "email": request.POST.get(f"type_{ntype}_email") == "on",
-            }
-        prefs.type_settings = type_settings
-
-        prefs.save()
-
-        # Redirect back with success message
-        from django.contrib import messages
-
-        messages.success(request, "Einstellungen gespeichert.")
-
-        return self.get(request, *args, **kwargs)
+        return redirect("work:profile_notifications", org_slug=self.organization.slug)
 
 
 class NotificationListPartialView(WorkViewMixin, View):

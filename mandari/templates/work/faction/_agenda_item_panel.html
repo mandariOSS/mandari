@@ -1,0 +1,583 @@
+{# Slide-over panel for a single agenda item — loaded via HTMX into #agenda-panel-content #}
+{# Variables: item, meeting, decision, can_edit, is_protocol_phase, attendances, protocol_entries, #}
+{#   attachments, tasks, linked_motions, available_motions, available_members, reference_links #}
+
+<div x-data="{ saved: false, saving: false, showDecisionForm: false, showEntryForm: false, showTaskForm: false, showLinkForm: false, showMotionSearch: false, editingEntry: null }"
+     @panel-autosaved.window="saving = false; saved = true; setTimeout(() => saved = false, 2000)"
+     @panel-autosaving.window="saving = true"
+     class="flex flex-col h-full">
+
+    {# ── Auto-Save Form (wraps title, description, visibility) ── #}
+    <form id="agenda-item-update-form"
+          hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+          hx-trigger="focusout from:find textarea changed delay:300ms,
+                       focusout from:find input[type=text] changed delay:300ms,
+                       change from:find select"
+          hx-swap="none"
+          hx-on::before-request="window.dispatchEvent(new Event('panel-autosaving'))"
+          hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new Event('panel-autosaved'))"
+          class="flex flex-col h-full overflow-hidden">
+        <input type="hidden" name="action" value="update">
+
+        {# ══ Header ══ #}
+        <div class="px-5 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-b from-gray-50/80 to-white dark:from-gray-900/50 dark:to-gray-800 flex-shrink-0">
+            <div class="flex items-start gap-3">
+                {# Number badge #}
+                <span class="flex-shrink-0 min-w-[2.5rem] h-10 px-3 rounded-lg flex items-center justify-center text-sm font-semibold
+                    {% if item.is_approval_item %}bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400
+                    {% elif item.visibility == 'internal' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400
+                    {% else %}bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400{% endif %}">
+                    {{ item.number }}
+                </span>
+
+                {# Title (editable) #}
+                <div class="flex-1 min-w-0">
+                    {% if can_edit and not item.is_approval_item %}
+                    <input type="text" name="title" value="{{ item.title }}"
+                           class="w-full text-lg font-semibold text-gray-900 dark:text-white bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-primary-500 focus:ring-0 outline-none px-0 py-0.5 transition-colors">
+                    {% else %}
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ item.title }}</h2>
+                    {% endif %}
+                </div>
+
+                {# Status indicators + close button #}
+                <div class="flex items-center gap-1 flex-shrink-0 pt-1">
+                    {# Autosave indicators #}
+                    <span x-cloak x-show="saving" class="text-gray-400 p-1">
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                    </span>
+                    <span x-cloak x-show="saved && !saving"
+                          x-transition:enter="transition ease-out duration-200"
+                          x-transition:enter-start="opacity-0 scale-90"
+                          x-transition:enter-end="opacity-100 scale-100"
+                          x-transition:leave="transition ease-in duration-300"
+                          x-transition:leave-start="opacity-100"
+                          x-transition:leave-end="opacity-0"
+                          class="text-green-500 p-1">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                    </span>
+                    <button type="button" @click="$dispatch('close-item-panel')"
+                            class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            {# Visibility toggle + badges #}
+            <div class="flex items-center gap-2 mt-2">
+                {% if can_edit and not item.is_approval_item %}
+                <select name="visibility" class="text-xs px-2 py-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 outline-none">
+                    <option value="public" {% if item.visibility == 'public' %}selected{% endif %}>Öffentlich</option>
+                    <option value="internal" {% if item.visibility == 'internal' %}selected{% endif %}>Nicht-öffentlich</option>
+                </select>
+                {% else %}
+                <span class="text-xs px-2 py-1 rounded-lg {% if item.visibility == 'internal' %}bg-amber-100 text-amber-700{% else %}bg-gray-100 text-gray-600{% endif %}">
+                    {{ item.get_visibility_display }}
+                </span>
+                {% endif %}
+
+                {% if item.has_decision %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                    <i data-lucide="check-circle" class="w-3 h-3"></i>
+                    Beschluss
+                </span>
+                {% endif %}
+
+                {% if item.is_approval_item %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                    <i data-lucide="shield-check" class="w-3 h-3"></i>
+                    Genehmigung
+                </span>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+
+    {# ══ Scrollable Body ══ #}
+    <div class="flex-1 overflow-y-auto">
+
+        {# ── 1. Beschreibung ── #}
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Beschreibung</h3>
+            {% if can_edit %}
+            <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                  hx-trigger="focusout from:find textarea changed delay:300ms"
+                  hx-swap="none"
+                  hx-vals='{"action": "update"}'
+                  hx-on::before-request="window.dispatchEvent(new Event('panel-autosaving'))"
+                  hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new Event('panel-autosaved'))">
+                {% csrf_token %}
+                <textarea name="description" rows="3" placeholder="Beschreibung hinzufügen..."
+                          class="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none resize-y">{{ item.get_description_decrypted|default:"" }}</textarea>
+            </form>
+            {% else %}
+            {% with desc=item.get_description_decrypted %}
+            {% if desc %}
+            <p class="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{{ desc }}</p>
+            {% else %}
+            <p class="text-sm text-gray-400 italic">Keine Beschreibung</p>
+            {% endif %}
+            {% endwith %}
+            {% endif %}
+        </div>
+
+        {# ── 2. Beschluss-Sektion ── #}
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Abstimmung</h3>
+                {% if can_edit and is_protocol_phase %}
+                <button type="button" @click="showDecisionForm = !showDecisionForm"
+                        class="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1">
+                    <i data-lucide="{% if decision %}edit-2{% else %}plus{% endif %}" class="w-3 h-3"></i>
+                    {% if decision %}Bearbeiten{% else %}Erfassen{% endif %}
+                </button>
+                {% endif %}
+            </div>
+
+            {% if decision %}
+            <div class="bg-green-50 dark:bg-green-900/20 rounded-xl p-3 space-y-2">
+                <div class="flex items-center gap-3">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold
+                        {% if decision.passed %}bg-green-100 text-green-700{% else %}bg-red-100 text-red-700{% endif %}">
+                        {% if decision.passed %}<i data-lucide="check" class="w-3 h-3"></i>{% else %}<i data-lucide="x" class="w-3 h-3"></i>{% endif %}
+                        {{ decision.get_result_display }}
+                    </span>
+                </div>
+                <div class="flex gap-4 text-sm">
+                    <span class="text-green-600 font-medium">{{ decision.votes_yes }} Ja</span>
+                    <span class="text-red-600 font-medium">{{ decision.votes_no }} Nein</span>
+                    <span class="text-gray-500 font-medium">{{ decision.votes_abstain }} Enth.</span>
+                </div>
+                {% if decision.decision_text %}
+                <p class="text-sm text-gray-700 dark:text-gray-300 mt-1">{{ decision.decision_text }}</p>
+                {% endif %}
+                {% if can_edit %}
+                <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                      hx-vals='{"action": "clear_decision"}'
+                      hx-target="#agenda-panel-content" hx-swap="innerHTML"
+                      hx-confirm="Abstimmung wirklich entfernen?"
+                      class="mt-2">
+                    {% csrf_token %}
+                    <button type="submit" class="text-xs text-red-500 hover:text-red-700 font-medium flex items-center gap-1">
+                        <i data-lucide="trash-2" class="w-3 h-3"></i> Entfernen
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            {% elif not can_edit or not is_protocol_phase %}
+            <p class="text-sm text-gray-400 italic">Keine Abstimmung erfasst</p>
+            {% endif %}
+
+            {# Decision inline form #}
+            <div x-show="showDecisionForm" x-transition x-cloak class="mt-3">
+                <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                      hx-vals='{"action": "record_decision"}'
+                      hx-target="#agenda-panel-content" hx-swap="innerHTML"
+                      @htmx:after-request="if($event.detail.successful) showDecisionForm = false; $nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                      class="space-y-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl p-3">
+                    {% csrf_token %}
+                    <div class="grid grid-cols-3 gap-2">
+                        <div>
+                            <label class="block text-xs font-medium text-green-600 mb-1">Ja</label>
+                            <input type="number" name="votes_yes" min="0" value="{{ decision.votes_yes|default:0 }}"
+                                   class="w-full px-2 py-1.5 text-center text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-green-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-red-600 mb-1">Nein</label>
+                            <input type="number" name="votes_no" min="0" value="{{ decision.votes_no|default:0 }}"
+                                   class="w-full px-2 py-1.5 text-center text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-red-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Enthaltung</label>
+                            <input type="number" name="votes_abstain" min="0" value="{{ decision.votes_abstain|default:0 }}"
+                                   class="w-full px-2 py-1.5 text-center text-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-gray-400">
+                        </div>
+                    </div>
+                    <select name="result" class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500">
+                        <option value="accepted" {% if decision.result == 'accepted' %}selected{% endif %}>Angenommen</option>
+                        <option value="rejected" {% if decision.result == 'rejected' %}selected{% endif %}>Abgelehnt</option>
+                        <option value="postponed" {% if decision.result == 'postponed' %}selected{% endif %}>Vertagt</option>
+                        <option value="modified" {% if decision.result == 'modified' %}selected{% endif %}>Geändert angenommen</option>
+                    </select>
+                    <textarea name="decision_text" rows="2" placeholder="Beschlusstext (optional)..."
+                              class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500 resize-none">{{ decision.decision_text|default:"" }}</textarea>
+                    <div class="flex justify-end gap-2">
+                        <button type="button" @click="showDecisionForm = false" class="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200 rounded-lg">Abbrechen</button>
+                        <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Erfassen</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {# ── 3. Protokolleinträge ── #}
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Protokoll
+                    {% if protocol_entries %}
+                    <span class="ml-1 text-gray-400">({{ protocol_entries|length }})</span>
+                    {% endif %}
+                </h3>
+                {% if is_protocol_phase %}
+                <button type="button" @click="showEntryForm = !showEntryForm"
+                        class="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1">
+                    <i data-lucide="plus" class="w-3 h-3"></i> Eintrag
+                </button>
+                {% endif %}
+            </div>
+
+            {# Existing entries #}
+            <div class="space-y-1">
+                {% for entry in protocol_entries %}
+                <div class="group/entry flex items-start gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/30 text-sm">
+                    <span class="flex-shrink-0 mt-0.5">
+                        {% if entry.entry_type == 'speech' %}<i data-lucide="mic" class="w-4 h-4 text-blue-500"></i>
+                        {% elif entry.entry_type == 'decision' %}<i data-lucide="gavel" class="w-4 h-4 text-green-500"></i>
+                        {% elif entry.entry_type == 'action' %}<i data-lucide="check-square" class="w-4 h-4 text-orange-500"></i>
+                        {% elif entry.entry_type == 'vote' %}<i data-lucide="vote" class="w-4 h-4 text-purple-500"></i>
+                        {% else %}<i data-lucide="file-text" class="w-4 h-4 text-gray-400"></i>{% endif %}
+                    </span>
+                    <div class="flex-1 min-w-0">
+                        {% if entry.speaker %}
+                        <span class="font-medium text-gray-700 dark:text-gray-300">{{ entry.speaker.user.get_display_name }}:</span>
+                        {% endif %}
+                        <span class="text-gray-600 dark:text-gray-400">{{ entry.get_content_decrypted }}</span>
+                    </div>
+                    {% if can_edit %}
+                    <div class="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover/entry:opacity-100 transition-opacity">
+                        <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                              hx-vals='{"action": "delete_entry", "entry_id": "{{ entry.id }}"}'
+                              hx-target="#agenda-panel-content" hx-swap="innerHTML"
+                              hx-confirm="Eintrag löschen?">
+                            {% csrf_token %}
+                            <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded">
+                                <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <p class="text-sm text-gray-400 italic py-2">Noch keine Protokolleinträge</p>
+                {% endfor %}
+            </div>
+
+            {# Add entry form #}
+            <div x-show="showEntryForm" x-transition x-cloak class="mt-3">
+                <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                      hx-vals='{"action": "add_entry"}'
+                      hx-target="#agenda-panel-content" hx-swap="innerHTML"
+                      @htmx:after-request="if($event.detail.successful) { showEntryForm = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                      class="space-y-2 bg-gray-50 dark:bg-gray-900/50 rounded-xl p-3">
+                    {% csrf_token %}
+                    <div class="flex gap-2">
+                        <select name="entry_type" class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500">
+                            <option value="note">Notiz</option>
+                            <option value="speech">Redebeitrag</option>
+                            <option value="decision">Beschluss</option>
+                            <option value="action">Aufgabe</option>
+                        </select>
+                        <select name="speaker" class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500 flex-1">
+                            <option value="">-- Sprecher --</option>
+                            {% for att in attendances %}
+                            {% if att.membership and att.status == 'present' %}
+                            <option value="{{ att.membership.id }}">{{ att.membership.user.get_display_name }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <textarea name="content" rows="2" placeholder="Inhalt..." required
+                              class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500 resize-none"></textarea>
+                    <div class="flex justify-end gap-2">
+                        <button type="button" @click="showEntryForm = false" class="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200 rounded-lg">Abbrechen</button>
+                        <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Hinzufügen</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {# ── 4. Aufgaben ── #}
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Aufgaben
+                    {% if tasks %}
+                    <span class="ml-1 text-gray-400">({{ tasks|length }})</span>
+                    {% endif %}
+                </h3>
+                {% if can_edit %}
+                <button type="button" @click="showTaskForm = !showTaskForm"
+                        class="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1">
+                    <i data-lucide="plus" class="w-3 h-3"></i> Aufgabe
+                </button>
+                {% endif %}
+            </div>
+
+            <div class="space-y-1">
+                {% for task in tasks %}
+                <div class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/30 text-sm">
+                    <span class="flex-shrink-0">
+                        {% if task.is_completed %}
+                        <i data-lucide="check-circle-2" class="w-4 h-4 text-green-500"></i>
+                        {% else %}
+                        <i data-lucide="circle" class="w-4 h-4 text-gray-400"></i>
+                        {% endif %}
+                    </span>
+                    <span class="flex-1 min-w-0 truncate {% if task.is_completed %}line-through text-gray-400{% else %}text-gray-700 dark:text-gray-300{% endif %}">
+                        {{ task.title }}
+                    </span>
+                    {% if task.assigned_to %}
+                    <span class="text-xs text-gray-400 flex-shrink-0">{{ task.assigned_to.user.get_display_name }}</span>
+                    {% endif %}
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0
+                        {% if task.status == 'done' %}bg-green-100 text-green-700
+                        {% elif task.status == 'in_progress' %}bg-blue-100 text-blue-700
+                        {% else %}bg-gray-100 text-gray-600{% endif %}">
+                        {{ task.get_status_display }}
+                    </span>
+                </div>
+                {% empty %}
+                <p class="text-sm text-gray-400 italic py-2">Keine Aufgaben verknüpft</p>
+                {% endfor %}
+            </div>
+
+            {# Create task form #}
+            <div x-show="showTaskForm" x-transition x-cloak class="mt-3">
+                <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                      hx-vals='{"action": "create_task"}'
+                      hx-target="#agenda-panel-content" hx-swap="innerHTML"
+                      @htmx:after-request="if($event.detail.successful) { showTaskForm = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                      class="space-y-2 bg-gray-50 dark:bg-gray-900/50 rounded-xl p-3">
+                    {% csrf_token %}
+                    <input type="text" name="title" placeholder="Aufgabentitel..." required
+                           class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500">
+                    <div class="flex gap-2">
+                        <select name="assigned_to" class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500 flex-1">
+                            <option value="">-- Zuweisen --</option>
+                            {% for member in available_members %}
+                            <option value="{{ member.id }}">{{ member.user.get_display_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="date" name="due_date"
+                               class="text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500">
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button type="button" @click="showTaskForm = false" class="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200 rounded-lg">Abbrechen</button>
+                        <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Erstellen</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {# ── 5. Anhänge ── #}
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Anhänge
+                    {% if attachments %}
+                    <span class="ml-1 text-gray-400">({{ attachments|length }})</span>
+                    {% endif %}
+                </h3>
+            </div>
+
+            <div class="space-y-1">
+                {% for att in attachments %}
+                <div class="group/att flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/30 text-sm">
+                    <i data-lucide="{{ att.icon_name }}" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                    <a href="{{ att.file.url }}" target="_blank" class="flex-1 min-w-0 truncate text-primary-600 hover:text-primary-700">
+                        {{ att.filename }}
+                    </a>
+                    <span class="text-xs text-gray-400 flex-shrink-0">{{ att.size_human }}</span>
+                    {% if can_edit %}
+                    <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                          hx-vals='{"action": "delete_attachment", "attachment_id": "{{ att.id }}"}'
+                          hx-target="#agenda-panel-content" hx-swap="innerHTML"
+                          hx-confirm="Anhang löschen?"
+                          class="opacity-0 group-hover/att:opacity-100 transition-opacity">
+                        {% csrf_token %}
+                        <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <p class="text-sm text-gray-400 italic py-2">Keine Anhänge</p>
+                {% endfor %}
+            </div>
+
+            {# Upload form #}
+            {% if can_edit %}
+            <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                  hx-vals='{"action": "upload_attachment"}'
+                  hx-target="#agenda-panel-content" hx-swap="innerHTML"
+                  hx-encoding="multipart/form-data"
+                  @htmx:after-request="$nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                  class="mt-2">
+                {% csrf_token %}
+                <label class="flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:border-primary-400 hover:bg-primary-50/50 transition-colors">
+                    <i data-lucide="upload" class="w-4 h-4 text-gray-400"></i>
+                    <span class="text-xs text-gray-500">Datei hochladen...</span>
+                    <input type="file" name="file" class="hidden"
+                           @change="if($el.files.length) $el.closest('form').requestSubmit()">
+                </label>
+            </form>
+            {% endif %}
+        </div>
+
+        {# ── 6. Verknüpfte Anträge (DMS) ── #}
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Verknüpfte Anträge
+                    {% if linked_motions %}
+                    <span class="ml-1 text-gray-400">({{ linked_motions|length }})</span>
+                    {% endif %}
+                </h3>
+                {% if can_edit %}
+                <button type="button" @click="showMotionSearch = !showMotionSearch"
+                        class="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1">
+                    <i data-lucide="plus" class="w-3 h-3"></i> Verknüpfen
+                </button>
+                {% endif %}
+            </div>
+
+            <div class="space-y-1">
+                {% for motion in linked_motions %}
+                <div class="group/motion flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/30 text-sm">
+                    <i data-lucide="file-text" class="w-4 h-4 text-primary-400 flex-shrink-0"></i>
+                    <span class="flex-1 min-w-0 truncate text-gray-700 dark:text-gray-300">{{ motion.title }}</span>
+                    {% if can_edit %}
+                    <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                          hx-vals='{"action": "unlink_motion", "motion_id": "{{ motion.id }}"}'
+                          hx-target="#agenda-panel-content" hx-swap="innerHTML"
+                          class="opacity-0 group-hover/motion:opacity-100 transition-opacity">
+                        {% csrf_token %}
+                        <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded" title="Verknüpfung lösen">
+                            <i data-lucide="unlink" class="w-3 h-3"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <p class="text-sm text-gray-400 italic py-2">Keine Anträge verknüpft</p>
+                {% endfor %}
+            </div>
+
+            {# Motion search/select #}
+            <div x-show="showMotionSearch" x-transition x-cloak class="mt-3">
+                <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                      hx-vals='{"action": "link_motion"}'
+                      hx-target="#agenda-panel-content" hx-swap="innerHTML"
+                      @htmx:after-request="if($event.detail.successful) { showMotionSearch = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                      class="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-3">
+                    {% csrf_token %}
+                    <select name="motion_id" class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500 mb-2">
+                        <option value="">Antrag auswählen...</option>
+                        {% for motion in available_motions %}
+                        <option value="{{ motion.id }}">{{ motion.title|truncatechars:80 }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="flex justify-end gap-2">
+                        <button type="button" @click="showMotionSearch = false" class="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200 rounded-lg">Abbrechen</button>
+                        <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Verknüpfen</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {# ── 7. Referenz-Links ── #}
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Referenz-Links
+                    {% if reference_links %}
+                    <span class="ml-1 text-gray-400">({{ reference_links|length }})</span>
+                    {% endif %}
+                </h3>
+                {% if can_edit %}
+                <button type="button" @click="showLinkForm = !showLinkForm"
+                        class="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1">
+                    <i data-lucide="plus" class="w-3 h-3"></i> Link
+                </button>
+                {% endif %}
+            </div>
+
+            <div class="space-y-1">
+                {% for link in reference_links %}
+                <div class="group/link flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/30 text-sm">
+                    <i data-lucide="external-link" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                    <a href="{{ link.url }}" target="_blank" rel="noopener" class="flex-1 min-w-0 truncate text-primary-600 hover:text-primary-700">
+                        {{ link.label }}
+                    </a>
+                    {% if can_edit %}
+                    <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                          hx-vals='{"action": "remove_link", "link_index": "{{ forloop.counter0 }}"}'
+                          hx-target="#agenda-panel-content" hx-swap="innerHTML"
+                          class="opacity-0 group-hover/link:opacity-100 transition-opacity">
+                        {% csrf_token %}
+                        <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded">
+                            <i data-lucide="x" class="w-3 h-3"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <p class="text-sm text-gray-400 italic py-2">Keine Links</p>
+                {% endfor %}
+            </div>
+
+            {# Add link form #}
+            <div x-show="showLinkForm" x-transition x-cloak class="mt-3">
+                <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
+                      hx-vals='{"action": "add_link"}'
+                      hx-target="#agenda-panel-content" hx-swap="innerHTML"
+                      @htmx:after-request="if($event.detail.successful) { showLinkForm = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                      class="space-y-2 bg-gray-50 dark:bg-gray-900/50 rounded-xl p-3">
+                    {% csrf_token %}
+                    <input type="text" name="link_label" placeholder="Bezeichnung..." required
+                           class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500">
+                    <input type="url" name="link_url" placeholder="https://..." required
+                           class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500">
+                    <div class="flex justify-end gap-2">
+                        <button type="button" @click="showLinkForm = false" class="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200 rounded-lg">Abbrechen</button>
+                        <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Hinzufügen</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {# ── Sub-items ── #}
+        {% if item.children.all %}
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Unterpunkte</h3>
+            <div class="space-y-1">
+                {% for child in item.children.all %}
+                <button type="button"
+                        @click="$dispatch('open-item-panel', { id: '{{ child.id }}' })"
+                        class="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/30 text-sm text-left">
+                    <span class="px-2 py-0.5 text-xs font-medium rounded bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{{ child.number }}</span>
+                    <span class="flex-1 min-w-0 truncate text-gray-700 dark:text-gray-300">{{ child.title }}</span>
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {# ══ Footer ══ #}
+    {% if can_edit and not item.is_approval_item %}
+    <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between flex-shrink-0">
+        <button type="button"
+                @click="$dispatch('open-add-sub', { parent_id: '{{ item.id }}', visibility: '{{ item.visibility }}' }); $dispatch('close-item-panel')"
+                class="text-xs text-gray-500 hover:text-primary-600 font-medium flex items-center gap-1">
+            <i data-lucide="plus" class="w-3 h-3"></i> Unterpunkt
+        </button>
+        <button type="button"
+                @click="$dispatch('open-delete-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}' }); $dispatch('close-item-panel')"
+                class="text-xs text-red-500 hover:text-red-700 font-medium flex items-center gap-1">
+            <i data-lucide="trash-2" class="w-3 h-3"></i> TOP löschen
+        </button>
+    </div>
+    {% endif %}
+</div>

@@ -1,0 +1,139 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Personen{% endblock %}
+
+{% block header_title %}Personen{% endblock %}
+{% block header_subtitle %}
+{% if body %}
+<p class="work-page-subtitle">{{ body.get_display_name }} · {{ paginator.count }} Personen</p>
+{% endif %}
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Zurück
+</a>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
+    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
+    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Keine Kommune verknüpft</h3>
+</div>
+{% else %}
+
+<!-- Search -->
+<div class="fade-up mb-6">
+    <form method="get">
+        <div class="relative max-w-md">
+            <i data-lucide="search" class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+            <input type="text" name="q" value="{{ search_query|default:'' }}"
+                   placeholder="Person suchen..."
+                   class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+        </div>
+    </form>
+</div>
+
+<!-- Persons Table -->
+{% if persons %}
+<div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Name</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Funktion</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Kontakt</th>
+                <th class="w-10 px-2 py-3"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for person in persons %}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+                onclick="window.location='{% url 'work:ris_person_detail' org_slug=organization.slug person_id=person.id %}'">
+                <td class="px-6 py-3">
+                    <div class="flex items-center gap-3">
+                        {% include "components/person_avatar.html" with person=person size="sm" %}
+                        <div>
+                            <a href="{% url 'work:ris_person_detail' org_slug=organization.slug person_id=person.id %}"
+                               class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                                {{ person.display_name }}
+                            </a>
+                            {% if person.council_role %}
+                            <p class="text-sm text-gray-500 dark:text-gray-400 sm:hidden">{{ person.council_role }}</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                    {{ person.council_role|default:"—" }}
+                </td>
+                <td class="px-4 py-3 max-sm:hidden">
+                    {% if person.email %}
+                    <a href="mailto:{{ person.email }}" class="text-sm text-primary-600 dark:text-primary-400 hover:underline" onclick="event.stopPropagation()">
+                        {{ person.email }}
+                    </a>
+                    {% else %}
+                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td class="px-2 py-3">
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if persons.has_other_pages %}
+<nav class="fade-up d2 mt-6 flex justify-center">
+    <ul class="flex items-center gap-1">
+        {% if persons.has_previous %}
+        <li>
+            <a href="?page={{ persons.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+        {% for num in persons.paginator.page_range %}
+            {% if persons.number == num %}
+            <li><span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span></li>
+            {% elif num > persons.number|add:'-3' and num < persons.number|add:'3' %}
+            <li>
+                <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}"
+                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">{{ num }}</a>
+            </li>
+            {% endif %}
+        {% endfor %}
+        {% if persons.has_next %}
+        <li>
+            <a href="?page={{ persons.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="user" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Personen gefunden</h3>
+    <p class="text-gray-500 dark:text-gray-400">
+        {% if search_query %}
+        Ihre Suche ergab keine Treffer. Versuchen Sie einen anderen Suchbegriff.
+        {% else %}
+        Es sind noch keine Ratsmitglieder vorhanden.
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

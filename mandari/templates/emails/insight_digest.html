@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background: #f8fafc; }
+        .container { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 30px; text-align: center; }
+        .header h1 { margin: 0 0 5px 0; font-size: 22px; }
+        .header p { margin: 0; opacity: 0.9; font-size: 14px; }
+        .content { padding: 25px 30px; }
+        .section { margin-bottom: 25px; }
+        .section-title { font-size: 14px; font-weight: 600; color: #6366f1; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }
+        .section-icon { font-size: 16px; margin-right: 6px; }
+        .alert-card { background: #f8fafc; border-radius: 8px; padding: 12px 15px; margin-bottom: 8px; border-left: 3px solid #6366f1; }
+        .alert-card a { color: #1e293b; text-decoration: none; font-weight: 600; font-size: 14px; }
+        .alert-card a:hover { color: #6366f1; }
+        .alert-meta { font-size: 12px; color: #64748b; margin-top: 4px; }
+        .alert-badge { display: inline-block; background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+        .footer { background: #f8fafc; padding: 20px 30px; text-align: center; border-top: 1px solid #e2e8f0; }
+        .footer p { margin: 4px 0; font-size: 13px; color: #64748b; }
+        .footer a { color: #6366f1; text-decoration: none; }
+        .footer .links { margin-top: 12px; }
+        .footer .links a { margin: 0 8px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Dein Mandari-Digest</h1>
+            <p>{{ subscriber.body.get_display_name }} &mdash; {{ alert_count }} neue{{ alert_count|pluralize:"r,n" }} Treffer</p>
+        </div>
+        <div class="content">
+            {% if neighborhood_alerts %}
+            <div class="section">
+                <div class="section-title">
+                    <span class="section-icon">&#127968;</span> Nachbarschaft
+                    {% if subscriber.neighborhood_name %}<span style="font-weight: 400; text-transform: none;"> &mdash; {{ subscriber.neighborhood_name }}</span>{% endif %}
+                </div>
+                {% for alert in neighborhood_alerts %}
+                <div class="alert-card">
+                    <a href="{{ site_url }}{{ alert.entity_url }}">{{ alert.entity_title }}</a>
+                    <div class="alert-meta">
+                        {% if alert.context.distance %}
+                        <span class="alert-badge">{{ alert.context.distance }}m entfernt</span>
+                        {% endif %}
+                        {{ alert.entity_type }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if keyword_alerts %}
+            <div class="section">
+                <div class="section-title">
+                    <span class="section-icon">&#128269;</span> Suchbegriff: {{ subscriber.keyword }}
+                </div>
+                {% for alert in keyword_alerts %}
+                <div class="alert-card">
+                    <a href="{{ site_url }}{{ alert.entity_url }}">{{ alert.entity_title }}</a>
+                    <div class="alert-meta">{{ alert.entity_type }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if bookmark_alerts %}
+            <div class="section">
+                <div class="section-title">
+                    <span class="section-icon">&#11088;</span> Gemerkte Elemente
+                </div>
+                {% for alert in bookmark_alerts %}
+                <div class="alert-card">
+                    <a href="{{ site_url }}{{ alert.entity_url }}">{{ alert.entity_title }}</a>
+                    <div class="alert-meta">{{ alert.entity_type }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="footer">
+            <p><strong>Mandari</strong> - Kommunalpolitische Transparenz</p>
+            <div class="links">
+                <a href="{{ site_url }}/insight/abo/verwalten/{{ subscriber.token }}/">Abo verwalten</a>
+                &middot;
+                <a href="{{ site_url }}/insight/abo/abmelden/{{ subscriber.token }}/">Abmelden</a>
+            </div>
+            <p style="margin-top: 10px; font-size: 11px;">
+                Diese E-Mail wurde an {{ subscriber.email }} gesendet, weil Sie ein Abo f&uuml;r {{ subscriber.body.get_display_name }} erstellt haben.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

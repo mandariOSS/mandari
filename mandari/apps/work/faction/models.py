@@ -522,6 +522,22 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
     votes_against = models.PositiveIntegerField(default=0, verbose_name="Nein-Stimmen")
     votes_abstain = models.PositiveIntegerField(default=0, verbose_name="Enthaltungen")
 
+    # Linked motions (DMS)
+    related_motions = models.ManyToManyField(
+        "work.Motion",
+        blank=True,
+        related_name="linked_agenda_items",
+        verbose_name="Verknüpfte Anträge",
+    )
+
+    # Reference links (internal/external documents)
+    reference_links = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Referenz-Links",
+        help_text="Links zu internen oder externen Dokumenten [{label, url}]",
+    )
+
     # Ordering
     order = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
 
@@ -825,3 +841,63 @@ class FactionDecision(models.Model):
     @property
     def passed(self):
         return self.result in ["accepted", "modified"]
+
+
+class FactionAgendaItemAttachment(models.Model):
+    """Datei-Anhang eines Fraktions-TOPs."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    agenda_item = models.ForeignKey(
+        FactionAgendaItem,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+        verbose_name="TOP",
+    )
+    file = models.FileField(upload_to="faction/attachments/%Y/%m/", verbose_name="Datei")
+    filename = models.CharField(max_length=255, verbose_name="Dateiname")
+    mime_type = models.CharField(max_length=100, blank=True, verbose_name="MIME-Typ")
+    file_size = models.PositiveIntegerField(default=0, verbose_name="Dateigröße (Bytes)")
+    uploaded_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="faction_item_attachments",
+        verbose_name="Hochgeladen von",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "TOP-Anhang"
+        verbose_name_plural = "TOP-Anhänge"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.filename
+
+    @property
+    def size_human(self) -> str:
+        """Menschenlesbare Dateigröße."""
+        size = self.file_size
+        if size < 1024:
+            return f"{size} B"
+        elif size < 1024 * 1024:
+            return f"{size / 1024:.1f} KB"
+        else:
+            return f"{size / (1024 * 1024):.1f} MB"
+
+    @property
+    def icon_name(self) -> str:
+        """Lucide Icon-Name basierend auf MIME-Typ."""
+        if self.mime_type.startswith("image/"):
+            return "image"
+        elif self.mime_type == "application/pdf":
+            return "file-text"
+        elif self.mime_type.startswith("video/"):
+            return "film"
+        elif self.mime_type.startswith("audio/"):
+            return "music"
+        elif "spreadsheet" in self.mime_type or "excel" in self.mime_type:
+            return "table"
+        elif "presentation" in self.mime_type or "powerpoint" in self.mime_type:
+            return "presentation"
+        return "file"

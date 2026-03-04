@@ -134,6 +134,27 @@ class OParlBody(models.Model):
         blank=True, null=True, help_text="OpenStreetMap Relation ID (z.B. 62591 für Münster)"
     )
 
+    # Personenfoto-Konfiguration
+    person_photo_url_template = models.CharField(
+        max_length=500,
+        blank=True,
+        null=True,
+        help_text=(
+            "URL-Template für Personenfotos. Verwende {id} als Platzhalter für die Person-ID. "
+            "Beispiel: https://www.stadt-muenster.de/sessionnet/sessionnetbi/im/pe{id}.jpg"
+        ),
+    )
+    person_photo_id_pattern = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text=(
+            "Regex-Pattern zum Extrahieren der ID aus der external_id der Person. "
+            "Muss eine Capture-Group enthalten. "
+            r"Beispiel: /people/(\d+)$"
+        ),
+    )
+
     # OParl-Zeitstempel
     oparl_created = models.DateTimeField(blank=True, null=True)
     oparl_modified = models.DateTimeField(blank=True, null=True)
@@ -268,6 +289,31 @@ class OParlPerson(models.Model):
             parts.append(self.family_name)
         return " ".join(parts) if parts else str(self.id)
 
+    @property
+    def photo_url(self):
+        """Bild-URL basierend auf Body-Konfiguration, oder None."""
+        import re
+
+        template = self.body.person_photo_url_template
+        pattern = self.body.person_photo_id_pattern
+        if not template or not pattern:
+            return None
+        match = re.search(pattern, self.external_id)
+        if not match:
+            return None
+        person_id = match.group(1)
+        return template.replace("{id}", person_id)
+
+    @property
+    def initials(self):
+        """Initialen für Fallback-Avatar."""
+        parts = []
+        if self.given_name:
+            parts.append(self.given_name[0])
+        if self.family_name:
+            parts.append(self.family_name[0])
+        return "".join(parts).upper() if parts else "?"
+
 
 class OParlMeeting(models.Model):
     """Eine Sitzung."""
@@ -374,6 +420,42 @@ class OParlPaper(models.Model):
     summary = models.TextField(blank=True, null=True)
     locations = models.JSONField(blank=True, null=True)
 
+    # Georeferenzierung
+    GEOREF_STATUS_CHOICES = [
+        ("pending", "Ausstehend"),
+        ("processing", "In Bearbeitung"),
+        ("completed", "Abgeschlossen"),
+        ("ai_needed", "KI-Extraktion benötigt"),
+        ("no_locations", "Keine Ortsbezüge"),
+        ("failed", "Fehlgeschlagen"),
+        ("skipped", "Übersprungen"),
+    ]
+
+    georef_status = models.CharField(
+        max_length=20,
+        choices=GEOREF_STATUS_CHOICES,
+        default="pending",
+        db_index=True,
+        verbose_name="Georef-Status",
+    )
+    georef_method = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        verbose_name="Georef-Methode",
+        help_text="regex, ai, regex+ai, manual",
+    )
+    georef_error = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Georef-Fehler",
+    )
+    georef_extracted_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Georef-Zeitpunkt",
+    )
+
     # Zeitstempel
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -447,6 +529,7 @@ class OParlFile(models.Model):
         ("processing", "In Bearbeitung"),
         ("completed", "Abgeschlossen"),
         ("failed", "Fehlgeschlagen"),
+        ("ocr_needed", "KI-OCR benötigt"),
         ("skipped", "Übersprungen"),
     ]
 
@@ -1129,3 +1212,164 @@ class ChatUsage(models.Model):
 
     def __str__(self):
         return f"Chat {self.created_at:%d.%m.%Y %H:%M} ({self.filter_result})"
+
+
+# =============================================================================
+# Bookmarks (Merkliste)
+# =============================================================================
+
+
+class Bookmark(models.Model):
+    """Merkliste: User kann Vorgänge, Sitzungen, Gremien und Personen speichern."""
+
+    ENTITY_TYPE_CHOICES = [
+        ("person", "Person"),
+        ("paper", "Vorgang"),
+        ("meeting", "Sitzung"),
+        ("organization", "Gremium"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="bookmarks")
+    entity_type = models.CharField(max_length=20, choices=ENTITY_TYPE_CHOICES)
+    entity_id = models.UUIDField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "insight_bookmarks"
+        unique_together = ("user", "entity_type", "entity_id")
+        ordering = ["-created_at"]
+        verbose_name = "Merkliste-Eintrag"
+        verbose_name_plural = "Merkliste-Einträge"
+
+    def __str__(self):
+        return f"{self.user} → {self.get_entity_type_display()} {self.entity_id}"
+
+
+# =============================================================================
+# Insight Subscriptions (E-Mail-Digest)
+# =============================================================================
+
+
+class InsightSubscriber(models.Model):
+    """E-Mail-Abonnent für Insight-Benachrichtigungen (kein Login nötig)."""
+
+    FREQUENCY_CHOICES = [
+        ("weekly", "Wöchentlich"),
+        ("biweekly", "Alle 2 Wochen"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(db_index=True)
+    body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="subscribers")
+    token = models.UUIDField(unique=True, default=uuid.uuid4)
+
+    # Double Opt-In
+    confirmed = models.BooleanField(default=False)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+
+    # Nachbarschaft-Abo
+    neighborhood_active = models.BooleanField(default=False)
+    neighborhood_lat = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    neighborhood_lon = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    neighborhood_name = models.CharField(max_length=300, null=True, blank=True)
+    neighborhood_radius = models.IntegerField(default=500)
+
+    # Suchbegriff-Abo
+    keyword_active = models.BooleanField(default=False)
+    keyword = models.CharField(max_length=200, null=True, blank=True)
+
+    # Gemerkte Elemente (nur für eingeloggte User)
+    bookmarks_active = models.BooleanField(default=False)
+    user = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="insight_subscriptions"
+    )
+
+    # Digest-Frequenz
+    digest_frequency = models.CharField(max_length=10, choices=FREQUENCY_CHOICES, default="weekly")
+
+    # Zeitstempel
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    unsubscribed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "insight_subscribers"
+        unique_together = ("email", "body")
+        verbose_name = "Insight-Abonnent"
+        verbose_name_plural = "Insight-Abonnenten"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.email} ({self.body.get_display_name()})"
+
+    @property
+    def is_active(self):
+        return self.confirmed and self.unsubscribed_at is None
+
+    @property
+    def active_types(self):
+        types = []
+        if self.neighborhood_active:
+            types.append("neighborhood")
+        if self.keyword_active:
+            types.append("keyword")
+        if self.bookmarks_active:
+            types.append("bookmark")
+        return types
+
+
+class SubscriptionAlert(models.Model):
+    """Einzelne Benachrichtigung, die im nächsten Digest verschickt wird."""
+
+    ALERT_TYPE_CHOICES = [
+        ("neighborhood", "Nachbarschaft"),
+        ("keyword", "Suchbegriff"),
+        ("bookmark", "Gemerkt"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subscriber = models.ForeignKey(InsightSubscriber, on_delete=models.CASCADE, related_name="alerts")
+    alert_type = models.CharField(max_length=20, choices=ALERT_TYPE_CHOICES)
+
+    entity_type = models.CharField(max_length=50)
+    entity_id = models.UUIDField()
+    entity_title = models.CharField(max_length=500)
+    entity_url = models.CharField(max_length=500)
+
+    context = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_in_digest = models.ForeignKey(
+        "DigestLog", on_delete=models.SET_NULL, null=True, blank=True, related_name="alerts"
+    )
+
+    class Meta:
+        db_table = "insight_subscription_alerts"
+        unique_together = ("subscriber", "entity_type", "entity_id")
+        verbose_name = "Abo-Benachrichtigung"
+        verbose_name_plural = "Abo-Benachrichtigungen"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_alert_type_display()}: {self.entity_title}"
+
+
+class DigestLog(models.Model):
+    """Protokoll verschickter Digest-E-Mails."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    subscriber = models.ForeignKey(InsightSubscriber, on_delete=models.CASCADE, related_name="digest_logs")
+    sent_at = models.DateTimeField(auto_now_add=True)
+    alert_count = models.IntegerField()
+    success = models.BooleanField(default=True)
+    error = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = "insight_digest_logs"
+        verbose_name = "Digest-Protokoll"
+        verbose_name_plural = "Digest-Protokolle"
+        ordering = ["-sent_at"]
+
+    def __str__(self):
+        return f"Digest {self.sent_at:%d.%m.%Y} → {self.subscriber.email} ({self.alert_count} Alerts)"

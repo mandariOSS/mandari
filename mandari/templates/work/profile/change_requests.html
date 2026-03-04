@@ -1,0 +1,297 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Änderungsanträge{% endblock %}
+
+{% block header_title %}Änderungsanträge{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Rollen, Gremien und Berechtigungen beantragen</p>
+{% endblock %}
+
+{% block work_content %}
+{% include "work/profile/_tabs.html" with active_tab="requests" %}
+
+{% if messages %}
+<div class="space-y-2 mb-6">
+    {% for message in messages %}
+    <div class="p-3 rounded-lg flex items-center gap-3 {% if message.tags == 'success' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400{% elif message.tags == 'error' %}bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400{% else %}bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400{% endif %}">
+        <i data-lucide="{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}alert-circle{% else %}info{% endif %}" class="w-4 h-4 flex-shrink-0"></i>
+        <span class="text-sm">{{ message }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6" x-data="changeRequestForm()">
+    <!-- Left Column: New Request -->
+    <div class="space-y-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="submit_request">
+
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Neuer Antrag</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Änderung an Rollen, Gremien oder Berechtigungen beantragen</p>
+                </div>
+
+                <div class="px-6 py-6 space-y-4">
+                    <!-- Request Type Selection -->
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Antragstyp</label>
+                        <div class="grid grid-cols-1 gap-2">
+                            <label class="flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors"
+                                   :class="requestType === 'role_change' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30'">
+                                <input type="radio" name="request_type" value="role_change" x-model="requestType" class="sr-only">
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                     :class="requestType === 'role_change' ? 'bg-primary-100 dark:bg-primary-900/40' : 'bg-gray-100 dark:bg-gray-700'">
+                                    <i data-lucide="shield" class="w-4 h-4" :class="requestType === 'role_change' ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'"></i>
+                                </div>
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900 dark:text-white">Rollenänderung</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Andere Rollen beantragen</p>
+                                </div>
+                            </label>
+
+                            <label class="flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors"
+                                   :class="requestType === 'committee_change' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30'">
+                                <input type="radio" name="request_type" value="committee_change" x-model="requestType" class="sr-only">
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                     :class="requestType === 'committee_change' ? 'bg-primary-100 dark:bg-primary-900/40' : 'bg-gray-100 dark:bg-gray-700'">
+                                    <i data-lucide="users" class="w-4 h-4" :class="requestType === 'committee_change' ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'"></i>
+                                </div>
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900 dark:text-white">Gremienänderung</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Gremien-Zuordnung ändern</p>
+                                </div>
+                            </label>
+
+                            <label class="flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors"
+                                   :class="requestType === 'permission_request' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30'">
+                                <input type="radio" name="request_type" value="permission_request" x-model="requestType" class="sr-only">
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                     :class="requestType === 'permission_request' ? 'bg-primary-100 dark:bg-primary-900/40' : 'bg-gray-100 dark:bg-gray-700'">
+                                    <i data-lucide="key" class="w-4 h-4" :class="requestType === 'permission_request' ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'"></i>
+                                </div>
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900 dark:text-white">Berechtigung</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Zusätzliche Berechtigungen anfragen</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Role Selection -->
+                    <div x-show="requestType === 'role_change'" x-cloak>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Gewünschte Rollen</label>
+                        <div class="space-y-1.5 max-h-48 overflow-y-auto">
+                            {% for role in available_roles %}
+                            <label class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer">
+                                <input type="checkbox" name="requested_roles" value="{{ role.id }}"
+                                       {% if role.id in current_role_ids %}checked disabled{% endif %}
+                                       class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 focus:ring-2">
+                                <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full"
+                                      style="background: {{ role.color|default:'#6b7280' }}15; color: {{ role.color|default:'#6b7280' }}; border: 1px solid {{ role.color|default:'#6b7280' }}30;">
+                                    {{ role.name }}
+                                </span>
+                                {% if role.id in current_role_ids %}
+                                <span class="text-[10px] text-gray-400">(aktuell)</span>
+                                {% endif %}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Committee Selection -->
+                    <div x-show="requestType === 'committee_change'" x-cloak>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Gremien</label>
+                        <div class="space-y-1.5 max-h-48 overflow-y-auto">
+                            {% for committee in available_committees %}
+                            <label class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer">
+                                <input type="checkbox" name="requested_committees" value="{{ committee.id }}"
+                                       {% if committee.id in current_committee_ids %}checked{% endif %}
+                                       class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 focus:ring-2">
+                                <span class="text-sm text-gray-700 dark:text-gray-300">{{ committee.name }}</span>
+                                {% if committee.id in current_committee_ids %}
+                                <span class="text-[10px] text-gray-400">(aktuell)</span>
+                                {% endif %}
+                            </label>
+                            {% endfor %}
+                            {% if not available_committees %}
+                            <p class="text-sm text-gray-500 dark:text-gray-400 py-2">Keine Gremien verfügbar (keine Kommune verknüpft).</p>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Permission Selection -->
+                    <div x-show="requestType === 'permission_request'" x-cloak>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Gewünschte Berechtigungen</label>
+                        <div class="space-y-1.5 max-h-48 overflow-y-auto">
+                            {% for perm in available_permissions %}
+                            <label class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer">
+                                <input type="checkbox" name="requested_permissions" value="{{ perm.codename }}"
+                                       class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 focus:ring-2">
+                                <span class="text-sm text-gray-700 dark:text-gray-300">{{ perm.name }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Reason -->
+                    <div x-show="requestType" x-cloak>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Begründung</label>
+                        <textarea name="reason" rows="3" required placeholder="Warum wird diese Änderung benötigt?"
+                                  class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none resize-none"></textarea>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-end" x-show="requestType" x-cloak>
+                    <button type="submit"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+                        <i data-lucide="send" class="w-4 h-4"></i>
+                        Antrag einreichen
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Right Column: My Requests & Review -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- My Requests -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 25ms">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Meine Anträge</h4>
+            </div>
+            <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {% for req in my_requests %}
+                <div class="px-6 py-4">
+                    <div class="flex items-start justify-between">
+                        <div class="flex items-start gap-3 min-w-0">
+                            <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5
+                                {% if req.status == 'pending' %}bg-amber-100 dark:bg-amber-900/30{% elif req.status == 'approved' %}bg-green-100 dark:bg-green-900/30{% elif req.status == 'rejected' %}bg-red-100 dark:bg-red-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                                <i data-lucide="{% if req.request_type == 'role_change' %}shield{% elif req.request_type == 'committee_change' %}users{% else %}key{% endif %}"
+                                   class="w-4 h-4 {% if req.status == 'pending' %}text-amber-600 dark:text-amber-400{% elif req.status == 'approved' %}text-green-600 dark:text-green-400{% elif req.status == 'rejected' %}text-red-600 dark:text-red-400{% else %}text-gray-400{% endif %}"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ req.get_request_type_display }}</p>
+                                    <span class="inline-flex px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wide leading-none
+                                        {% if req.status == 'pending' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400{% elif req.status == 'approved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400{% elif req.status == 'rejected' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400{% else %}bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400{% endif %}">
+                                        {{ req.get_status_display }}
+                                    </span>
+                                </div>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ req.reason|truncatechars:80 }}</p>
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ req.created_at|date:"d.m.Y H:i" }}</p>
+                                {% if req.decision_comment %}
+                                <p class="text-xs text-gray-600 dark:text-gray-400 mt-1 p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
+                                    <i data-lucide="message-square" class="w-3 h-3 inline -mt-0.5"></i>
+                                    {{ req.decision_comment }}
+                                </p>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% if req.status == 'pending' %}
+                        <form method="post" class="flex-shrink-0">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="withdraw_request">
+                            <input type="hidden" name="request_id" value="{{ req.id }}">
+                            <button type="submit"
+                                    class="p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                    title="Zurückziehen">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+                {% empty %}
+                <div class="px-6 py-8 text-center">
+                    <i data-lucide="git-pull-request" class="w-6 h-6 text-gray-300 dark:text-gray-600 mx-auto mb-2"></i>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Noch keine Anträge gestellt.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Pending Review (only for admins/managers) -->
+        {% if can_review and pending_requests %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <div>
+                    <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Zu prüfen</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Anträge anderer Mitglieder</p>
+                </div>
+                <span class="inline-flex items-center justify-center w-6 h-6 text-xs font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full">{{ pending_requests|length }}</span>
+            </div>
+            <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {% for req in pending_requests %}
+                <div class="px-6 py-4">
+                    <div class="flex items-start gap-3">
+                        <div class="w-9 h-9 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <i data-lucide="{% if req.request_type == 'role_change' %}shield{% elif req.request_type == 'committee_change' %}users{% else %}key{% endif %}"
+                               class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <p class="text-sm font-medium text-gray-900 dark:text-white">
+                                    {{ req.requester.user.get_full_name|default:req.requester.user.email }}
+                                </p>
+                                <span class="text-xs text-gray-400">·</span>
+                                <span class="text-xs text-gray-500 dark:text-gray-400">{{ req.get_request_type_display }}</span>
+                            </div>
+                            <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{{ req.reason|truncatechars:120 }}</p>
+                            <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ req.created_at|date:"d.m.Y H:i" }}</p>
+
+                            <!-- Decision Buttons -->
+                            <div class="flex items-center gap-2 mt-3" x-data="{ showReject: false, comment: '' }">
+                                <form method="post" class="inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="approve_request">
+                                    <input type="hidden" name="request_id" value="{{ req.id }}">
+                                    <button type="submit"
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors">
+                                        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                                        Genehmigen
+                                    </button>
+                                </form>
+                                <button type="button" @click="showReject = !showReject"
+                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                    <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                    Ablehnen
+                                </button>
+
+                                <!-- Reject form with comment -->
+                                <div x-show="showReject" x-cloak class="w-full mt-2">
+                                    <form method="post" class="flex items-end gap-2">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="reject_request">
+                                        <input type="hidden" name="request_id" value="{{ req.id }}">
+                                        <div class="flex-1">
+                                            <input type="text" name="decision_comment" placeholder="Begründung (optional)"
+                                                   class="w-full px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none">
+                                        </div>
+                                        <button type="submit"
+                                                class="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors whitespace-nowrap">
+                                            Ablehnen
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function changeRequestForm() {
+    return {
+        requestType: ''
+    }
+}
+</script>
+{% endblock %}

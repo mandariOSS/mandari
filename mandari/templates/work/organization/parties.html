@@ -8,37 +8,9 @@
 {% endblock %}
 
 {% block work_content %}
-<!-- Navigation Tabs -->
-<div class="mb-8 border-b border-gray-200 dark:border-gray-700">
-    <nav class="flex gap-1 overflow-x-auto">
-        <a href="{% url 'work:organization' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Allgemein
-        </a>
-        <a href="{% url 'work:organization_faction_settings' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Fraktionssitzungen
-        </a>
-        <a href="{% url 'work:organization_documents' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Anträge & Vorgänge
-        </a>
-        <a href="{% url 'work:council_parties' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 whitespace-nowrap">
-            Ratsfraktionen
-        </a>
-        <a href="{% url 'work:members' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Mitglieder
-        </a>
-        <a href="{% url 'work:roles' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Rollen
-        </a>
-    </nav>
-</div>
+{% include "work/organization/_tabs.html" %}
 
-<div class="space-y-8">
+<div class="space-y-8 fade-up">
     <!-- Organization Email Settings -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">E-Mail-Einstellungen</h3>
@@ -54,7 +26,7 @@
                     </label>
                     <input type="email" name="administration_email" value="{{ administration_email }}"
                            placeholder="verwaltung@stadt.de"
-                           class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     <p class="mt-1 text-sm text-gray-500">Standard-Empfänger für eingereichte Anträge</p>
                 </div>
 
@@ -64,14 +36,14 @@
                     </label>
                     <input type="text" name="coalition_name" value="{{ coalition_name }}"
                            placeholder="z.B. Ampel, Rot-Grün"
-                           class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     <p class="mt-1 text-sm text-gray-500">Name der aktuellen Koalition (optional)</p>
                 </div>
             </div>
 
             <div class="flex justify-end">
                 <button type="submit"
-                        class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 focus:ring-2 focus:ring-primary-500">
+                        class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                     Speichern
                 </button>
             </div>
@@ -131,7 +103,7 @@
                 <p class="text-sm text-gray-500 mt-1">Alle Fraktionen im Rat (auch Opposition)</p>
             </div>
             <a href="{% url 'work:council_party_create' org_slug=organization.slug %}"
-               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                 <i data-lucide="plus" class="w-4 h-4"></i>
                 Fraktion hinzufuegen
             </a>

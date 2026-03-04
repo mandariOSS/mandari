@@ -1,0 +1,183 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Sitzungen{% endblock %}
+
+{% block header_title %}Sitzungen{% endblock %}
+{% block header_subtitle %}
+{% if body %}
+<p class="work-page-subtitle">{{ body.get_display_name }}</p>
+{% endif %}
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Zurück
+</a>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
+    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
+    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Keine Kommune verknüpft</h3>
+    <p class="text-amber-700 dark:text-amber-300">
+        Dieser Organisation ist noch keine Kommune zugewiesen.
+    </p>
+</div>
+{% else %}
+
+<!-- Period Tabs -->
+<div class="fade-up flex flex-wrap items-center gap-4 mb-6 border-b border-gray-200 dark:border-gray-700">
+    <div class="flex gap-2">
+        <a href="?view=upcoming{% if selected_org %}&org={{ selected_org }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+           class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if view_mode == 'upcoming' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
+            Kommende
+        </a>
+        <a href="?view=past{% if selected_org %}&org={{ selected_org }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+           class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if view_mode == 'past' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
+            Vergangene
+        </a>
+        <a href="?view=all{% if selected_org %}&org={{ selected_org }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+           class="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors {% if view_mode == 'all' %}border-primary-500 text-primary-600 dark:text-primary-400{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200{% endif %}">
+            Alle
+        </a>
+    </div>
+    <div class="flex-1"></div>
+    <!-- Filters -->
+    <form method="get" class="flex items-center gap-3 pb-2">
+        <input type="hidden" name="view" value="{{ view_mode }}">
+        <select name="org" onchange="this.form.submit()"
+                class="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
+            <option value="">Alle Gremien</option>
+            {% for org in organizations %}
+            <option value="{{ org.id }}" {% if selected_org == org.id|slugify %}selected{% endif %}>{{ org.short_name|default:org.name }}</option>
+            {% endfor %}
+        </select>
+        <select name="year" onchange="this.form.submit()"
+                class="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
+            <option value="">Alle Jahre</option>
+            {% for year in years %}
+            <option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>
+            {% endfor %}
+        </select>
+    </form>
+</div>
+
+<!-- Meetings Table -->
+{% if meetings %}
+<div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Sitzung</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Datum</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Uhrzeit</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Ort</th>
+                <th class="w-10 px-2 py-3"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for meeting in meetings %}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer {% if meeting.cancelled %}opacity-60{% endif %}"
+                onclick="window.location='{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}'">
+                <td class="px-6 py-3">
+                    <div class="flex items-center gap-2">
+                        <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}"
+                           class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
+                            {{ meeting.get_display_name }}
+                        </a>
+                        {% if meeting.cancelled %}
+                        <span class="px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 shrink-0">Abgesagt</span>
+                        {% endif %}
+                    </div>
+                    {% with orgs=meeting.get_organization_names %}
+                    {% if orgs %}
+                    <div class="flex flex-wrap gap-1.5 mt-1">
+                        {% for org in orgs %}
+                        <span class="text-xs text-gray-500 dark:text-gray-400">{{ org }}{% if not forloop.last %},{% endif %}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+                    <div class="sm:hidden text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                        {% if meeting.start %}{{ meeting.start|date:"d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% endif %}
+                        {% if meeting.location_name %} &middot; {{ meeting.location_name }}{% endif %}
+                    </div>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                    {% if meeting.start %}
+                    <time datetime="{{ meeting.start|date:'Y-m-d' }}">{{ meeting.start|date:"d.m.Y" }}</time>
+                    {% else %}
+                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                    {% if meeting.start %}
+                    {{ meeting.start|date:"H:i" }} Uhr
+                    {% else %}
+                    <span class="text-gray-300 dark:text-gray-600">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                    {{ meeting.location_name|default:"—" }}
+                </td>
+                <td class="px-2 py-3">
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if meetings.has_other_pages %}
+<nav class="fade-up d2 mt-6 flex justify-center">
+    <ul class="flex items-center gap-1">
+        {% if meetings.has_previous %}
+        <li>
+            <a href="?page={{ meetings.previous_page_number }}&view={{ view_mode }}{% if selected_org %}&org={{ selected_org }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+        {% for num in meetings.paginator.page_range %}
+            {% if meetings.number == num %}
+            <li><span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span></li>
+            {% elif num > meetings.number|add:'-3' and num < meetings.number|add:'3' %}
+            <li>
+                <a href="?page={{ num }}&view={{ view_mode }}{% if selected_org %}&org={{ selected_org }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">{{ num }}</a>
+            </li>
+            {% endif %}
+        {% endfor %}
+        {% if meetings.has_next %}
+        <li>
+            <a href="?page={{ meetings.next_page_number }}&view={{ view_mode }}{% if selected_org %}&org={{ selected_org }}{% endif %}{% if selected_year %}&year={{ selected_year }}{% endif %}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="calendar" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Sitzungen gefunden</h3>
+    <p class="text-gray-500 dark:text-gray-400">
+        {% if view_mode == 'upcoming' %}
+        Es sind keine kommenden Sitzungen geplant.
+        {% else %}
+        Es gibt keine Sitzungen in diesem Zeitraum.
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

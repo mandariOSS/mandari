@@ -1,0 +1,200 @@
+{% extends "base_insight.html" %}
+
+{% block title %}Abo verwalten{% endblock %}
+
+{% block content %}
+<div x-data="manageApp()" class="max-w-2xl mx-auto">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Abo verwalten</h1>
+        <p class="text-gray-600 dark:text-gray-400">
+            {{ subscriber.email }} &mdash; {{ subscriber.body.get_display_name }}
+        </p>
+    </div>
+
+    {% if saved %}
+    <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 mb-6">
+        <div class="flex items-center gap-2">
+            <i data-lucide="check-circle" class="w-5 h-5 text-green-500"></i>
+            <p class="text-sm font-medium text-green-800 dark:text-green-200">&Auml;nderungen gespeichert!</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <form method="post" class="space-y-4">
+        {% csrf_token %}
+
+        <!-- Subscriptions -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="bell" class="w-4 h-4 text-primary-500"></i>
+                    Benachrichtigungen
+                </h2>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Mindestens ein Feld muss ausgef&uuml;llt sein. Beide k&ouml;nnen kombiniert werden.</p>
+            </div>
+            <div class="divide-y divide-gray-100 dark:divide-gray-700">
+                <!-- Nachbarschaft -->
+                <div class="p-5">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i data-lucide="map-pin" class="w-4 h-4 text-amber-500"></i>
+                        <h3 class="text-sm font-medium text-gray-900 dark:text-white">Nachbarschaft</h3>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="relative">
+                            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+                            <input type="text" name="neighborhood_name"
+                                   x-model="neighborhoodName"
+                                   @input.debounce.300ms="fetchSuggestions()"
+                                   @keydown.escape="suggestions = []"
+                                   placeholder="z.B. Wolbecker Stra&szlig;e..."
+                                   class="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none transition-all">
+                            <input type="hidden" name="neighborhood_lat" :value="neighborhoodLat">
+                            <input type="hidden" name="neighborhood_lon" :value="neighborhoodLon">
+
+                            <!-- Autocomplete Dropdown -->
+                            <div x-show="suggestions.length > 0" x-cloak
+                                 @click.away="suggestions = []"
+                                 class="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden">
+                                <template x-for="(s, i) in suggestions" :key="i">
+                                    <button type="button" @click="selectSuggestion(s)"
+                                            class="w-full px-3 py-2.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 last:border-0 transition-colors">
+                                        <i data-lucide="map-pin" class="w-3.5 h-3.5 text-gray-400 shrink-0"></i>
+                                        <span x-text="s.name" class="truncate"></span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Radius (shown when location selected) -->
+                        <div x-show="neighborhoodLat" x-cloak>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Umkreis</label>
+                            <div class="flex gap-1.5">
+                                <template x-for="r in [250, 500, 1000, 2000]" :key="r">
+                                    <button type="button" @click="neighborhoodRadius = r"
+                                            :class="neighborhoodRadius === r
+                                                ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border-primary-300 dark:border-primary-700'
+                                                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:border-gray-300'"
+                                            class="flex-1 px-2 py-1.5 text-xs font-medium border rounded-lg transition-colors">
+                                        <span x-text="r >= 1000 ? (r/1000) + ' km' : r + ' m'"></span>
+                                    </button>
+                                </template>
+                            </div>
+                            <input type="hidden" name="neighborhood_radius" :value="neighborhoodRadius">
+                        </div>
+
+                        <!-- Selected location badge -->
+                        <div x-show="neighborhoodLat" x-cloak class="flex items-center gap-2">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 text-xs font-medium rounded-full border border-green-200 dark:border-green-800">
+                                <i data-lucide="check" class="w-3 h-3"></i>
+                                Standort gew&auml;hlt
+                            </span>
+                            <button type="button" @click="clearNeighborhood()" class="text-xs text-gray-400 hover:text-red-500 transition-colors">
+                                Zur&uuml;cksetzen
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Suchbegriff -->
+                <div class="p-5">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i data-lucide="text-search" class="w-4 h-4 text-blue-500"></i>
+                        <h3 class="text-sm font-medium text-gray-900 dark:text-white">Suchbegriff</h3>
+                    </div>
+                    <div class="relative">
+                        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+                        <input type="text" name="keyword"
+                               x-model="keyword"
+                               placeholder="z.B. Radweg, Spielplatz, Klimaschutz..."
+                               class="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none transition-all">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Frequency -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="clock" class="w-4 h-4 text-primary-500"></i>
+                    H&auml;ufigkeit
+                </h2>
+            </div>
+            <div class="p-5">
+                <div class="flex gap-3">
+                    <label class="flex-1 flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-transparent has-[:checked]:border-primary-300 dark:has-[:checked]:border-primary-700 has-[:checked]:bg-primary-50 dark:has-[:checked]:bg-primary-900/20">
+                        <input type="radio" name="digest_frequency" value="weekly"
+                               {% if subscriber.digest_frequency == 'weekly' %}checked{% endif %}
+                               class="text-primary-600 focus:ring-primary-500">
+                        <span class="text-sm text-gray-900 dark:text-white">W&ouml;chentlich</span>
+                    </label>
+                    <label class="flex-1 flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-transparent has-[:checked]:border-primary-300 dark:has-[:checked]:border-primary-700 has-[:checked]:bg-primary-50 dark:has-[:checked]:bg-primary-900/20">
+                        <input type="radio" name="digest_frequency" value="biweekly"
+                               {% if subscriber.digest_frequency == 'biweekly' %}checked{% endif %}
+                               class="text-primary-600 focus:ring-primary-500">
+                        <span class="text-sm text-gray-900 dark:text-white">Alle 2 Wochen</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center justify-between pt-2">
+            <a href="/insight/abo/abmelden/{{ subscriber.token }}/"
+               class="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:underline">
+                Abo k&uuml;ndigen
+            </a>
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-all shadow-sm hover:shadow-md">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                Speichern
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function manageApp() {
+    return {
+        neighborhoodName: '{{ subscriber.neighborhood_name|default:""|escapejs }}',
+        neighborhoodLat: '{{ subscriber.neighborhood_lat|default:"" }}',
+        neighborhoodLon: '{{ subscriber.neighborhood_lon|default:"" }}',
+        neighborhoodRadius: {{ subscriber.neighborhood_radius|default:"500" }},
+        keyword: '{{ subscriber.keyword|default:""|escapejs }}',
+        suggestions: [],
+
+        async fetchSuggestions() {
+            if (this.neighborhoodName.length < 2) {
+                this.suggestions = [];
+                return;
+            }
+            try {
+                const resp = await fetch(`/insight/nachbarschaft/autocomplete/?q=${encodeURIComponent(this.neighborhoodName)}`);
+                this.suggestions = await resp.json();
+                this.$nextTick(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); });
+            } catch (e) {
+                this.suggestions = [];
+            }
+        },
+
+        selectSuggestion(s) {
+            this.neighborhoodName = s.name;
+            this.neighborhoodLat = s.lat;
+            this.neighborhoodLon = s.lon;
+            this.suggestions = [];
+            this.$nextTick(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); });
+        },
+
+        clearNeighborhood() {
+            this.neighborhoodName = '';
+            this.neighborhoodLat = '';
+            this.neighborhoodLon = '';
+            this.suggestions = [];
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -4,6 +4,8 @@ Context Processors für Mandari Insight.
 Stellt globale Context-Variablen für alle Templates bereit.
 """
 
+from django.conf import settings
+
 from .models import OParlBody, OParlMeeting
 
 
@@ -14,11 +16,13 @@ def navigation_context(request):
     Mandari only serves portal pages now (under /insight/).
     Marketing pages are served by the separate Wagtail site.
     """
+    marketing_url = getattr(settings, "MARKETING_URL", "")
     return {
         "is_portal": True,
         "is_marketing": False,
         "nav_context": "portal",
         "has_chat_consent": request.session.get("chat_consent", False),
+        "marketing_url": marketing_url,
     }
 
 

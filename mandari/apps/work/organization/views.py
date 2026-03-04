@@ -8,7 +8,7 @@ import logging
 
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
-from django.http import JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -22,6 +22,118 @@ from apps.common.mixins import WorkViewMixin
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# TEAM DIRECTORY
+# =============================================================================
+
+
+class TeamDirectoryView(WorkViewMixin, TemplateView):
+    """Internal team directory — visible to all active members."""
+
+    template_name = "work/team/directory.html"
+    permission_required = "dashboard.view"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = "team"
+
+        from django.db.models import Q
+
+        from apps.tenants.models import Membership
+
+        from .models import MemberAbsence
+
+        members = (
+            Membership.objects.filter(organization=self.organization, is_active=True)
+            .select_related("user")
+            .prefetch_related("roles", "oparl_committees")
+            .order_by("user__last_name", "user__first_name")
+        )
+
+        # Search filter
+        search_query = self.request.GET.get("q", "").strip()
+        if search_query:
+            members = members.filter(
+                Q(user__first_name__icontains=search_query)
+                | Q(user__last_name__icontains=search_query)
+                | Q(user__email__icontains=search_query)
+            )
+
+        # Current absences for all members
+        today = timezone.now().date()
+        current_absences = MemberAbsence.objects.filter(
+            organization=self.organization,
+            is_active=True,
+            start_date__lte=today,
+            end_date__gte=today,
+        ).select_related("deputy__user")
+        absence_map = {a.membership_id: a for a in current_absences}
+
+        # Annotate members with absence info
+        member_list = []
+        for member in members:
+            member.current_absence = absence_map.get(member.id)
+            member_list.append(member)
+
+        context["members"] = member_list
+        context["member_count"] = len(member_list) if search_query else members.count()
+        context["search_query"] = search_query
+        context["is_owner_user"] = self.organization.owner
+
+        return context
+
+
+class TeamMemberProfileView(WorkViewMixin, TemplateView):
+    """Read-only member profile in team directory."""
+
+    template_name = "work/team/profile.html"
+    permission_required = "dashboard.view"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = "team"
+
+        from apps.tenants.models import Membership
+
+        from .models import MemberAbsence
+
+        member_id = kwargs.get("member_id")
+        member = get_object_or_404(
+            Membership.objects.select_related("user").prefetch_related("roles", "oparl_committees"),
+            id=member_id,
+            organization=self.organization,
+            is_active=True,
+        )
+
+        context["member"] = member
+        context["is_self"] = member.user == self.request.user
+        context["is_owner"] = self.organization.owner == member.user
+        context["roles"] = member.roles.all()
+        context["committees"] = member.oparl_committees.all()
+        context["joined_at"] = member.joined_at
+
+        # Current absence
+        today = timezone.now().date()
+        context["current_absence"] = MemberAbsence.objects.filter(
+            membership=member,
+            organization=self.organization,
+            is_active=True,
+            start_date__lte=today,
+            end_date__gte=today,
+        ).select_related("deputy__user").first()
+
+        # Visibility / contact settings from User.settings
+        user_settings = member.user.settings or {}
+        profile = user_settings.get("profile", {})
+        context["bio"] = profile.get("bio", "")
+        context["show_email"] = profile.get("show_email", True)
+        context["show_phone"] = profile.get("show_phone", False)
+        context["preferred_contact"] = profile.get("preferred_contact", "email")
+        context["contact_signal"] = profile.get("contact_signal", "")
+
+        return context
+
+
 class OrganizationSettingsView(WorkViewMixin, TemplateView):
     """Organization settings page."""
 
@@ -33,20 +145,92 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
         context["active_nav"] = "organization"
         context["active_tab"] = "general"
 
-        # Check if user can manage faction settings
+        # Check permissions
         from apps.common.permissions import PermissionChecker
 
         checker = PermissionChecker(self.membership)
         context["can_manage_faction"] = checker.has_permission("faction.manage")
-
-        # Get document settings counts
-        from apps.work.motions.models import MotionTemplate, MotionType, OrganizationLetterhead
-
-        context["type_count"] = MotionType.objects.filter(organization=self.organization).count()
-        context["template_count"] = MotionTemplate.objects.filter(organization=self.organization).count()
-        context["letterhead_count"] = OrganizationLetterhead.objects.filter(organization=self.organization).count()
+        context["can_edit"] = checker.has_permission("organization.edit")
 
         return context
+
+    def post(self, request, *args, **kwargs):
+        """Handle organization settings updates."""
+        import re
+
+        from apps.common.permissions import PermissionChecker
+
+        checker = PermissionChecker(self.membership)
+        if not checker.has_permission("organization.edit"):
+            messages.error(request, "Keine Berechtigung zum Bearbeiten.")
+            return redirect("work:organization", org_slug=self.organization.slug)
+
+        action = request.POST.get("action")
+
+        if action == "update_general":
+            name = request.POST.get("name", "").strip()
+            if not name:
+                messages.error(request, "Der Name darf nicht leer sein.")
+                return redirect("work:organization", org_slug=self.organization.slug)
+
+            self.organization.name = name
+            self.organization.description = request.POST.get("description", "").strip()
+
+            # Primary color
+            color = request.POST.get("primary_color", "").strip()
+            if color and re.match(r"^#[0-9a-fA-F]{6}$", color):
+                self.organization.primary_color = color
+
+            # Logo upload
+            if "logo" in request.FILES:
+                logo_file = request.FILES["logo"]
+                allowed_types = ["image/jpeg", "image/png", "image/webp"]
+                if logo_file.content_type in allowed_types and logo_file.size <= 5 * 1024 * 1024:
+                    if self.organization.logo:
+                        self.organization.logo.delete(save=False)
+                    self.organization.logo = logo_file
+                else:
+                    messages.error(request, "Logo muss JPG, PNG oder WebP sein und max. 5 MB gross.")
+                    return redirect("work:organization", org_slug=self.organization.slug)
+
+            # Logo remove
+            if request.POST.get("remove_logo") == "1":
+                if self.organization.logo:
+                    self.organization.logo.delete(save=False)
+                    self.organization.logo = None
+
+            self.organization.save()
+            messages.success(request, "Organisationseinstellungen gespeichert.")
+
+        elif action == "update_contact":
+            from django.core.exceptions import ValidationError
+            from django.core.validators import EmailValidator, URLValidator
+
+            contact_email = request.POST.get("contact_email", "").strip()
+            website = request.POST.get("website", "").strip()
+
+            if contact_email:
+                try:
+                    EmailValidator()(contact_email)
+                except ValidationError:
+                    messages.error(request, "Ungueltige E-Mail-Adresse.")
+                    return redirect("work:organization", org_slug=self.organization.slug)
+
+            if website:
+                try:
+                    URLValidator()(website)
+                except ValidationError:
+                    messages.error(request, "Ungueltige Website-URL.")
+                    return redirect("work:organization", org_slug=self.organization.slug)
+
+            self.organization.contact_email = contact_email
+            self.organization.contact_phone = request.POST.get("contact_phone", "").strip()
+            self.organization.website = website
+            self.organization.address = request.POST.get("address", "").strip()
+            self.organization.save()
+            messages.success(request, "Kontaktdaten gespeichert.")
+
+        return redirect("work:organization", org_slug=self.organization.slug)
 
 
 class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
@@ -59,6 +243,7 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
         context["active_tab"] = "faction"
+        context["can_manage_faction"] = True  # This view requires faction.manage
 
         # Get current faction settings
         settings = self.organization.settings or {}
@@ -133,6 +318,7 @@ class OrganizationDocumentsView(WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
+        context["active_tab"] = "documents"
 
         # Check if user can manage faction settings
         from apps.common.permissions import PermissionChecker
@@ -172,6 +358,7 @@ class MemberListView(WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
+        context["active_tab"] = "members"
 
         # Check if user can manage faction settings
         from apps.common.permissions import PermissionChecker
@@ -796,6 +983,7 @@ class RoleListView(WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
+        context["active_tab"] = "roles"
 
         # Check if user can manage faction settings
         from apps.common.permissions import PermissionChecker
@@ -803,17 +991,174 @@ class RoleListView(WorkViewMixin, TemplateView):
         checker = PermissionChecker(self.membership)
         context["can_manage_faction"] = checker.has_permission("faction.manage")
 
-        # Get all roles for this organization
+        # Get all roles for this organization with member count
+        from django.db.models import Count
+
         from apps.tenants.models import Role
 
         roles = (
             Role.objects.filter(organization=self.organization)
             .prefetch_related("permissions")
-            .order_by("priority", "name")
+            .annotate(member_count=Count("memberships"))
+            .order_by("-priority", "name")
         )
 
         context["roles"] = roles
         return context
+
+
+class RoleCreateView(WorkViewMixin, TemplateView):
+    """Create a new role."""
+
+    template_name = "work/organization/role_form.html"
+    permission_required = "organization.manage_roles"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = "organization"
+        context["is_edit"] = False
+        context["role"] = None
+        context["role_permissions"] = set()
+
+        from apps.common.permissions import get_permissions_by_category
+
+        context["permission_categories"] = get_permissions_by_category()
+        return context
+
+    def post(self, request, *args, **kwargs):
+        from apps.tenants.models import Permission, Role
+
+        name = request.POST.get("name", "").strip()
+        if not name:
+            messages.error(request, "Der Name ist erforderlich.")
+            return redirect("work:role_create", org_slug=self.organization.slug)
+
+        # Check unique name per org
+        if Role.objects.filter(organization=self.organization, name=name).exists():
+            messages.error(request, f"Eine Rolle mit dem Namen '{name}' existiert bereits.")
+            return redirect("work:role_create", org_slug=self.organization.slug)
+
+        import re
+
+        color = request.POST.get("color", "#6b7280").strip()
+        if not re.match(r"^#[0-9a-fA-F]{6}$", color):
+            color = "#6b7280"
+
+        role = Role.objects.create(
+            organization=self.organization,
+            name=name,
+            description=request.POST.get("description", "").strip(),
+            color=color,
+            priority=min(max(int(request.POST.get("priority", 50) or 50), 0), 100),
+            is_admin=request.POST.get("is_admin") == "on",
+            require_2fa=request.POST.get("require_2fa") == "on",
+            is_system_role=False,
+        )
+
+        # Set permissions
+        perm_codenames = request.POST.getlist("permissions")
+        if perm_codenames and not role.is_admin:
+            perms = Permission.objects.filter(codename__in=perm_codenames)
+            role.permissions.set(perms)
+
+        messages.success(request, f"Rolle '{name}' wurde erstellt.")
+        return redirect("work:roles", org_slug=self.organization.slug)
+
+
+class RoleEditView(WorkViewMixin, TemplateView):
+    """Edit an existing role."""
+
+    template_name = "work/organization/role_form.html"
+    permission_required = "organization.manage_roles"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = "organization"
+        context["is_edit"] = True
+
+        from apps.tenants.models import Role
+
+        role = get_object_or_404(Role, id=kwargs["role_id"], organization=self.organization)
+        context["role"] = role
+        context["role_permissions"] = set(role.permissions.values_list("codename", flat=True))
+
+        from apps.common.permissions import get_permissions_by_category
+
+        context["permission_categories"] = get_permissions_by_category()
+        return context
+
+    def post(self, request, *args, **kwargs):
+        from apps.tenants.models import Permission, Role
+
+        role = get_object_or_404(Role, id=kwargs["role_id"], organization=self.organization)
+
+        name = request.POST.get("name", "").strip()
+        if not name:
+            messages.error(request, "Der Name ist erforderlich.")
+            return redirect("work:role_edit", org_slug=self.organization.slug, role_id=role.id)
+
+        # Check unique name per org (excluding self)
+        if Role.objects.filter(organization=self.organization, name=name).exclude(id=role.id).exists():
+            messages.error(request, f"Eine Rolle mit dem Namen '{name}' existiert bereits.")
+            return redirect("work:role_edit", org_slug=self.organization.slug, role_id=role.id)
+
+        import re
+
+        color = request.POST.get("color", role.color).strip()
+        if not re.match(r"^#[0-9a-fA-F]{6}$", color):
+            color = role.color
+
+        role.name = name
+        role.description = request.POST.get("description", "").strip()
+        role.color = color
+        role.require_2fa = request.POST.get("require_2fa") == "on"
+
+        # System roles: is_admin and priority can't be changed
+        if not role.is_system_role:
+            role.is_admin = request.POST.get("is_admin") == "on"
+            role.priority = min(max(int(request.POST.get("priority", role.priority) or role.priority), 0), 100)
+
+        role.save()
+
+        # Update permissions
+        perm_codenames = request.POST.getlist("permissions")
+        if role.is_admin:
+            role.permissions.clear()
+        else:
+            perms = Permission.objects.filter(codename__in=perm_codenames)
+            role.permissions.set(perms)
+
+        messages.success(request, f"Rolle '{name}' wurde aktualisiert.")
+        return redirect("work:roles", org_slug=self.organization.slug)
+
+
+class RoleDeleteView(WorkViewMixin, View):
+    """Delete a role (POST only)."""
+
+    permission_required = "organization.manage_roles"
+
+    def post(self, request, *args, **kwargs):
+        from apps.tenants.models import Role
+
+        role = get_object_or_404(Role, id=kwargs["role_id"], organization=self.organization)
+
+        if role.is_system_role:
+            messages.error(request, "Systemrollen können nicht gelöscht werden.")
+            return redirect("work:roles", org_slug=self.organization.slug)
+
+        member_count = role.memberships.count()
+        if member_count > 0:
+            messages.error(
+                request,
+                f"Die Rolle '{role.name}' ist noch {member_count} Mitglied(ern) zugewiesen. "
+                "Entfernen Sie zuerst die Zuweisungen.",
+            )
+            return redirect("work:roles", org_slug=self.organization.slug)
+
+        role_name = role.name
+        role.delete()
+        messages.success(request, f"Rolle '{role_name}' wurde gelöscht.")
+        return redirect("work:roles", org_slug=self.organization.slug)
 
 
 # =============================================================================
@@ -830,6 +1175,24 @@ class ProfileView(WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = None
+
+        user = self.request.user
+        tfa_service = TwoFactorService()
+
+        # Security quick-status
+        is_2fa = tfa_service.is_2fa_enabled(user)
+        sessions_count = SessionService.get_user_sessions(user).count()
+        score = 1  # base: has account
+        if is_2fa:
+            score += 1
+        if user.email_verified:
+            score += 1
+        # max 3
+        context["security_score"] = score
+        context["security_max"] = 3
+        context["is_2fa_enabled"] = is_2fa
+        context["sessions_count"] = sessions_count
+
         return context
 
     def post(self, request, *args, **kwargs):
@@ -840,12 +1203,35 @@ class ProfileView(WorkViewMixin, TemplateView):
         if action == "update_profile":
             first_name = request.POST.get("first_name", "").strip()
             last_name = request.POST.get("last_name", "").strip()
+            phone = request.POST.get("phone", "").strip()
 
             user.first_name = first_name
             user.last_name = last_name
-            user.save()
+            user.phone = phone
 
+            # Handle avatar upload
+            if "avatar" in request.FILES:
+                avatar_file = request.FILES["avatar"]
+                # Validate file type
+                allowed_types = ["image/jpeg", "image/png", "image/webp"]
+                if avatar_file.content_type in allowed_types and avatar_file.size <= 5 * 1024 * 1024:
+                    # Delete old avatar if exists
+                    if user.avatar:
+                        user.avatar.delete(save=False)
+                    user.avatar = avatar_file
+                else:
+                    messages.error(request, "Bild muss JPG, PNG oder WebP sein und max. 5 MB groß.")
+                    return redirect("work:profile", org_slug=self.organization.slug)
+
+            user.save()
             messages.success(request, "Profil aktualisiert.")
+
+        elif action == "remove_avatar":
+            if user.avatar:
+                user.avatar.delete(save=False)
+                user.avatar = None
+                user.save()
+                messages.success(request, "Profilbild entfernt.")
 
         return redirect("work:profile", org_slug=self.organization.slug)
 
@@ -1127,6 +1513,12 @@ class CouncilPartyListView(WorkViewMixin, TemplateView):
         context["active_nav"] = "organization"
         context["active_tab"] = "parties"
 
+        # Check if user can manage faction settings
+        from apps.common.permissions import PermissionChecker
+
+        checker = PermissionChecker(self.membership)
+        context["can_manage_faction"] = checker.has_permission("faction.manage")
+
         from apps.tenants.models import CouncilParty
 
         parties = CouncilParty.objects.filter(organization=self.organization).order_by("coalition_order", "name")
@@ -1198,6 +1590,589 @@ class CouncilPartyCreateView(WorkViewMixin, TemplateView):
         return redirect("work:council_parties", org_slug=self.organization.slug)
 
 
+# =============================================================================
+# PROFILE: NOTIFICATIONS TAB
+# =============================================================================
+
+
+class ProfileNotificationsView(WorkViewMixin, TemplateView):
+    """Notification preferences within profile tabs."""
+
+    template_name = "work/profile/notifications.html"
+    permission_required = "dashboard.view"
+
+    # Notification type categories for grouping
+    NOTIFICATION_CATEGORIES = {
+        "meetings": ["meeting_reminder", "meeting_updated", "meeting_cancelled"],
+        "tasks": ["task_assigned", "task_due_soon", "task_completed", "task_comment"],
+        "motions": ["motion_shared", "motion_comment", "motion_status"],
+        "faction": ["faction_reminder", "faction_updated"],
+        "organization": ["member_joined", "role_changed"],
+        "support": [
+            "support_created",
+            "support_reply",
+            "support_status",
+            "support_resolved",
+            "support_escalated",
+        ],
+        "system": ["change_request_new", "change_request_decided", "absence_deputy", "system", "announcement"],
+    }
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = None
+        context["active_tab"] = "notifications"
+
+        from apps.work.notifications.models import NotificationPreference, NotificationType
+
+        prefs, _ = NotificationPreference.objects.get_or_create(membership=self.membership)
+        context["preferences"] = prefs
+
+        # Build categorized notification types
+        type_lookup = dict(NotificationType.choices)
+        categorized = []
+        for category_name, type_values in self.NOTIFICATION_CATEGORIES.items():
+            items = []
+            for val in type_values:
+                if val in type_lookup:
+                    items.append(
+                        {
+                            "value": val,
+                            "label": type_lookup[val],
+                            "in_app_enabled": prefs.is_type_enabled(val, "in_app"),
+                            "email_enabled": prefs.is_type_enabled(val, "email"),
+                            "category": category_name,
+                        }
+                    )
+            if items:
+                categorized.extend(items)
+
+        context["notification_types"] = categorized
+
+        return context
+
+    def post(self, request, *args, **kwargs):
+        """Update notification preferences."""
+        from apps.work.notifications.models import NotificationPreference, NotificationType
+
+        prefs, _ = NotificationPreference.objects.get_or_create(membership=self.membership)
+
+        prefs.email_enabled = request.POST.get("email_enabled") == "on"
+        prefs.email_digest = request.POST.get("email_digest", "instant")
+
+        prefs.quiet_hours_enabled = request.POST.get("quiet_hours_enabled") == "on"
+        if prefs.quiet_hours_enabled:
+            start = request.POST.get("quiet_hours_start")
+            end = request.POST.get("quiet_hours_end")
+            if start:
+                prefs.quiet_hours_start = start
+            if end:
+                prefs.quiet_hours_end = end
+
+        type_settings = {}
+        for ntype, _ in NotificationType.choices:
+            type_settings[ntype] = {
+                "in_app": request.POST.get(f"type_{ntype}_in_app") == "on",
+                "email": request.POST.get(f"type_{ntype}_email") == "on",
+            }
+        prefs.type_settings = type_settings
+        prefs.save()
+
+        messages.success(request, "Benachrichtigungseinstellungen gespeichert.")
+        return redirect("work:profile_notifications", org_slug=self.organization.slug)
+
+
+# =============================================================================
+# PROFILE: ABSENCE TAB
+# =============================================================================
+
+
+class ProfileAbsenceView(WorkViewMixin, TemplateView):
+    """Absence management within profile tabs."""
+
+    template_name = "work/profile/absence.html"
+    permission_required = "dashboard.view"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = None
+        context["active_tab"] = "absence"
+
+        from apps.tenants.models import Membership
+
+        from .models import MemberAbsence
+
+        today = timezone.now().date()
+
+        # My absences
+        my_absences = MemberAbsence.objects.filter(
+            membership=self.membership,
+            organization=self.organization,
+        )
+
+        current = my_absences.filter(
+            is_active=True,
+            start_date__lte=today,
+            end_date__gte=today,
+        ).first()
+
+        active_absences = (
+            my_absences.filter(is_active=True, end_date__gte=today)
+            .select_related("deputy__user")
+            .order_by("start_date")
+        )
+
+        past_absences = (
+            my_absences.filter(end_date__lt=today)
+            .select_related("deputy__user")
+            .order_by("-start_date")[:10]
+        )
+
+        # Where I'm deputy
+        deputy_for = (
+            MemberAbsence.objects.filter(
+                deputy=self.membership,
+                organization=self.organization,
+                is_active=True,
+                end_date__gte=today,
+            )
+            .select_related("membership__user")
+            .order_by("start_date")
+        )
+
+        # Available deputies (other active members)
+        available_deputies = (
+            Membership.objects.filter(
+                organization=self.organization,
+                is_active=True,
+            )
+            .exclude(id=self.membership.id)
+            .select_related("user")
+            .order_by("user__first_name", "user__last_name")
+        )
+
+        context["current_absence"] = current
+        context["active_absences"] = active_absences
+        context["past_absences"] = past_absences
+        context["deputy_for"] = deputy_for
+        context["available_deputies"] = available_deputies
+
+        return context
+
+    def post(self, request, *args, **kwargs):
+        """Handle absence actions."""
+        action = request.POST.get("action")
+
+        if action == "create_absence":
+            return self._create_absence(request)
+        elif action == "cancel_absence":
+            return self._cancel_absence(request)
+
+        return redirect("work:profile_absence", org_slug=self.organization.slug)
+
+    def _create_absence(self, request):
+        from datetime import datetime
+
+        from apps.tenants.models import Membership
+
+        from .models import MemberAbsence
+
+        start_date = request.POST.get("start_date")
+        end_date = request.POST.get("end_date")
+        reason = request.POST.get("reason", "").strip()
+        deputy_id = request.POST.get("deputy_id")
+        auto_decline = request.POST.get("auto_decline_meetings") == "on"
+        notify_dep = request.POST.get("notify_deputy") == "on"
+
+        if not start_date or not end_date:
+            messages.error(request, "Von- und Bis-Datum sind erforderlich.")
+            return redirect("work:profile_absence", org_slug=self.organization.slug)
+
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        except ValueError:
+            messages.error(request, "Ungültiges Datumsformat.")
+            return redirect("work:profile_absence", org_slug=self.organization.slug)
+
+        if end < start:
+            messages.error(request, "Das Enddatum muss nach dem Startdatum liegen.")
+            return redirect("work:profile_absence", org_slug=self.organization.slug)
+
+        deputy = None
+        if deputy_id:
+            deputy = Membership.objects.filter(
+                id=deputy_id,
+                organization=self.organization,
+                is_active=True,
+            ).first()
+
+        absence = MemberAbsence.objects.create(
+            organization=self.organization,
+            membership=self.membership,
+            start_date=start,
+            end_date=end,
+            reason=reason,
+            deputy=deputy,
+            auto_decline_meetings=auto_decline,
+            notify_deputy=notify_dep,
+        )
+
+        # Auto-decline faction meetings in the absence period
+        if auto_decline:
+            self._auto_decline_meetings(start, end)
+
+        # Notify deputy
+        if deputy and notify_dep:
+            from apps.work.notifications.models import NotificationType
+            from apps.work.notifications.services import NotificationHub
+
+            user_name = request.user.get_full_name() or request.user.email
+            NotificationHub.send(
+                recipient=deputy,
+                notification_type=NotificationType.ABSENCE_DEPUTY,
+                title="Stellvertretung zugewiesen",
+                message=f"{user_name} hat Sie als Stellvertreter eingetragen ({start.strftime('%d.%m.')} – {end.strftime('%d.%m.%Y')}).",
+                link=f"/work/{self.organization.slug}/profile/absence/",
+                actor=self.membership,
+            )
+
+        messages.success(request, "Abwesenheit eingetragen.")
+        return redirect("work:profile_absence", org_slug=self.organization.slug)
+
+    def _auto_decline_meetings(self, start_date, end_date):
+        """Set FactionAttendance to excused for meetings in the absence period."""
+        try:
+            from apps.work.faction.models import FactionAttendance, FactionMeeting
+
+            meetings = FactionMeeting.objects.filter(
+                organization=self.organization,
+                date__range=[start_date, end_date],
+                status__in=["draft", "invited", "scheduled"],
+            )
+
+            for meeting in meetings:
+                FactionAttendance.objects.update_or_create(
+                    meeting=meeting,
+                    membership=self.membership,
+                    defaults={"status": "excused"},
+                )
+        except Exception as e:
+            logger.error(f"Failed to auto-decline meetings: {e}")
+
+    def _cancel_absence(self, request):
+        from .models import MemberAbsence
+
+        absence_id = request.POST.get("absence_id")
+        absence = get_object_or_404(
+            MemberAbsence,
+            id=absence_id,
+            membership=self.membership,
+            organization=self.organization,
+        )
+        absence.is_active = False
+        absence.save()
+        messages.success(request, "Abwesenheit storniert.")
+        return redirect("work:profile_absence", org_slug=self.organization.slug)
+
+
+# =============================================================================
+# PROFILE: CHANGE REQUESTS TAB
+# =============================================================================
+
+
+class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
+    """Change requests within profile tabs."""
+
+    template_name = "work/profile/change_requests.html"
+    permission_required = "dashboard.view"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = None
+        context["active_tab"] = "requests"
+
+        from apps.common.permissions import PermissionChecker
+        from apps.tenants.models import Permission, Role
+
+        from .models import MemberChangeRequest
+
+        # Permission check for review capability
+        checker = PermissionChecker(self.membership)
+        can_review = (
+            checker.has_permission("members.edit")
+            or checker.has_permission("organization.manage_roles")
+            or checker.is_admin()
+        )
+        context["can_review"] = can_review
+
+        # My requests
+        context["my_requests"] = (
+            MemberChangeRequest.objects.filter(
+                requester=self.membership,
+                organization=self.organization,
+            )
+            .select_related("decided_by__user")
+            .order_by("-created_at")[:20]
+        )
+
+        # Pending requests (for reviewers)
+        if can_review:
+            context["pending_requests"] = (
+                MemberChangeRequest.objects.filter(
+                    organization=self.organization,
+                    status="pending",
+                )
+                .exclude(requester=self.membership)
+                .select_related("requester__user")
+                .order_by("created_at")
+            )
+        else:
+            context["pending_requests"] = []
+
+        # Available roles
+        context["available_roles"] = Role.objects.filter(organization=self.organization).order_by("name")
+        context["current_role_ids"] = list(self.membership.roles.values_list("id", flat=True))
+
+        # Available committees
+        body = self.organization.body
+        if body:
+            from django.db.models import Q
+
+            from insight_core.models import OParlOrganization
+
+            today = timezone.now().date()
+            context["available_committees"] = OParlOrganization.objects.filter(
+                body=body,
+            ).filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).order_by("name")
+            context["current_committee_ids"] = list(self.membership.oparl_committees.values_list("id", flat=True))
+        else:
+            context["available_committees"] = []
+            context["current_committee_ids"] = []
+
+        # Available permissions
+        context["available_permissions"] = Permission.objects.all().order_by("category", "codename")
+
+        return context
+
+    def post(self, request, *args, **kwargs):
+        """Handle change request actions."""
+        action = request.POST.get("action")
+
+        if action == "submit_request":
+            return self._submit_request(request)
+        elif action == "withdraw_request":
+            return self._withdraw_request(request)
+        elif action == "approve_request":
+            return self._approve_request(request)
+        elif action == "reject_request":
+            return self._reject_request(request)
+
+        return redirect("work:profile_requests", org_slug=self.organization.slug)
+
+    def _submit_request(self, request):
+        from .models import MemberChangeRequest
+
+        request_type = request.POST.get("request_type")
+        reason = request.POST.get("reason", "").strip()
+
+        if not request_type or not reason:
+            messages.error(request, "Antragstyp und Begründung sind erforderlich.")
+            return redirect("work:profile_requests", org_slug=self.organization.slug)
+
+        # Build request_data based on type
+        request_data = {}
+        if request_type == "role_change":
+            request_data["requested_roles"] = request.POST.getlist("requested_roles")
+        elif request_type == "committee_change":
+            request_data["requested_committees"] = request.POST.getlist("requested_committees")
+        elif request_type == "permission_request":
+            request_data["requested_permissions"] = request.POST.getlist("requested_permissions")
+        else:
+            messages.error(request, "Ungültiger Antragstyp.")
+            return redirect("work:profile_requests", org_slug=self.organization.slug)
+
+        change_request = MemberChangeRequest.objects.create(
+            organization=self.organization,
+            requester=self.membership,
+            request_type=request_type,
+            request_data=request_data,
+            reason=reason,
+        )
+
+        # Notify admins
+        from apps.work.notifications.models import NotificationType
+        from apps.work.notifications.services import NotificationHub
+
+        admins = self.organization.memberships.filter(
+            is_active=True,
+            roles__is_admin=True,
+        ).distinct().exclude(id=self.membership.id)
+
+        user_name = request.user.get_full_name() or request.user.email
+        NotificationHub.send_bulk(
+            recipients=list(admins),
+            notification_type=NotificationType.CHANGE_REQUEST_NEW,
+            title="Neuer Änderungsantrag",
+            message=f"{user_name} hat einen {change_request.get_request_type_display()} eingereicht.",
+            link=f"/work/{self.organization.slug}/profile/requests/",
+            actor=self.membership,
+        )
+
+        messages.success(request, "Antrag eingereicht.")
+        return redirect("work:profile_requests", org_slug=self.organization.slug)
+
+    def _withdraw_request(self, request):
+        from .models import MemberChangeRequest
+
+        request_id = request.POST.get("request_id")
+        change_request = get_object_or_404(
+            MemberChangeRequest,
+            id=request_id,
+            requester=self.membership,
+            organization=self.organization,
+            status="pending",
+        )
+        change_request.status = "withdrawn"
+        change_request.save()
+        messages.success(request, "Antrag zurückgezogen.")
+        return redirect("work:profile_requests", org_slug=self.organization.slug)
+
+    def _approve_request(self, request):
+        from apps.common.permissions import PermissionChecker
+
+        from .models import MemberChangeRequest
+
+        checker = PermissionChecker(self.membership)
+        if not (
+            checker.has_permission("members.edit")
+            or checker.has_permission("organization.manage_roles")
+            or checker.is_admin()
+        ):
+            messages.error(request, "Keine Berechtigung.")
+            return redirect("work:profile_requests", org_slug=self.organization.slug)
+
+        request_id = request.POST.get("request_id")
+        change_request = get_object_or_404(
+            MemberChangeRequest,
+            id=request_id,
+            organization=self.organization,
+            status="pending",
+        )
+
+        # Apply the change
+        self._apply_change(change_request)
+
+        change_request.status = "approved"
+        change_request.decided_by = self.membership
+        change_request.decided_at = timezone.now()
+        change_request.save()
+
+        # Notify requester
+        from apps.work.notifications.models import NotificationType
+        from apps.work.notifications.services import NotificationHub
+
+        decider_name = request.user.get_full_name() or request.user.email
+        NotificationHub.send(
+            recipient=change_request.requester,
+            notification_type=NotificationType.CHANGE_REQUEST_DECIDED,
+            title="Antrag genehmigt",
+            message=f"Ihr {change_request.get_request_type_display()} wurde von {decider_name} genehmigt.",
+            link=f"/work/{self.organization.slug}/profile/requests/",
+            actor=self.membership,
+        )
+
+        messages.success(request, "Antrag genehmigt und Änderung angewendet.")
+        return redirect("work:profile_requests", org_slug=self.organization.slug)
+
+    def _apply_change(self, change_request):
+        """Apply the actual change when a request is approved."""
+        requester = change_request.requester
+        data = change_request.request_data
+
+        if change_request.request_type == "role_change":
+            role_ids = data.get("requested_roles", [])
+            if role_ids:
+                from apps.tenants.models import Role
+
+                roles = Role.objects.filter(id__in=role_ids, organization=self.organization)
+                requester.roles.set(roles)
+
+        elif change_request.request_type == "committee_change":
+            committee_ids = data.get("requested_committees", [])
+            body = self.organization.body
+            if body:
+                from insight_core.models import OParlOrganization
+
+                committees = OParlOrganization.objects.filter(id__in=committee_ids, body=body)
+                requester.oparl_committees.set(committees)
+
+        elif change_request.request_type == "permission_request":
+            perm_codes = data.get("requested_permissions", [])
+            if perm_codes:
+                from apps.tenants.models import Permission
+
+                perms = Permission.objects.filter(codename__in=perm_codes)
+                for perm in perms:
+                    requester.individual_permissions.add(perm)
+
+    def _reject_request(self, request):
+        from apps.common.permissions import PermissionChecker
+
+        from .models import MemberChangeRequest
+
+        checker = PermissionChecker(self.membership)
+        if not (
+            checker.has_permission("members.edit")
+            or checker.has_permission("organization.manage_roles")
+            or checker.is_admin()
+        ):
+            messages.error(request, "Keine Berechtigung.")
+            return redirect("work:profile_requests", org_slug=self.organization.slug)
+
+        request_id = request.POST.get("request_id")
+        comment = request.POST.get("decision_comment", "").strip()
+
+        change_request = get_object_or_404(
+            MemberChangeRequest,
+            id=request_id,
+            organization=self.organization,
+            status="pending",
+        )
+
+        change_request.status = "rejected"
+        change_request.decided_by = self.membership
+        change_request.decided_at = timezone.now()
+        change_request.decision_comment = comment
+        change_request.save()
+
+        # Notify requester
+        from apps.work.notifications.models import NotificationType
+        from apps.work.notifications.services import NotificationHub
+
+        decider_name = request.user.get_full_name() or request.user.email
+        msg = f"Ihr {change_request.get_request_type_display()} wurde von {decider_name} abgelehnt."
+        if comment:
+            msg += f" Kommentar: {comment}"
+
+        NotificationHub.send(
+            recipient=change_request.requester,
+            notification_type=NotificationType.CHANGE_REQUEST_DECIDED,
+            title="Antrag abgelehnt",
+            message=msg,
+            link=f"/work/{self.organization.slug}/profile/requests/",
+            actor=self.membership,
+        )
+
+        messages.success(request, "Antrag abgelehnt.")
+        return redirect("work:profile_requests", org_slug=self.organization.slug)
+
+
+# =============================================================================
+# COUNCIL PARTY MANAGEMENT
+# =============================================================================
+
+
 class CouncilPartyEditView(WorkViewMixin, TemplateView):
     """Edit an existing council party."""
 
@@ -1260,3 +2235,390 @@ class CouncilPartyEditView(WorkViewMixin, TemplateView):
 
         messages.success(request, f"Fraktion '{name}' wurde aktualisiert.")
         return redirect("work:council_parties", org_slug=self.organization.slug)
+
+
+# =============================================================================
+# PROFILE: DATA & PRIVACY (DSGVO)
+# =============================================================================
+
+
+class ProfileDataPrivacyView(WorkViewMixin, TemplateView):
+    """DSGVO data export, activity log, and account deletion."""
+
+    template_name = "work/profile/data_privacy.html"
+    permission_required = "dashboard.view"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = None
+        context["active_tab"] = "data"
+
+        user = self.request.user
+
+        # Security events (last logins, password changes)
+        from apps.accounts.models import UserSession
+
+        context["recent_sessions"] = (
+            UserSession.objects.filter(user=user).order_by("-created_at")[:10]
+        )
+
+        context["is_owner"] = self.organization.owner == user
+
+        # Export history
+        from .models import DataExport
+
+        context["exports"] = DataExport.objects.filter(
+            membership=self.membership,
+            organization=self.organization,
+        ).order_by("-created_at")[:10]
+
+        context["has_active_export"] = DataExport.objects.filter(
+            membership=self.membership,
+            organization=self.organization,
+            status__in=["pending", "processing"],
+        ).exists()
+
+        return context
+
+    def post(self, request, *args, **kwargs):
+        action = request.POST.get("action")
+
+        if action == "export_data":
+            return self._export_data(request)
+        elif action == "request_deletion":
+            return self._request_deletion(request)
+
+        return redirect("work:profile_data", org_slug=self.organization.slug)
+
+    def _export_data(self, request):
+        """Start async DSGVO data export."""
+        from apps.work.background_tasks import generate_dsgvo_export_task
+
+        from .models import DataExport
+
+        # Prevent duplicate exports
+        if DataExport.objects.filter(
+            membership=self.membership,
+            organization=self.organization,
+            status__in=["pending", "processing"],
+        ).exists():
+            messages.info(request, "Es läuft bereits ein Export. Bitte warten Sie, bis dieser abgeschlossen ist.")
+            return redirect("work:profile_data", org_slug=self.organization.slug)
+
+        export_format = request.POST.get("format", "json")
+        if export_format not in ("json", "pdf"):
+            export_format = "json"
+
+        export = DataExport.objects.create(
+            organization=self.organization,
+            membership=self.membership,
+            export_format=export_format,
+        )
+
+        generate_dsgvo_export_task.enqueue(str(export.id))
+
+        messages.success(request, "Ihr Datenexport wird erstellt. Sie können die Datei in Kürze herunterladen.")
+        return redirect("work:profile_data", org_slug=self.organization.slug)
+
+    def _request_deletion(self, request):
+        """Handle account deletion request."""
+        user = request.user
+
+        if self.organization.owner == user:
+            messages.error(
+                request,
+                "Als Eigentümer müssen Sie zuerst die Eigentümerschaft übertragen, "
+                "bevor Sie Ihr Konto löschen können.",
+            )
+            return redirect("work:profile_data", org_slug=self.organization.slug)
+
+        password = request.POST.get("password", "")
+        if not user.check_password(password):
+            messages.error(request, "Falsches Passwort.")
+            return redirect("work:profile_data", org_slug=self.organization.slug)
+
+        # Deactivate membership (soft delete)
+        self.membership.is_active = False
+        self.membership.save()
+
+        messages.success(
+            request,
+            "Ihre Mitgliedschaft wurde deaktiviert. "
+            "Kontaktieren Sie den Support für eine vollständige Kontolöschung.",
+        )
+        return redirect("work:dashboard", org_slug=self.organization.slug)
+
+
+class DataExportStatusView(WorkViewMixin, View):
+    """JSON API for polling export status."""
+
+    permission_required = "dashboard.view"
+
+    def get(self, request, *args, **kwargs):
+        from .models import DataExport
+
+        export = get_object_or_404(
+            DataExport,
+            id=kwargs["export_id"],
+            membership=self.membership,
+            organization=self.organization,
+        )
+
+        download_url = (
+            reverse(
+                "work:export_download",
+                kwargs={"org_slug": self.organization.slug, "export_id": export.id},
+            )
+            if export.is_ready
+            else None
+        )
+
+        return JsonResponse({
+            "id": str(export.id),
+            "status": export.status,
+            "format": export.export_format,
+            "file_size": export.file_size,
+            "file_size_human": export.file_size_human,
+            "is_ready": export.is_ready,
+            "is_in_progress": export.is_in_progress,
+            "download_url": download_url,
+            "error_message": export.error_message,
+            "created_at": export.created_at.isoformat() if export.created_at else None,
+            "completed_at": export.completed_at.isoformat() if export.completed_at else None,
+        })
+
+
+class DataExportDownloadView(WorkViewMixin, View):
+    """Serve export file for download."""
+
+    permission_required = "dashboard.view"
+
+    def get(self, request, *args, **kwargs):
+        from .models import DataExport
+
+        export = get_object_or_404(
+            DataExport,
+            id=kwargs["export_id"],
+            membership=self.membership,
+            organization=self.organization,
+            status="completed",
+        )
+
+        file_path = export.get_absolute_path()
+        if not file_path or not file_path.exists():
+            raise Http404("Exportdatei nicht gefunden.")
+
+        content_type = "application/pdf" if export.export_format == "pdf" else "application/json; charset=utf-8"
+        filename = f'mandari-datenexport-{export.created_at.strftime("%Y%m%d")}.{export.export_format}'
+
+        response = HttpResponse(file_path.read_bytes(), content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class DataExportDeleteView(WorkViewMixin, View):
+    """Delete an export and its file."""
+
+    permission_required = "dashboard.view"
+
+    def post(self, request, *args, **kwargs):
+        from .models import DataExport
+
+        export = get_object_or_404(
+            DataExport,
+            id=kwargs["export_id"],
+            membership=self.membership,
+            organization=self.organization,
+        )
+
+        export.delete_file()
+        export.delete()
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"ok": True})
+
+        messages.success(request, "Export wurde gelöscht.")
+        return redirect("work:profile_data", org_slug=self.organization.slug)
+
+
+# =============================================================================
+# PROFILE: ACTIVITY OVERVIEW
+# =============================================================================
+
+
+class ProfileActivityView(WorkViewMixin, TemplateView):
+    """Activity overview with statistics and timeline."""
+
+    template_name = "work/profile/activity.html"
+    permission_required = "dashboard.view"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = None
+        context["active_tab"] = "activity"
+
+        membership = self.membership
+        org = self.organization
+
+        # --- Statistics ---
+        from django.db.models import Q
+
+        from apps.work.faction.models import FactionAttendance, FactionMeeting
+        from apps.work.motions.models import Motion, MotionComment
+        from apps.work.tasks.models import Task
+
+        # Tasks
+        my_tasks = Task.objects.filter(organization=org).filter(
+            Q(created_by=membership) | Q(assigned_to=membership)
+        )
+        context["tasks_total"] = my_tasks.count()
+        context["tasks_completed"] = my_tasks.filter(is_completed=True).count()
+        context["tasks_open"] = my_tasks.filter(is_completed=False).count()
+
+        # Motions
+        context["motions_authored"] = Motion.objects.filter(
+            organization=org, author=membership
+        ).count()
+
+        # Motion comments
+        context["motion_comments"] = MotionComment.objects.filter(
+            motion__organization=org, author=membership
+        ).count()
+
+        # Faction meetings
+        attendance_qs = FactionAttendance.objects.filter(
+            membership=membership, meeting__organization=org
+        )
+        context["meetings_present"] = attendance_qs.filter(status="present").count()
+        context["meetings_excused"] = attendance_qs.filter(status="excused").count()
+        context["meetings_absent"] = attendance_qs.filter(status="absent").count()
+        context["meetings_total"] = FactionMeeting.objects.filter(
+            organization=org, status="completed"
+        ).count()
+
+        # Meeting preparations
+        from apps.work.meetings.models import AgendaItemNote, MeetingPreparation
+
+        context["preparations"] = MeetingPreparation.objects.filter(
+            organization=org, membership=membership
+        ).count()
+
+        context["agenda_notes"] = AgendaItemNote.objects.filter(
+            organization=org, author=membership
+        ).count()
+
+        # --- Timeline (last 20 activities) ---
+        timeline = []
+
+        # Recent tasks (created or completed)
+        recent_tasks = (
+            my_tasks.order_by("-updated_at")[:5]
+        )
+        for t in recent_tasks:
+            timeline.append({
+                "date": t.updated_at,
+                "icon": "check-square",
+                "color": "green" if t.is_completed else "blue",
+                "title": f"Aufgabe: {t.title}",
+                "detail": "Erledigt" if t.is_completed else f"Status: {t.get_status_display()}",
+            })
+
+        # Recent motions
+        recent_motions = Motion.objects.filter(
+            organization=org, author=membership
+        ).order_by("-updated_at")[:5]
+        for m in recent_motions:
+            timeline.append({
+                "date": m.updated_at,
+                "icon": "file-text",
+                "color": "indigo",
+                "title": f"Antrag: {m.title}",
+                "detail": m.get_status_display(),
+            })
+
+        # Recent attendance
+        recent_attendance = (
+            FactionAttendance.objects.filter(
+                membership=membership, meeting__organization=org
+            )
+            .select_related("meeting")
+            .order_by("-meeting__start")[:5]
+        )
+        for a in recent_attendance:
+            timeline.append({
+                "date": a.meeting.start if a.meeting.start else a.meeting.created_at,
+                "icon": "users",
+                "color": "purple",
+                "title": f"Sitzung: {a.meeting.title}",
+                "detail": a.get_status_display(),
+            })
+
+        # Recent meeting preparations
+        recent_preps = (
+            MeetingPreparation.objects.filter(
+                organization=org, membership=membership
+            )
+            .order_by("-updated_at")[:5]
+        )
+        for p in recent_preps:
+            timeline.append({
+                "date": p.updated_at,
+                "icon": "clipboard-check",
+                "color": "amber",
+                "title": "Sitzungsvorbereitung",
+                "detail": f"Aktualisiert am {p.updated_at.strftime('%d.%m.%Y')}",
+            })
+
+        # Sort by date descending, take top 20
+        timeline.sort(key=lambda x: x["date"] if x["date"] else timezone.now(), reverse=True)
+        context["timeline"] = timeline[:20]
+
+        return context
+
+
+# =============================================================================
+# PROFILE: VISIBILITY & CONTACT
+# =============================================================================
+
+
+class ProfileVisibilityView(WorkViewMixin, TemplateView):
+    """Visibility settings, bio, and contact preferences."""
+
+    template_name = "work/profile/visibility.html"
+    permission_required = "dashboard.view"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = None
+        context["active_tab"] = "visibility"
+
+        # Load profile settings from User.settings JSON
+        user_settings = self.request.user.settings or {}
+        profile = user_settings.get("profile", {})
+
+        context["bio"] = profile.get("bio", "")
+        context["show_email"] = profile.get("show_email", True)
+        context["show_phone"] = profile.get("show_phone", False)
+        context["preferred_contact"] = profile.get("preferred_contact", "email")
+        context["contact_signal"] = profile.get("contact_signal", "")
+        context["oparl_person"] = self.membership.oparl_person
+
+        return context
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        settings = user.settings or {}
+        profile = settings.get("profile", {})
+
+        profile["bio"] = request.POST.get("bio", "").strip()[:500]
+        profile["show_email"] = request.POST.get("show_email") == "on"
+        profile["show_phone"] = request.POST.get("show_phone") == "on"
+        profile["preferred_contact"] = request.POST.get("preferred_contact", "email")
+        profile["contact_signal"] = request.POST.get("contact_signal", "").strip()[:100]
+
+        settings["profile"] = profile
+        user.settings = settings
+        user.save(update_fields=["settings"])
+
+        messages.success(request, "Sichtbarkeitseinstellungen gespeichert.")
+        return redirect("work:profile_visibility", org_slug=self.organization.slug)

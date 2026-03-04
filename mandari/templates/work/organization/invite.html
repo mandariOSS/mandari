@@ -17,7 +17,7 @@
 
 {% block work_content %}
 <div class="max-w-2xl">
-    <form method="post" class="space-y-6">
+    <form method="post" class="space-y-6 fade-up">
         {% csrf_token %}
 
         <!-- Email -->
@@ -26,7 +26,7 @@
 
             <div>
                 <input type="email" name="email" required autofocus
-                       class="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                       class="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
                        placeholder="email@beispiel.de">
                 <p class="mt-2 text-sm text-gray-500">
                     Die eingeladene Person erhält eine E-Mail mit einem Link zur Registrierung oder Anmeldung.
@@ -73,7 +73,7 @@
 
             <div>
                 <textarea name="message" rows="3"
-                          class="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          class="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
                           placeholder="Optionale Nachricht, die in der Einladungs-E-Mail erscheint..."></textarea>
                 <p class="mt-2 text-sm text-gray-500">
                     Diese Nachricht wird in der Einladungs-E-Mail an das neue Mitglied angezeigt.
@@ -103,7 +103,7 @@
                 Abbrechen
             </a>
             <button type="submit"
-                    class="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                    class="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                 <i data-lucide="send" class="w-4 h-4"></i>
                 Einladung senden
             </button>

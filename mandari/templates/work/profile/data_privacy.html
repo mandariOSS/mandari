@@ -1,0 +1,368 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Daten & Privatsphäre{% endblock %}
+
+{% block header_title %}Mein Profil{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Persönliche Einstellungen und Kontoinformationen</p>
+{% endblock %}
+
+{% block work_content %}
+{% include "work/profile/_tabs.html" with active_tab="data" %}
+
+<div class="space-y-6">
+    <!-- DSGVO Data Export -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up"
+         x-data="dataExport()">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="download" class="w-4 h-4 text-gray-400"></i>
+                Datenexport (DSGVO Art. 15/20)
+            </h4>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Laden Sie eine Kopie aller Ihrer gespeicherten Daten herunter
+            </p>
+        </div>
+        <div class="px-6 py-4">
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Ihr Datenexport enthält alle gespeicherten personenbezogenen Daten: Kontodaten,
+                Mitgliedschaft, Sicherheitsinformationen, Aufgaben, Anträge, Sitzungsdaten,
+                Abwesenheiten, Änderungsanträge, Benachrichtigungen und Support-Tickets.
+                Die Datei wird im JSON- oder PDF-Format bereitgestellt.
+            </p>
+
+            <!-- Export Form -->
+            <div class="flex flex-wrap gap-3 mb-6">
+                <form method="post" class="flex items-center gap-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="export_data">
+                    <input type="hidden" name="format" :value="format">
+                    <div class="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <button type="button" @click="format = 'json'"
+                                :class="format === 'json' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400'"
+                                class="px-3 py-2 text-sm font-medium transition-colors">
+                            JSON
+                        </button>
+                        <button type="button" @click="format = 'pdf'"
+                                :class="format === 'pdf' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400'"
+                                class="px-3 py-2 text-sm font-medium transition-colors border-l border-gray-200 dark:border-gray-700">
+                            PDF
+                        </button>
+                    </div>
+                    <button type="submit"
+                            :disabled="hasActiveExport"
+                            :class="hasActiveExport ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-700'"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg shadow-sm transition-colors">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        Export starten
+                    </button>
+                    <span x-show="hasActiveExport" class="text-xs text-gray-500 dark:text-gray-400">
+                        Ein Export wird bereits erstellt...
+                    </span>
+                </form>
+            </div>
+
+            <!-- Export List -->
+            <template x-if="exports.length > 0">
+                <div>
+                    <h5 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Bisherige Exporte</h5>
+                    <div class="space-y-2">
+                        <template x-for="exp in exports" :key="exp.id">
+                            <div class="flex items-center justify-between p-3 rounded-lg border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                                <div class="flex items-center gap-3">
+                                    <!-- Status Icon -->
+                                    <template x-if="exp.status === 'completed'">
+                                        <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                                            <i data-lucide="check-circle" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
+                                        </div>
+                                    </template>
+                                    <template x-if="exp.status === 'pending' || exp.status === 'processing'">
+                                        <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                                            <svg class="w-4 h-4 text-blue-600 dark:text-blue-400 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                            </svg>
+                                        </div>
+                                    </template>
+                                    <template x-if="exp.status === 'failed'">
+                                        <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                                            <i data-lucide="alert-circle" class="w-4 h-4 text-red-600 dark:text-red-400"></i>
+                                        </div>
+                                    </template>
+
+                                    <!-- Info -->
+                                    <div>
+                                        <template x-if="exp.status === 'completed'">
+                                            <p class="text-sm text-gray-900 dark:text-white">
+                                                <span x-text="exp.format.toUpperCase()"></span>-Export
+                                                <span class="text-gray-400 dark:text-gray-500">&middot;</span>
+                                                <span class="text-gray-500 dark:text-gray-400" x-text="exp.file_size_human"></span>
+                                            </p>
+                                        </template>
+                                        <template x-if="exp.status === 'pending' || exp.status === 'processing'">
+                                            <p class="text-sm text-blue-700 dark:text-blue-400">Daten werden zusammengefuehrt...</p>
+                                        </template>
+                                        <template x-if="exp.status === 'failed'">
+                                            <p class="text-sm text-red-700 dark:text-red-400">Fehler bei der Erstellung</p>
+                                        </template>
+                                        <p class="text-xs text-gray-400 dark:text-gray-500" x-text="formatDate(exp.created_at)"></p>
+                                    </div>
+                                </div>
+
+                                <!-- Actions -->
+                                <div class="flex items-center gap-2">
+                                    <template x-if="exp.status === 'completed' && exp.download_url">
+                                        <a :href="exp.download_url"
+                                           class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors">
+                                            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                                            Download
+                                        </a>
+                                    </template>
+                                    <template x-if="exp.status === 'completed' || exp.status === 'failed'">
+                                        <button @click="deleteExport(exp.id)"
+                                                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                        </button>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-3">
+                        Die Erstellung dauert in der Regel wenige Sekunden bis maximal 10 Minuten.
+                    </p>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="scroll-text" class="w-4 h-4 text-gray-400"></i>
+                Aktivitätsprotokoll
+            </h4>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Letzte Anmeldungen und Sitzungen
+            </p>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for session in recent_sessions %}
+            <div class="px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="monitor" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-900 dark:text-white">
+                            {{ session.device_info|default:"Unbekanntes Gerät" }}
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            {{ session.ip_address|default:"—" }}
+                            {% if session.location %} · {{ session.location }}{% endif %}
+                        </p>
+                    </div>
+                </div>
+                <div class="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                    {{ session.created_at|date:"d.m.Y H:i" }}
+                </div>
+            </div>
+            {% empty %}
+            <div class="px-6 py-8 text-center text-sm text-gray-400 dark:text-gray-500">
+                Keine Sitzungsdaten vorhanden
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Stored Data Overview -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 100ms">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="database" class="w-4 h-4 text-gray-400"></i>
+                Gespeicherte Daten
+            </h4>
+        </div>
+        <dl class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            <div class="px-6 py-4 flex items-center justify-between">
+                <dt class="text-sm text-gray-500 dark:text-gray-400">E-Mail-Adresse</dt>
+                <dd class="text-sm font-medium text-gray-900 dark:text-white">{{ request.user.email }}</dd>
+            </div>
+            <div class="px-6 py-4 flex items-center justify-between">
+                <dt class="text-sm text-gray-500 dark:text-gray-400">Name</dt>
+                <dd class="text-sm font-medium text-gray-900 dark:text-white">{{ request.user.get_full_name|default:"—" }}</dd>
+            </div>
+            <div class="px-6 py-4 flex items-center justify-between">
+                <dt class="text-sm text-gray-500 dark:text-gray-400">Telefon</dt>
+                <dd class="text-sm font-medium text-gray-900 dark:text-white">{{ request.user.phone|default:"—" }}</dd>
+            </div>
+            <div class="px-6 py-4 flex items-center justify-between">
+                <dt class="text-sm text-gray-500 dark:text-gray-400">Profilbild</dt>
+                <dd class="text-sm font-medium text-gray-900 dark:text-white">{% if request.user.avatar %}Vorhanden{% else %}Keines{% endif %}</dd>
+            </div>
+            <div class="px-6 py-4 flex items-center justify-between">
+                <dt class="text-sm text-gray-500 dark:text-gray-400">Registriert seit</dt>
+                <dd class="text-sm font-medium text-gray-900 dark:text-white">{{ request.user.date_joined|date:"d.m.Y" }}</dd>
+            </div>
+            <div class="px-6 py-4 flex items-center justify-between">
+                <dt class="text-sm text-gray-500 dark:text-gray-400">Mitglied seit</dt>
+                <dd class="text-sm font-medium text-gray-900 dark:text-white">{{ membership.joined_at|date:"d.m.Y" }}</dd>
+            </div>
+        </dl>
+    </div>
+
+    <!-- Account Deletion -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-900/50 fade-up" style="animation-delay: 150ms"
+         x-data="{ showDelete: false }">
+        <div class="px-6 py-4 border-b border-red-200 dark:border-red-900/50">
+            <h4 class="text-[15px] font-bold text-red-700 dark:text-red-400 flex items-center gap-2">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                Gefahrenzone
+            </h4>
+        </div>
+        <div class="px-6 py-4">
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Wenn Sie Ihre Mitgliedschaft in dieser Organisation beenden möchten, können Sie sie hier deaktivieren.
+                {% if is_owner %}
+                <strong class="text-red-600 dark:text-red-400">Als Eigentümer müssen Sie zuerst die Eigentümerschaft übertragen.</strong>
+                {% endif %}
+            </p>
+
+            {% if not is_owner %}
+            <button @click="showDelete = !showDelete"
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors">
+                <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+                Mitgliedschaft deaktivieren
+            </button>
+
+            <div x-show="showDelete" x-cloak x-transition class="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                <p class="text-sm text-red-700 dark:text-red-300 mb-3">
+                    Bitte bestätigen Sie mit Ihrem Passwort. Diese Aktion deaktiviert Ihre Mitgliedschaft.
+                </p>
+                <form method="post" class="flex items-end gap-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="request_deletion">
+                    <div class="flex-1">
+                        <label class="block text-xs font-medium text-red-700 dark:text-red-300 mb-1">Passwort</label>
+                        <input type="password" name="password" required
+                               class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-red-300 dark:border-red-700 rounded-lg focus:ring-2 focus:ring-red-500">
+                    </div>
+                    <button type="submit"
+                            class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">
+                        Bestätigen
+                    </button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function dataExport() {
+    // Placeholder UUID for URL building — will be replaced per export
+    const PLACEHOLDER = '00000000-0000-0000-0000-000000000000';
+    const statusUrlTpl = '{% url "work:export_status" org_slug=organization.slug export_id="00000000-0000-0000-0000-000000000000" %}';
+    const deleteUrlTpl = '{% url "work:export_delete" org_slug=organization.slug export_id="00000000-0000-0000-0000-000000000000" %}';
+    const downloadUrlTpl = '{% url "work:export_download" org_slug=organization.slug export_id="00000000-0000-0000-0000-000000000000" %}';
+
+    return {
+        format: 'json',
+        exports: [
+            {% for exp in exports %}
+            {
+                id: '{{ exp.id }}',
+                status: '{{ exp.status }}',
+                format: '{{ exp.export_format }}',
+                file_size: {{ exp.file_size|default:"null" }},
+                file_size_human: '{{ exp.file_size_human }}',
+                is_ready: {{ exp.is_ready|yesno:"true,false" }},
+                is_in_progress: {{ exp.is_in_progress|yesno:"true,false" }},
+                download_url: {% if exp.is_ready %}'{% url "work:export_download" org_slug=organization.slug export_id=exp.id %}'{% else %}null{% endif %},
+                error_message: '{{ exp.error_message|escapejs }}',
+                created_at: '{{ exp.created_at|date:"c" }}',
+                completed_at: {% if exp.completed_at %}'{{ exp.completed_at|date:"c" }}'{% else %}null{% endif %},
+            },
+            {% endfor %}
+        ],
+        hasActiveExport: {{ has_active_export|yesno:"true,false" }},
+        _pollInterval: null,
+
+        init() {
+            if (this.hasActiveExport) {
+                this.startPolling();
+            }
+        },
+
+        startPolling() {
+            if (this._pollInterval) return;
+            this._pollInterval = setInterval(() => this.pollStatus(), 3000);
+        },
+
+        stopPolling() {
+            if (this._pollInterval) {
+                clearInterval(this._pollInterval);
+                this._pollInterval = null;
+            }
+        },
+
+        destroy() {
+            this.stopPolling();
+        },
+
+        async pollStatus() {
+            let stillActive = false;
+            for (const exp of this.exports) {
+                if (exp.status !== 'pending' && exp.status !== 'processing') continue;
+
+                try {
+                    const url = statusUrlTpl.replace(PLACEHOLDER, exp.id);
+                    const resp = await fetch(url);
+                    if (!resp.ok) continue;
+                    const data = await resp.json();
+                    Object.assign(exp, data);
+                    if (data.is_in_progress) stillActive = true;
+                } catch (e) {
+                    // Ignore fetch errors, retry next cycle
+                }
+            }
+            this.hasActiveExport = stillActive;
+            if (!stillActive) {
+                this.stopPolling();
+                // Re-init lucide icons for newly rendered elements
+                if (window.lucide) lucide.createIcons();
+            }
+        },
+
+        async deleteExport(id) {
+            const url = deleteUrlTpl.replace(PLACEHOLDER, id);
+            try {
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+                if (resp.ok) {
+                    this.exports = this.exports.filter(e => e.id !== id);
+                    this.hasActiveExport = this.exports.some(e => e.status === 'pending' || e.status === 'processing');
+                }
+            } catch (e) {
+                // Fallback: reload page
+                window.location.reload();
+            }
+        },
+
+        formatDate(isoStr) {
+            if (!isoStr) return '';
+            const d = new Date(isoStr);
+            return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        },
+    };
+}
+</script>
+{% endblock %}

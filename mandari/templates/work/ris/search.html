@@ -1,0 +1,195 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Suche{% endblock %}
+
+{% block header_title %}Suche{% endblock %}
+{% block header_subtitle %}
+{% if body %}
+<p class="work-page-subtitle">{{ body.get_display_name }}</p>
+{% endif %}
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Zurück
+</a>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
+    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
+    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Keine Kommune verknüpft</h3>
+</div>
+{% else %}
+
+<!-- Search Input -->
+<div class="fade-up mb-6">
+    <form method="get" class="max-w-2xl">
+        <div class="relative">
+            <i data-lucide="search" class="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+            <input type="text" name="q" value="{{ search_query|default:'' }}"
+                   placeholder="Suche in Vorgängen, Sitzungen, Gremien, Personen..."
+                   autofocus
+                   class="w-full px-5 py-3 pl-12 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            <button type="submit"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+                Suchen
+            </button>
+        </div>
+    </form>
+</div>
+
+{% if search_query %}
+<!-- Results Summary -->
+<div class="fade-up d1 mb-6">
+    <p class="text-gray-600 dark:text-gray-400">
+        {{ total_results }} Ergebnisse für "<span class="font-medium text-gray-900 dark:text-white">{{ search_query }}</span>"
+    </p>
+</div>
+
+{% if total_results > 0 %}
+<div class="fade-up d2 space-y-6">
+
+    <!-- Papers -->
+    {% if results.papers %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                <i data-lucide="file-text" class="w-4 h-4 text-blue-500"></i>
+                Vorgänge ({{ results.papers|length }})
+            </h2>
+            <a href="{% url 'work:ris_papers' org_slug=organization.slug %}?q={{ search_query }}"
+               class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+                Alle anzeigen
+            </a>
+        </div>
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for paper in results.papers %}
+            <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}"
+               class="group flex items-center gap-3 px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <div class="min-w-0 flex-1">
+                    <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{{ paper.name }}</p>
+                    <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {% if paper.reference %}<span class="font-mono bg-gray-50 dark:bg-gray-700/30 px-1.5 py-0.5 rounded">{{ paper.reference }}</span>{% endif %}
+                        {% if paper.date %}<span>{{ paper.date|date:"d.m.Y" }}</span>{% endif %}
+                    </div>
+                </div>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors flex-shrink-0"></i>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Meetings -->
+    {% if results.meetings %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                <i data-lucide="calendar" class="w-4 h-4 text-green-500"></i>
+                Sitzungen ({{ results.meetings|length }})
+            </h2>
+            <a href="{% url 'work:ris_meetings' org_slug=organization.slug %}"
+               class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+                Alle anzeigen
+            </a>
+        </div>
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for meeting in results.meetings %}
+            <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}"
+               class="group flex items-center gap-3 px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <div class="min-w-0 flex-1">
+                    <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{{ meeting.get_display_name }}</p>
+                    <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {% if meeting.start %}<span>{{ meeting.start|date:"d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr</span>{% endif %}
+                        {% if meeting.location_name %}<span>&middot; {{ meeting.location_name }}</span>{% endif %}
+                    </div>
+                </div>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors flex-shrink-0"></i>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Organizations -->
+    {% if results.organizations %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                <i data-lucide="building-2" class="w-4 h-4 text-purple-500"></i>
+                Gremien ({{ results.organizations|length }})
+            </h2>
+            <a href="{% url 'work:ris_organizations' org_slug=organization.slug %}"
+               class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+                Alle anzeigen
+            </a>
+        </div>
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for org in results.organizations %}
+            <a href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=org.id %}"
+               class="group flex items-center gap-3 px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <div class="min-w-0 flex-1">
+                    <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{{ org.short_name|default:org.name }}</p>
+                    {% if org.organization_type %}
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ org.organization_type }}</p>
+                    {% endif %}
+                </div>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors flex-shrink-0"></i>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Persons -->
+    {% if results.persons %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                <i data-lucide="users" class="w-4 h-4 text-amber-500"></i>
+                Personen ({{ results.persons|length }})
+            </h2>
+            <a href="{% url 'work:ris_persons' org_slug=organization.slug %}"
+               class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+                Alle anzeigen
+            </a>
+        </div>
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for person in results.persons %}
+            <a href="{% url 'work:ris_person_detail' org_slug=organization.slug person_id=person.id %}"
+               class="group flex items-center gap-3 px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <div class="flex-shrink-0 w-8 h-8 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center">
+                    <i data-lucide="user" class="w-4 h-4 text-amber-500 dark:text-amber-400"></i>
+                </div>
+                <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{{ person.name }}</p>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors flex-shrink-0 ml-auto"></i>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% else %}
+<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="search-x" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Ergebnisse</h3>
+    <p class="text-gray-500 dark:text-gray-400">Ihre Suche ergab keine Treffer. Versuchen Sie einen anderen Suchbegriff.</p>
+</div>
+{% endif %}
+
+{% else %}
+<!-- Empty State -->
+<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="search" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Suche starten</h3>
+    <p class="text-gray-500 dark:text-gray-400">Geben Sie einen Suchbegriff ein, um in Vorgängen, Sitzungen, Gremien und Personen zu suchen.</p>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

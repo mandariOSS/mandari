@@ -59,7 +59,7 @@
                 </div>
 
                 <!-- Link to Marketing Website (served by Wagtail via Caddy) -->
-                <a href="/"
+                <a href="{{ marketing_url }}/"
                    class="hidden md:inline-flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-lg transition-colors"
                    aria-label="Zur Mandari Website wechseln">
                     <i data-lucide="globe" class="w-4 h-4" aria-hidden="true"></i>
@@ -113,7 +113,7 @@
             </div>
 
             <!-- Context Switch to Marketing Site -->
-            <a href="/"
+            <a href="{{ marketing_url }}/"
                @click="mobileMenuOpen = false"
                class="flex items-center gap-3 px-4 py-3 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-medium touch-target">
                 <i data-lucide="globe" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>

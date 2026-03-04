@@ -1,0 +1,181 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Dokumente{% endblock %}
+
+{% block header_title %}Dokumente{% endblock %}
+{% block header_subtitle %}
+{% if body %}
+<p class="work-page-subtitle">
+    {% if total_count %}{{ total_count }} Dokumente{% endif %}
+    {{ body.get_display_name }}
+</p>
+{% endif %}
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Zurück
+</a>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
+    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
+    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Keine Kommune verknüpft</h3>
+    <p class="text-amber-700 dark:text-amber-300">
+        Dieser Organisation ist noch keine Kommune zugewiesen.
+    </p>
+</div>
+{% else %}
+
+<!-- Search -->
+<div class="fade-up mb-6">
+    <form method="get">
+        <div class="relative max-w-md">
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
+            <input type="text" name="q" value="{{ search_query|default:'' }}"
+                   placeholder="Dokument suchen..."
+                   class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+        </div>
+    </form>
+</div>
+
+<!-- Files List -->
+{% if files %}
+<div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for file in files %}
+        <div class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors {% if file.access_url or file.download_url %}cursor-pointer{% endif %}"
+             {% if file.access_url or file.download_url %}@click="openDoc('{% url 'insight_core:insight:file_proxy' file.id %}', '{{ file.name|default:file.file_name|default:"Dokument"|escapejs }}', '{% if file.context_info.organization_name %}{{ file.context_info.organization_name|escapejs }}{% endif %}{% if file.paper.reference %}{% if file.context_info.organization_name %} · {% endif %}{{ file.paper.reference|escapejs }}{% endif %}{% if file.context_info.meeting_date %} · Sitzung {{ file.context_info.meeting_date|date:"d.m.Y" }}{% endif %}{% if file.size %} · {{ file.size|filesizeformat }}{% endif %}')"{% endif %}>
+            <!-- File type icon -->
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+                {% if file.mime_type == 'application/pdf' %}bg-red-100 dark:bg-red-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                {% if file.mime_type == 'application/pdf' %}
+                <i data-lucide="file-text" class="w-5 h-5 text-red-500 dark:text-red-400"></i>
+                {% else %}
+                <i data-lucide="file" class="w-5 h-5 text-gray-500 dark:text-gray-400"></i>
+                {% endif %}
+            </div>
+
+            <div class="flex-1 min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white truncate md:whitespace-normal md:overflow-visible">
+                    {{ file.name|default:file.file_name|default:"Unbenanntes Dokument" }}
+                </p>
+                <!-- Row 1: Paper, date, size -->
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    {% if file.paper %}
+                    <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=file.paper.id %}"
+                       class="hover:text-primary-600 dark:hover:text-primary-400 truncate md:whitespace-normal md:overflow-visible"
+                       @click.stop>
+                        {{ file.paper.name|default:file.paper.reference }}
+                    </a>
+                    <span class="text-gray-300 dark:text-gray-600">|</span>
+                    {% endif %}
+                    {% if file.file_date %}
+                    <span>{{ file.file_date|date:"d.m.Y" }}</span>
+                    {% endif %}
+                    {% if file.size %}
+                    <span>{{ file.size|filesizeformat }}</span>
+                    {% endif %}
+                </div>
+                <!-- Row 2: Organization, meeting, agenda item -->
+                {% if file.context_info %}
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-gray-600 dark:text-gray-300 mt-1">
+                    {% if file.context_info.organization_name %}
+                    <span class="inline-flex items-center gap-1.5">
+                        <i data-lucide="users" class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"></i>
+                        {{ file.context_info.organization_name }}
+                    </span>
+                    {% endif %}
+                    {% if file.context_info.meeting_date %}
+                    {% if file.context_info.meeting %}
+                    <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=file.context_info.meeting.id %}"
+                       class="inline-flex items-center gap-1.5 hover:text-primary-600 dark:hover:text-primary-400"
+                       @click.stop>
+                        <i data-lucide="calendar" class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"></i>
+                        Sitzung {{ file.context_info.meeting_date|date:"d.m.Y" }}
+                    </a>
+                    {% else %}
+                    <span class="inline-flex items-center gap-1.5">
+                        <i data-lucide="calendar" class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"></i>
+                        Sitzung {{ file.context_info.meeting_date|date:"d.m.Y" }}
+                    </span>
+                    {% endif %}
+                    {% endif %}
+                    {% if file.context_info.agenda_number %}
+                    <span class="text-gray-500 dark:text-gray-400">TOP {{ file.context_info.agenda_number }}</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="flex items-center gap-2 flex-shrink-0">
+                {% if file.text_extraction_status == 'completed' %}
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 max-sm:hidden" title="Text extrahiert">OCR</span>
+                {% endif %}
+                {% if file.access_url or file.download_url %}
+                <a href="{{ file.download_url|default:file.access_url }}" target="_blank" rel="noopener noreferrer"
+                   @click.stop
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="In neuem Tab öffnen">
+                    <i data-lucide="external-link" class="w-4 h-4 text-gray-400"></i>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if files.has_other_pages %}
+<nav class="fade-up d2 mt-6 flex justify-center">
+    <ul class="flex items-center gap-1">
+        {% if files.has_previous %}
+        <li>
+            <a href="?page={{ files.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+        {% for num in files.paginator.page_range %}
+            {% if files.number == num %}
+            <li><span class="px-4 py-2 rounded-lg bg-primary-500 text-white font-medium">{{ num }}</span></li>
+            {% elif num > files.number|add:'-3' and num < files.number|add:'3' %}
+            <li>
+                <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}"
+                   class="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">{{ num }}</a>
+            </li>
+            {% endif %}
+        {% endfor %}
+        {% if files.has_next %}
+        <li>
+            <a href="?page={{ files.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}"
+               class="px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="files" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Dokumente gefunden</h3>
+    <p class="text-gray-500 dark:text-gray-400">
+        {% if search_query %}
+        Ihre Suche ergab keine Treffer. Versuchen Sie einen anderen Suchbegriff.
+        {% else %}
+        Es gibt noch keine Dokumente.
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

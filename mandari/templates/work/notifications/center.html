@@ -9,7 +9,7 @@
 {% endblock %}
 
 {% block header_actions %}
-<a href="{% url 'work:notification_preferences' org_slug=organization.slug %}"
+<a href="{% url 'work:profile_notifications' org_slug=organization.slug %}"
    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
     <i data-lucide="settings" class="w-4 h-4"></i>
     Einstellungen
@@ -18,7 +18,7 @@
 <button hx-post="{% url 'work:notifications_mark_all_read' org_slug=organization.slug %}"
         hx-swap="none"
         hx-on::after-request="window.location.reload()"
-        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
     <i data-lucide="check-check" class="w-4 h-4"></i>
     Alle als gelesen markieren
 </button>
@@ -26,7 +26,7 @@
 {% endblock %}
 
 {% block work_content %}
-<div class="max-w-4xl">
+<div class="fade-up max-w-4xl">
     <!-- Filter Tabs -->
     <div class="mb-6 flex items-center gap-4 border-b border-gray-200 dark:border-gray-700">
         <a href="?filter=all"
@@ -43,7 +43,7 @@
     </div>
 
     <!-- Notification List -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
+    <div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
         {% if notifications %}
             {% for notification in notifications %}
             <div class="p-4 {% if not notification.is_read %}bg-primary-50/50 dark:bg-primary-900/10{% endif %} hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
@@ -124,12 +124,8 @@
             </div>
             {% endif %}
         {% else %}
-            <div class="p-12 text-center">
-                <div class="w-16 h-16 mx-auto mb-4 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center">
-                    <i data-lucide="bell-off" class="w-8 h-8 text-purple-500 dark:text-purple-400"></i>
-                </div>
-                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-1">Keine Benachrichtigungen</h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400">
+            <div class="px-4 py-8 text-center">
+                <p class="text-sm text-gray-400 dark:text-gray-500">
                     {% if request.GET.filter == 'unread' %}
                     Du hast alle Benachrichtigungen gelesen.
                     {% else %}

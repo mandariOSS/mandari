@@ -19,6 +19,31 @@
             {{ page.intro|richtext }}
         </div>
         {% endif %}
+
+        <!-- RSS Feed Link -->
+        <a href="/blog/feed/"
+           class="inline-flex items-center gap-2 mt-4 px-4 py-2 text-sm font-medium text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors">
+            <i data-lucide="rss" class="w-4 h-4"></i>
+            RSS-Feed abonnieren
+        </a>
+    </div>
+</section>
+
+<!-- Kategorie-Tabs -->
+<section class="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 sticky top-16 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <nav class="flex gap-1 overflow-x-auto py-3 -mb-px" aria-label="Kategorien">
+            <a href="{{ page.url }}"
+               class="px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-colors {% if not active_category %}bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300{% else %}text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800{% endif %}">
+                Alle
+            </a>
+            {% for value, label in categories %}
+            <a href="{{ page.url }}?category={{ value }}"
+               class="px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-colors {% if active_category == value %}bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300{% else %}text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800{% endif %}">
+                {{ label }}
+            </a>
+            {% endfor %}
+        </nav>
     </div>
 </section>
 
@@ -26,11 +51,10 @@
 <section class="py-12 lg:py-16">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {% if blog_posts %}
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8">Beiträge</h2>
-        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {% for post in blog_posts %}
             <a href="{% pageurl post %}" class="block group">
-                <article class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-shadow h-full">
+                <article class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-shadow h-full flex flex-col">
                     {% if post.featured_image %}
                     {% image post.featured_image fill-600x340 as post_img %}
                     <img src="{{ post_img.url }}" alt="{{ post.title }}" class="w-full h-48 object-cover">
@@ -39,7 +63,7 @@
                         <i data-lucide="newspaper" class="w-12 h-12 text-primary-400"></i>
                     </div>
                     {% endif %}
-                    <div class="p-6">
+                    <div class="p-6 flex flex-col flex-1">
                         <div class="flex items-center gap-3 mb-3">
                             <span class="px-2.5 py-0.5 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 text-xs font-medium rounded-full">
                                 {{ post.get_category_display }}
@@ -52,43 +76,92 @@
                             {{ post.title }}
                         </h3>
                         {% if post.excerpt %}
-                        <p class="text-gray-600 dark:text-gray-300 text-sm line-clamp-3">{{ post.excerpt }}</p>
+                        <p class="text-gray-600 dark:text-gray-300 text-sm line-clamp-3 mb-4">{{ post.excerpt }}</p>
                         {% endif %}
+                        <!-- Autor + Lesezeit -->
+                        <div class="mt-auto flex items-center gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
+                            {% if post.author %}
+                            <div class="flex items-center gap-2">
+                                {% if post.author.image %}
+                                {% image post.author.image fill-32x32 as author_img %}
+                                <img src="{{ author_img.url }}" alt="{{ post.author.name }}" class="w-6 h-6 rounded-full object-cover">
+                                {% else %}
+                                <span class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center text-xs font-medium text-primary-700 dark:text-primary-300">
+                                    {{ post.author.name|truncatechars:1 }}
+                                </span>
+                                {% endif %}
+                                <span class="text-sm text-gray-600 dark:text-gray-400">{{ post.author.name }}</span>
+                            </div>
+                            {% endif %}
+                            <span class="text-sm text-gray-400 dark:text-gray-500 ml-auto flex items-center gap-1">
+                                <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+                                {{ post.reading_time }} Min.
+                            </span>
+                        </div>
                     </div>
                 </article>
             </a>
             {% endfor %}
         </div>
+
+        <!-- Pagination -->
+        {% if blog_posts.paginator.num_pages > 1 %}
+        <nav class="mt-12 flex items-center justify-center gap-2" aria-label="Seitennavigation">
+            {% if blog_posts.has_previous %}
+            <a href="?{% if active_category %}category={{ active_category }}&{% endif %}page={{ blog_posts.previous_page_number }}"
+               class="inline-flex items-center gap-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                Zurück
+            </a>
+            {% endif %}
+
+            <div class="flex items-center gap-1">
+                {% for page_num in blog_posts.paginator.page_range %}
+                {% if blog_posts.number == page_num %}
+                <span class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg">
+                    {{ page_num }}
+                </span>
+                {% elif page_num == 1 or page_num == blog_posts.paginator.num_pages or page_num >= blog_posts.number|add:"-2" and page_num <= blog_posts.number|add:"2" %}
+                <a href="?{% if active_category %}category={{ active_category }}&{% endif %}page={{ page_num }}"
+                   class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    {{ page_num }}
+                </a>
+                {% elif page_num == 2 or page_num == blog_posts.paginator.num_pages|add:"-1" %}
+                <span class="px-2 text-gray-400">…</span>
+                {% endif %}
+                {% endfor %}
+            </div>
+
+            {% if blog_posts.has_next %}
+            <a href="?{% if active_category %}category={{ active_category }}&{% endif %}page={{ blog_posts.next_page_number }}"
+               class="inline-flex items-center gap-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                Weiter
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </a>
+            {% endif %}
+        </nav>
         {% endif %}
 
-        {% if releases %}
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8">Releases</h2>
-        <div class="space-y-4">
-            {% for release in releases %}
-            <a href="{% pageurl release %}" class="block group">
-                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-4">
-                            <span class="px-3 py-1 bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 font-mono font-semibold rounded-lg">
-                                v{{ release.version }}
-                            </span>
-                            <div>
-                                <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                                    {{ release.title }}
-                                </h3>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">
-                                    {{ release.get_release_type_display }} &middot; {{ release.release_date|date:"d.m.Y" }}
-                                    {% if release.breaking_changes %}
-                                    <span class="text-red-500 font-medium ml-2">Breaking Changes</span>
-                                    {% endif %}
-                                </p>
-                            </div>
-                        </div>
-                        <i data-lucide="arrow-right" class="w-5 h-5 text-gray-400 group-hover:text-primary-500 transition-colors" aria-hidden="true"></i>
-                    </div>
-                </div>
+        {% else %}
+        <!-- Empty State -->
+        <div class="text-center py-16">
+            <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                <i data-lucide="newspaper" class="w-8 h-8 text-gray-400"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Keine Beiträge gefunden</h3>
+            <p class="text-gray-600 dark:text-gray-400 mb-6">
+                {% if active_category %}
+                In dieser Kategorie gibt es noch keine Beiträge.
+                {% else %}
+                Es gibt noch keine Blog-Beiträge.
+                {% endif %}
+            </p>
+            {% if active_category %}
+            <a href="{{ page.url }}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors">
+                Alle Beiträge anzeigen
             </a>
-            {% endfor %}
+            {% endif %}
         </div>
         {% endif %}
     </div>

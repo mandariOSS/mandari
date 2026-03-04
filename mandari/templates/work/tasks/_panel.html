@@ -1,0 +1,550 @@
+{% load i18n %}
+{% if can_edit and form %}
+{# ═══ Editable Panel — auto-saves on change ═══ #}
+<div x-data="{ saved: false, saving: false }"
+     @task-autosaved.window="saving = false; saved = true; setTimeout(() => saved = false, 2000)"
+     @task-autosaving.window="saving = true"
+     class="flex-1 flex flex-col overflow-hidden">
+
+    <form id="task-update-form"
+          hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+          hx-trigger="change from:find select, change from:find input[type=radio], focusout from:find input[type=text] changed delay:300ms, focusout from:find input[type=date] changed delay:300ms, focusout from:find textarea changed delay:300ms"
+          hx-swap="none"
+          hx-indicator=".autosave-indicator"
+          hx-on::before-request="window.dispatchEvent(new Event('task-autosaving'))"
+          hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new Event('task-autosaved'))"
+          class="flex-1 flex flex-col overflow-hidden">
+        <input type="hidden" name="action" value="update">
+
+        {# ── Header ── #}
+        <div class="px-6 pt-5 pb-4 bg-gradient-to-b from-gray-50/80 to-white dark:from-gray-900/50 dark:to-gray-800">
+            <div class="flex items-start gap-3">
+                <div class="flex-1 min-w-0">
+                    {{ form.title }}
+                </div>
+                <div class="flex items-center gap-1 flex-shrink-0 pt-1">
+                    {# Autosave-Indikator #}
+                    <span x-cloak x-show="saving"
+                          x-transition:enter="transition ease-out duration-150"
+                          x-transition:enter-start="opacity-0"
+                          x-transition:enter-end="opacity-100"
+                          class="autosave-indicator text-gray-400 dark:text-gray-500 p-1">
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                    </span>
+                    <span x-cloak x-show="saved && !saving"
+                          x-transition:enter="transition ease-out duration-200"
+                          x-transition:enter-start="opacity-0 scale-90"
+                          x-transition:enter-end="opacity-100 scale-100"
+                          x-transition:leave="transition ease-in duration-300"
+                          x-transition:leave-start="opacity-100"
+                          x-transition:leave-end="opacity-0"
+                          class="text-green-500 dark:text-green-400 p-1">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                    </span>
+                    {# Speichern-Button #}
+                    <button type="button"
+                            hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+                            hx-include="#task-update-form"
+                            hx-vals='{"action": "save"}'
+                            hx-target="#task-panel-container"
+                            hx-swap="innerHTML"
+                            class="p-1.5 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                            title="Speichern">
+                        <i data-lucide="save" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" @click="closePanel()"
+                            class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+            {# Status, Priorität, Labels #}
+            <div class="flex items-center gap-1.5 mt-3 flex-wrap">
+                {{ form.status }}
+                {{ form.priority }}
+                {% if task.is_overdue %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 ring-1 ring-red-200 dark:ring-red-800/50">
+                    <i data-lucide="alert-circle" class="w-3 h-3"></i>
+                    Überfällig
+                </span>
+                {% endif %}
+                {% for label in task.labels.all %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-{{ label.color }}-100 dark:bg-{{ label.color }}-900/30 text-{{ label.color }}-700 dark:text-{{ label.color }}-300 ring-1 ring-{{ label.color }}-200/50 dark:ring-{{ label.color }}-700/30">
+                    {{ label.name }}
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+
+        {# ── Scrollable Body ── #}
+        <div id="task-panel-body" class="flex-1 overflow-y-auto">
+            {# Beschreibung #}
+            <div class="px-6 py-4">
+                {{ form.description }}
+            </div>
+
+            {# ── Details-Sektion ── #}
+            <div class="mx-6 rounded-xl border border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-900/30 divide-y divide-gray-100 dark:divide-gray-700/50">
+                <div class="flex items-center h-10 gap-3 px-4">
+                    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <i data-lucide="user" class="w-3.5 h-3.5 text-primary-500"></i>
+                        Zugewiesen an
+                    </span>
+                    <div class="flex-1 min-w-0">{{ form.assigned_to }}</div>
+                </div>
+                <div class="flex items-center h-10 gap-3 px-4">
+                    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <i data-lucide="calendar" class="w-3.5 h-3.5 text-amber-500"></i>
+                        Fällig am
+                    </span>
+                    <div class="flex-1 min-w-0">{{ form.due_date }}</div>
+                </div>
+                <div class="flex items-center min-h-[40px] gap-3 px-4">
+                    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <i data-lucide="eye" class="w-3.5 h-3.5 text-blue-500"></i>
+                        Sichtbarkeit
+                    </span>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2.5">
+                            {% for radio in form.visibility %}
+                            <label class="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 cursor-pointer hover:text-gray-900 dark:hover:text-gray-200 transition-colors">
+                                {{ radio.tag }}
+                                <span>{{ radio.choice_label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {# Geteilt mit — nur bei visibility=shared #}
+                {% if task.visibility == 'shared' and shared_members %}
+                <div class="flex items-start gap-3 px-4 py-2.5">
+                    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400 pt-0.5">
+                        <i data-lucide="users" class="w-3.5 h-3.5 text-violet-500"></i>
+                        Geteilt mit
+                    </span>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex flex-wrap gap-1.5">
+                            {% for share in shared_members %}
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 ring-1 ring-violet-200/50 dark:ring-violet-700/30">
+                                <i data-lucide="user" class="w-2.5 h-2.5"></i>
+                                {{ share.membership.user.get_display_name }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% elif task.visibility == 'shared' %}
+                <div class="flex items-center gap-3 px-4 py-2.5">
+                    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <i data-lucide="users" class="w-3.5 h-3.5 text-violet-500"></i>
+                        Geteilt mit
+                    </span>
+                    <span class="text-xs text-gray-400 italic">Noch niemand hinzugefügt</span>
+                </div>
+                {% endif %}
+            </div>
+
+            {# ── Meta (read-only) ── #}
+            <div class="px-6 py-3 mt-3">
+                <div class="flex items-center gap-4 text-[11px] text-gray-400 dark:text-gray-500">
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="user-circle" class="w-3 h-3"></i>
+                        {{ task.created_by.user.get_display_name }}
+                    </span>
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="clock" class="w-3 h-3"></i>
+                        {{ task.created_at|date:"d.m.Y, H:i" }}
+                    </span>
+                    {% if task.completed_at %}
+                    <span class="flex items-center gap-1 text-green-500 dark:text-green-400">
+                        <i data-lucide="check-circle-2" class="w-3 h-3"></i>
+                        Erledigt {{ task.completed_at|date:"d.m.Y" }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {# Verknüpfungen #}
+            {% if task.related_meeting or task.related_motion or task.related_faction_meeting %}
+            <div class="px-6 pb-3">
+                <div class="flex flex-wrap gap-1.5">
+                    {% if task.related_meeting %}
+                    <a href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=task.related_meeting.id %}"
+                       class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors ring-1 ring-primary-200/50 dark:ring-primary-700/30" target="_blank">
+                        <i data-lucide="calendar" class="w-3 h-3"></i>
+                        {{ task.related_meeting.name|truncatechars:30 }}
+                    </a>
+                    {% endif %}
+                    {% if task.related_motion %}
+                    <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=task.related_motion.id %}"
+                       class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors ring-1 ring-primary-200/50 dark:ring-primary-700/30" target="_blank">
+                        <i data-lucide="file-text" class="w-3 h-3"></i>
+                        {{ task.related_motion.title|truncatechars:30 }}
+                    </a>
+                    {% endif %}
+                    {% if task.related_faction_meeting %}
+                    <a href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=task.related_faction_meeting.id %}"
+                       class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors ring-1 ring-primary-200/50 dark:ring-primary-700/30" target="_blank">
+                        <i data-lucide="users" class="w-3 h-3"></i>
+                        {{ task.related_faction_meeting.title|truncatechars:30 }}
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            {# Fehler #}
+            {% if form.errors %}
+            <div class="mx-6 mb-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                <ul class="text-xs text-red-600 dark:text-red-400 space-y-0.5">
+                    {% for field, errors in form.errors.items %}
+                    {% for error in errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {# ── Labels ── #}
+            <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+                <div id="panel-labels">
+                    {% include "work/tasks/_panel_labels.html" %}
+                </div>
+            </div>
+
+            {# ── Checkliste ── #}
+            <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+                <div id="panel-checklist">
+                    {% include "work/tasks/_panel_checklist.html" %}
+                </div>
+            </div>
+
+            {# ── Anhänge ── #}
+            <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+                <div id="panel-attachments">
+                    {% include "work/tasks/_panel_attachments.html" %}
+                </div>
+            </div>
+
+            {# ── Aktivität ── #}
+            <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="flex items-center gap-1.5">
+                        <i data-lucide="activity" class="w-4 h-4 text-primary-500"></i>
+                        <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Aktivität</span>
+                    </div>
+                    {% if activities|length > 0 %}
+                    <span class="text-[10px] font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 rounded-full px-1.5 py-0.5 leading-none ring-1 ring-primary-200/50 dark:ring-primary-700/30">{{ activities|length }}</span>
+                    {% endif %}
+                </div>
+                <div id="panel-activity">
+                    {% include "work/tasks/_panel_activity.html" %}
+                </div>
+            </div>
+        </div>{# /scrollable #}
+    </form>
+
+    {# ── Kommentar-Input (außerhalb des Auto-Save-Forms) ── #}
+    <div class="border-t border-gray-200 dark:border-gray-700 px-6 py-3 bg-white dark:bg-gray-800">
+        <form hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+              hx-target="#panel-activity"
+              hx-swap="innerHTML"
+              hx-on::after-request="if(event.detail.successful) { this.reset(); this.querySelector('input[name=content]').blur(); }"
+              class="flex items-center gap-2">
+            <input type="hidden" name="action" value="add_comment">
+            <div class="w-7 h-7 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                <span class="text-xs font-semibold text-primary-600 dark:text-primary-400">{{ membership.user.get_display_name|slice:":1" }}</span>
+            </div>
+            <input type="text" name="content" required autocomplete="off"
+                   class="flex-1 min-w-0 px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 outline-none placeholder-gray-400 dark:placeholder-gray-500 transition-all"
+                   placeholder="Kommentar schreiben...">
+            <button type="submit"
+                    class="p-2 text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors flex-shrink-0 shadow-sm">
+                <i data-lucide="send" class="w-4 h-4"></i>
+            </button>
+        </form>
+    </div>
+
+    {# ── Footer ── #}
+    <div class="border-t border-gray-200 dark:border-gray-700 px-6 py-2.5 bg-gray-50/80 dark:bg-gray-900/50 flex items-center justify-between">
+        <button type="button"
+                hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+                hx-vals='{"action": "toggle_complete"}'
+                hx-target="#task-panel-container"
+                hx-swap="innerHTML"
+                class="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-sm
+                {% if task.is_completed %}text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 ring-1 ring-amber-200 dark:ring-amber-800/50
+                {% else %}text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 ring-1 ring-green-200 dark:ring-green-800/50{% endif %}">
+            <i data-lucide="{% if task.is_completed %}rotate-ccw{% else %}check{% endif %}" class="w-3.5 h-3.5"></i>
+            {% if task.is_completed %}Wieder öffnen{% else %}Erledigt{% endif %}
+        </button>
+
+        <div class="flex items-center gap-0.5">
+            <button type="button"
+                    onclick="navigator.clipboard.writeText(window.location.origin + '{% url 'work:tasks' org_slug=organization.slug %}?open={{ task.id }}'); window.dispatchEvent(new CustomEvent('show-toast', {detail: {message: 'Link kopiert', type: 'success'}}))"
+                    class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                    title="Link kopieren">
+                <i data-lucide="link" class="w-4 h-4"></i>
+            </button>
+            <button type="button" x-data
+                    @click="confirmAction({title: 'Aufgabe löschen', message: 'Die Aufgabe wird unwiderruflich gelöscht.', confirmText: 'Löschen', variant: 'danger'}).then(ok => { if(ok) htmx.ajax('POST', '{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}', {values: {action: 'delete'}, swap: 'none'}) })"
+                    class="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                    title="Aufgabe löschen">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+{% else %}
+{# ═══ Read-Only Panel ═══ #}
+
+{# Header #}
+<div class="px-6 pt-5 pb-4 bg-gradient-to-b from-gray-50/80 to-white dark:from-gray-900/50 dark:to-gray-800">
+    <div class="flex items-start gap-3">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white leading-tight {% if task.is_completed %}line-through opacity-60{% endif %}">
+                {{ task.title }}
+            </h2>
+            <div class="flex items-center gap-1.5 mt-3 flex-wrap">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold
+                    {% if task.status == 'todo' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 ring-1 ring-blue-200/50 dark:ring-blue-700/30
+                    {% elif task.status == 'in_progress' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200/50 dark:ring-amber-700/30
+                    {% else %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 ring-1 ring-green-200/50 dark:ring-green-700/30{% endif %}">
+                    {{ task.get_status_display }}
+                </span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold
+                    {% if task.priority == 'urgent' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 ring-1 ring-red-200/50 dark:ring-red-700/30
+                    {% elif task.priority == 'high' %}bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 ring-1 ring-orange-200/50 dark:ring-orange-700/30
+                    {% elif task.priority == 'medium' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 ring-1 ring-blue-200/50 dark:ring-blue-700/30
+                    {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                    {{ task.get_priority_display }}
+                </span>
+                {% if task.is_overdue %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 ring-1 ring-red-200 dark:ring-red-800/50">
+                    <i data-lucide="alert-circle" class="w-3 h-3"></i>
+                    Überfällig
+                </span>
+                {% endif %}
+                {% for label in task.labels.all %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-{{ label.color }}-100 dark:bg-{{ label.color }}-900/30 text-{{ label.color }}-700 dark:text-{{ label.color }}-300 ring-1 ring-{{ label.color }}-200/50 dark:ring-{{ label.color }}-700/30">
+                    {{ label.name }}
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+        <button @click="closePanel()"
+                class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors flex-shrink-0">
+            <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+    </div>
+</div>
+
+{# Body #}
+<div id="task-panel-body" class="flex-1 overflow-y-auto">
+    {# Beschreibung #}
+    <div class="px-6 py-4">
+        {% if task.description %}
+        <div class="prose dark:prose-invert prose-sm max-w-none text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
+            {{ task.description|linebreaks }}
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-400 dark:text-gray-500 italic">Keine Beschreibung</p>
+        {% endif %}
+    </div>
+
+    {# ── Details ── #}
+    <div class="mx-6 rounded-xl border border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-900/30 divide-y divide-gray-100 dark:divide-gray-700/50">
+        <div class="flex items-center h-10 gap-3 px-4">
+            <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                <i data-lucide="user" class="w-3.5 h-3.5 text-primary-500"></i>
+                Zugewiesen an
+            </span>
+            <span class="text-xs text-gray-900 dark:text-white">
+                {% if task.assigned_to %}{{ task.assigned_to.user.get_display_name }}{% else %}<span class="text-gray-400">—</span>{% endif %}
+            </span>
+        </div>
+        <div class="flex items-center h-10 gap-3 px-4">
+            <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                <i data-lucide="calendar" class="w-3.5 h-3.5 text-amber-500"></i>
+                Fällig am
+            </span>
+            <span class="text-xs {% if task.is_overdue %}text-red-600 dark:text-red-400 font-medium{% else %}text-gray-900 dark:text-white{% endif %}">
+                {% if task.due_date %}{{ task.due_date|date:"d.m.Y" }}{% else %}<span class="text-gray-400">—</span>{% endif %}
+            </span>
+        </div>
+        <div class="flex items-center h-10 gap-3 px-4">
+            <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                <i data-lucide="eye" class="w-3.5 h-3.5 text-blue-500"></i>
+                Sichtbarkeit
+            </span>
+            <span class="text-xs text-gray-600 dark:text-gray-300">
+                {% if task.visibility == 'private' %}
+                <span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3 h-3 text-gray-400"></i> Privat</span>
+                {% elif task.visibility == 'shared' %}
+                <span class="inline-flex items-center gap-1"><i data-lucide="users" class="w-3 h-3 text-violet-500"></i> Geteilt</span>
+                {% else %}
+                <span class="inline-flex items-center gap-1"><i data-lucide="building" class="w-3 h-3 text-green-500"></i> Organisation</span>
+                {% endif %}
+            </span>
+        </div>
+        {# Geteilt mit — nur bei visibility=shared #}
+        {% if task.visibility == 'shared' and shared_members %}
+        <div class="flex items-start gap-3 px-4 py-2.5">
+            <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400 pt-0.5">
+                <i data-lucide="users" class="w-3.5 h-3.5 text-violet-500"></i>
+                Geteilt mit
+            </span>
+            <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap gap-1.5">
+                    {% for share in shared_members %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 ring-1 ring-violet-200/50 dark:ring-violet-700/30">
+                        <i data-lucide="user" class="w-2.5 h-2.5"></i>
+                        {{ share.membership.user.get_display_name }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {# ── Meta ── #}
+    <div class="px-6 py-3 mt-3">
+        <div class="flex items-center gap-4 text-[11px] text-gray-400 dark:text-gray-500">
+            <span class="flex items-center gap-1">
+                <i data-lucide="user-circle" class="w-3 h-3"></i>
+                {{ task.created_by.user.get_display_name }}
+            </span>
+            <span class="flex items-center gap-1">
+                <i data-lucide="clock" class="w-3 h-3"></i>
+                {{ task.created_at|date:"d.m.Y, H:i" }}
+            </span>
+            {% if task.completed_at %}
+            <span class="flex items-center gap-1 text-green-500 dark:text-green-400">
+                <i data-lucide="check-circle-2" class="w-3 h-3"></i>
+                Erledigt {{ task.completed_at|date:"d.m.Y" }}
+            </span>
+            {% endif %}
+        </div>
+    </div>
+
+    {# Verknüpfungen #}
+    {% if task.related_meeting or task.related_motion or task.related_faction_meeting %}
+    <div class="px-6 pb-3">
+        <div class="flex flex-wrap gap-1.5">
+            {% if task.related_meeting %}
+            <a href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=task.related_meeting.id %}"
+               class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors ring-1 ring-primary-200/50 dark:ring-primary-700/30" target="_blank">
+                <i data-lucide="calendar" class="w-3 h-3"></i>
+                {{ task.related_meeting.name|truncatechars:30 }}
+            </a>
+            {% endif %}
+            {% if task.related_motion %}
+            <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=task.related_motion.id %}"
+               class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors ring-1 ring-primary-200/50 dark:ring-primary-700/30" target="_blank">
+                <i data-lucide="file-text" class="w-3 h-3"></i>
+                {{ task.related_motion.title|truncatechars:30 }}
+            </a>
+            {% endif %}
+            {% if task.related_faction_meeting %}
+            <a href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=task.related_faction_meeting.id %}"
+               class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors ring-1 ring-primary-200/50 dark:ring-primary-700/30" target="_blank">
+                <i data-lucide="users" class="w-3 h-3"></i>
+                {{ task.related_faction_meeting.title|truncatechars:30 }}
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# Checkliste (read-only) #}
+    {% if checklist_items %}
+    <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+        {% with progress=task.checklist_progress %}
+        <div class="flex items-center gap-2 mb-3">
+            <div class="flex items-center gap-1.5">
+                <i data-lucide="check-square" class="w-4 h-4 text-green-500"></i>
+                <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Checkliste</span>
+            </div>
+            <span class="text-[10px] font-bold {% if progress.0 == progress.1 %}text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 ring-1 ring-green-200/50 dark:ring-green-700/30{% else %}text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800{% endif %} rounded-full px-1.5 py-0.5 leading-none">{{ progress.0 }}/{{ progress.1 }}</span>
+        </div>
+        {% endwith %}
+        <div class="space-y-1">
+            {% for item in checklist_items %}
+            <div class="flex items-center gap-2 py-0.5">
+                <i data-lucide="{% if item.is_completed %}check-square{% else %}square{% endif %}" class="w-4 h-4 flex-shrink-0 {% if item.is_completed %}text-green-500{% else %}text-gray-400{% endif %}"></i>
+                <span class="text-sm {% if item.is_completed %}line-through text-gray-400 dark:text-gray-500{% else %}text-gray-700 dark:text-gray-300{% endif %}">{{ item.title }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# Anhänge (read-only) #}
+    {% if attachments %}
+    <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+        <div class="flex items-center gap-2 mb-3">
+            <div class="flex items-center gap-1.5">
+                <i data-lucide="paperclip" class="w-4 h-4 text-blue-500"></i>
+                <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Anhänge</span>
+            </div>
+            <span class="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-full px-1.5 py-0.5 leading-none ring-1 ring-blue-200/50 dark:ring-blue-700/30">{{ attachments|length }}</span>
+        </div>
+        <div class="space-y-1.5">
+            {% for att in attachments %}
+            <a href="{{ att.file.url }}" target="_blank"
+               class="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group">
+                <i data-lucide="{{ att.icon_name }}" class="w-4 h-4 text-gray-400 flex-shrink-0 group-hover:text-primary-500 transition-colors"></i>
+                <span class="text-sm text-gray-700 dark:text-gray-300 truncate flex-1">{{ att.filename }}</span>
+                <span class="text-[11px] text-gray-400 flex-shrink-0">{{ att.size_human }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# Aktivität #}
+    <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+        <div class="flex items-center gap-2 mb-4">
+            <div class="flex items-center gap-1.5">
+                <i data-lucide="activity" class="w-4 h-4 text-primary-500"></i>
+                <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Aktivität</span>
+            </div>
+        </div>
+        <div id="panel-activity">
+            {% include "work/tasks/_panel_activity.html" %}
+        </div>
+
+        {# Kommentar-Input #}
+        <form hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+              hx-target="#panel-activity"
+              hx-swap="innerHTML"
+              hx-on::after-request="if(event.detail.successful) this.reset()"
+              class="mt-4 flex items-center gap-2">
+            <input type="hidden" name="action" value="add_comment">
+            <div class="w-7 h-7 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                <span class="text-xs font-semibold text-primary-600 dark:text-primary-400">{{ membership.user.get_display_name|slice:":1" }}</span>
+            </div>
+            <input type="text" name="content" required autocomplete="off"
+                   class="flex-1 min-w-0 px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 outline-none placeholder-gray-400 dark:placeholder-gray-500 transition-all"
+                   placeholder="Kommentar schreiben...">
+            <button type="submit"
+                    class="p-2 text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors flex-shrink-0 shadow-sm">
+                <i data-lucide="send" class="w-4 h-4"></i>
+            </button>
+        </form>
+    </div>
+</div>
+
+{# Footer (read-only) #}
+<div class="border-t border-gray-200 dark:border-gray-700 px-6 py-2.5 bg-gray-50/80 dark:bg-gray-900/50 flex items-center justify-end">
+    <button type="button"
+            onclick="navigator.clipboard.writeText(window.location.origin + '{% url 'work:tasks' org_slug=organization.slug %}?open={{ task.id }}'); window.dispatchEvent(new CustomEvent('show-toast', {detail: {message: 'Link kopiert', type: 'success'}}))"
+            class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+            title="Link kopieren">
+        <i data-lucide="link" class="w-4 h-4"></i>
+    </button>
+</div>
+{% endif %}

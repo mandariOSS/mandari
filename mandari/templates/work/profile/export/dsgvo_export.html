@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Datenexport - {{ organization.name }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 25mm 20mm 20mm 20mm;
+
+            @frame footer {
+                -pdf-frame-content: page-footer;
+                bottom: 0;
+                margin-left: 20mm;
+                margin-right: 20mm;
+                height: 15mm;
+            }
+        }
+
+        body {
+            font-family: "Helvetica", "Arial", sans-serif;
+            font-size: 10pt;
+            line-height: 1.4;
+            color: #333;
+        }
+
+        /* Cover */
+        .cover {
+            text-align: center;
+            padding-top: 40px;
+            padding-bottom: 30px;
+            border-bottom: 2px solid #333;
+            margin-bottom: 30px;
+        }
+        .cover-org {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #111;
+            margin-bottom: 8px;
+        }
+        .cover-title {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #111;
+            margin: 15px 0;
+        }
+        .cover-subtitle {
+            font-size: 10pt;
+            color: #666;
+            margin: 5px 0;
+        }
+
+        /* Sections */
+        h2 {
+            font-size: 13pt;
+            font-weight: bold;
+            color: #111;
+            margin-top: 25px;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #ccc;
+        }
+        h3 {
+            font-size: 11pt;
+            font-weight: bold;
+            color: #333;
+            margin-top: 15px;
+            margin-bottom: 6px;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0 15px 0;
+            table-layout: fixed;
+            word-wrap: break-word;
+        }
+        th {
+            background: #f5f5f5;
+            text-align: left;
+            padding: 5px 6px;
+            font-size: 8pt;
+            font-weight: bold;
+            border-bottom: 1px solid #ddd;
+            overflow: hidden;
+        }
+        td {
+            padding: 5px 6px;
+            font-size: 8pt;
+            border-bottom: 1px solid #eee;
+            vertical-align: top;
+            overflow: hidden;
+            word-wrap: break-word;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Key-value pairs */
+        .kv-table td:first-child {
+            font-weight: bold;
+            width: 35%;
+            color: #555;
+        }
+
+        /* Column width helpers */
+        .col-date { width: 20%; }
+        .col-ip { width: 15%; }
+        .col-status { width: 12%; }
+        .col-narrow { width: 10%; }
+        .col-wide { width: 30%; }
+
+        /* Content blocks */
+        .content-block {
+            background: #fafafa;
+            border: 1px solid #eee;
+            padding: 8px 10px;
+            margin: 5px 0 10px 0;
+            font-size: 9pt;
+            line-height: 1.4;
+        }
+
+        /* Item card */
+        .item-header {
+            background: #f5f5f5;
+            padding: 6px 10px;
+            margin-top: 12px;
+            margin-bottom: 4px;
+            font-weight: bold;
+            font-size: 10pt;
+            border-left: 3px solid #888;
+        }
+
+        /* Labels */
+        .label {
+            font-size: 8pt;
+            padding: 2px 6px;
+            background: #e8e8e8;
+            color: #555;
+        }
+        .label-success { background: #d4edda; color: #155724; }
+        .label-warning { background: #fff3cd; color: #856404; }
+        .label-danger { background: #f8d7da; color: #721c24; }
+
+        /* Empty state */
+        .empty {
+            color: #999;
+            font-style: italic;
+            font-size: 9pt;
+            margin: 5px 0;
+        }
+
+        /* Footer */
+        .footer {
+            font-size: 8pt;
+            color: #999;
+            text-align: center;
+            border-top: 1px solid #eee;
+            padding-top: 5px;
+        }
+
+        /* Pagebreak helper */
+        .page-break { page-break-before: always; }
+    </style>
+</head>
+<body>
+
+<!-- Cover -->
+<div class="cover">
+    <div class="cover-org">{{ organization.name }}</div>
+    <div class="cover-title">Datenauskunft gem. DSGVO Art. 15/20</div>
+    <div class="cover-subtitle">{{ user.get_full_name }} &mdash; {{ user.email }}</div>
+    <div class="cover-subtitle">Erstellt am {{ export_date|date:"d.m.Y" }} um {{ export_date|time:"H:i" }} Uhr</div>
+</div>
+
+
+<!-- 1. Account -->
+<h2>1. Kontodaten</h2>
+<table class="kv-table">
+    <tr><td>E-Mail</td><td>{{ data.account.email }}</td></tr>
+    <tr><td>Vorname</td><td>{{ data.account.first_name|default:"&mdash;" }}</td></tr>
+    <tr><td>Nachname</td><td>{{ data.account.last_name|default:"&mdash;" }}</td></tr>
+    <tr><td>Telefon</td><td>{{ data.account.phone|default:"&mdash;" }}</td></tr>
+    <tr><td>Profilbild</td><td>{{ data.account.avatar }}</td></tr>
+    <tr><td>Registriert seit</td><td>{{ data.account.date_joined|default:"&mdash;" }}</td></tr>
+    <tr><td>Letzter Login</td><td>{{ data.account.last_login|default:"&mdash;" }}</td></tr>
+    <tr><td>E-Mail verifiziert</td><td>{% if data.account.email_verified %}Ja{% else %}Nein{% endif %}</td></tr>
+</table>
+
+
+<!-- 2. Membership -->
+<h2>2. Mitgliedschaft</h2>
+<table class="kv-table">
+    <tr><td>Organisation</td><td>{{ data.meta.organization }}</td></tr>
+    <tr><td>Beigetreten</td><td>{{ data.membership.joined_at|default:"&mdash;" }}</td></tr>
+    <tr><td>Vereidigt</td><td>{% if data.membership.is_sworn_in %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Aktiv</td><td>{% if data.membership.is_active %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Rollen</td><td>{% for r in data.membership.roles %}{{ r }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</td></tr>
+    <tr><td>Gremien</td><td>{% for c in data.membership.committees %}{{ c }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</td></tr>
+    {% if data.membership.individual_permissions %}
+    <tr><td>Individuelle Berechtigungen</td><td>{% for p in data.membership.individual_permissions %}{{ p }}{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
+    {% endif %}
+    {% if data.membership.denied_permissions %}
+    <tr><td>Verweigerte Berechtigungen</td><td>{% for p in data.membership.denied_permissions %}{{ p }}{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
+    {% endif %}
+</table>
+
+
+<!-- 3. Security -->
+<h2>3. Sicherheit &amp; Ger&auml;te</h2>
+
+<h3>Aktive Sitzungen</h3>
+{% if data.security_sessions %}
+<table>
+    <tr>
+        <th class="col-wide">Ger&auml;t</th>
+        <th class="col-ip">IP-Adresse</th>
+        <th class="col-date">Erstellt</th>
+        <th class="col-date">Letzte Aktivit&auml;t</th>
+    </tr>
+    {% for s in data.security_sessions %}
+    <tr>
+        <td>{{ s.device_name|default:"&mdash;" }}{% if s.location %} ({{ s.location }}){% endif %}</td>
+        <td>{{ s.ip_address|default:"&mdash;" }}</td>
+        <td>{{ s.created_at|default:"&mdash;" }}</td>
+        <td>{{ s.last_activity|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Sitzungsdaten vorhanden.</p>
+{% endif %}
+
+<h3>Login-Versuche</h3>
+{% if data.security_logins %}
+<table>
+    <tr>
+        <th class="col-date">Zeitpunkt</th>
+        <th class="col-ip">IP-Adresse</th>
+        <th class="col-narrow">Erfolg</th>
+        <th>Grund</th>
+    </tr>
+    {% for a in data.security_logins %}
+    <tr>
+        <td>{{ a.timestamp|default:"&mdash;" }}</td>
+        <td>{{ a.ip_address|default:"&mdash;" }}</td>
+        <td>{% if a.was_successful %}Ja{% else %}Nein{% endif %}</td>
+        <td>{{ a.failure_reason|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Login-Versuche gespeichert.</p>
+{% endif %}
+
+<h3>Zwei-Faktor-Authentifizierung</h3>
+{% if data.security_2fa %}
+<table class="kv-table">
+    <tr><td>Best&auml;tigt</td><td>{% if data.security_2fa.is_confirmed %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Aktiv</td><td>{% if data.security_2fa.is_active %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Eingerichtet</td><td>{{ data.security_2fa.created_at|default:"&mdash;" }}</td></tr>
+    <tr><td>Best&auml;tigt am</td><td>{{ data.security_2fa.confirmed_at|default:"&mdash;" }}</td></tr>
+    <tr><td>Zuletzt verwendet</td><td>{{ data.security_2fa.last_used_at|default:"&mdash;" }}</td></tr>
+    <tr><td>Backup-Codes</td><td>{% if data.security_2fa.has_backup_codes %}Vorhanden{% else %}Nicht eingerichtet{% endif %}</td></tr>
+</table>
+<p style="font-size: 8pt; color: #999;">Hinweis: TOTP-Secrets und Backup-Codes werden aus Sicherheitsgr&uuml;nden nicht im Export aufgef&uuml;hrt.</p>
+{% else %}
+<p class="empty">Keine Zwei-Faktor-Authentifizierung eingerichtet.</p>
+{% endif %}
+
+<h3>Vertrauensw&uuml;rdige Ger&auml;te</h3>
+{% if data.security_trusted %}
+<table>
+    <tr>
+        <th class="col-wide">Ger&auml;t</th>
+        <th class="col-ip">IP-Adresse</th>
+        <th class="col-date">Erstellt</th>
+        <th class="col-date">Zuletzt verwendet</th>
+        <th class="col-narrow">G&uuml;ltig</th>
+    </tr>
+    {% for d in data.security_trusted %}
+    <tr>
+        <td>{{ d.device_name|default:"&mdash;" }}</td>
+        <td>{{ d.ip_address|default:"&mdash;" }}</td>
+        <td>{{ d.created_at|default:"&mdash;" }}</td>
+        <td>{{ d.last_used_at|default:"&mdash;" }}</td>
+        <td>{% if d.is_valid %}Ja{% else %}Nein{% endif %}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine vertrauensw&uuml;rdigen Ger&auml;te gespeichert.</p>
+{% endif %}
+
+<h3>Sicherheitswarnungen</h3>
+{% if data.security_alerts %}
+<table>
+    <tr>
+        <th class="col-date">Datum</th>
+        <th style="width: 18%;">Typ</th>
+        <th>Titel</th>
+        <th class="col-ip">IP</th>
+    </tr>
+    {% for a in data.security_alerts %}
+    <tr>
+        <td>{{ a.created_at|default:"&mdash;" }}</td>
+        <td>{{ a.type }}</td>
+        <td>{{ a.title }}{% if a.location %} ({{ a.location }}){% endif %}</td>
+        <td>{{ a.ip_address|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Sicherheitswarnungen vorhanden.</p>
+{% endif %}
+
+
+<!-- 4. Tasks -->
+<div class="page-break"></div>
+<h2>4. Aufgaben</h2>
+{% if data.tasks %}
+{% for t in data.tasks %}
+<div class="item-header">{{ t.title }}</div>
+<table class="kv-table">
+    <tr><td>Status</td><td>{{ t.status }}</td></tr>
+    <tr><td>Priorit&auml;t</td><td>{{ t.priority }}</td></tr>
+    <tr><td>F&auml;llig</td><td>{{ t.due_date|default:"&mdash;" }}</td></tr>
+    <tr><td>Erstellt</td><td>{{ t.created_at }}</td></tr>
+    <tr><td>Rolle</td><td>{% if t.is_creator %}Ersteller{% endif %}{% if t.is_creator and t.is_assignee %}, {% endif %}{% if t.is_assignee %}Zugewiesen{% endif %}</td></tr>
+</table>
+{% if t.description %}
+<div class="content-block">{{ t.description }}</div>
+{% endif %}
+{% if t.comments %}
+<h3 style="margin-top: 5px;">Kommentare</h3>
+{% for c in t.comments %}
+<div class="content-block"><strong>{{ c.created_at }}:</strong> {{ c.content }}</div>
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Aufgaben vorhanden.</p>
+{% endif %}
+
+
+<!-- 5. Motions -->
+<div class="page-break"></div>
+<h2>5. Antr&auml;ge &amp; Dokumente</h2>
+{% if data.motions %}
+{% for m in data.motions %}
+<div class="item-header">{{ m.title }}</div>
+<table class="kv-table">
+    <tr><td>Status</td><td>{{ m.status }}</td></tr>
+    <tr><td>Sichtbarkeit</td><td>{{ m.visibility }}</td></tr>
+    <tr><td>Erstellt</td><td>{{ m.created_at }}</td></tr>
+    {% if m.submitted_at %}<tr><td>Eingereicht</td><td>{{ m.submitted_at }}</td></tr>{% endif %}
+</table>
+{% if m.summary %}
+<p><strong>Zusammenfassung:</strong> {{ m.summary }}</p>
+{% endif %}
+{% if m.content %}
+<div class="content-block">{{ m.content|safe }}</div>
+{% endif %}
+
+{% if m.revisions %}
+<h3>Revisionen</h3>
+<table>
+    <tr>
+        <th class="col-narrow">Version</th>
+        <th style="width: 22%;">Ge&auml;ndert von</th>
+        <th>&Auml;nderung</th>
+        <th class="col-date">Datum</th>
+    </tr>
+    {% for r in m.revisions %}
+    <tr>
+        <td>{{ r.version }}</td>
+        <td>{{ r.changed_by|default:"&mdash;" }}</td>
+        <td>{{ r.change_summary|default:"&mdash;" }}</td>
+        <td>{{ r.created_at }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+
+{% if m.comments %}
+<h3>Kommentare</h3>
+{% for c in m.comments %}
+<div class="content-block"><strong>{{ c.created_at }}:</strong> {{ c.content }}</div>
+{% endfor %}
+{% endif %}
+
+{% if m.approvals %}
+<h3>Genehmigungen</h3>
+<table>
+    <tr>
+        <th style="width: 25%;">Person</th>
+        <th style="width: 15%;">Typ</th>
+        <th class="col-status">Status</th>
+        <th>Kommentar</th>
+        <th class="col-date">Datum</th>
+    </tr>
+    {% for a in m.approvals %}
+    <tr>
+        <td>{{ a.approver|default:"&mdash;" }}</td>
+        <td>{{ a.approval_type }}</td>
+        <td>{% if a.approved == True %}Genehmigt{% elif a.approved == False %}Abgelehnt{% else %}Ausstehend{% endif %}</td>
+        <td>{{ a.comment|default:"&mdash;" }}</td>
+        <td>{{ a.decided_at|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+
+{% if m.shares %}
+<h3>Freigaben</h3>
+<table>
+    <tr>
+        <th style="width: 18%;">Umfang</th>
+        <th style="width: 15%;">Berechtigung</th>
+        <th>Nachricht</th>
+        <th class="col-date">Datum</th>
+    </tr>
+    {% for s in m.shares %}
+    <tr>
+        <td>{{ s.scope }}</td>
+        <td>{{ s.level }}</td>
+        <td>{{ s.message|default:"&mdash;" }}</td>
+        <td>{{ s.created_at }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+
+{% if m.documents %}
+<h3>Dokumente</h3>
+<table>
+    <tr>
+        <th>Dateiname</th>
+        <th style="width: 20%;">Typ</th>
+        <th class="col-narrow">Gr&ouml;&szlig;e</th>
+        <th class="col-date">Hochgeladen</th>
+    </tr>
+    {% for d in m.documents %}
+    <tr>
+        <td>{{ d.filename }}</td>
+        <td>{{ d.mime_type }}</td>
+        <td>{{ d.file_size }}</td>
+        <td>{{ d.uploaded_at }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Antr&auml;ge vorhanden.</p>
+{% endif %}
+
+
+<!-- 6. Faction Attendance -->
+<div class="page-break"></div>
+<h2>6. Fraktionssitzungen</h2>
+{% if data.faction_attendance %}
+<table>
+    <tr>
+        <th style="width: 28%;">Sitzung</th>
+        <th class="col-date">Datum</th>
+        <th class="col-status">Status</th>
+        <th class="col-date">Check-in</th>
+        <th class="col-date">Check-out</th>
+    </tr>
+    {% for a in data.faction_attendance %}
+    <tr>
+        <td>{{ a.meeting }}{% if a.response_message %}<br><em style="font-size: 7pt; color: #888;">{{ a.response_message }}</em>{% endif %}</td>
+        <td>{{ a.date|default:"&mdash;" }}</td>
+        <td>{{ a.status }}</td>
+        <td>{{ a.checked_in_at|default:"&mdash;" }}</td>
+        <td>{{ a.checked_out_at|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Teilnahmedaten vorhanden.</p>
+{% endif %}
+
+
+<!-- 7. Meeting Data -->
+<h2>7. Sitzungsvorbereitung</h2>
+
+<h3>Vorbereitungen</h3>
+{% if data.meetings.preparations %}
+{% for p in data.meetings.preparations %}
+<div class="item-header">{{ p.meeting }}</div>
+<table class="kv-table">
+    <tr><td>Vorbereitet</td><td>{% if p.is_prepared %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Erstellt</td><td>{{ p.created_at }}</td></tr>
+</table>
+{% if p.notes %}
+<div class="content-block">{{ p.notes }}</div>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Vorbereitungen vorhanden.</p>
+{% endif %}
+
+<h3>TOP-Notizen</h3>
+{% if data.meetings.agenda_notes %}
+{% for n in data.meetings.agenda_notes %}
+<div class="item-header">{{ n.agenda_item }}</div>
+<table class="kv-table">
+    <tr><td>Sichtbarkeit</td><td>{{ n.visibility }}</td></tr>
+    {% if n.is_decision %}<tr><td>Beschluss</td><td>Ja</td></tr>{% endif %}
+    <tr><td>Erstellt</td><td>{{ n.created_at }}</td></tr>
+</table>
+{% if n.content %}
+<div class="content-block">{{ n.content }}</div>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine TOP-Notizen vorhanden.</p>
+{% endif %}
+
+<h3>Redebeitr&auml;ge</h3>
+{% if data.meetings.speech_notes %}
+{% for s in data.meetings.speech_notes %}
+<div class="item-header">{{ s.title|default:s.agenda_item }}</div>
+<table class="kv-table">
+    <tr><td>Sitzung</td><td>{{ s.meeting }}</td></tr>
+    <tr><td>TOP</td><td>{{ s.agenda_item }}</td></tr>
+    <tr><td>Gesch. Dauer</td><td>{{ s.estimated_duration }}s</td></tr>
+    <tr><td>Erstellt</td><td>{{ s.created_at }}</td></tr>
+</table>
+{% if s.content %}
+<div class="content-block">{{ s.content }}</div>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Redebeitr&auml;ge vorhanden.</p>
+{% endif %}
+
+<h3>Vorlagen-Kommentare</h3>
+{% if data.meetings.paper_comments %}
+{% for c in data.meetings.paper_comments %}
+<div class="item-header">{{ c.paper }}</div>
+<table class="kv-table">
+    <tr><td>Sichtbarkeit</td><td>{{ c.visibility }}</td></tr>
+    {% if c.is_recommendation %}<tr><td>Empfehlung</td><td>Ja</td></tr>{% endif %}
+    <tr><td>Erstellt</td><td>{{ c.created_at }}</td></tr>
+</table>
+{% if c.content %}
+<div class="content-block">{{ c.content }}</div>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Vorlagen-Kommentare vorhanden.</p>
+{% endif %}
+
+
+<!-- 8. Absences -->
+<h2>8. Abwesenheiten</h2>
+{% if data.absences %}
+<table>
+    <tr>
+        <th class="col-date">Von</th>
+        <th class="col-date">Bis</th>
+        <th>Grund</th>
+        <th style="width: 22%;">Stellvertretung</th>
+        <th class="col-narrow">Aktiv</th>
+    </tr>
+    {% for a in data.absences %}
+    <tr>
+        <td>{{ a.start_date }}</td>
+        <td>{{ a.end_date }}</td>
+        <td>{{ a.reason|default:"&mdash;" }}</td>
+        <td>{{ a.deputy|default:"&mdash;" }}</td>
+        <td>{% if a.is_active %}Ja{% else %}Nein{% endif %}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Abwesenheiten vorhanden.</p>
+{% endif %}
+
+
+<!-- 9. Change Requests -->
+<h2>9. &Auml;nderungsantr&auml;ge</h2>
+{% if data.change_requests %}
+<table>
+    <tr>
+        <th style="width: 18%;">Typ</th>
+        <th class="col-status">Status</th>
+        <th>Grund</th>
+        <th class="col-date">Erstellt</th>
+        <th class="col-date">Entschieden</th>
+    </tr>
+    {% for r in data.change_requests %}
+    <tr>
+        <td>{{ r.type }}</td>
+        <td>{{ r.status }}</td>
+        <td>{{ r.reason|default:"&mdash;" }}</td>
+        <td>{{ r.created_at }}</td>
+        <td>{{ r.decided_at|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine &Auml;nderungsantr&auml;ge vorhanden.</p>
+{% endif %}
+
+
+<!-- 10. Notifications -->
+<div class="page-break"></div>
+<h2>10. Benachrichtigungen</h2>
+
+{% if data.notifications.preferences %}
+<h3>Pr&auml;ferenzen</h3>
+<table class="kv-table">
+    <tr><td>E-Mail aktiviert</td><td>{% if data.notifications.preferences.email_enabled %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Push aktiviert</td><td>{% if data.notifications.preferences.push_enabled %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>E-Mail-Zusammenfassung</td><td>{{ data.notifications.preferences.email_digest }}</td></tr>
+    <tr><td>Ruhezeiten</td><td>{% if data.notifications.preferences.quiet_hours_enabled %}{{ data.notifications.preferences.quiet_hours_start }} &ndash; {{ data.notifications.preferences.quiet_hours_end }}{% else %}Aus{% endif %}</td></tr>
+</table>
+{% endif %}
+
+<h3>Benachrichtigungen ({{ data.notifications.notifications|length }})</h3>
+{% if data.notifications.notifications %}
+<table>
+    <tr>
+        <th class="col-date">Datum</th>
+        <th style="width: 22%;">Typ</th>
+        <th>Titel</th>
+        <th class="col-narrow">Gelesen</th>
+    </tr>
+    {% for n in data.notifications.notifications %}
+    <tr>
+        <td>{{ n.created_at }}</td>
+        <td>{{ n.type }}</td>
+        <td>{{ n.title }}</td>
+        <td>{% if n.is_read %}Ja{% else %}Nein{% endif %}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Benachrichtigungen vorhanden.</p>
+{% endif %}
+
+
+<!-- 11. Support -->
+<h2>11. Support-Tickets</h2>
+{% if data.support %}
+{% for t in data.support %}
+<div class="item-header">{{ t.subject }}</div>
+<table class="kv-table">
+    <tr><td>Kategorie</td><td>{{ t.category }}</td></tr>
+    <tr><td>Priorit&auml;t</td><td>{{ t.priority }}</td></tr>
+    <tr><td>Status</td><td>{{ t.status }}</td></tr>
+    <tr><td>Erstellt</td><td>{{ t.created_at }}</td></tr>
+    {% if t.resolved_at %}<tr><td>Gel&ouml;st</td><td>{{ t.resolved_at }}</td></tr>{% endif %}
+</table>
+{% if t.description %}
+<div class="content-block">{{ t.description }}</div>
+{% endif %}
+{% if t.messages %}
+<h3>Nachrichten</h3>
+{% for msg in t.messages %}
+<div class="content-block">
+    <strong>{{ msg.created_at }}{% if msg.is_from_support %} (Support){% endif %}:</strong><br>
+    {{ msg.content }}
+</div>
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Support-Tickets vorhanden.</p>
+{% endif %}
+
+
+<!-- Footer -->
+<div id="page-footer">
+    <div class="footer">
+        Erstellt mit Mandari am {{ export_date|date:"d.m.Y" }} um {{ export_date|time:"H:i" }} Uhr
+    </div>
+</div>
+
+</body>
+</html>

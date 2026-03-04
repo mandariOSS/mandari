@@ -10,7 +10,7 @@
 </a>
 
 <!-- Sitzungen -->
-{% if permission_checker.has_permission "view_meetings" %}
+{% if "view_meetings" in permission_checker.permissions %}
 <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}"
    class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if 'meeting' in current_url %}bg-primary-50 dark:bg-primary-900/50 text-primary-700 dark:text-primary-400{% else %}text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
     <i data-lucide="calendar" class="w-5 h-5"></i>
@@ -19,7 +19,7 @@
 {% endif %}
 
 <!-- Vorlagen -->
-{% if permission_checker.has_permission "view_papers" %}
+{% if "view_papers" in permission_checker.permissions %}
 <a href="{% url 'session:papers' tenant_slug=tenant_slug %}"
    class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if 'paper' in current_url %}bg-primary-50 dark:bg-primary-900/50 text-primary-700 dark:text-primary-400{% else %}text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
     <i data-lucide="file-text" class="w-5 h-5"></i>
@@ -28,7 +28,7 @@
 {% endif %}
 
 <!-- Anträge -->
-{% if permission_checker.has_permission "view_applications" %}
+{% if "view_applications" in permission_checker.permissions %}
 <a href="{% url 'session:applications' tenant_slug=tenant_slug %}"
    class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if 'application' in current_url %}bg-primary-50 dark:bg-primary-900/50 text-primary-700 dark:text-primary-400{% else %}text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
     <i data-lucide="inbox" class="w-5 h-5"></i>
@@ -57,7 +57,7 @@
     Personen
 </a>
 
-{% if permission_checker.has_permission "manage_settings" %}
+{% if "manage_settings" in permission_checker.permissions %}
 <div class="my-4 border-t border-gray-200 dark:border-gray-700"></div>
 
 <!-- Einstellungen -->

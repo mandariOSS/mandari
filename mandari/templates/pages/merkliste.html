@@ -1,0 +1,179 @@
+{% extends "base_insight.html" %}
+
+{% block title %}Merkliste{% endblock %}
+
+{% block content %}
+<div x-data="merklisteController()">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Merkliste</h1>
+        <p class="text-gray-500 dark:text-gray-400 mt-1">Deine gespeicherten Vorgänge, Sitzungen, Gremien und Personen.</p>
+    </div>
+
+    {# Info-Box für anonyme User #}
+    {% if not request.user.is_authenticated %}
+    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 mb-6 flex items-start gap-3">
+        <svg class="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+        </svg>
+        <div>
+            <p class="text-sm font-medium text-blue-800 dark:text-blue-300">Lokale Speicherung</p>
+            <p class="text-sm text-blue-700 dark:text-blue-400 mt-0.5">
+                Deine Merkliste wird lokal in deinem Browser gespeichert.
+                <a href="{% url 'accounts:login' %}" class="underline hover:text-blue-900 dark:hover:text-blue-200">Melde dich an</a>
+                für geräteübergreifende Nutzung.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if request.user.is_authenticated %}
+    {# ===== AUTHENTICATED: Server-rendered ===== #}
+    {% if has_bookmarks %}
+
+        {# Vorgänge #}
+        {% if bookmarked_papers %}
+        <div class="mb-6">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                <i data-lucide="file-text" class="w-5 h-5 text-amber-500"></i>
+                Vorgänge ({{ bookmarked_papers|length }})
+            </h2>
+            {% include "partials/merkliste_papers.html" with items=bookmarked_papers %}
+        </div>
+        {% endif %}
+
+        {# Sitzungen #}
+        {% if bookmarked_meetings %}
+        <div class="mb-6">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                <i data-lucide="calendar-days" class="w-5 h-5 text-blue-500"></i>
+                Sitzungen ({{ bookmarked_meetings|length }})
+            </h2>
+            {% include "partials/merkliste_meetings.html" with items=bookmarked_meetings %}
+        </div>
+        {% endif %}
+
+        {# Gremien #}
+        {% if bookmarked_organizations %}
+        <div class="mb-6">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                <i data-lucide="building-2" class="w-5 h-5 text-purple-500"></i>
+                Gremien ({{ bookmarked_organizations|length }})
+            </h2>
+            {% include "partials/merkliste_organizations.html" with items=bookmarked_organizations %}
+        </div>
+        {% endif %}
+
+        {# Personen #}
+        {% if bookmarked_persons %}
+        <div class="mb-6">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                <i data-lucide="users" class="w-5 h-5 text-green-500"></i>
+                Personen ({{ bookmarked_persons|length }})
+            </h2>
+            {% include "partials/merkliste_persons.html" with items=bookmarked_persons %}
+        </div>
+        {% endif %}
+
+    {% else %}
+        {# Leerer Zustand #}
+        <div class="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+            <svg class="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Noch nichts gespeichert</h3>
+            <p class="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+                Klicke auf den Stern bei Vorgängen, Sitzungen, Gremien oder Personen, um sie hier wiederzufinden.
+            </p>
+        </div>
+    {% endif %}
+
+    {% else %}
+    {# ===== ANONYMOUS: Alpine.js + localStorage ===== #}
+
+    {# Leerer Zustand #}
+    <div x-show="$store.bookmarks._loaded && $store.bookmarks.count() === 0"
+         class="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+        <svg class="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Noch nichts gespeichert</h3>
+        <p class="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+            Klicke auf den Stern bei Vorgängen, Sitzungen, Gremien oder Personen, um sie hier wiederzufinden.
+        </p>
+    </div>
+
+    {# Dynamically loaded sections #}
+    <template x-if="$store.bookmarks._loaded && $store.bookmarks.count() > 0">
+        <div>
+            {# Vorgänge #}
+            <div x-show="$store.bookmarks._data.paper.length > 0" class="mb-6">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                    <i data-lucide="file-text" class="w-5 h-5 text-amber-500"></i>
+                    Vorgänge (<span x-text="$store.bookmarks._data.paper.length"></span>)
+                </h2>
+                <div x-ref="paperContainer"
+                     x-effect="if ($store.bookmarks._data.paper.length > 0) loadEntities('paper', $refs.paperContainer)">
+                </div>
+            </div>
+
+            {# Sitzungen #}
+            <div x-show="$store.bookmarks._data.meeting.length > 0" class="mb-6">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                    <i data-lucide="calendar-days" class="w-5 h-5 text-blue-500"></i>
+                    Sitzungen (<span x-text="$store.bookmarks._data.meeting.length"></span>)
+                </h2>
+                <div x-ref="meetingContainer"
+                     x-effect="if ($store.bookmarks._data.meeting.length > 0) loadEntities('meeting', $refs.meetingContainer)">
+                </div>
+            </div>
+
+            {# Gremien #}
+            <div x-show="$store.bookmarks._data.organization.length > 0" class="mb-6">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                    <i data-lucide="building-2" class="w-5 h-5 text-purple-500"></i>
+                    Gremien (<span x-text="$store.bookmarks._data.organization.length"></span>)
+                </h2>
+                <div x-ref="organizationContainer"
+                     x-effect="if ($store.bookmarks._data.organization.length > 0) loadEntities('organization', $refs.organizationContainer)">
+                </div>
+            </div>
+
+            {# Personen #}
+            <div x-show="$store.bookmarks._data.person.length > 0" class="mb-6">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                    <i data-lucide="users" class="w-5 h-5 text-green-500"></i>
+                    Personen (<span x-text="$store.bookmarks._data.person.length"></span>)
+                </h2>
+                <div x-ref="personContainer"
+                     x-effect="if ($store.bookmarks._data.person.length > 0) loadEntities('person', $refs.personContainer)">
+                </div>
+            </div>
+        </div>
+    </template>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function merklisteController() {
+    return {
+        _loadedTypes: {},
+        loadEntities(type, container) {
+            if (!container) return;
+            const ids = Alpine.store('bookmarks')._data[type];
+            if (!ids || ids.length === 0) { container.innerHTML = ''; return; }
+            const key = type + ':' + ids.sort().join(',');
+            if (this._loadedTypes[type] === key) return;
+            this._loadedTypes[type] = key;
+            fetch('/insight/merkliste/api/entities/?type=' + type + '&ids=' + ids.join(','))
+                .then(r => r.text())
+                .then(html => {
+                    container.innerHTML = html;
+                    if (window.lucide) lucide.createIcons();
+                });
+        }
+    };
+}
+</script>
+{% endblock %}

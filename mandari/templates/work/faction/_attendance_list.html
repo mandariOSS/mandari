@@ -1,0 +1,52 @@
+{# Attendance list partial — rendered inside sidebar's #attendance-list #}
+{# Variables: meeting, attendances, can_manage_attendance, org_slug #}
+
+{% for attendance in attendances %}
+<div class="px-4 py-2 flex items-center justify-between gap-2">
+    <div class="flex items-center gap-2 min-w-0">
+        <span class="flex-shrink-0 w-2 h-2 rounded-full
+            {% if attendance.status == 'present' %}bg-green-500
+            {% elif attendance.status == 'confirmed' %}bg-blue-500
+            {% elif attendance.status == 'declined' %}bg-red-500
+            {% elif attendance.status == 'excused' %}bg-amber-500
+            {% elif attendance.status == 'absent' %}bg-gray-400
+            {% elif attendance.status == 'tentative' %}bg-yellow-500
+            {% else %}bg-gray-300{% endif %}"></span>
+        <span class="text-sm text-gray-700 dark:text-gray-300 truncate">
+            {{ attendance.get_display_name }}
+            {% if attendance.is_guest %}
+            <span class="text-xs text-gray-400">(Gast)</span>
+            {% endif %}
+        </span>
+    </div>
+    <div class="flex items-center gap-1 flex-shrink-0">
+        {% if can_manage_attendance and meeting.status == 'ongoing' %}
+            {% if attendance.status != 'present' %}
+            <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+                    hx-vals='{"action": "check_in", "member_id": "{{ attendance.membership_id }}"}'
+                    hx-target="#attendance-list"
+                    hx-swap="innerHTML"
+                    class="px-2 py-0.5 text-xs text-green-600 hover:bg-green-50 rounded"
+                    title="Einchecken">
+                <i data-lucide="log-in" class="w-3 h-3"></i>
+            </button>
+            {% else %}
+            <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+                    hx-vals='{"action": "check_out", "member_id": "{{ attendance.membership_id }}"}'
+                    hx-target="#attendance-list"
+                    hx-swap="innerHTML"
+                    class="px-2 py-0.5 text-xs text-amber-600 hover:bg-amber-50 rounded"
+                    title="Auschecken">
+                <i data-lucide="log-out" class="w-3 h-3"></i>
+            </button>
+            {% endif %}
+        {% else %}
+        <span class="text-xs text-gray-400">{{ attendance.get_status_display }}</span>
+        {% endif %}
+    </div>
+</div>
+{% empty %}
+<div class="px-4 py-4 text-center">
+    <p class="text-xs text-gray-400">Keine Teilnehmer</p>
+</div>
+{% endfor %}

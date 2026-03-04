@@ -1,0 +1,16 @@
+<div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4">
+    <div class="flex items-start gap-3">
+        <div class="w-8 h-8 bg-green-100 dark:bg-green-900/40 rounded-lg flex items-center justify-center shrink-0">
+            <i data-lucide="check-circle" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+        </div>
+        <div>
+            <p class="text-sm font-medium text-green-900 dark:text-green-200">{{ message }}</p>
+            {% if already_exists %}
+            <p class="text-xs text-green-700 dark:text-green-300 mt-1">
+                Pr&uuml;fen Sie auch Ihren Spam-Ordner.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+<script>if (typeof lucide !== 'undefined') lucide.createIcons();</script>

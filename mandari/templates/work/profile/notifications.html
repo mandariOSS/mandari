@@ -1,0 +1,153 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Benachrichtigungen{% endblock %}
+
+{% block header_title %}Benachrichtigungen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Benachrichtigungseinstellungen verwalten</p>
+{% endblock %}
+
+{% block work_content %}
+{% include "work/profile/_tabs.html" with active_tab="notifications" %}
+
+<form method="post">
+    {% csrf_token %}
+    <div class="space-y-6">
+        <!-- Global Settings -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Allgemein</h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Globale Einstellungen für Benachrichtigungen</p>
+            </div>
+            <div class="px-6 py-6 space-y-4">
+                <!-- Email Global Toggle -->
+                <label class="flex items-center justify-between cursor-pointer group">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="mail" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+                        </div>
+                        <div>
+                            <span class="text-sm font-medium text-gray-900 dark:text-white">E-Mail-Benachrichtigungen</span>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Benachrichtigungen per E-Mail erhalten</p>
+                        </div>
+                    </div>
+                    <div class="relative">
+                        <input type="checkbox" name="email_enabled" class="sr-only peer" {% if preferences.email_enabled %}checked{% endif %}>
+                        <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full peer-checked:bg-primary-600 transition-colors"></div>
+                        <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform peer-checked:translate-x-5"></div>
+                    </div>
+                </label>
+
+                <!-- Email Digest -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">E-Mail-Häufigkeit</label>
+                    <select name="email_digest"
+                            class="w-full sm:w-auto px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
+                        <option value="instant" {% if preferences.email_digest == 'instant' %}selected{% endif %}>Sofort</option>
+                        <option value="daily" {% if preferences.email_digest == 'daily' %}selected{% endif %}>Tägliche Zusammenfassung</option>
+                        <option value="weekly" {% if preferences.email_digest == 'weekly' %}selected{% endif %}>Wöchentliche Zusammenfassung</option>
+                        <option value="never" {% if preferences.email_digest == 'never' %}selected{% endif %}>Nie</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quiet Hours -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 25ms"
+             x-data="{ quietEnabled: {{ preferences.quiet_hours_enabled|yesno:'true,false' }} }">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Ruhezeiten</h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Keine E-Mails während der Ruhezeiten</p>
+            </div>
+            <div class="px-6 py-6 space-y-4">
+                <label class="flex items-center justify-between cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="moon" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
+                        </div>
+                        <span class="text-sm font-medium text-gray-900 dark:text-white">Ruhezeiten aktivieren</span>
+                    </div>
+                    <div class="relative">
+                        <input type="checkbox" name="quiet_hours_enabled" class="sr-only peer"
+                               {% if preferences.quiet_hours_enabled %}checked{% endif %}
+                               @change="quietEnabled = $event.target.checked">
+                        <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full peer-checked:bg-primary-600 transition-colors"></div>
+                        <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform peer-checked:translate-x-5"></div>
+                    </div>
+                </label>
+
+                <div class="grid grid-cols-2 gap-4" x-show="quietEnabled" x-cloak>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Von</label>
+                        <input type="time" name="quiet_hours_start" value="{{ preferences.quiet_hours_start|date:'H:i'|default:'22:00' }}"
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Bis</label>
+                        <input type="time" name="quiet_hours_end" value="{{ preferences.quiet_hours_end|date:'H:i'|default:'07:00' }}"
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Per-Type Settings -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Benachrichtigungstypen</h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Für jeden Typ festlegen, ob In-App und/oder E-Mail</p>
+            </div>
+
+            <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {% regroup notification_types by category as categories %}
+                {% for category in categories %}
+                <div class="px-6 py-4">
+                    <div class="flex items-center gap-2 mb-3">
+                        <div class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0
+                            {% if category.grouper == 'meetings' %}bg-blue-100 dark:bg-blue-900/30{% elif category.grouper == 'tasks' %}bg-purple-100 dark:bg-purple-900/30{% elif category.grouper == 'motions' %}bg-indigo-100 dark:bg-indigo-900/30{% elif category.grouper == 'faction' %}bg-violet-100 dark:bg-violet-900/30{% elif category.grouper == 'organization' %}bg-green-100 dark:bg-green-900/30{% elif category.grouper == 'support' %}bg-orange-100 dark:bg-orange-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                            <i data-lucide="{% if category.grouper == 'meetings' %}calendar{% elif category.grouper == 'tasks' %}clipboard-list{% elif category.grouper == 'motions' %}file-text{% elif category.grouper == 'faction' %}users{% elif category.grouper == 'organization' %}building{% elif category.grouper == 'support' %}headphones{% else %}bell{% endif %}"
+                               class="w-3.5 h-3.5 {% if category.grouper == 'meetings' %}text-blue-600 dark:text-blue-400{% elif category.grouper == 'tasks' %}text-purple-600 dark:text-purple-400{% elif category.grouper == 'motions' %}text-indigo-600 dark:text-indigo-400{% elif category.grouper == 'faction' %}text-violet-600 dark:text-violet-400{% elif category.grouper == 'organization' %}text-green-600 dark:text-green-400{% elif category.grouper == 'support' %}text-orange-600 dark:text-orange-400{% else %}text-gray-500 dark:text-gray-400{% endif %}"></i>
+                        </div>
+                        <h5 class="text-sm font-semibold text-gray-900 dark:text-white capitalize">{{ category.grouper }}</h5>
+                    </div>
+
+                    <!-- Header row -->
+                    <div class="hidden sm:flex items-center justify-end gap-6 mb-2 pr-1">
+                        <span class="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-12 text-center">In-App</span>
+                        <span class="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider w-12 text-center">E-Mail</span>
+                    </div>
+
+                    <div class="space-y-1">
+                        {% for ntype in category.list %}
+                        <div class="flex items-center justify-between py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/30 px-2 -mx-2">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">{{ ntype.label }}</span>
+                            <div class="flex items-center gap-6">
+                                <label class="flex items-center justify-center w-12 cursor-pointer">
+                                    <input type="checkbox" name="type_{{ ntype.value }}_in_app"
+                                           {% if ntype.in_app_enabled %}checked{% endif %}
+                                           class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 focus:ring-2">
+                                </label>
+                                <label class="flex items-center justify-center w-12 cursor-pointer">
+                                    <input type="checkbox" name="type_{{ ntype.value }}_email"
+                                           {% if ntype.email_enabled %}checked{% endif %}
+                                           class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 focus:ring-2">
+                                </label>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-end">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Speichern
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}

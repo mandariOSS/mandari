@@ -6,7 +6,7 @@
 
 {% block work_content %}
 <div class="max-w-2xl">
-    <form method="post" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+    <form method="post" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
         {% csrf_token %}
 
         <div class="space-y-6">
@@ -15,7 +15,7 @@
                 <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
                 <input type="text" id="name" name="name" required
                        value="{% if motion_type %}{{ motion_type.name }}{% endif %}"
-                       class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                       class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
                        placeholder="z.B. Antrag, Anfrage, Stellungnahme">
             </div>
 
@@ -24,7 +24,7 @@
                 <label for="slug" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kurzname *</label>
                 <input type="text" id="slug" name="slug" required
                        value="{% if motion_type %}{{ motion_type.slug }}{% endif %}"
-                       class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                       class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
                        placeholder="z.B. antrag, anfrage">
                 <p class="text-xs text-gray-500 mt-1">Nur Kleinbuchstaben und Bindestriche</p>
             </div>
@@ -33,7 +33,7 @@
             <div>
                 <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
                 <textarea id="description" name="description" rows="2"
-                          class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
                           placeholder="Kurze Beschreibung des Dokumenttyps">{% if motion_type %}{{ motion_type.description }}{% endif %}</textarea>
             </div>
 
@@ -42,7 +42,7 @@
                 <div>
                     <label for="icon" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Icon</label>
                     <select id="icon" name="icon"
-                            class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                            class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                         {% with current_icon=motion_type.icon|default:"file-text" %}
                         <option value="file-text" {% if current_icon == "file-text" %}selected{% endif %}>📄 Dokument</option>
                         <option value="help-circle" {% if current_icon == "help-circle" %}selected{% endif %}>❓ Anfrage</option>
@@ -58,7 +58,7 @@
                 <div>
                     <label for="color" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Farbe</label>
                     <select id="color" name="color"
-                            class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                            class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                         {% with current_color=motion_type.color|default:"blue" %}
                         <option value="blue" {% if current_color == "blue" %}selected{% endif %}>🔵 Blau</option>
                         <option value="green" {% if current_color == "green" %}selected{% endif %}>🟢 Grün</option>
@@ -113,12 +113,12 @@
 
         <!-- Actions -->
         <div class="flex items-center justify-between mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-            <a href="{% url 'work:motion_type_list' org_slug=organization.slug %}"
+            <a href="{% url 'work:document_type_list' org_slug=organization.slug %}"
                class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
                 Abbrechen
             </a>
             <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                 <i data-lucide="check" class="w-4 h-4"></i>
                 {% if is_new %}Typ erstellen{% else %}Speichern{% endif %}
             </button>

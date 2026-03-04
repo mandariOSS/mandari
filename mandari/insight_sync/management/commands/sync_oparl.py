@@ -88,7 +88,7 @@ class Command(BaseCommand):
     def _run_sync(self, source_url: str | None, full: bool, concurrent: int):
         """Führt den Sync direkt aus."""
         # Add ingestor to path
-        ingestor_path = settings.BASE_DIR.parent / "apps" / "ingestor"
+        ingestor_path = settings.BASE_DIR.parent / "ingestor"
         sys.path.insert(0, str(ingestor_path))
 
         from src.sync.orchestrator import SyncOrchestrator

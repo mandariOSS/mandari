@@ -2,9 +2,9 @@
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
         {% for file in files %}
-        <div class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors {% if file.access_url %}cursor-pointer{% endif %}"
-             {% if file.access_url %}
-             @click="openDoc('{{ file.access_url|escapejs }}', '{{ file.name|default:file.file_name|default:"Dokument"|escapejs }}', '{% if file.context_info.organization_name %}{{ file.context_info.organization_name|escapejs }}{% endif %}{% if file.paper.reference %}{% if file.context_info.organization_name %} · {% endif %}{{ file.paper.reference|escapejs }}{% endif %}{% if file.context_info.meeting_date %} · Sitzung {{ file.context_info.meeting_date|date:"d.m.Y" }}{% endif %}{% if file.size %} · {{ file.size|filesizeformat }}{% endif %}')"
+        <div class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors {% if file.access_url or file.download_url %}cursor-pointer{% endif %}"
+             {% if file.access_url or file.download_url %}
+             @click="openDoc('{% url 'insight_core:insight:file_proxy' file.id %}', '{{ file.name|default:file.file_name|default:"Dokument"|escapejs }}', '{% if file.context_info.organization_name %}{{ file.context_info.organization_name|escapejs }}{% endif %}{% if file.paper.reference %}{% if file.context_info.organization_name %} · {% endif %}{{ file.paper.reference|escapejs }}{% endif %}{% if file.context_info.meeting_date %} · Sitzung {{ file.context_info.meeting_date|date:"d.m.Y" }}{% endif %}{% if file.size %} · {{ file.size|filesizeformat }}{% endif %}')"
              {% endif %}>
             {# File type icon #}
             <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
@@ -62,8 +62,8 @@
                 {% if file.text_extraction_status == 'completed' %}
                 <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" title="Text extrahiert">OCR</span>
                 {% endif %}
-                {% if file.access_url %}
-                <a href="{{ file.access_url }}" target="_blank" rel="noopener noreferrer" @click.stop
+                {% if file.access_url or file.download_url %}
+                <a href="{{ file.download_url|default:file.access_url }}" target="_blank" rel="noopener noreferrer" @click.stop
                     class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="In neuem Tab öffnen">
                     <i data-lucide="external-link" class="w-4 h-4 text-gray-400"></i>
                 </a>

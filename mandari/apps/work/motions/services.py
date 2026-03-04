@@ -1,24 +1,40 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-AI-powered motion assistant service.
+AI-powered document assistant service for Work DMS.
 
-Provides AI assistance for motion creation:
-- Text improvement with specific instructions
-- Formal correctness checking
-- Suggestion generation
-- Title generation from content
-- Bullet point expansion
+Key goals:
+- OpenAI-compatible provider integration (Nebius default)
+- Organization-level API keys and model/provider overrides
+- Hard token budgets per organization (day/week/month)
+- Context-aware chat for collaborative document editing
 """
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 
+import httpx
 from django.conf import settings
 
+from apps.common.models import SiteSettings
+
 from .ai_security import AIInputSanitizer, AIOutputFilter, AIRateLimiter
+from .models import OrganizationAITokenUsage
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_html(value: str) -> str:
+    if not value:
+        return ""
+    value = re.sub(r"<[^>]+>", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _estimate_tokens(value: str) -> int:
+    # Good enough estimation for budget pre-checking.
+    return max(1, len(value or "") // 4)
 
 
 @dataclass
@@ -29,6 +45,7 @@ class AIResponse:
     content: str = ""
     error: str = ""
     suggestions: list = None
+    total_tokens: int = 0
 
     def __post_init__(self):
         if self.suggestions is None:
@@ -37,24 +54,20 @@ class AIResponse:
 
 class MotionAIService:
     """
-    AI-powered assistance for motion/document creation.
-
-    Uses the Groq API for fast inference.
+    AI-powered assistance for collaborative document editing.
     """
 
-    SYSTEM_PROMPT = """Du bist Experte für kommunalpolitische Anträge und Anfragen in Deutschland.
-Deine Aufgabe ist es, Anträge formal korrekt, klar und überzeugend zu formulieren.
+    SYSTEM_PROMPT = """Du bist ein deutscher Assistent für kommunalpolitische Dokumente.
+Du hilfst beim Schreiben, Umformulieren, Prüfen und Strukturieren.
+Nutze den bereitgestellten Dokumentkontext präzise und antworte konkret."""
 
-Wichtige Regeln:
-- Verwende formale Sprache, aber bleibe verständlich
-- Beachte die typische Struktur kommunaler Anträge (Betreff, Antrag/Beschlussvorschlag, Begründung)
-- Sei präzise und verzichte auf unnötige Floskeln
-- Beachte die politische Neutralität - der Nutzer bestimmt die Ausrichtung
-
-Format-Hinweise:
-- Verwende klare Absätze
-- Nummeriere bei mehreren Beschlusspunkten
-- Halte die Begründung sachlich"""
+    CHAT_SYSTEM_PROMPT = """Du bist der KI-Co-Editor in einem kollaborativen Dokument (Beta).
+Verhalte dich wie ein pragmatischer Redaktionsassistent:
+- Beziehe dich auf den bereitgestellten Dokumentkontext
+- Erkläre kurz und klar
+- Gib konkrete Formulierungsvorschläge in Deutsch
+- Erfinde keine Fakten
+- Wenn Informationen fehlen, stelle Rückfragen"""
 
     MOTION_TYPES = {
         "motion": "Antrag",
@@ -63,92 +76,159 @@ Format-Hinweise:
         "amendment": "Änderungsantrag",
     }
 
-    def __init__(self, user_id: int = None):
-        """
-        Initialize the AI service.
+    PROVIDER_DEFAULTS = {
+        "nebius": {
+            "base_url": "https://api.tokenfactory.nebius.com/v1/",
+            "model": "openai/gpt-oss-120b",
+        },
+        "ovh": {
+            "base_url": "",
+            "model": "openai/gpt-oss-120b",
+        },
+        "ionos": {
+            "base_url": "",
+            "model": "openai/gpt-oss-120b",
+        },
+    }
 
-        Args:
-            user_id: Optional user ID for rate limiting
-        """
-        self.api_key = getattr(settings, "GROQ_API_KEY", None)
-        self.model = getattr(settings, "GROQ_MODEL", "llama-3.1-70b-versatile")
+    def __init__(self, organization=None, user_id: int | None = None):
+        self.organization = organization
         self.user_id = user_id
 
-    def _get_client(self):
-        """Get the Groq client (lazy loading)."""
-        if not self.api_key:
-            return None
+    def _resolve_provider_config(self) -> dict:
+        provider = (getattr(self.organization, "ai_provider", "") or "nebius").lower()
+        defaults = self.PROVIDER_DEFAULTS.get(provider, self.PROVIDER_DEFAULTS["nebius"])
 
-        try:
-            from groq import Groq
+        model = getattr(self.organization, "ai_model", "") or defaults["model"]
+        base_url = ""
+        api_key = ""
 
-            return Groq(api_key=self.api_key)
-        except ImportError:
-            logger.warning("Groq library not installed")
-            return None
+        if self.organization:
+            base_url = self.organization.get_effective_ai_base_url()
+            api_key = self.organization.get_ai_api_key()
+
+        # For Nebius we also support global fallback key.
+        if not api_key and provider == "nebius":
+            api_key = SiteSettings.get_nebius_api_key() or getattr(settings, "NEBIUS_API_KEY", "")
+
+        if not base_url:
+            base_url = defaults["base_url"]
+
+        return {
+            "provider": provider,
+            "base_url": base_url,
+            "api_key": api_key,
+            "model": model,
+        }
 
     def _check_rate_limit(self) -> tuple[bool, str]:
-        """Check rate limit for current user."""
         if not self.user_id:
             return True, ""
-        return AIRateLimiter.check_limit(self.user_id)
+        organization_id = str(self.organization.id) if self.organization else None
+        return AIRateLimiter.check_limit(self.user_id, organization_id=organization_id)
 
     def _increment_rate_limit(self) -> None:
-        """Increment rate limit counter after successful request."""
         if self.user_id:
-            AIRateLimiter.increment(self.user_id)
+            organization_id = str(self.organization.id) if self.organization else None
+            AIRateLimiter.increment(self.user_id, organization_id=organization_id)
 
-    def _call_api(self, messages: list, max_tokens: int = 2000) -> str | None:
-        """Make API call to Groq with security checks."""
-        # Check rate limit
-        allowed, error_message = self._check_rate_limit()
+    def _check_org_token_limits(self, estimated_tokens: int) -> tuple[bool, str]:
+        if not self.organization:
+            return True, ""
+
+        day_used = OrganizationAITokenUsage.get_tokens_used(
+            self.organization, OrganizationAITokenUsage.PERIOD_DAY
+        )
+        week_used = OrganizationAITokenUsage.get_tokens_used(
+            self.organization, OrganizationAITokenUsage.PERIOD_WEEK
+        )
+        month_used = OrganizationAITokenUsage.get_tokens_used(
+            self.organization, OrganizationAITokenUsage.PERIOD_MONTH
+        )
+
+        if day_used + estimated_tokens > self.organization.ai_token_limit_daily:
+            return False, "Tageslimit für KI-Tokens erreicht."
+        if week_used + estimated_tokens > self.organization.ai_token_limit_weekly:
+            return False, "Wochenlimit für KI-Tokens erreicht."
+        if month_used + estimated_tokens > self.organization.ai_token_limit_monthly:
+            return False, "Monatslimit für KI-Tokens erreicht."
+        return True, ""
+
+    def _record_token_usage(self, total_tokens: int) -> None:
+        if self.organization and total_tokens > 0:
+            OrganizationAITokenUsage.increment_usage(self.organization, total_tokens)
+
+    def _call_api(
+        self,
+        messages: list[dict],
+        max_tokens: int = 2000,
+        temperature: float = 0.5,
+    ) -> AIResponse:
+        allowed, limit_message = self._check_rate_limit()
         if not allowed:
-            logger.warning(f"Rate limit exceeded for user {self.user_id}: {error_message}")
-            return None
+            return AIResponse(success=False, error=limit_message)
 
-        client = self._get_client()
-        if not client:
-            return None
+        cfg = self._resolve_provider_config()
+        if not cfg["api_key"]:
+            return AIResponse(success=False, error="Kein KI API Key konfiguriert.")
+        if not cfg["base_url"]:
+            return AIResponse(success=False, error="Kein KI Endpoint (Base URL) konfiguriert.")
+
+        estimated_prompt_tokens = sum(_estimate_tokens(str(m.get("content", ""))) for m in messages)
+        estimated_total = estimated_prompt_tokens + max_tokens
+        allowed, budget_message = self._check_org_token_limits(estimated_total)
+        if not allowed:
+            return AIResponse(success=False, error=budget_message)
+
+        url = cfg["base_url"].rstrip("/") + "/chat/completions"
+        payload = {
+            "model": cfg["model"],
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        headers = {
+            "Authorization": f"Bearer {cfg['api_key']}",
+            "Content-Type": "application/json",
+        }
 
         try:
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=0.7,
-            )
-            result = response.choices[0].message.content
+            timeout = httpx.Timeout(90.0, connect=15.0)
+            with httpx.Client(timeout=timeout) as client:
+                response = client.post(url, json=payload, headers=headers)
+                response.raise_for_status()
+            data = response.json()
 
-            # Increment rate limit on success
+            content = (((data.get("choices") or [{}])[0]).get("message") or {}).get("content", "")
+            usage = data.get("usage") or {}
+            total_tokens = int(usage.get("total_tokens") or 0)
+            if total_tokens <= 0:
+                total_tokens = _estimate_tokens(content) + estimated_prompt_tokens
+
+            # Strong post-check to enforce budget strictly.
+            allowed, budget_message = self._check_org_token_limits(total_tokens)
+            if not allowed:
+                return AIResponse(success=False, error=budget_message)
+
+            self._record_token_usage(total_tokens)
             self._increment_rate_limit()
 
-            # Filter output for safety
-            return AIOutputFilter.filter(result, allow_html=True)
+            safe_content = AIOutputFilter.filter(content, allow_html=True)
+            return AIResponse(success=True, content=safe_content, total_tokens=total_tokens)
+        except httpx.HTTPStatusError as e:
+            logger.warning("AI provider HTTP error: %s - %s", e.response.status_code, e.response.text[:500])
+            return AIResponse(success=False, error=f"KI-Provider Fehler: {e.response.status_code}")
         except Exception as e:
-            logger.error(f"Groq API error: {e}")
-            return None
+            logger.exception("AI provider call failed: %s", e)
+            return AIResponse(success=False, error="KI-Service nicht verfügbar.")
 
     def improve_text(self, text: str, instruction: str, motion_type: str = "motion", context: str = "") -> AIResponse:
-        """
-        Improve text based on specific instruction.
-
-        Args:
-            text: The text to improve
-            instruction: What to improve (e.g., "make more formal", "shorten")
-            motion_type: Type of motion (motion, inquiry, etc.)
-            context: Additional context about the motion
-
-        Returns:
-            AIResponse with improved text
-        """
         if not text.strip():
             return AIResponse(success=False, error="Kein Text zum Verbessern")
 
-        # Sanitize inputs
         text = AIInputSanitizer.sanitize(text)
         instruction = AIInputSanitizer.sanitize(instruction)
         context = AIInputSanitizer.sanitize(context) if context else ""
-
         type_name = self.MOTION_TYPES.get(motion_type, "Antrag")
 
         messages = [
@@ -156,243 +236,169 @@ Format-Hinweise:
             {
                 "role": "user",
                 "content": f"""Verbessere den folgenden Text eines {type_name}s.
-
 Anweisung: {instruction}
-
 {f"Kontext: {context}" if context else ""}
-
 Text:
 {text}
-
-Antworte nur mit dem verbesserten Text, ohne Erklärungen.""",
+Antworte nur mit dem verbesserten Text.""",
             },
         ]
-
-        result = self._call_api(messages)
-        if result:
-            return AIResponse(success=True, content=result.strip())
-
-        return AIResponse(success=False, error="AI-Service nicht verfügbar")
+        return self._call_api(messages, max_tokens=2000, temperature=0.4)
 
     def check_formalities(self, content: str, motion_type: str = "motion") -> AIResponse:
-        """
-        Check a motion for formal correctness.
-
-        Returns list of issues and suggestions.
-        """
         if not content.strip():
             return AIResponse(success=False, error="Kein Inhalt zum Prüfen")
 
-        # Sanitize input
         content = AIInputSanitizer.sanitize(content)
-
         type_name = self.MOTION_TYPES.get(motion_type, "Antrag")
-
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {
                 "role": "user",
                 "content": f"""Prüfe den folgenden {type_name} auf formale Korrektheit.
-
-Prüfe besonders:
-1. Ist ein klarer Beschlussvorschlag vorhanden?
-2. Ist der Betreff aussagekräftig?
-3. Enthält die Begründung alle wichtigen Punkte?
-4. Ist die Sprache formal und verständlich?
-5. Gibt es logische Lücken oder Widersprüche?
-
-{type_name}:
-{content}
-
-Antworte im JSON-Format:
-{{
-    "issues": ["Problem 1", "Problem 2"],
-    "suggestions": ["Verbesserungsvorschlag 1", "Verbesserungsvorschlag 2"],
-    "score": 85,
-    "summary": "Kurze Zusammenfassung"
-}}""",
+Antworte als JSON:
+{{"issues": [], "suggestions": [], "summary": ""}}
+Inhalt:
+{content}""",
             },
         ]
-
-        result = self._call_api(messages)
-        if result:
-            try:
-                # Try to parse JSON
-                data = json.loads(result)
-                return AIResponse(
-                    success=True,
-                    content=data.get("summary", ""),
-                    suggestions=data.get("issues", []) + data.get("suggestions", []),
-                )
-            except json.JSONDecodeError:
-                # Return as plain text
-                return AIResponse(success=True, content=result)
-
-        return AIResponse(success=False, error="AI-Service nicht verfügbar")
+        result = self._call_api(messages, max_tokens=1200, temperature=0.2)
+        if not result.success:
+            return result
+        try:
+            data = json.loads(result.content)
+            return AIResponse(
+                success=True,
+                content=data.get("summary", ""),
+                suggestions=data.get("issues", []) + data.get("suggestions", []),
+                total_tokens=result.total_tokens,
+            )
+        except json.JSONDecodeError:
+            return result
 
     def suggest_improvements(self, content: str) -> AIResponse:
-        """
-        Generate improvement suggestions for the motion.
-
-        Returns a list of actionable suggestions.
-        """
         if not content.strip():
             return AIResponse(success=False, error="Kein Inhalt")
-
-        # Sanitize input
         content = AIInputSanitizer.sanitize(content)
-
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {
                 "role": "user",
-                "content": f"""Analysiere diesen Antrag und gib konkrete Verbesserungsvorschläge.
-
-Antrag:
-{content}
-
-Gib maximal 5 Vorschläge. Antworte im JSON-Format:
-[
-    {{"type": "struktur", "suggestion": "Vorschlag 1"}},
-    {{"type": "sprache", "suggestion": "Vorschlag 2"}},
-    {{"type": "inhalt", "suggestion": "Vorschlag 3"}}
-]""",
+                "content": f"""Analysiere den Text und nenne maximal 5 konkrete Verbesserungen als JSON-Array.
+Text:
+{content}""",
             },
         ]
-
-        result = self._call_api(messages)
-        if result:
-            try:
-                suggestions = json.loads(result)
-                return AIResponse(success=True, suggestions=[s.get("suggestion", str(s)) for s in suggestions])
-            except json.JSONDecodeError:
-                # Parse as plain text list
-                lines = [line.strip("- ").strip() for line in result.split("\n") if line.strip()]
-                return AIResponse(success=True, suggestions=lines[:5])
-
-        return AIResponse(success=False, error="AI-Service nicht verfügbar")
+        result = self._call_api(messages, max_tokens=900, temperature=0.3)
+        if not result.success:
+            return result
+        try:
+            suggestions = json.loads(result.content)
+            return AIResponse(
+                success=True,
+                suggestions=[s.get("suggestion", str(s)) for s in suggestions],
+                total_tokens=result.total_tokens,
+            )
+        except json.JSONDecodeError:
+            lines = [line.strip("- ").strip() for line in result.content.split("\n") if line.strip()]
+            return AIResponse(success=True, suggestions=lines[:5], total_tokens=result.total_tokens)
 
     def generate_title(self, content: str) -> AIResponse:
-        """
-        Generate a suitable title from the motion content.
-        """
         if not content.strip():
             return AIResponse(success=False, error="Kein Inhalt")
-
-        # Sanitize input
         content = AIInputSanitizer.sanitize(content)
-
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {
                 "role": "user",
-                "content": f"""Erstelle einen passenden Betreff/Titel für diesen Antrag.
-
-Der Titel sollte:
-- Prägnant sein (max. 100 Zeichen)
-- Den Kerninhalt widerspiegeln
-- Formal korrekt sein
-
-Antrag:
-{content[:2000]}
-
-Antworte nur mit dem Titel, ohne Erklärungen.""",
+                "content": f"""Erstelle einen prägnanten Titel (max. 100 Zeichen) für den Text.
+Text:
+{content[:3000]}""",
             },
         ]
-
-        result = self._call_api(messages, max_tokens=200)
-        if result:
-            # Clean up result
-            title = result.strip().strip('"').strip()
-            return AIResponse(success=True, content=title[:500])
-
-        return AIResponse(success=False, error="AI-Service nicht verfügbar")
+        result = self._call_api(messages, max_tokens=180, temperature=0.2)
+        if result.success:
+            result.content = result.content.strip().strip('"')[:500]
+        return result
 
     def expand_bullet_points(self, bullet_points: str, motion_type: str = "motion", context: str = "") -> AIResponse:
-        """
-        Expand bullet points into a full motion text.
-
-        Args:
-            bullet_points: Bullet points or notes to expand
-            motion_type: Type of motion
-            context: Additional context
-
-        Returns:
-            AIResponse with expanded text
-        """
         if not bullet_points.strip():
             return AIResponse(success=False, error="Keine Stichpunkte")
-
-        # Sanitize inputs
         bullet_points = AIInputSanitizer.sanitize(bullet_points)
         context = AIInputSanitizer.sanitize(context) if context else ""
-
         type_name = self.MOTION_TYPES.get(motion_type, "Antrag")
-
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {
                 "role": "user",
-                "content": f"""Formuliere aus diesen Stichpunkten einen vollständigen {type_name}.
-
+                "content": f"""Formuliere aus den Stichpunkten einen vollständigen {type_name}.
 {f"Kontext: {context}" if context else ""}
-
 Stichpunkte:
-{bullet_points}
-
-Erstelle einen gut strukturierten {type_name} mit:
-- Klarem Beschlussvorschlag (bei Anträgen) oder klarer Fragestellung (bei Anfragen)
-- Sachlicher Begründung
-
-Antworte nur mit dem ausformulierten {type_name}.""",
+{bullet_points}""",
             },
         ]
-
-        result = self._call_api(messages, max_tokens=3000)
-        if result:
-            return AIResponse(success=True, content=result.strip())
-
-        return AIResponse(success=False, error="AI-Service nicht verfügbar")
+        return self._call_api(messages, max_tokens=2600, temperature=0.5)
 
     def generate_summary(self, content: str, max_length: int = 300) -> AIResponse:
-        """
-        Generate a public summary of the motion.
-        """
         if not content.strip():
             return AIResponse(success=False, error="Kein Inhalt")
-
-        # Sanitize input
         content = AIInputSanitizer.sanitize(content)
-
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {
                 "role": "user",
-                "content": f"""Erstelle eine öffentliche Kurzzusammenfassung dieses Antrags.
-
-Die Zusammenfassung sollte:
-- Maximal {max_length} Zeichen lang sein
-- Den Kern des Antrags erfassen
-- Verständlich für die Öffentlichkeit sein
-
-Antrag:
-{content[:3000]}
-
-Antworte nur mit der Zusammenfassung.""",
+                "content": f"""Erstelle eine öffentliche Zusammenfassung mit max. {max_length} Zeichen.
+Text:
+{content[:4000]}""",
             },
         ]
+        result = self._call_api(messages, max_tokens=500, temperature=0.3)
+        if result.success:
+            result.content = result.content[:max_length]
+        return result
 
-        result = self._call_api(messages, max_tokens=500)
-        if result:
-            summary = result.strip()[:max_length]
-            return AIResponse(success=True, content=summary)
+    def chat_with_document(
+        self,
+        document_html: str,
+        user_message: str,
+        selected_text: str = "",
+        history: list[dict] | None = None,
+    ) -> AIResponse:
+        if not user_message.strip():
+            return AIResponse(success=False, error="Leere Nachricht")
 
-        return AIResponse(success=False, error="AI-Service nicht verfügbar")
+        user_message = AIInputSanitizer.sanitize(user_message)
+        selected_text = AIInputSanitizer.sanitize(selected_text or "")
+        document_text = AIInputSanitizer.sanitize(_strip_html(document_html))[:16000]
+
+        messages = [{"role": "system", "content": self.CHAT_SYSTEM_PROMPT}]
+        if document_text:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": f"Dokumentkontext (gekürzt):\n{document_text}",
+                }
+            )
+        if selected_text:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": f"Aktuell markierter Text:\n{selected_text[:2000]}",
+                }
+            )
+
+        # Keep conversation history short for cost control.
+        for msg in (history or [])[-8:]:
+            role = msg.get("role")
+            content = AIInputSanitizer.sanitize(str(msg.get("content", "")))
+            if role in {"user", "assistant"} and content:
+                messages.append({"role": role, "content": content[:4000]})
+
+        messages.append({"role": "user", "content": user_message})
+        return self._call_api(messages, max_tokens=1400, temperature=0.4)
 
     def is_available(self) -> bool:
-        """Check if the AI service is available."""
-        return bool(self.api_key)
-
-
-# Singleton instance
-motion_ai_service = MotionAIService()
+        if self.organization and not self.organization.ai_enabled:
+            return False
+        cfg = self._resolve_provider_config()
+        return bool(cfg["api_key"] and cfg["base_url"] and cfg["model"])

@@ -62,6 +62,7 @@ class NotificationHub:
         actor=None,  # Membership instance (optional)
         metadata: dict = None,
         send_email: bool = True,
+        _forwarded: bool = False,  # Recursion guard for deputy forwarding
     ) -> Notification | None:
         """
         Send a notification to a single user.
@@ -75,6 +76,7 @@ class NotificationHub:
             actor: Optional Membership who triggered the notification
             metadata: Optional additional data
             send_email: Whether to send email (subject to user preferences)
+            _forwarded: Internal flag to prevent recursive deputy forwarding
 
         Returns:
             The created Notification instance, or None if filtered out
@@ -103,7 +105,53 @@ class NotificationHub:
 
         logger.info(f"Notification sent: {notification_type} to {recipient.user.email}")
 
+        # Deputy forwarding: if recipient is absent and has a deputy
+        if not _forwarded:
+            cls._forward_to_deputy(
+                recipient=recipient,
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                link=link,
+                actor=actor,
+                metadata=metadata,
+            )
+
         return notification
+
+    @classmethod
+    def _forward_to_deputy(cls, recipient, notification_type, title, message, link, actor, metadata):
+        """Forward notification to deputy if recipient is currently absent."""
+        try:
+            from apps.work.organization.models import MemberAbsence
+
+            today = timezone.now().date()
+            active_absence = (
+                MemberAbsence.objects.filter(
+                    membership=recipient,
+                    is_active=True,
+                    start_date__lte=today,
+                    end_date__gte=today,
+                    notify_deputy=True,
+                    deputy__isnull=False,
+                )
+                .select_related("deputy")
+                .first()
+            )
+
+            if active_absence and active_absence.deputy:
+                cls.send(
+                    recipient=active_absence.deputy,
+                    notification_type=notification_type,
+                    title=f"[Vertretung] {title}",
+                    message=message,
+                    link=link,
+                    actor=actor,
+                    metadata=metadata,
+                    _forwarded=True,
+                )
+        except Exception as e:
+            logger.error(f"Failed to forward notification to deputy: {e}")
 
     @classmethod
     def send_bulk(

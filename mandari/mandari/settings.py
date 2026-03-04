@@ -4,6 +4,7 @@ Django settings for Mandari project.
 Mandari Insight - Kommunalpolitische Transparenz
 """
 
+import django
 import os
 from pathlib import Path
 
@@ -71,6 +72,8 @@ SUBDOMAIN_REDIRECT_ENABLED = os.environ.get("SUBDOMAIN_REDIRECT_ENABLED", "true"
 # Application definition
 
 INSTALLED_APPS = [
+    # ASGI Server (must be first for Channels)
+    "daphne",
     # Unfold Admin Theme (muss vor django.contrib.admin stehen!)
     "unfold",
     "unfold.contrib.filters",
@@ -101,6 +104,9 @@ INSTALLED_APPS = [
 
 # Custom User Model
 AUTH_USER_MODEL = "accounts.User"
+
+# ASGI Application (for Django Channels WebSocket support)
+ASGI_APPLICATION = "mandari.asgi.application"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -185,6 +191,24 @@ else:
     }
     SESSION_ENGINE = "django.contrib.sessions.backends.db"
 
+# Django Channels — WebSocket layer
+# Uses Redis if available, falls back to in-memory for development
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+            },
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -252,6 +276,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Mandari-spezifische Einstellungen
 # =============================================================================
 
+# Marketing-Website URL (lokal: http://localhost:8001, Produktion: leer = gleiche Domain)
+MARKETING_URL = os.environ.get("MARKETING_URL", "http://localhost:8001" if DEBUG else "")
+
 # Meilisearch
 MEILISEARCH_URL = os.environ.get("MEILISEARCH_URL", "http://localhost:7700")
 MEILISEARCH_KEY = os.environ.get("MEILISEARCH_KEY", "masterKey")
@@ -263,8 +290,8 @@ MEILISEARCH_AUTO_INDEX = os.environ.get("MEILISEARCH_AUTO_INDEX", "True").lower(
 MEILISEARCH_EMBEDDING_MODEL = os.environ.get("MEILISEARCH_EMBEDDING_MODEL", "BAAI/bge-m3")
 MEILISEARCH_SEMANTIC_RATIO = float(os.environ.get("MEILISEARCH_SEMANTIC_RATIO", "0.0"))
 
-# Groq API (für KI-Features)
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+# Nebius AI (KI-Features: Dokumenten-Assistent, Zusammenfassungen)
+NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")
 
 # Mistral API (für OCR)
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
@@ -282,6 +309,17 @@ TEXT_EXTRACTION_ASYNC = os.environ.get("TEXT_EXTRACTION_ASYNC", "True").lower() 
     "yes",
 )
 TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", "50"))
+
+# Insight Subscriptions (E-Mail-Digest)
+INSIGHT_DIGEST_ENABLED = os.environ.get("INSIGHT_DIGEST_ENABLED", "True").lower() in ("true", "1", "yes")
+INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL = int(os.environ.get("INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL", "20"))
+INSIGHT_DIGEST_FROM_EMAIL = os.environ.get("INSIGHT_DIGEST_FROM_EMAIL", "")  # Falls leer → DEFAULT_FROM_EMAIL
+
+# Georeferenzierung
+GEOREF_ENABLED = os.environ.get("GEOREF_ENABLED", "True").lower() in ("true", "1", "yes")
+PHOTON_API_URL = os.environ.get("PHOTON_API_URL", "https://photon.komoot.io/api/")
+GEOCODING_RATE_LIMIT = int(os.environ.get("GEOCODING_RATE_LIMIT", "5"))  # Requests pro Sekunde
+GEOREF_TEXT_MAX_CHARS = int(os.environ.get("GEOREF_TEXT_MAX_CHARS", "8000"))
 
 # Encryption Master Key (für Work-Module Datenverschlüsselung)
 # Generate with: python -c "import secrets; import base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
@@ -422,7 +460,7 @@ LOGGING = {
 # =============================================================================
 # Built-in CSP support for protection against XSS attacks
 
-if not DEBUG:
+if not DEBUG and django.VERSION >= (6, 0):
     from django.utils.csp import CSP
 
     SECURE_CSP = {

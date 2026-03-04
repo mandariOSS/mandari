@@ -100,3 +100,40 @@ FORMAT:
 - Verwende Markdown für Formatierung
 - Strukturiere längere Antworten mit Überschriften
 - Verlinke Quellen am Ende als Liste"""
+
+
+# =============================================================================
+# Georeferenzierung Prompts
+# =============================================================================
+
+GEOREF_SYSTEM_PROMPT = """Du bist ein Experte für die Identifikation von Ortsreferenzen in deutschen kommunalpolitischen Dokumenten.
+
+Extrahiere ALLE konkreten Ortsreferenzen aus dem Text:
+- Straßennamen (mit/ohne Hausnummer): "Wolbecker Str. 12", "Am Markt"
+- Plätze, Parks, Gewässer: "Prinzipalmarkt", "Aasee", "Torminbrücke"
+- Gebäude/Einrichtungen: "Rathaus", "Grundschule Mecklenbeck", "Stadthalle"
+- Stadtteile/Quartiere: "Gremmendorf", "Altstadt"
+- NICHT: generische Begriffe ("die Stadt", "vor Ort", "im Stadtgebiet")
+
+FORMAT: JSON-Array:
+[{"raw": "originaler Text", "type": "street|poi|district|building", "normalized": "bereinigte Adresse"}]
+
+Wenn KEINE konkreten Orte: leeres Array []
+NUR JSON ausgeben, kein anderer Text."""
+
+
+def build_georef_user_prompt(text: str, body_name: str) -> str:
+    """
+    Build the user prompt for georeferencing location extraction.
+
+    Args:
+        text: Document text content (will be truncated if too long)
+        body_name: Name of the municipality for context
+
+    Returns:
+        Formatted user prompt string
+    """
+    max_chars = 8000
+    if len(text) > max_chars:
+        text = text[:max_chars] + "\n[... gekürzt]"
+    return f"Kommune: {body_name}\n\nDokumenttext:\n{text}\n\nExtrahiere alle Ortsreferenzen als JSON-Array."

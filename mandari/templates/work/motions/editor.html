@@ -1,0 +1,2952 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}{{ motion.title }}{% endblock %}
+
+{% load static %}
+{% block work_extra_head %}
+<script src="{% static 'js/editor.bundle.js' %}?v={% now 'U' %}"></script>
+<style>
+    /* Constrain entire layout to viewport height so sidebar stays fixed */
+    .work-main {
+        height: 100vh !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+    }
+
+    /* Override page content padding for full-height editor */
+    .work-page-content {
+        padding: 0 !important;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    /* Editor Layout */
+    .editor-wrapper {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .editor-layout {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        grid-template-rows: minmax(0, 1fr);
+        gap: 0;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    @media (max-width: 1280px) {
+        .editor-layout {
+            grid-template-columns: 1fr;
+        }
+        .editor-sidebar {
+            display: none;
+        }
+        .editor-sidebar.mobile-open {
+            display: flex;
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            max-width: 400px;
+            z-index: 50;
+        }
+    }
+
+    /* Editor Panel */
+    .editor-panel {
+        display: flex;
+        flex-direction: column;
+        background: white;
+        overflow: hidden;
+        min-height: 0;
+    }
+
+    .dark .editor-panel {
+        background: #111827;
+    }
+
+    /* Editor Content - TinyMCE */
+    .editor-container {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    #editor-container {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: #faf9f7;
+        overflow-y: auto;
+    }
+
+    .dark #editor-container {
+        background: #111827;
+    }
+
+    /* TipTap ProseMirror editor styles — matches PDF export margins for WYSIWYG */
+    #editor-container .tiptap {
+        flex: 1;
+        padding: 30mm 25mm 25mm 25mm;
+        max-width: 210mm;
+        margin: 0 auto;
+        width: 100%;
+        font-size: 11pt;
+        line-height: 1.6;
+        color: #1f2937;
+        outline: none;
+        min-height: 100%;
+        font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .dark #editor-container .tiptap {
+        color: #e5e7eb;
+    }
+
+    #editor-container .tiptap p {
+        margin: 0.75em 0;
+    }
+
+    #editor-container .tiptap h1 {
+        font-size: 1.875rem;
+        font-weight: 700;
+        margin: 1em 0 0.5em;
+    }
+
+    #editor-container .tiptap h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 1em 0 0.5em;
+    }
+
+    #editor-container .tiptap h3 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 1em 0 0.5em;
+    }
+
+    #editor-container .tiptap blockquote {
+        border-left: 4px solid #6366f1;
+        padding-left: 1em;
+        margin: 1em 0;
+        color: #4b5563;
+    }
+
+    .dark #editor-container .tiptap blockquote {
+        color: #9ca3af;
+    }
+
+    #editor-container .tiptap ul {
+        padding-left: 1.5em;
+        margin: 0.75em 0;
+        list-style-type: disc;
+    }
+
+    #editor-container .tiptap ol {
+        padding-left: 1.5em;
+        margin: 0.75em 0;
+        list-style-type: decimal;
+    }
+
+    /* Nested list styles */
+    #editor-container .tiptap ul ul { list-style-type: circle; }
+    #editor-container .tiptap ul ul ul { list-style-type: square; }
+    #editor-container .tiptap ol ol { list-style-type: lower-alpha; }
+    #editor-container .tiptap ol ol ol { list-style-type: lower-roman; }
+
+    #editor-container .tiptap li {
+        margin: 0.25em 0;
+    }
+
+    #editor-container .tiptap li p {
+        margin: 0.25em 0;
+    }
+
+    #editor-container .tiptap hr {
+        border: none;
+        border-top: 2px solid #e5e7eb;
+        margin: 1.5em 0;
+    }
+
+    .dark #editor-container .tiptap hr {
+        border-top-color: #374151;
+    }
+
+    #editor-container .tiptap a {
+        color: #4f46e5;
+        text-decoration: underline;
+    }
+
+    #editor-container .tiptap mark {
+        background-color: #fef08a;
+        border-radius: 2px;
+        padding: 0 2px;
+    }
+
+    /* Placeholder */
+    #editor-container .tiptap p.is-editor-empty:first-child::before {
+        content: attr(data-placeholder);
+        float: left;
+        color: #9ca3af;
+        pointer-events: none;
+        height: 0;
+    }
+
+    .dark #editor-container .tiptap p.is-editor-empty:first-child::before {
+        color: #6b7280;
+    }
+
+    /* A4 Paper styling — always active for document feel */
+    .editor-paper {
+        background: #f0efed;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 32px 24px;
+        min-height: 100%;
+    }
+
+    .dark .editor-paper {
+        background: #0f172a;
+    }
+
+    .editor-page {
+        background: #faf9f7;
+        box-shadow:
+            0 1px 4px rgba(0,0,0,0.08),
+            0 0 0 1px rgba(0,0,0,0.04);
+        max-width: 210mm;
+        min-height: 297mm;
+        width: 100%;
+        position: relative;
+        border-radius: 2px;
+    }
+
+    .dark .editor-page {
+        background: #111827;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+
+    .editor-page {
+        overflow-x: hidden;
+    }
+
+    .editor-page .tiptap {
+        position: relative;
+        z-index: 1;
+    }
+
+    /* Page gap widgets — rendered by PageBreaks TipTap extension (widget decorations) */
+    #editor-container .tiptap .page-gap {
+        background: #f0efed;
+    }
+
+    .dark #editor-container .tiptap .page-gap {
+        background: #1e293b;
+    }
+
+    .dark #editor-container .tiptap .page-gap .page-gap-line {
+        border-top-color: rgba(255,255,255,0.1) !important;
+    }
+
+    .dark #editor-container .tiptap .page-gap .page-gap-label {
+        color: #475569 !important;
+    }
+
+    /* Inline Comment Marks — highlight text that has comments */
+    #editor-container .tiptap span.comment-mark,
+    #editor-container .tiptap .ProseMirror span.comment-mark,
+    .tiptap span[data-comment-id] {
+        background-color: rgba(251, 191, 36, 0.25) !important;
+        border-bottom: 2px solid #f59e0b !important;
+        cursor: pointer;
+        padding: 1px 0;
+        transition: background-color 0.15s;
+        border-radius: 2px;
+    }
+
+    #editor-container .tiptap span.comment-mark:hover,
+    .tiptap span[data-comment-id]:hover {
+        background-color: rgba(251, 191, 36, 0.45) !important;
+    }
+
+    #editor-container .tiptap span.comment-mark--resolved,
+    .tiptap span[data-comment-id][data-resolved="true"] {
+        background-color: rgba(34, 197, 94, 0.15) !important;
+        border-bottom-color: #86efac !important;
+    }
+
+    .dark #editor-container .tiptap span.comment-mark,
+    .dark .tiptap span[data-comment-id] {
+        background-color: rgba(251, 191, 36, 0.15) !important;
+        border-bottom-color: #d97706 !important;
+    }
+
+    .dark #editor-container .tiptap span.comment-mark:hover,
+    .dark .tiptap span[data-comment-id]:hover {
+        background-color: rgba(251, 191, 36, 0.3) !important;
+    }
+
+    .dark #editor-container .tiptap span.comment-mark--resolved,
+    .dark .tiptap span[data-comment-id][data-resolved="true"] {
+        background-color: rgba(34, 197, 94, 0.1) !important;
+        border-bottom-color: #166534 !important;
+    }
+
+    /* === Tables === */
+    #editor-container .tiptap table.editor-table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 1em 0;
+        overflow: hidden;
+        table-layout: fixed;
+    }
+
+    #editor-container .tiptap table.editor-table td,
+    #editor-container .tiptap table.editor-table th {
+        border: 1px solid #d1d5db;
+        padding: 8px 12px;
+        vertical-align: top;
+        position: relative;
+        min-width: 80px;
+    }
+
+    .dark #editor-container .tiptap table.editor-table td,
+    .dark #editor-container .tiptap table.editor-table th {
+        border-color: #4b5563;
+    }
+
+    #editor-container .tiptap table.editor-table th {
+        background: #f3f4f6;
+        font-weight: 600;
+        text-align: left;
+    }
+
+    .dark #editor-container .tiptap table.editor-table th {
+        background: #1f2937;
+    }
+
+    #editor-container .tiptap table.editor-table td p,
+    #editor-container .tiptap table.editor-table th p {
+        margin: 0;
+    }
+
+    /* Selected cell highlight */
+    #editor-container .tiptap table.editor-table .selectedCell::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: rgba(79, 70, 229, 0.08);
+        pointer-events: none;
+    }
+
+    /* Column resize handle */
+    #editor-container .tiptap .column-resize-handle {
+        position: absolute;
+        right: -2px;
+        top: 0;
+        bottom: -2px;
+        width: 4px;
+        background: #6366f1;
+        pointer-events: none;
+    }
+
+    #editor-container .tiptap.resize-cursor {
+        cursor: col-resize;
+    }
+
+    /* === Task Lists / Checklists === */
+    #editor-container .tiptap ul[data-type="taskList"] {
+        list-style: none;
+        padding-left: 0;
+        margin: 0.75em 0;
+    }
+
+    #editor-container .tiptap ul[data-type="taskList"] li {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin: 4px 0;
+    }
+
+    #editor-container .tiptap ul[data-type="taskList"] li label {
+        flex-shrink: 0;
+        margin-top: 3px;
+    }
+
+    #editor-container .tiptap ul[data-type="taskList"] li label input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: #6366f1;
+        cursor: pointer;
+        border-radius: 3px;
+    }
+
+    #editor-container .tiptap ul[data-type="taskList"] li div {
+        flex: 1;
+    }
+
+    #editor-container .tiptap ul[data-type="taskList"] li[data-checked="true"] > div {
+        text-decoration: line-through;
+        color: #9ca3af;
+    }
+
+    /* Nested task lists */
+    #editor-container .tiptap ul[data-type="taskList"] ul[data-type="taskList"] {
+        margin-left: 24px;
+    }
+
+    /* === Images === */
+    #editor-container .tiptap img.editor-image {
+        max-width: 100%;
+        height: auto;
+        border-radius: 4px;
+        margin: 1em 0;
+        cursor: default;
+    }
+
+    #editor-container .tiptap img.ProseMirror-selectednode {
+        outline: 2px solid #6366f1;
+        outline-offset: 2px;
+    }
+
+    /* === Slash Commands Popup === */
+    .slash-cmd-popup {
+        position: fixed;
+        z-index: 100;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+        max-height: 320px;
+        width: 260px;
+        overflow-y: auto;
+        padding: 4px;
+    }
+
+    .dark .slash-cmd-popup {
+        background: #1f2937;
+        border-color: #374151;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    .slash-cmd-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: none;
+        background: none;
+        cursor: pointer;
+        text-align: left;
+        color: #374151;
+        font-size: 13px;
+    }
+
+    .dark .slash-cmd-item {
+        color: #d1d5db;
+    }
+
+    .slash-cmd-item:hover,
+    .slash-cmd-item--active {
+        background: #f3f4f6;
+    }
+
+    .dark .slash-cmd-item:hover,
+    .dark .slash-cmd-item--active {
+        background: #374151;
+    }
+
+    .slash-cmd-icon {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        flex-shrink: 0;
+    }
+
+    .dark .slash-cmd-icon {
+        background: #111827;
+        border-color: #374151;
+    }
+
+    .slash-cmd-icon svg,
+    .slash-cmd-icon i {
+        width: 16px;
+        height: 16px;
+    }
+
+    .slash-cmd-text {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+    }
+
+    .slash-cmd-title {
+        font-weight: 500;
+        font-size: 13px;
+    }
+
+    .slash-cmd-desc {
+        font-size: 11px;
+        color: #9ca3af;
+    }
+
+    .dark .slash-cmd-desc {
+        color: #6b7280;
+    }
+
+    /* === Table Context Menu (toolbar section) === */
+    .table-actions-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        margin-top: 4px;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        padding: 4px;
+        min-width: 200px;
+        z-index: 50;
+    }
+
+    .dark .table-actions-dropdown {
+        background: #1f2937;
+        border-color: #374151;
+    }
+
+    .table-actions-dropdown button {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 6px 10px;
+        font-size: 12px;
+        border-radius: 4px;
+        color: #374151;
+        text-align: left;
+    }
+
+    .dark .table-actions-dropdown button {
+        color: #d1d5db;
+    }
+
+    .table-actions-dropdown button:hover {
+        background: #f3f4f6;
+    }
+
+    .dark .table-actions-dropdown button:hover {
+        background: #374151;
+    }
+
+    .table-actions-dropdown button.text-red-600:hover {
+        background: #fef2f2;
+    }
+
+    .dark .table-actions-dropdown button.text-red-600:hover {
+        background: #450a0a;
+    }
+
+    /* === Color Picker Dropdown === */
+    .color-picker-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        margin-top: 4px;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        padding: 8px;
+        z-index: 50;
+    }
+
+    .dark .color-picker-dropdown {
+        background: #1f2937;
+        border-color: #374151;
+    }
+
+    .color-swatch {
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        border: 2px solid transparent;
+        cursor: pointer;
+        transition: transform 0.1s;
+    }
+
+    .color-swatch:hover {
+        transform: scale(1.15);
+    }
+
+    .color-swatch.active {
+        border-color: #4f46e5;
+    }
+
+    /* === Image Insert Modal === */
+    .image-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 60;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .image-modal {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        width: 100%;
+        max-width: 440px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+    }
+
+    .dark .image-modal {
+        background: #1f2937;
+    }
+
+    /* Collaboration cursors */
+    .collaboration-cursor__caret {
+        border-left: 2px solid;
+        border-right: none;
+        margin-left: -1px;
+        margin-right: -1px;
+        pointer-events: none;
+        position: relative;
+        word-break: normal;
+    }
+
+    .collaboration-cursor__label {
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1;
+        padding: 1px 6px 2px;
+        position: absolute;
+        top: -1.4em;
+        left: -1px;
+        white-space: nowrap;
+        border-radius: 4px 4px 4px 0;
+        user-select: none;
+        pointer-events: none;
+        color: white;
+    }
+
+    /* Connection status indicator */
+    .collab-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+    }
+    .collab-status-dot {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .collab-status-dot.connected { background-color: #22c55e; }
+    .collab-status-dot.connecting { background-color: #f59e0b; animation: pulse 1.5s infinite; }
+    .collab-status-dot.disconnected { background-color: #ef4444; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* Inline Comment Popup */
+    .comment-popup {
+        position: fixed;
+        z-index: 45;
+        transition: opacity 0.15s, transform 0.15s;
+    }
+
+    .comment-popup-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
+        font-size: 13px;
+        font-weight: 500;
+        color: #374151;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .comment-popup-btn:hover {
+        background: #f9fafb;
+        border-color: #d1d5db;
+    }
+
+    .dark .comment-popup-btn {
+        background: #1f2937;
+        border-color: #374151;
+        color: #d1d5db;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .dark .comment-popup-btn:hover {
+        background: #374151;
+    }
+
+    .comment-popup-card {
+        width: 320px;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08);
+        overflow: hidden;
+    }
+
+    .dark .comment-popup-card {
+        background: #1f2937;
+        border-color: #374151;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    /* Read-only content display */
+    .content-readonly {
+        flex: 1;
+        overflow-y: auto;
+        padding: 40px;
+        max-width: 800px;
+        margin: 0 auto;
+        font-size: 16px;
+        line-height: 1.7;
+        color: #1f2937;
+    }
+
+    .dark .content-readonly {
+        color: #e5e7eb;
+    }
+
+    .content-readonly h1 { font-size: 1.875rem; font-weight: 700; margin: 1em 0 0.5em; }
+    .content-readonly h2 { font-size: 1.5rem; font-weight: 600; margin: 1em 0 0.5em; }
+    .content-readonly h3 { font-size: 1.25rem; font-weight: 600; margin: 1em 0 0.5em; }
+    .content-readonly blockquote { border-left: 4px solid #6366f1; padding-left: 1em; margin: 1em 0; color: #4b5563; }
+    .content-readonly ul, .content-readonly ol { padding-left: 1.5em; margin: 0.75em 0; }
+    .content-readonly li { margin: 0.25em 0; }
+
+    /* Sidebar */
+    .editor-sidebar {
+        display: flex;
+        flex-direction: column;
+        background: #f9fafb;
+        border-left: 1px solid #e5e7eb;
+        overflow: hidden;
+        min-height: 0;
+    }
+
+    .dark .editor-sidebar {
+        background: #0f172a;
+        border-color: #1e293b;
+    }
+
+    /* Chat Messages */
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .chat-message {
+        display: flex;
+        gap: 12px;
+        max-width: 100%;
+    }
+
+    .chat-message.user {
+        flex-direction: row-reverse;
+    }
+
+    .chat-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .chat-message.ai .chat-avatar {
+        background: linear-gradient(135deg, #7c3aed, #a855f7);
+        color: white;
+    }
+
+    .chat-message.user .chat-avatar {
+        background: #3b82f6;
+        color: white;
+    }
+
+    .chat-bubble {
+        padding: 12px 16px;
+        border-radius: 16px;
+        max-width: 85%;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .chat-message.ai .chat-bubble {
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px 16px 16px 4px;
+    }
+
+    .dark .chat-message.ai .chat-bubble {
+        background: #1e293b;
+        border-color: #334155;
+    }
+
+    .chat-message.user .chat-bubble {
+        background: #3b82f6;
+        color: white;
+        border-radius: 16px 16px 4px 16px;
+    }
+
+    /* Quick Actions */
+    .quick-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 12px 16px;
+        border-top: 1px solid #e5e7eb;
+        background: white;
+    }
+
+    .dark .quick-actions {
+        background: #111827;
+        border-color: #1e293b;
+    }
+
+    .quick-action-btn {
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 500;
+        background: #f3f4f6;
+        border-radius: 20px;
+        transition: all 0.15s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .quick-action-btn:hover {
+        background: #e5e7eb;
+    }
+
+    .dark .quick-action-btn {
+        background: #1e293b;
+        color: #d1d5db;
+    }
+
+    .dark .quick-action-btn:hover {
+        background: #334155;
+    }
+
+    /* Chat Input */
+    .chat-input-wrapper {
+        padding: 16px;
+        background: white;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .dark .chat-input-wrapper {
+        background: #111827;
+        border-color: #1e293b;
+    }
+
+    /* Sidebar tabs */
+    .sidebar-tab {
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 500;
+        color: #6b7280;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .sidebar-tab:hover {
+        color: #374151;
+    }
+
+    .sidebar-tab.active {
+        color: #4f46e5;
+        border-bottom-color: #4f46e5;
+    }
+
+    .dark .sidebar-tab:hover {
+        color: #d1d5db;
+    }
+
+    .dark .sidebar-tab.active {
+        color: #818cf8;
+        border-bottom-color: #818cf8;
+    }
+</style>
+{% endblock %}
+
+{% block work_header %}
+<!-- Empty - custom header in work_content with Alpine scope -->
+{% endblock %}
+
+{% block work_content %}
+<div class="editor-wrapper" x-data="documentEditor()">
+    <!-- Custom Header inside Alpine scope -->
+    <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex-shrink-0">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <a href="{% url 'work:documents' org_slug=organization.slug %}"
+                   class="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="arrow-left" class="w-5 h-5"></i>
+                </a>
+                <div>
+                    {% if can_edit %}
+                    <input type="text" x-model="title" x-ref="titleInput"
+                           class="text-lg font-semibold bg-transparent border-none focus:ring-0 p-0 text-gray-900 dark:text-white w-full max-w-md"
+                           placeholder="Titel eingeben...">
+                    {% else %}
+                    <h1 class="text-lg font-semibold text-gray-900 dark:text-white">{{ motion.title }}</h1>
+                    {% endif %}
+                    <div class="flex items-center gap-2 text-sm text-gray-500">
+                        {% if can_edit %}
+                        <!-- Dokumenttyp-Dropdown -->
+                        <div x-data="{ open: false }" class="relative">
+                            <button @click="open = !open" type="button"
+                                    class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer">
+                                <i data-lucide="file-type" class="w-3 h-3"></i>
+                                <span x-text="documentTypeName">{{ motion.get_type_display }}</span>
+                                <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
+                            </button>
+                            <div x-show="open" @click.away="open = false" x-cloak
+                                 class="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[180px] z-50">
+                                {% for dt in document_types %}
+                                <button @click="setDocumentType('{{ dt.id }}', '{{ dt.name|escapejs }}'); open = false"
+                                        class="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                                        :class="documentTypeId === '{{ dt.id }}' ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : ''">
+                                    <i data-lucide="{{ dt.icon|default:'file-text' }}" class="w-3.5 h-3.5"></i>
+                                    {{ dt.name }}
+                                </button>
+                                {% empty %}
+                                <span class="px-3 py-1.5 text-xs text-gray-400">Keine Typen konfiguriert</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <span>·</span>
+                        <!-- Briefpapier-Dropdown -->
+                        <div x-data="{ open: false }" class="relative">
+                            <button @click="open = !open" type="button"
+                                    class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer">
+                                <i data-lucide="file-badge" class="w-3 h-3"></i>
+                                <span x-text="letterheadName">{{ motion.letterhead.name|default:'Kein Briefpapier' }}</span>
+                                <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
+                            </button>
+                            <div x-show="open" @click.away="open = false" x-cloak
+                                 class="absolute left-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[200px] z-50">
+                                <button @click="setLetterhead('', 'Kein Briefpapier'); open = false"
+                                        class="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                                        :class="letterheadId === '' ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : ''">
+                                    <i data-lucide="file-x" class="w-3.5 h-3.5"></i>
+                                    Kein Briefpapier
+                                </button>
+                                {% for lh in letterheads %}
+                                <button @click="setLetterhead('{{ lh.id }}', '{{ lh.name|escapejs }}'); open = false"
+                                        class="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                                        :class="letterheadId === '{{ lh.id }}' ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : ''">
+                                    <i data-lucide="file-badge" class="w-3.5 h-3.5"></i>
+                                    {{ lh.name }}{% if lh.is_default %} <span class="text-gray-400 ml-1">(Standard)</span>{% endif %}
+                                </button>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% else %}
+                        <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">
+                            {{ motion.get_type_display }}
+                        </span>
+                        {% endif %}
+                        <span>·</span>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                            {% if motion.status == 'draft' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
+                            {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
+                            {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
+                            {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
+                            {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
+                            {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
+                            {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                            {{ motion.get_status_display }}
+                        </span>
+                        <span>·</span>
+                        <span class="text-xs text-gray-400">{{ motion.author.user.get_display_name }}</span>
+                        {% if can_edit %}
+                        <span x-show="lastSaved" x-cloak class="flex items-center gap-1">
+                            <span>·</span>
+                            <i data-lucide="check-circle" class="w-3 h-3 text-green-500"></i>
+                            <span x-text="'Gespeichert ' + lastSaved"></span>
+                        </span>
+                        <span x-show="saveError" x-cloak class="flex items-center gap-1 text-red-500">
+                            <span>·</span>
+                            <i data-lucide="alert-circle" class="w-3 h-3"></i>
+                            <span>Fehler beim Speichern</span>
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <!-- Collaboration Presence -->
+                <template x-if="collabEnabled">
+                    <div class="flex items-center gap-2 mr-2">
+                        <!-- Connection Status -->
+                        <span class="collab-status text-gray-500 dark:text-gray-400">
+                            <span class="collab-status-dot" :class="collabStatus"></span>
+                            <span x-text="collabStatus === 'connected' ? 'Online' : (collabStatus === 'connecting' ? 'Verbindung wird hergestellt...' : 'Offline')"
+                                  :class="collabStatus === 'connected' ? 'text-green-600 dark:text-green-400' : (collabStatus === 'disconnected' ? 'text-red-500' : '')"></span>
+                        </span>
+                        <!-- Active Users Avatars -->
+                        <div class="flex items-center gap-1" x-show="collabUsers.length > 0">
+                            <!-- Show avatars (max 5, then counter) -->
+                            <div class="flex -space-x-2">
+                                <template x-for="u in collabUsers.slice(0, 5)" :key="u.name">
+                                    <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold ring-2 ring-white dark:ring-gray-800 cursor-default"
+                                         :style="'background-color: ' + u.color"
+                                         :title="u.name === collabUserName ? u.name + ' (Du)' : u.name"
+                                         x-text="u.name.charAt(0).toUpperCase()">
+                                    </div>
+                                </template>
+                            </div>
+                            <!-- Counter for >5 users -->
+                            <span x-show="collabUsers.length > 5" x-cloak
+                                  class="text-xs text-gray-500 dark:text-gray-400 font-medium ml-1"
+                                  x-text="'+' + (collabUsers.length - 5)"></span>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Mobile Sidebar Toggle -->
+                <button type="button" @click="showMobileSidebar = !showMobileSidebar"
+                        class="xl:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i data-lucide="panel-right" class="w-5 h-5"></i>
+                </button>
+
+                <!-- Export Dropdown -->
+                <div x-data="{ open: false }" class="relative">
+                    <button @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Exportieren">
+                        <i data-lucide="download" class="w-5 h-5"></i>
+                    </button>
+                    <div x-show="open" @click.away="open = false" x-cloak
+                         class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[160px] z-50">
+                        <a href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf"
+                           class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2">
+                            <i data-lucide="file-text" class="w-4 h-4"></i>
+                            Als PDF
+                        </a>
+                        <a href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=docx"
+                           class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2">
+                            <i data-lucide="file-type" class="w-4 h-4"></i>
+                            Als DOCX
+                        </a>
+                    </div>
+                </div>
+
+                {% if can_share %}
+                <!-- Share Button (opens modal) -->
+                <button type="button" @click="showShareModal = true"
+                        class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Teilen">
+                    <i data-lucide="share-2" class="w-5 h-5"></i>
+                </button>
+                {% endif %}
+
+                {% if can_edit %}
+                <!-- Status Dropdown -->
+                <div x-data="{ open: false }" class="relative">
+                    <button @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Status ändern">
+                        <i data-lucide="flag" class="w-5 h-5"></i>
+                    </button>
+                    <div x-show="open" @click.away="open = false" x-cloak
+                         class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[160px] z-50">
+                        <button @click="changeStatus('draft'); open = false" class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Entwurf</button>
+                        <button @click="changeStatus('review'); open = false" class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Prüfen</button>
+                        <button @click="changeStatus('approved'); open = false" class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Genehmigt</button>
+                        <button @click="changeStatus('submitted'); open = false" class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Eingereicht</button>
+                    </div>
+                </div>
+
+                <!-- More Actions -->
+                <div x-data="{ open: false }" class="relative">
+                    <button @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Mehr">
+                        <i data-lucide="more-vertical" class="w-5 h-5"></i>
+                    </button>
+                    <div x-show="open" @click.away="open = false" x-cloak
+                         class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[180px] z-50">
+                        <button @click="confirmDelete(); open = false"
+                                class="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            In den Papierkorb
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Save Button -->
+                <button type="button" @click="save()"
+                        :disabled="saving"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 shadow-sm">
+                    <i data-lucide="save" class="w-4 h-4" x-show="!saving"></i>
+                    <svg x-show="saving" class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span x-text="saving ? 'Speichern...' : 'Speichern'"></span>
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <!-- Editor Layout -->
+    <div class="editor-layout">
+        <!-- Editor Panel -->
+        <div class="editor-panel">
+            <!-- Hidden form for CSRF -->
+            <form id="motion-form" method="post" class="hidden">
+                {% csrf_token %}
+            </form>
+
+            {% if can_edit %}
+            <!-- Toolbar (only shown when editable) -->
+            <div id="editor-toolbar" class="border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex flex-wrap items-center gap-1 bg-white dark:bg-gray-800 flex-shrink-0">
+                <!-- Text Formatting -->
+                <div class="flex items-center gap-0.5 pr-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" data-editor-cmd="bold"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.bold }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Fett (Strg+B)">
+                        <i data-lucide="bold" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="italic"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.italic }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Kursiv (Strg+I)">
+                        <i data-lucide="italic" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="underline"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.underline }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Unterstrichen (Strg+U)">
+                        <i data-lucide="underline" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Headings -->
+                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" data-editor-cmd="heading" data-editor-level="1"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.header === 1 }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Überschrift 1">
+                        <span class="text-xs font-bold">H1</span>
+                    </button>
+                    <button type="button" data-editor-cmd="heading" data-editor-level="2"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.header === 2 }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Überschrift 2">
+                        <span class="text-xs font-bold">H2</span>
+                    </button>
+                    <button type="button" data-editor-cmd="heading" data-editor-level="3"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.header === 3 }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Überschrift 3">
+                        <span class="text-xs font-bold">H3</span>
+                    </button>
+                </div>
+
+                <!-- Lists -->
+                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" data-editor-cmd="bulletList"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'bullet' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufzählung">
+                        <i data-lucide="list" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="orderedList"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'ordered' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Nummerierung">
+                        <i data-lucide="list-ordered" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="taskList"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'task' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufgabenliste">
+                        <i data-lucide="list-checks" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Indent -->
+                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" data-editor-cmd="outdent"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Weniger einrücken (Shift+Tab)">
+                        <i data-lucide="indent-decrease" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="indent"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Einrücken (Tab)">
+                        <i data-lucide="indent-increase" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Block -->
+                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" data-editor-cmd="blockquote"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.blockquote }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Zitat">
+                        <i data-lucide="quote" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="horizontalRule"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Trennlinie">
+                        <i data-lucide="minus" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Table -->
+                <div x-data="{ tableMenu: false }" class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700 relative">
+                    <button type="button" @mousedown.prevent="tableMenu = !tableMenu"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.table }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Tabelle">
+                        <i data-lucide="table" class="w-4 h-4"></i>
+                    </button>
+                    <div x-show="tableMenu" @click.away="tableMenu = false" x-cloak class="table-actions-dropdown">
+                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'insertTable'); tableMenu = false">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Tabelle einfügen
+                        </button>
+                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnAfter'); tableMenu = false">
+                            <i data-lucide="columns-3" class="w-3.5 h-3.5"></i> Spalte rechts
+                        </button>
+                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnBefore'); tableMenu = false">
+                            <i data-lucide="columns-3" class="w-3.5 h-3.5"></i> Spalte links
+                        </button>
+                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowAfter'); tableMenu = false">
+                            <i data-lucide="rows-3" class="w-3.5 h-3.5"></i> Zeile darunter
+                        </button>
+                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowBefore'); tableMenu = false">
+                            <i data-lucide="rows-3" class="w-3.5 h-3.5"></i> Zeile darüber
+                        </button>
+                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteColumn'); tableMenu = false" class="text-red-600 dark:text-red-400">
+                            <i data-lucide="x" class="w-3.5 h-3.5"></i> Spalte löschen
+                        </button>
+                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteRow'); tableMenu = false" class="text-red-600 dark:text-red-400">
+                            <i data-lucide="x" class="w-3.5 h-3.5"></i> Zeile löschen
+                        </button>
+                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteTable'); tableMenu = false" class="text-red-600 dark:text-red-400">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Tabelle löschen
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Text Color -->
+                <div x-data="{ colorMenu: false }" class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700 relative">
+                    <button type="button" @mousedown.prevent="colorMenu = !colorMenu"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 relative" title="Textfarbe">
+                        <i data-lucide="palette" class="w-4 h-4"></i>
+                        <span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded"
+                              :style="formats.textColor ? 'background:' + formats.textColor : 'background:#374151'"></span>
+                    </button>
+                    <div x-show="colorMenu" @click.away="colorMenu = false" x-cloak class="color-picker-dropdown">
+                        <div class="grid grid-cols-6 gap-1.5">
+                            <button type="button" @mousedown.prevent="$dispatch('editor-color-cmd', ''); colorMenu = false"
+                                    class="color-swatch border-gray-300" :class="{ 'active': !formats.textColor }"
+                                    style="background: #374151" title="Standard">
+                            </button>
+                            <template x-for="c in ['#dc2626','#ea580c','#d97706','#16a34a','#0891b2','#2563eb','#7c3aed','#db2777','#059669','#0d9488','#4f46e5']" :key="c">
+                                <button type="button" @mousedown.prevent="$dispatch('editor-color-cmd', c); colorMenu = false"
+                                        class="color-swatch" :class="{ 'active': formats.textColor === c }"
+                                        :style="'background:' + c">
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Image -->
+                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" @mousedown.prevent="showImageModal = true"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Bild einfügen">
+                        <i data-lucide="image" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Undo/Redo -->
+                <div class="flex items-center gap-0.5 px-2">
+                    <button type="button" data-editor-cmd="undo"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Rückgängig (Strg+Z)">
+                        <i data-lucide="undo" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="redo"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Wiederholen (Strg+Y)">
+                        <i data-lucide="redo" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Page Count & Word Count -->
+                <div class="ml-auto flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+                    <span>Seite <span x-text="currentPage"></span>/<span x-text="pageCount"></span></span>
+                    <span class="border-l border-gray-300 dark:border-gray-600 pl-3">
+                        <span x-text="wordCount"></span> Wörter
+                    </span>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Editor Content -->
+            <div class="editor-container editor-paper">
+                {% if can_edit %}
+                <div id="editor-container" class="editor-page"></div>
+                {% else %}
+                <div class="content-readonly">
+                    {% if motion_content %}
+                        {{ motion_content|safe }}
+                    {% else %}
+                        <p class="text-gray-400">Kein Inhalt vorhanden.</p>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            <!-- Hidden: initial content for TipTap -->
+            {% if can_edit %}
+            <template id="editor-initial-content">{{ motion_content|default:''|safe }}</template>
+            {% endif %}
+            {{ inline_comments_data|json_script:"inline-comments-data" }}
+            {{ letterheads_json|json_script:"letterheads-json" }}
+        </div>
+
+        <!-- Right Sidebar (Comments / AI / History) -->
+        <div class="editor-sidebar" :class="{ 'mobile-open': showMobileSidebar }">
+            <!-- Sidebar Tabs -->
+            <div class="flex items-center border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0 overflow-x-auto">
+                <button @click="sidebarTab = 'comments'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'comments' }">
+                    <i data-lucide="message-square" class="w-3.5 h-3.5 inline-block mr-1"></i>
+                    Kommentare
+                </button>
+                {% if can_edit %}
+                <button @click="sidebarTab = 'ai'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'ai' }">
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5 inline-block mr-1"></i>
+                    KI
+                </button>
+                {% endif %}
+                <button @click="sidebarTab = 'history'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'history' }">
+                    <i data-lucide="history" class="w-3.5 h-3.5 inline-block mr-1"></i>
+                    Verlauf
+                </button>
+                <!-- Mobile close button -->
+                <button type="button" @click="showMobileSidebar = false" class="xl:hidden ml-auto p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 mr-2">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Comments Tab -->
+            <div x-show="sidebarTab === 'comments'" class="flex-1 flex flex-col min-h-0">
+                {% include "work/motions/partials/_comments_sidebar.html" %}
+            </div>
+
+            <!-- AI Tab -->
+            {% if can_edit %}
+            <div x-show="sidebarTab === 'ai'" x-cloak class="flex-1 flex flex-col min-h-0">
+                {% if ai_available %}
+                <!-- Chat Messages -->
+                <div class="chat-messages" x-ref="chatMessages">
+                    <!-- Welcome Message -->
+                    <div class="chat-message ai">
+                        <div class="chat-avatar">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i>
+                        </div>
+                        <div class="chat-bubble">
+                            <p>Hallo! Ich bin Ihr KI-Assistent. Ich kann Ihnen helfen:</p>
+                            <ul class="mt-2 space-y-1 text-sm">
+                                <li>Texte verbessern und umformulieren</li>
+                                <li>Stichpunkte ausformulieren</li>
+                                <li>Formale Prüfung durchführen</li>
+                                <li>Zusammenfassungen erstellen</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Messages -->
+                    <template x-for="(msg, index) in chatMessages" :key="index">
+                        <div class="chat-message" :class="msg.role">
+                            <div class="chat-avatar">
+                                <template x-if="msg.role === 'ai'">
+                                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                                </template>
+                                <template x-if="msg.role === 'user'">
+                                    <span>Du</span>
+                                </template>
+                            </div>
+                            <div class="chat-bubble">
+                                <div x-html="msg.content"></div>
+                                <template x-if="msg.role === 'ai' && msg.hasAction">
+                                    <div class="mt-3 flex gap-2">
+                                        <button type="button" @click="applyAiContent(msg.actionContent)"
+                                                class="px-3 py-1.5 text-xs font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700">
+                                            Übernehmen
+                                        </button>
+                                        <button type="button" @click="chatMessages.splice(index, 1)"
+                                                class="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+                                            Verwerfen
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Loading Indicator -->
+                    <div x-show="aiLoading" class="chat-message ai">
+                        <div class="chat-avatar">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i>
+                        </div>
+                        <div class="chat-bubble">
+                            <div class="flex items-center gap-2">
+                                <svg class="animate-spin h-4 w-4 text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span class="text-gray-600 dark:text-gray-400">Denke nach...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="quick-actions">
+                    <button type="button" @click="aiAction('improve', 'Verbessere den markierten Text')" class="quick-action-btn">
+                        <i data-lucide="wand-2" class="w-3.5 h-3.5 text-purple-600"></i>
+                        Verbessern
+                    </button>
+                    <button type="button" @click="aiAction('expand')" class="quick-action-btn">
+                        <i data-lucide="maximize-2" class="w-3.5 h-3.5 text-blue-600"></i>
+                        Ausformulieren
+                    </button>
+                    <button type="button" @click="aiAction('check')" class="quick-action-btn">
+                        <i data-lucide="check-circle" class="w-3.5 h-3.5 text-green-600"></i>
+                        Prüfen
+                    </button>
+                    <button type="button" @click="aiAction('summary')" class="quick-action-btn">
+                        <i data-lucide="align-left" class="w-3.5 h-3.5 text-amber-600"></i>
+                        Zusammenfassen
+                    </button>
+                </div>
+
+                <!-- Chat Input -->
+                <div class="chat-input-wrapper">
+                    <div class="relative">
+                        <input type="text" x-model="userMessage"
+                               @keydown.enter="sendMessage()"
+                               placeholder="Fragen Sie mich etwas..."
+                               class="w-full px-4 py-3 pr-12 bg-gray-100 dark:bg-gray-800 border-0 rounded-xl text-sm focus:ring-2 focus:ring-purple-500">
+                        <button type="button" @click="sendMessage()"
+                                :disabled="!userMessage.trim() || aiLoading"
+                                class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-purple-600 hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded-lg disabled:opacity-50">
+                            <i data-lucide="send" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                {% else %}
+                <!-- AI Not Configured -->
+                <div class="flex-1 flex items-center justify-center p-6">
+                    <div class="text-center">
+                        <div class="w-16 h-16 mx-auto mb-4 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center">
+                            <i data-lucide="sparkles" class="w-8 h-8 text-purple-400"></i>
+                        </div>
+                        <h3 class="font-medium text-gray-900 dark:text-white mb-2">KI-Assistent</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            Der KI-Assistent ist noch nicht eingerichtet. Wenden Sie sich an Ihre Organisationsadministration, um diese Funktion zu aktivieren.
+                        </p>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- History Tab -->
+            <div x-show="sidebarTab === 'history'" x-cloak class="flex-1 flex flex-col min-h-0">
+                <!-- Revision List / Diff View -->
+                <template x-if="!selectedRevision">
+                    <div class="flex-1 overflow-y-auto p-4 space-y-3">
+                        <template x-if="revisions.length === 0 && !revisionsLoading">
+                            <div class="text-center py-8">
+                                <div class="w-12 h-12 mx-auto mb-3 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                                    <i data-lucide="history" class="w-6 h-6 text-gray-400"></i>
+                                </div>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Noch keine Änderungen</p>
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Versionen werden beim Speichern erstellt</p>
+                            </div>
+                        </template>
+                        <template x-if="revisionsLoading">
+                            <div class="flex justify-center py-8">
+                                <svg class="animate-spin h-6 w-6 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            </div>
+                        </template>
+                        <template x-for="rev in revisions" :key="rev.id">
+                            <button @click="viewRevision(rev)"
+                                    class="w-full text-left p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-700 transition-colors">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-xs font-medium text-gray-900 dark:text-white" x-text="'Version ' + rev.version"></span>
+                                    <span class="text-xs text-gray-500" x-text="formatTimeAgo(rev.created_at)"></span>
+                                </div>
+                                <p class="text-xs text-gray-500" x-text="rev.change_summary || 'Keine Beschreibung'"></p>
+                                <p class="text-xs text-gray-400 mt-1" x-text="rev.changed_by"></p>
+                            </button>
+                        </template>
+                    </div>
+                </template>
+
+                <!-- Revision Detail / Diff -->
+                <template x-if="selectedRevision">
+                    <div class="flex-1 flex flex-col min-h-0">
+                        <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+                            <div class="flex items-center justify-between mb-2">
+                                <button @click="selectedRevision = null; revisionDiff = ''"
+                                        class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1">
+                                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                                    Zurück
+                                </button>
+                                {% if can_edit %}
+                                <button @click="restoreRevision(selectedRevision)"
+                                        class="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 flex items-center gap-1">
+                                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                                    Wiederherstellen
+                                </button>
+                                {% endif %}
+                            </div>
+                            <p class="text-sm font-medium text-gray-900 dark:text-white" x-text="'Version ' + selectedRevision.version"></p>
+                            <p class="text-xs text-gray-500" x-text="selectedRevision.changed_by + ' · ' + formatTimeAgo(selectedRevision.created_at)"></p>
+                            <!-- Diff/Original toggle -->
+                            <div class="flex items-center gap-2 mt-2">
+                                <button @click="revisionViewMode = 'diff'"
+                                        :class="revisionViewMode === 'diff' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'"
+                                        class="px-2.5 py-1 text-xs font-medium rounded-lg">Vergleich</button>
+                                <button @click="revisionViewMode = 'original'"
+                                        :class="revisionViewMode === 'original' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'"
+                                        class="px-2.5 py-1 text-xs font-medium rounded-lg">Original</button>
+                            </div>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-4">
+                            <template x-if="revisionLoading">
+                                <div class="flex justify-center py-8">
+                                    <svg class="animate-spin h-6 w-6 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </div>
+                            </template>
+                            <template x-if="!revisionLoading">
+                                <div class="prose dark:prose-invert prose-sm max-w-none text-sm leading-relaxed whitespace-pre-wrap"
+                                     x-html="revisionViewMode === 'diff' ? revisionDiff : revisionContent"></div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Mobile Sidebar Overlay -->
+        <div x-show="showMobileSidebar" @click="showMobileSidebar = false"
+             class="xl:hidden fixed inset-0 bg-black/50 z-40"></div>
+    </div>
+
+    <!-- Inline Comment Popup (appears on text selection) -->
+    {% if can_edit or access_level == 'comment' %}
+    <div x-show="commentPopupVisible" x-cloak
+         class="comment-popup"
+         :style="'top: ' + commentPopupTop + 'px; left: ' + commentPopupLeft + 'px'"
+         @keydown.escape.window="hideCommentPopup()">
+
+        <!-- Collapsed: comment button -->
+        <template x-if="!commentPopupExpanded">
+            <button @click.stop="expandCommentPopup()"
+                    class="comment-popup-btn">
+                <i data-lucide="message-square-plus" class="w-4 h-4 text-amber-500"></i>
+                Kommentieren
+            </button>
+        </template>
+
+        <!-- Expanded: comment form -->
+        <template x-if="commentPopupExpanded">
+            <div class="comment-popup-card" @click.stop>
+                <!-- Selected text preview -->
+                <div class="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10">
+                    <p class="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Markierter Text</p>
+                    <p class="text-sm text-gray-700 dark:text-gray-300 italic line-clamp-2"
+                       x-text="'&quot;' + inlineSelectedText.substring(0, 120) + (inlineSelectedText.length > 120 ? '...' : '') + '&quot;'"></p>
+                </div>
+                <!-- Input -->
+                <div class="p-3">
+                    <textarea x-model="inlineCommentText"
+                              x-ref="inlineCommentInput"
+                              rows="3"
+                              placeholder="Kommentar schreiben..."
+                              @keydown.meta.enter="submitInlineComment()"
+                              @keydown.ctrl.enter="submitInlineComment()"
+                              class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none"></textarea>
+                    <div class="flex items-center justify-between mt-2">
+                        <button @click="hideCommentPopup()"
+                                class="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                            Abbrechen
+                        </button>
+                        <button @click="submitInlineComment()"
+                                :disabled="!inlineCommentText.trim() || commentSubmitting"
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <svg x-show="commentSubmitting" class="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <i data-lucide="send" class="w-3.5 h-3.5" x-show="!commentSubmitting"></i>
+                            <span x-text="commentSubmitting ? 'Senden...' : 'Senden'"></span>
+                        </button>
+                    </div>
+                    <p class="text-[10px] text-gray-400 mt-1.5 text-right">Strg+Enter zum Senden</p>
+                </div>
+            </div>
+        </template>
+    </div>
+    {% endif %}
+
+    <!-- Mark Comment Popup (appears on clicking highlighted inline comment) -->
+    <div x-show="markCommentPopup" x-cloak
+         class="comment-popup"
+         :style="'top:' + markCommentTop + 'px; left:' + markCommentLeft + 'px'"
+         @keydown.escape.window="hideMarkPopup()">
+        <div class="comment-popup-card" @click.stop x-show="markCommentData">
+            <!-- Selected text quote -->
+            <div class="px-4 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10">
+                <p class="text-sm text-gray-700 dark:text-gray-300 italic line-clamp-2"
+                   x-text="markCommentData ? markCommentData.selected_text : ''"></p>
+            </div>
+
+            <!-- Main comment -->
+            <div class="px-4 py-3">
+                <div class="flex items-center gap-2 mb-1.5">
+                    <div class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                        <span class="text-xs font-medium text-primary-600 dark:text-primary-400"
+                              x-text="markCommentData ? markCommentData.author_initials : ''"></span>
+                    </div>
+                    <span class="text-xs font-medium text-gray-900 dark:text-white"
+                          x-text="markCommentData ? markCommentData.author_name : ''"></span>
+                    <span class="text-xs text-gray-400">·</span>
+                    <span class="text-xs text-gray-400"
+                          x-text="markCommentData ? formatTimeAgo(markCommentData.created_at) : ''"></span>
+                    <template x-if="markCommentData && markCommentData.is_resolved">
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                            <i data-lucide="check" class="w-2.5 h-2.5"></i> Erledigt
+                        </span>
+                    </template>
+                </div>
+                <p class="text-sm text-gray-700 dark:text-gray-300"
+                   x-text="markCommentData ? markCommentData.content : ''"></p>
+            </div>
+
+            <!-- Replies -->
+            <template x-if="markCommentData && markCommentData.replies && markCommentData.replies.length > 0">
+                <div class="px-4 pb-3 space-y-2.5 border-t border-gray-100 dark:border-gray-700 pt-3">
+                    <template x-for="reply in markCommentData.replies" :key="reply.id">
+                        <div class="flex gap-2">
+                            <div class="w-5 h-5 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                                <span class="text-[10px] font-medium text-gray-600 dark:text-gray-400"
+                                      x-text="reply.author_initials"></span>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-1">
+                                    <span class="text-xs font-medium text-gray-900 dark:text-white"
+                                          x-text="reply.author_name"></span>
+                                    <span class="text-xs text-gray-400"
+                                          x-text="formatTimeAgo(reply.created_at)"></span>
+                                </div>
+                                <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5"
+                                   x-text="reply.content"></p>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Reply input -->
+            <template x-if="markCommentData && !markCommentData.is_resolved">
+                <div class="px-4 py-3 border-t border-gray-100 dark:border-gray-700">
+                    <div class="flex gap-2">
+                        <input type="text" x-model="markReplyText"
+                               x-ref="markReplyInput"
+                               placeholder="Antworten..."
+                               @keydown.enter="submitMarkReply()"
+                               class="flex-1 px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                        <button @click="submitMarkReply()"
+                                :disabled="!markReplyText.trim() || markReplySubmitting"
+                                class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0">
+                            <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Actions -->
+            <template x-if="markCommentData && !markCommentData.is_resolved">
+                <div class="px-4 py-2 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50 rounded-b-xl">
+                    <button @click="resolveMarkComment()"
+                            class="text-xs font-medium text-green-600 dark:text-green-400 hover:text-green-700 flex items-center gap-1.5">
+                        <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+                        Erledigen
+                    </button>
+                    <button @click="hideMarkPopup()"
+                            class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        Schliessen
+                    </button>
+                </div>
+            </template>
+            <template x-if="markCommentData && markCommentData.is_resolved">
+                <div class="px-4 py-2 border-t border-gray-100 dark:border-gray-700 flex items-center justify-end bg-gray-50/50 dark:bg-gray-800/50 rounded-b-xl">
+                    <button @click="hideMarkPopup()"
+                            class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        Schliessen
+                    </button>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    {% if can_share %}
+    {% include "work/motions/partials/_share_modal.html" %}
+    {% endif %}
+
+    <!-- Image Insert Modal -->
+    {% if can_edit %}
+    <div x-show="showImageModal" x-cloak class="image-modal-backdrop" @click.self="showImageModal = false; imageUrl = ''; imageAlt = ''">
+        <div class="image-modal" @click.stop>
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-4">Bild einfügen</h3>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bild-URL</label>
+                    <input type="url" x-model="imageUrl" placeholder="https://..."
+                           @keydown.enter="insertImage()"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                           x-ref="imageUrlInput">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Alternativtext (optional)</label>
+                    <input type="text" x-model="imageAlt" placeholder="Beschreibung des Bildes"
+                           @keydown.enter="insertImage()"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-4">
+                <button type="button" @click="showImageModal = false; imageUrl = ''; imageAlt = ''"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+                    Abbrechen
+                </button>
+                <button type="button" @click="insertImage()" :disabled="!imageUrl.trim()"
+                        class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">
+                    Einfügen
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- AI Preview Panel -->
+    {% if can_edit %}
+    <div x-show="aiPreviewActive" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+         @click.self="closeAiPreview()">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden m-4 flex flex-col">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center">
+                        <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 dark:text-white">KI-Vorschlag</h3>
+                        <p class="text-sm text-gray-500">Prüfen Sie die vorgeschlagenen Änderungen</p>
+                    </div>
+                </div>
+                <button type="button" @click="closeAiPreview()"
+                        class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6">
+                <div class="flex items-center gap-2 mb-4">
+                    <button type="button" @click="previewMode = 'suggested'"
+                            :class="previewMode === 'suggested' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-gray-100 dark:bg-gray-700'"
+                            class="px-3 py-1.5 text-sm font-medium rounded-lg">Vorschlag</button>
+                    <button type="button" @click="previewMode = 'original'"
+                            :class="previewMode === 'original' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-gray-100 dark:bg-gray-700'"
+                            class="px-3 py-1.5 text-sm font-medium rounded-lg">Original</button>
+                    <button type="button" @click="previewMode = 'diff'"
+                            :class="previewMode === 'diff' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-gray-100 dark:bg-gray-700'"
+                            class="px-3 py-1.5 text-sm font-medium rounded-lg">Vergleich</button>
+                </div>
+                <div class="prose dark:prose-invert max-w-none p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 min-h-[200px]">
+                    <template x-if="previewMode === 'suggested'">
+                        <div x-html="aiPreviewContent" class="whitespace-pre-wrap"></div>
+                    </template>
+                    <template x-if="previewMode === 'original'">
+                        <div x-html="aiOriginalContent" class="whitespace-pre-wrap"></div>
+                    </template>
+                    <template x-if="previewMode === 'diff'">
+                        <div>
+                            <div class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded border-l-4 border-red-400">
+                                <span class="text-xs font-medium text-red-600 dark:text-red-400 uppercase">Entfernt</span>
+                                <div x-html="aiOriginalContent" class="mt-1 text-sm line-through opacity-70"></div>
+                            </div>
+                            <div class="p-3 bg-green-50 dark:bg-green-900/20 rounded border-l-4 border-green-400">
+                                <span class="text-xs font-medium text-green-600 dark:text-green-400 uppercase">Hinzugefügt</span>
+                                <div x-html="aiPreviewContent" class="mt-1 text-sm"></div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+            <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                <button type="button" @click="closeAiPreview()"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                    Abbrechen
+                </button>
+                <button type="button" @click="applyAiPreview()"
+                        class="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg hover:from-purple-700 hover:to-purple-800 flex items-center gap-2">
+                    <i data-lucide="check" class="w-4 h-4"></i>
+                    Übernehmen
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function documentEditor() {
+    // CRITICAL: Store TipTap editor outside Alpine's reactive properties.
+    // Alpine wraps component properties in Proxy objects, which breaks
+    // ProseMirror's internal state identity checks and causes
+    // "RangeError: Applying a mismatched transaction".
+    let editor = null;
+    let _autoSaveInterval = null;
+
+    return {
+        updatedAt: Date.now(),
+        title: '{{ motion.title|escapejs }}',
+        wordCount: 0,
+        pageCount: 1,
+        currentPage: 1,
+        lastSaved: null,
+        saveError: false,
+        saving: false,
+        showMobileSidebar: false,
+        showShareModal: false,
+        shareMotionId: '{{ motion.id }}',
+        shareMotionTitle: '{{ motion.title|escapejs }}',
+        shareVisibility: '{{ motion.visibility }}',
+        addUserEmail: '',
+        sidebarTab: 'comments',
+        aiLoading: false,
+        chatMessages: [],
+        userMessage: '',
+        aiPreviewActive: false,
+        aiPreviewContent: '',
+        aiOriginalContent: '',
+        previewMode: 'suggested',
+        // Comment sidebar state
+        showResolvedComments: false,
+        replyingToComment: null,
+        newCommentContent: '',
+        commentSubmitting: false,
+        selectedText: '',
+        selectionStart: 0,
+        selectionEnd: 0,
+        // Inline comment creation popup (on text selection)
+        commentPopupVisible: false,
+        commentPopupExpanded: false,
+        commentPopupTop: 0,
+        commentPopupLeft: 0,
+        inlineCommentText: '',
+        inlineSelectedText: '',
+        _selectionFrom: 0,
+        _selectionTo: 0,
+        // Mark comment detail popup (on clicking existing highlight)
+        markCommentPopup: false,
+        markCommentData: null,
+        markCommentTop: 0,
+        markCommentLeft: 0,
+        markReplyText: '',
+        markReplySubmitting: false,
+        inlineCommentsData: [],
+        // Collaboration state
+        collabEnabled: false,
+        collabStatus: 'disconnected',
+        collabUsers: [],
+        collabUserName: '{{ request.user.get_full_name|default:request.user.email|escapejs }}',
+        collabUserColor: '{{ collab_color|default:"#3b82f6" }}',
+        collabDestroy: null,
+        // Revision history state
+        revisions: [],
+        revisionsLoading: false,
+        selectedRevision: null,
+        revisionContent: '',
+        revisionDiff: '',
+        revisionLoading: false,
+        revisionViewMode: 'diff',
+        // Image insert modal
+        showImageModal: false,
+        imageUrl: '',
+        imageAlt: '',
+        formats: {
+            bold: false,
+            italic: false,
+            underline: false,
+            strike: false,
+            header: false,
+            list: false,
+            blockquote: false,
+            link: false,
+            textAlign: 'left',
+            textColor: false,
+            table: false
+        },
+        csrfToken: '{{ csrf_token }}',
+        motionId: '{{ motion.id }}',
+        motionType: '{{ motion.motion_type }}',
+        documentTypeId: '{{ motion.document_type_id|default:"" }}',
+        documentTypeName: '{{ motion.get_type_display|escapejs }}',
+        letterheadId: '{{ motion.letterhead_id|default:"" }}',
+        letterheadName: '{{ motion.letterhead.name|default:"Kein Briefpapier"|escapejs }}',
+        letterheadsData: JSON.parse(document.getElementById('letterheads-json')?.textContent || '[]'),
+        accessLevel: '{{ access_level }}',
+        _editorInitialized: false,
+        _collabFailed: false,
+        _recoveringEditor: false,
+
+        init() {
+            if (this._editorInitialized) return;
+            this._editorInitialized = true;
+            const canEdit = this.accessLevel === 'edit' || this.accessLevel === 'admin';
+
+            if (canEdit && typeof MandariEditor !== 'undefined') {
+                // Get initial content from hidden template
+                const tpl = document.getElementById('editor-initial-content');
+                const initialContent = tpl ? tpl.innerHTML : '';
+                const editorEl = document.getElementById('editor-container');
+
+                // Build WebSocket URL for collaboration
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${wsProtocol}//${window.location.host}/ws/documents/${this.motionId}/`;
+
+                // Temporary hard fallback for beta stability:
+                // force solo mode until collab state handling is rebuilt.
+                this.collabEnabled = false;
+                this._initSoloEditor(editorEl, initialContent);
+                this._bindToolbarCommands();
+                this._bindExtendedToolbar();
+
+                // Keyboard shortcut: Ctrl+S to save
+                if (editorEl) {
+                    editorEl.addEventListener('keydown', (e) => {
+                        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                            e.preventDefault();
+                            this.save();
+                        }
+                    });
+                }
+
+                this.updateWordCount();
+
+                // Auto-save every 60 seconds
+                _autoSaveInterval = setInterval(() => this.autoSave(), 60000);
+            }
+
+            // Render letterhead background if available
+            {% if letterhead %}
+            if (typeof MandariEditor !== 'undefined' && MandariEditor.renderLetterhead) {
+                MandariEditor.renderLetterhead({
+                    pdfUrl: '{{ letterhead.pdf_file.url }}',
+                    container: document.getElementById('editor-container'),
+                    opacity: 0.25,
+                    margins: {
+                        top: {{ letterhead.content_margin_top|default:"25" }},
+                        right: {{ letterhead.content_margin_right|default:"20" }},
+                        bottom: {{ letterhead.content_margin_bottom|default:"25" }},
+                        left: {{ letterhead.content_margin_left|default:"20" }},
+                    }
+                });
+            }
+            {% endif %}
+
+            // Load inline comments data for click-on-mark popup
+            const inlineDataEl = document.getElementById('inline-comments-data');
+            if (inlineDataEl) {
+                try { this.inlineCommentsData = JSON.parse(inlineDataEl.textContent); }
+                catch (e) { this.inlineCommentsData = []; }
+            }
+
+            // Click handler for existing inline comment marks
+            const editorClickEl = document.getElementById('editor-container');
+            if (editorClickEl) {
+                editorClickEl.addEventListener('click', (e) => {
+                    const mark = e.target.closest('[data-comment-id]');
+                    if (mark) {
+                        e.stopPropagation();
+                        this._handleMarkClick(mark);
+                    } else if (!e.target.closest('.comment-popup')) {
+                        this.hideMarkPopup();
+                    }
+                });
+            }
+
+            // Hide inline comment popup on editor scroll
+            const scrollContainer = document.querySelector('.editor-container');
+            if (scrollContainer) {
+                scrollContainer.addEventListener('scroll', () => {
+                    if (!this.commentPopupExpanded) {
+                        this.commentPopupVisible = false;
+                    }
+                }, { passive: true });
+            }
+
+            // Load revisions when history tab is opened
+            this.$watch('sidebarTab', (val) => {
+                if (val === 'history' && this.revisions.length === 0) {
+                    this.loadRevisions();
+                }
+            });
+
+            this.$nextTick(() => {
+                lucide.createIcons();
+            });
+        },
+
+        _initSoloEditor(editorEl, initialContent) {
+            const _this = this;
+            editor = MandariEditor.createEditor({
+                element: editorEl,
+                content: initialContent,
+                editable: true,
+                placeholder: 'Beginnen Sie hier mit dem Schreiben...',
+                onUpdate: (html) => {
+                    _this.updatedAt = Date.now();
+                    _this.updateWordCount();
+                },
+                onSelectionUpdate: (state) => {
+                    _this.updatedAt = Date.now();
+                    _this.formats = state;
+                    _this._checkTextSelection();
+                },
+                onPageCount: (count, currentPage) => {
+                    _this.pageCount = count;
+                    _this.currentPage = currentPage;
+                }
+            });
+        },
+
+        destroy() {
+            if (_autoSaveInterval) {
+                clearInterval(_autoSaveInterval);
+                _autoSaveInterval = null;
+            }
+            if (this.collabDestroy) {
+                this.collabDestroy();
+                this.collabDestroy = null;
+            }
+            if (editor) {
+                editor.destroy();
+                editor = null;
+            }
+        },
+
+        _switchToSoloMode(reason = 'Kollaboration vorübergehend deaktiviert') {
+            if (this._collabFailed) return;
+            this._collabFailed = true;
+
+            let currentText = '';
+            if (editor && !editor.isDestroyed) {
+                try {
+                    currentText = editor.getText() || '';
+                } catch (e) {
+                    currentText = '';
+                }
+            }
+
+            this.destroy();
+            this.collabEnabled = false;
+            this.collabStatus = 'disconnected';
+            this.collabUsers = [];
+
+            const editorEl = document.getElementById('editor-container');
+            if (!editorEl) return;
+            editorEl.innerHTML = '';
+
+            const escaped = (currentText || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const fallbackContent = escaped ? `<p>${escaped.replace(/\n/g, '<br>')}</p>` : (document.getElementById('editor-initial-content')?.innerHTML || '<p></p>');
+            this._initSoloEditor(editorEl, fallbackContent);
+            showToast(reason, 'warning');
+        },
+
+        _rebuildSoloEditorFromText() {
+            if (this._recoveringEditor) return;
+            this._recoveringEditor = true;
+            try {
+                let text = '';
+                if (editor && !editor.isDestroyed) {
+                    try { text = editor.getText() || ''; } catch (e) { text = ''; }
+                }
+                this.destroy();
+                this.collabEnabled = false;
+                this.collabStatus = 'disconnected';
+                this.collabUsers = [];
+
+                const editorEl = document.getElementById('editor-container');
+                if (!editorEl) return;
+                editorEl.innerHTML = '';
+
+                const escaped = (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const safeHtml = escaped ? `<p>${escaped.replace(/\n/g, '<br>')}</p>` : '<p></p>';
+                this._initSoloEditor(editorEl, safeHtml);
+            } finally {
+                this._recoveringEditor = false;
+            }
+        },
+
+        closeShareModal() {
+            this.showShareModal = false;
+            this.addUserEmail = '';
+        },
+
+        scrollToCommentInContent(commentId) {
+            // Find the comment mark in the editor and scroll to it
+            if (!editor) return;
+            const editorEl = document.getElementById('editor-container');
+            if (!editorEl) return;
+            const mark = editorEl.querySelector(`[data-comment-id="${commentId}"]`);
+            if (mark) {
+                mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Brief highlight flash
+                mark.style.backgroundColor = 'rgba(251, 191, 36, 0.6)';
+                setTimeout(() => { mark.style.backgroundColor = ''; }, 1500);
+            }
+        },
+
+        replyToComment(commentId) {
+            this.replyingToComment = this.replyingToComment === commentId ? null : commentId;
+        },
+
+        clearSelection() {
+            this.selectedText = '';
+            this.selectionStart = 0;
+            this.selectionEnd = 0;
+        },
+
+        // === Inline Comment Popup ===
+
+        _checkTextSelection() {
+            if (!editor) return;
+            // Don't update while user is typing a comment or viewing a mark comment
+            if (this.commentPopupExpanded) return;
+            if (this.markCommentPopup) return;
+
+            const { from, to, empty } = editor.state.selection;
+
+            if (empty || from === to) {
+                this.commentPopupVisible = false;
+                return;
+            }
+
+            const selectedText = editor.state.doc.textBetween(from, to, ' ');
+            if (!selectedText.trim()) {
+                this.commentPopupVisible = false;
+                return;
+            }
+
+            // Calculate popup position (viewport-relative for position: fixed)
+            try {
+                const endCoords = editor.view.coordsAtPos(to);
+                this.commentPopupTop = endCoords.bottom + 8;
+                // Prevent overflow on the right side
+                this.commentPopupLeft = Math.min(endCoords.left, window.innerWidth - 350);
+                // Prevent overflow at the bottom — flip above selection
+                if (this.commentPopupTop + 200 > window.innerHeight) {
+                    const startCoords = editor.view.coordsAtPos(from);
+                    this.commentPopupTop = startCoords.top - 48;
+                }
+            } catch (e) {
+                return;
+            }
+
+            this.inlineSelectedText = selectedText;
+            this._selectionFrom = from;
+            this._selectionTo = to;
+            this.commentPopupVisible = true;
+
+            this.$nextTick(() => lucide.createIcons());
+        },
+
+        expandCommentPopup() {
+            this.commentPopupExpanded = true;
+            this.$nextTick(() => {
+                const input = this.$refs.inlineCommentInput;
+                if (input) input.focus();
+                lucide.createIcons();
+            });
+        },
+
+        hideCommentPopup() {
+            this.commentPopupVisible = false;
+            this.commentPopupExpanded = false;
+            this.inlineCommentText = '';
+            this.inlineSelectedText = '';
+        },
+
+        // === Mark Comment Detail Popup (click on existing highlight) ===
+
+        _handleMarkClick(markEl) {
+            const markId = markEl.getAttribute('data-comment-id');
+            if (!markId) return;
+
+            // Toggle off if same mark clicked
+            if (this.markCommentPopup && this.markCommentData && this.markCommentData.mark_id === markId) {
+                this.hideMarkPopup();
+                return;
+            }
+
+            // Find comment data
+            const comment = this.inlineCommentsData.find(c => c.mark_id === markId);
+            if (!comment) return;
+
+            // Hide creation popup if visible
+            this.commentPopupVisible = false;
+
+            // Position near the mark element
+            const rect = markEl.getBoundingClientRect();
+            this.markCommentTop = rect.bottom + 8;
+            this.markCommentLeft = Math.min(rect.left, window.innerWidth - 340);
+            // Flip above if near bottom
+            if (this.markCommentTop + 300 > window.innerHeight) {
+                this.markCommentTop = rect.top - 280;
+            }
+
+            this.markCommentData = comment;
+            this.markCommentPopup = true;
+            this.markReplyText = '';
+
+            this.$nextTick(() => lucide.createIcons());
+        },
+
+        hideMarkPopup() {
+            this.markCommentPopup = false;
+            this.markCommentData = null;
+            this.markReplyText = '';
+        },
+
+        async submitMarkReply() {
+            if (!this.markReplyText.trim() || this.markReplySubmitting || !this.markCommentData) return;
+            this.markReplySubmitting = true;
+
+            const formData = new URLSearchParams();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('content', this.markReplyText.trim());
+            formData.append('parent', this.markCommentData.id);
+
+            try {
+                const response = await fetch('{% url "work:document_comment" org_slug=organization.slug motion_id=motion.id %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.success && data.comment) {
+                    // Add reply to local data so popup updates immediately
+                    this.markCommentData.replies.push({
+                        id: data.comment.id,
+                        content: data.comment.content,
+                        author_name: data.comment.author,
+                        author_initials: data.comment.author.substring(0, 2).toUpperCase(),
+                        created_at: data.comment.created_at,
+                    });
+                    this.markReplyText = '';
+                    this.$nextTick(() => lucide.createIcons());
+                } else {
+                    showToast('Fehler beim Speichern der Antwort.', 'error');
+                }
+            } catch (error) {
+                console.error('Reply error:', error);
+                showToast('Fehler beim Speichern der Antwort.', 'error');
+            }
+
+            this.markReplySubmitting = false;
+        },
+
+        async resolveMarkComment() {
+            if (!this.markCommentData) return;
+            const commentId = this.markCommentData.id;
+
+            try {
+                const response = await fetch(`/work/{{ organization.slug }}/documents/{{ motion.id }}/comment/${commentId}/resolve/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                });
+                const data = await response.json();
+                if (data.success) {
+                    // Update local state
+                    this.markCommentData.is_resolved = true;
+                    // Update the mark in the editor to show resolved style
+                    if (editor) {
+                        editor.commands.unsetCommentMark(this.markCommentData.mark_id);
+                    }
+                    this.hideMarkPopup();
+                    await this.reloadCommentsSidebar();
+                } else {
+                    showToast('Fehler beim Erledigen.', 'error');
+                }
+            } catch (error) {
+                showToast('Fehler beim Erledigen.', 'error');
+            }
+        },
+
+        async submitInlineComment() {
+            if (!this.inlineCommentText.trim() || this.commentSubmitting) return;
+            this.commentSubmitting = true;
+
+            // Generate mark_id client-side and apply mark SYNCHRONOUSLY
+            // to avoid "mismatched transaction" error from stale positions after await
+            const markId = crypto.randomUUID();
+            let markApplied = false;
+
+            if (editor) {
+                try {
+                    editor.chain()
+                        .focus()
+                        .setTextSelection({ from: this._selectionFrom, to: this._selectionTo })
+                        .setCommentMark({ commentId: markId })
+                        .run();
+                    markApplied = true;
+                } catch (e) {
+                    console.warn('Failed to apply comment mark:', e);
+                }
+            }
+
+            const formData = new URLSearchParams();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('content', this.inlineCommentText.trim());
+            formData.append('selected_text', this.inlineSelectedText);
+            formData.append('selection_start', this._selectionFrom);
+            formData.append('selection_end', this._selectionTo);
+            formData.append('mark_id', markId);
+
+            try {
+                const response = await fetch('{% url "work:document_comment" org_slug=organization.slug motion_id=motion.id %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.success && data.comment) {
+                    this.hideCommentPopup();
+                    this.sidebarTab = 'comments';
+                    await this.reloadCommentsSidebar();
+                } else {
+                    // Revert the mark on failure
+                    if (markApplied && editor) {
+                        try { editor.commands.unsetCommentMark(markId); } catch (e) { /* ignore */ }
+                    }
+                    showToast('Fehler beim Speichern des Kommentars.', 'error');
+                }
+            } catch (error) {
+                console.error('Inline comment error:', error);
+                // Revert the mark on failure
+                if (markApplied && editor) {
+                    try { editor.commands.unsetCommentMark(markId); } catch (e) { /* ignore */ }
+                }
+                showToast('Fehler beim Speichern des Kommentars.', 'error');
+            }
+
+            this.commentSubmitting = false;
+        },
+
+        async submitComment() {
+            if (!this.newCommentContent.trim() || this.commentSubmitting) return;
+            this.commentSubmitting = true;
+
+            const formData = new URLSearchParams();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('content', this.newCommentContent.trim());
+            if (this.selectedText) {
+                formData.append('selected_text', this.selectedText);
+                formData.append('selection_start', this.selectionStart);
+                formData.append('selection_end', this.selectionEnd);
+            }
+
+            try {
+                const response = await fetch('{% url "work:document_comment" org_slug=organization.slug motion_id=motion.id %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.success && data.comment) {
+                    // If this was an inline comment with a mark_id, apply the mark in the editor
+                    if (data.comment.mark_id && editor && this.selectedText) {
+                        editor.chain().focus().setCommentMark({ commentId: data.comment.mark_id }).run();
+                    }
+                    this.newCommentContent = '';
+                    this.clearSelection();
+                    await this.reloadCommentsSidebar();
+                } else {
+                    showToast('Fehler beim Speichern des Kommentars.', 'error');
+                }
+            } catch (error) {
+                console.error('Comment error:', error);
+                showToast('Fehler beim Speichern des Kommentars.', 'error');
+            }
+
+            this.commentSubmitting = false;
+        },
+
+        async reloadCommentsSidebar() {
+            try {
+                const response = await fetch(window.location.href, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                if (!response.ok) return;
+                const html = await response.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const selector = `.editor-sidebar [x-show="sidebarTab === 'comments'"]`;
+                const nextSidebar = doc.querySelector(selector);
+                const currentSidebar = document.querySelector(selector);
+                if (nextSidebar && currentSidebar) {
+                    currentSidebar.innerHTML = nextSidebar.innerHTML;
+                    this.$nextTick(() => lucide.createIcons());
+                }
+            } catch (error) {
+                console.warn('Could not refresh comments sidebar:', error);
+            }
+        },
+
+        updateWordCount() {
+            if (!editor) return;
+            const text = editor.getText().trim();
+            this.wordCount = text ? text.split(/\s+/).length : 0;
+        },
+
+        runEditorCommand(commandFn) {
+            if (!editor || editor.isDestroyed) return;
+            try {
+                commandFn(editor);
+            } catch (error) {
+                console.error('Editor command failed:', error);
+            }
+        },
+
+        isEditorReady() {
+            return editor && !editor.isDestroyed;
+        },
+
+        _bindToolbarCommands() {
+            const toolbar = document.getElementById('editor-toolbar');
+            if (!toolbar) return;
+
+            toolbar.addEventListener('mousedown', (event) => {
+                const button = event.target.closest('[data-editor-cmd]');
+                if (!button) return;
+                event.preventDefault();
+                if (!editor || editor.isDestroyed) return;
+
+                const cmd = button.getAttribute('data-editor-cmd');
+                const level = parseInt(button.getAttribute('data-editor-level') || '0', 10);
+                this._executeToolbarCommand(cmd, level);
+            });
+        },
+
+        _executeToolbarCommand(cmd, level = 0) {
+            if (!editor || editor.isDestroyed) return;
+            try {
+                switch (cmd) {
+                    case 'bold': editor.chain().focus().toggleBold().run(); break;
+                    case 'italic': editor.chain().focus().toggleItalic().run(); break;
+                    case 'underline': editor.chain().focus().toggleUnderline().run(); break;
+                    case 'heading':
+                        if (!level) break;
+                        editor.chain().focus().toggleHeading({ level }).run();
+                        break;
+                    case 'bulletList': editor.chain().focus().toggleBulletList().run(); break;
+                    case 'orderedList': editor.chain().focus().toggleOrderedList().run(); break;
+                    case 'taskList': editor.chain().focus().toggleTaskList().run(); break;
+                    case 'blockquote': editor.chain().focus().toggleBlockquote().run(); break;
+                    case 'horizontalRule': editor.chain().focus().setHorizontalRule().run(); break;
+                    case 'indent':
+                        // Lists: sink list item; otherwise: paragraph indent
+                        if (editor.isActive('listItem') && editor.can().sinkListItem('listItem')) {
+                            editor.chain().focus().sinkListItem('listItem').run();
+                        } else {
+                            editor.chain().focus().indent().run();
+                        }
+                        break;
+                    case 'outdent':
+                        if (editor.isActive('listItem') && editor.can().liftListItem('listItem')) {
+                            editor.chain().focus().liftListItem('listItem').run();
+                        } else {
+                            editor.chain().focus().outdent().run();
+                        }
+                        break;
+                    case 'undo': editor.commands.undo(); break;
+                    case 'redo': editor.commands.redo(); break;
+                }
+            } catch (error) {
+                console.error('Editor command failed:', error);
+            }
+        },
+
+        _bindExtendedToolbar() {
+            const _this = this;
+            const wrapper = this.$el;
+
+            // Table commands via custom events ($dispatch bubbles to wrapper)
+            wrapper.addEventListener('editor-table-cmd', (e) => {
+                if (!editor || editor.isDestroyed) return;
+                const cmd = e.detail;
+                try {
+                    switch (cmd) {
+                        case 'insertTable':
+                            editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+                            break;
+                        case 'addColumnBefore': editor.chain().focus().addColumnBefore().run(); break;
+                        case 'addColumnAfter': editor.chain().focus().addColumnAfter().run(); break;
+                        case 'addRowBefore': editor.chain().focus().addRowBefore().run(); break;
+                        case 'addRowAfter': editor.chain().focus().addRowAfter().run(); break;
+                        case 'deleteColumn': editor.chain().focus().deleteColumn().run(); break;
+                        case 'deleteRow': editor.chain().focus().deleteRow().run(); break;
+                        case 'deleteTable': editor.chain().focus().deleteTable().run(); break;
+                    }
+                } catch (err) {
+                    console.error('Table command failed:', err);
+                }
+            });
+
+            // Color command via custom event
+            wrapper.addEventListener('editor-color-cmd', (e) => {
+                if (!editor || editor.isDestroyed) return;
+                const color = e.detail;
+                try {
+                    if (color) {
+                        editor.chain().focus().setColor(color).run();
+                    } else {
+                        editor.chain().focus().unsetColor().run();
+                    }
+                } catch (err) {
+                    console.error('Color command failed:', err);
+                }
+            });
+
+            // Slash command image insertion (dispatched on window from editor bundle)
+            window.addEventListener('slash-insert-image', () => {
+                _this.showImageModal = true;
+            });
+        },
+
+        insertImage() {
+            if (!editor || !this.imageUrl.trim()) return;
+            try {
+                editor.chain().focus().setImage({
+                    src: this.imageUrl.trim(),
+                    alt: this.imageAlt.trim() || undefined,
+                }).run();
+            } catch (err) {
+                console.error('Image insert failed:', err);
+            }
+            this.showImageModal = false;
+            this.imageUrl = '';
+            this.imageAlt = '';
+        },
+
+        getContent() {
+            if (!editor) return '';
+            return editor.getHTML();
+        },
+
+        setContent(html) {
+            if (!editor) return;
+            editor.commands.setContent(html);
+        },
+
+        async save() {
+            if (this.saving || !editor) return;
+            this.saving = true;
+            this.saveError = false;
+
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('action', 'save');
+            formData.append('title', this.title);
+            formData.append('content', this.getContent());
+            formData.append('motion_type', this.motionType);
+            formData.append('document_type_id', this.documentTypeId);
+            formData.append('letterhead_id', this.letterheadId);
+
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        this.lastSaved = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                        this.saveError = false;
+                    } else {
+                        this.saveError = true;
+                    }
+                } else {
+                    this.saveError = true;
+                }
+            } catch (error) {
+                this.saveError = true;
+                console.error('Save error:', error);
+            }
+
+            this.saving = false;
+        },
+
+        autoSave() {
+            if (!this.saving && editor) this.save();
+        },
+
+        setDocumentType(id, name) {
+            this.documentTypeId = id;
+            this.documentTypeName = name;
+        },
+
+        setLetterhead(id, name) {
+            this.letterheadId = id;
+            this.letterheadName = name;
+
+            // Re-render letterhead background
+            const container = document.getElementById('editor-container');
+            if (!container || typeof MandariEditor === 'undefined' || !MandariEditor.renderLetterhead) return;
+
+            // Remove existing letterhead canvas
+            const existingCanvas = container.querySelector('.letterhead-canvas');
+            if (existingCanvas) existingCanvas.remove();
+
+            // Reset editor padding to default
+            const tiptapEl = container.querySelector('.tiptap');
+            if (tiptapEl) {
+                tiptapEl.style.padding = '30mm 25mm 25mm 25mm';
+            }
+
+            if (!id) return; // "Kein Briefpapier" selected
+
+            // Find letterhead data
+            const lhData = this.letterheadsData.find(lh => lh.id === id);
+            if (!lhData) return;
+
+            MandariEditor.renderLetterhead({
+                pdfUrl: lhData.pdf_url,
+                container: container,
+                opacity: 0.25,
+                margins: {
+                    top: lhData.margin_top,
+                    right: lhData.margin_right,
+                    bottom: lhData.margin_bottom,
+                    left: lhData.margin_left,
+                }
+            });
+        },
+
+        async changeStatus(newStatus) {
+            try {
+                const response = await fetch(`{% url 'work:document_status' org_slug=organization.slug motion_id=motion.id %}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: new URLSearchParams({ status: newStatus })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    location.reload();
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            } catch (error) {
+                showToast('Fehler beim Statuswechsel', 'error');
+            }
+        },
+
+        async confirmDelete() {
+            const ok = await confirmAction({
+                title: 'Dokument löschen',
+                message: 'Möchten Sie dieses Dokument wirklich löschen? Es wird für 30 Tage im Papierkorb aufbewahrt.',
+                confirmText: 'Löschen',
+                variant: 'danger'
+            });
+            if (!ok) return;
+
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('action', 'delete');
+
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.success) {
+                    window.location.href = '{% url "work:documents" org_slug=organization.slug %}';
+                } else {
+                    showToast('Fehler beim Loeschen: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            } catch (error) {
+                showToast('Fehler beim Loeschen des Dokuments.', 'error');
+            }
+        },
+
+        sendMessage() {
+            if (!this.userMessage.trim() || this.aiLoading) return;
+            const msg = this.userMessage.trim();
+            this.chatMessages.push({ role: 'user', content: msg });
+            this.userMessage = '';
+            this.aiAction('chat', msg);
+        },
+
+        async aiAction(action, instruction = '') {
+            this.aiLoading = true;
+            this.$nextTick(() => {
+                const container = this.$refs.chatMessages;
+                if (container) container.scrollTop = container.scrollHeight;
+            });
+
+            const text = editor ? this.getContent() : '';
+            const selectedText = this.selectedText || '';
+            const historyPayload = this.chatMessages
+                .filter(m => m.role === 'user' || m.role === 'ai')
+                .slice(-8)
+                .map(m => ({
+                    role: m.role === 'ai' ? 'assistant' : 'user',
+                    content: String(m.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+                }));
+
+            try {
+                const response = await fetch('{% url "work:document_ai" org_slug=organization.slug %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: new URLSearchParams({
+                        action: action,
+                        text: text,
+                        instruction: instruction,
+                        motion_type: this.motionType,
+                        selected_text: selectedText,
+                        history: JSON.stringify(historyPayload),
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    let content = '';
+                    let hasAction = false;
+                    let actionContent = null;
+
+                    if (data.content) {
+                        content = data.content.replace(/\n/g, '<br>');
+                        hasAction = action !== 'chat';
+                        actionContent = data.content;
+                    }
+                    if (data.suggestions && data.suggestions.length > 0) {
+                        content += '<ul class="mt-2 space-y-1">';
+                        data.suggestions.forEach(s => { content += `<li class="text-sm">${s}</li>`; });
+                        content += '</ul>';
+                    }
+                    if (!content) content = 'Keine Vorschlaege verfuegbar.';
+
+                    this.chatMessages.push({ role: 'ai', content, hasAction, actionContent });
+                } else {
+                    this.chatMessages.push({
+                        role: 'ai',
+                        content: 'Entschuldigung, es ist ein Fehler aufgetreten: ' + (data.error || 'Unbekannter Fehler')
+                    });
+                }
+            } catch (error) {
+                this.chatMessages.push({
+                    role: 'ai',
+                    content: 'Entschuldigung, die Verbindung zum KI-Service ist fehlgeschlagen.'
+                });
+            }
+
+            this.aiLoading = false;
+            this.$nextTick(() => {
+                const container = this.$refs.chatMessages;
+                if (container) container.scrollTop = container.scrollHeight;
+                lucide.createIcons();
+            });
+        },
+
+        applyAiContent(content) {
+            if (content && editor) {
+                this.aiOriginalContent = this.getContent();
+                this.aiPreviewContent = content;
+                this.previewMode = 'suggested';
+                this.aiPreviewActive = true;
+                this.$nextTick(() => lucide.createIcons());
+            }
+        },
+
+        closeAiPreview() {
+            this.aiPreviewActive = false;
+            this.aiPreviewContent = '';
+            this.aiOriginalContent = '';
+            this.previewMode = 'suggested';
+        },
+
+        applyAiPreview() {
+            if (this.aiPreviewContent && editor) {
+                this.setContent(this.aiPreviewContent);
+                this.chatMessages.push({ role: 'ai', content: 'Änderungen wurden in den Editor übernommen.' });
+                this.closeAiPreview();
+                this.$nextTick(() => lucide.createIcons());
+            }
+        },
+
+        // === Version History ===
+
+        async loadRevisions() {
+            if (this.revisionsLoading) return;
+            this.revisionsLoading = true;
+
+            try {
+                const response = await fetch(`/work/{{ organization.slug }}/documents/${this.motionId}/revisions/`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.revisions = data.revisions;
+                }
+            } catch (error) {
+                console.error('Error loading revisions:', error);
+            }
+
+            this.revisionsLoading = false;
+            this.$nextTick(() => lucide.createIcons());
+        },
+
+        async viewRevision(rev) {
+            this.selectedRevision = rev;
+            this.revisionLoading = true;
+            this.revisionViewMode = 'diff';
+
+            try {
+                const response = await fetch(`/work/{{ organization.slug }}/documents/${this.motionId}/revisions/${rev.id}/`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.revisionContent = data.revision.content;
+                    // Generate diff between revision and current content
+                    const currentContent = editor ? this.getContent() : '';
+                    if (typeof MandariEditor !== 'undefined' && MandariEditor.renderDiff) {
+                        this.revisionDiff = MandariEditor.renderDiff(data.revision.content, currentContent);
+                    } else {
+                        this.revisionDiff = data.revision.content;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading revision:', error);
+            }
+
+            this.revisionLoading = false;
+            this.$nextTick(() => lucide.createIcons());
+        },
+
+        async restoreRevision(rev) {
+            const ok = await confirmAction({
+                title: 'Version wiederherstellen',
+                message: `Moechten Sie Version ${rev.version} wiederherstellen? Der aktuelle Inhalt wird als neue Version gesichert.`,
+                confirmText: 'Wiederherstellen',
+                variant: 'info'
+            });
+            if (!ok) return;
+
+            try {
+                const response = await fetch(`/work/{{ organization.slug }}/documents/${this.motionId}/revisions/${rev.id}/restore/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    // Reload to get the restored content
+                    location.reload();
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            } catch (error) {
+                showToast('Fehler beim Wiederherstellen', 'error');
+            }
+        },
+
+        formatTimeAgo(isoDate) {
+            const date = new Date(isoDate);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMin = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            if (diffMin < 1) return 'gerade eben';
+            if (diffMin < 60) return `vor ${diffMin} Min.`;
+            if (diffHours < 24) return `vor ${diffHours} Std.`;
+            if (diffDays < 7) return `vor ${diffDays} Tagen`;
+            return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+    }
+}
+</script>
+{% endblock %}
+
+
+

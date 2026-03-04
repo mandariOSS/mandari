@@ -40,11 +40,15 @@
             {# Municipality list #}
             {% for body in available_bodies %}
             <a href="{% url 'insight_core:insight:set_body' body.id %}"
-                x-show="!citySearch || '{{ body.name|lower }}'.includes(citySearch.toLowerCase()) || '{{ body.short_name|default:""|lower }}'.includes(citySearch.toLowerCase())"
+                x-show="!citySearch || '{{ body.name|lower }}'.includes(citySearch.toLowerCase()) || '{{ body.short_name|default:""|lower }}'.includes(citySearch.toLowerCase()) || '{{ body.display_name|default:""|lower }}'.includes(citySearch.toLowerCase())"
                 class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                 :class="activeBodyId === '{{ body.id }}' ? 'bg-primary-50 dark:bg-primary-900/20' : ''">
-                <div class="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                <div class="w-9 h-9 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    {% if body.logo %}
+                    <img src="{{ body.logo.url }}" alt="" class="w-9 h-9 object-contain">
+                    {% else %}
                     <svg class="w-4 h-4 text-gray-500 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+                    {% endif %}
                 </div>
                 <div class="flex-1 min-w-0">
                     <div class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ body.get_display_name }}</div>

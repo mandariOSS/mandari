@@ -11,7 +11,7 @@
 
 {% block work_content %}
 <div class="max-w-2xl">
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
         <form method="post" action="" class="space-y-6">
             {% csrf_token %}
 
@@ -23,7 +23,7 @@
                     </label>
                     <input type="text" name="name" value="{{ party.name|default:'' }}" required
                            placeholder="z.B. SPD-Fraktion"
-                           class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                 </div>
 
                 <div>
@@ -32,7 +32,7 @@
                     </label>
                     <input type="text" name="short_name" value="{{ party.short_name|default:'' }}" required
                            placeholder="z.B. SPD" maxlength="20"
-                           class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                 </div>
             </div>
 
@@ -46,8 +46,8 @@
                     </label>
                     <input type="email" name="email" value="{{ party.email|default:'' }}"
                            placeholder="fraktion@example.de"
-                           class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
-                    <p class="mt-1 text-sm text-gray-500">E-Mail fuer Antragsversand</p>
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    <p class="mt-1 text-sm text-gray-500">E-Mail für Antragsversand</p>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -57,7 +57,7 @@
                         </label>
                         <input type="text" name="contact_name" value="{{ party.contact_name|default:'' }}"
                                placeholder="Max Mustermann"
-                               class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     </div>
 
                     <div>
@@ -66,7 +66,7 @@
                         </label>
                         <input type="text" name="contact_phone" value="{{ party.contact_phone|default:'' }}"
                                placeholder="+49 123 456789"
-                               class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     </div>
                 </div>
             </div>
@@ -76,16 +76,27 @@
                 <h4 class="font-medium text-gray-900 dark:text-white">Erscheinung & Koalition</h4>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
+                    <div x-data="colorPicker('{{ party.color|default:'#6b7280' }}')">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Farbe
                         </label>
-                        <div class="flex items-center gap-2">
-                            <input type="color" name="color" value="{{ party.color|default:'#6b7280' }}"
-                                   class="w-12 h-10 p-1 rounded border border-gray-300 dark:border-gray-600 cursor-pointer">
-                            <input type="text" value="{{ party.color|default:'#6b7280' }}" readonly
-                                   class="flex-1 px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-500">
+                        <div class="flex items-center gap-3">
+                            <div class="relative">
+                                <div class="w-10 h-10 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer shadow-sm hover:border-primary-400 transition-colors"
+                                     :style="'background-color: ' + color"
+                                     @click="$refs.nativePicker.click()"></div>
+                                <input type="color" x-ref="nativePicker" :value="color"
+                                       @input="color = $event.target.value"
+                                       class="sr-only">
+                            </div>
+                            <div class="flex items-center w-32 border border-gray-300 dark:border-gray-600 rounded-xl overflow-hidden focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/20">
+                                <span class="pl-3 pr-1 text-gray-400 text-sm font-mono select-none">#</span>
+                                <input type="text" x-model="hex" @input="onHexInput()" maxlength="6"
+                                       placeholder="6b7280"
+                                       class="w-full py-2 pr-3 bg-transparent outline-none text-sm font-mono text-gray-900 dark:text-white">
+                            </div>
                         </div>
+                        <input type="hidden" name="color" :value="color">
                     </div>
 
                     <div>
@@ -94,7 +105,7 @@
                         </label>
                         <input type="number" name="coalition_order" value="{{ party.coalition_order|default:0 }}"
                                min="0" max="100"
-                               class="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     </div>
                 </div>
 
@@ -134,14 +145,14 @@
 
                 <div class="flex items-center gap-3">
                     {% if is_edit %}
-                    <button type="submit" name="action" value="delete"
-                            onclick="return confirm('Fraktion wirklich loeschen?')"
+                    <button type="button"
+                            @click="confirmAction({title: 'Fraktion löschen', message: 'Möchten Sie die Fraktion wirklich löschen?', confirmText: 'Löschen', variant: 'danger'}).then(ok => { if(ok) { const f = $el.closest('form'); const h = document.createElement('input'); h.type='hidden'; h.name='action'; h.value='delete'; f.appendChild(h); f.submit(); } })"
                             class="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
-                        Loeschen
+                        Löschen
                     </button>
                     {% endif %}
                     <button type="submit"
-                            class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 focus:ring-2 focus:ring-primary-500">
+                            class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                         {% if is_edit %}Speichern{% else %}Hinzufuegen{% endif %}
                     </button>
                 </div>
@@ -151,9 +162,23 @@
 </div>
 
 <script>
-    // Update color text input when color picker changes
-    document.querySelector('input[type="color"]').addEventListener('input', function(e) {
-        e.target.nextElementSibling.value = e.target.value;
-    });
+function colorPicker(initial) {
+    return {
+        color: initial || '#6b7280',
+        hex: (initial || '#6b7280').replace('#', ''),
+        onHexInput() {
+            const clean = this.hex.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
+            this.hex = clean;
+            if (clean.length === 6) {
+                this.color = '#' + clean;
+            }
+        },
+        init() {
+            this.$watch('color', (val) => {
+                this.hex = val.replace('#', '');
+            });
+        }
+    }
+}
 </script>
 {% endblock %}

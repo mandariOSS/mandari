@@ -21,6 +21,8 @@ from .support.models import (
     SupportTicketAttachment,
     SupportTicketMessage,
 )
+from .faction.models import FactionAgendaItemAttachment
+from .motions.models import OrganizationAITokenUsage
 
 # =============================================================================
 # Support Ticket Badge for Unfold Sidebar
@@ -36,6 +38,27 @@ def support_ticket_badge(request):
     if open_count > 0:
         return str(open_count)
     return None
+
+
+@admin.register(OrganizationAITokenUsage)
+class OrganizationAITokenUsageAdmin(ModelAdmin):
+    """Readonly overview of organization-level AI token consumption."""
+
+    list_display = (
+        "organization",
+        "period_type",
+        "period_start",
+        "tokens_used",
+        "requests_count",
+        "updated_at",
+    )
+    list_filter = ("period_type", "organization")
+    search_fields = ("organization__name", "organization__slug")
+    readonly_fields = ("organization", "period_type", "period_start", "tokens_used", "requests_count", "updated_at")
+    ordering = ("-period_start", "period_type")
+
+    def has_add_permission(self, request):
+        return False
 
 
 # =============================================================================
@@ -809,3 +832,30 @@ class SupportTicketAdmin(ModelAdmin):
         # Use absolute URL to avoid relative path issues
         extra_context["reply_url"] = reverse("admin:work_supportticket_reply", args=[object_id])
         return super().change_view(request, object_id, form_url, extra_context)
+
+
+# =============================================================================
+# Faction Agenda Item Attachments
+# =============================================================================
+
+
+@admin.register(FactionAgendaItemAttachment)
+class FactionAgendaItemAttachmentAdmin(ModelAdmin):
+    """Readonly admin für TOP-Anhänge."""
+
+    list_display = ("filename", "agenda_item", "file_size_display", "created_at")
+    list_filter = ("created_at",)
+    search_fields = ("filename", "agenda_item__title")
+    readonly_fields = ("id", "agenda_item", "file", "filename", "mime_type", "file_size", "uploaded_by", "created_at")
+    ordering = ("-created_at",)
+
+    def file_size_display(self, obj):
+        return obj.size_human
+
+    file_size_display.short_description = "Größe"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

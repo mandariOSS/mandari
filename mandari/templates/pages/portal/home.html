@@ -1,4 +1,5 @@
 {% extends "base_insight.html" %}
+{% load l10n %}
 
 {% block title %}{% if active_body %}{{ active_body.get_display_name }} - Ratsinformationen{% else %}Mandari Insight Portal{% endif %}{% endblock %}
 
@@ -13,30 +14,124 @@
 {% block content %}
 {% if active_body %}
 
-<section class="fade-up mb-10">
-    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-center">
+<section class="fade-up mb-10" x-data="homeSearchApp()">
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         <div class="lg:col-span-3">
             <h1 class="text-3xl lg:text-4xl font-extrabold text-gray-900 dark:text-white mb-3">
                 {{ active_body.get_display_name }} transparent
             </h1>
             {% if active_body.description %}
-            <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-6">{{ active_body.description }}</p>
+            <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-5">{{ active_body.description }}</p>
             {% else %}
-            <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-6">Hier findest du alle öffentlichen Ratsinformationen deiner Stadt &ndash; Sitzungen, Vorgänge, Gremien und die Menschen, die Entscheidungen treffen. Offen für alle.</p>
+            <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-5">Alle &ouml;ffentlichen Ratsinformationen deiner Stadt &ndash; Sitzungen, Vorg&auml;nge, Gremien und die Menschen, die Entscheidungen treffen.</p>
             {% endif %}
-            <div class="relative max-w-xl">
-                <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-400 pointer-events-none"></i>
-                <input type="text"
-                    placeholder="Was suchst du? Thema, Straße, Gremium ..."
-                    hx-get="{% url 'insight_core:insight:search' %}"
-                    hx-trigger="keyup changed delay:500ms"
-                    hx-target="#search-results-preview"
-                    hx-vals='{"dropdown":"1"}'
-                    name="q"
-                    autocomplete="off"
-                    class="w-full pl-12 pr-4 py-3.5 text-[15px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all outline-none shadow-sm">
+
+            <!-- Search Mode Tabs -->
+            <div class="flex items-center gap-1 mb-3 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 max-w-xl">
+                <button @click="mode = 'topics'"
+                        :class="mode === 'topics'
+                            ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'"
+                        class="flex-1 flex items-center justify-center gap-2 py-2 px-3 text-sm font-semibold rounded-md transition-all">
+                    <i data-lucide="search" class="w-4 h-4"></i>
+                    Themen durchsuchen
+                </button>
+                <button @click="mode = 'neighborhood'"
+                        :class="mode === 'neighborhood'
+                            ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'"
+                        class="flex-1 flex items-center justify-center gap-2 py-2 px-3 text-sm font-semibold rounded-md transition-all">
+                    <i data-lucide="map-pin" class="w-4 h-4"></i>
+                    Meine Nachbarschaft
+                </button>
             </div>
-            <div id="search-results-preview"></div>
+
+            <!-- Tab 1: Topic Search (HTMX) -->
+            <div x-show="mode === 'topics'" x-cloak class="max-w-xl">
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Suche nach Themen, Gremien, Personen oder Dokumenten in den Ratsinformationen.</p>
+                <div class="relative">
+                    <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-400 pointer-events-none"></i>
+                    <input type="text"
+                        placeholder="z.B. Radwege, Klimaschutz, Schulen &hellip;"
+                        hx-get="{% url 'insight_core:insight:search_results' %}"
+                        hx-trigger="keyup changed delay:500ms"
+                        hx-target="#search-results-preview"
+                        hx-vals='{"dropdown":"1"}'
+                        name="q"
+                        autocomplete="off"
+                        x-data
+                        @keydown.enter="if($el.value.trim().length >= 2) window.location.href = '{% url 'insight_core:insight:search' %}?q=' + encodeURIComponent($el.value.trim())"
+                        class="w-full pl-12 pr-4 py-3.5 text-[15px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all outline-none shadow-sm">
+                </div>
+                <div id="search-results-preview"></div>
+            </div>
+
+            <!-- Tab 2: Neighborhood Search (Alpine.js) -->
+            <div x-show="mode === 'neighborhood'" x-cloak class="max-w-xl">
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Gib deine Stra&szlig;e oder einen Stadtteil ein &ndash; wir zeigen dir alle Vorg&auml;nge im Umkreis von 500&thinsp;m, z.&thinsp;B. Bauvorhaben, Verkehrsplanungen oder Spielplatz-Sanierungen.</p>
+                <div class="relative">
+                    <i data-lucide="map-pin" class="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-400 pointer-events-none"></i>
+                    <input type="text"
+                           x-model="searchQuery"
+                           @input.debounce.300ms="fetchSuggestions()"
+                           @keydown.escape="suggestions = []"
+                           placeholder="z.B. Wolbecker Stra&szlig;e, Hiltrup, Gievenbeck &hellip;"
+                           class="w-full pl-12 pr-4 py-3.5 text-[15px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all outline-none shadow-sm">
+                </div>
+
+                <!-- Autocomplete Dropdown -->
+                <div x-show="suggestions.length > 0" x-cloak
+                     @click.away="suggestions = []"
+                     class="mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden">
+                    <template x-for="(s, i) in suggestions" :key="i">
+                        <button @click="selectSuggestion(s)"
+                                class="w-full px-3 py-2.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 last:border-0 transition-colors">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-gray-400 shrink-0"></i>
+                            <span x-text="s.name" class="truncate"></span>
+                        </button>
+                    </template>
+                </div>
+
+                {% if home_districts %}
+                <!-- Stadtteile Chips -->
+                <div class="mt-3 flex flex-wrap gap-1.5">
+                    <span class="text-xs text-gray-400 dark:text-gray-500 py-1 mr-0.5">Stadtteile:</span>
+                    {% for d in home_districts|slice:":12" %}
+                    {% localize off %}
+                    <button @click="selectDistrict('{{ d.name }}', {{ d.lat }}, {{ d.lon }})"
+                            :class="selectedName === '{{ d.name }}'
+                                ? 'bg-primary-600 text-white border-primary-600'
+                                : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-primary-300 dark:hover:border-primary-600'"
+                            class="px-2 py-0.5 text-xs font-medium border rounded-lg transition-all">
+                        {{ d.name }}
+                    </button>
+                    {% endlocalize %}
+                    {% endfor %}
+                    {% if home_districts|length > 12 %}
+                    <a href="{% url 'insight_core:insight:neighborhood' %}"
+                       class="px-2 py-0.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline">
+                        +{{ home_districts|length|add:"-12" }} mehr&hellip;
+                    </a>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- Results Preview -->
+                <div x-show="selectedLat" x-cloak class="mt-4">
+                    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <!-- Loading -->
+                        <div x-show="loading" class="p-6 text-center">
+                            <svg class="animate-spin h-6 w-6 text-primary-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Suche Vorg&auml;nge in der N&auml;he&hellip;</p>
+                        </div>
+                        <!-- Results container -->
+                        <div x-show="!loading" id="home-neighborhood-results" class="p-4"></div>
+                    </div>
+                </div>
+            </div>
         </div>
         {% if active_body.hero_image %}
         <div class="lg:col-span-2 hidden lg:block">
@@ -55,7 +150,7 @@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         <div>
-            <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center justify-between mb-1">
                 <h2 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                     <i data-lucide="calendar-days" class="w-4 h-4 text-primary-500"></i>
                     Kommende Sitzungen
@@ -64,6 +159,7 @@
                     Alle ansehen <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
                 </a>
             </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Die n&auml;chsten &ouml;ffentlichen Sitzungen der st&auml;dtischen Gremien</p>
             {% if upcoming_meetings %}
             <div class="item-list bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">
                 {% for meeting in upcoming_meetings %}
@@ -92,15 +188,16 @@
         </div>
 
         <div>
-            <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center justify-between mb-1">
                 <h2 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
                     <i data-lucide="file-text" class="w-4 h-4 text-primary-500"></i>
-                    Neueste Vorgänge
+                    Neueste Vorg&auml;nge
                 </h2>
                 <a href="{% url 'insight_core:insight:paper_list' %}" class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-0.5">
                     Alle ansehen <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
                 </a>
             </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Die neusten von der Verwaltung ver&ouml;ffentlichten Vorg&auml;nge</p>
             {% if recent_papers %}
             <div class="item-list bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">
                 {% for paper in recent_papers %}
@@ -129,7 +226,7 @@
             </div>
             {% else %}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
-                <p class="text-sm text-gray-400 dark:text-gray-500">Keine Vorgänge vorhanden</p>
+                <p class="text-sm text-gray-400 dark:text-gray-500">Keine Vorg&auml;nge vorhanden</p>
             </div>
             {% endif %}
         </div>
@@ -138,8 +235,8 @@
 </section>
 
 <section class="fade-up d2 mb-10">
-    <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Was möchtest du wissen?</h2>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Was m&ouml;chtest du wissen?</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 
         <a href="{% url 'insight_core:insight:person_list' %}"
             class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-md transition-all flex items-start gap-4">
@@ -148,21 +245,8 @@
             </div>
             <div class="min-w-0">
                 <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Frag deine Ratsmitglieder</div>
-                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">Stelle öffentliche Fragen an die Menschen, die in deiner Stadt Entscheidungen treffen &ndash; und erhalte transparente Antworten.</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">Stelle &ouml;ffentliche Fragen an die Menschen, die Entscheidungen treffen.</p>
             </div>
-            <i data-lucide="arrow-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0 mt-1"></i>
-        </a>
-
-        <a href="{% url 'insight_core:insight:neighborhood' %}"
-            class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-md transition-all flex items-start gap-4">
-            <div class="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <i data-lucide="map-pin" class="w-5 h-5 text-amber-500"></i>
-            </div>
-            <div class="min-w-0">
-                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Was passiert in deiner Nähe?</div>
-                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">Finde Entscheidungen, die dich und dein Viertel betreffen &ndash; Vorgänge, Sitzungen und Projekte auf der Karte.</p>
-            </div>
-            <i data-lucide="arrow-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0 mt-1"></i>
         </a>
 
         <a href="{% url 'insight_core:insight:file_list' %}"
@@ -170,11 +254,10 @@
             <div class="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0 mt-0.5">
                 <i data-lucide="file-search" class="w-5 h-5 text-emerald-500"></i>
             </div>
-            <div class="min-w-0">
-                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Alle Dokumente durchsuchen</div>
-                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{{ stats.files }} Dokumente mit Volltextsuche &ndash; finde Beschlüsse, Anträge und Berichte in Sekunden.</p>
+            <div class="min-w-0 flex-1">
+                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Dokumente durchsuchen</div>
+                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{{ stats.files }} Dokumente mit Volltextsuche &ndash; Beschl&uuml;sse, Antr&auml;ge und Berichte.</p>
             </div>
-            <i data-lucide="arrow-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0 mt-1"></i>
         </a>
 
         <a href="{% url 'insight_core:insight:organization_list' %}"
@@ -182,11 +265,10 @@
             <div class="w-11 h-11 rounded-xl bg-sky-50 dark:bg-sky-900/20 flex items-center justify-center flex-shrink-0 mt-0.5">
                 <i data-lucide="building-2" class="w-5 h-5 text-sky-500"></i>
             </div>
-            <div class="min-w-0">
-                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Gremien & Ausschüsse</div>
-                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{{ stats.organizations }} Gremien &ndash; erfahre, wer in deiner Stadt worüber entscheidet und wer dort sitzt.</p>
+            <div class="min-w-0 flex-1">
+                <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Gremien &amp; Aussch&uuml;sse</div>
+                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{{ stats.organizations }} Gremien &ndash; wer entscheidet wor&uuml;ber und wer dort sitzt.</p>
             </div>
-            <i data-lucide="arrow-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0 mt-1"></i>
         </a>
 
     </div>
@@ -202,7 +284,7 @@
             <span class="text-gray-300 dark:text-gray-600">&middot;</span>
             <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.meetings }}</strong> Sitzungen</span>
             <span class="text-gray-300 dark:text-gray-600">&middot;</span>
-            <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.papers }}</strong> Vorgänge</span>
+            <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.papers }}</strong> Vorg&auml;nge</span>
             <span class="text-gray-300 dark:text-gray-600">&middot;</span>
             <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.files }}</strong> Dokumente</span>
             {% if stats.public_questions %}
@@ -221,7 +303,7 @@
             Lokalpolitik, die alle verstehen
         </h1>
         <p class="text-[15px] text-gray-600 dark:text-gray-300 max-w-lg mx-auto">
-            Wähle deine Kommune und entdecke Sitzungen, Vorgänge und die Menschen hinter den Entscheidungen.
+            W&auml;hle deine Kommune und entdecke Sitzungen, Vorg&auml;nge und die Menschen hinter den Entscheidungen.
         </p>
     </div>
 
@@ -253,14 +335,14 @@
         <div class="w-14 h-14 bg-gray-100 dark:bg-gray-800 rounded-full mx-auto mb-3 flex items-center justify-center">
             <i data-lucide="database" class="w-6 h-6 text-gray-400"></i>
         </div>
-        <h3 class="text-base font-medium text-gray-700 dark:text-gray-300 mb-1">Keine Kommunen verfügbar</h3>
+        <h3 class="text-base font-medium text-gray-700 dark:text-gray-300 mb-1">Keine Kommunen verf&uuml;gbar</h3>
         <p class="text-sm text-gray-500 dark:text-gray-400">Es wurden noch keine Kommunen synchronisiert.</p>
     </div>
     {% endif %}
 
     {% if stats.bodies > 0 %}
     <div class="mt-10 pt-6 border-t border-gray-200 dark:border-gray-700">
-        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 text-center">Insgesamt verfügbar</p>
+        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 text-center">Insgesamt verf&uuml;gbar</p>
         <div class="grid grid-cols-3 md:grid-cols-6 gap-4 text-center">
             <div>
                 <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.bodies }}</div>
@@ -280,7 +362,7 @@
             </div>
             <div>
                 <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.papers }}</div>
-                <div class="text-xs text-gray-400 dark:text-gray-500">Vorgänge</div>
+                <div class="text-xs text-gray-400 dark:text-gray-500">Vorg&auml;nge</div>
             </div>
             <div>
                 <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.files }}</div>
@@ -290,5 +372,79 @@
     </div>
     {% endif %}
 </section>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if active_body %}
+<script>
+function homeSearchApp() {
+    return {
+        mode: 'topics',
+        searchQuery: '',
+        suggestions: [],
+        selectedLat: null,
+        selectedLon: null,
+        selectedName: null,
+        loading: false,
+
+        async fetchSuggestions() {
+            if (this.searchQuery.length < 2) {
+                this.suggestions = [];
+                return;
+            }
+            try {
+                const resp = await fetch('/insight/nachbarschaft/autocomplete/?q=' + encodeURIComponent(this.searchQuery));
+                this.suggestions = await resp.json();
+            } catch (e) {
+                this.suggestions = [];
+            }
+        },
+
+        selectSuggestion(s) {
+            this.selectedLat = s.lat;
+            this.selectedLon = s.lon;
+            this.selectedName = s.name;
+            this.searchQuery = s.name;
+            this.suggestions = [];
+            this.fetchResults();
+        },
+
+        selectDistrict(name, lat, lon) {
+            this.selectedLat = lat;
+            this.selectedLon = lon;
+            this.selectedName = name;
+            this.searchQuery = name;
+            this.suggestions = [];
+            this.fetchResults();
+        },
+
+        async fetchResults() {
+            if (!this.selectedLat) return;
+            this.loading = true;
+
+            try {
+                const url = '/insight/nachbarschaft/partials/results/?lat=' + this.selectedLat + '&lon=' + this.selectedLon + '&radius=500&limit=5';
+                const resp = await fetch(url, { headers: { 'HX-Request': 'true' } });
+                const html = await resp.text();
+                const container = document.getElementById('home-neighborhood-results');
+                container.innerHTML = html;
+
+                // Add "show all on map" link
+                const allLink = document.createElement('div');
+                allLink.className = 'mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-center';
+                allLink.innerHTML = '<a href="/insight/nachbarschaft/?lat=' + this.selectedLat + '&lon=' + this.selectedLon + '&name=' + encodeURIComponent(this.selectedName || '') + '&radius=500" class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors">Alle Ergebnisse auf der Karte ansehen <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>';
+                container.appendChild(allLink);
+
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            } catch (e) {
+                document.getElementById('home-neighborhood-results').innerHTML = '<p class="text-center text-sm text-red-500 py-4">Fehler beim Laden.</p>';
+            }
+
+            this.loading = false;
+        },
+    }
+}
+</script>
 {% endif %}
 {% endblock %}

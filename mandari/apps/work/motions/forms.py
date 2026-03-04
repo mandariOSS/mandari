@@ -299,12 +299,11 @@ class AIAssistantForm(forms.Form):
         ("title", "Titel generieren"),
         ("expand", "Stichpunkte ausformulieren"),
         ("summary", "Zusammenfassung erstellen"),
+        ("chat", "Dokumenten-Chat"),
     ]
 
     action = forms.ChoiceField(choices=ACTION_CHOICES, widget=forms.HiddenInput())
-
     text = forms.CharField(required=False, widget=forms.HiddenInput())
-
     instruction = forms.CharField(
         required=False,
         widget=forms.TextInput(
@@ -315,5 +314,6 @@ class AIAssistantForm(forms.Form):
             }
         ),
     )
-
     motion_type = forms.ChoiceField(choices=Motion.LEGACY_TYPE_CHOICES, required=False, widget=forms.HiddenInput())
+    selected_text = forms.CharField(required=False, widget=forms.HiddenInput())
+    history = forms.JSONField(required=False, widget=forms.HiddenInput())

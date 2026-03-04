@@ -14,6 +14,8 @@ from unfold.decorators import action
 
 from .models import (
     ChatUsage,
+    DigestLog,
+    InsightSubscriber,
     OParlAgendaItem,
     OParlBody,
     OParlConsultation,
@@ -26,6 +28,7 @@ from .models import (
     OParlPaper,
     OParlPerson,
     OParlSource,
+    SubscriptionAlert,
 )
 
 
@@ -159,6 +162,19 @@ class OParlBodyAdmin(ModelAdmin):
             },
         ),
         (
+            "Personenfotos",
+            {
+                "fields": ("person_photo_url_template", "person_photo_id_pattern"),
+                "description": (
+                    "Konfiguration für externe Personenbilder. "
+                    "Das ID-Pattern extrahiert per Regex die Person-ID aus der OParl external_id. "
+                    "Das URL-Template setzt die ID in die Bild-URL ein. "
+                    "Beispiel Münster: Pattern '/people/(\\d+)$', "
+                    "Template 'https://www.stadt-muenster.de/sessionnet/sessionnetbi/im/pe{id}.jpg'"
+                ),
+            },
+        ),
+        (
             "OParl-Daten",
             {
                 "fields": ("name", "short_name", "classification", "website"),
@@ -248,11 +264,57 @@ class OParlMeetingAdmin(ModelAdmin):
 
 @admin.register(OParlPaper)
 class OParlPaperAdmin(ModelAdmin):
-    list_display = ["reference", "name", "paper_type", "date", "body"]
-    list_filter = ["body", "paper_type"]
+    list_display = ["reference", "name", "paper_type", "date", "georef_status_display", "body"]
+    list_filter = ["body", "paper_type", "georef_status"]
     search_fields = ["name", "reference"]
     date_hierarchy = "date"
-    readonly_fields = ["id", "external_id", "created_at", "updated_at"]
+    readonly_fields = [
+        "id", "external_id", "created_at", "updated_at",
+        "georef_status", "georef_method", "georef_error",
+        "georef_extracted_at", "locations",
+    ]
+
+    fieldsets = (
+        (None, {
+            "fields": ("name", "reference", "paper_type", "date", "body"),
+        }),
+        ("Georeferenzierung", {
+            "fields": (
+                "georef_status", "georef_method", "georef_extracted_at",
+                "georef_error", "locations",
+            ),
+            "classes": ("collapse",),
+        }),
+        ("KI-Felder", {
+            "fields": ("summary",),
+            "classes": ("collapse",),
+        }),
+        ("OParl-Daten", {
+            "fields": ("external_id", "oparl_created", "oparl_modified", "raw_json"),
+            "classes": ("collapse",),
+        }),
+        ("Zeitstempel", {
+            "fields": ("created_at", "updated_at"),
+            "classes": ("collapse",),
+        }),
+    )
+
+    @admin.display(description="Georef")
+    def georef_status_display(self, obj):
+        colors = {
+            "pending": "#64748b",
+            "processing": "#2563eb",
+            "completed": "#16a34a",
+            "ai_needed": "#f59e0b",
+            "no_locations": "#64748b",
+            "failed": "#dc2626",
+            "skipped": "#64748b",
+        }
+        color = colors.get(obj.georef_status, "#64748b")
+        return mark_safe(
+            f'<span style="color: {color}; font-weight: 600;">'
+            f'{obj.get_georef_status_display()}</span>'
+        )
 
 
 @admin.register(OParlAgendaItem)
@@ -645,6 +707,99 @@ class ChatUsageAdmin(ModelAdmin):
         """Truncated message for list display."""
         return obj.message[:80] + "..." if len(obj.message) > 80 else obj.message
     short_message.short_description = "Nachricht"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+# =============================================================================
+# Bookmark Admin (Merkliste)
+# =============================================================================
+
+from .models import Bookmark
+
+
+@admin.register(Bookmark)
+class BookmarkAdmin(ModelAdmin):
+    list_display = ["user", "entity_type", "entity_id", "created_at"]
+    list_filter = ["entity_type", "created_at"]
+    search_fields = ["user__email", "entity_id"]
+    readonly_fields = ["id", "created_at"]
+    ordering = ["-created_at"]
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        return False
+
+
+# =============================================================================
+# Insight Subscriptions Admin
+# =============================================================================
+
+
+@admin.register(InsightSubscriber)
+class InsightSubscriberAdmin(ModelAdmin):
+    list_display = [
+        "email", "body", "confirmed", "active_types_display",
+        "digest_frequency", "created_at",
+    ]
+    list_filter = ["confirmed", "body", "digest_frequency", "neighborhood_active", "keyword_active"]
+    search_fields = ["email", "neighborhood_name", "keyword"]
+    readonly_fields = ["id", "token", "created_at", "updated_at", "confirmed_at"]
+    ordering = ["-created_at"]
+    list_per_page = 50
+
+    fieldsets = (
+        (None, {"fields": ("email", "body", "token")}),
+        ("Status", {"fields": ("confirmed", "confirmed_at", "unsubscribed_at", "digest_frequency")}),
+        ("Nachbarschaft-Abo", {
+            "fields": ("neighborhood_active", "neighborhood_name", "neighborhood_lat", "neighborhood_lon", "neighborhood_radius"),
+        }),
+        ("Suchbegriff-Abo", {"fields": ("keyword_active", "keyword")}),
+        ("Gemerkte Elemente", {"fields": ("bookmarks_active", "user")}),
+        ("Zeitstempel", {"fields": ("id", "created_at", "updated_at"), "classes": ("collapse",)}),
+    )
+
+    @admin.display(description="Abo-Typen")
+    def active_types_display(self, obj):
+        types = []
+        if obj.neighborhood_active:
+            types.append("Nachbarschaft")
+        if obj.keyword_active:
+            types.append("Keyword")
+        if obj.bookmarks_active:
+            types.append("Merkliste")
+        return ", ".join(types) if types else "-"
+
+
+@admin.register(SubscriptionAlert)
+class SubscriptionAlertAdmin(ModelAdmin):
+    list_display = ["subscriber", "alert_type", "entity_title", "created_at", "is_sent"]
+    list_filter = ["alert_type", "created_at"]
+    search_fields = ["entity_title", "subscriber__email"]
+    readonly_fields = ["id", "created_at"]
+    ordering = ["-created_at"]
+    list_per_page = 50
+
+    @admin.display(boolean=True, description="Gesendet")
+    def is_sent(self, obj):
+        return obj.sent_in_digest is not None
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(DigestLog)
+class DigestLogAdmin(ModelAdmin):
+    list_display = ["subscriber", "sent_at", "alert_count", "success"]
+    list_filter = ["success", "sent_at"]
+    search_fields = ["subscriber__email"]
+    readonly_fields = ["id", "sent_at", "subscriber", "alert_count", "success", "error"]
+    ordering = ["-sent_at"]
+    list_per_page = 50
 
     def has_add_permission(self, request):
         return False

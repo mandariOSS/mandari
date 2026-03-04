@@ -1,0 +1,196 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Sichtbarkeit & Kontakt{% endblock %}
+
+{% block header_title %}Mein Profil{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Persönliche Einstellungen und Kontoinformationen</p>
+{% endblock %}
+
+{% block work_content %}
+{% include "work/profile/_tabs.html" with active_tab="visibility" %}
+
+{% if messages %}
+<div class="space-y-2 mb-6">
+    {% for message in messages %}
+    <div class="p-3 rounded-lg flex items-center gap-3 {% if message.tags == 'success' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400{% elif message.tags == 'error' %}bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400{% else %}bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400{% endif %}">
+        <i data-lucide="{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}alert-circle{% else %}info{% endif %}" class="w-4 h-4 flex-shrink-0"></i>
+        <span class="text-sm">{{ message }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<form method="post">
+{% csrf_token %}
+<div class="space-y-6">
+    <!-- Bio / About -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="pen-line" class="w-4 h-4 text-gray-400"></i>
+                Über mich
+            </h4>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Kurzbeschreibung, die im Team-Verzeichnis angezeigt wird
+            </p>
+        </div>
+        <div class="px-6 py-4">
+            <textarea name="bio" rows="3" maxlength="500"
+                      placeholder="z.B. Zuständig für Verkehr & Mobilität, Mitglied im Planungsausschuss..."
+                      class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow dark:text-white">{{ bio }}</textarea>
+            <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Max. 500 Zeichen</p>
+        </div>
+    </div>
+
+    <!-- Visibility Settings -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="eye" class="w-4 h-4 text-gray-400"></i>
+                Sichtbarkeit im Team
+            </h4>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Welche Informationen sehen andere Mitglieder auf Ihrer Profilseite?
+            </p>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            <!-- Show Email -->
+            <label class="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">E-Mail-Adresse anzeigen</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Ihre E-Mail wird im Team-Profil sichtbar</p>
+                </div>
+                <div class="relative">
+                    <input type="checkbox" name="show_email" class="sr-only peer" {% if show_email %}checked{% endif %}>
+                    <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full peer-checked:bg-primary-600 transition-colors"></div>
+                    <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform peer-checked:translate-x-5"></div>
+                </div>
+            </label>
+
+            <!-- Show Phone -->
+            <label class="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">Telefonnummer anzeigen</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Ihre Telefonnummer wird im Team-Profil sichtbar</p>
+                </div>
+                <div class="relative">
+                    <input type="checkbox" name="show_phone" class="sr-only peer" {% if show_phone %}checked{% endif %}>
+                    <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full peer-checked:bg-primary-600 transition-colors"></div>
+                    <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform peer-checked:translate-x-5"></div>
+                </div>
+            </label>
+        </div>
+    </div>
+
+    <!-- Contact Preferences -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 100ms">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="message-circle" class="w-4 h-4 text-gray-400"></i>
+                Kontaktpräferenzen
+            </h4>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Wie möchten Sie bevorzugt kontaktiert werden?
+            </p>
+        </div>
+        <div class="px-6 py-4 space-y-4">
+            <!-- Preferred Contact Method -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bevorzugter Kontaktweg</label>
+                <div class="flex flex-wrap gap-3">
+                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors
+                        {% if preferred_contact == 'email' %}border-primary-500 bg-primary-50 dark:bg-primary-900/20{% else %}border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30{% endif %}">
+                        <input type="radio" name="preferred_contact" value="email" class="sr-only" {% if preferred_contact == 'email' %}checked{% endif %}>
+                        <i data-lucide="mail" class="w-4 h-4 {% if preferred_contact == 'email' %}text-primary-600 dark:text-primary-400{% else %}text-gray-400{% endif %}"></i>
+                        <span class="text-sm {% if preferred_contact == 'email' %}text-primary-700 dark:text-primary-300 font-medium{% else %}text-gray-600 dark:text-gray-400{% endif %}">E-Mail</span>
+                    </label>
+                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors
+                        {% if preferred_contact == 'phone' %}border-primary-500 bg-primary-50 dark:bg-primary-900/20{% else %}border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30{% endif %}">
+                        <input type="radio" name="preferred_contact" value="phone" class="sr-only" {% if preferred_contact == 'phone' %}checked{% endif %}>
+                        <i data-lucide="phone" class="w-4 h-4 {% if preferred_contact == 'phone' %}text-primary-600 dark:text-primary-400{% else %}text-gray-400{% endif %}"></i>
+                        <span class="text-sm {% if preferred_contact == 'phone' %}text-primary-700 dark:text-primary-300 font-medium{% else %}text-gray-600 dark:text-gray-400{% endif %}">Telefon</span>
+                    </label>
+                    <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors
+                        {% if preferred_contact == 'signal' %}border-primary-500 bg-primary-50 dark:bg-primary-900/20{% else %}border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30{% endif %}">
+                        <input type="radio" name="preferred_contact" value="signal" class="sr-only" {% if preferred_contact == 'signal' %}checked{% endif %}>
+                        <i data-lucide="message-square" class="w-4 h-4 {% if preferred_contact == 'signal' %}text-primary-600 dark:text-primary-400{% else %}text-gray-400{% endif %}"></i>
+                        <span class="text-sm {% if preferred_contact == 'signal' %}text-primary-700 dark:text-primary-300 font-medium{% else %}text-gray-600 dark:text-gray-400{% endif %}">Signal</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Signal Username -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Signal-Benutzername</label>
+                <input type="text" name="contact_signal" value="{{ contact_signal }}"
+                       placeholder="z.B. @benutzername.01"
+                       maxlength="100"
+                       class="w-full max-w-sm px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow dark:text-white">
+                <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Optional — wird nur angezeigt wenn Signal als Kontaktweg gewählt</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- OParl Person Link -->
+    {% if oparl_person %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 150ms">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="link" class="w-4 h-4 text-gray-400"></i>
+                RIS-Verknüpfung
+            </h4>
+        </div>
+        <div class="px-6 py-4 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                <i data-lucide="user-check" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ oparl_person.display_name }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Verknüpfte Person im Ratsinformationssystem</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Save Button -->
+    <div class="flex justify-end">
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+            <i data-lucide="save" class="w-4 h-4"></i>
+            Speichern
+        </button>
+    </div>
+</div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Radio button visual toggle
+document.querySelectorAll('input[name="preferred_contact"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+        document.querySelectorAll('input[name="preferred_contact"]').forEach(r => {
+            const label = r.closest('label');
+            const icon = label.querySelector('i');
+            const text = label.querySelector('span');
+            if (r.checked) {
+                label.classList.add('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
+                label.classList.remove('border-gray-200', 'dark:border-gray-700');
+                icon.classList.add('text-primary-600', 'dark:text-primary-400');
+                icon.classList.remove('text-gray-400');
+                text.classList.add('text-primary-700', 'dark:text-primary-300', 'font-medium');
+                text.classList.remove('text-gray-600', 'dark:text-gray-400');
+            } else {
+                label.classList.remove('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
+                label.classList.add('border-gray-200', 'dark:border-gray-700');
+                icon.classList.remove('text-primary-600', 'dark:text-primary-400');
+                icon.classList.add('text-gray-400');
+                text.classList.remove('text-primary-700', 'dark:text-primary-300', 'font-medium');
+                text.classList.add('text-gray-600', 'dark:text-gray-400');
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

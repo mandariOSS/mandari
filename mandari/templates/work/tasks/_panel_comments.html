@@ -1,0 +1,21 @@
+{% load i18n %}
+<div class="space-y-3">
+    {% for comment in comments %}
+    <div class="flex gap-3">
+        <div class="w-7 h-7 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center flex-shrink-0">
+            <span class="text-xs font-medium text-primary-600 dark:text-primary-400">
+                {{ comment.author.user.get_display_name|slice:":1" }}
+            </span>
+        </div>
+        <div class="flex-1">
+            <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-sm font-medium text-gray-900 dark:text-white">{{ comment.author.user.get_display_name }}</span>
+                <span class="text-xs text-gray-500">vor {{ comment.created_at|timesince }}</span>
+            </div>
+            <p class="text-sm text-gray-600 dark:text-gray-400">{{ comment.content }}</p>
+        </div>
+    </div>
+    {% empty %}
+    <p class="text-sm text-gray-400 dark:text-gray-500 text-center py-4">Noch keine Kommentare</p>
+    {% endfor %}
+</div>

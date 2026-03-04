@@ -9,10 +9,15 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load .env from project root (shared with mandari)
-env_path = BASE_DIR.parent / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
+# Load local .env first (highest priority), then shared .env
+local_env_path = BASE_DIR / ".env"
+if local_env_path.exists():
+    load_dotenv(local_env_path)
+
+# Load shared .env from parent (won't override already-set vars)
+shared_env_path = BASE_DIR.parent / ".env"
+if shared_env_path.exists():
+    load_dotenv(shared_env_path)
 
 SECRET_KEY = os.environ.get("WEBSITE_SECRET_KEY", os.environ.get("SECRET_KEY", "django-insecure-change-me"))
 DEBUG = os.environ.get("DEBUG", "True").lower() in ("true", "1", "yes")

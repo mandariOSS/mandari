@@ -25,7 +25,7 @@
                       this.docViewerLoading = false;
                       this.docViewerError = true;
                   }
-              }, 8000);
+              }, 30000);
           }
       }"
       x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))"
@@ -77,7 +77,73 @@
     <script src="{% static 'vendor/htmx/htmx.min.js' %}"></script>
 
     <!-- Alpine.js (lokal) -->
+    <script defer src="{% static 'vendor/alpine/collapse.min.js' %}"></script>
     <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
+
+    <!-- Bookmarks Store -->
+    <script>
+    window.__isAuthenticated = {{ request.user.is_authenticated|yesno:"true,false" }};
+    window.__csrfToken = '{{ csrf_token }}';
+    document.addEventListener('alpine:init', () => {
+        Alpine.store('bookmarks', {
+            _data: { person: [], paper: [], meeting: [], organization: [] },
+            _loaded: false,
+            init() {
+                if (window.__isAuthenticated) {
+                    fetch('/insight/merkliste/api/ids/')
+                        .then(r => r.json())
+                        .then(data => {
+                            this._data = data;
+                            this._loaded = true;
+                        })
+                        .catch(() => { this._loaded = true; });
+                } else {
+                    try {
+                        const saved = localStorage.getItem('mandari_bookmarks');
+                        if (saved) this._data = JSON.parse(saved);
+                    } catch(e) {}
+                    this._loaded = true;
+                }
+            },
+            has(type, id) {
+                const idStr = String(id);
+                return this._data[type] && this._data[type].indexOf(idStr) !== -1;
+            },
+            toggle(type, id) {
+                const idStr = String(id);
+                if (!this._data[type]) this._data[type] = [];
+                const idx = this._data[type].indexOf(idStr);
+                if (idx !== -1) {
+                    this._data[type].splice(idx, 1);
+                } else {
+                    this._data[type].push(idStr);
+                }
+                if (window.__isAuthenticated) {
+                    fetch('/insight/merkliste/api/toggle/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': window.__csrfToken
+                        },
+                        body: JSON.stringify({ type: type, id: idStr })
+                    }).catch(() => {});
+                } else {
+                    this._save();
+                }
+            },
+            count() {
+                let c = 0;
+                for (const k in this._data) { c += this._data[k].length; }
+                return c;
+            },
+            _save() {
+                try {
+                    localStorage.setItem('mandari_bookmarks', JSON.stringify(this._data));
+                } catch(e) {}
+            }
+        });
+    });
+    </script>
 
     <!-- Lucide Icons (lokal) -->
     <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>

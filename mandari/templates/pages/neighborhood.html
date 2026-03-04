@@ -1,0 +1,353 @@
+{% extends "base_insight.html" %}
+{% load static l10n %}
+
+{% block title %}Nachbarschaft{% if active_body %} – {{ active_body.get_display_name }}{% endif %}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}" />
+<style>
+    #neighborhood-map {
+        height: 400px;
+        border-radius: 0.75rem;
+    }
+    @media (min-width: 1024px) {
+        #neighborhood-map { height: 480px; }
+    }
+    .leaflet-control-zoom { border: none !important; box-shadow: 0 1px 3px rgba(0,0,0,0.12) !important; border-radius: 8px !important; overflow: hidden; }
+    .leaflet-control-zoom a { background: white !important; color: #374151 !important; border: none !important; width: 32px !important; height: 32px !important; line-height: 32px !important; }
+    .leaflet-control-zoom a:hover { background: #f3f4f6 !important; }
+    .dark .leaflet-control-zoom a { background: #374151 !important; color: #e5e7eb !important; }
+    .dark .leaflet-control-zoom a:hover { background: #4b5563 !important; }
+    .leaflet-control-attribution { background: rgba(255,255,255,0.85) !important; padding: 2px 8px !important; font-size: 10px !important; border-radius: 4px !important; }
+    .dark .leaflet-control-attribution { background: rgba(31,41,55,0.85) !important; color: #9ca3af !important; }
+    .search-radius { fill: rgba(99,102,241,0.08); stroke: rgba(99,102,241,0.35); stroke-width: 2; }
+    .marker-dot { width: 14px; height: 14px; background: #6366f1; border: 2px solid white; border-radius: 50%; box-shadow: 0 1px 4px rgba(99,102,241,0.4); }
+    .center-dot { width: 18px; height: 18px; background: #ef4444; border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 6px rgba(239,68,68,0.4); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="neighborhoodApp()">
+
+    <!-- Page Header -->
+    <div class="mb-8">
+        <h1 class="text-2xl lg:text-3xl font-extrabold text-gray-900 dark:text-white mb-2 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center shrink-0">
+                <i data-lucide="map-pin" class="w-5 h-5 text-primary-500"></i>
+            </div>
+            Nachbarschaft
+        </h1>
+        <p class="text-[15px] text-gray-500 dark:text-gray-400 max-w-2xl leading-relaxed">
+            {% if active_body %}
+            Finde heraus, was in deiner N&auml;he passiert. Gib eine Adresse ein oder w&auml;hle einen Stadtteil &ndash; wir zeigen dir alle Vorg&auml;nge im gew&auml;hlten Umkreis, z.&thinsp;B. Bauvorhaben, Verkehrsplanungen oder Spielplatz-Sanierungen.
+            {% else %}
+            Bitte w&auml;hle zuerst eine Kommune in der Sidebar aus.
+            {% endif %}
+        </p>
+    </div>
+
+    {% if active_body %}
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+        <!-- Left Column: Search + Districts + CTA -->
+        <div class="lg:col-span-4 space-y-4">
+
+            <!-- Search Input -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Adresse oder Stra&szlig;e</label>
+                <div class="relative">
+                    <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-gray-400 pointer-events-none"></i>
+                    <input type="text"
+                           x-model="searchQuery"
+                           @input.debounce.300ms="fetchSuggestions()"
+                           @keydown.escape="suggestions = []"
+                           placeholder="z.B. Wolbecker Stra&szlig;e, Prinzipalmarkt&hellip;"
+                           class="w-full pl-11 pr-4 py-3 text-sm bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none transition-all">
+                </div>
+
+                <!-- Autocomplete Dropdown -->
+                <div x-show="suggestions.length > 0" x-cloak
+                     @click.away="suggestions = []"
+                     class="mt-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden">
+                    <template x-for="(s, i) in suggestions" :key="i">
+                        <button @click="selectSuggestion(s)"
+                                class="w-full px-3.5 py-2.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700/60 text-gray-900 dark:text-white flex items-center gap-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0 transition-colors">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-gray-400 shrink-0"></i>
+                            <span x-text="s.name" class="truncate"></span>
+                        </button>
+                    </template>
+                </div>
+
+                <!-- Radius Selector -->
+                <div class="mt-4">
+                    <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Umkreis</label>
+                    <div class="flex gap-2">
+                        <template x-for="r in [250, 500, 1000, 2000]" :key="r">
+                            <button @click="setRadius(r)"
+                                    :class="radius === r
+                                        ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                                        : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-primary-300 dark:hover:border-primary-500'"
+                                    class="flex-1 py-2 text-xs font-semibold border rounded-lg transition-all text-center">
+                                <span x-text="r >= 1000 ? (r/1000) + ' km' : r + ' m'"></span>
+                            </button>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            {% if districts %}
+            <!-- Stadtteile -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Stadtteile</label>
+                    <span class="text-[11px] text-gray-400 dark:text-gray-500">{{ districts|length }} verf&uuml;gbar</span>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                    {% for d in districts %}
+                    {% localize off %}
+                    <button @click="selectDistrict('{{ d.name }}', {{ d.lat }}, {{ d.lon }})"
+                            :class="selectedName === '{{ d.name }}'
+                                ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                                : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-primary-300 dark:hover:border-primary-500 hover:text-primary-700 dark:hover:text-primary-300'"
+                            class="px-2.5 py-1.5 text-xs font-medium border rounded-lg transition-all">
+                        {{ d.name }}
+                    </button>
+                    {% endlocalize %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Subscribe CTA -->
+            <div x-show="selectedLat" x-cloak
+                 class="bg-gradient-to-br from-primary-50 to-primary-100/50 dark:from-primary-900/20 dark:to-primary-900/10 rounded-xl border border-primary-200 dark:border-primary-800/50 p-4">
+                <div class="flex items-start gap-3">
+                    <div class="w-9 h-9 bg-primary-100 dark:bg-primary-900/40 rounded-lg flex items-center justify-center shrink-0">
+                        <i data-lucide="bell" class="w-4 h-4 text-primary-600 dark:text-primary-400"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-sm font-semibold text-primary-900 dark:text-primary-200 mb-0.5">Per E-Mail informiert werden</p>
+                        <p class="text-xs text-primary-700/80 dark:text-primary-300/70 mb-3 leading-relaxed">Erhalte eine w&ouml;chentliche E-Mail, wenn neue Vorg&auml;nge in deiner N&auml;he ver&ouml;ffentlicht werden.</p>
+                        <a :href="'/insight/benachrichtigungen/?lat=' + selectedLat + '&lon=' + selectedLon + '&name=' + encodeURIComponent(selectedName || '')"
+                           class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
+                            <i data-lucide="mail" class="w-3.5 h-3.5"></i>
+                            Nachbarschaft abonnieren
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Map + Results -->
+        <div class="lg:col-span-8 space-y-4">
+
+            <!-- Map -->
+            <div class="relative">
+                <div id="neighborhood-map" class="border border-gray-200 dark:border-gray-700 shadow-sm"></div>
+                <!-- Map overlay label -->
+                <div x-show="selectedName" x-cloak
+                     class="absolute top-3 left-3 z-[1000] bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow-sm border border-gray-200/50 dark:border-gray-700/50">
+                    <p class="text-xs font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                        <span class="w-2 h-2 bg-red-500 rounded-full inline-block"></span>
+                        <span x-text="selectedName"></span>
+                        <span class="text-gray-400 dark:text-gray-500 font-normal">&ndash;</span>
+                        <span class="text-gray-500 dark:text-gray-400 font-normal" x-text="radius >= 1000 ? (radius/1000) + ' km Umkreis' : radius + ' m Umkreis'"></span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div id="neighborhood-results">
+                <!-- Empty State -->
+                <div x-show="!selectedLat" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 border-dashed p-10 text-center">
+                    <div class="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gray-50 dark:bg-gray-700/50 flex items-center justify-center">
+                        <i data-lucide="map-pin" class="w-7 h-7 text-gray-300 dark:text-gray-500"></i>
+                    </div>
+                    <h3 class="text-base font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Wo m&ouml;chtest du suchen?</h3>
+                    <p class="text-sm text-gray-400 dark:text-gray-500 max-w-sm mx-auto leading-relaxed">
+                        Gib oben eine Adresse ein oder w&auml;hle einen Stadtteil aus &ndash; dann zeigen wir dir alle Vorg&auml;nge in der N&auml;he.
+                    </p>
+                </div>
+                <!-- Loading State -->
+                <div x-show="loading" x-cloak class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-10 text-center">
+                    <svg class="animate-spin h-7 w-7 text-primary-500 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Suche Vorg&auml;nge in der N&auml;he&hellip;</p>
+                </div>
+                <div id="results-container"></div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <!-- No Body Selected -->
+    <div class="text-center py-20">
+        <div class="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gray-50 dark:bg-gray-800 flex items-center justify-center">
+            <i data-lucide="building-2" class="w-8 h-8 text-gray-300 dark:text-gray-600"></i>
+        </div>
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Kommune ausw&auml;hlen</h3>
+        <p class="text-sm text-gray-400 dark:text-gray-500 max-w-sm mx-auto">W&auml;hle zuerst eine Kommune in der Sidebar aus, um die Nachbarschaftssuche zu nutzen.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<script>
+{% localize off %}
+function neighborhoodApp() {
+    return {
+        searchQuery: '',
+        suggestions: [],
+        selectedLat: null,
+        selectedLon: null,
+        selectedName: null,
+        radius: 500,
+        loading: false,
+        map: null,
+        radiusCircle: null,
+        centerMarker: null,
+        resultMarkers: [],
+
+        init() {
+            this.initMap();
+            // Auto-load from URL params (e.g. from homepage link)
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('lat') && params.get('lon')) {
+                this.selectedLat = parseFloat(params.get('lat'));
+                this.selectedLon = parseFloat(params.get('lon'));
+                this.selectedName = params.get('name') || '';
+                this.searchQuery = this.selectedName;
+                if (params.get('radius')) this.radius = parseInt(params.get('radius'));
+                this.$nextTick(() => {
+                    this.updateMap();
+                    this.fetchResults();
+                });
+            }
+        },
+
+        initMap() {
+            {% if map_center %}
+            const center = [{{ map_center.lat }}, {{ map_center.lng }}];
+            this.map = L.map('neighborhood-map', {
+                center: center,
+                zoom: 14,
+                zoomControl: true,
+                attributionControl: true,
+            });
+            {% else %}
+            this.map = L.map('neighborhood-map', {
+                center: [51.9607, 7.6261],
+                zoom: 14,
+                zoomControl: true,
+            });
+            {% endif %}
+
+            L.tileLayer('/insight/tiles/{z}/{x}/{y}', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+                maxZoom: 18,
+            }).addTo(this.map);
+        },
+
+        async fetchSuggestions() {
+            if (this.searchQuery.length < 2) {
+                this.suggestions = [];
+                return;
+            }
+            try {
+                const resp = await fetch(`/insight/nachbarschaft/autocomplete/?q=${encodeURIComponent(this.searchQuery)}`);
+                this.suggestions = await resp.json();
+            } catch (e) {
+                this.suggestions = [];
+            }
+        },
+
+        selectSuggestion(s) {
+            this.selectedLat = s.lat;
+            this.selectedLon = s.lon;
+            this.selectedName = s.name;
+            this.searchQuery = s.name;
+            this.suggestions = [];
+            this.updateMap();
+            this.fetchResults();
+        },
+
+        selectDistrict(name, lat, lon) {
+            this.selectedLat = lat;
+            this.selectedLon = lon;
+            this.selectedName = name;
+            this.searchQuery = name;
+            this.suggestions = [];
+            this.updateMap();
+            this.fetchResults();
+        },
+
+        setRadius(r) {
+            this.radius = r;
+            if (this.selectedLat) {
+                this.updateMap();
+                this.fetchResults();
+            }
+        },
+
+        updateMap() {
+            if (!this.map || !this.selectedLat) return;
+
+            // Clear previous
+            if (this.radiusCircle) this.map.removeLayer(this.radiusCircle);
+            if (this.centerMarker) this.map.removeLayer(this.centerMarker);
+            this.resultMarkers.forEach(m => this.map.removeLayer(m));
+            this.resultMarkers = [];
+
+            // Center marker
+            const centerIcon = L.divIcon({ className: 'custom-marker', html: '<div class="center-dot"></div>', iconSize: [18, 18], iconAnchor: [9, 9] });
+            this.centerMarker = L.marker([this.selectedLat, this.selectedLon], { icon: centerIcon }).addTo(this.map);
+
+            // Radius circle
+            this.radiusCircle = L.circle([this.selectedLat, this.selectedLon], {
+                radius: this.radius,
+                className: 'search-radius',
+                interactive: false,
+            }).addTo(this.map);
+
+            this.map.fitBounds(this.radiusCircle.getBounds(), { padding: [30, 30] });
+        },
+
+        async fetchResults() {
+            if (!this.selectedLat) return;
+            this.loading = true;
+
+            try {
+                const url = `/insight/nachbarschaft/partials/results/?lat=${this.selectedLat}&lon=${this.selectedLon}&radius=${this.radius}`;
+                const resp = await fetch(url, { headers: { 'HX-Request': 'true' } });
+                const html = await resp.text();
+                document.getElementById('results-container').innerHTML = html;
+
+                // Parse result coordinates from data attributes and add markers
+                this.resultMarkers.forEach(m => this.map.removeLayer(m));
+                this.resultMarkers = [];
+
+                const items = document.querySelectorAll('[data-paper-lat]');
+                items.forEach(el => {
+                    const lat = parseFloat(el.dataset.paperLat);
+                    const lon = parseFloat(el.dataset.paperLon);
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        const icon = L.divIcon({ className: 'custom-marker', html: '<div class="marker-dot"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
+                        const marker = L.marker([lat, lon], { icon: icon }).addTo(this.map);
+                        marker.bindPopup(`<div class="p-2 text-sm">${el.dataset.paperTitle || ''}</div>`);
+                        this.resultMarkers.push(marker);
+                    }
+                });
+            } catch (e) {
+                document.getElementById('results-container').innerHTML = '<p class="text-center text-sm text-red-500 py-4">Fehler beim Laden der Ergebnisse.</p>';
+            }
+
+            this.loading = false;
+        },
+    }
+}
+{% endlocalize %}
+</script>
+{% endblock %}

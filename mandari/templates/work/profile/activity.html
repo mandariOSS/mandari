@@ -1,0 +1,171 @@
+{% extends "work/base_work.html" %}
+{% load humanize %}
+
+{% block page_title %}Aktivität{% endblock %}
+
+{% block header_title %}Mein Profil{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Persönliche Einstellungen und Kontoinformationen</p>
+{% endblock %}
+
+{% block work_content %}
+{% include "work/profile/_tabs.html" with active_tab="activity" %}
+
+<div class="space-y-6">
+    <!-- Statistics Grid -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 fade-up">
+        <!-- Tasks -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center gap-2 mb-2">
+                <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                    <i data-lucide="check-square" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ tasks_completed }}<span class="text-base font-normal text-gray-400">/{{ tasks_total }}</span></p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Aufgaben erledigt</p>
+        </div>
+
+        <!-- Motions -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center gap-2 mb-2">
+                <div class="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+                    <i data-lucide="file-text" class="w-4 h-4 text-indigo-600 dark:text-indigo-400"></i>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ motions_authored }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Anträge erstellt</p>
+        </div>
+
+        <!-- Meeting Attendance -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center gap-2 mb-2">
+                <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                    <i data-lucide="users" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ meetings_present }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Sitzungen anwesend</p>
+        </div>
+
+        <!-- Preparations -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center gap-2 mb-2">
+                <div class="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                    <i data-lucide="clipboard-check" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                </div>
+            </div>
+            <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ preparations }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Sitzungsvorbereitungen</p>
+        </div>
+    </div>
+
+    <!-- Detailed Stats -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Meeting Stats -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Sitzungsteilnahme</h4>
+            </div>
+            <div class="px-6 py-4 space-y-3">
+                {% if meetings_total > 0 %}
+                <!-- Attendance Bar -->
+                <div class="flex h-3 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700">
+                    {% if meetings_present %}
+                    <div class="bg-green-500" style="width: {% widthratio meetings_present meetings_total 100 %}%" title="Anwesend: {{ meetings_present }}"></div>
+                    {% endif %}
+                    {% if meetings_excused %}
+                    <div class="bg-amber-400" style="width: {% widthratio meetings_excused meetings_total 100 %}%" title="Entschuldigt: {{ meetings_excused }}"></div>
+                    {% endif %}
+                    {% if meetings_absent %}
+                    <div class="bg-red-400" style="width: {% widthratio meetings_absent meetings_total 100 %}%" title="Abwesend: {{ meetings_absent }}"></div>
+                    {% endif %}
+                </div>
+                <div class="flex flex-wrap gap-4 text-xs">
+                    <span class="flex items-center gap-1.5">
+                        <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                        Anwesend: {{ meetings_present }}
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                        <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                        Entschuldigt: {{ meetings_excused }}
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                        <span class="w-2.5 h-2.5 rounded-full bg-red-400"></span>
+                        Abwesend: {{ meetings_absent }}
+                    </span>
+                </div>
+                {% else %}
+                <p class="text-sm text-gray-400 dark:text-gray-500">Noch keine Sitzungsdaten</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Task & Comment Stats -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 75ms">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Beiträge</h4>
+            </div>
+            <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                <div class="px-6 py-4 flex items-center justify-between">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Offene Aufgaben</span>
+                    <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ tasks_open }}</span>
+                </div>
+                <div class="px-6 py-4 flex items-center justify-between">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Erledigte Aufgaben</span>
+                    <span class="text-sm font-semibold text-green-600 dark:text-green-400">{{ tasks_completed }}</span>
+                </div>
+                <div class="px-6 py-4 flex items-center justify-between">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Anträge verfasst</span>
+                    <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ motions_authored }}</span>
+                </div>
+                <div class="px-6 py-4 flex items-center justify-between">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Kommentare geschrieben</span>
+                    <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ motion_comments }}</span>
+                </div>
+                <div class="px-6 py-4 flex items-center justify-between">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Sitzungsnotizen</span>
+                    <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ agenda_notes }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 100ms">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="clock" class="w-4 h-4 text-gray-400"></i>
+                Letzte Aktivitäten
+            </h4>
+        </div>
+
+        {% if timeline %}
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for item in timeline %}
+            <div class="px-6 py-4 flex items-center gap-4">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0
+                    {% if item.color == 'green' %}bg-green-100 dark:bg-green-900/30{% elif item.color == 'blue' %}bg-blue-100 dark:bg-blue-900/30{% elif item.color == 'indigo' %}bg-indigo-100 dark:bg-indigo-900/30{% elif item.color == 'purple' %}bg-purple-100 dark:bg-purple-900/30{% elif item.color == 'amber' %}bg-amber-100 dark:bg-amber-900/30{% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
+                    <i data-lucide="{{ item.icon }}" class="w-4 h-4
+                        {% if item.color == 'green' %}text-green-600 dark:text-green-400{% elif item.color == 'blue' %}text-blue-600 dark:text-blue-400{% elif item.color == 'indigo' %}text-indigo-600 dark:text-indigo-400{% elif item.color == 'purple' %}text-purple-600 dark:text-purple-400{% elif item.color == 'amber' %}text-amber-600 dark:text-amber-400{% else %}text-gray-500{% endif %}"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm text-gray-900 dark:text-white truncate">{{ item.title }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ item.detail }}</p>
+                </div>
+                <div class="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                    {{ item.date|date:"d.m.Y" }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="px-6 py-12 text-center">
+            <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                <i data-lucide="clock" class="w-6 h-6 text-gray-400"></i>
+            </div>
+            <p class="text-sm text-gray-400 dark:text-gray-500">Noch keine Aktivitäten vorhanden</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

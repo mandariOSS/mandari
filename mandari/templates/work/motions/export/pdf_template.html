@@ -6,128 +6,90 @@
     <style>
         @page {
             size: A4;
-            margin: 30mm 25mm 25mm 25mm;
+            margin: 25mm 25mm 25mm 25mm;
         }
 
         body {
             font-family: "Helvetica", "Arial", sans-serif;
             font-size: 11pt;
-            line-height: 1.5;
-            color: #333;
-        }
-
-        .document-header {
-            margin-bottom: 30px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #333;
-        }
-
-        .document-type {
-            font-size: 10pt;
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 5px;
-        }
-
-        .document-title {
-            font-size: 18pt;
-            font-weight: bold;
+            line-height: 1.6;
+            color: #1f2937;
             margin: 0;
-            color: #111;
+            padding: 0;
         }
 
-        .document-meta {
-            font-size: 9pt;
-            color: #666;
-            margin-top: 10px;
-        }
-
-        .document-content {
-            margin-top: 20px;
-        }
-
+        /* Match editor typography exactly */
         .document-content h1 {
-            font-size: 16pt;
-            font-weight: bold;
-            margin-top: 20px;
-            margin-bottom: 10px;
+            font-size: 18pt;
+            font-weight: 700;
+            margin: 16px 0 8px;
         }
 
         .document-content h2 {
-            font-size: 14pt;
-            font-weight: bold;
-            margin-top: 18px;
-            margin-bottom: 8px;
+            font-size: 15pt;
+            font-weight: 600;
+            margin: 14px 0 6px;
         }
 
         .document-content h3 {
-            font-size: 12pt;
-            font-weight: bold;
-            margin-top: 15px;
-            margin-bottom: 6px;
+            font-size: 13pt;
+            font-weight: 600;
+            margin: 12px 0 6px;
         }
 
         .document-content p {
-            margin: 10px 0;
-            text-align: justify;
+            margin: 8px 0;
         }
 
-        .document-content ul, .document-content ol {
-            margin: 10px 0;
+        .document-content ul {
+            margin: 8px 0;
             padding-left: 25px;
+            list-style-type: disc;
         }
+
+        .document-content ol {
+            margin: 8px 0;
+            padding-left: 25px;
+            list-style-type: decimal;
+        }
+
+        .document-content ul ul { list-style-type: circle; }
+        .document-content ul ul ul { list-style-type: square; }
+        .document-content ol ol { list-style-type: lower-alpha; }
+        .document-content ol ol ol { list-style-type: lower-roman; }
 
         .document-content li {
-            margin: 5px 0;
+            margin: 4px 0;
         }
 
         .document-content blockquote {
-            margin: 15px 0;
-            padding: 10px 20px;
-            border-left: 3px solid #ccc;
-            background: #f9f9f9;
-            font-style: italic;
+            margin: 12px 0;
+            padding: 8px 16px;
+            border-left: 3px solid #6366f1;
+            color: #4b5563;
         }
 
-        .document-footer {
-            margin-top: 40px;
-            padding-top: 15px;
-            border-top: 1px solid #ddd;
-            font-size: 9pt;
-            color: #666;
+        .document-content hr {
+            border: none;
+            border-top: 2px solid #e5e7eb;
+            margin: 16px 0;
         }
 
-        .signature-block {
-            margin-top: 50px;
+        .document-content a {
+            color: #4f46e5;
+            text-decoration: underline;
         }
 
-        .signature-line {
-            border-top: 1px solid #333;
-            width: 200px;
-            margin-top: 40px;
-            padding-top: 5px;
-            font-size: 10pt;
+        .document-content mark {
+            background-color: #fef08a;
+            padding: 0 2px;
+            border-radius: 2px;
         }
     </style>
 </head>
 <body>
-    <div class="document-header">
-        <div class="document-type">{{ document_type }}</div>
-        <h1 class="document-title">{{ title }}</h1>
-        <div class="document-meta">
-            {{ organization_name }} |
-            {% if author_name %}Erstellt von: {{ author_name }} | {% endif %}
-            Datum: {{ created_at|date:"d.m.Y" }}
-        </div>
-    </div>
-
     <div class="document-content">
         {{ content|safe }}
-    </div>
-
-    <div class="document-footer">
-        <p>Erstellt mit Mandari Work am {{ created_at|date:"d.m.Y" }} um {{ created_at|time:"H:i" }} Uhr</p>
     </div>
 </body>
 </html>

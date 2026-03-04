@@ -19,12 +19,6 @@ def dashboard_callback(request, context):
     Diese Funktion wird von Unfold aufgerufen und fügt
     statistische Daten zum Template-Context hinzu.
     """
-    from django.apps import apps as django_apps
-
-    has_content = django_apps.is_installed("insight_content")
-    if has_content:
-        from insight_content.models import BlogPost, Release
-
     from insight_core.models import (
         OParlAgendaItem,
         OParlBody,
@@ -56,17 +50,6 @@ def dashboard_callback(request, context):
         "files": OParlFile.objects.count(),
         "memberships": OParlMembership.objects.count(),
     }
-
-    # Content Statistiken
-    if has_content:
-        context["content_stats"] = {
-            "blog_posts": BlogPost.objects.count(),
-            "blog_published": BlogPost.objects.filter(status=BlogPost.Status.PUBLISHED).count(),
-            "releases": Release.objects.count(),
-            "releases_published": Release.objects.filter(is_published=True).count(),
-        }
-    else:
-        context["content_stats"] = {}
 
     # Letzte Sync-Aktivität mit Stunden-Berechnung
     sources = OParlSource.objects.filter(is_active=True).order_by("-last_sync")[:5]

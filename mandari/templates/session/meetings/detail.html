@@ -48,7 +48,7 @@
                         {{ meeting.organization.name }}
                     </p>
                 </div>
-                {% if permission_checker.has_permission "edit_meetings" %}
+                {% if "edit_meetings" in permission_checker.permissions %}
                 <a href="{% url 'session:meeting_edit' tenant_slug=tenant_slug meeting_id=meeting.id %}"
                    class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                     <i data-lucide="edit" class="w-4 h-4"></i>
@@ -80,7 +80,7 @@
                     <i data-lucide="list-ordered" class="w-5 h-5 text-blue-500"></i>
                     Tagesordnung
                 </h2>
-                {% if permission_checker.has_permission "edit_meetings" %}
+                {% if "edit_meetings" in permission_checker.permissions %}
                 <button hx-get="{% url 'session:agenda_item_create' tenant_slug=tenant_slug meeting_id=meeting.id %}"
                         hx-target="#agenda-form"
                         hx-swap="innerHTML"

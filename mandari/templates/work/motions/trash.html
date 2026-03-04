@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block header_actions %}
-<a href="{% url 'work:motions' org_slug=organization.slug %}"
+<a href="{% url 'work:documents' org_slug=organization.slug %}"
    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
     <i data-lucide="arrow-left" class="w-4 h-4"></i>
     Zurück zu Dokumenten
@@ -133,160 +133,87 @@
     {% endif %}
 </div>
 
-<!-- Confirmation Modal -->
-<div id="confirmModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
-    <div class="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
-        <h3 id="confirmTitle" class="text-lg font-semibold text-gray-900 dark:text-white mb-2"></h3>
-        <p id="confirmMessage" class="text-gray-600 dark:text-gray-400 mb-6"></p>
-        <div class="flex justify-end gap-3">
-            <button onclick="closeModal()"
-                    class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600">
-                Abbrechen
-            </button>
-            <button id="confirmAction"
-                    class="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 dark:bg-red-700 text-white hover:bg-red-700 dark:hover:bg-red-600">
-                Bestätigen
-            </button>
-        </div>
-    </div>
-</div>
-
 <script>
 const csrfToken = '{{ csrf_token }}';
 const orgSlug = '{{ organization.slug }}';
 
-function showModal(title, message, onConfirm, isGreen = false) {
-    document.getElementById('confirmTitle').textContent = title;
-    document.getElementById('confirmMessage').textContent = message;
-    const confirmBtn = document.getElementById('confirmAction');
-    // Reset classes and apply correct color scheme
-    confirmBtn.className = 'px-4 py-2 text-sm font-medium rounded-lg text-white hover:opacity-90';
-    if (isGreen) {
-        confirmBtn.classList.add('bg-green-600', 'dark:bg-green-700');
-    } else {
-        confirmBtn.classList.add('bg-red-600', 'dark:bg-red-700');
+async function restoreMotion(motionId) {
+    const ok = await confirmAction({
+        title: 'Dokument wiederherstellen',
+        message: 'Das Dokument wird als Entwurf wiederhergestellt.',
+        confirmText: 'Wiederherstellen',
+        variant: 'info'
+    });
+    if (!ok) return;
+
+    try {
+        const res = await fetch(`/work/${orgSlug}/documents/${motionId}/restore/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+        }
+    } catch (err) {
+        console.error('Restore error:', err);
+        showToast('Fehler beim Wiederherstellen: ' + err.message, 'error');
     }
-    confirmBtn.onclick = () => {
-        onConfirm();
-        closeModal();
-    };
-    document.getElementById('confirmModal').classList.remove('hidden');
-    document.getElementById('confirmModal').classList.add('flex');
 }
 
-function closeModal() {
-    document.getElementById('confirmModal').classList.add('hidden');
-    document.getElementById('confirmModal').classList.remove('flex');
-}
+async function permanentlyDelete(motionId, title) {
+    const ok = await confirmAction({
+        title: 'Endgültig löschen',
+        message: `"${title}" wird unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.`,
+        confirmText: 'Löschen',
+        variant: 'danger'
+    });
+    if (!ok) return;
 
-function restoreMotion(motionId) {
-    showModal(
-        'Dokument wiederherstellen?',
-        'Das Dokument wird als Entwurf wiederhergestellt.',
-        () => {
-            fetch(`/work/${orgSlug}/motions/${motionId}/restore/`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            })
-            .then(res => {
-                if (!res.ok) {
-                    throw new Error(`HTTP ${res.status}`);
-                }
-                return res.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert('Fehler: ' + (data.error || 'Unbekannter Fehler'));
-                }
-            })
-            .catch(err => {
-                console.error('Restore error:', err);
-                alert('Fehler beim Wiederherstellen: ' + err.message);
-            });
-        },
-        true
-    );
-}
-
-function permanentlyDelete(motionId, title) {
-    showModal(
-        'Endgültig löschen?',
-        `"${title}" wird unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.`,
-        () => {
-            fetch(`/work/${orgSlug}/motions/${motionId}/permanent-delete/`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            })
-            .then(res => {
-                if (!res.ok) {
-                    throw new Error(`HTTP ${res.status}`);
-                }
-                return res.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert('Fehler: ' + (data.error || 'Unbekannter Fehler'));
-                }
-            })
-            .catch(err => {
-                console.error('Delete error:', err);
-                alert('Fehler beim Löschen: ' + err.message);
-            });
+    try {
+        const res = await fetch(`/work/${orgSlug}/documents/${motionId}/permanent-delete/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
         }
-    );
+    } catch (err) {
+        console.error('Delete error:', err);
+        showToast('Fehler beim Löschen: ' + err.message, 'error');
+    }
 }
 
-function emptyTrash() {
-    showModal(
-        'Papierkorb leeren?',
-        'Alle {{ trash_count }} Dokumente werden unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.',
-        () => {
-            fetch(`/work/${orgSlug}/motions/trash/empty/`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            })
-            .then(res => {
-                if (!res.ok) {
-                    throw new Error(`HTTP ${res.status}`);
-                }
-                return res.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert('Fehler: ' + (data.error || 'Unbekannter Fehler'));
-                }
-            })
-            .catch(err => {
-                console.error('Empty trash error:', err);
-                alert('Fehler beim Leeren: ' + err.message);
-            });
+async function emptyTrash() {
+    const ok = await confirmAction({
+        title: 'Papierkorb leeren',
+        message: 'Alle {{ trash_count }} Dokumente werden unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.',
+        confirmText: 'Papierkorb leeren',
+        variant: 'danger'
+    });
+    if (!ok) return;
+
+    try {
+        const res = await fetch(`/work/${orgSlug}/documents/trash/empty/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
         }
-    );
+    } catch (err) {
+        console.error('Empty trash error:', err);
+        showToast('Fehler beim Leeren: ' + err.message, 'error');
+    }
 }
-
-// Close modal on escape key
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeModal();
-});
-
-// Close modal on backdrop click
-document.getElementById('confirmModal').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) closeModal();
 });
 </script>
 {% endblock %}

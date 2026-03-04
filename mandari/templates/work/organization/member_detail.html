@@ -18,7 +18,7 @@
 {% block work_content %}
 <div class="max-w-3xl">
     <!-- Member Info Card -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6 fade-up">
         <div class="p-6">
             <div class="flex items-start gap-4">
                 <!-- Avatar -->
@@ -92,7 +92,7 @@
             </div>
 
             <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                 <i data-lucide="save" class="w-4 h-4"></i>
                 Rollen speichern
             </button>
@@ -212,7 +212,7 @@
                         {% csrf_token %}
                         <input type="hidden" name="action" value="apply_suggestions">
                         <button type="submit"
-                                class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                                class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                             <i data-lucide="sparkles" class="w-4 h-4"></i>
                             {{ suggested_committee_ids|length }} Vorschläge übernehmen
                         </button>
@@ -333,7 +333,7 @@
 
             {% if active_committees or inactive_committees %}
             <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                 <i data-lucide="save" class="w-4 h-4"></i>
                 Gremien speichern
             </button>
@@ -389,7 +389,7 @@
             {% if not is_self and not is_owner %}
                 {% if member.is_active %}
                 <!-- Deactivate -->
-                <form method="post" onsubmit="return confirm('Mitglied wirklich deaktivieren?')">
+                <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied deaktivieren', message: 'Das Mitglied kann sich danach nicht mehr anmelden.', confirmText: 'Deaktivieren', variant: 'warning'}).then(ok => ok && $el.submit())">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="deactivate">
                     <button type="submit"
@@ -418,7 +418,7 @@
                 {% endif %}
 
                 <!-- Remove completely -->
-                <form method="post" onsubmit="return confirm('Mitglied wirklich komplett entfernen? Diese Aktion kann nicht rückgängig gemacht werden.')">
+                <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied entfernen', message: 'Das Mitglied wird komplett aus der Organisation entfernt. Diese Aktion kann nicht rückgängig gemacht werden.', confirmText: 'Entfernen', variant: 'danger'}).then(ok => ok && $el.submit())">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="remove">
                     <button type="submit"
@@ -434,7 +434,7 @@
 
             {% if request.user == organization.owner and not is_self %}
             <!-- Transfer ownership -->
-            <form method="post" onsubmit="return confirm('Eigentümerschaft wirklich übertragen? Sie können diese Aktion nicht selbst rückgängig machen.')">
+            <form method="post" x-data @submit.prevent="confirmAction({title: 'Eigentümerschaft übertragen', message: 'Sind Sie sicher? Sie können diese Aktion nicht selbst rückgängig machen.', confirmText: 'Übertragen', variant: 'danger'}).then(ok => ok && $el.submit())">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="transfer_ownership">
                 <button type="submit"

@@ -296,7 +296,7 @@
     <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex-shrink-0">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-4">
-                <a href="{% url 'work:motions' org_slug=organization.slug %}"
+                <a href="{% url 'work:documents' org_slug=organization.slug %}"
                    class="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                     <i data-lucide="arrow-left" class="w-5 h-5"></i>
                 </a>
@@ -331,12 +331,12 @@
                 </button>
 
                 <!-- Export PDF -->
-                <a href="{% url 'work:motion_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf"
+                <a href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf"
                    class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Als PDF exportieren">
                     <i data-lucide="download" class="w-5 h-5"></i>
                 </a>
 
-                <a href="{% url 'work:motion_share' org_slug=organization.slug motion_id=motion.id %}"
+                <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}"
                    class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Teilen">
                     <i data-lucide="share-2" class="w-5 h-5"></i>
                 </a>
@@ -349,7 +349,7 @@
 
                 <button type="button" @click="save()"
                         :disabled="saving"
-                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 shadow-sm">
                     <i data-lucide="save" class="w-4 h-4" x-show="!saving"></i>
                     <svg x-show="saving" class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -559,7 +559,7 @@
                 </button>
                 <button type="button" @click="aiAction('check')" class="quick-action-btn">
                     <i data-lucide="check-circle" class="w-3.5 h-3.5 text-green-600"></i>
-                    Pruefen
+                    Prüfen
                 </button>
                 <button type="button" @click="aiAction('summary')" class="quick-action-btn">
                     <i data-lucide="align-left" class="w-3.5 h-3.5 text-amber-600"></i>
@@ -580,7 +580,7 @@
                             </div>
                             <div>
                                 <h3 class="font-semibold text-gray-900 dark:text-white">KI-Vorschlag</h3>
-                                <p class="text-sm text-gray-500">Pruefen Sie die vorgeschlagenen Aenderungen</p>
+                                <p class="text-sm text-gray-500">Prüfen Sie die vorgeschlagenen Änderungen</p>
                             </div>
                         </div>
                         <button type="button" @click="closeAiPreview()"
@@ -625,7 +625,7 @@
                                         <div x-html="aiOriginalContent" class="mt-1 text-sm line-through opacity-70"></div>
                                     </div>
                                     <div class="p-3 bg-green-50 dark:bg-green-900/20 rounded border-l-4 border-green-400">
-                                        <span class="text-xs font-medium text-green-600 dark:text-green-400 uppercase">Hinzugefuegt</span>
+                                        <span class="text-xs font-medium text-green-600 dark:text-green-400 uppercase">Hinzugefügt</span>
                                         <div x-html="aiPreviewContent" class="mt-1 text-sm"></div>
                                     </div>
                                 </div>
@@ -635,7 +635,7 @@
                         <!-- AI Action Info -->
                         <p class="mt-4 text-sm text-gray-500">
                             <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
-                            Alle KI-Aenderungen werden in der Versionshistorie protokolliert.
+                            Alle KI-Änderungen werden in der Versionshistorie protokolliert.
                         </p>
                     </div>
 
@@ -648,7 +648,7 @@
                         <button type="button" @click="applyAiPreview()"
                                 class="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg hover:from-purple-700 hover:to-purple-800 flex items-center gap-2">
                             <i data-lucide="check" class="w-4 h-4"></i>
-                            Uebernehmen
+                            Übernehmen
                         </button>
                     </div>
                 </div>
@@ -917,9 +917,13 @@ function motionEditor() {
         },
 
         async confirmDelete() {
-            if (!confirm('Möchten Sie dieses Dokument wirklich löschen?\n\nEs wird für 30 Tage im Papierkorb aufbewahrt.')) {
-                return;
-            }
+            const ok = await confirmAction({
+                title: 'Dokument löschen',
+                message: 'Möchten Sie dieses Dokument wirklich löschen? Es wird für 30 Tage im Papierkorb aufbewahrt.',
+                confirmText: 'Löschen',
+                variant: 'danger'
+            });
+            if (!ok) return;
 
             const formData = new FormData();
             formData.append('csrfmiddlewaretoken', this.csrfToken);
@@ -937,13 +941,13 @@ function motionEditor() {
                 const data = await response.json();
 
                 if (data.success) {
-                    window.location.href = '{% url "work:motions" org_slug=organization.slug %}';
+                    window.location.href = '{% url "work:documents" org_slug=organization.slug %}';
                 } else {
-                    alert('Fehler beim Löschen: ' + (data.error || 'Unbekannter Fehler'));
+                    showToast('Fehler beim Löschen: ' + (data.error || 'Unbekannter Fehler'), 'error');
                 }
             } catch (error) {
                 console.error('Delete error:', error);
-                alert('Fehler beim Löschen des Dokuments.');
+                showToast('Fehler beim Löschen des Dokuments.', 'error');
             }
         },
 
@@ -969,7 +973,7 @@ function motionEditor() {
             const text = this.editor.getContent();
 
             try {
-                const response = await fetch('{% url "work:motion_ai" org_slug=organization.slug %}', {
+                const response = await fetch('{% url "work:document_ai" org_slug=organization.slug %}', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
@@ -1070,7 +1074,7 @@ function motionEditor() {
                 this.editor.setContent(this.aiPreviewContent);
                 this.chatMessages.push({
                     role: 'ai',
-                    content: 'Aenderungen wurden in den Editor uebernommen.'
+                    content: 'Änderungen wurden in den Editor übernommen.'
                 });
                 this.closeAiPreview();
                 this.$nextTick(() => lucide.createIcons());

@@ -46,6 +46,13 @@ class SiteSettingsAdminForm(forms.ModelForm):
         help_text="Leer lassen, um vorhandenes Passwort beizubehalten",
     )
 
+    nebius_api_key = forms.CharField(
+        widget=forms.PasswordInput(render_value=True),
+        required=False,
+        label="Nebius API Key",
+        help_text="API Key für Nebius TokenFactory. Kann auch via NEBIUS_API_KEY Umgebungsvariable gesetzt werden.",
+    )
+
     class Meta:
         model = SiteSettings
         fields = "__all__"
@@ -55,6 +62,8 @@ class SiteSettingsAdminForm(forms.ModelForm):
         # Don't require password to be re-entered if already set
         if self.instance and self.instance.pk and self.instance.email_host_password:
             self.fields["email_host_password"].help_text = "Passwort ist gesetzt. Leer lassen, um es beizubehalten."
+        if self.instance and self.instance.pk and self.instance.nebius_api_key:
+            self.fields["nebius_api_key"].help_text = "Key ist gesetzt. Leer lassen, um ihn beizubehalten."
 
 
 @admin.register(SiteSettings)
@@ -93,6 +102,16 @@ class SiteSettingsAdmin(ModelAdmin):
                     "site_description",
                 ),
                 "classes": ("collapse",),
+            },
+        ),
+        (
+            "KI-Einstellungen",
+            {
+                "fields": ("nebius_api_key",),
+                "description": (
+                    "Globaler Nebius API Key für KI-Features (Zusammenfassungen, Dokument-Assistent). "
+                    "Wird als Fallback verwendet, wenn keine organisationsspezifische Konfiguration vorhanden ist."
+                ),
             },
         ),
         (

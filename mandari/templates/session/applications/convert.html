@@ -1,0 +1,188 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Antrag in Vorlage umwandeln{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:applications' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Anträge
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=application.id %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        {{ application.reference }}
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">In Vorlage umwandeln</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<!-- Hinweis -->
+<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 mb-6">
+    <div class="flex items-start gap-3">
+        <i data-lucide="info" class="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"></i>
+        <div>
+            <p class="text-sm text-amber-800 dark:text-amber-300">
+                <strong>Umwandlung:</strong> Aus dem Antrag wird eine neue Vorlage erstellt. Der Antragsstatus wird automatisch
+                auf „In Vorlage umgewandelt" gesetzt.
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-6">
+    <!-- Linke Seite: Antragsdaten -->
+    <div class="space-y-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="file-input" class="w-5 h-5 text-blue-500"></i>
+                    Antragsdaten
+                </h2>
+            </div>
+            <div class="p-6">
+                <dl class="space-y-4 text-sm">
+                    <div>
+                        <dt class="text-gray-500 dark:text-gray-400">Eingangsnummer</dt>
+                        <dd class="font-medium font-mono text-gray-900 dark:text-white mt-1">{{ application.reference }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 dark:text-gray-400">Titel</dt>
+                        <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ application.title }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 dark:text-gray-400">Art</dt>
+                        <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ application.get_application_type_display }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 dark:text-gray-400">Einreicher</dt>
+                        <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                            {{ application.submitter_name }}
+                            {% if application.submitting_organization %}({{ application.submitting_organization.name }}){% endif %}
+                        </dd>
+                    </div>
+                </dl>
+
+                {% if application.justification %}
+                <div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Begründung</h3>
+                    <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-48 overflow-y-auto">{{ application.justification }}</p>
+                </div>
+                {% endif %}
+
+                {% if application.resolution_proposal %}
+                <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Beschlussvorschlag</h3>
+                    <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-48 overflow-y-auto">{{ application.resolution_proposal }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Rechte Seite: Vorlagenformular -->
+    <div>
+        <form method="post">
+            {% csrf_token %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                        <i data-lucide="file-text" class="w-5 h-5 text-amber-500"></i>
+                        Neue Vorlage
+                    </h2>
+                </div>
+                <div class="p-6 space-y-5">
+                    <!-- Titel -->
+                    <div>
+                        <label for="id_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Titel der Vorlage *
+                        </label>
+                        <input type="text" name="name" id="id_name"
+                               value="{{ application.title }}"
+                               required
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    </div>
+
+                    <!-- Typ -->
+                    <div>
+                        <label for="id_paper_type" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Vorlagentyp
+                        </label>
+                        <select name="paper_type" id="id_paper_type"
+                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                            <option value="motion" selected>Antrag</option>
+                            <option value="proposal">Vorlage</option>
+                            <option value="report">Bericht</option>
+                            <option value="inquiry">Anfrage</option>
+                            <option value="resolution">Beschluss</option>
+                            <option value="bylaw">Satzung</option>
+                            <option value="budget">Haushalt</option>
+                            <option value="other">Sonstige</option>
+                        </select>
+                    </div>
+
+                    <!-- Federführendes Gremium -->
+                    <div>
+                        <label for="id_main_organization" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Federführendes Gremium *
+                        </label>
+                        <select name="main_organization" id="id_main_organization" required
+                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                            <option value="">Bitte wählen...</option>
+                            {% for org in organizations %}
+                            <option value="{{ org.id }}" {% if application.target_organization and application.target_organization.id == org.id %}selected{% endif %}>
+                                {{ org.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Vorausgefüllte Felder (versteckt als Info) -->
+                    <div class="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
+                        <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Übernommene Inhalte</h3>
+                        <ul class="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                            {% if application.justification %}
+                            <li class="flex items-center gap-2">
+                                <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                                Begründung → Sachverhalt
+                            </li>
+                            {% endif %}
+                            {% if application.resolution_proposal %}
+                            <li class="flex items-center gap-2">
+                                <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                                Beschlussvorschlag → Beschlussvorschlag
+                            </li>
+                            {% endif %}
+                            <li class="flex items-center gap-2">
+                                <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                                Datum wird auf heute gesetzt
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <i data-lucide="check" class="w-3 h-3 text-green-500"></i>
+                                Vorlage wird als öffentlich markiert
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3">
+                    <a href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=application.id %}"
+                       class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
+                        Abbrechen
+                    </a>
+                    <button type="submit"
+                            class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                        <i data-lucide="arrow-right-circle" class="w-5 h-5"></i>
+                        In Vorlage umwandeln
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

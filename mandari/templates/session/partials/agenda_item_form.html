@@ -1,0 +1,74 @@
+<div class="px-6 py-4 bg-blue-50 dark:bg-blue-900/20 border-b border-gray-200 dark:border-gray-700">
+    <form method="post"
+          hx-post="{% url 'session:agenda_item_create' tenant_slug=tenant_slug meeting_id=view.kwargs.meeting_id %}"
+          hx-swap="none"
+          class="space-y-4">
+        {% csrf_token %}
+        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+            <i data-lucide="plus-circle" class="w-4 h-4 text-blue-500"></i>
+            Tagesordnungspunkt hinzufügen
+        </h3>
+
+        <div class="grid grid-cols-12 gap-3">
+            <!-- Nummer -->
+            <div class="col-span-2">
+                <label for="id_number" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Nr. *</label>
+                <input type="text" name="number" id="id_number"
+                       value="{{ form.number.value|default:'' }}"
+                       required
+                       class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                       placeholder="1">
+                {% if form.number.errors %}
+                <p class="mt-0.5 text-xs text-red-600">{{ form.number.errors.0 }}</p>
+                {% endif %}
+            </div>
+
+            <!-- Name -->
+            <div class="col-span-5">
+                <label for="id_name" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Bezeichnung *</label>
+                <input type="text" name="name" id="id_name"
+                       value="{{ form.name.value|default:'' }}"
+                       required
+                       class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                       placeholder="Tagesordnungspunkt">
+                {% if form.name.errors %}
+                <p class="mt-0.5 text-xs text-red-600">{{ form.name.errors.0 }}</p>
+                {% endif %}
+            </div>
+
+            <!-- Vorlage -->
+            <div class="col-span-3">
+                <label for="id_paper" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Vorlage</label>
+                <select name="paper" id="id_paper"
+                        class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    <option value="">Keine</option>
+                    {% for paper in form.paper.field.queryset %}
+                    <option value="{{ paper.id }}">{{ paper.reference }} - {{ paper.name|truncatechars:30 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Öffentlich -->
+            <div class="col-span-2 flex items-end">
+                <div class="flex items-center gap-2 pb-1.5">
+                    <input type="checkbox" name="is_public" id="id_is_public" checked
+                           class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                    <label for="id_is_public" class="text-xs font-medium text-gray-600 dark:text-gray-400">Öffentl.</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2">
+            <button type="button"
+                    onclick="this.closest('#agenda-form').innerHTML=''"
+                    class="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                Abbrechen
+            </button>
+            <button type="submit"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Hinzufügen
+            </button>
+        </div>
+    </form>
+</div>

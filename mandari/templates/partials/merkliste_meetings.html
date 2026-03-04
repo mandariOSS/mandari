@@ -1,0 +1,24 @@
+{# Merkliste partial: Meetings #}
+{% if items %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden divide-y divide-gray-200 dark:divide-gray-700">
+    {% for meeting in items %}
+    <a href="{% url 'insight_core:insight:meeting_detail' meeting.id %}"
+       class="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
+        <div class="flex-1 min-w-0">
+            <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                {{ meeting.get_display_name }}
+            </p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                {% if meeting.start %}{{ meeting.start|date:"d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% endif %}
+                {% if meeting.location_name %} &middot; {{ meeting.location_name }}{% endif %}
+                {% if meeting.cancelled %} &middot; <span class="text-red-500">Abgesagt</span>{% endif %}
+            </p>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            {% include "components/bookmark_star.html" with entity_type="meeting" entity_id=meeting.id size="sm" %}
+            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}

@@ -1,5 +1,6 @@
+{% load permission_tags %}
 <!-- Comments Sidebar (Google Docs Style) -->
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 h-full flex flex-col">
+<div class="flex flex-col flex-1 min-h-0">
     <!-- Header -->
     <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
         <h3 class="font-medium text-gray-900 dark:text-white flex items-center gap-2">
@@ -21,7 +22,7 @@
              :class="{ 'opacity-50': {{ comment.is_resolved|yesno:'true,false' }} && !showResolvedComments }"
              x-show="!{{ comment.is_resolved|yesno:'true,false' }} || showResolvedComments"
              id="comment-sidebar-{{ comment.id }}"
-             @click="scrollToCommentInContent('{{ comment.id }}')">
+             @click="scrollToCommentInContent('{{ comment.mark_id|default:comment.id }}')">
 
             <!-- Comment Card -->
             <div class="p-3 rounded-xl border transition-all cursor-pointer
@@ -71,9 +72,10 @@
                         Antworten
                     </button>
                     {% endif %}
-                    {% if not comment.is_resolved and comment.author == membership or membership.has_permission %}
+                    {% if not comment.is_resolved %}
+                    {% if comment.author == membership or membership|has_perm:"motions.edit_all" %}
                     <form method="post"
-                          action="{% url 'work:motion_comment_resolve' org_slug=organization.slug motion_id=motion.id comment_id=comment.id %}"
+                          action="{% url 'work:document_comment_resolve' org_slug=organization.slug motion_id=motion.id comment_id=comment.id %}"
                           @click.stop
                           class="inline">
                         {% csrf_token %}
@@ -83,6 +85,7 @@
                             Erledigen
                         </button>
                     </form>
+                    {% endif %}
                     {% endif %}
                 </div>
 
@@ -116,7 +119,7 @@
                      @click.stop
                      class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                     <form method="post"
-                          action="{% url 'work:motion_comment' org_slug=organization.slug motion_id=motion.id %}">
+                          action="{% url 'work:document_comment' org_slug=organization.slug motion_id=motion.id %}">
                         {% csrf_token %}
                         <input type="hidden" name="parent" value="{{ comment.id }}">
                         <textarea name="content"
@@ -154,25 +157,17 @@
 
     <!-- New Comment Form -->
     <div class="border-t border-gray-200 dark:border-gray-700 p-4">
-        <form method="post"
-              action="{% url 'work:motion_comment' org_slug=organization.slug motion_id=motion.id %}"
-              class="space-y-3">
-            {% csrf_token %}
-            <input type="hidden" name="selection_start" :value="selectionStart">
-            <input type="hidden" name="selection_end" :value="selectionEnd">
-            <input type="hidden" name="selected_text" :value="selectedText">
-
+        <form @submit.prevent="submitComment()" class="space-y-3">
             <!-- Show selected text if any -->
             <div x-show="selectedText" class="p-2 bg-amber-50 dark:bg-amber-900/20 border-l-2 border-amber-400 rounded-r">
                 <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">Kommentar zu:</p>
                 <p class="text-sm text-gray-700 dark:text-gray-300 italic" x-text="selectedText.substring(0, 100) + (selectedText.length > 100 ? '...' : '')"></p>
             </div>
 
-            <textarea name="content"
-                      rows="3"
+            <textarea rows="3"
                       x-model="newCommentContent"
                       required
-                      placeholder="Kommentar hinzufügen..."
+                      placeholder="Kommentar hinzufuegen..."
                       class="w-full px-3 py-2.5 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"></textarea>
             <div class="flex items-center justify-between">
                 <button type="button"
@@ -182,9 +177,13 @@
                     Markierung aufheben
                 </button>
                 <button type="submit"
-                        :disabled="!newCommentContent.trim()"
+                        :disabled="!newCommentContent.trim() || commentSubmitting"
                         class="ml-auto inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i data-lucide="send" class="w-4 h-4"></i>
+                    <i data-lucide="send" class="w-4 h-4" x-show="!commentSubmitting"></i>
+                    <svg x-show="commentSubmitting" class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
                     Senden
                 </button>
             </div>

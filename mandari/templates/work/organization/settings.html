@@ -8,54 +8,205 @@
 {% endblock %}
 
 {% block work_content %}
-<!-- Navigation Tabs -->
-<div class="mb-8 border-b border-gray-200 dark:border-gray-700">
-    <nav class="flex gap-1 overflow-x-auto">
-        <a href="{% url 'work:organization' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 {% if active_tab == 'general' %}border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %} whitespace-nowrap">
-            Allgemein
-        </a>
-        {% if can_manage_faction %}
-        <a href="{% url 'work:organization_faction_settings' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 {% if active_tab == 'faction' %}border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %} whitespace-nowrap">
-            Fraktionssitzungen
-        </a>
-        {% endif %}
-        <a href="{% url 'work:organization_documents' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 {% if active_tab == 'documents' %}border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %} whitespace-nowrap">
-            Anträge & Vorgänge
-        </a>
-        <a href="{% url 'work:members' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 {% if active_tab == 'members' %}border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %} whitespace-nowrap">
-            Mitglieder
-        </a>
-        <a href="{% url 'work:roles' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 {% if active_tab == 'roles' %}border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20{% else %}border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %} whitespace-nowrap">
-            Rollen
-        </a>
-    </nav>
-</div>
+{% include "work/organization/_tabs.html" %}
 
 <!-- Settings Content -->
-<div class="space-y-6">
-    <!-- Organization Info -->
+<div class="space-y-6 fade-up">
+
+    <!-- Card 1: Organisation & Erscheinung -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Organisation</h3>
-        <div class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
-                <input type="text" value="{{ organization.name }}" readonly
-                       class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-6">Organisation & Erscheinung</h3>
+
+        {% if can_edit %}
+        <form method="post" enctype="multipart/form-data" class="space-y-6" x-data="logoPreview()">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_general">
+
+            <div class="flex flex-col md:flex-row gap-6">
+                <!-- Logo Upload (left) -->
+                <div class="flex-shrink-0">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Logo</label>
+                    <div class="relative w-32 h-32 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center overflow-hidden bg-gray-50 dark:bg-gray-900 cursor-pointer hover:border-primary-400 transition-colors"
+                         @click="if(!removeLogo) $refs.logoInput.click()">
+                        <!-- New file preview -->
+                        <img :src="previewUrl" alt="Logo-Vorschau" class="w-full h-full object-cover"
+                             x-show="previewUrl" x-cloak>
+                        <!-- Existing logo -->
+                        {% if organization.logo %}
+                        <img src="{{ organization.logo.url }}" alt="Logo" class="w-full h-full object-cover"
+                             x-show="!previewUrl && !removeLogo">
+                        {% endif %}
+                        <!-- Empty placeholder -->
+                        <div class="text-center" x-show="!previewUrl && {% if organization.logo %}removeLogo{% else %}true{% endif %}">
+                            <i data-lucide="image-plus" class="w-8 h-8 mx-auto text-gray-400"></i>
+                            <span class="text-xs text-gray-500 mt-1 block" x-text="removeLogo ? 'Entfernt' : 'Hochladen'"></span>
+                        </div>
+                    </div>
+                    <input type="file" name="logo" accept="image/jpeg,image/png,image/webp" class="hidden"
+                           x-ref="logoInput" @change="handleFile($event)">
+                    <input type="hidden" name="remove_logo" :value="removeLogo ? '1' : ''">
+                    {% if organization.logo %}
+                    <div class="mt-2">
+                        <button type="button" @click="removeLogo = !removeLogo; if(removeLogo) { previewUrl = ''; $refs.logoInput.value = ''; }"
+                                class="flex items-center gap-1.5 text-sm cursor-pointer hover:underline"
+                                :class="removeLogo ? 'text-primary-600 dark:text-primary-400' : 'text-red-600 dark:text-red-400'">
+                            <i data-lucide="undo-2" class="w-3.5 h-3.5" x-show="removeLogo" x-cloak></i>
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5" x-show="!removeLogo"></i>
+                            <span x-text="removeLogo ? 'Rueckgaengig' : 'Entfernen'"></span>
+                        </button>
+                    </div>
+                    {% endif %}
+                    <p class="mt-1 text-xs text-gray-500">JPG, PNG oder WebP, max. 5 MB</p>
+                </div>
+
+                <!-- Name + Description (right) -->
+                <div class="flex-1 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Name <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" name="name" value="{{ organization.name }}" required
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                        <textarea name="description" rows="3"
+                                  class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">{{ organization.description }}</textarea>
+                    </div>
+                </div>
             </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
-                <textarea rows="3" readonly
-                          class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg">{{ organization.description }}</textarea>
+
+            <!-- Primary Color -->
+            <div x-data="colorPicker('{{ organization.primary_color }}')">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Primaerfarbe</label>
+                <div class="flex items-center gap-3">
+                    <div class="relative">
+                        <div class="w-10 h-10 rounded-lg border-2 border-gray-300 dark:border-gray-600 cursor-pointer shadow-sm hover:border-primary-400 transition-colors"
+                             :style="'background-color: ' + color"
+                             @click="$refs.nativePicker.click()"></div>
+                        <input type="color" x-ref="nativePicker" :value="color"
+                               @input="color = $event.target.value"
+                               class="sr-only">
+                    </div>
+                    <div class="flex items-center w-32 border border-gray-300 dark:border-gray-600 rounded-xl overflow-hidden focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/20">
+                        <span class="pl-3 pr-1 text-gray-400 text-sm font-mono select-none">#</span>
+                        <input type="text" x-model="hex" @input="onHexInput()" maxlength="6"
+                               placeholder="6366f1"
+                               class="w-full py-2 pr-3 bg-transparent outline-none text-sm font-mono text-gray-900 dark:text-white">
+                    </div>
+                    <span class="text-sm text-gray-500">Steuert den Akzent in der Sidebar</span>
+                </div>
+                <input type="hidden" name="primary_color" :value="color">
+            </div>
+
+            <!-- Save Button -->
+            <div class="flex justify-end pt-2">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Speichern
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <!-- Read-only view -->
+        <div class="flex flex-col md:flex-row gap-6">
+            <div class="flex-shrink-0">
+                {% if organization.logo %}
+                <img src="{{ organization.logo.url }}" alt="Logo" class="w-32 h-32 rounded-xl object-cover border border-gray-200 dark:border-gray-700">
+                {% else %}
+                <div class="w-32 h-32 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+                    <i data-lucide="building-2" class="w-10 h-10 text-gray-300 dark:text-gray-600"></i>
+                </div>
+                {% endif %}
+            </div>
+            <div class="flex-1 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+                    <input type="text" value="{{ organization.name }}" readonly
+                           class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-600 dark:text-gray-400">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                    <textarea rows="3" readonly
+                              class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-600 dark:text-gray-400">{{ organization.description }}</textarea>
+                </div>
             </div>
         </div>
+        <div class="mt-4 flex items-center gap-2">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Primaerfarbe</label>
+            <div class="w-6 h-6 rounded border border-gray-300 dark:border-gray-600" style="background-color: {{ organization.primary_color }}"></div>
+            <span class="text-sm text-gray-500">{{ organization.primary_color }}</span>
+        </div>
         <p class="mt-4 text-sm text-gray-500">
-            Kontaktieren Sie den Support, um Organisationsdaten zu ändern.
+            Sie haben keine Berechtigung, diese Einstellungen zu ändern.
         </p>
+        {% endif %}
+    </div>
+
+    <!-- Card 2: Kontaktdaten -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-6">Kontaktdaten</h3>
+
+        {% if can_edit %}
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_contact">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">E-Mail</label>
+                    <input type="email" name="contact_email" value="{{ organization.contact_email }}"
+                           placeholder="info@fraktion.de"
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Telefon</label>
+                    <input type="tel" name="contact_phone" value="{{ organization.contact_phone }}"
+                           placeholder="+49 123 456789"
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website</label>
+                    <input type="url" name="website" value="{{ organization.website }}"
+                           placeholder="https://fraktion.de"
+                           class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Adresse</label>
+                    <textarea name="address" rows="2"
+                              class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">{{ organization.address }}</textarea>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Speichern
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">E-Mail</label>
+                <p class="text-gray-600 dark:text-gray-400 text-sm">{{ organization.contact_email|default:"—" }}</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Telefon</label>
+                <p class="text-gray-600 dark:text-gray-400 text-sm">{{ organization.contact_phone|default:"—" }}</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website</label>
+                <p class="text-gray-600 dark:text-gray-400 text-sm">{{ organization.website|default:"—" }}</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Adresse</label>
+                <p class="text-gray-600 dark:text-gray-400 text-sm whitespace-pre-line">{{ organization.address|default:"—" }}</p>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Members Overview -->
@@ -93,4 +244,39 @@
         </button>
     </div>
 </div>
+
+<script>
+function logoPreview() {
+    return {
+        previewUrl: '',
+        removeLogo: false,
+        handleFile(event) {
+            const file = event.target.files[0];
+            if (file) {
+                this.removeLogo = false;
+                this.previewUrl = URL.createObjectURL(file);
+            }
+        }
+    }
+}
+
+function colorPicker(initial) {
+    return {
+        color: initial || '#6366f1',
+        hex: (initial || '#6366f1').replace('#', ''),
+        onHexInput() {
+            const clean = this.hex.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
+            this.hex = clean;
+            if (clean.length === 6) {
+                this.color = '#' + clean;
+            }
+        },
+        init() {
+            this.$watch('color', (val) => {
+                this.hex = val.replace('#', '');
+            });
+        }
+    }
+}
+</script>
 {% endblock %}

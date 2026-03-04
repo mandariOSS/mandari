@@ -1,0 +1,50 @@
+{% comment %}
+Shared profile tab navigation. Expects `active_tab` in context.
+Values: "profile", "security", "notifications", "absence", "requests", "activity", "visibility", "data"
+{% endcomment %}
+<div class="mb-6 border-b border-gray-200 dark:border-gray-700">
+    <nav class="flex gap-1 overflow-x-auto">
+        {% with tab_active="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 whitespace-nowrap" tab_inactive="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap" %}
+        <a href="{% url 'work:profile' org_slug=organization.slug %}"
+           class="{% if active_tab == 'profile' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            <i data-lucide="user" class="w-4 h-4 inline -mt-0.5 mr-1"></i>
+            Profil
+        </a>
+        <a href="{% url 'work:profile_visibility' org_slug=organization.slug %}"
+           class="{% if active_tab == 'visibility' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            <i data-lucide="eye" class="w-4 h-4 inline -mt-0.5 mr-1"></i>
+            Sichtbarkeit
+        </a>
+        <a href="{% url 'work:profile_activity' org_slug=organization.slug %}"
+           class="{% if active_tab == 'activity' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            <i data-lucide="activity" class="w-4 h-4 inline -mt-0.5 mr-1"></i>
+            Aktivität
+        </a>
+        <a href="{% url 'work:security' org_slug=organization.slug %}"
+           class="{% if active_tab == 'security' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            <i data-lucide="shield" class="w-4 h-4 inline -mt-0.5 mr-1"></i>
+            Sicherheit
+        </a>
+        <a href="{% url 'work:profile_notifications' org_slug=organization.slug %}"
+           class="{% if active_tab == 'notifications' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            <i data-lucide="bell" class="w-4 h-4 inline -mt-0.5 mr-1"></i>
+            Benachrichtigungen
+        </a>
+        <a href="{% url 'work:profile_absence' org_slug=organization.slug %}"
+           class="{% if active_tab == 'absence' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            <i data-lucide="calendar-off" class="w-4 h-4 inline -mt-0.5 mr-1"></i>
+            Abwesenheit
+        </a>
+        <a href="{% url 'work:profile_requests' org_slug=organization.slug %}"
+           class="{% if active_tab == 'requests' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            <i data-lucide="git-pull-request" class="w-4 h-4 inline -mt-0.5 mr-1"></i>
+            Anträge
+        </a>
+        <a href="{% url 'work:profile_data' org_slug=organization.slug %}"
+           class="{% if active_tab == 'data' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            <i data-lucide="download" class="w-4 h-4 inline -mt-0.5 mr-1"></i>
+            Daten
+        </a>
+        {% endwith %}
+    </nav>
+</div>

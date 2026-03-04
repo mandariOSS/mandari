@@ -8,36 +8,10 @@
 {% endblock %}
 
 {% block work_content %}
-<!-- Navigation Tabs -->
-<div class="mb-8 border-b border-gray-200 dark:border-gray-700">
-    <nav class="flex gap-1 overflow-x-auto">
-        <a href="{% url 'work:organization' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Allgemein
-        </a>
-        {% if can_manage_faction %}
-        <a href="{% url 'work:organization_faction_settings' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Fraktionssitzungen
-        </a>
-        {% endif %}
-        <a href="{% url 'work:organization_documents' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 whitespace-nowrap">
-            Anträge & Vorgänge
-        </a>
-        <a href="{% url 'work:members' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Mitglieder
-        </a>
-        <a href="{% url 'work:roles' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Rollen
-        </a>
-    </nav>
-</div>
+{% include "work/organization/_tabs.html" %}
 
 <!-- Document Settings Content -->
-<div class="space-y-6">
+<div class="space-y-6 fade-up">
     <!-- Document Types -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
         <div class="flex items-center justify-between mb-4">
@@ -45,8 +19,8 @@
                 <h3 class="text-lg font-medium text-gray-900 dark:text-white">Dokumenttypen</h3>
                 <p class="text-sm text-gray-500 mt-1">Definieren Sie verschiedene Typen von Anträgen und Vorgängen</p>
             </div>
-            <a href="{% url 'work:motion_type_create' org_slug=organization.slug %}"
-               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+            <a href="{% url 'work:document_type_create' org_slug=organization.slug %}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                 <i data-lucide="plus" class="w-4 h-4"></i>
                 Neuer Typ
             </a>
@@ -73,13 +47,13 @@
                     {% endif %}
                 </div>
                 <div class="flex items-center gap-2">
-                    <a href="{% url 'work:motion_type_edit' org_slug=organization.slug type_id=type.id %}"
+                    <a href="{% url 'work:document_type_edit' org_slug=organization.slug type_id=type.id %}"
                        class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                         <i data-lucide="pencil" class="w-4 h-4"></i>
                     </a>
-                    <form method="post" action="{% url 'work:motion_type_delete' org_slug=organization.slug type_id=type.id %}"
+                    <form method="post" action="{% url 'work:document_type_delete' org_slug=organization.slug type_id=type.id %}"
                           class="inline"
-                          onsubmit="return confirm('Diesen Dokumenttyp wirklich löschen?')">
+                          x-data @submit.prevent="confirmAction({title: 'Dokumenttyp löschen', message: 'Möchten Sie diesen Dokumenttyp wirklich löschen?', confirmText: 'Löschen', variant: 'danger'}).then(ok => ok && $el.submit())">
                         {% csrf_token %}
                         <button type="submit"
                                 class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -94,7 +68,7 @@
         <div class="text-center py-8">
             <i data-lucide="file-type" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600"></i>
             <p class="mt-2 text-sm text-gray-500">Noch keine Dokumenttypen definiert</p>
-            <a href="{% url 'work:motion_type_create' org_slug=organization.slug %}"
+            <a href="{% url 'work:document_type_create' org_slug=organization.slug %}"
                class="mt-4 inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
                 <i data-lucide="plus" class="w-4 h-4"></i>
                 Ersten Typ erstellen
@@ -110,8 +84,8 @@
                 <h3 class="text-lg font-medium text-gray-900 dark:text-white">Vorlagen</h3>
                 <p class="text-sm text-gray-500 mt-1">Vorgefertigte Inhalte und Strukturen für neue Dokumente</p>
             </div>
-            <a href="{% url 'work:motion_template_create' org_slug=organization.slug %}"
-               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+            <a href="{% url 'work:document_template_create' org_slug=organization.slug %}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                 <i data-lucide="plus" class="w-4 h-4"></i>
                 Neue Vorlage
             </a>
@@ -142,13 +116,13 @@
                     {% endif %}
                 </div>
                 <div class="flex items-center gap-2">
-                    <a href="{% url 'work:motion_template_edit' org_slug=organization.slug template_id=template.id %}"
+                    <a href="{% url 'work:document_template_edit' org_slug=organization.slug template_id=template.id %}"
                        class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                         <i data-lucide="pencil" class="w-4 h-4"></i>
                     </a>
-                    <form method="post" action="{% url 'work:motion_template_delete' org_slug=organization.slug template_id=template.id %}"
+                    <form method="post" action="{% url 'work:document_template_delete' org_slug=organization.slug template_id=template.id %}"
                           class="inline"
-                          onsubmit="return confirm('Diese Vorlage wirklich löschen?')">
+                          x-data @submit.prevent="confirmAction({title: 'Vorlage löschen', message: 'Möchten Sie diese Vorlage wirklich löschen?', confirmText: 'Löschen', variant: 'danger'}).then(ok => ok && $el.submit())">
                         {% csrf_token %}
                         <button type="submit"
                                 class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -163,7 +137,7 @@
         <div class="text-center py-8">
             <i data-lucide="file-text" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600"></i>
             <p class="mt-2 text-sm text-gray-500">Noch keine Vorlagen erstellt</p>
-            <a href="{% url 'work:motion_template_create' org_slug=organization.slug %}"
+            <a href="{% url 'work:document_template_create' org_slug=organization.slug %}"
                class="mt-4 inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
                 <i data-lucide="plus" class="w-4 h-4"></i>
                 Erste Vorlage erstellen
@@ -179,8 +153,8 @@
                 <h3 class="text-lg font-medium text-gray-900 dark:text-white">Briefköpfe</h3>
                 <p class="text-sm text-gray-500 mt-1">PDF-Hintergründe für den Export von Dokumenten</p>
             </div>
-            <a href="{% url 'work:letterhead_create' org_slug=organization.slug %}"
-               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+            <a href="{% url 'work:document_letterhead_create' org_slug=organization.slug %}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                 <i data-lucide="plus" class="w-4 h-4"></i>
                 Neuer Briefkopf
             </a>
@@ -207,13 +181,13 @@
                     {% endif %}
                 </div>
                 <div class="flex items-center gap-2">
-                    <a href="{% url 'work:letterhead_edit' org_slug=organization.slug letterhead_id=letterhead.id %}"
+                    <a href="{% url 'work:document_letterhead_edit' org_slug=organization.slug letterhead_id=letterhead.id %}"
                        class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                         <i data-lucide="pencil" class="w-4 h-4"></i>
                     </a>
-                    <form method="post" action="{% url 'work:letterhead_delete' org_slug=organization.slug letterhead_id=letterhead.id %}"
+                    <form method="post" action="{% url 'work:document_letterhead_delete' org_slug=organization.slug letterhead_id=letterhead.id %}"
                           class="inline"
-                          onsubmit="return confirm('Diesen Briefkopf wirklich löschen?')">
+                          x-data @submit.prevent="confirmAction({title: 'Briefkopf löschen', message: 'Möchten Sie diesen Briefkopf wirklich löschen?', confirmText: 'Löschen', variant: 'danger'}).then(ok => ok && $el.submit())">
                         {% csrf_token %}
                         <button type="submit"
                                 class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -228,7 +202,7 @@
         <div class="text-center py-8">
             <i data-lucide="file-image" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600"></i>
             <p class="mt-2 text-sm text-gray-500">Noch keine Briefköpfe hochgeladen</p>
-            <a href="{% url 'work:letterhead_create' org_slug=organization.slug %}"
+            <a href="{% url 'work:document_letterhead_create' org_slug=organization.slug %}"
                class="mt-4 inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
                 <i data-lucide="plus" class="w-4 h-4"></i>
                 Ersten Briefkopf hochladen

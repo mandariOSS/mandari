@@ -1,0 +1,206 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}{{ person.display_name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:persons' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Personen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">{{ person.display_name }}</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid lg:grid-cols-3 gap-6">
+    <!-- Main Content -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Header Card -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-start gap-4">
+                <div class="w-14 h-14 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xl font-bold text-gray-600 dark:text-gray-400">
+                    {{ person.given_name|slice:":1" }}{{ person.family_name|slice:":1" }}
+                </div>
+                <div class="flex-1">
+                    <h1 class="text-xl font-bold text-gray-900 dark:text-white">
+                        {% if person.title %}{{ person.title }} {% endif %}{{ person.display_name }}
+                    </h1>
+                    {% if person.form_of_address %}
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ person.form_of_address }}</p>
+                    {% endif %}
+                </div>
+                {% if not person.is_active %}
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                    Inaktiv
+                </span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Mitgliedschaften -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="building" class="w-5 h-5 text-indigo-500"></i>
+                    Mitgliedschaften ({{ memberships|length }})
+                </h2>
+            </div>
+            {% if memberships %}
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead>
+                        <tr class="bg-gray-50 dark:bg-gray-900/50 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            <th class="px-6 py-3">Gremium</th>
+                            <th class="px-6 py-3">Rolle</th>
+                            <th class="px-6 py-3">Zeitraum</th>
+                            <th class="px-6 py-3">Stimmrecht</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                        {% for membership in memberships %}
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <td class="px-6 py-3">
+                                <a href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=membership.organization.id %}"
+                                   class="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline">
+                                    {{ membership.organization.name }}
+                                </a>
+                            </td>
+                            <td class="px-6 py-3 text-sm text-gray-700 dark:text-gray-300">
+                                {{ membership.get_role_display }}
+                            </td>
+                            <td class="px-6 py-3 text-sm text-gray-500 dark:text-gray-400">
+                                {% if membership.start_date %}{{ membership.start_date|date:"d.m.Y" }}{% else %}&ndash;{% endif %}
+                                {% if membership.end_date %} &ndash; {{ membership.end_date|date:"d.m.Y" }}{% endif %}
+                            </td>
+                            <td class="px-6 py-3">
+                                {% if membership.has_voting_rights %}
+                                <span class="inline-flex items-center gap-1 text-green-600 dark:text-green-400 text-sm">
+                                    <i data-lucide="check" class="w-4 h-4"></i> Ja
+                                </span>
+                                {% else %}
+                                <span class="text-sm text-gray-400 dark:text-gray-500">Nein</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                <i data-lucide="building" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                <p>Keine Mitgliedschaften</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Letzte Anwesenheiten -->
+        {% if recent_attendances %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="calendar-check" class="w-5 h-5 text-green-500"></i>
+                    Letzte Anwesenheiten
+                </h2>
+            </div>
+            <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for attendance in recent_attendances %}
+                <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=attendance.meeting.id %}"
+                   class="px-6 py-3 flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex flex-col items-center justify-center text-blue-600 dark:text-blue-400 flex-shrink-0">
+                        <span class="text-[10px] font-medium uppercase leading-none">{{ attendance.meeting.start|date:"M" }}</span>
+                        <span class="text-sm font-bold leading-none">{{ attendance.meeting.start|date:"d" }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ attendance.meeting.name }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            {{ attendance.meeting.organization.name }} &middot; {{ attendance.meeting.start|date:"d.m.Y" }}
+                        </p>
+                    </div>
+                    <span class="px-2 py-1 text-xs font-medium rounded-full flex-shrink-0
+                        {% if attendance.status == 'present' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                        {% elif attendance.status == 'absent' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+                        {% elif attendance.status == 'excused' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400
+                        {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                        {{ attendance.get_status_display }}
+                    </span>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-6">
+        <!-- Kontaktdaten -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Kontaktdaten</h3>
+            <dl class="space-y-4 text-sm">
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Name</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        {% if person.title %}{{ person.title }} {% endif %}{{ person.given_name }} {{ person.family_name }}
+                    </dd>
+                </div>
+                {% if person.email %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">E-Mail</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        <a href="mailto:{{ person.email }}" class="text-primary-600 dark:text-primary-400 hover:underline">
+                            {{ person.email }}
+                        </a>
+                    </dd>
+                </div>
+                {% endif %}
+                {% if person.phone %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Telefon</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ person.phone }}</dd>
+                </div>
+                {% endif %}
+                {% if person.address %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Adresse</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ person.address }}</dd>
+                </div>
+                {% endif %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Status</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        {% if person.is_active %}
+                        <span class="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                            <i data-lucide="check-circle" class="w-4 h-4"></i>
+                            Aktiv
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                            <i data-lucide="x-circle" class="w-4 h-4"></i>
+                            Inaktiv
+                        </span>
+                        {% endif %}
+                    </dd>
+                </div>
+                {% if person.start_date %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Aktiv seit</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ person.start_date|date:"d.m.Y" }}</dd>
+                </div>
+                {% endif %}
+                {% if person.end_date %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Aktiv bis</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ person.end_date|date:"d.m.Y" }}</dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+    </div>
+</div>
+{% endblock %}

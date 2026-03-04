@@ -93,9 +93,12 @@ class Command(BaseCommand):
         # Filter: Nur Dateien mit Download-URL
         queryset = queryset.filter(Q(download_url__isnull=False) | Q(access_url__isnull=False))
 
-        # Filter: Ohne text_content (außer bei --reprocess)
+        # Filter: Nur pending/unverarbeitete Dateien (außer bei --reprocess)
         if not reprocess:
-            queryset = queryset.filter(Q(text_content__isnull=True) | Q(text_content=""))
+            queryset = queryset.filter(
+                Q(text_extraction_status="pending")
+                | Q(text_extraction_status__isnull=True)
+            )
 
         # Filter: Nur bestimmte Kommune
         if body_id:
@@ -198,7 +201,9 @@ class Command(BaseCommand):
             # Text speichern
             if result.text:
                 file.text_content = result.text
-                file.save(update_fields=["text_content", "updated_at"])
+                file.text_extraction_status = "completed"
+                file.text_extraction_method = "ocr" if result.ocr_performed else "pypdf"
+                file.save(update_fields=["text_content", "text_extraction_status", "text_extraction_method", "updated_at"])
 
                 if verbose:
                     self.stdout.write(
@@ -214,16 +219,25 @@ class Command(BaseCommand):
                     "pages": result.page_count,
                 }
             else:
+                file.text_extraction_status = "ocr_needed"
+                file.text_extraction_error = "Download ok, aber kein Text extrahierbar (KI-OCR benötigt)"
+                file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
                 if verbose:
-                    self.stdout.write(self.style.WARNING(f"  {file.id}: Kein Text extrahiert"))
-                return {"success": False, "reason": "Kein Text extrahiert"}
+                    self.stdout.write(self.style.WARNING(f"  {file.id}: KI-OCR benötigt (kein Text via pypdf/Tesseract)"))
+                return {"success": False, "reason": "ocr_needed"}
 
         except DocumentDownloadError as exc:
+            file.text_extraction_status = "failed"
+            file.text_extraction_error = str(exc)[:500]
+            file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
             if verbose:
                 self.stdout.write(self.style.ERROR(f"  {file.id}: Download-Fehler - {exc}"))
             return {"success": False, "reason": str(exc)}
 
         except Exception as exc:
+            file.text_extraction_status = "failed"
+            file.text_extraction_error = str(exc)[:500]
+            file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
             if verbose:
                 self.stdout.write(self.style.ERROR(f"  {file.id}: Fehler - {exc}"))
             return {"success": False, "reason": str(exc)}

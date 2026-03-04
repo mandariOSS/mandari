@@ -7,7 +7,7 @@ giving users access to their municipality's council information system.
 """
 
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, OuterRef, Q, Subquery
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -418,35 +418,65 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
 
         context["body"] = body
 
-        from insight_core.models import OParlOrganization
+        from insight_core.models import OParlMeeting, OParlOrganization
         from insight_core.ranking import sort_organizations_by_ranking
 
-        # Base queryset
-        organizations = OParlOrganization.objects.filter(body=body)
+        now = timezone.now()
+        today = now.date()
+        tab = self.request.GET.get("tab", "active")
+        q = self.request.GET.get("q", "").strip()
 
-        # Filter by type
-        org_type = self.request.GET.get("type")
-        if org_type:
-            organizations = organizations.filter(organization_type=org_type)
-            context["selected_type"] = org_type
-
-        # Filter active/all (by end_date)
-        show_inactive = self.request.GET.get("inactive") == "1"
-        if not show_inactive:
-            today = timezone.now().date()
-            organizations = organizations.filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
-        context["show_inactive"] = show_inactive
-
-        # Get available types
-        context["org_types"] = (
-            OParlOrganization.objects.filter(body=body)
-            .values_list("organization_type", flat=True)
-            .distinct()
-            .order_by("organization_type")
+        # Subqueries for next/last meeting dates
+        next_meeting_sq = Subquery(
+            OParlMeeting.objects.filter(
+                organizations=OuterRef("pk"),
+                start__gte=now,
+                cancelled=False,
+            ).order_by("start").values("start")[:1]
+        )
+        last_meeting_sq = Subquery(
+            OParlMeeting.objects.filter(
+                organizations=OuterRef("pk"),
+                start__lt=now,
+            ).order_by("-start").values("start")[:1]
+        )
+        has_any_meeting = Exists(
+            OParlMeeting.objects.filter(organizations=OuterRef("pk"))
         )
 
-        # Annotate with member count and apply ranking (with activity check)
-        organizations = organizations.annotate(member_count=Count("memberships"))
+        # Base queryset with meeting annotations
+        organizations = OParlOrganization.objects.filter(body=body).annotate(
+            next_meeting=next_meeting_sq,
+            last_meeting=last_meeting_sq,
+            has_meetings=has_any_meeting,
+        )
+
+        # Search
+        if q:
+            organizations = organizations.filter(
+                Q(name__icontains=q) | Q(short_name__icontains=q)
+            )
+            context["search_query"] = q
+
+        # Tab filter: active vs all
+        if tab == "active":
+            organizations = organizations.filter(
+                Q(end_date__isnull=True) | Q(end_date__gte=today),
+                has_meetings=True,
+            )
+        context["tab"] = tab
+
+        # Tab counts (without search filter)
+        all_orgs = OParlOrganization.objects.filter(body=body).annotate(
+            has_meetings=has_any_meeting,
+        )
+        context["active_count"] = all_orgs.filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=today),
+            has_meetings=True,
+        ).count()
+        context["all_count"] = all_orgs.count()
+
+        # Apply ranking (with activity check)
         organizations = sort_organizations_by_ranking(organizations, include_activity=True)
 
         # Pagination
@@ -508,16 +538,33 @@ class RISPersonsView(WorkViewMixin, TemplateView):
 
         context["body"] = body
 
-        from insight_core.models import OParlPerson
+        from insight_core.models import OParlMembership, OParlOrganization, OParlPerson
 
         # Base queryset
         persons = OParlPerson.objects.filter(body=body)
+
+        # Council role annotation (like Insight portal)
+        today = timezone.now().date()
+        rat = OParlOrganization.objects.filter(body=body, name="Rat").first()
+        if rat:
+            council_role_sq = Subquery(
+                OParlMembership.objects.filter(
+                    person=OuterRef("pk"),
+                    organization=rat,
+                )
+                .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+                .values("role")[:1]
+            )
+            persons = persons.annotate(council_role=council_role_sq)
 
         # Search
         search = self.request.GET.get("q", "").strip()
         if search:
             persons = persons.filter(
-                Q(name__icontains=search) | Q(family_name__icontains=search) | Q(given_name__icontains=search)
+                Q(name__icontains=search)
+                | Q(family_name__icontains=search)
+                | Q(given_name__icontains=search)
+                | Q(email__icontains=search)
             )
             context["search_query"] = search
 
@@ -641,6 +688,55 @@ class RISMapDataView(WorkViewMixin, View):
                     )
 
         return JsonResponse({"type": "FeatureCollection", "features": features})
+
+
+class RISFilesView(WorkViewMixin, TemplateView):
+    """RIS files/documents list."""
+
+    template_name = "work/ris/files.html"
+    permission_required = "ris.view"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = "ris"
+        context["active_subnav"] = "ris_files"
+
+        body = self.organization.body
+        if not body:
+            context["no_body_linked"] = True
+            return context
+
+        context["body"] = body
+
+        from insight_core.models import OParlFile
+        from insight_core.views import _annotate_files_with_context
+
+        # Base queryset
+        files = OParlFile.objects.filter(body=body).select_related("paper").order_by("-file_date", "-created_at")
+
+        # Search
+        search = self.request.GET.get("q", "").strip()
+        if search:
+            files = files.filter(
+                Q(name__icontains=search)
+                | Q(file_name__icontains=search)
+                | Q(paper__name__icontains=search)
+            )
+            context["search_query"] = search
+
+        # Pagination
+        paginator = Paginator(files, 30)
+        page = self.request.GET.get("page", 1)
+        page_obj = paginator.get_page(page)
+
+        # Annotate with context (organization, meeting, agenda item)
+        _annotate_files_with_context(page_obj.object_list)
+
+        context["files"] = page_obj
+        context["paginator"] = paginator
+        context["total_count"] = paginator.count
+
+        return context
 
 
 class RISSearchView(WorkViewMixin, TemplateView):

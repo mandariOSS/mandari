@@ -30,7 +30,7 @@ class HomePage(Page):
     template = "marketing/landing.html"
     max_count = 1
     parent_page_types = ["wagtailcore.Page"]
-    subpage_types = ["MarketingPage", "ContactPage", "LegalPage", "blog.BlogIndexPage"]
+    subpage_types = ["MarketingPage", "ContactPage", "LegalPage", "blog.BlogIndexPage", "blog.ReleaseIndexPage"]
 
     class Meta:
         verbose_name = "Startseite"

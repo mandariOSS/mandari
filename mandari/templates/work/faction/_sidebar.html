@@ -1,0 +1,160 @@
+{# Sidebar partial — rendered via HTMX into #sidebar-container #}
+{# Variables: meeting, my_attendance, attendance_stats, attendances, can_edit, can_manage_attendance, #}
+{#            protocol_entries, available_members, organization, org_slug, membership #}
+{% load permission_tags %}
+
+{# RSVP card (before meeting starts) #}
+{% if my_attendance and meeting.status in 'draft,planned,invited' %}
+<div id="rsvp-card" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+    <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+        <i data-lucide="hand" class="w-4 h-4 text-primary-600"></i>
+        Meine Teilnahme
+    </h4>
+    {% if my_attendance.status == 'invited' %}
+    <div class="flex gap-2">
+        <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+                hx-vals='{"action": "respond", "status": "confirmed"}'
+                hx-target="#sidebar-container"
+                hx-swap="innerHTML"
+                class="flex-1 py-2 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 flex items-center justify-center gap-1">
+            <i data-lucide="check" class="w-4 h-4"></i> Zusagen
+        </button>
+        <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+                hx-vals='{"action": "respond", "status": "declined"}'
+                hx-target="#sidebar-container"
+                hx-swap="innerHTML"
+                class="flex-1 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100 flex items-center justify-center gap-1">
+            <i data-lucide="x" class="w-4 h-4"></i> Absagen
+        </button>
+    </div>
+    {% else %}
+    <div class="text-center">
+        <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm
+            {% if my_attendance.status == 'confirmed' %}bg-green-100 text-green-700
+            {% elif my_attendance.status == 'declined' %}bg-red-100 text-red-700
+            {% elif my_attendance.status == 'present' %}bg-green-100 text-green-700
+            {% else %}bg-gray-100 text-gray-700{% endif %}">
+            {{ my_attendance.get_status_display }}
+        </span>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{# Attendance list #}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+    <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <h4 class="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="users" class="w-4 h-4 text-primary-600"></i>
+            Teilnehmer ({{ attendances|length }})
+        </h4>
+        {% if can_manage_attendance %}
+        <button @click="$dispatch('open-add-attendee')"
+                class="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1">
+            <i data-lucide="user-plus" class="w-3 h-3"></i> Hinzufügen
+        </button>
+        {% endif %}
+    </div>
+    <div id="attendance-list" class="divide-y divide-gray-100 dark:divide-gray-700/50 max-h-80 overflow-y-auto">
+        {% include "work/faction/_attendance_list.html" %}
+    </div>
+</div>
+
+{# Quick stats #}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+    <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+        <i data-lucide="bar-chart-2" class="w-4 h-4 text-primary-600"></i>
+        Schnellinfos
+    </h4>
+    <div class="space-y-2 text-sm">
+        <div class="flex justify-between">
+            <span class="text-gray-500">TOPs</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ public_agenda_items|length }}{% if internal_agenda_items %} + {{ internal_agenda_items|length }} NÖ{% endif %}</span>
+        </div>
+        <div class="flex justify-between">
+            <span class="text-gray-500">Einträge</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ protocol_entry_count }}</span>
+        </div>
+        <div class="flex justify-between">
+            <span class="text-gray-500">Anwesend</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ attendance_stats.present }}/{{ attendances|length }}</span>
+        </div>
+        {% if attendance_stats.confirmed %}
+        <div class="flex justify-between">
+            <span class="text-gray-500">Zugesagt</span>
+            <span class="font-medium text-green-600">{{ attendance_stats.confirmed }}</span>
+        </div>
+        {% endif %}
+        {% if attendance_stats.declined %}
+        <div class="flex justify-between">
+            <span class="text-gray-500">Abgesagt</span>
+            <span class="font-medium text-red-600">{{ attendance_stats.declined }}</span>
+        </div>
+        {% endif %}
+        <div class="flex justify-between">
+            <span class="text-gray-500">Protokoll</span>
+            <span class="font-medium {% if meeting.protocol_approved %}text-green-600{% else %}text-amber-600{% endif %}">
+                {% if meeting.protocol_approved %}Genehmigt{% elif meeting.status == 'completed' %}Entwurf{% else %}—{% endif %}
+            </span>
+        </div>
+    </div>
+</div>
+
+{# Actions card #}
+{% if can_edit %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-2">
+    <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+        <i data-lucide="zap" class="w-4 h-4 text-primary-600"></i>
+        Aktionen
+    </h4>
+
+    {% if not meeting.invitation_sent and meeting.status in 'draft,planned' %}
+    <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "invite"}'
+          class="w-full">
+        {% csrf_token %}
+        <button type="submit" class="w-full py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 flex items-center justify-center gap-2">
+            <i data-lucide="send" class="w-4 h-4"></i>
+            Einladen
+        </button>
+    </form>
+    {% endif %}
+
+    {% if meeting.status == 'completed' and not meeting.protocol_approved %}
+    <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "approve_protocol"}'
+          hx-confirm="Protokoll endgültig genehmigen?"
+          class="w-full">
+        {% csrf_token %}
+        <button type="submit" class="w-full py-2 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 flex items-center justify-center gap-2">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            Protokoll genehmigen
+        </button>
+    </form>
+    {% endif %}
+
+    {% if meeting.status not in 'completed,cancelled' %}
+    <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "cancel"}'
+          hx-confirm="Sitzung wirklich absagen?"
+          class="w-full">
+        {% csrf_token %}
+        <button type="submit" class="w-full py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 flex items-center justify-center gap-2">
+            <i data-lucide="x-circle" class="w-4 h-4"></i>
+            Sitzung absagen
+        </button>
+    </form>
+    {% endif %}
+
+    <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "delete"}'
+          hx-confirm="Sitzung unwiderruflich löschen?"
+          class="w-full">
+        {% csrf_token %}
+        <button type="submit" class="w-full py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center justify-center gap-2">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            Löschen
+        </button>
+    </form>
+</div>
+{% endif %}

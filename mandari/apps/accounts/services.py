@@ -352,15 +352,26 @@ class SessionService:
     @classmethod
     def create_session(cls, user, request, session_key: str):
         """Record a new user session."""
-        return UserSession.objects.create(
-            user=user,
+        # Match expires_at to actual session expiry
+        expiry_age = request.session.get_expiry_age()
+        if expiry_age and expiry_age > 0:
+            expires_at = timezone.now() + timezone.timedelta(seconds=expiry_age)
+        else:
+            # Browser-close sessions: default to 24h for display purposes
+            expires_at = timezone.now() + timezone.timedelta(hours=24)
+
+        session, created = UserSession.objects.update_or_create(
             session_key=session_key,
-            device_name=TrustedDevice._get_device_name(request),
-            user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
-            ip_address=TrustedDevice._get_ip_address(request),
-            expires_at=timezone.now() + timezone.timedelta(days=14),
-            is_current=True,
+            defaults={
+                "user": user,
+                "device_name": TrustedDevice._get_device_name(request),
+                "user_agent": request.META.get("HTTP_USER_AGENT", "")[:500],
+                "ip_address": TrustedDevice._get_ip_address(request),
+                "expires_at": expires_at,
+                "is_current": True,
+            },
         )
+        return session
 
     @classmethod
     def revoke_session(cls, user, session_key: str) -> bool:

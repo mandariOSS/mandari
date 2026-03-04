@@ -5,7 +5,7 @@
 
 {% block header_title %}Fraktionssitzungen{% endblock %}
 {% block header_subtitle %}
-<p class="work-page-subtitle">{{ stats.total }} Sitzungen · {{ stats.upcoming }} anstehend</p>
+<p class="work-page-subtitle">{{ stats.total }} Sitzungen &middot; {{ stats.upcoming }} anstehend</p>
 {% endblock %}
 
 {% block header_actions %}
@@ -18,63 +18,65 @@
     </a>
     {% endif %}
     {% if membership|has_perm:"faction.create" %}
-    <a href="{% url 'work:faction_create' org_slug=organization.slug %}"
-       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+    <button type="button" @click="$dispatch('open-create-modal')"
+       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
         <i data-lucide="plus" class="w-4 h-4"></i>
         Neue Sitzung
-    </a>
+    </button>
     {% endif %}
 </div>
 {% endblock %}
 
 {% block work_content %}
+<div x-data="{ showCreateModal: false }" @open-create-modal.window="showCreateModal = true">
+
 <!-- Quick Stats -->
-<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+<div class="fade-up grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-center gap-3">
-            <div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                <i data-lucide="calendar-clock" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+            <div class="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <i data-lucide="calendar-clock" class="w-5 h-5 text-blue-500 dark:text-blue-400"></i>
             </div>
             <div>
                 <div class="text-2xl font-bold text-gray-900 dark:text-white">{{ stats.upcoming }}</div>
-                <div class="text-sm text-gray-500">Anstehend</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Anstehend</div>
             </div>
         </div>
     </div>
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-center gap-3">
-            <div class="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                <i data-lucide="check-circle" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
+            <div class="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                <i data-lucide="check-circle" class="w-5 h-5 text-green-500 dark:text-green-400"></i>
             </div>
             <div>
                 <div class="text-2xl font-bold text-gray-900 dark:text-white">{{ stats.total }}</div>
-                <div class="text-sm text-gray-500">Gesamt</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Gesamt</div>
             </div>
         </div>
     </div>
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-center gap-3">
-            <div class="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
-                <i data-lucide="file-text" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+            <div class="p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                <i data-lucide="file-text" class="w-5 h-5 text-amber-500 dark:text-amber-400"></i>
             </div>
             <div>
                 <div class="text-2xl font-bold text-gray-900 dark:text-white">{{ stats.pending_protocol }}</div>
-                <div class="text-sm text-gray-500">Offene Protokolle</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Offene Protokolle</div>
             </div>
         </div>
     </div>
 </div>
 
 <!-- Filters -->
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
+<div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
     <form method="get" class="flex flex-wrap items-center gap-4">
         <!-- Search -->
         <div class="flex-1 min-w-[200px]">
             <div class="relative">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
                 <input type="text" name="q" value="{{ search_query|default:'' }}"
                        placeholder="Sitzung suchen..."
-                       class="w-full px-4 py-2.5 pl-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
-                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                       class="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             </div>
         </div>
 
@@ -96,7 +98,7 @@
 
         <!-- Status Filter -->
         <select name="status" onchange="this.form.submit()"
-                class="px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <option value="">Alle Status</option>
             {% for value, label in status_choices %}
             <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
@@ -106,89 +108,72 @@
 </div>
 
 <!-- Meetings List -->
-<div class="space-y-4">
-    {% for meeting in meetings %}
-    <a href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=meeting.id %}"
-       class="block bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
-        <div class="flex items-start justify-between">
-            <div class="flex items-start gap-4">
-                <!-- Date Badge -->
-                <div class="flex-shrink-0 w-14 text-center">
-                    <div class="text-3xl font-bold text-gray-900 dark:text-white">{{ meeting.start|date:"d" }}</div>
-                    <div class="text-xs text-gray-500 uppercase">{{ meeting.start|date:"M" }}</div>
-                </div>
+<div class="fade-up d2">
+    {% if meetings %}
+    <div class="item-list bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">
+        {% for meeting in meetings %}
+        <a href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=meeting.id %}"
+           class="group flex items-center gap-4 px-4 py-3.5 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
+            <!-- Date Badge -->
+            <div class="flex flex-col items-center justify-center flex-shrink-0 w-12 h-12 rounded-lg bg-purple-50 dark:bg-purple-900/20 leading-none">
+                <span class="text-lg font-extrabold text-purple-600 dark:text-purple-400">{{ meeting.start|date:"d" }}</span>
+                <span class="text-[10px] font-bold text-purple-500 dark:text-purple-400 uppercase tracking-wide mt-0.5">{{ meeting.start|date:"M" }}</span>
+            </div>
 
-                <div>
-                    <div class="flex items-center gap-2">
-                        <h3 class="font-medium text-gray-900 dark:text-white">{{ meeting.title }}</h3>
-                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
-                            {% if meeting.status == 'draft' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
-                            {% elif meeting.status == 'planned' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
-                            {% elif meeting.status == 'invited' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
-                            {% elif meeting.status == 'ongoing' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
-                            {% elif meeting.status == 'completed' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
-                            {% else %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300{% endif %}">
-                            {{ meeting.get_status_display }}
-                        </span>
-                    </div>
-                    <div class="flex items-center gap-4 mt-1 text-sm text-gray-500">
-                        <span class="flex items-center gap-1">
-                            <i data-lucide="clock" class="w-4 h-4"></i>
-                            {{ meeting.start|time:"H:i" }} Uhr
-                        </span>
-                        {% if meeting.location %}
-                        <span class="flex items-center gap-1">
-                            <i data-lucide="map-pin" class="w-4 h-4"></i>
-                            {{ meeting.location }}
-                        </span>
-                        {% endif %}
-                        {% if meeting.is_virtual %}
-                        <span class="flex items-center gap-1 text-blue-500">
-                            <i data-lucide="video" class="w-4 h-4"></i>
-                            Online
-                        </span>
-                        {% endif %}
-                    </div>
+            <!-- Content -->
+            <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">{{ meeting.title }}</span>
+                    <span class="flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold
+                        {% if meeting.status == 'draft' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
+                        {% elif meeting.status == 'planned' %}bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300
+                        {% elif meeting.status == 'invited' %}bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300
+                        {% elif meeting.status == 'ongoing' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300
+                        {% elif meeting.status == 'completed' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
+                        {% else %}bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300{% endif %}">
+                        {{ meeting.get_status_display }}
+                    </span>
+                    {% if meeting.status == 'completed' and not meeting.protocol_approved %}
+                    <span class="flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300">
+                        Protokoll offen
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2.5 mt-0.5">
+                    <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> {{ meeting.start|time:"H:i" }}</span>
+                    {% if meeting.location %}
+                    <span class="flex items-center gap-1 truncate"><i data-lucide="map-pin" class="w-3 h-3 flex-shrink-0"></i> {{ meeting.location|truncatechars:30 }}</span>
+                    {% endif %}
+                    {% if meeting.is_virtual %}
+                    <span class="flex items-center gap-1 text-blue-500"><i data-lucide="video" class="w-3 h-3"></i> Online</span>
+                    {% endif %}
                     {% if meeting.attendee_count > 0 %}
-                    <p class="mt-1 text-sm text-gray-500">
-                        {{ meeting.attendee_count }} Teilnehmer bestätigt
-                    </p>
+                    <span class="flex items-center gap-1"><i data-lucide="users" class="w-3 h-3"></i> {{ meeting.attendee_count }}</span>
                     {% endif %}
                 </div>
             </div>
 
-            <div class="flex items-center gap-2">
-                {% if meeting.status == 'completed' and not meeting.protocol_approved %}
-                <span class="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs rounded-full">
-                    Protokoll offen
-                </span>
-                {% endif %}
-                <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400"></i>
-            </div>
-        </div>
-    </a>
-    {% empty %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
-        <div class="w-16 h-16 mx-auto mb-4 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center">
-            <i data-lucide="users" class="w-8 h-8 text-purple-500 dark:text-purple-400"></i>
-        </div>
-        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Fraktionssitzungen</h3>
-        <p class="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-400 transition-colors flex-shrink-0"></i>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
+        <p class="text-sm text-gray-400 dark:text-gray-500 mb-1">
             {% if search_query or selected_status %}
             Keine Sitzungen mit diesen Filterkriterien gefunden.
             {% else %}
-            Planen Sie Ihre erste Fraktionssitzung, um mit der Zusammenarbeit zu beginnen.
+            Noch keine Fraktionssitzungen vorhanden.
             {% endif %}
         </p>
-        {% if not search_query and not selected_status %}
-        <a href="{% url 'work:faction_create' org_slug=organization.slug %}"
-           class="inline-flex items-center gap-2 mt-6 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
-            <i data-lucide="plus" class="w-4 h-4"></i>
-            Sitzung planen
-        </a>
+        {% if not search_query and not selected_status and membership|has_perm:"faction.create" %}
+        <button type="button" @click="showCreateModal = true"
+           class="inline-flex items-center gap-1.5 mt-3 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Sitzung planen
+        </button>
         {% endif %}
     </div>
-    {% endfor %}
+    {% endif %}
 </div>
 
 <!-- Pagination -->
@@ -215,4 +200,99 @@
     </nav>
 </div>
 {% endif %}
+
+{# ===== Create Meeting Modal ===== #}
+{% if membership|has_perm:"faction.create" %}
+<div x-show="showCreateModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition>
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+        <div class="fixed inset-0 bg-black/50" @click="showCreateModal = false"></div>
+        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto" @click.stop>
+            <form method="post">
+                {% csrf_token %}
+
+                <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Neue Fraktionssitzung</h3>
+                    <button type="button" @click="showCreateModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+
+                <div class="p-4 space-y-4" x-data="{ isVirtual: false }">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Titel <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" name="title" required
+                               class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm"
+                               placeholder="z.B. Fraktionssitzung März 2026">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Datum <span class="text-red-500">*</span>
+                            </label>
+                            <input type="date" name="start_date" required
+                                   class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Uhrzeit <span class="text-red-500">*</span>
+                            </label>
+                            <input type="time" name="start_time" required value="18:00"
+                                   class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ort</label>
+                        <input type="text" name="location"
+                               class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm"
+                               placeholder="z.B. Fraktionsbüro, Rathaus Raum 203">
+                    </div>
+
+                    <div class="space-y-3">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" name="is_virtual" x-model="isVirtual"
+                                   class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Online-Teilnahme</span>
+                        </label>
+                        <div x-show="isVirtual" x-transition>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Video-Link</label>
+                            <input type="url" name="video_link"
+                                   class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm"
+                                   placeholder="https://meet.example.com/...">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                        <textarea name="description" rows="3"
+                                  class="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm"
+                                  placeholder="Optionale Beschreibung oder Hinweise..."></textarea>
+                    </div>
+                </div>
+
+                <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                    <button type="button" @click="showCreateModal = false"
+                            class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+                        Abbrechen
+                    </button>
+                    <button type="submit" name="save_as" value="draft"
+                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+                        Als Entwurf
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 text-sm font-medium text-white bg-primary-600 shadow-sm rounded-lg hover:bg-primary-700 flex items-center gap-2">
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                        Erstellen
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+</div>
 {% endblock %}

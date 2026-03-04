@@ -5,6 +5,7 @@ module.exports = {
     "./insight_core/templates/**/*.html",
     "./insight_content/templates/**/*.html",
     "./static/js/**/*.js",
+    "./frontend/**/*.ts",
   ],
   darkMode: 'class',
   theme: {
@@ -29,5 +30,20 @@ module.exports = {
       },
     },
   },
+  safelist: [
+    // Dynamic label colors used in task cards and panel
+    {
+      pattern: /bg-(red|orange|amber|green|teal|blue|indigo|purple|pink|gray)-(100|500|900)/,
+      variants: ['dark'],
+    },
+    {
+      pattern: /text-(red|orange|amber|green|teal|blue|indigo|purple|pink|gray)-(300|700)/,
+      variants: ['dark'],
+    },
+    {
+      pattern: /ring-(red|orange|amber|green|teal|blue|indigo|purple|pink|gray)-(200|700)/,
+      variants: ['dark'],
+    },
+  ],
   plugins: [],
 }

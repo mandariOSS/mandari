@@ -1,0 +1,23 @@
+{# Usage: {% include "components/person_avatar.html" with person=person size="sm" %} #}
+{% with photo_url=person.photo_url %}
+<div class="flex-shrink-0 {% if size == 'lg' %}w-20 h-20{% elif size == 'md' %}w-12 h-12{% else %}w-8 h-8{% endif %} rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700"
+     {% if photo_url %}x-data="{ imgError: false }"{% endif %}>
+    {% if photo_url %}
+    <img x-show="!imgError"
+         @error="imgError = true"
+         src="{{ photo_url }}"
+         alt="{{ person.display_name }}"
+         class="w-full h-full object-cover"
+         loading="lazy"
+         referrerpolicy="no-referrer">
+    <div x-show="imgError" x-cloak
+         class="w-full h-full flex items-center justify-center {% if size == 'lg' %}text-xl{% elif size == 'md' %}text-sm{% else %}text-xs{% endif %} font-semibold text-gray-400 dark:text-gray-500">
+        {{ person.initials }}
+    </div>
+    {% else %}
+    <div class="w-full h-full flex items-center justify-center {% if size == 'lg' %}text-xl{% elif size == 'md' %}text-sm{% else %}text-xs{% endif %} font-semibold text-gray-400 dark:text-gray-500">
+        {{ person.initials }}
+    </div>
+    {% endif %}
+</div>
+{% endwith %}

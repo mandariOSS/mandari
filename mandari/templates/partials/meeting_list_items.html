@@ -47,7 +47,10 @@
                     {{ meeting.location_name|default:"—" }}
                 </td>
                 <td class="px-2 py-3">
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                    <div class="flex items-center gap-1">
+                        {% include "components/bookmark_star.html" with entity_type="meeting" entity_id=meeting.id size="sm" %}
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                    </div>
                 </td>
             </tr>
             {% endfor %}

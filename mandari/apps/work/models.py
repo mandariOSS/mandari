@@ -37,6 +37,9 @@ from apps.work.notifications.models import (
     NotificationType,
 )
 
+# Organization
+from apps.work.organization.models import DataExport, MemberAbsence, MemberChangeRequest
+
 # Support
 from apps.work.support.models import (
     SupportTicket,
@@ -45,7 +48,14 @@ from apps.work.support.models import (
 )
 
 # Tasks
-from apps.work.tasks.models import Task, TaskComment
+from apps.work.tasks.models import (
+    Task,
+    TaskActivity,
+    TaskAttachment,
+    TaskChecklistItem,
+    TaskComment,
+    TaskLabel,
+)
 
 __all__ = [
     # Meetings
@@ -76,4 +86,8 @@ __all__ = [
     "Notification",
     "NotificationPreference",
     "NotificationType",
+    # Organization
+    "MemberChangeRequest",
+    "MemberAbsence",
+    "DataExport",
 ]

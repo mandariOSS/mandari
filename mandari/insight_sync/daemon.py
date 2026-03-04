@@ -169,19 +169,35 @@ def _daemon_loop():
 
 
 def _run_sync(*, full: bool, max_concurrent: int):
-    """Führt einen Sync mit Logging aus."""
+    """Führt einen Sync mit Logging und Timeout aus."""
+    import concurrent.futures
+
+    # Max 10 Minuten für Incremental, 30 für Full — danach abbrechen
+    timeout = 1800 if full else 600
+
     try:
         from .tasks import run_sync_with_logging
 
-        run_sync_with_logging(
-            full=full,
-            triggered_by="daemon",
-            max_concurrent=max_concurrent,
-        )
+        # Sync in einem separaten Thread mit Timeout ausführen
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                run_sync_with_logging,
+                full=full,
+                triggered_by="daemon",
+                max_concurrent=max_concurrent,
+            )
+            try:
+                future.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                logger.error(
+                    f"Sync-Timeout nach {timeout}s — API möglicherweise nicht erreichbar. "
+                    f"Nächster Versuch beim nächsten Intervall."
+                )
     except ImportError as e:
         logger.error(
             f"Ingestor nicht verfügbar: {e} — "
-            f"Sync übersprungen. Manueller Sync via Admin-Button ist weiterhin möglich."
+            f"Fehlende Abhängigkeiten? Installiere: pip install sqlalchemy asyncpg pydantic-settings. "
+            f"Sync übersprungen."
         )
     except Exception:
         logger.exception("Sync fehlgeschlagen")

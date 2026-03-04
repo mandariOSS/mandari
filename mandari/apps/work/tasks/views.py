@@ -5,33 +5,64 @@ Task views for the Work module.
 Provides Kanban-style task management with:
 - 3-column board (TODO, In Progress, Done)
 - Drag & drop reordering
-- Quick task creation
-- Priority and due date management
+- Slide-over panel with auto-save + explicit save
+- Checklists, attachments, labels, activity feed
 """
 
 import json
 import logging
+import mimetypes
 
 from django.contrib import messages
-from django.db.models import Q
-from django.http import JsonResponse
+from django.db.models import Q, Prefetch
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
+from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
 
-from .forms import QuickTaskForm, TaskCommentForm, TaskForm
-from .models import Task, TaskShare
+from .activity import log_activity, log_field_change
+from .forms import (
+    QuickTaskForm,
+    TaskAttachmentForm,
+    TaskChecklistItemForm,
+    TaskLabelForm,
+    TaskPanelForm,
+    TaskForm,
+)
+from .models import Task, TaskActivity, TaskAttachment, TaskChecklistItem, TaskLabel, TaskShare
+
+logger = logging.getLogger(__name__)
+
+
+def _task_base_queryset():
+    """Base queryset with standard select_related."""
+    return Task.objects.select_related(
+        "assigned_to__user",
+        "created_by__user",
+        "related_meeting",
+        "related_motion",
+        "related_faction_meeting",
+    )
+
+
+def _task_panel_queryset():
+    """Queryset with all relations needed for the panel."""
+    return _task_base_queryset().prefetch_related(
+        "labels",
+        "checklist_items",
+        "attachments",
+        Prefetch(
+            "activities",
+            queryset=TaskActivity.objects.select_related("actor__user").order_by("created_at"),
+        ),
+    )
 
 
 class TaskListView(WorkViewMixin, TemplateView):
-    """
-    Kanban board view for tasks.
-
-    Displays tasks in three columns: TODO, In Progress, Done
-    with drag & drop support.
-    """
+    """Kanban board view for tasks."""
 
     template_name = "work/tasks/list.html"
     permission_required = "tasks.view"
@@ -41,30 +72,23 @@ class TaskListView(WorkViewMixin, TemplateView):
         context["active_nav"] = "tasks"
 
         # Filter parameters
-        view_mode = self.request.GET.get("view", "my")  # my, all
+        view_mode = self.request.GET.get("view", "my")
         show_completed = self.request.GET.get("completed", "0") == "1"
         search = self.request.GET.get("q", "").strip()
         priority_filter = self.request.GET.get("priority", "")
 
         # Base queryset
-        tasks = Task.objects.filter(organization=self.organization).select_related(
-            "assigned_to__user",
-            "created_by__user",
-            "related_meeting",
-            "related_motion",
-            "related_faction_meeting",
-        )
+        tasks = _task_base_queryset().filter(
+            organization=self.organization
+        ).prefetch_related("labels", "checklist_items", "attachments")
 
         # Apply filters based on visibility
         if view_mode == "my":
-            # My tasks: tasks I created, am assigned to, or are shared with me
             tasks = tasks.filter(
                 Q(assigned_to=self.membership) | Q(created_by=self.membership) | Q(shares__membership=self.membership)
             ).distinct()
             context["view_mode"] = "my"
         else:
-            # All tasks: filter by visibility
-            # Show: organization-wide tasks, tasks shared with me, and my own tasks
             tasks = tasks.filter(
                 Q(visibility="organization")
                 | Q(created_by=self.membership)
@@ -113,21 +137,43 @@ class TaskListView(WorkViewMixin, TemplateView):
 
         context["priority_choices"] = Task.PRIORITY_CHOICES
 
+        # Auto-open panel via URL param
+        context["auto_open_task_id"] = self.request.GET.get("open", "")
+
         return context
 
 
 class TaskBoardAPIView(WorkViewMixin, View):
     """API endpoint for Kanban board operations."""
 
-    permission_required = "tasks.manage"
+    permission_required = "tasks.view"
+
+    def _can_modify_task(self, task):
+        """Prüft ob der User die Aufgabe ändern darf."""
+        return (
+            task.created_by == self.membership
+            or task.assigned_to == self.membership
+            or self.membership.has_permission("tasks.manage")
+        )
 
     def post(self, request, *args, **kwargs):
-        """Handle various board actions."""
+        content_type = request.content_type or ""
+        if "application/json" in content_type:
+            try:
+                data = json.loads(request.body)
+                action = data.get("action", "move")
+            except json.JSONDecodeError:
+                return JsonResponse({"error": "Ungültiges JSON."}, status=400)
+
+            if action == "move":
+                return self._move_task(request, data=data)
+            return JsonResponse({"error": "Unknown action"}, status=400)
+
         action = request.POST.get("action")
 
-        if action == "move":
-            return self._move_task(request)
-        elif action == "quick_add":
+        if action == "quick_add":
+            if not self.membership.has_permission("tasks.create"):
+                return JsonResponse({"error": "Keine Berechtigung."}, status=403)
             return self._quick_add(request)
         elif action == "update_status":
             return self._update_status(request)
@@ -136,21 +182,30 @@ class TaskBoardAPIView(WorkViewMixin, View):
 
         return JsonResponse({"error": "Unknown action"}, status=400)
 
-    def _move_task(self, request):
-        """Move task to a different status column and position."""
+    def _move_task(self, request, data=None):
         try:
-            data = json.loads(request.body)
+            if data is None:
+                data = json.loads(request.body)
+
             task_id = data.get("task_id")
             new_status = data.get("status")
             new_position = data.get("position", 0)
 
+            if not task_id or not new_status:
+                return JsonResponse({"error": "task_id und status erforderlich."}, status=400)
+
+            if new_status not in ("todo", "in_progress", "done"):
+                return JsonResponse({"error": "Ungültiger Status."}, status=400)
+
             task = get_object_or_404(Task, id=task_id, organization=self.organization)
+
+            if not self._can_modify_task(task):
+                return JsonResponse({"error": "Keine Berechtigung."}, status=403)
 
             old_status = task.status
             task.status = new_status
             task.position = new_position
 
-            # If moved to done, mark as completed
             if new_status == "done" and old_status != "done":
                 task.is_completed = True
                 task.completed_at = timezone.now()
@@ -160,18 +215,37 @@ class TaskBoardAPIView(WorkViewMixin, View):
 
             task.save()
 
-            # Reorder other tasks in the same column
-            tasks_in_column = (
+            # Log activity for status changes
+            if old_status != new_status:
+                old_label = dict(Task.STATUS_CHOICES).get(old_status, old_status)
+                new_label = dict(Task.STATUS_CHOICES).get(new_status, new_status)
+                if new_status == "done":
+                    log_activity(task, self.membership, "completed")
+                elif old_status == "done":
+                    log_activity(task, self.membership, "reopened")
+                else:
+                    log_field_change(task, self.membership, "status", old_label, new_label, "status_changed")
+
+            # Reorder tasks in the new column
+            other_tasks = list(
                 Task.objects.filter(organization=self.organization, status=new_status)
                 .exclude(id=task_id)
                 .order_by("position")
             )
 
-            for idx, t in enumerate(tasks_in_column):
-                new_pos = idx if idx < new_position else idx + 1
-                if t.position != new_pos:
-                    t.position = new_pos
-                    t.save(update_fields=["position"])
+            for idx, t in enumerate(other_tasks):
+                correct_pos = idx if idx < new_position else idx + 1
+                if t.position != correct_pos:
+                    Task.objects.filter(id=t.id).update(position=correct_pos)
+
+            if old_status != new_status:
+                old_column_tasks = list(
+                    Task.objects.filter(organization=self.organization, status=old_status)
+                    .order_by("position")
+                )
+                for idx, t in enumerate(old_column_tasks):
+                    if t.position != idx:
+                        Task.objects.filter(id=t.id).update(position=idx)
 
             return JsonResponse(
                 {
@@ -182,12 +256,11 @@ class TaskBoardAPIView(WorkViewMixin, View):
                 }
             )
 
-        except (json.JSONDecodeError, KeyError) as e:
-            logging.getLogger(__name__).warning(f"[Tasks] Invalid request: {e}")
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logger.warning(f"[Tasks] Invalid move request: {e}")
             return JsonResponse({"error": "Ungültige Anfrage."}, status=400)
 
     def _quick_add(self, request):
-        """Quick add a task from the board."""
         title = request.POST.get("title", "").strip()
         status = request.POST.get("status", "todo")
         priority = request.POST.get("priority", "medium")
@@ -195,7 +268,6 @@ class TaskBoardAPIView(WorkViewMixin, View):
         if not title:
             return JsonResponse({"error": "Title required"}, status=400)
 
-        # Get max position in the column
         max_pos = Task.objects.filter(organization=self.organization, status=status).count()
 
         task = Task.objects.create(
@@ -207,6 +279,21 @@ class TaskBoardAPIView(WorkViewMixin, View):
             created_by=self.membership,
             assigned_to=self.membership,
         )
+
+        log_activity(task, self.membership, "created")
+
+        if self.is_htmx:
+            context = {"task": task, "organization": self.organization}
+            card_html = render_to_string("work/tasks/_card.html", context, request=request)
+            counts = {
+                "todo_count": Task.objects.filter(organization=self.organization, status="todo").count(),
+                "in_progress_count": Task.objects.filter(organization=self.organization, status="in_progress").count(),
+                "done_count": Task.objects.filter(organization=self.organization, status="done").count(),
+            }
+            counts_html = render_to_string("work/tasks/_column_counts_oob.html", counts, request=request)
+            response = HttpResponse(card_html + counts_html)
+            response["HX-Trigger"] = json.dumps({"show-toast": {"message": "Aufgabe erstellt.", "type": "success"}})
+            return response
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse(
@@ -225,11 +312,14 @@ class TaskBoardAPIView(WorkViewMixin, View):
         return redirect("work:tasks", org_slug=self.organization.slug)
 
     def _update_status(self, request):
-        """Update task status."""
         task_id = request.POST.get("task_id")
         new_status = request.POST.get("status")
 
         task = get_object_or_404(Task, id=task_id, organization=self.organization)
+
+        if not self._can_modify_task(task):
+            return JsonResponse({"error": "Keine Berechtigung."}, status=403)
+
         old_status = task.status
         task.status = new_status
 
@@ -245,9 +335,11 @@ class TaskBoardAPIView(WorkViewMixin, View):
         return JsonResponse({"success": True})
 
     def _toggle_complete(self, request):
-        """Toggle task completion."""
         task_id = request.POST.get("task_id")
         task = get_object_or_404(Task, id=task_id, organization=self.organization)
+
+        if not self._can_modify_task(task):
+            return JsonResponse({"error": "Keine Berechtigung."}, status=403)
 
         if task.is_completed:
             task.is_completed = False
@@ -280,7 +372,6 @@ class TaskCreateView(WorkViewMixin, TemplateView):
         context["active_nav"] = "tasks"
         context["form"] = TaskForm(organization=self.organization)
 
-        # Pre-fill from protocol entry if provided
         from_protocol = self.request.GET.get("from_protocol")
         if from_protocol:
             from apps.work.faction.models import FactionProtocolEntry
@@ -311,10 +402,10 @@ class TaskCreateView(WorkViewMixin, TemplateView):
             if not task.assigned_to:
                 task.assigned_to = self.membership
 
-            # Set position
             task.position = Task.objects.filter(organization=self.organization, status=task.status).count()
 
             task.save()
+            log_activity(task, self.membership, "created")
 
             messages.success(request, "Aufgabe erfolgreich erstellt.")
             return redirect("work:tasks", org_slug=self.organization.slug)
@@ -322,101 +413,6 @@ class TaskCreateView(WorkViewMixin, TemplateView):
         context = self.get_context_data()
         context["form"] = form
         return self.render_to_response(context)
-
-
-class TaskDetailView(WorkViewMixin, TemplateView):
-    """Detail view of a task with comments."""
-
-    template_name = "work/tasks/detail.html"
-    permission_required = "tasks.view"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["active_nav"] = "tasks"
-
-        task = get_object_or_404(
-            Task.objects.select_related(
-                "assigned_to__user",
-                "created_by__user",
-                "related_meeting",
-                "related_motion",
-                "related_faction_meeting",
-                "related_agenda_item",
-            ),
-            id=kwargs.get("task_id"),
-            organization=self.organization,
-        )
-
-        context["task"] = task
-        context["comments"] = task.comments.select_related("author__user").order_by("created_at")
-        context["comment_form"] = TaskCommentForm()
-        context["form"] = TaskForm(instance=task, organization=self.organization)
-
-        # Can edit
-        context["can_edit"] = (
-            task.created_by == self.membership
-            or task.assigned_to == self.membership
-            or self.membership.has_permission("tasks.manage")
-        )
-
-        # Members for sharing
-        context["members"] = self.organization.memberships.filter(is_active=True).select_related("user")
-
-        # Get IDs of members task is shared with
-        context["shared_member_ids"] = list(task.shares.values_list("membership_id", flat=True))
-
-        return context
-
-    def post(self, request, *args, **kwargs):
-        task = get_object_or_404(Task, id=kwargs.get("task_id"), organization=self.organization)
-
-        action = request.POST.get("action")
-
-        if action == "update":
-            form = TaskForm(request.POST, instance=task, organization=self.organization)
-            if form.is_valid():
-                updated_task = form.save(commit=False)
-
-                # Handle status -> completion sync
-                if updated_task.status == "done" and not updated_task.is_completed:
-                    updated_task.is_completed = True
-                    updated_task.completed_at = timezone.now()
-                elif updated_task.status != "done" and updated_task.is_completed:
-                    updated_task.is_completed = False
-                    updated_task.completed_at = None
-
-                updated_task.save()
-                messages.success(request, "Aufgabe aktualisiert.")
-            else:
-                messages.error(request, "Fehler beim Speichern.")
-
-        elif action == "comment":
-            comment_form = TaskCommentForm(request.POST)
-            if comment_form.is_valid():
-                comment = comment_form.save(commit=False)
-                comment.task = task
-                comment.author = self.membership
-                comment.save()
-                messages.success(request, "Kommentar hinzugefügt.")
-
-        elif action == "delete":
-            task.delete()
-            messages.success(request, "Aufgabe gelöscht.")
-            return redirect("work:tasks", org_slug=self.organization.slug)
-
-        elif action == "toggle_complete":
-            if task.is_completed:
-                task.is_completed = False
-                task.completed_at = None
-                task.status = "in_progress"
-            else:
-                task.is_completed = True
-                task.completed_at = timezone.now()
-                task.status = "done"
-            task.save()
-            messages.success(request, "Status aktualisiert.")
-
-        return redirect("work:task_detail", org_slug=self.organization.slug, task_id=task.id)
 
 
 class TaskShareView(WorkViewMixin, View):
@@ -427,7 +423,6 @@ class TaskShareView(WorkViewMixin, View):
     def post(self, request, *args, **kwargs):
         task = get_object_or_404(Task, id=kwargs.get("task_id"), organization=self.organization)
 
-        # Check permission
         can_edit = (
             task.created_by == self.membership
             or task.assigned_to == self.membership
@@ -435,32 +430,500 @@ class TaskShareView(WorkViewMixin, View):
         )
         if not can_edit:
             messages.error(request, "Keine Berechtigung.")
-            return redirect("work:task_detail", org_slug=self.organization.slug, task_id=task.id)
+            return redirect("work:tasks", org_slug=self.organization.slug)
 
-        # Update visibility
         new_visibility = request.POST.get("visibility", "private")
         if new_visibility in ["private", "shared", "organization"]:
             task.visibility = new_visibility
             task.save(update_fields=["visibility"])
 
-        # Handle shares if visibility is "shared"
         if new_visibility == "shared":
             share_with_ids = request.POST.getlist("share_with[]")
-
-            # Remove existing shares that are not in the new list
             TaskShare.objects.filter(task=task).exclude(membership_id__in=share_with_ids).delete()
-
-            # Add new shares
             for member_id in share_with_ids:
                 TaskShare.objects.get_or_create(
                     task=task, membership_id=member_id, defaults={"shared_by": self.membership}
                 )
         else:
-            # If not shared, remove all shares
             TaskShare.objects.filter(task=task).delete()
 
         messages.success(request, "Sichtbarkeit aktualisiert.")
-        return redirect("work:task_detail", org_slug=self.organization.slug, task_id=task.id)
+        return redirect("work:tasks", org_slug=self.organization.slug)
+
+
+class TaskPanelView(WorkViewMixin, TemplateView):
+    """Panel view for a task (HTMX fragment). Inline-editable when can_edit."""
+
+    template_name = "work/tasks/_panel.html"
+    permission_required = "tasks.view"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        task = get_object_or_404(
+            _task_panel_queryset(),
+            id=kwargs.get("task_id"),
+            organization=self.organization,
+        )
+        context["task"] = task
+        can_edit = (
+            task.created_by == self.membership
+            or task.assigned_to == self.membership
+            or self.membership.has_permission("tasks.manage")
+        )
+        context["can_edit"] = can_edit
+        if can_edit:
+            context["form"] = TaskPanelForm(instance=task, organization=self.organization)
+        context["checklist_items"] = task.checklist_items.all()
+        context["attachments"] = task.attachments.all()
+        context["activities"] = task.activities.all()
+        context["available_labels"] = TaskLabel.objects.filter(organization=self.organization)
+        context["task_label_ids"] = list(task.labels.values_list("id", flat=True))
+        context["checklist_form"] = TaskChecklistItemForm()
+        context["shared_members"] = TaskShare.objects.filter(task=task).select_related("membership__user")
+        return context
+
+
+class TaskPanelActionView(WorkViewMixin, View):
+    """Central POST handler for all panel actions."""
+
+    permission_required = "tasks.view"
+
+    def _get_column_counts(self):
+        qs = Task.objects.filter(organization=self.organization)
+        return {
+            "todo_count": qs.filter(status="todo").count(),
+            "in_progress_count": qs.filter(status="in_progress").count(),
+            "done_count": qs.filter(status="done").count(),
+        }
+
+    def _panel_context(self, task):
+        """Build full panel context."""
+        can_edit = (
+            task.created_by == self.membership
+            or task.assigned_to == self.membership
+            or self.membership.has_permission("tasks.manage")
+        )
+        context = {
+            "task": task,
+            "can_edit": can_edit,
+            "organization": self.organization,
+            "membership": self.membership,
+            "checklist_items": task.checklist_items.all(),
+            "attachments": task.attachments.all(),
+            "activities": task.activities.select_related("actor__user").order_by("created_at"),
+            "available_labels": TaskLabel.objects.filter(organization=self.organization),
+            "task_label_ids": list(task.labels.values_list("id", flat=True)),
+            "checklist_form": TaskChecklistItemForm(),
+            "shared_members": TaskShare.objects.filter(task=task).select_related("membership__user"),
+        }
+        if can_edit:
+            context["form"] = TaskPanelForm(instance=task, organization=self.organization)
+        return context
+
+    def _render_panel(self, task):
+        context = self._panel_context(task)
+        return render_to_string("work/tasks/_panel.html", context, request=self.request)
+
+    def _render_oob_card(self, task):
+        # Reload with prefetch for card rendering
+        task = _task_base_queryset().prefetch_related("labels", "checklist_items", "attachments").get(id=task.id)
+        context = {"task": task, "organization": self.organization}
+        return render_to_string("work/tasks/_card_oob.html", context, request=self.request)
+
+    def _render_oob_counts(self):
+        context = self._get_column_counts()
+        return render_to_string("work/tasks/_column_counts_oob.html", context, request=self.request)
+
+    def _render_checklist(self, task):
+        context = {
+            "task": task,
+            "checklist_items": task.checklist_items.all(),
+            "checklist_form": TaskChecklistItemForm(),
+            "can_edit": True,
+            "organization": self.organization,
+        }
+        return render_to_string("work/tasks/_panel_checklist.html", context, request=self.request)
+
+    def _render_attachments(self, task):
+        context = {
+            "task": task,
+            "attachments": task.attachments.all(),
+            "can_edit": True,
+            "organization": self.organization,
+        }
+        return render_to_string("work/tasks/_panel_attachments.html", context, request=self.request)
+
+    def _render_labels(self, task):
+        context = {
+            "task": task,
+            "available_labels": TaskLabel.objects.filter(organization=self.organization),
+            "task_label_ids": list(task.labels.values_list("id", flat=True)),
+            "can_edit": True,
+            "organization": self.organization,
+        }
+        return render_to_string("work/tasks/_panel_labels.html", context, request=self.request)
+
+    def _render_activity(self, task):
+        context = {
+            "task": task,
+            "activities": task.activities.select_related("actor__user").order_by("created_at"),
+            "organization": self.organization,
+        }
+        return render_to_string("work/tasks/_panel_activity.html", context, request=self.request)
+
+    def _make_response(self, html, toast_message, toast_type="success"):
+        response = HttpResponse(html)
+        response["HX-Trigger"] = json.dumps({"show-toast": {"message": toast_message, "type": toast_type}})
+        return response
+
+    def post(self, request, *args, **kwargs):
+        action = request.POST.get("action")
+        task_id = kwargs.get("task_id")
+        task = get_object_or_404(
+            _task_base_queryset(),
+            id=task_id,
+            organization=self.organization,
+        )
+
+        can_edit = (
+            task.created_by == self.membership
+            or task.assigned_to == self.membership
+            or self.membership.has_permission("tasks.manage")
+        )
+
+        if action == "update":
+            return self._handle_update(request, task, can_edit)
+        elif action == "save":
+            return self._handle_save(request, task, can_edit)
+        elif action == "add_comment":
+            return self._handle_add_comment(request, task)
+        elif action == "toggle_complete":
+            return self._handle_toggle_complete(request, task, can_edit)
+        elif action == "delete":
+            return self._handle_delete(request, task, task_id, can_edit)
+        elif action == "upload_attachment":
+            return self._handle_upload_attachment(request, task, can_edit)
+        elif action == "delete_attachment":
+            return self._handle_delete_attachment(request, task, can_edit)
+        elif action == "add_checklist_item":
+            return self._handle_add_checklist_item(request, task, can_edit)
+        elif action == "toggle_checklist_item":
+            return self._handle_toggle_checklist_item(request, task, can_edit)
+        elif action == "delete_checklist_item":
+            return self._handle_delete_checklist_item(request, task, can_edit)
+        elif action == "toggle_label":
+            return self._handle_toggle_label(request, task, can_edit)
+        elif action == "reorder_checklist":
+            return self._handle_reorder_checklist(request, task, can_edit)
+
+        return HttpResponse(status=400)
+
+    def _capture_old_values(self, task):
+        """Capture old values before update for activity logging."""
+        return {
+            "status": task.get_status_display(),
+            "priority": task.get_priority_display(),
+            "due_date": str(task.due_date) if task.due_date else "—",
+            "assigned_to": task.assigned_to.user.get_display_name() if task.assigned_to else "—",
+            "visibility": task.get_visibility_display(),
+            "status_raw": task.status,
+            "priority_raw": task.priority,
+            "due_date_raw": task.due_date,
+            "assigned_to_raw": task.assigned_to_id,
+            "visibility_raw": task.visibility,
+        }
+
+    def _log_changes(self, task, old_values):
+        """Log field changes as activities."""
+        changes = []
+        if old_values["status_raw"] != task.status:
+            if task.status == "done":
+                log_activity(task, self.membership, "completed")
+            elif old_values["status_raw"] == "done":
+                log_activity(task, self.membership, "reopened")
+            else:
+                changes.append(("status", old_values["status"], task.get_status_display(), "status_changed"))
+        if old_values["priority_raw"] != task.priority:
+            changes.append(("priority", old_values["priority"], task.get_priority_display(), "priority_changed"))
+        if old_values["due_date_raw"] != task.due_date:
+            new_due = str(task.due_date) if task.due_date else "—"
+            changes.append(("due_date", old_values["due_date"], new_due, "due_date_changed"))
+        if old_values["assigned_to_raw"] != task.assigned_to_id:
+            new_assigned = task.assigned_to.user.get_display_name() if task.assigned_to else "—"
+            changes.append(("assigned_to", old_values["assigned_to"], new_assigned, "assigned"))
+        if old_values["visibility_raw"] != task.visibility:
+            changes.append(("visibility", old_values["visibility"], task.get_visibility_display(), "visibility_changed"))
+
+        for field_name, old_val, new_val, activity_type in changes:
+            log_field_change(task, self.membership, field_name, old_val, new_val, activity_type)
+
+    def _handle_update(self, request, task, can_edit):
+        """Auto-save: hx-swap=none, only OOB card + counts."""
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        old_values = self._capture_old_values(task)
+        form = TaskPanelForm(request.POST, instance=task, organization=self.organization)
+        if form.is_valid():
+            updated_task = form.save(commit=False)
+            if updated_task.status == "done" and not updated_task.is_completed:
+                updated_task.is_completed = True
+                updated_task.completed_at = timezone.now()
+            elif updated_task.status != "done" and updated_task.is_completed:
+                updated_task.is_completed = False
+                updated_task.completed_at = None
+            updated_task.save()
+
+            self._log_changes(updated_task, old_values)
+
+            # Reload for rendering
+            task = _task_base_queryset().prefetch_related("labels", "checklist_items", "attachments").get(id=task.id)
+            html = self._render_oob_card(task)
+            html += self._render_oob_counts()
+            return HttpResponse(html)
+        else:
+            # Validation error: re-render full panel
+            task = _task_panel_queryset().get(id=task.id)
+            context = self._panel_context(task)
+            context["form"] = form
+            html = render_to_string("work/tasks/_panel.html", context, request=request)
+            response = HttpResponse(html)
+            response["HX-Reswap"] = "innerHTML"
+            response["HX-Retarget"] = "#task-panel-container"
+            response["HX-Trigger"] = json.dumps({"show-toast": {"message": "Fehler beim Speichern.", "type": "error"}})
+            return response
+
+    def _handle_save(self, request, task, can_edit):
+        """Explicit save button: re-render full panel."""
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        old_values = self._capture_old_values(task)
+        form = TaskPanelForm(request.POST, instance=task, organization=self.organization)
+        if form.is_valid():
+            updated_task = form.save(commit=False)
+            if updated_task.status == "done" and not updated_task.is_completed:
+                updated_task.is_completed = True
+                updated_task.completed_at = timezone.now()
+            elif updated_task.status != "done" and updated_task.is_completed:
+                updated_task.is_completed = False
+                updated_task.completed_at = None
+            updated_task.save()
+
+            self._log_changes(updated_task, old_values)
+
+            # Re-render full panel + OOB card + counts
+            task = _task_panel_queryset().get(id=task.id)
+            html = self._render_panel(task)
+            html += self._render_oob_card(task)
+            html += self._render_oob_counts()
+            return self._make_response(html, "Gespeichert.")
+        else:
+            task = _task_panel_queryset().get(id=task.id)
+            context = self._panel_context(task)
+            context["form"] = form
+            html = render_to_string("work/tasks/_panel.html", context, request=request)
+            return self._make_response(html, "Fehler beim Speichern.", "error")
+
+    def _handle_add_comment(self, request, task):
+        content = request.POST.get("content", "").strip()
+        if not content:
+            return HttpResponse(status=400)
+
+        log_activity(task, self.membership, "comment", content=content)
+
+        html = self._render_activity(task)
+        return self._make_response(html, "Kommentar hinzugefügt.")
+
+    def _handle_toggle_complete(self, request, task, can_edit):
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        if task.is_completed:
+            task.is_completed = False
+            task.completed_at = None
+            task.status = "in_progress"
+            msg = "Aufgabe wieder geöffnet."
+            log_activity(task, self.membership, "reopened")
+        else:
+            task.is_completed = True
+            task.completed_at = timezone.now()
+            task.status = "done"
+            msg = "Aufgabe als erledigt markiert."
+            log_activity(task, self.membership, "completed")
+        task.save()
+
+        task = _task_panel_queryset().get(id=task.id)
+        html = self._render_panel(task)
+        html += self._render_oob_card(task)
+        html += self._render_oob_counts()
+        return self._make_response(html, msg)
+
+    def _handle_delete(self, request, task, task_id, can_edit):
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        card_id = f"task-card-{task.id}"
+        task.delete()
+
+        oob_delete = f'<div id="{card_id}" hx-swap-oob="delete"></div>'
+        html = oob_delete + self._render_oob_counts()
+        response = HttpResponse(html)
+        response["HX-Trigger"] = json.dumps({
+            "show-toast": {"message": "Aufgabe gelöscht.", "type": "success"},
+            "taskDeleted": {"taskId": str(task_id)},
+        })
+        return response
+
+    def _handle_upload_attachment(self, request, task, can_edit):
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        form = TaskAttachmentForm(request.POST, request.FILES)
+        if form.is_valid():
+            attachment = form.save(commit=False)
+            attachment.task = task
+            attachment.uploaded_by = self.membership
+            f = request.FILES["file"]
+            attachment.filename = f.name
+            attachment.mime_type = f.content_type or mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+            attachment.file_size = f.size
+            attachment.save()
+
+            log_activity(task, self.membership, "attachment_added", details={"filename": f.name})
+
+            html = self._render_attachments(task)
+            # Also update activity section via OOB
+            activity_html = f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+            return self._make_response(html + activity_html, f'"{f.name}" hochgeladen.')
+
+        return self._make_response("", "Fehler beim Hochladen.", "error")
+
+    def _handle_delete_attachment(self, request, task, can_edit):
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        attachment_id = request.POST.get("attachment_id")
+        attachment = get_object_or_404(TaskAttachment, id=attachment_id, task=task)
+        filename = attachment.filename
+        attachment.file.delete(save=False)
+        attachment.delete()
+
+        log_activity(task, self.membership, "attachment_removed", details={"filename": filename})
+
+        html = self._render_attachments(task)
+        activity_html = f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+        return self._make_response(html + activity_html, f'"{filename}" entfernt.')
+
+    def _handle_add_checklist_item(self, request, task, can_edit):
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        form = TaskChecklistItemForm(request.POST)
+        if form.is_valid():
+            item = form.save(commit=False)
+            item.task = task
+            item.position = task.checklist_items.count()
+            item.save()
+
+            log_activity(task, self.membership, "checklist_item_added", details={"title": item.title})
+
+            html = self._render_checklist(task)
+            activity_html = f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+            # OOB card update for checklist progress
+            oob_card = self._render_oob_card(task)
+            return self._make_response(html + activity_html + oob_card, "Punkt hinzugefügt.")
+
+        return HttpResponse(status=400)
+
+    def _handle_toggle_checklist_item(self, request, task, can_edit):
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        item_id = request.POST.get("item_id")
+        item = get_object_or_404(TaskChecklistItem, id=item_id, task=task)
+        item.is_completed = not item.is_completed
+        item.save(update_fields=["is_completed"])
+
+        if item.is_completed:
+            log_activity(task, self.membership, "checklist_item_completed", details={"title": item.title})
+        else:
+            log_activity(task, self.membership, "checklist_item_unchecked", details={"title": item.title})
+
+        html = self._render_checklist(task)
+        oob_card = self._render_oob_card(task)
+        return HttpResponse(html + oob_card)
+
+    def _handle_delete_checklist_item(self, request, task, can_edit):
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        item_id = request.POST.get("item_id")
+        item = get_object_or_404(TaskChecklistItem, id=item_id, task=task)
+        item.delete()
+
+        html = self._render_checklist(task)
+        oob_card = self._render_oob_card(task)
+        return HttpResponse(html + oob_card)
+
+    def _handle_toggle_label(self, request, task, can_edit):
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        label_id = request.POST.get("label_id")
+        label = get_object_or_404(TaskLabel, id=label_id, organization=self.organization)
+
+        if task.labels.filter(id=label_id).exists():
+            task.labels.remove(label)
+            log_activity(task, self.membership, "label_removed", details={"label": label.name})
+        else:
+            task.labels.add(label)
+            log_activity(task, self.membership, "label_added", details={"label": label.name})
+
+        html = self._render_labels(task)
+        oob_card = self._render_oob_card(task)
+        activity_html = f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+        return HttpResponse(html + oob_card + activity_html)
+
+    def _handle_reorder_checklist(self, request, task, can_edit):
+        if not can_edit:
+            return JsonResponse({"error": "Keine Berechtigung."}, status=403)
+
+        try:
+            order = json.loads(request.POST.get("order", "[]"))
+            for idx, item_id in enumerate(order):
+                TaskChecklistItem.objects.filter(id=item_id, task=task).update(position=idx)
+            return JsonResponse({"success": True})
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({"error": "Ungültige Daten."}, status=400)
+
+
+class TaskLabelManageView(WorkViewMixin, View):
+    """Manage organization labels (create, delete)."""
+
+    permission_required = "tasks.manage"
+
+    def get(self, request, *args, **kwargs):
+        """Return labels as JSON."""
+        labels = TaskLabel.objects.filter(organization=self.organization).values("id", "name", "color")
+        return JsonResponse({"labels": list(labels)})
+
+    def post(self, request, *args, **kwargs):
+        """Create a new label."""
+        form = TaskLabelForm(request.POST)
+        if form.is_valid():
+            label = form.save(commit=False)
+            label.organization = self.organization
+            label.save()
+            return JsonResponse({"success": True, "id": str(label.id), "name": label.name, "color": label.color})
+        return JsonResponse({"error": "Ungültige Daten."}, status=400)
+
+    def delete(self, request, *args, **kwargs):
+        """Delete a label."""
+        label_id = kwargs.get("label_id")
+        label = get_object_or_404(TaskLabel, id=label_id, organization=self.organization)
+        label.delete()
+        return JsonResponse({"success": True})
 
 
 class TaskImportView(WorkViewMixin, View):
@@ -469,10 +932,8 @@ class TaskImportView(WorkViewMixin, View):
     permission_required = "tasks.create"
 
     def get(self, request, *args, **kwargs):
-        """Show pending action items from protocols."""
         from apps.work.faction.models import FactionProtocolEntry
 
-        # Get action items that haven't been converted to tasks yet
         action_items = (
             FactionProtocolEntry.objects.filter(
                 meeting__organization=self.organization,
@@ -480,7 +941,6 @@ class TaskImportView(WorkViewMixin, View):
                 action_completed=False,
             )
             .exclude(
-                # Exclude items that already have tasks (need to track this relationship)
                 id__in=Task.objects.filter(organization=self.organization).values_list(
                     "related_faction_meeting", flat=True
                 )
@@ -506,7 +966,6 @@ class TaskImportView(WorkViewMixin, View):
         )
 
     def post(self, request, *args, **kwargs):
-        """Import selected protocol entries as tasks."""
         from apps.work.faction.models import FactionProtocolEntry
 
         entry_ids = request.POST.getlist("entry_ids[]")
@@ -518,8 +977,7 @@ class TaskImportView(WorkViewMixin, View):
                     id=entry_id, meeting__organization=self.organization, entry_type="action"
                 )
 
-                # Create task
-                Task.objects.create(
+                task = Task.objects.create(
                     organization=self.organization,
                     title=entry.content[:500] if entry.content else "Protokoll-Aufgabe",
                     created_by=self.membership,
@@ -530,6 +988,7 @@ class TaskImportView(WorkViewMixin, View):
                     position=Task.objects.filter(organization=self.organization, status="todo").count(),
                     related_faction_meeting=entry.meeting,
                 )
+                log_activity(task, self.membership, "created")
                 created += 1
 
             except FactionProtocolEntry.DoesNotExist:

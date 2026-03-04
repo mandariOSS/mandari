@@ -1,0 +1,259 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}{{ application.title }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:applications' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Anträge
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium truncate max-w-[200px]">{{ application.reference }}</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid lg:grid-cols-3 gap-6">
+    <!-- Main Content -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Header Card -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-start gap-4 mb-4">
+                <div class="w-14 h-14 rounded-xl {% if application.is_urgent %}bg-red-100 dark:bg-red-900/50{% else %}bg-blue-100 dark:bg-blue-900/50{% endif %} flex items-center justify-center">
+                    {% if application.is_urgent %}
+                    <i data-lucide="alert-triangle" class="w-7 h-7 text-red-600 dark:text-red-400"></i>
+                    {% else %}
+                    <i data-lucide="file-input" class="w-7 h-7 text-blue-600 dark:text-blue-400"></i>
+                    {% endif %}
+                </div>
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-sm font-mono text-gray-500 dark:text-gray-400">{{ application.reference }}</span>
+                        <span class="inline-block px-2.5 py-1 text-xs font-medium rounded-full
+                            {% if application.status == 'submitted' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
+                            {% elif application.status == 'received' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400
+                            {% elif application.status == 'in_review' %}bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-400
+                            {% elif application.status == 'accepted' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                            {% elif application.status == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+                            {% elif application.status == 'converted' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                            {% elif application.status == 'withdrawn' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400
+                            {% endif %}">
+                            {{ application.get_status_display }}
+                        </span>
+                        {% if application.is_urgent %}
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
+                            <i data-lucide="zap" class="w-3 h-3"></i>
+                            Dringend
+                        </span>
+                        {% endif %}
+                    </div>
+                    <h1 class="text-xl font-bold text-gray-900 dark:text-white">{{ application.title }}</h1>
+                </div>
+                {% if "process_applications" in permission_checker.permissions %}
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <a href="{% url 'session:application_process' tenant_slug=tenant_slug application_id=application.id %}"
+                       class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                        <i data-lucide="edit" class="w-4 h-4"></i>
+                        Bearbeiten
+                    </a>
+                    {% if application.status != 'converted' and application.status != 'withdrawn' %}
+                    {% if "create_papers" in permission_checker.permissions %}
+                    <a href="{% url 'session:application_convert' tenant_slug=tenant_slug application_id=application.id %}"
+                       class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
+                        <i data-lucide="arrow-right-circle" class="w-4 h-4"></i>
+                        In Vorlage umwandeln
+                    </a>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Begründung -->
+        {% if application.justification %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="align-left" class="w-5 h-5 text-blue-500"></i>
+                    Begründung
+                </h2>
+            </div>
+            <div class="px-6 py-4 prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap">{{ application.justification }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Beschlussvorschlag -->
+        {% if application.resolution_proposal %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="check-square" class="w-5 h-5 text-green-500"></i>
+                    Beschlussvorschlag
+                </h2>
+            </div>
+            <div class="px-6 py-4 prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap">{{ application.resolution_proposal }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Finanzielle Auswirkungen -->
+        {% if application.financial_impact %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="coins" class="w-5 h-5 text-amber-500"></i>
+                    Finanzielle Auswirkungen
+                </h2>
+            </div>
+            <div class="px-6 py-4 prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap">{{ application.financial_impact }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Erstellte Vorlagen -->
+        {% if created_papers %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="file-output" class="w-5 h-5 text-green-500"></i>
+                    Erstellte Vorlagen
+                </h2>
+            </div>
+            <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for paper in created_papers %}
+                <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}"
+                   class="px-6 py-4 flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    <i data-lucide="file-text" class="w-5 h-5 text-amber-500 flex-shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-medium text-gray-900 dark:text-white text-sm">{{ paper.name }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ paper.reference }}</p>
+                    </div>
+                    <span class="inline-block px-2 py-1 text-xs font-medium rounded-full
+                        {% if paper.status == 'draft' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400
+                        {% elif paper.status == 'approved' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                        {% else %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400{% endif %}">
+                        {{ paper.get_status_display }}
+                    </span>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-6">
+        <!-- Details -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Details</h3>
+            <dl class="space-y-4 text-sm">
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Status</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium
+                            {% if application.status == 'submitted' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
+                            {% elif application.status == 'received' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400
+                            {% elif application.status == 'in_review' %}bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-400
+                            {% elif application.status == 'accepted' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                            {% elif application.status == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+                            {% elif application.status == 'converted' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                            {% elif application.status == 'withdrawn' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400
+                            {% endif %}">
+                            {{ application.get_status_display }}
+                        </span>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Art</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ application.get_application_type_display }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Eingangsnummer</dt>
+                    <dd class="font-medium font-mono text-gray-900 dark:text-white mt-1">{{ application.reference }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Eingereicht am</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ application.submitted_at|date:"d.m.Y H:i" }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Einreicher</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        {{ application.submitter_name }}
+                        {% if application.submitter_email %}
+                        <br><span class="text-gray-500 dark:text-gray-400 font-normal">{{ application.submitter_email }}</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                {% if application.submitting_organization %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Einreichende Organisation</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ application.submitting_organization.name }}</dd>
+                </div>
+                {% endif %}
+                {% if application.target_organization %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Zuständiges Gremium</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        <a href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=application.target_organization.id %}"
+                           class="text-primary-600 dark:text-primary-400 hover:underline">
+                            {{ application.target_organization.name }}
+                        </a>
+                    </dd>
+                </div>
+                {% endif %}
+                {% if application.deadline %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Frist</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ application.deadline|date:"d.m.Y" }}</dd>
+                </div>
+                {% endif %}
+                {% if application.received_by %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Angenommen von</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        {{ application.received_by.user.email }}
+                        {% if application.received_at %}<br><span class="text-gray-500 dark:text-gray-400 font-normal">{{ application.received_at|date:"d.m.Y H:i" }}</span>{% endif %}
+                    </dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+
+        <!-- Mitzeichner -->
+        {% if application.co_signers %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <i data-lucide="users" class="w-5 h-5 text-blue-500"></i>
+                Mitzeichner
+            </h3>
+            <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ application.co_signers }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Bearbeitungsnotizen -->
+        {% if application.processing_notes %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <i data-lucide="sticky-note" class="w-5 h-5 text-yellow-500"></i>
+                Bearbeitungsnotizen
+            </h3>
+            <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ application.processing_notes }}</p>
+        </div>
+        {% endif %}
+
+        {% if application.is_urgent and application.urgency_reason %}
+        <div class="bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800 p-6">
+            <h3 class="font-semibold text-red-700 dark:text-red-400 mb-2 flex items-center gap-2">
+                <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                Dringlichkeitsbegründung
+            </h3>
+            <p class="text-sm text-red-700 dark:text-red-300">{{ application.urgency_reason }}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -44,12 +44,8 @@
             return;
         }
 
-        // Try SSE first, fall back to polling
-        if (window.EventSource) {
-            connectSSE();
-        } else {
-            startPolling();
-        }
+        // Use polling for notification updates
+        startPolling();
 
         // Listen for visibility changes to reconnect when page becomes visible
         document.addEventListener('visibilitychange', handleVisibilityChange);

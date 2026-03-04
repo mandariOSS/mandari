@@ -59,7 +59,7 @@
 	# Mandari Core (Django) - explicit paths
 	# =========================================================================
 	@mandari {
-		path /insight/* /work/* /session/* /accounts/* /admin/* /api/* /public/*
+		path /insight/* /work/* /session/* /accounts/* /admin/* /api/* /public/* /ws/*
 		path /static/*
 		path /sitemap-insight-*
 	}
@@ -70,6 +70,16 @@
 			header_up Host {host}
 			header_up Connection {header.Connection}
 			header_up Upgrade {header.Upgrade}
+
+			# Zero-Downtime: Requests puffern während Container-Swap (~3-5s)
+			lb_try_duration 15s
+			lb_try_interval 250ms
+			fail_duration 10s
+
+			# Upstream Health-Check
+			health_uri /health/
+			health_interval 5s
+			health_timeout 3s
 		}
 	}
 
@@ -81,6 +91,16 @@
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 			header_up Host {host}
+
+			# Zero-Downtime: Requests puffern während Container-Swap
+			lb_try_duration 15s
+			lb_try_interval 250ms
+			fail_duration 10s
+
+			# Upstream Health-Check
+			health_uri /health/
+			health_interval 5s
+			health_timeout 3s
 		}
 	}
 

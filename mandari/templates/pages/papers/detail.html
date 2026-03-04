@@ -41,6 +41,9 @@
                     {% endif %}
                 </div>
             </div>
+            <div class="flex-shrink-0">
+                {% include "components/bookmark_star.html" with entity_type="paper" entity_id=paper.id size="lg" %}
+            </div>
         </div>
     </div>
 
@@ -157,7 +160,7 @@
                     {% for file in files %}
                     <div class="px-6 py-4 {% if file.download_url or file.access_url %}cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50{% endif %} transition-colors"
                          {% if file.download_url or file.access_url %}
-                         @click="openDoc('{{ file.download_url|default:file.access_url|escapejs }}', '{{ file.name|default:file.file_name|default:"Dokument"|escapejs }}', '{% if file_context_summary.organization_name %}{{ file_context_summary.organization_name|escapejs }} · {% endif %}{% if paper.reference %}{{ paper.reference|escapejs }} · {% endif %}{% if file.size %}{{ file.size_human }}{% endif %}{% if file.mime_type %} · {{ file.mime_type }}{% endif %}')"
+                         @click="openDoc('{% url 'insight_core:insight:file_proxy' file.id %}', '{{ file.name|default:file.file_name|default:"Dokument"|escapejs }}', '{% if file_context_summary.organization_name %}{{ file_context_summary.organization_name|escapejs }} · {% endif %}{% if paper.reference %}{{ paper.reference|escapejs }} · {% endif %}{% if file.size %}{{ file.size_human }}{% endif %}{% if file.mime_type %} · {{ file.mime_type }}{% endif %}')"
                          {% endif %}>
                         <div class="flex items-center gap-4">
                             <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0

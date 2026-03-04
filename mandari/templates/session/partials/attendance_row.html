@@ -1,0 +1,65 @@
+<form hx-post="{% url 'session:attendance_update' tenant_slug=tenant_slug attendance_id=attendance.id %}"
+      hx-target="closest tr"
+      hx-swap="outerHTML"
+      class="contents">
+    {% csrf_token %}
+    <tr class="border-b border-gray-200 dark:border-gray-700">
+        <!-- Person -->
+        <td class="px-4 py-3">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
+                    {{ attendance.person.given_name|slice:":1" }}{{ attendance.person.family_name|slice:":1" }}
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ attendance.person.display_name }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ attendance.get_role_display }}</p>
+                </div>
+            </div>
+        </td>
+
+        <!-- Status -->
+        <td class="px-4 py-3">
+            <select name="status"
+                    class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <option value="invited" {% if attendance.status == 'invited' %}selected{% endif %}>Eingeladen</option>
+                <option value="confirmed" {% if attendance.status == 'confirmed' %}selected{% endif %}>Zugesagt</option>
+                <option value="declined" {% if attendance.status == 'declined' %}selected{% endif %}>Abgesagt</option>
+                <option value="present" {% if attendance.status == 'present' %}selected{% endif %}>Anwesend</option>
+                <option value="absent" {% if attendance.status == 'absent' %}selected{% endif %}>Abwesend</option>
+                <option value="excused" {% if attendance.status == 'excused' %}selected{% endif %}>Entschuldigt</option>
+                <option value="left_early" {% if attendance.status == 'left_early' %}selected{% endif %}>Vorzeitig gegangen</option>
+                <option value="joined_late" {% if attendance.status == 'joined_late' %}selected{% endif %}>Verspätet</option>
+            </select>
+        </td>
+
+        <!-- Ankunft -->
+        <td class="px-4 py-3">
+            <input type="time" name="arrival_time"
+                   value="{{ attendance.arrival_time|time:'H:i'|default:'' }}"
+                   class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 w-24">
+        </td>
+
+        <!-- Abgang -->
+        <td class="px-4 py-3">
+            <input type="time" name="departure_time"
+                   value="{{ attendance.departure_time|time:'H:i'|default:'' }}"
+                   class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 w-24">
+        </td>
+
+        <!-- Notizen -->
+        <td class="px-4 py-3">
+            <input type="text" name="notes"
+                   value="{{ attendance.notes|default:'' }}"
+                   placeholder="Notiz..."
+                   class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 w-full">
+        </td>
+
+        <!-- Speichern -->
+        <td class="px-4 py-3">
+            <button type="submit"
+                    class="inline-flex items-center gap-1 px-2 py-1 text-xs bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                <i data-lucide="save" class="w-3 h-3"></i>
+            </button>
+        </td>
+    </tr>
+</form>

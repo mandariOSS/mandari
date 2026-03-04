@@ -11,6 +11,12 @@ whitenoise>=6.7.0
 psycopg[binary]>=3.2.0
 dj-database-url>=2.2.0
 
+# Ingestor integration (needed for Django sync daemon)
+sqlalchemy>=2.0.36
+asyncpg>=0.30.0
+pydantic-settings>=2.6.0
+rich>=13.9.0
+
 # Cache & Sessions
 redis>=5.2.0
 django-redis>=5.4.0
@@ -41,6 +47,14 @@ pdf2image>=1.16.0
 # PDF generation
 xhtml2pdf>=0.2.17  # Security: fixes ReDoS vulnerability
 reportlab>=4.0.0
+
+# DOCX generation
+python-docx>=1.1.0
+
+# Real-time collaboration (WebSocket)
+channels>=4.2.0
+channels-redis>=4.2.0
+daphne>=4.1.0
 
 # Production server
 gunicorn>=23.0.0

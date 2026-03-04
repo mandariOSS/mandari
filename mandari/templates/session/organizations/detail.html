@@ -1,0 +1,217 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}{{ organization.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:organizations' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Gremien
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium truncate max-w-[200px]">{{ organization.name }}</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid lg:grid-cols-3 gap-6">
+    <!-- Main Content -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Header Card -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-start gap-4">
+                <div class="w-14 h-14 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center">
+                    <i data-lucide="users" class="w-7 h-7 text-indigo-600 dark:text-indigo-400"></i>
+                </div>
+                <div class="flex-1">
+                    <h1 class="text-xl font-bold text-gray-900 dark:text-white">{{ organization.name }}</h1>
+                    {% if organization.short_name %}
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ organization.short_name }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Mitglieder -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="user-check" class="w-5 h-5 text-green-500"></i>
+                    Aktive Mitglieder ({{ memberships|length }})
+                </h2>
+            </div>
+            {% if memberships %}
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead>
+                        <tr class="bg-gray-50 dark:bg-gray-900/50 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            <th class="px-6 py-3">Person</th>
+                            <th class="px-6 py-3">Rolle</th>
+                            <th class="px-6 py-3">Stimmrecht</th>
+                            <th class="px-6 py-3">Seit</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                        {% for membership in memberships %}
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <td class="px-6 py-3">
+                                <a href="{% url 'session:person_detail' tenant_slug=tenant_slug person_id=membership.person.id %}"
+                                   class="flex items-center gap-3 group">
+                                    <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-400">
+                                        {{ membership.person.given_name|slice:":1" }}{{ membership.person.family_name|slice:":1" }}
+                                    </div>
+                                    <span class="text-sm font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">
+                                        {{ membership.person.display_name }}
+                                    </span>
+                                </a>
+                            </td>
+                            <td class="px-6 py-3">
+                                <span class="text-sm text-gray-700 dark:text-gray-300">{{ membership.get_role_display }}</span>
+                            </td>
+                            <td class="px-6 py-3">
+                                {% if membership.has_voting_rights %}
+                                <span class="inline-flex items-center gap-1 text-green-600 dark:text-green-400 text-sm">
+                                    <i data-lucide="check" class="w-4 h-4"></i> Ja
+                                </span>
+                                {% else %}
+                                <span class="text-sm text-gray-400 dark:text-gray-500">Nein</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-3 text-sm text-gray-500 dark:text-gray-400">
+                                {% if membership.start_date %}{{ membership.start_date|date:"d.m.Y" }}{% else %}&ndash;{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                <i data-lucide="users" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                <p>Keine aktiven Mitglieder</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Letzte Sitzungen -->
+        {% if recent_meetings %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="calendar" class="w-5 h-5 text-blue-500"></i>
+                    Letzte Sitzungen
+                </h2>
+            </div>
+            <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for meeting in recent_meetings %}
+                <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                   class="px-6 py-3 flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex flex-col items-center justify-center text-blue-600 dark:text-blue-400 flex-shrink-0">
+                        <span class="text-[10px] font-medium uppercase leading-none">{{ meeting.start|date:"M" }}</span>
+                        <span class="text-sm font-bold leading-none">{{ meeting.start|date:"d" }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ meeting.name }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">{{ meeting.start|date:"d.m.Y H:i" }}</p>
+                    </div>
+                    <span class="inline-block px-2 py-0.5 text-xs font-medium rounded-full
+                        {% if meeting.meeting_state == 'completed' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400
+                        {% elif meeting.meeting_state == 'scheduled' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
+                        {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                        {{ meeting.get_meeting_state_display }}
+                    </span>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Letzte Vorlagen -->
+        {% if recent_papers %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="file-text" class="w-5 h-5 text-amber-500"></i>
+                    Letzte Vorlagen
+                </h2>
+            </div>
+            <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for paper in recent_papers %}
+                <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}"
+                   class="px-6 py-3 flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    <i data-lucide="file-text" class="w-5 h-5 text-amber-500 flex-shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ paper.name }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">{{ paper.reference }} &middot; {{ paper.date|date:"d.m.Y" }}</p>
+                    </div>
+                    <span class="inline-block px-2 py-0.5 text-xs font-medium rounded-full
+                        {% if paper.status == 'draft' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400
+                        {% elif paper.status == 'approved' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                        {% else %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400{% endif %}">
+                        {{ paper.get_status_display }}
+                    </span>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-6">
+        <!-- Details -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Details</h3>
+            <dl class="space-y-4 text-sm">
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Typ</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ organization.get_organization_type_display }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Status</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">
+                        {% if organization.is_active %}
+                        <span class="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                            <i data-lucide="check-circle" class="w-4 h-4"></i>
+                            Aktiv
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                            <i data-lucide="x-circle" class="w-4 h-4"></i>
+                            Inaktiv
+                        </span>
+                        {% endif %}
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Mitglieder</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ memberships|length }}</dd>
+                </div>
+                {% if organization.start_date %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Beginn</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ organization.start_date|date:"d.m.Y" }}</dd>
+                </div>
+                {% endif %}
+                {% if organization.end_date %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Ende</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ organization.end_date|date:"d.m.Y" }}</dd>
+                </div>
+                {% endif %}
+                {% if organization.default_meeting_location %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Standard-Sitzungsort</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ organization.default_meeting_location }}</dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+    </div>
+</div>
+{% endblock %}

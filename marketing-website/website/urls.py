@@ -13,6 +13,8 @@ from wagtail.admin import urls as wagtailadmin_urls
 from wagtail.contrib.sitemaps.views import sitemap
 from wagtail.documents import urls as wagtaildocs_urls
 
+from blog.feeds import BlogFeed
+
 
 def health_check(request):
     """Health check endpoint for Docker."""
@@ -25,6 +27,7 @@ urlpatterns = [
     path("cms-admin/", include(wagtailadmin_urls)),
     path("documents/", include(wagtaildocs_urls)),
     path("sitemap.xml", sitemap, name="sitemap"),
+    path("blog/feed/", BlogFeed(), name="blog_feed"),
     # Wagtail catch-all (serves all CMS pages)
     path("", include(wagtail_urls)),
 ]

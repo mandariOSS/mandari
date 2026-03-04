@@ -14,13 +14,18 @@
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
                 onclick="window.location='{% url 'insight_core:insight:person_detail' person.id %}'">
                 <td class="px-6 py-3">
-                    <a href="{% url 'insight_core:insight:person_detail' person.id %}"
-                       class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                        {% if person.title %}{{ person.title }} {% endif %}{{ person.display_name }}
-                    </a>
-                    {% if person.council_role %}
-                    <p class="text-sm text-gray-500 dark:text-gray-400 sm:hidden">{{ person.council_role }}</p>
-                    {% endif %}
+                    <div class="flex items-center gap-3">
+                        {% include "components/person_avatar.html" with person=person size="sm" %}
+                        <div>
+                            <a href="{% url 'insight_core:insight:person_detail' person.id %}"
+                               class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                                {{ person.display_name }}
+                            </a>
+                            {% if person.council_role %}
+                            <p class="text-sm text-gray-500 dark:text-gray-400 sm:hidden">{{ person.council_role }}</p>
+                            {% endif %}
+                        </div>
+                    </div>
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
                     {{ person.council_role|default:"—" }}
@@ -35,7 +40,10 @@
                     {% endif %}
                 </td>
                 <td class="px-2 py-3">
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                    <div class="flex items-center gap-1">
+                        {% include "components/bookmark_star.html" with entity_type="person" entity_id=person.id size="sm" %}
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                    </div>
                 </td>
             </tr>
             {% endfor %}

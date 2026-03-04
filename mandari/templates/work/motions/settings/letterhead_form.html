@@ -6,7 +6,7 @@
 
 {% block work_content %}
 <div class="max-w-2xl">
-    <form method="post" enctype="multipart/form-data" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+    <form method="post" enctype="multipart/form-data" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
         {% csrf_token %}
 
         <div class="space-y-6">
@@ -15,7 +15,7 @@
                 <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
                 <input type="text" id="name" name="name" required
                        value="{% if letterhead %}{{ letterhead.name }}{% endif %}"
-                       class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                       class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
                        placeholder="z.B. Offizieller Briefkopf, Interne Mitteilung">
             </div>
 
@@ -23,7 +23,7 @@
             <div>
                 <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
                 <textarea id="description" name="description" rows="2"
-                          class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
                           placeholder="Kurze Beschreibung des Briefkopfs">{% if letterhead %}{{ letterhead.description }}{% endif %}</textarea>
             </div>
 
@@ -56,25 +56,25 @@
                         <label for="content_margin_top" class="block text-xs text-gray-500 mb-1">Oben</label>
                         <input type="number" id="content_margin_top" name="content_margin_top" min="0" max="200"
                                value="{% if letterhead %}{{ letterhead.content_margin_top }}{% else %}60{% endif %}"
-                               class="block w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
+                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     </div>
                     <div>
                         <label for="content_margin_left" class="block text-xs text-gray-500 mb-1">Links</label>
                         <input type="number" id="content_margin_left" name="content_margin_left" min="0" max="100"
                                value="{% if letterhead %}{{ letterhead.content_margin_left }}{% else %}25{% endif %}"
-                               class="block w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
+                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     </div>
                     <div>
                         <label for="content_margin_right" class="block text-xs text-gray-500 mb-1">Rechts</label>
                         <input type="number" id="content_margin_right" name="content_margin_right" min="0" max="100"
                                value="{% if letterhead %}{{ letterhead.content_margin_right }}{% else %}20{% endif %}"
-                               class="block w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
+                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     </div>
                     <div>
                         <label for="content_margin_bottom" class="block text-xs text-gray-500 mb-1">Unten</label>
                         <input type="number" id="content_margin_bottom" name="content_margin_bottom" min="0" max="100"
                                value="{% if letterhead %}{{ letterhead.content_margin_bottom }}{% else %}30{% endif %}"
-                               class="block w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
+                               class="block w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     </div>
                 </div>
                 <p class="text-xs text-gray-500 mt-2">Der Textbereich beginnt nach dem oberen Rand und endet vor dem unteren Rand.</p>
@@ -87,7 +87,7 @@
                     <div>
                         <label for="font_family" class="block text-xs text-gray-500 mb-1">Schriftart</label>
                         <select id="font_family" name="font_family"
-                                class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                             {% with current_font=letterhead.font_family|default:"Arial" %}
                             <option value="Arial" {% if current_font == "Arial" %}selected{% endif %}>Arial</option>
                             <option value="Helvetica" {% if current_font == "Helvetica" %}selected{% endif %}>Helvetica</option>
@@ -101,7 +101,7 @@
                         <label for="font_size" class="block text-xs text-gray-500 mb-1">Schriftgröße (pt)</label>
                         <input type="number" id="font_size" name="font_size" min="8" max="24"
                                value="{% if letterhead %}{{ letterhead.font_size }}{% else %}11{% endif %}"
-                               class="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+                               class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                     </div>
                 </div>
             </div>
@@ -122,12 +122,12 @@
 
         <!-- Actions -->
         <div class="flex items-center justify-between mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-            <a href="{% url 'work:letterhead_list' org_slug=organization.slug %}"
+            <a href="{% url 'work:document_letterhead_list' org_slug=organization.slug %}"
                class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
                 Abbrechen
             </a>
             <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                 <i data-lucide="check" class="w-4 h-4"></i>
                 {% if is_new %}Briefkopf erstellen{% else %}Speichern{% endif %}
             </button>

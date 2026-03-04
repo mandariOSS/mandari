@@ -1,0 +1,241 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Abwesenheit{% endblock %}
+
+{% block header_title %}Abwesenheit & Stellvertretung{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Abwesenheiten verwalten und Stellvertreter bestimmen</p>
+{% endblock %}
+
+{% block work_content %}
+{% include "work/profile/_tabs.html" with active_tab="absence" %}
+
+{% if messages %}
+<div class="space-y-2 mb-6">
+    {% for message in messages %}
+    <div class="p-3 rounded-lg flex items-center gap-3 {% if message.tags == 'success' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400{% elif message.tags == 'error' %}bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400{% else %}bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400{% endif %}">
+        <i data-lucide="{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}alert-circle{% else %}info{% endif %}" class="w-4 h-4 flex-shrink-0"></i>
+        <span class="text-sm">{{ message }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Status & Deputy Info -->
+    <div class="space-y-4">
+        <!-- Current Status -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Status</h4>
+            </div>
+            <div class="px-6 py-4">
+                {% if current_absence %}
+                <div class="flex items-center gap-3 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-lg">
+                    <div class="w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="calendar-off" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm font-medium text-amber-800 dark:text-amber-300">Abwesend</p>
+                        <p class="text-xs text-amber-600 dark:text-amber-400">
+                            {{ current_absence.start_date|date:"d.m.Y" }} – {{ current_absence.end_date|date:"d.m.Y" }}
+                        </p>
+                        {% if current_absence.deputy %}
+                        <p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                            Stellv.: {{ current_absence.deputy.user.get_full_name|default:current_absence.deputy.user.email }}
+                        </p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <div class="flex items-center gap-3 p-3 bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/30 rounded-lg">
+                    <div class="w-9 h-9 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="check-circle" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
+                    </div>
+                    <p class="text-sm font-medium text-green-800 dark:text-green-300">Verfügbar</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Deputy For -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 25ms">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Meine Stellvertretungen</h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Wo ich aktuell als Stellvertreter eingetragen bin</p>
+            </div>
+            <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {% for dep in deputy_for %}
+                <div class="px-6 py-3 flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="user-check" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {{ dep.membership.user.get_full_name|default:dep.membership.user.email }}
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            {{ dep.start_date|date:"d.m." }} – {{ dep.end_date|date:"d.m.Y" }}
+                        </p>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="px-6 py-6 text-center">
+                    <i data-lucide="users" class="w-5 h-5 text-gray-300 dark:text-gray-600 mx-auto mb-1"></i>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Keine aktiven Stellvertretungen</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Create & List -->
+    <div class="lg:col-span-2 space-y-6">
+        <!-- Create Absence -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 25ms">
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create_absence">
+
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Neue Abwesenheit</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Abwesenheitszeitraum mit optionalem Stellvertreter eintragen</p>
+                </div>
+
+                <div class="px-6 py-6 space-y-4">
+                    <!-- Date Range -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Von</label>
+                            <input type="date" name="start_date" required
+                                   class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bis</label>
+                            <input type="date" name="end_date" required
+                                   class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
+                        </div>
+                    </div>
+
+                    <!-- Reason -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Grund <span class="text-gray-400 font-normal">(optional)</span></label>
+                        <input type="text" name="reason" maxlength="500" placeholder="z.B. Urlaub, Dienstreise..."
+                               class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
+                    </div>
+
+                    <!-- Deputy -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Stellvertreter <span class="text-gray-400 font-normal">(optional)</span></label>
+                        <select name="deputy_id"
+                                class="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
+                            <option value="">— Kein Stellvertreter —</option>
+                            {% for deputy in available_deputies %}
+                            <option value="{{ deputy.id }}">{{ deputy.user.get_full_name|default:deputy.user.email }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Options -->
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" name="auto_decline_meetings" checked
+                                   class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 focus:ring-2">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Sitzungen automatisch absagen</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" name="notify_deputy" checked
+                                   class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 focus:ring-2">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Stellvertreter benachrichtigen</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-end">
+                    <button type="submit"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        Abwesenheit eintragen
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Current & Future Absences -->
+        {% if active_absences %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Geplante & Aktuelle Abwesenheiten</h4>
+            </div>
+            <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {% for absence in active_absences %}
+                <div class="px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0
+                            {% if absence.is_current %}bg-amber-100 dark:bg-amber-900/30{% else %}bg-blue-100 dark:bg-blue-900/30{% endif %}">
+                            <i data-lucide="{% if absence.is_current %}calendar-clock{% else %}calendar{% endif %}"
+                               class="w-4 h-4 {% if absence.is_current %}text-amber-600 dark:text-amber-400{% else %}text-blue-600 dark:text-blue-400{% endif %}"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <p class="text-sm font-medium text-gray-900 dark:text-white">
+                                    {{ absence.start_date|date:"d.m.Y" }} – {{ absence.end_date|date:"d.m.Y" }}
+                                </p>
+                                {% if absence.is_current %}
+                                <span class="inline-flex px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded uppercase tracking-wide leading-none">Aktiv</span>
+                                {% else %}
+                                <span class="inline-flex px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded uppercase tracking-wide leading-none">Geplant</span>
+                                {% endif %}
+                            </div>
+                            <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                {% if absence.reason %}<span>{{ absence.reason }}</span>{% endif %}
+                                {% if absence.reason and absence.deputy %}<span class="text-gray-300 dark:text-gray-600">·</span>{% endif %}
+                                {% if absence.deputy %}<span>Stellv.: {{ absence.deputy.user.get_full_name|default:absence.deputy.user.email }}</span>{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <form method="post" class="flex-shrink-0">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="cancel_absence">
+                        <input type="hidden" name="absence_id" value="{{ absence.id }}">
+                        <button type="submit"
+                                class="p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                title="Abwesenheit stornieren">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                        </button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Past Absences -->
+        {% if past_absences %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 75ms">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h4 class="text-[15px] font-bold text-gray-900 dark:text-white">Vergangene Abwesenheiten</h4>
+            </div>
+            <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {% for absence in past_absences %}
+                <div class="px-6 py-3 flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="calendar-check" class="w-4 h-4 text-gray-400 dark:text-gray-500"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-sm text-gray-700 dark:text-gray-300">
+                            {{ absence.start_date|date:"d.m.Y" }} – {{ absence.end_date|date:"d.m.Y" }}
+                        </p>
+                        <p class="text-xs text-gray-400 dark:text-gray-500">
+                            {% if absence.reason %}{{ absence.reason }}{% endif %}
+                            {% if absence.deputy %} · Stellv.: {{ absence.deputy.user.get_full_name|default:absence.deputy.user.email }}{% endif %}
+                        </p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

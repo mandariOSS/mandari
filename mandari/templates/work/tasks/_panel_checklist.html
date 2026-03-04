@@ -1,0 +1,63 @@
+{% load i18n %}
+{% with progress=task.checklist_progress %}
+<div class="flex items-center gap-2 mb-3">
+    <div class="flex items-center gap-1.5">
+        <i data-lucide="check-square" class="w-4 h-4 text-green-500"></i>
+        <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Checkliste</span>
+    </div>
+    {% if progress.1 > 0 %}
+    <span class="text-[10px] font-bold {% if progress.0 == progress.1 %}text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 ring-1 ring-green-200/50 dark:ring-green-700/30{% else %}text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800{% endif %} rounded-full px-1.5 py-0.5 leading-none">{{ progress.0 }}/{{ progress.1 }}</span>
+    {% if progress.1 > 0 %}
+    <div class="flex-1 max-w-[100px] h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+        <div class="h-full {% if progress.0 == progress.1 %}bg-green-500{% else %}bg-primary-500{% endif %} rounded-full transition-all duration-300" style="width: {% widthratio progress.0 progress.1 100 %}%"></div>
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+{% endwith %}
+
+<div class="space-y-0.5">
+    {% for item in checklist_items %}
+    <div class="group flex items-center gap-2 py-1.5 -mx-1 px-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+        {% if can_edit %}
+        <button type="button"
+                hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+                hx-vals='{"action": "toggle_checklist_item", "item_id": "{{ item.id }}"}'
+                hx-target="#panel-checklist"
+                hx-swap="innerHTML"
+                class="flex-shrink-0 transition-transform hover:scale-110">
+            <i data-lucide="{% if item.is_completed %}check-square{% else %}square{% endif %}"
+               class="w-4 h-4 {% if item.is_completed %}text-green-500{% else %}text-gray-400 hover:text-primary-500{% endif %} transition-colors"></i>
+        </button>
+        {% else %}
+        <i data-lucide="{% if item.is_completed %}check-square{% else %}square{% endif %}"
+           class="w-4 h-4 flex-shrink-0 {% if item.is_completed %}text-green-500{% else %}text-gray-400{% endif %}"></i>
+        {% endif %}
+        <span class="text-sm flex-1 {% if item.is_completed %}line-through text-gray-400 dark:text-gray-500{% else %}text-gray-700 dark:text-gray-300{% endif %} transition-colors">{{ item.title }}</span>
+        {% if can_edit %}
+        <button type="button"
+                hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+                hx-vals='{"action": "delete_checklist_item", "item_id": "{{ item.id }}"}'
+                hx-target="#panel-checklist"
+                hx-swap="innerHTML"
+                class="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-red-500 transition-all flex-shrink-0">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+{% if can_edit %}
+{# Neuen Punkt hinzufügen #}
+<form hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+      hx-target="#panel-checklist"
+      hx-swap="innerHTML"
+      hx-on::after-request="if(event.detail.successful) this.reset()"
+      class="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/50">
+    <input type="hidden" name="action" value="add_checklist_item">
+    <i data-lucide="plus" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+    {{ checklist_form.title }}
+    <button type="submit" class="sr-only">Hinzufügen</button>
+</form>
+{% endif %}

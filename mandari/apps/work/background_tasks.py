@@ -10,6 +10,7 @@ import logging
 
 from django.conf import settings
 from django.core.mail import send_mail
+from django.tasks import task
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 
@@ -202,3 +203,86 @@ def send_meeting_reminder_task(meeting_id: str):
 
         except Exception as e:
             logger.error(f"Failed to send reminder to {recipient_email}: {e}")
+
+
+@task
+def generate_dsgvo_export_task(export_id: str):
+    """
+    Generate a DSGVO data export in the background.
+
+    Collects user data, generates JSON or PDF, and writes to disk.
+    """
+    import json as json_mod
+    from pathlib import Path
+
+    from django.utils import timezone
+
+    from apps.work.organization.models import DataExport
+
+    try:
+        export = DataExport.objects.select_related(
+            "membership__user", "organization"
+        ).get(id=export_id)
+    except DataExport.DoesNotExist:
+        logger.error(f"DataExport {export_id} not found")
+        return
+
+    if export.status != "pending":
+        logger.info(f"DataExport {export_id} already {export.status}, skipping")
+        return
+
+    export.status = "processing"
+    export.started_at = timezone.now()
+    export.save(update_fields=["status", "started_at"])
+
+    try:
+        from apps.work.organization.export_service import dsgvo_export_service
+
+        data = dsgvo_export_service.collect_user_data(
+            user=export.membership.user,
+            membership=export.membership,
+            organization=export.organization,
+        )
+
+        if export.export_format == "pdf":
+            html_content = render_to_string(
+                "work/profile/export/dsgvo_export.html",
+                {
+                    "data": data,
+                    "user": export.membership.user,
+                    "organization": export.organization,
+                    "export_date": timezone.now(),
+                },
+            )
+            file_bytes = dsgvo_export_service._html_to_pdf(html_content)
+            ext = "pdf"
+        else:
+            content = json_mod.dumps(data, indent=2, ensure_ascii=False, default=str)
+            file_bytes = content.encode("utf-8")
+            ext = "json"
+
+        # Write file to MEDIA_ROOT/exports/<org_id>/<membership_id>/
+        rel_dir = Path("exports") / str(export.organization_id) / str(export.membership_id)
+        abs_dir = settings.MEDIA_ROOT / rel_dir
+        abs_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = f"dsgvo-export-{export.id}.{ext}"
+        rel_path = rel_dir / filename
+        abs_path = abs_dir / filename
+
+        abs_path.write_bytes(file_bytes)
+
+        export.status = "completed"
+        export.file_path = str(rel_path)
+        export.file_size = len(file_bytes)
+        export.completed_at = timezone.now()
+        export.save(update_fields=["status", "file_path", "file_size", "completed_at"])
+
+        logger.info(f"DSGVO export {export_id} completed ({export.file_size_human})")
+
+    except Exception as e:
+        logger.error(f"DSGVO export {export_id} failed: {e}")
+        export.status = "failed"
+        export.error_message = str(e)
+        export.completed_at = timezone.now()
+        export.save(update_fields=["status", "error_message", "completed_at"])

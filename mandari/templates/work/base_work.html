@@ -33,6 +33,13 @@
 
     <style>
         [x-cloak] { display: none !important; }
+        .item-list a, .item-list a:visited { color: inherit; }
+        @keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-up { animation: fade-up .4s cubic-bezier(.16,1,.3,1) both; }
+        .d1 { animation-delay: .06s; }
+        .d2 { animation-delay: .12s; }
+        .d3 { animation-delay: .18s; }
+        .d4 { animation-delay: .24s; }
 
         /* Organization Color Variables */
         :root {
@@ -93,14 +100,14 @@
         .work-main {
             flex: 1;
             margin-left: 260px;
-            background: #f9fafb;
+            background: #faf9f7;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
         }
 
         .dark .work-main {
-            background: #0f172a;
+            background: #111827;
         }
 
         @media (max-width: 1024px) {
@@ -113,13 +120,13 @@
         .work-nav-item {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 10px 16px;
+            gap: 10px;
+            padding: 8px 12px;
             color: #4b5563;
             font-size: 14px;
             font-weight: 500;
             border-radius: 8px;
-            margin: 2px 8px;
+            margin: 1px 8px;
             transition: all 0.15s ease;
         }
 
@@ -131,8 +138,9 @@
         .work-nav-item.active {
             background: var(--org-color-light, #eef2ff);
             color: var(--org-color, #4f46e5);
-            border-left: 3px solid var(--org-color, #4f46e5);
-            padding-left: 13px;
+            font-weight: 600;
+            box-shadow: inset 3px 0 0 var(--org-color, #4f46e5);
+            padding-left: 9px;
         }
 
         .dark .work-nav-item {
@@ -147,21 +155,22 @@
         .dark .work-nav-item.active {
             background: var(--org-color-dark, #312e81);
             color: var(--org-color-text, #a5b4fc);
-            border-left: 3px solid var(--org-color, #4f46e5);
-            padding-left: 13px;
+            font-weight: 600;
+            box-shadow: inset 3px 0 0 var(--org-color, #4f46e5);
+            padding-left: 9px;
         }
 
         .work-nav-item i {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             flex-shrink: 0;
         }
 
         /* Sidebar Section */
         .work-nav-section {
-            padding: 16px 16px 8px;
-            font-size: 11px;
-            font-weight: 600;
+            padding: 12px 12px 6px;
+            font-size: 10px;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             color: #9ca3af;
@@ -230,13 +239,13 @@
         /* Page Header */
         .work-page-header {
             padding: 20px 32px;
-            background: linear-gradient(to right, white, #f8fafc);
-            border-bottom: 1px solid #e5e7eb;
+            background: #faf9f7;
+            border-bottom: 1px solid #e5e7eb20;
         }
 
         .dark .work-page-header {
-            background: linear-gradient(to right, #111827, #1e293b);
-            border-color: #374151;
+            background: #111827;
+            border-color: #37415140;
         }
 
         .work-page-title {
@@ -275,8 +284,12 @@
 
         /* Top bar */
         .work-topbar {
-            height: 56px;
-            background: white;
+            height: 52px;
+            position: sticky;
+            top: 0;
+            background: rgba(250, 249, 247, 0.8);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
             border-bottom: 1px solid #e5e7eb;
             display: flex;
             align-items: center;
@@ -285,15 +298,37 @@
         }
 
         .dark .work-topbar {
-            background: #111827;
+            background: rgba(17, 24, 39, 0.8);
             border-color: #374151;
         }
     </style>
     {% block work_extra_head %}{% endblock %}
 </head>
 
-<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-org-slug="{{ organization.slug }}">
-    <div class="work-layout" x-data="{ sidebarOpen: false }">
+<body class="bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-org-slug="{{ organization.slug }}">
+    <div class="work-layout" x-data="{
+        sidebarOpen: false,
+        docViewerUrl: '',
+        docViewerName: '',
+        docViewerMeta: '',
+        docViewerLoading: false,
+        docViewerError: false,
+        _docTimeout: null,
+        openDoc(url, name, meta) {
+            this.docViewerUrl = url;
+            this.docViewerName = name || 'Dokument';
+            this.docViewerMeta = meta || '';
+            this.docViewerLoading = true;
+            this.docViewerError = false;
+            clearTimeout(this._docTimeout);
+            this._docTimeout = setTimeout(() => {
+                if (this.docViewerLoading) {
+                    this.docViewerLoading = false;
+                    this.docViewerError = true;
+                }
+            }, 30000);
+        }
+    }">
         <!-- Mobile Sidebar Overlay -->
         <div class="work-sidebar-overlay"
              :class="{ 'open': sidebarOpen }"
@@ -337,10 +372,10 @@
                     Meine Sitzungen
                 </a>
 
-                <a href="{% url 'work:motions' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_nav == 'motions' %}active{% endif %}">
+                <a href="{% url 'work:documents' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_nav == 'documents' %}active{% endif %}">
                     <i data-lucide="file-text"></i>
-                    Anträge & Vorgänge
+                    Dokumente
                 </a>
 
                 <a href="{% url 'work:faction' org_slug=organization.slug %}"
@@ -355,58 +390,61 @@
                     Aufgaben
                 </a>
 
-                <div class="work-nav-section">RIS</div>
+                <a href="{% url 'work:team' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_nav == 'team' %}active{% endif %}">
+                    <i data-lucide="contact"></i>
+                    Team
+                </a>
 
-                <!-- RIS with collapsible sub-menu -->
-                <div x-data="{ expanded: {% if active_nav == 'ris' %}true{% else %}false{% endif %} }">
-                    <button @click="expanded = !expanded"
-                            class="work-nav-item w-full justify-between {% if active_nav == 'ris' %}active{% endif %}">
-                        <span class="flex items-center gap-3">
-                            <i data-lucide="building-2"></i>
-                            Ratsinformation
-                        </span>
-                        <i data-lucide="chevron-down" class="w-4 h-4 transition-transform duration-200" :class="expanded ? 'rotate-180' : ''"></i>
-                    </button>
-                    <div x-show="expanded"
-                         x-transition:enter="transition ease-out duration-200"
-                         x-transition:enter-start="opacity-0 -translate-y-2"
-                         x-transition:enter-end="opacity-100 translate-y-0"
-                         x-transition:leave="transition ease-in duration-150"
-                         x-transition:leave-start="opacity-100 translate-y-0"
-                         x-transition:leave-end="opacity-0 -translate-y-2"
-                         class="ml-4 mt-1 space-y-1 border-l-2 border-gray-200 dark:border-gray-700 pl-2">
-                        <a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
-                           class="work-nav-item text-sm {% if active_subnav == 'ris_overview' %}active{% endif %}">
-                            <i data-lucide="layout-grid" class="w-4 h-4"></i>
-                            Übersicht
-                        </a>
-                        <a href="{% url 'work:ris_meetings' org_slug=organization.slug %}"
-                           class="work-nav-item text-sm {% if active_subnav == 'ris_meetings' %}active{% endif %}">
-                            <i data-lucide="calendar" class="w-4 h-4"></i>
-                            Sitzungen
-                        </a>
-                        <a href="{% url 'work:ris_papers' org_slug=organization.slug %}"
-                           class="work-nav-item text-sm {% if active_subnav == 'ris_papers' %}active{% endif %}">
-                            <i data-lucide="file-text" class="w-4 h-4"></i>
-                            Vorgänge
-                        </a>
-                        <a href="{% url 'work:ris_organizations' org_slug=organization.slug %}"
-                           class="work-nav-item text-sm {% if active_subnav == 'ris_organizations' %}active{% endif %}">
-                            <i data-lucide="building" class="w-4 h-4"></i>
-                            Gremien
-                        </a>
-                        <a href="{% url 'work:ris_persons' org_slug=organization.slug %}"
-                           class="work-nav-item text-sm {% if active_subnav == 'ris_persons' %}active{% endif %}">
-                            <i data-lucide="users" class="w-4 h-4"></i>
-                            Personen
-                        </a>
-                        <a href="{% url 'work:ris_search' org_slug=organization.slug %}"
-                           class="work-nav-item text-sm {% if active_subnav == 'ris_search' %}active{% endif %}">
-                            <i data-lucide="search" class="w-4 h-4"></i>
-                            Suche
-                        </a>
-                    </div>
-                </div>
+                <div class="work-nav-section">Ratsinformation</div>
+
+                <a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_subnav == 'ris_overview' %}active{% endif %}">
+                    <i data-lucide="layout-dashboard"></i>
+                    Übersicht
+                </a>
+
+                <a href="{% url 'work:ris_meetings' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_subnav == 'ris_meetings' %}active{% endif %}">
+                    <i data-lucide="calendar-days"></i>
+                    Sitzungen
+                </a>
+
+                <a href="{% url 'work:ris_papers' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_subnav == 'ris_papers' %}active{% endif %}">
+                    <i data-lucide="file-text"></i>
+                    Vorgänge
+                </a>
+
+                <a href="{% url 'work:ris_organizations' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_subnav == 'ris_organizations' %}active{% endif %}">
+                    <i data-lucide="building-2"></i>
+                    Gremien
+                </a>
+
+                <a href="{% url 'work:ris_persons' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_subnav == 'ris_persons' %}active{% endif %}">
+                    <i data-lucide="users"></i>
+                    Personen
+                </a>
+
+                <a href="{% url 'work:ris_files' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_subnav == 'ris_files' %}active{% endif %}">
+                    <i data-lucide="files"></i>
+                    Dokumente
+                </a>
+
+                <a href="{% url 'work:ris_map' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_subnav == 'ris_map' %}active{% endif %}">
+                    <i data-lucide="map"></i>
+                    Karte
+                </a>
+
+                <a href="{% url 'work:ris_search' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_subnav == 'ris_search' %}active{% endif %}">
+                    <i data-lucide="search"></i>
+                    Suche
+                </a>
 
                 {% if membership|has_perm:"organization.view" %}
                 <div class="work-nav-section">Verwaltung</div>
@@ -450,7 +488,7 @@
         <!-- Main Content -->
         <main class="work-main">
             <!-- Top Bar -->
-            <div class="work-topbar">
+            <div class="work-topbar z-30">
                 <div class="flex items-center gap-4">
                     <!-- Mobile menu button -->
                     <button @click="sidebarOpen = !sidebarOpen"
@@ -633,6 +671,75 @@
                 {% block work_content %}{% endblock %}
             </div>
         </main>
+
+        <!-- Document Viewer Modal -->
+        {% include "components/document_viewer.html" %}
+    </div>
+
+    <!-- Confirm Dialog -->
+    <div x-data="{
+            open: false,
+            title: '',
+            message: '',
+            confirmText: 'Bestätigen',
+            variant: 'danger',
+            _resolve: null,
+            show(opts) {
+                this.title = opts.title || 'Bestätigen';
+                this.message = opts.message || '';
+                this.confirmText = opts.confirmText || 'Bestätigen';
+                this.variant = opts.variant || 'danger';
+                this.open = true;
+                this.$nextTick(() => { this.$refs.confirmBtn?.focus(); lucide.createIcons(); });
+                return new Promise(r => { this._resolve = r; });
+            },
+            accept() { this.open = false; this._resolve?.(true); this._resolve = null; },
+            dismiss() { this.open = false; this._resolve?.(false); this._resolve = null; },
+         }"
+         x-on:confirm-dialog.window="show($event.detail).then(ok => { if ($event.detail._cb) $event.detail._cb(ok) })"
+         @keydown.escape.window="if (open) dismiss()">
+
+        <div x-show="open" x-cloak
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100"
+             x-transition:leave-end="opacity-0"
+             class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+             @click.self="dismiss()">
+            <div x-show="open"
+                 x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="opacity-0 scale-95"
+                 x-transition:enter-end="opacity-100 scale-100"
+                 x-transition:leave="transition ease-in duration-150"
+                 x-transition:leave-start="opacity-100 scale-100"
+                 x-transition:leave-end="opacity-0 scale-95"
+                 class="bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 w-full max-w-sm overflow-hidden">
+                <div class="p-6 text-center">
+                    <!-- Icon -->
+                    <div class="mx-auto w-12 h-12 rounded-full flex items-center justify-center mb-4"
+                         :class="variant === 'danger' ? 'bg-red-100 dark:bg-red-900/30' : variant === 'warning' ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-blue-100 dark:bg-blue-900/30'">
+                        <i :data-lucide="variant === 'info' ? 'info' : 'triangle-alert'"
+                           class="w-6 h-6"
+                           :class="variant === 'danger' ? 'text-red-600 dark:text-red-400' : variant === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'"></i>
+                    </div>
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-1" x-text="title"></h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400" x-text="message"></p>
+                </div>
+                <div class="flex gap-3 px-6 pb-5">
+                    <button @click="dismiss()" type="button"
+                            class="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                        Abbrechen
+                    </button>
+                    <button @click="accept()" type="button" x-ref="confirmBtn"
+                            class="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg"
+                            :class="variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : variant === 'warning' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary-600 hover:bg-primary-700'"
+                            x-text="confirmText">
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Toast Notifications -->
@@ -763,6 +870,16 @@
         window.showToast = function(message, type = 'info') {
             const event = new CustomEvent('show-toast', { detail: { message, type } });
             window.dispatchEvent(event);
+        };
+
+        // Global confirm dialog - returns Promise<boolean>
+        // Usage: const ok = await confirmAction({ title, message, confirmText, variant })
+        window.confirmAction = function(options) {
+            return new Promise(resolve => {
+                window.dispatchEvent(new CustomEvent('confirm-dialog', {
+                    detail: { ...options, _cb: resolve }
+                }));
+            });
         };
     </script>
 

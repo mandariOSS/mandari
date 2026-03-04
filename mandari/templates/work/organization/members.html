@@ -9,44 +9,18 @@
 
 {% block header_actions %}
 <a href="{% url 'work:member_invite' org_slug=organization.slug %}"
-   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
     <i data-lucide="user-plus" class="w-4 h-4"></i>
     Einladen
 </a>
 {% endblock %}
 
 {% block work_content %}
-<!-- Navigation Tabs -->
-<div class="mb-8 border-b border-gray-200 dark:border-gray-700">
-    <nav class="flex gap-1 overflow-x-auto">
-        <a href="{% url 'work:organization' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Allgemein
-        </a>
-        {% if can_manage_faction %}
-        <a href="{% url 'work:organization_faction_settings' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Fraktionssitzungen
-        </a>
-        {% endif %}
-        <a href="{% url 'work:organization_documents' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Anträge & Vorgänge
-        </a>
-        <a href="{% url 'work:members' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 whitespace-nowrap">
-            Mitglieder
-        </a>
-        <a href="{% url 'work:roles' org_slug=organization.slug %}"
-           class="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
-            Rollen
-        </a>
-    </nav>
-</div>
+{% include "work/organization/_tabs.html" %}
 
 <!-- Pending Invitations -->
 {% if pending_invitations %}
-<div class="mb-6 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800">
+<div class="mb-6 fade-up bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800">
     <div class="px-6 py-4 border-b border-amber-200 dark:border-amber-800">
         <h3 class="font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-2">
             <i data-lucide="mail" class="w-5 h-5"></i>
@@ -81,7 +55,7 @@
                     </button>
                 </form>
                 <form method="post" action="{% url 'work:invitation_cancel' org_slug=organization.slug invitation_id=invitation.id %}"
-                      onsubmit="return confirm('Einladung wirklich zurückziehen?')">
+                      x-data @submit.prevent="confirmAction({title: 'Einladung zurückziehen', message: 'Möchten Sie die Einladung wirklich zurückziehen?', confirmText: 'Zurückziehen', variant: 'warning'}).then(ok => ok && $el.submit())">
                     {% csrf_token %}
                     <button type="submit" class="p-2 text-gray-500 hover:text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg" title="Zurückziehen">
                         <i data-lucide="x" class="w-4 h-4"></i>
@@ -95,7 +69,7 @@
 {% endif %}
 
 <!-- Active Members List -->
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
         <h3 class="font-semibold text-gray-900 dark:text-white">Aktive Mitglieder</h3>
     </div>
@@ -158,7 +132,7 @@
         </div>
         <p class="text-gray-500 dark:text-gray-400 mb-4">Noch keine Mitglieder vorhanden.</p>
         <a href="{% url 'work:member_invite' org_slug=organization.slug %}"
-           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
             <i data-lucide="user-plus" class="w-4 h-4"></i>
             Erstes Mitglied einladen
         </a>
