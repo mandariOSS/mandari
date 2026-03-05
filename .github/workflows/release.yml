@@ -109,6 +109,10 @@ jobs:
           echo "Ingestor tags: $INGESTOR_TAGS"
           echo "Website tags: $WEBSITE_TAGS"
 
+      # =====================================================================
+      # Build, scan, and push all images
+      # =====================================================================
+
       - name: Build and push mandari image
         uses: docker/build-push-action@v5
         with:
@@ -123,6 +127,14 @@ jobs:
             org.opencontainers.image.description=Mandari - Open-Source Platform for Municipal Political Transparency
             org.opencontainers.image.licenses=AGPL-3.0
             org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Scan mandari image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${{ steps.tags.outputs.short_sha }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
 
       - name: Build and push ingestor image
         uses: docker/build-push-action@v5
@@ -139,6 +151,14 @@ jobs:
             org.opencontainers.image.licenses=AGPL-3.0
             org.opencontainers.image.revision=${{ github.sha }}
 
+      - name: Scan ingestor image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${{ steps.tags.outputs.short_sha }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
       - name: Build and push website image
         uses: docker/build-push-action@v5
         with:
@@ -153,3 +173,11 @@ jobs:
             org.opencontainers.image.description=Mandari Marketing Website - Wagtail CMS
             org.opencontainers.image.licenses=AGPL-3.0
             org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Scan website image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${{ steps.tags.outputs.short_sha }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
