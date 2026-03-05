@@ -5,8 +5,11 @@
 # Interactive installer for single-server deployment
 #
 # Usage:
-#   ./install.sh              # Interactive mode
-#   ./install.sh --unattended # Use defaults or environment variables
+#   ./install.sh                    # Interactive mode (latest)
+#   ./install.sh --tag dev          # Install dev version
+#   ./install.sh --tag beta         # Install beta version
+#   ./install.sh --tag v1.0.0       # Install specific version
+#   ./install.sh --unattended       # Use defaults or environment variables
 # =============================================================================
 
 set -euo pipefail
@@ -256,7 +259,7 @@ INGESTOR_CONCURRENT=10
 # =============================================================================
 # Version
 # =============================================================================
-IMAGE_TAG=latest
+IMAGE_TAG=${IMAGE_TAG}
 
 # =============================================================================
 # Optional: Email Configuration
@@ -461,6 +464,7 @@ show_summary() {
     else
         echo -e "  URL:        ${BLUE}http://localhost${NC}"
     fi
+    echo -e "  Version:    ${CYAN}${IMAGE_TAG}${NC}"
 
     echo ""
     echo "  Commands:"
@@ -498,12 +502,32 @@ show_summary() {
 # Main
 # =============================================================================
 main() {
-    # Set unattended flag early so check_prerequisites can use it
-    if [ "${1:-}" = "--unattended" ]; then
-        UNATTENDED=true
-    else
-        UNATTENDED=false
-    fi
+    UNATTENDED=false
+    IMAGE_TAG=""
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --unattended)
+                UNATTENDED=true
+                shift
+                ;;
+            --tag)
+                if [ -z "${2:-}" ]; then
+                    error "--tag requires a value (e.g., --tag dev)"
+                fi
+                IMAGE_TAG="$2"
+                shift 2
+                ;;
+            --tag=*)
+                IMAGE_TAG="${1#--tag=}"
+                shift
+                ;;
+            *)
+                error "Unknown argument: $1\nUsage: ./install.sh [--tag dev|beta|latest|VERSION] [--unattended]"
+                ;;
+        esac
+    done
 
     show_banner
     check_prerequisites
@@ -517,11 +541,30 @@ main() {
         POSTGRES_DB="${POSTGRES_DB:-mandari}"
         REDIS_MAXMEMORY="${REDIS_MAXMEMORY:-256mb}"
         INGESTOR_INTERVAL="${INGESTOR_INTERVAL:-15}"
+        IMAGE_TAG="${IMAGE_TAG:-latest}"
         log "Running in unattended mode"
     else
         configure_interactively
+
+        # Image tag selection (if not set via --tag)
+        if [ -z "$IMAGE_TAG" ]; then
+            echo ""
+            echo -e "  ${CYAN}Release-Kanal wählen:${NC}"
+            echo "    1) latest  — Stabile Version (empfohlen für Produktion)"
+            echo "    2) beta    — Beta-Version (für Tests)"
+            echo "    3) dev     — Entwicklungsversion (instabil)"
+            echo ""
+            read -p "  Auswahl [1]: " channel_choice
+            case "${channel_choice:-1}" in
+                1) IMAGE_TAG="latest" ;;
+                2) IMAGE_TAG="beta" ;;
+                3) IMAGE_TAG="dev" ;;
+                *) IMAGE_TAG="latest" ;;
+            esac
+        fi
     fi
 
+    log "Image-Tag: $IMAGE_TAG"
     generate_secrets
     create_env_file
     start_services
