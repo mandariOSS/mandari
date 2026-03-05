@@ -304,7 +304,7 @@ def _parse_ai_locations(content: str) -> list[dict]:
 
     if content.startswith("```"):
         lines = content.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [line for line in lines if not line.strip().startswith("```")]
         content = "\n".join(lines).strip()
 
     try:
@@ -423,7 +423,6 @@ def _geocode_photon(address: str, body) -> dict | None:
             osm_key = props.get("osm_key", "")
             result_name = props.get("name") or props.get("street") or ""
             result_street = props.get("street") or ""
-            result_city = props.get("city") or ""
 
             # Validation 1: Must be a geographic feature, not random POI
             if osm_key not in _VALID_OSM_KEYS:

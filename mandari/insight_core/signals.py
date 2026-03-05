@@ -20,13 +20,11 @@ from .models import (
     OParlPaper,
     OParlPerson,
 )
-from .services.search_documents import (
-    file_to_doc as _file_to_doc,
-    meeting_to_doc as _meeting_to_doc,
-    organization_to_doc as _organization_to_doc,
-    paper_to_doc as _paper_to_doc,
-    person_to_doc as _person_to_doc,
-)
+from .services.search_documents import file_to_doc as _file_to_doc
+from .services.search_documents import meeting_to_doc as _meeting_to_doc
+from .services.search_documents import organization_to_doc as _organization_to_doc
+from .services.search_documents import paper_to_doc as _paper_to_doc
+from .services.search_documents import person_to_doc as _person_to_doc
 
 logger = logging.getLogger(__name__)
 

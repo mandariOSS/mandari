@@ -403,11 +403,11 @@ class Command(BaseCommand):
                 self.stdout.write("  Konfiguriere Embedder für Hybrid Search...")
                 try:
                     index.update_embedders(embedder_configs[index_name])
-                    self.stdout.write(f"    Embedder 'default' gesetzt")
+                    self.stdout.write("    Embedder 'default' gesetzt")
                 except AttributeError:
                     try:
                         index.update_settings({"embedders": embedder_configs[index_name]})
-                        self.stdout.write(f"    Embedder 'default' gesetzt (via update_settings)")
+                        self.stdout.write("    Embedder 'default' gesetzt (via update_settings)")
                     except Exception as e:
                         self.stdout.write(self.style.WARNING(f"    Embedder-Konfiguration fehlgeschlagen: {e}"))
                 except Exception as e:

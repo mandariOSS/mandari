@@ -177,7 +177,7 @@ def file_to_doc(file, context_info: dict[str, Any] | None = None) -> dict[str, A
 def _resolve_file_context(file, doc: dict[str, Any]) -> None:
     """Resolve file context (organization, meeting, agenda) from DB."""
     try:
-        from insight_core.models import OParlConsultation, OParlMeeting, OParlAgendaItem
+        from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting
 
         meeting = None
         agenda_number = None

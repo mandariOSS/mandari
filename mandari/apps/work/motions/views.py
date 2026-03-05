@@ -7,22 +7,21 @@ import logging
 import uuid
 
 from django.contrib import messages
-
-logger = logging.getLogger("apps.work.motions")
+from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
-from django.core.exceptions import PermissionDenied
 from django.utils import timezone
 from django.views.generic import TemplateView, View
+
+logger = logging.getLogger("apps.work.motions")
 
 from apps.common.mixins import WorkViewMixin
 
 from .forms import (
     AIAssistantForm,
     MotionCommentForm,
-    MotionContentForm,
     MotionDocumentForm,
     MotionForm,
     MotionShareForm,

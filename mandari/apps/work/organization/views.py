@@ -3,7 +3,6 @@
 Organization settings views for the Work module.
 """
 
-import json
 import logging
 
 from django.contrib import messages
@@ -1761,7 +1760,7 @@ class ProfileAbsenceView(WorkViewMixin, TemplateView):
                 is_active=True,
             ).first()
 
-        absence = MemberAbsence.objects.create(
+        MemberAbsence.objects.create(
             organization=self.organization,
             membership=self.membership,
             start_date=start,

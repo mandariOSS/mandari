@@ -11,7 +11,6 @@ Usage: python manage.py generate_alerts
 
 import logging
 
-from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import connection
 from django.utils import timezone
@@ -36,7 +35,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        from insight_core.models import InsightSubscriber, SubscriptionAlert
+        from insight_core.models import InsightSubscriber
 
         days = options["days"]
         dry_run = options["dry_run"]

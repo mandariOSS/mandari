@@ -246,7 +246,7 @@ class Command(BaseCommand):
                 ref = paper.reference or str(paper.id)[:8]
 
                 if status == "completed":
-                    loc_names = [l.get("name", "?") for l in locs[:3]]
+                    loc_names = [loc.get("name", "?") for loc in locs[:3]]
                     self.stdout.write(
                         self.style.SUCCESS(
                             f"  {ref}: {len(locs)} Orte ({method}) "

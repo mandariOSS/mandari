@@ -8,8 +8,8 @@ Three filter stages, all executed BEFORE the LLM call:
 3. Prompt injection detection (role override attempts)
 """
 
-import re
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 

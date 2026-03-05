@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -30,7 +30,6 @@ from .models import (
     FactionAttendance,
     FactionDecision,
     FactionMeeting,
-    FactionMeetingSchedule,
     FactionProtocolEntry,
 )
 
@@ -253,7 +252,6 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
             return redirect("work:faction", org_slug=self.organization.slug)
 
         # Combine date and time
-        post_data = request.POST.copy()
         start_date = request.POST.get("start_date")
         start_time = request.POST.get("start_time", "18:00")
 
@@ -1060,9 +1058,6 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
         except FactionDecision.DoesNotExist:
             decision = None
 
-        from apps.common.permissions import PermissionChecker
-        checker = PermissionChecker(self.membership)
-
         can_edit = (
             meeting.created_by == self.membership
             or self.membership.has_permission("faction.manage")
@@ -1155,7 +1150,6 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
     def _render_panel(self, request, meeting, item):
         """Re-render the full panel."""
-        from django.test import RequestFactory
         view = FactionItemPanelView()
         view.request = request
         view.organization = self.organization

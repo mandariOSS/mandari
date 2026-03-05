@@ -7,7 +7,6 @@ E-Mail-Versand und Hilfsfunktionen für den Ratsfragen-Workflow.
 import logging
 
 from django.conf import settings
-from django.db.models import Q
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)

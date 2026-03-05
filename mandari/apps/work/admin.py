@@ -13,6 +13,8 @@ from django.utils import timezone
 from django.utils.html import format_html, mark_safe
 from unfold.admin import ModelAdmin, StackedInline, TabularInline
 
+from .faction.models import FactionAgendaItemAttachment
+from .motions.models import OrganizationAITokenUsage
 from .support.models import (
     ArticleFeedback,
     KnowledgeBaseArticle,
@@ -21,8 +23,6 @@ from .support.models import (
     SupportTicketAttachment,
     SupportTicketMessage,
 )
-from .faction.models import FactionAgendaItemAttachment
-from .motions.models import OrganizationAITokenUsage
 
 # =============================================================================
 # Support Ticket Badge for Unfold Sidebar

@@ -9,7 +9,6 @@ import logging
 from datetime import timedelta
 
 from django.core.paginator import Paginator
-from django.db import models
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -120,7 +119,7 @@ class PortalHomeView(TemplateView):
                 os.path.dirname(__file__), "data", "stadtteile.json"
             )
             if os.path.exists(data_path):
-                with open(data_path, "r", encoding="utf-8") as f:
+                with open(data_path, encoding="utf-8") as f:
                     all_districts = json.load(f)
                 slug = body.slug or ""
                 context["home_districts"] = all_districts.get(slug, [])
@@ -1339,8 +1338,6 @@ def map_markers(request):
 
 import httpx
 from django.views.decorators.cache import cache_page
-
-
 from django.views.decorators.clickjacking import xframe_options_exempt
 
 
@@ -2272,7 +2269,7 @@ class NeighborhoodView(TemplateView):
                 os.path.dirname(__file__), "data", "stadtteile.json"
             )
             if os.path.exists(data_path):
-                with open(data_path, "r", encoding="utf-8") as f:
+                with open(data_path, encoding="utf-8") as f:
                     all_districts = json_mod.load(f)
                 slug = body.slug or ""
                 context["districts"] = all_districts.get(slug, [])

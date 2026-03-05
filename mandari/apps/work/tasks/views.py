@@ -14,7 +14,7 @@ import logging
 import mimetypes
 
 from django.contrib import messages
-from django.db.models import Q, Prefetch
+from django.db.models import Prefetch, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
@@ -28,9 +28,9 @@ from .forms import (
     QuickTaskForm,
     TaskAttachmentForm,
     TaskChecklistItemForm,
+    TaskForm,
     TaskLabelForm,
     TaskPanelForm,
-    TaskForm,
 )
 from .models import Task, TaskActivity, TaskAttachment, TaskChecklistItem, TaskLabel, TaskShare
 
