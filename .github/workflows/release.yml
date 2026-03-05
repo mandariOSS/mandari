@@ -104,7 +104,12 @@ jobs:
           echo "website_tags=$WEBSITE_TAGS" >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
+          # Scan-Tag: erstes Tag aus der komma-separierten Liste (für Trivy)
+          SCAN_TAG=$(echo "$MANDARI_TAGS" | cut -d',' -f1 | rev | cut -d':' -f1 | rev)
+          echo "scan_tag=$SCAN_TAG" >> $GITHUB_OUTPUT
+
           echo "Branch: $BRANCH"
+          echo "Scan tag: $SCAN_TAG"
           echo "Mandari tags: $MANDARI_TAGS"
           echo "Ingestor tags: $INGESTOR_TAGS"
           echo "Website tags: $WEBSITE_TAGS"
@@ -131,7 +136,7 @@ jobs:
       - name: Scan mandari image for vulnerabilities
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${{ steps.tags.outputs.short_sha }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${{ steps.tags.outputs.scan_tag }}
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
           format: 'table'
@@ -154,7 +159,7 @@ jobs:
       - name: Scan ingestor image for vulnerabilities
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${{ steps.tags.outputs.short_sha }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${{ steps.tags.outputs.scan_tag }}
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
           format: 'table'
@@ -177,7 +182,7 @@ jobs:
       - name: Scan website image for vulnerabilities
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${{ steps.tags.outputs.short_sha }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${{ steps.tags.outputs.scan_tag }}
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
           format: 'table'
