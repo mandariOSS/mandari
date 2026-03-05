@@ -55,6 +55,33 @@ info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
 
+# Sicheres Lesen einzelner Werte aus .env (kein source = keine Code-Injection)
+get_env_var() {
+    local key="$1"
+    local default="${2:-}"
+    local val
+    val=$(grep -E "^${key}=" .env 2>/dev/null | head -1 | cut -d'=' -f2-)
+    echo "${val:-$default}"
+}
+
+# Alle Variablen aus .env sicher laden (nur KEY=VALUE Zeilen, keine Shell-Expansion)
+load_env_safe() {
+    if [ ! -f ".env" ]; then
+        return 1
+    fi
+    while IFS='=' read -r key value; do
+        # Kommentare und leere Zeilen überspringen
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        # Führende/nachfolgende Leerzeichen entfernen
+        key=$(echo "$key" | xargs)
+        value=$(echo "$value" | xargs)
+        # Nur gültige Variablennamen exportieren
+        if [[ "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+            export "$key=$value"
+        fi
+    done < .env
+}
+
 # Warte bis Container healthy ist
 wait_for_healthy() {
     local container=$1
@@ -195,9 +222,8 @@ if ! docker info &>/dev/null; then
     error "Docker Daemon läuft nicht"
 fi
 
-# Aktuelle Version merken
-source .env
-CURRENT_VERSION="${IMAGE_TAG:-latest}"
+# Aktuelle Version merken (sicheres Parsing, kein source)
+CURRENT_VERSION=$(get_env_var IMAGE_TAG latest)
 log "Aktuelle Version: $CURRENT_VERSION"
 
 # =============================================================================
@@ -210,8 +236,8 @@ if [ "$DO_ROLLBACK" = true ]; then
 
     warn "Rollback auf vorherige Version..."
     cp .env.pre-update .env
-    source .env
-    log "Zielversion: ${IMAGE_TAG:-latest}"
+    ROLLBACK_VERSION=$(get_env_var IMAGE_TAG latest)
+    log "Zielversion: $ROLLBACK_VERSION"
 
     docker compose pull mandari website ingestor 2>/dev/null || true
 
@@ -431,8 +457,7 @@ echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}  Update abgeschlossen!${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
-source .env
-echo "  Version:   ${IMAGE_TAG:-latest}"
+echo "  Version:   $(get_env_var IMAGE_TAG latest)"
 echo "  Rollback:  ./update.sh --rollback"
 echo ""
 echo "  Logs:      docker compose logs -f"

@@ -311,7 +311,8 @@ wait_for_healthy() {
 # =============================================================================
 setup_cron_backup() {
     if [ -x "./backup.sh" ]; then
-        local cron_line="0 2 * * * cd $SCRIPT_DIR && ./backup.sh --quiet >> /var/log/mandari-backup.log 2>&1"
+        mkdir -p "$SCRIPT_DIR/logs"
+        local cron_line="0 2 * * * cd $SCRIPT_DIR && ./backup.sh --quiet >> $SCRIPT_DIR/logs/backup.log 2>&1"
         if crontab -l 2>/dev/null | grep -q "mandari.*backup"; then
             info "Tägliches Backup bereits in Crontab eingerichtet"
         else

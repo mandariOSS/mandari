@@ -59,6 +59,15 @@ info() {
     fi
 }
 
+# Sicheres Lesen einzelner Werte aus .env (kein source = keine Code-Injection)
+get_env_var() {
+    local key="$1"
+    local default="${2:-}"
+    local val
+    val=$(grep -E "^${key}=" .env 2>/dev/null | head -1 | cut -d'=' -f2-)
+    echo "${val:-$default}"
+}
+
 # =============================================================================
 # Parse Arguments
 # =============================================================================
@@ -154,8 +163,10 @@ if [ "$RESTORE_MODE" = true ]; then
     # Restore database
     if [ -f "$BACKUP_CONTENT/postgres.sql" ]; then
         log "Datenbank wiederherstellen..."
-        source .env
-        docker exec -i mandari-postgres psql -U "${POSTGRES_USER:-mandari}" "${POSTGRES_DB:-mandari}" < "$BACKUP_CONTENT/postgres.sql"
+        local restore_user restore_db
+        restore_user=$(get_env_var POSTGRES_USER mandari)
+        restore_db=$(get_env_var POSTGRES_DB mandari)
+        docker exec -i mandari-postgres psql -U "$restore_user" "$restore_db" < "$BACKUP_CONTENT/postgres.sql"
     fi
 
     # Restore Meilisearch data
@@ -190,8 +201,13 @@ if [ ! -f ".env" ]; then
     error "Keine .env Datei gefunden. Ist Mandari installiert?"
 fi
 
-# Load environment
-source .env
+# Load environment variables safely (no source = no code injection)
+POSTGRES_USER=$(get_env_var POSTGRES_USER mandari)
+POSTGRES_DB=$(get_env_var POSTGRES_DB mandari)
+WEBSITE_DB=$(get_env_var WEBSITE_DB mandari_website)
+MEILISEARCH_KEY=$(get_env_var MEILISEARCH_KEY "")
+DOMAIN=$(get_env_var DOMAIN unknown)
+IMAGE_TAG=$(get_env_var IMAGE_TAG latest)
 
 # Create backup directory
 mkdir -p "$BACKUP_DIR"
@@ -210,11 +226,21 @@ cp .env "$BACKUP_PATH/.env"
 # Backup PostgreSQL
 # =============================================================================
 log "Datenbank sichern..."
-if docker exec mandari-postgres pg_dump -U "${POSTGRES_USER:-mandari}" "${POSTGRES_DB:-mandari}" > "$BACKUP_PATH/postgres.sql" 2>/dev/null; then
+if docker exec mandari-postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > "$BACKUP_PATH/postgres.sql" 2>/dev/null; then
     DB_SIZE=$(du -h "$BACKUP_PATH/postgres.sql" | cut -f1)
-    log "  Datenbank: $DB_SIZE"
+    log "  Mandari-DB: $DB_SIZE"
 else
     error "Datenbank-Backup fehlgeschlagen. Läuft PostgreSQL?"
+fi
+
+# Website-Datenbank (Wagtail) — falls vorhanden
+if docker exec mandari-postgres psql -U "$POSTGRES_USER" -lqt 2>/dev/null | grep -q "$WEBSITE_DB"; then
+    if docker exec mandari-postgres pg_dump -U "$POSTGRES_USER" "$WEBSITE_DB" > "$BACKUP_PATH/postgres_website.sql" 2>/dev/null; then
+        WDB_SIZE=$(du -h "$BACKUP_PATH/postgres_website.sql" | cut -f1)
+        log "  Website-DB: $WDB_SIZE"
+    else
+        warn "  Website-DB-Backup fehlgeschlagen"
+    fi
 fi
 
 # =============================================================================
@@ -293,7 +319,6 @@ if [ "$VERIFY" = true ]; then
             warn "  Datenbank-Dump: Header nicht gefunden — möglicherweise unvollständig"
         fi
 
-        local sql_size
         sql_size=$(du -h "$VERIFY_CONTENT/postgres.sql" | cut -f1)
         log "  Datenbank-Größe: $sql_size"
     fi
