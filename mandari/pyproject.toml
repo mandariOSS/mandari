@@ -46,6 +46,9 @@ dependencies = [
     "pillow>=10.0.0",  # For ImageField (logos)
     "markdown>=3.7",  # For markdownify template filter
 
+    # Zero-Downtime Migrations
+    "django-safemigrate>=4.3",
+
     # Production server
     "gunicorn>=23.0.0",
 ]

@@ -88,6 +88,7 @@ INSTALLED_APPS = [
     "django.contrib.humanize",
     # Third-party apps
     "django_htmx",
+    "django_safemigrate",
     # Mandari Insight apps (OSS)
     "insight_core",
     "insight_sync",

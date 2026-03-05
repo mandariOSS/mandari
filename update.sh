@@ -342,23 +342,23 @@ info "  (Alter Container bedient weiterhin Requests)"
 docker compose pull
 
 # =============================================================================
-# Phase 2: Migrationen BEVOR Container getauscht werden
+# Phase 2: Pre-Deploy Migrationen (nur schema-kompatible Änderungen)
 # =============================================================================
 echo ""
-log "Phase 2: Datenbank-Migrationen..."
+log "Phase 2: Pre-Deploy Migrationen (django-safemigrate)..."
+info "  (Nur Migrationen die mit dem alten Code kompatibel sind)"
 info "  (Temporärer Container, alter bedient weiter Requests)"
 
-# Mandari-Migrationen via temporären Container
+# Pre-Deploy: Nur Safe.before_deploy() und Safe.always() Migrationen
 if docker compose run --rm --no-deps \
-    -e DATABASE_URL="postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}" \
-    mandari python manage.py migrate --noinput 2>&1; then
-    log "  Mandari-Migrationen erfolgreich"
+    mandari python manage.py safemigrate --noinput 2>&1; then
+    log "  Pre-Deploy Migrationen erfolgreich"
 else
-    warn "  Mandari-Migrationen fehlgeschlagen — prüfe Logs"
+    warn "  Pre-Deploy Migrationen fehlgeschlagen — prüfe Logs"
     warn "  Update wird fortgesetzt (Migrationen könnten bereits aktuell sein)"
 fi
 
-# Website-Migrationen via temporären Container
+# Website-Migrationen (kein safemigrate, einfache Wagtail-Schemas)
 if docker compose run --rm --no-deps \
     website python manage.py migrate --noinput 2>&1; then
     log "  Website-Migrationen erfolgreich"
@@ -404,10 +404,23 @@ docker compose up -d --no-deps ingestor
 log "  Ingestor gestartet"
 
 # =============================================================================
-# Phase 4: Caddy reload (falls Caddyfile geändert)
+# Phase 4: Post-Deploy Migrationen (nach Container-Swap)
 # =============================================================================
 echo ""
-log "Phase 4: Caddy-Konfiguration prüfen..."
+log "Phase 4: Post-Deploy Migrationen..."
+info "  (Migrationen die den neuen Code benötigen: RemoveField, Data-Migrations)"
+
+if docker exec mandari python manage.py migrate --noinput 2>&1; then
+    log "  Post-Deploy Migrationen erfolgreich"
+else
+    warn "  Post-Deploy Migrationen fehlgeschlagen — prüfe: docker logs mandari"
+fi
+
+# =============================================================================
+# Phase 5: Caddy reload (falls Caddyfile geändert)
+# =============================================================================
+echo ""
+log "Phase 5: Caddy-Konfiguration prüfen..."
 if docker exec mandari-caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null; then
     log "  Caddy-Konfiguration neu geladen"
 else
@@ -415,10 +428,10 @@ else
 fi
 
 # =============================================================================
-# Phase 5: Abschließende Verifikation
+# Phase 6: Abschließende Verifikation
 # =============================================================================
 echo ""
-log "Phase 5: Verifikation..."
+log "Phase 6: Verifikation..."
 sleep 3
 
 echo ""

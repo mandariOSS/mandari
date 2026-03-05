@@ -57,8 +57,10 @@ fi
 # Wait for database
 wait_for_db
 
-# NOTE: Migrationen werden via update.sh BEVOR der Container-Swap ausgeführt.
-# Beim Erststart via install.sh werden sie nach dem Start ausgeführt.
+# NOTE: Migrationen laufen NICHT im Entrypoint! Zero-Downtime-Workflow:
+#   update.sh Phase 2: safemigrate (pre-deploy, vor Container-Swap)
+#   update.sh Phase 4: migrate (post-deploy, nach Container-Swap)
+# Erststart: install.sh führt migrate nach dem Start separat aus.
 
 # Meilisearch im Hintergrund konfigurieren (blockiert nicht den Start)
 (python manage.py setup_meilisearch 2>&1 || echo "Meilisearch setup skipped (not available)") &
