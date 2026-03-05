@@ -1,10 +1,56 @@
 # Mandari Django Application
 # Build context: repo root (not ./mandari)
-# Dockerfile for staging/production with local assets (DSGVO-konform)
+# Multi-stage build: build-deps bleiben nicht im finalen Image
 
+# =============================================================================
+# Stage 1: Python dependencies bauen
+# =============================================================================
+FROM python:3.12-slim AS python-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    pkg-config \
+    libcairo2-dev \
+    libpango1.0-dev \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Shared package
+COPY shared/ /tmp/shared/
+RUN pip install --no-cache-dir --prefix=/install /tmp/shared/
+
+# Python dependencies
+COPY mandari/requirements.txt /tmp/
+RUN pip install --no-cache-dir --prefix=/install -r /tmp/requirements.txt
+
+# =============================================================================
+# Stage 2: Frontend assets bauen
+# =============================================================================
+FROM node:20-slim AS node-builder
+
+WORKDIR /build
+
+# npm dependencies (cached layer)
+COPY mandari/package.json mandari/package-lock.json* ./
+RUN npm ci --ignore-scripts 2>/dev/null || npm install
+
+# Tailwind + esbuild sources
+COPY mandari/tailwind.config.js ./
+COPY mandari/static/ ./static/
+COPY mandari/templates/ ./templates/
+COPY mandari/frontend/ ./frontend/
+
+# Build CSS + Editor bundle
+RUN npx tailwindcss -i ./static/css/input.css -o ./static/css/styles.css --minify
+RUN npx esbuild frontend/editor/index.ts --bundle --outfile=static/js/editor.bundle.js --format=iife --global-name=MandariEditor --minify --target=es2020 2>/dev/null || true
+
+# =============================================================================
+# Stage 3: Finales Runtime-Image (kein build-essential, kein Node.js)
+# =============================================================================
 FROM python:3.12-slim
 
-# Environment variables
+# Environment
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
@@ -12,71 +58,51 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies including Node.js
-# pycairo requires: libcairo2-dev, pkg-config
-# pdf2image requires: poppler-utils
-# pytesseract requires: tesseract-ocr
+# Runtime-Dependencies (keine Compiler, kein Node)
+# libpq5: PostgreSQL Client-Library
+# libcairo2, libpango-1.0-0: PDF-Generierung (xhtml2pdf)
+# poppler-utils: pdf2image
+# tesseract-ocr: OCR
+# shared-mime-info: MIME-Type-Erkennung
+# curl: Health-Checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
-    libpq-dev \
-    build-essential \
-    curl \
-    gnupg \
-    pkg-config \
-    libcairo2-dev \
-    libpango1.0-dev \
-    libffi-dev \
+    libcairo2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libffi8 \
     shared-mime-info \
     poppler-utils \
     tesseract-ocr \
     tesseract-ocr-deu \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
+# Non-root user
 RUN useradd --create-home --shell /bin/bash mandari
 
-# Install shared package first (mandari-oparl)
-COPY shared/ /tmp/shared/
-RUN pip install --no-cache-dir /tmp/shared/
+# Python packages aus Builder-Stage
+COPY --from=python-builder /install /usr/local
 
-# Copy requirements first (for caching)
-COPY mandari/requirements.txt ./
-
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Copy package.json and tailwind config first (for caching)
-COPY mandari/package.json mandari/tailwind.config.js ./
-
-# Install npm dependencies and build Tailwind CSS
-RUN npm install && \
-    mkdir -p static/css
-
-# Copy application code
+# Application code
 COPY --chown=mandari:mandari mandari/ .
 
-# Build Tailwind CSS
-RUN npm run build:css
+# Frontend assets aus Node-Builder-Stage (überschreibt Source-Versionen)
+COPY --from=node-builder /build/static/css/styles.css ./static/css/styles.css
+COPY --from=node-builder /build/static/js/editor.bundle.js ./static/js/editor.bundle.js
 
-# Create directories
+# Verzeichnisse + Berechtigungen
 RUN mkdir -p /app/staticfiles /app/media && \
     chown -R mandari:mandari /app
 
-# Fix line endings and make entrypoint executable
+# Entrypoint vorbereiten
 RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
 
-# Switch to non-root user
 USER mandari
 
-# Expose port
 EXPOSE 8000
 
-# Health check (longer start period for collectstatic + migrate)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health/ || exit 1
+HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=3 \
+    CMD curl -sf http://localhost:8000/health/ || exit 1
 
-# Run entrypoint (collectstatic, migrate, then gunicorn)
 CMD ["/app/docker-entrypoint.sh"]
