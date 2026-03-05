@@ -39,27 +39,37 @@ class PublicQuestionForm(forms.ModelForm):
             "question_text": "Ihre Frage",
         }
         widgets = {
-            "questioner_name": forms.TextInput(attrs={
-                "placeholder": "Vor- und Nachname",
-                "autocomplete": "name",
-            }),
-            "questioner_email": forms.EmailInput(attrs={
-                "placeholder": "ihre@email.de",
-                "autocomplete": "email",
-            }),
-            "questioner_city": forms.TextInput(attrs={
-                "placeholder": "z.B. Münster",
-                "autocomplete": "address-level2",
-            }),
-            "subject": forms.TextInput(attrs={
-                "placeholder": "Betreff Ihrer Frage",
-                "maxlength": 300,
-            }),
-            "question_text": forms.Textarea(attrs={
-                "rows": 6,
-                "maxlength": 2000,
-                "placeholder": "Formulieren Sie Ihre Frage...",
-            }),
+            "questioner_name": forms.TextInput(
+                attrs={
+                    "placeholder": "Vor- und Nachname",
+                    "autocomplete": "name",
+                }
+            ),
+            "questioner_email": forms.EmailInput(
+                attrs={
+                    "placeholder": "ihre@email.de",
+                    "autocomplete": "email",
+                }
+            ),
+            "questioner_city": forms.TextInput(
+                attrs={
+                    "placeholder": "z.B. Münster",
+                    "autocomplete": "address-level2",
+                }
+            ),
+            "subject": forms.TextInput(
+                attrs={
+                    "placeholder": "Betreff Ihrer Frage",
+                    "maxlength": 300,
+                }
+            ),
+            "question_text": forms.Textarea(
+                attrs={
+                    "rows": 6,
+                    "maxlength": 2000,
+                    "placeholder": "Formulieren Sie Ihre Frage...",
+                }
+            ),
         }
         help_texts = {
             "questioner_email": "Wird nicht öffentlich angezeigt. Dient nur zur Verifizierung.",
@@ -69,9 +79,7 @@ class PublicQuestionForm(forms.ModelForm):
     def clean_question_text(self):
         text = self.cleaned_data["question_text"]
         if len(text) < 50:
-            raise forms.ValidationError(
-                "Die Frage muss mindestens 50 Zeichen lang sein."
-            )
+            raise forms.ValidationError("Die Frage muss mindestens 50 Zeichen lang sein.")
         return text
 
     def clean(self):
@@ -87,11 +95,13 @@ class PublicAnswerForm(forms.Form):
 
     answer_text = forms.CharField(
         label="Ihre Antwort",
-        widget=forms.Textarea(attrs={
-            "rows": 8,
-            "maxlength": 5000,
-            "placeholder": "Verfassen Sie Ihre Antwort...",
-        }),
+        widget=forms.Textarea(
+            attrs={
+                "rows": 8,
+                "maxlength": 5000,
+                "placeholder": "Verfassen Sie Ihre Antwort...",
+            }
+        ),
         min_length=20,
         error_messages={
             "min_length": "Die Antwort muss mindestens 20 Zeichen lang sein.",

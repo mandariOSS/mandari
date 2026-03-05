@@ -260,9 +260,7 @@ class MotionImportService:
             if html_content.strip():
                 motion.set_content_encrypted(html_content)
             else:
-                motion.set_content_encrypted(
-                    "<p><em>Kein Text im Dokument gefunden.</em></p>"
-                )
+                motion.set_content_encrypted("<p><em>Kein Text im Dokument gefunden.</em></p>")
             motion.save()
 
             # Create attachment

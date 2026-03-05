@@ -72,9 +72,9 @@ class OrganizationAdminForm(forms.ModelForm):
         self.fields["owner"].required = False
 
         if self.instance and self.instance.pk and self.instance.ai_api_key_encrypted:
-            self.fields["ai_api_key"].help_text = (
-                "Ein Key ist gesetzt. Für Rotation neuen Key eintragen, sonst leer lassen."
-            )
+            self.fields[
+                "ai_api_key"
+            ].help_text = "Ein Key ist gesetzt. Für Rotation neuen Key eintragen, sonst leer lassen."
 
     def save(self, commit=True):
         obj = super().save(commit=False)
@@ -175,8 +175,7 @@ class OrganizationAdmin(ModelAdmin):
                     "ai_token_limit_monthly",
                 ),
                 "description": (
-                    "Provider- und Budget-Steuerung fuer den KI-Chat im Dokumenten-Editor. "
-                    "Standard ist Nebius GPT-OSS."
+                    "Provider- und Budget-Steuerung fuer den KI-Chat im Dokumenten-Editor. Standard ist Nebius GPT-OSS."
                 ),
                 "classes": ("collapse",),
             },

@@ -184,39 +184,23 @@ def _resolve_file_context(file, doc: dict[str, Any]) -> None:
 
         if file.paper_id:
             # File → Paper → Consultation → Meeting
-            consultation = (
-                OParlConsultation.objects.filter(paper_id=file.paper_id)
-                .order_by("-authoritative")
-                .first()
-            )
+            consultation = OParlConsultation.objects.filter(paper_id=file.paper_id).order_by("-authoritative").first()
             if consultation and consultation.meeting_external_id:
                 meeting = (
-                    OParlMeeting.objects.filter(
-                        external_id=consultation.meeting_external_id
-                    )
+                    OParlMeeting.objects.filter(external_id=consultation.meeting_external_id)
                     .prefetch_related("organizations")
                     .first()
                 )
                 if consultation.agenda_item_external_id:
-                    ai = OParlAgendaItem.objects.filter(
-                        external_id=consultation.agenda_item_external_id
-                    ).first()
+                    ai = OParlAgendaItem.objects.filter(external_id=consultation.agenda_item_external_id).first()
                     if ai:
                         agenda_number = ai.number
 
         if not meeting and file.meeting_id:
-            meeting = (
-                OParlMeeting.objects.filter(pk=file.meeting_id)
-                .prefetch_related("organizations")
-                .first()
-            )
+            meeting = OParlMeeting.objects.filter(pk=file.meeting_id).prefetch_related("organizations").first()
 
         if meeting:
-            org_names = [
-                org.name
-                for org in meeting.organizations.all()
-                if org.name
-            ]
+            org_names = [org.name for org in meeting.organizations.all() if org.name]
             doc["organization_names"] = org_names
             doc["meeting_name"] = meeting.get_display_name()
             doc["meeting_date"] = meeting.start.isoformat() if meeting.start else None

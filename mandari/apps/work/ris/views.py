@@ -432,17 +432,19 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
                 organizations=OuterRef("pk"),
                 start__gte=now,
                 cancelled=False,
-            ).order_by("start").values("start")[:1]
+            )
+            .order_by("start")
+            .values("start")[:1]
         )
         last_meeting_sq = Subquery(
             OParlMeeting.objects.filter(
                 organizations=OuterRef("pk"),
                 start__lt=now,
-            ).order_by("-start").values("start")[:1]
+            )
+            .order_by("-start")
+            .values("start")[:1]
         )
-        has_any_meeting = Exists(
-            OParlMeeting.objects.filter(organizations=OuterRef("pk"))
-        )
+        has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
 
         # Base queryset with meeting annotations
         organizations = OParlOrganization.objects.filter(body=body).annotate(
@@ -453,9 +455,7 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
 
         # Search
         if q:
-            organizations = organizations.filter(
-                Q(name__icontains=q) | Q(short_name__icontains=q)
-            )
+            organizations = organizations.filter(Q(name__icontains=q) | Q(short_name__icontains=q))
             context["search_query"] = q
 
         # Tab filter: active vs all
@@ -718,9 +718,7 @@ class RISFilesView(WorkViewMixin, TemplateView):
         search = self.request.GET.get("q", "").strip()
         if search:
             files = files.filter(
-                Q(name__icontains=search)
-                | Q(file_name__icontains=search)
-                | Q(paper__name__icontains=search)
+                Q(name__icontains=search) | Q(file_name__icontains=search) | Q(paper__name__icontains=search)
             )
             context["search_query"] = search
 

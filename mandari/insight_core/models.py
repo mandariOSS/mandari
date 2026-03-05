@@ -368,9 +368,8 @@ class OParlMeeting(models.Model):
         org_urls = self.raw_json.get("organization", []) if self.raw_json else []
         if org_urls:
             from .models import OParlOrganization as OrgModel
-            resolved = OrgModel.objects.filter(
-                external_id__in=org_urls[:2]
-            ).values_list("name", flat=True)
+
+            resolved = OrgModel.objects.filter(external_id__in=org_urls[:2]).values_list("name", flat=True)
             names = [n for n in resolved if n]
             if names:
                 return ", ".join(names)
@@ -389,10 +388,8 @@ class OParlMeeting(models.Model):
         org_urls = self.raw_json.get("organization", []) if self.raw_json else []
         if org_urls:
             from .models import OParlOrganization as OrgModel
-            return list(
-                OrgModel.objects.filter(external_id__in=org_urls)
-                .values_list("name", flat=True)
-            )
+
+            return list(OrgModel.objects.filter(external_id__in=org_urls).values_list("name", flat=True))
         return []
 
 

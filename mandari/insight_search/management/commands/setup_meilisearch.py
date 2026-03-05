@@ -63,6 +63,7 @@ class Command(BaseCommand):
             self.stdout.write("Aktiviere Vector Store Feature...")
             try:
                 import httpx
+
                 resp = httpx.patch(
                     f"{url}/experimental-features",
                     json={"vectorStore": True},
@@ -72,10 +73,13 @@ class Command(BaseCommand):
                 if resp.status_code == 200:
                     self.stdout.write(self.style.SUCCESS("  Vector Store aktiviert"))
                 else:
-                    self.stdout.write(self.style.WARNING(f"  Vector Store Aktivierung fehlgeschlagen: {resp.text[:200]}"))
+                    self.stdout.write(
+                        self.style.WARNING(f"  Vector Store Aktivierung fehlgeschlagen: {resp.text[:200]}")
+                    )
             except ImportError:
                 import json
                 import urllib.request
+
                 req = urllib.request.Request(
                     f"{url}/experimental-features",
                     data=json.dumps({"vectorStore": True}).encode(),
@@ -90,7 +94,9 @@ class Command(BaseCommand):
             except Exception as e:
                 self.stdout.write(self.style.WARNING(f"  Vector Store Aktivierung fehlgeschlagen: {e}"))
         else:
-            self.stdout.write("Semantic Search deaktiviert (MEILISEARCH_SEMANTIC_RATIO=0.0), Embedder werden übersprungen")
+            self.stdout.write(
+                "Semantic Search deaktiviert (MEILISEARCH_SEMANTIC_RATIO=0.0), Embedder werden übersprungen"
+            )
 
         # Index-Konfigurationen
         index_configs = self._get_index_configs()

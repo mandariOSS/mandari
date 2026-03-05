@@ -113,11 +113,13 @@ def build_rag_context(query: str, body_id: str | None) -> tuple[str, list[dict]]
         context_parts.append("\n".join(snippet_parts))
 
         if url:
-            sources.append({
-                "title": title[:100],
-                "url": url,
-                "type": hit_type,
-            })
+            sources.append(
+                {
+                    "title": title[:100],
+                    "url": url,
+                    "type": hit_type,
+                }
+            )
 
     # Join context and truncate to budget
     context_text = "\n\n---\n\n".join(context_parts)
@@ -183,20 +185,14 @@ def process_chat_message(
     """
     provider = NebiusProvider()
     if not provider.is_available():
-        raise ValueError(
-            "KI-Assistent ist nicht konfiguriert. "
-            "Bitte setzen Sie den NEBIUS_API_KEY."
-        )
+        raise ValueError("KI-Assistent ist nicht konfiguriert. Bitte setzen Sie den NEBIUS_API_KEY.")
 
     # 1. Build RAG context from Meilisearch
     rag_context, sources = build_rag_context(message, body_id)
 
     # 2. Build system prompt with RAG context
     if rag_context:
-        system_content = (
-            f"{CHAT_SYSTEM_PROMPT}\n\n"
-            f"## RELEVANTE DOKUMENTE\n\n{rag_context}"
-        )
+        system_content = f"{CHAT_SYSTEM_PROMPT}\n\n## RELEVANTE DOKUMENTE\n\n{rag_context}"
     else:
         system_content = (
             f"{CHAT_SYSTEM_PROMPT}\n\n"

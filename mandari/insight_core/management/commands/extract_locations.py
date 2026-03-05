@@ -111,9 +111,7 @@ class Command(BaseCommand):
             elif mode == "ai":
                 queryset = queryset.filter(georef_status="ai_needed")
             elif mode == "all":
-                queryset = queryset.filter(
-                    georef_status__in=["pending", "ai_needed"]
-                )
+                queryset = queryset.filter(georef_status__in=["pending", "ai_needed"])
 
         # Filter: Specific body
         if body_id:
@@ -144,8 +142,7 @@ class Command(BaseCommand):
             if verbose:
                 for paper in queryset[:20]:
                     self.stdout.write(
-                        f"  {paper.reference or paper.id}: {paper.name or '(ohne Name)'}"
-                        f" [{paper.georef_status}]"
+                        f"  {paper.reference or paper.id}: {paper.name or '(ohne Name)'} [{paper.georef_status}]"
                     )
                 if total > 20:
                     self.stdout.write(f"  ... und {total - 20} weitere")
@@ -164,20 +161,15 @@ class Command(BaseCommand):
         # Batch processing
         papers = list(queryset)
         for batch_start in range(0, len(papers), batch_size):
-            batch = papers[batch_start: batch_start + batch_size]
+            batch = papers[batch_start : batch_start + batch_size]
             batch_num = (batch_start // batch_size) + 1
             total_batches = (len(papers) + batch_size - 1) // batch_size
 
-            self.stdout.write(
-                f"\nBatch {batch_num}/{total_batches} ({len(batch)} Papers)..."
-            )
+            self.stdout.write(f"\nBatch {batch_num}/{total_batches} ({len(batch)} Papers)...")
 
             # Parallel processing (limited workers for API rate limiting)
             with ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = {
-                    executor.submit(self._process_paper, p, mode, verbose): p
-                    for p in batch
-                }
+                futures = {executor.submit(self._process_paper, p, mode, verbose): p for p in batch}
 
                 for future in as_completed(futures):
                     paper = futures[future]
@@ -201,24 +193,15 @@ class Command(BaseCommand):
                     except Exception as exc:
                         stats["failed"] += 1
                         if verbose:
-                            self.stdout.write(
-                                self.style.ERROR(f"  {paper.id}: Fehler - {exc}")
-                            )
+                            self.stdout.write(self.style.ERROR(f"  {paper.id}: Fehler - {exc}"))
 
         # Summary
         self.stdout.write("\n" + "=" * 60)
         self.stdout.write(
-            self.style.SUCCESS(
-                f"Georeferenziert: {stats['completed']} Papers "
-                f"({stats['total_locations']} Orte)"
-            )
+            self.style.SUCCESS(f"Georeferenziert: {stats['completed']} Papers ({stats['total_locations']} Orte)")
         )
         if stats["ai_needed"]:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"KI-Extraktion benötigt: {stats['ai_needed']} Papers"
-                )
-            )
+            self.stdout.write(self.style.WARNING(f"KI-Extraktion benötigt: {stats['ai_needed']} Papers"))
         if stats["no_locations"]:
             self.stdout.write(f"Keine Ortsbezüge: {stats['no_locations']}")
         if stats["skipped"]:
@@ -248,21 +231,14 @@ class Command(BaseCommand):
                 if status == "completed":
                     loc_names = [loc.get("name", "?") for loc in locs[:3]]
                     self.stdout.write(
-                        self.style.SUCCESS(
-                            f"  {ref}: {len(locs)} Orte ({method}) "
-                            f"[{', '.join(loc_names)}]"
-                        )
+                        self.style.SUCCESS(f"  {ref}: {len(locs)} Orte ({method}) [{', '.join(loc_names)}]")
                     )
                 elif status == "ai_needed":
                     self.stdout.write(f"  {ref}: KI-Extraktion benötigt")
                 elif status == "no_locations":
                     self.stdout.write(f"  {ref}: Keine Ortsbezüge")
                 elif status == "skipped":
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"  {ref}: Übersprungen ({result.get('reason', '')})"
-                        )
-                    )
+                    self.stdout.write(self.style.WARNING(f"  {ref}: Übersprungen ({result.get('reason', '')})"))
 
             return result
 
@@ -273,7 +249,5 @@ class Command(BaseCommand):
             paper.save(update_fields=["georef_status", "georef_error", "updated_at"])
 
             if verbose:
-                self.stdout.write(
-                    self.style.ERROR(f"  {paper.id}: {exc}")
-                )
+                self.stdout.write(self.style.ERROR(f"  {paper.id}: {exc}"))
             return {"status": "failed", "error": str(exc)}

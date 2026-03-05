@@ -93,10 +93,7 @@ def _daemon_loop():
     # Kurz warten bis Django vollständig gestartet ist
     _wait(5)
 
-    logger.info(
-        "Sync-Daemon-Loop gestartet. "
-        "Konfiguration wird aus DB gelesen (Admin → Sync-Einstellungen)."
-    )
+    logger.info("Sync-Daemon-Loop gestartet. Konfiguration wird aus DB gelesen (Admin → Sync-Einstellungen).")
 
     while not _stop_event.is_set():
         try:
@@ -136,8 +133,7 @@ def _daemon_loop():
 
             if wait_seconds > 5:
                 logger.debug(
-                    f"Nächster Sync in {wait_seconds // 60} Min. {wait_seconds % 60} Sek. "
-                    f"(Intervall: {interval} Min.)"
+                    f"Nächster Sync in {wait_seconds // 60} Min. {wait_seconds % 60} Sek. (Intervall: {interval} Min.)"
                 )
                 if _wait(wait_seconds):
                     break
@@ -146,8 +142,10 @@ def _daemon_loop():
             # Sync ausführen
             now = datetime.now()
             # Full-Sync nur wenn gültige Stunde (0-23). Wert > 23 = deaktiviert.
-            is_full = 0 <= full_hour <= 23 and now.hour == full_hour and (
-                last_full_sync_date is None or last_full_sync_date != now.date()
+            is_full = (
+                0 <= full_hour <= 23
+                and now.hour == full_hour
+                and (last_full_sync_date is None or last_full_sync_date != now.date())
             )
 
             if is_full:

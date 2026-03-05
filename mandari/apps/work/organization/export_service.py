@@ -80,12 +80,8 @@ class DsgvoExportService:
             "is_active": membership.is_active,
             "roles": [r.name for r in membership.roles.all()],
             "committees": [c.name for c in membership.oparl_committees.all()],
-            "individual_permissions": [
-                p.codename for p in membership.individual_permissions.all()
-            ],
-            "denied_permissions": [
-                p.codename for p in membership.denied_permissions.all()
-            ],
+            "individual_permissions": [p.codename for p in membership.individual_permissions.all()],
+            "denied_permissions": [p.codename for p in membership.denied_permissions.all()],
         }
 
     # -------------------------------------------------------------------------
@@ -189,9 +185,7 @@ class DsgvoExportService:
 
         result = []
         for t in tasks:
-            comments = TaskComment.objects.filter(
-                task=t, author=membership
-            ).order_by("created_at")
+            comments = TaskComment.objects.filter(task=t, author=membership).order_by("created_at")
 
             result.append(
                 {
@@ -229,9 +223,7 @@ class DsgvoExportService:
             MotionShare,
         )
 
-        motions = Motion.objects.filter(
-            organization=organization, author=membership
-        ).order_by("-created_at")
+        motions = Motion.objects.filter(organization=organization, author=membership).order_by("-created_at")
 
         result = []
         for m in motions:
@@ -239,12 +231,8 @@ class DsgvoExportService:
             content = _safe_decrypt(m, "content")
 
             revisions = MotionRevision.objects.filter(motion=m).order_by("version")
-            comments = MotionComment.objects.filter(
-                motion=m, author=membership
-            ).order_by("created_at")
-            approvals = MotionApproval.objects.filter(motion=m).select_related(
-                "approver__user"
-            )
+            comments = MotionComment.objects.filter(motion=m, author=membership).order_by("created_at")
+            approvals = MotionApproval.objects.filter(motion=m).select_related("approver__user")
             shares = MotionShare.objects.filter(motion=m).order_by("-created_at")
             documents = MotionDocument.objects.filter(motion=m).order_by("-uploaded_at")
 
@@ -262,11 +250,7 @@ class DsgvoExportService:
                             "version": r.version,
                             "content": _safe_decrypt(r, "content"),
                             "change_summary": r.change_summary or "",
-                            "changed_by": (
-                                r.changed_by.user.get_full_name()
-                                if r.changed_by
-                                else ""
-                            ),
+                            "changed_by": (r.changed_by.user.get_full_name() if r.changed_by else ""),
                             "created_at": _dt(r.created_at),
                         }
                         for r in revisions
@@ -280,11 +264,7 @@ class DsgvoExportService:
                     ],
                     "approvals": [
                         {
-                            "approver": (
-                                a.approver.user.get_full_name()
-                                if a.approver
-                                else ""
-                            ),
+                            "approver": (a.approver.user.get_full_name() if a.approver else ""),
                             "approval_type": a.approval_type,
                             "approved": a.approved,
                             "comment": a.comment or "",
@@ -323,9 +303,7 @@ class DsgvoExportService:
         from apps.work.faction.models import FactionAttendance
 
         attendances = (
-            FactionAttendance.objects.filter(
-                membership=membership, meeting__organization=organization
-            )
+            FactionAttendance.objects.filter(membership=membership, meeting__organization=organization)
             .select_related("meeting")
             .order_by("-meeting__start")
         )
@@ -357,9 +335,7 @@ class DsgvoExportService:
 
         # Preparations
         preparations = (
-            MeetingPreparation.objects.filter(
-                membership=membership, organization=organization
-            )
+            MeetingPreparation.objects.filter(membership=membership, organization=organization)
             .select_related("meeting")
             .order_by("-created_at")
         )
@@ -377,9 +353,7 @@ class DsgvoExportService:
 
         # Agenda item notes
         notes = (
-            AgendaItemNote.objects.filter(
-                author=membership, organization=organization
-            )
+            AgendaItemNote.objects.filter(author=membership, organization=organization)
             .select_related("agenda_item")
             .order_by("-created_at")
         )
@@ -397,9 +371,7 @@ class DsgvoExportService:
 
         # Speech notes (plain text, not encrypted)
         speeches = (
-            AgendaSpeechNote.objects.filter(
-                author=membership, organization=organization
-            )
+            AgendaSpeechNote.objects.filter(author=membership, organization=organization)
             .select_related("meeting", "agenda_item")
             .order_by("-created_at")
         )
@@ -418,9 +390,7 @@ class DsgvoExportService:
 
         # Paper comments
         comments = (
-            PaperComment.objects.filter(
-                author=membership, organization=organization
-            )
+            PaperComment.objects.filter(author=membership, organization=organization)
             .select_related("paper")
             .order_by("-created_at")
         )
@@ -450,18 +420,16 @@ class DsgvoExportService:
     def _collect_absences(self, membership, organization) -> list:
         from .models import MemberAbsence
 
-        absences = MemberAbsence.objects.filter(
-            membership=membership, organization=organization
-        ).order_by("-start_date")
+        absences = MemberAbsence.objects.filter(membership=membership, organization=organization).order_by(
+            "-start_date"
+        )
 
         return [
             {
                 "start_date": _date(a.start_date),
                 "end_date": _date(a.end_date),
                 "reason": a.reason or "",
-                "deputy": (
-                    a.deputy.user.get_full_name() if a.deputy else ""
-                ),
+                "deputy": (a.deputy.user.get_full_name() if a.deputy else ""),
                 "is_active": a.is_active,
                 "created_at": _dt(a.created_at),
             }
@@ -475,9 +443,9 @@ class DsgvoExportService:
     def _collect_change_requests(self, membership, organization) -> list:
         from .models import MemberChangeRequest
 
-        requests = MemberChangeRequest.objects.filter(
-            requester=membership, organization=organization
-        ).order_by("-created_at")
+        requests = MemberChangeRequest.objects.filter(requester=membership, organization=organization).order_by(
+            "-created_at"
+        )
 
         return [
             {
@@ -499,9 +467,7 @@ class DsgvoExportService:
         from apps.work.notifications.models import Notification, NotificationPreference
 
         # All notifications (not limited to 100)
-        notifications = Notification.objects.filter(
-            recipient=membership
-        ).order_by("-created_at")
+        notifications = Notification.objects.filter(recipient=membership).order_by("-created_at")
 
         notif_list = [
             {
@@ -543,9 +509,7 @@ class DsgvoExportService:
     def _collect_support(self, membership, organization) -> list:
         from apps.work.support.models import SupportTicket
 
-        tickets = SupportTicket.objects.filter(
-            organization=organization, created_by=membership
-        ).order_by("-created_at")
+        tickets = SupportTicket.objects.filter(organization=organization, created_by=membership).order_by("-created_at")
 
         result = []
         for t in tickets:
@@ -584,7 +548,7 @@ class DsgvoExportService:
     def export_to_json(self, data: dict) -> HttpResponse:
         """Export data as JSON download."""
         content = json_mod.dumps(data, indent=2, ensure_ascii=False, default=str)
-        filename = f'mandari-datenexport-{timezone.now().strftime("%Y%m%d")}.json'
+        filename = f"mandari-datenexport-{timezone.now().strftime('%Y%m%d')}.json"
         response = HttpResponse(content, content_type="application/json; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
@@ -598,13 +562,11 @@ class DsgvoExportService:
             "export_date": timezone.now(),
         }
 
-        html_content = render_to_string(
-            "work/profile/export/dsgvo_export.html", context
-        )
+        html_content = render_to_string("work/profile/export/dsgvo_export.html", context)
 
         pdf_bytes = self._html_to_pdf(html_content)
 
-        filename = f'mandari-datenexport-{timezone.now().strftime("%Y%m%d")}.pdf'
+        filename = f"mandari-datenexport-{timezone.now().strftime('%Y%m%d')}.pdf"
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response

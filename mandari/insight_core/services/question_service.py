@@ -41,9 +41,7 @@ def send_question_notification_to_recipient(question) -> bool:
     from apps.common.email import send_template_email
 
     if not question.recipient.email:
-        logger.warning(
-            f"Ratsmitglied {question.recipient} hat keine E-Mail-Adresse."
-        )
+        logger.warning(f"Ratsmitglied {question.recipient} hat keine E-Mail-Adresse.")
         return False
 
     site_url = _get_site_url()

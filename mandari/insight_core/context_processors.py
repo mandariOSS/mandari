@@ -67,9 +67,7 @@ def active_body(request):
     if body:
         from django.utils import timezone
 
-        upcoming_count = OParlMeeting.objects.filter(
-            body=body, start__gte=timezone.now(), cancelled=False
-        ).count()
+        upcoming_count = OParlMeeting.objects.filter(body=body, start__gte=timezone.now(), cancelled=False).count()
 
     return {
         "active_body": body,

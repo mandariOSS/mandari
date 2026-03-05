@@ -220,9 +220,7 @@ def generate_dsgvo_export_task(export_id: str):
     from apps.work.organization.models import DataExport
 
     try:
-        export = DataExport.objects.select_related(
-            "membership__user", "organization"
-        ).get(id=export_id)
+        export = DataExport.objects.select_related("membership__user", "organization").get(id=export_id)
     except DataExport.DoesNotExist:
         logger.error(f"DataExport {export_id} not found")
         return

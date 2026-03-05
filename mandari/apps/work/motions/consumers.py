@@ -81,17 +81,21 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         await self.accept()
 
         # Send connection confirmation
-        await self.send_json({
-            "type": "connected",
-            "user": self.user_info,
-        })
+        await self.send_json(
+            {
+                "type": "connected",
+                "user": self.user_info,
+            }
+        )
 
         # Always send yjs_state (even if null) so client knows when to seed from HTML
         yjs_state = await self._load_yjs_state()
-        await self.send_json({
-            "type": "yjs_state",
-            "data": base64.b64encode(yjs_state).decode("ascii") if yjs_state else None,
-        })
+        await self.send_json(
+            {
+                "type": "yjs_state",
+                "data": base64.b64encode(yjs_state).decode("ascii") if yjs_state else None,
+            }
+        )
 
         logger.info(f"User {self.user.id} connected to document {self.document_id}")
 
@@ -100,8 +104,7 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
         logger.info(
-            f"User {getattr(self.user, 'id', '?')} disconnected from "
-            f"document {self.document_id} (code={close_code})"
+            f"User {getattr(self.user, 'id', '?')} disconnected from document {self.document_id} (code={close_code})"
         )
 
     async def receive_json(self, content, **kwargs):
@@ -138,19 +141,23 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
     async def yjs_sync(self, event):
         """Forward Yjs sync to client (skip sender)."""
         if event.get("sender_channel") != self.channel_name:
-            await self.send_json({
-                "type": "yjs_sync",
-                "data": event["data"],
-            })
+            await self.send_json(
+                {
+                    "type": "yjs_sync",
+                    "data": event["data"],
+                }
+            )
 
     async def awareness_update(self, event):
         """Forward awareness update to client (skip sender)."""
         if event.get("sender_channel") != self.channel_name:
-            await self.send_json({
-                "type": "awareness",
-                "data": event["data"],
-                "user_info": event.get("user_info"),
-            })
+            await self.send_json(
+                {
+                    "type": "awareness",
+                    "data": event["data"],
+                    "user_info": event.get("user_info"),
+                }
+            )
 
     # --- Database helpers ---
 

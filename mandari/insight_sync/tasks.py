@@ -25,9 +25,9 @@ def _get_sync_orchestrator():
 
     # Lokale Entwicklung: ingestor/ neben mandari/
     candidates = [
-        settings.BASE_DIR.parent / "ingestor",        # dev/ingestor/
+        settings.BASE_DIR.parent / "ingestor",  # dev/ingestor/
         settings.BASE_DIR.parent / "apps" / "ingestor",  # dev/apps/ingestor/
-        Path("/ingestor"),                             # Docker-Mount
+        Path("/ingestor"),  # Docker-Mount
     ]
     for path in candidates:
         if path.is_dir() and str(path) not in sys.path:

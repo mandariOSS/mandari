@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_meeting_context(view, meeting):
     """Build shared context dict for detail page and partials."""
     from apps.common.permissions import PermissionChecker
@@ -95,6 +96,7 @@ def _get_meeting_context(view, meeting):
     # Available members (for adding attendees)
     existing_ids = list(attendances.filter(membership__isnull=False).values_list("membership_id", flat=True))
     from apps.tenants.models import Membership
+
     available_members = (
         Membership.objects.filter(organization=view.organization, is_active=True)
         .exclude(id__in=existing_ids)
@@ -152,9 +154,9 @@ def _htmx_response(html, trigger=None, refresh=False):
 
 def _renumber_items(meeting, visibility):
     """Renumber items after reordering to maintain consistent numbering."""
-    items = meeting.agenda_items.filter(
-        visibility=visibility, parent__isnull=True, is_approval_item=False
-    ).order_by("order")
+    items = meeting.agenda_items.filter(visibility=visibility, parent__isnull=True, is_approval_item=False).order_by(
+        "order"
+    )
 
     prefix = "NÖ " if visibility == "internal" else ""
     start_num = 1
@@ -179,6 +181,7 @@ def _renumber_items(meeting, visibility):
 # 1. List + Create
 # ---------------------------------------------------------------------------
 
+
 class FactionMeetingListView(WorkViewMixin, TemplateView):
     """List of faction meetings. POST creates a new meeting (from modal)."""
 
@@ -189,9 +192,9 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "faction"
 
-        meetings = FactionMeeting.objects.filter(
-            organization=self.organization
-        ).select_related("created_by__user", "schedule")
+        meetings = FactionMeeting.objects.filter(organization=self.organization).select_related(
+            "created_by__user", "schedule"
+        )
 
         # Filter by status
         status = self.request.GET.get("status")
@@ -266,7 +269,9 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
 
         try:
             start_datetime = datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %H:%M")
-            start_datetime = timezone.make_aware(start_datetime) if timezone.is_naive(start_datetime) else start_datetime
+            start_datetime = (
+                timezone.make_aware(start_datetime) if timezone.is_naive(start_datetime) else start_datetime
+            )
         except ValueError:
             messages.error(request, "Ungültiges Datum oder Uhrzeit.")
             return redirect("work:faction", org_slug=self.organization.slug)
@@ -307,6 +312,7 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
 # 2. Detail (= Protocol page)
 # ---------------------------------------------------------------------------
 
+
 class FactionMeetingDetailView(WorkViewMixin, TemplateView):
     """Combined detail + protocol page."""
 
@@ -317,9 +323,7 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "faction"
 
-        meeting = get_object_or_404(
-            FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization
-        )
+        meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
 
         context.update(_get_meeting_context(self, meeting))
         return context
@@ -329,15 +333,14 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
 # 3. Central Action Handler
 # ---------------------------------------------------------------------------
 
+
 class FactionActionView(WorkViewMixin, View):
     """Central HTMX action handler for all meeting interactions."""
 
     permission_required = "faction.view_public"
 
     def post(self, request, *args, **kwargs):
-        meeting = get_object_or_404(
-            FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization
-        )
+        meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
 
         action = request.POST.get("action")
         is_htmx = request.headers.get("HX-Request")
@@ -512,6 +515,7 @@ class FactionActionView(WorkViewMixin, View):
             messages.warning(request, "Einladungen wurden bereits versendet.")
         else:
             from .services import FactionMeetingEmailService
+
             email_service = FactionMeetingEmailService()
             sent_count = email_service.send_invitations(meeting)
 
@@ -553,9 +557,9 @@ class FactionActionView(WorkViewMixin, View):
             child_count = parent.children.count() + 1
             number = f"{parent.number}.{child_count}"
         else:
-            existing = meeting.agenda_items.filter(
-                visibility=visibility, parent__isnull=True
-            ).exclude(is_approval_item=True)
+            existing = meeting.agenda_items.filter(visibility=visibility, parent__isnull=True).exclude(
+                is_approval_item=True
+            )
             next_num = existing.count() + 1
 
             if visibility == "public" and meeting.agenda_items.filter(is_approval_item=True).exists():
@@ -621,9 +625,7 @@ class FactionActionView(WorkViewMixin, View):
             return HttpResponse(status=403)
 
         item_id = request.POST.get("item_id")
-        item = FactionAgendaItem.objects.filter(
-            id=item_id, meeting=meeting, is_approval_item=False
-        ).first()
+        item = FactionAgendaItem.objects.filter(id=item_id, meeting=meeting, is_approval_item=False).first()
 
         if item:
             item.delete()
@@ -900,7 +902,10 @@ class FactionActionView(WorkViewMixin, View):
                 return self._redirect_detail(meeting)
 
             attendance = FactionAttendance.objects.create(
-                meeting=meeting, is_guest=True, guest_name=guest_name, status=status,
+                meeting=meeting,
+                is_guest=True,
+                guest_name=guest_name,
+                status=status,
             )
             if status == "present":
                 attendance.checked_in_at = timezone.now()
@@ -913,6 +918,7 @@ class FactionActionView(WorkViewMixin, View):
                 return self._redirect_detail(meeting)
 
             from apps.tenants.models import Membership
+
             membership = get_object_or_404(Membership, id=membership_id, organization=self.organization)
 
             if FactionAttendance.objects.filter(meeting=meeting, membership=membership).exists():
@@ -920,7 +926,10 @@ class FactionActionView(WorkViewMixin, View):
                 return self._redirect_detail(meeting)
 
             attendance = FactionAttendance.objects.create(
-                meeting=meeting, membership=membership, is_guest=False, status=status,
+                meeting=meeting,
+                membership=membership,
+                is_guest=False,
+                status=status,
             )
             if status == "present":
                 attendance.checked_in_at = timezone.now()
@@ -944,9 +953,13 @@ class FactionActionView(WorkViewMixin, View):
             return self._redirect_detail(meeting)
 
         from .services import AgendaProposalService
+
         AgendaProposalService.create_proposal(
-            meeting=meeting, title=title, description=description,
-            proposed_by=self.membership, visibility=visibility,
+            meeting=meeting,
+            title=title,
+            description=description,
+            proposed_by=self.membership,
+            visibility=visibility,
         )
 
         messages.success(request, f"Vorschlag '{title}' eingereicht.")
@@ -961,6 +974,7 @@ class FactionActionView(WorkViewMixin, View):
         item = get_object_or_404(FactionAgendaItem, id=item_id, meeting=meeting, proposal_status="proposed")
 
         from .services import AgendaProposalService
+
         assign_number = request.POST.get("number", "").strip()
         AgendaProposalService.accept_proposal(item, self.membership, assign_number or None)
 
@@ -977,6 +991,7 @@ class FactionActionView(WorkViewMixin, View):
         item = get_object_or_404(FactionAgendaItem, id=item_id, meeting=meeting, proposal_status="proposed")
 
         from .services import AgendaProposalService
+
         AgendaProposalService.reject_proposal(item, self.membership, reason)
 
         messages.success(request, f"Vorschlag '{item.title}' abgelehnt.")
@@ -1025,6 +1040,7 @@ class FactionActionView(WorkViewMixin, View):
 # 4. Agenda Item Panel (Slide-Over)
 # ---------------------------------------------------------------------------
 
+
 class FactionItemPanelView(WorkViewMixin, TemplateView):
     """GET: Render agenda item slide-over panel content."""
 
@@ -1033,9 +1049,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        meeting = get_object_or_404(
-            FactionMeeting, id=kwargs["meeting_id"], organization=self.organization
-        )
+        meeting = get_object_or_404(FactionMeeting, id=kwargs["meeting_id"], organization=self.organization)
         item = get_object_or_404(
             FactionAgendaItem.objects.select_related(
                 "meeting", "parent", "approves_meeting", "related_agenda_item"
@@ -1059,8 +1073,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
             decision = None
 
         can_edit = (
-            meeting.created_by == self.membership
-            or self.membership.has_permission("faction.manage")
+            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
         ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
 
         is_protocol_phase = meeting.status in ["ongoing", "completed"] and not meeting.protocol_approved
@@ -1070,40 +1083,44 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
 
         # Available motions for linking
         from apps.work.motions.models import Motion
-        available_motions = Motion.objects.filter(
-            organization=self.organization
-        ).exclude(
-            id__in=item.related_motions.values_list("id", flat=True)
-        ).order_by("-created_at")[:50]
+
+        available_motions = (
+            Motion.objects.filter(organization=self.organization)
+            .exclude(id__in=item.related_motions.values_list("id", flat=True))
+            .order_by("-created_at")[:50]
+        )
 
         # Available members for task assignment
         from apps.tenants.models import Membership
+
         available_members = (
             Membership.objects.filter(organization=self.organization, is_active=True)
             .select_related("user")
             .order_by("user__last_name", "user__first_name")
         )
 
-        context.update({
-            "item": item,
-            "meeting": meeting,
-            "decision": decision,
-            "can_edit": can_edit,
-            "is_protocol_phase": is_protocol_phase,
-            "attendances": attendances,
-            "protocol_entries": item.protocol_entries.select_related(
-                "speaker__user", "created_by__user"
-            ).order_by("order", "created_at"),
-            "attachments": item.attachments.select_related("uploaded_by__user").order_by("-created_at"),
-            "tasks": item.tasks.select_related("assigned_to__user", "created_by__user"),
-            "linked_motions": item.related_motions.all(),
-            "available_motions": available_motions,
-            "available_members": available_members,
-            "reference_links": item.reference_links or [],
-            "organization": self.organization,
-            "org_slug": self.organization.slug,
-            "membership": self.membership,
-        })
+        context.update(
+            {
+                "item": item,
+                "meeting": meeting,
+                "decision": decision,
+                "can_edit": can_edit,
+                "is_protocol_phase": is_protocol_phase,
+                "attendances": attendances,
+                "protocol_entries": item.protocol_entries.select_related("speaker__user", "created_by__user").order_by(
+                    "order", "created_at"
+                ),
+                "attachments": item.attachments.select_related("uploaded_by__user").order_by("-created_at"),
+                "tasks": item.tasks.select_related("assigned_to__user", "created_by__user"),
+                "linked_motions": item.related_motions.all(),
+                "available_motions": available_motions,
+                "available_members": available_members,
+                "reference_links": item.reference_links or [],
+                "organization": self.organization,
+                "org_slug": self.organization.slug,
+                "membership": self.membership,
+            }
+        )
         return context
 
 
@@ -1113,17 +1130,12 @@ class FactionItemPanelActionView(WorkViewMixin, View):
     permission_required = "faction.view_public"
 
     def post(self, request, *args, **kwargs):
-        meeting = get_object_or_404(
-            FactionMeeting, id=kwargs["meeting_id"], organization=self.organization
-        )
-        item = get_object_or_404(
-            FactionAgendaItem, id=kwargs["item_id"], meeting=meeting
-        )
+        meeting = get_object_or_404(FactionMeeting, id=kwargs["meeting_id"], organization=self.organization)
+        item = get_object_or_404(FactionAgendaItem, id=kwargs["item_id"], meeting=meeting)
 
         action = request.POST.get("action")
         can_edit = (
-            meeting.created_by == self.membership
-            or self.membership.has_permission("faction.manage")
+            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
         ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
 
         handlers = {
@@ -1348,9 +1360,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             return HttpResponse(status=403)
 
         attachment_id = request.POST.get("attachment_id")
-        attachment = FactionAgendaItemAttachment.objects.filter(
-            id=attachment_id, agenda_item=item
-        ).first()
+        attachment = FactionAgendaItemAttachment.objects.filter(id=attachment_id, agenda_item=item).first()
         if attachment:
             attachment.file.delete(save=False)
             attachment.delete()
@@ -1367,6 +1377,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             return HttpResponse(status=400)
 
         from apps.work.motions.models import Motion
+
         motion = get_object_or_404(Motion, id=motion_id, organization=self.organization)
         item.related_motions.add(motion)
 
@@ -1450,6 +1461,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 # ---------------------------------------------------------------------------
 # 5. Settings (legacy redirect)
 # ---------------------------------------------------------------------------
+
 
 class FactionSettingsView(WorkViewMixin, View):
     """Legacy redirect - settings are now in organization settings."""

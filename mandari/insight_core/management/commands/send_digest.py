@@ -44,9 +44,8 @@ class Command(BaseCommand):
 
         max_alerts = getattr(settings, "INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL", 20)
         site_url = getattr(settings, "SITE_URL", "http://localhost:8000")
-        from_email = (
-            getattr(settings, "INSIGHT_DIGEST_FROM_EMAIL", "")
-            or getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de")
+        from_email = getattr(settings, "INSIGHT_DIGEST_FROM_EMAIL", "") or getattr(
+            settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"
         )
 
         # Find subscribers with unsent alerts
@@ -62,13 +61,10 @@ class Command(BaseCommand):
         error_count = 0
 
         for subscriber in subscribers:
-            unsent_alerts = (
-                SubscriptionAlert.objects.filter(
-                    subscriber=subscriber,
-                    sent_in_digest__isnull=True,
-                )
-                .order_by("alert_type", "-created_at")[:max_alerts]
-            )
+            unsent_alerts = SubscriptionAlert.objects.filter(
+                subscriber=subscriber,
+                sent_in_digest__isnull=True,
+            ).order_by("alert_type", "-created_at")[:max_alerts]
 
             if not unsent_alerts.exists():
                 continue
@@ -90,14 +86,17 @@ class Command(BaseCommand):
                 continue
 
             # Render email
-            html_message = render_to_string("emails/insight_digest.html", {
-                "subscriber": subscriber,
-                "alert_count": alert_count,
-                "neighborhood_alerts": neighborhood_alerts,
-                "keyword_alerts": keyword_alerts,
-                "bookmark_alerts": bookmark_alerts,
-                "site_url": site_url,
-            })
+            html_message = render_to_string(
+                "emails/insight_digest.html",
+                {
+                    "subscriber": subscriber,
+                    "alert_count": alert_count,
+                    "neighborhood_alerts": neighborhood_alerts,
+                    "keyword_alerts": keyword_alerts,
+                    "bookmark_alerts": bookmark_alerts,
+                    "site_url": site_url,
+                },
+            )
 
             subject = f"Dein Mandari-Digest: {alert_count} neue Treffer ({subscriber.body.get_display_name()})"
 
@@ -106,7 +105,7 @@ class Command(BaseCommand):
                 send_mail(
                     subject=subject,
                     message=f"{alert_count} neue Treffer in {subscriber.body.get_display_name()}. "
-                            f"Ansehen: {site_url}/insight/",
+                    f"Ansehen: {site_url}/insight/",
                     from_email=from_email,
                     recipient_list=[subscriber.email],
                     html_message=html_message,
@@ -121,9 +120,7 @@ class Command(BaseCommand):
                 )
 
                 # Mark alerts as sent
-                SubscriptionAlert.objects.filter(
-                    id__in=[a.id for a in alerts_list]
-                ).update(sent_in_digest=digest_log)
+                SubscriptionAlert.objects.filter(id__in=[a.id for a in alerts_list]).update(sent_in_digest=digest_log)
 
                 sent_count += 1
                 self.stdout.write(f"  {subscriber.email}: {alert_count} Alerts gesendet")
@@ -141,6 +138,4 @@ class Command(BaseCommand):
                 error_count += 1
 
         prefix = "[DRY RUN] " if dry_run else ""
-        self.stdout.write(self.style.SUCCESS(
-            f"{prefix}{sent_count} Digests versendet, {error_count} Fehler."
-        ))
+        self.stdout.write(self.style.SUCCESS(f"{prefix}{sent_count} Digests versendet, {error_count} Fehler."))

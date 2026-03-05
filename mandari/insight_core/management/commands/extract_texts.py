@@ -95,10 +95,7 @@ class Command(BaseCommand):
 
         # Filter: Nur pending/unverarbeitete Dateien (außer bei --reprocess)
         if not reprocess:
-            queryset = queryset.filter(
-                Q(text_extraction_status="pending")
-                | Q(text_extraction_status__isnull=True)
-            )
+            queryset = queryset.filter(Q(text_extraction_status="pending") | Q(text_extraction_status__isnull=True))
 
         # Filter: Nur bestimmte Kommune
         if body_id:
@@ -203,7 +200,9 @@ class Command(BaseCommand):
                 file.text_content = result.text
                 file.text_extraction_status = "completed"
                 file.text_extraction_method = "ocr" if result.ocr_performed else "pypdf"
-                file.save(update_fields=["text_content", "text_extraction_status", "text_extraction_method", "updated_at"])
+                file.save(
+                    update_fields=["text_content", "text_extraction_status", "text_extraction_method", "updated_at"]
+                )
 
                 if verbose:
                     self.stdout.write(
@@ -223,7 +222,9 @@ class Command(BaseCommand):
                 file.text_extraction_error = "Download ok, aber kein Text extrahierbar (KI-OCR benötigt)"
                 file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
                 if verbose:
-                    self.stdout.write(self.style.WARNING(f"  {file.id}: KI-OCR benötigt (kein Text via pypdf/Tesseract)"))
+                    self.stdout.write(
+                        self.style.WARNING(f"  {file.id}: KI-OCR benötigt (kein Text via pypdf/Tesseract)")
+                    )
                 return {"success": False, "reason": "ocr_needed"}
 
         except DocumentDownloadError as exc:

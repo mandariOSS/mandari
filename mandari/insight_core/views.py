@@ -115,9 +115,7 @@ class PortalHomeView(TemplateView):
             # Stadtteile für Nachbarschafts-Schnellwahl
             import os
 
-            data_path = os.path.join(
-                os.path.dirname(__file__), "data", "stadtteile.json"
-            )
+            data_path = os.path.join(os.path.dirname(__file__), "data", "stadtteile.json")
             if os.path.exists(data_path):
                 with open(data_path, encoding="utf-8") as f:
                     all_districts = json.load(f)
@@ -223,26 +221,24 @@ class OrganizationListView(ListView):
                 organizations=OuterRef("pk"),
                 start__gte=now,
                 cancelled=False,
-            ).order_by("start").values("start")[:1]
+            )
+            .order_by("start")
+            .values("start")[:1]
         )
         last_meeting_sq = Subquery(
             OParlMeeting.objects.filter(
                 organizations=OuterRef("pk"),
                 start__lt=now,
-            ).order_by("-start").values("start")[:1]
-        )
-        has_any_meeting = Exists(
-            OParlMeeting.objects.filter(organizations=OuterRef("pk"))
-        )
-
-        base_qs = (
-            OParlOrganization.objects
-            .filter(body=body)
-            .annotate(
-                next_meeting=next_meeting_sq,
-                last_meeting=last_meeting_sq,
-                has_meetings=has_any_meeting,
             )
+            .order_by("-start")
+            .values("start")[:1]
+        )
+        has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
+
+        base_qs = OParlOrganization.objects.filter(body=body).annotate(
+            next_meeting=next_meeting_sq,
+            last_meeting=last_meeting_sq,
+            has_meetings=has_any_meeting,
         )
 
         # Suche
@@ -265,9 +261,7 @@ class OrganizationListView(ListView):
 
         if body:
             today = timezone.now().date()
-            has_any_meeting = Exists(
-                OParlMeeting.objects.filter(organizations=OuterRef("pk"))
-            )
+            has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
 
             # Counts ohne Suchfilter
             all_orgs = OParlOrganization.objects.filter(body=body).annotate(
@@ -297,12 +291,10 @@ class OrganizationDetailView(DetailView):
         now = timezone.now()
 
         all_memberships = org.memberships.select_related("person", "person__body")
-        active_qs = all_memberships.filter(
-            Q(end_date__isnull=True) | Q(end_date__gte=today)
-        ).order_by("person__family_name")
-        past_qs = all_memberships.filter(
-            end_date__lt=today
-        ).order_by("person__family_name")
+        active_qs = all_memberships.filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).order_by(
+            "person__family_name"
+        )
+        past_qs = all_memberships.filter(end_date__lt=today).order_by("person__family_name")
 
         # Sonderfall "Rat": Ratsmitglieder von anderen trennen
         is_rat = org.name == "Rat"
@@ -323,16 +315,15 @@ class OrganizationDetailView(DetailView):
         context["past_members"] = past_qs
 
         # Sitzungen
-        context["upcoming_meetings"] = (
-            OParlMeeting.objects.filter(
-                organizations=org, start__gte=now, cancelled=False,
-            ).order_by("start")[:10]
-        )
-        context["past_meetings"] = (
-            OParlMeeting.objects.filter(
-                organizations=org, start__lt=now,
-            ).order_by("-start")[:10]
-        )
+        context["upcoming_meetings"] = OParlMeeting.objects.filter(
+            organizations=org,
+            start__gte=now,
+            cancelled=False,
+        ).order_by("start")[:10]
+        context["past_meetings"] = OParlMeeting.objects.filter(
+            organizations=org,
+            start__lt=now,
+        ).order_by("-start")[:10]
 
         # SEO-Kontext
         from .seo import get_organization_seo
@@ -409,9 +400,9 @@ class PersonListView(ListView):
                     person=OuterRef("pk"),
                     organization=rat,
                     role__in=COUNCIL_ROLES,
-                ).filter(
-                    Q(end_date__isnull=True) | Q(end_date__gte=today)
-                ).values("role")[:1]
+                )
+                .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+                .values("role")[:1]
             )
             qs = qs.annotate(council_role=council_role_sq)
 
@@ -446,17 +437,17 @@ class PersonDetailView(DetailView):
         context["active_memberships"] = all_memberships.filter(
             Q(end_date__isnull=True) | Q(end_date__gte=today)
         ).order_by("organization__name")
-        context["past_memberships"] = all_memberships.filter(
-            end_date__lt=today
-        ).order_by("organization__name")
+        context["past_memberships"] = all_memberships.filter(end_date__lt=today).order_by("organization__name")
 
         # Ratsrolle ermitteln (für Hero-Anzeige)
-        council_membership = all_memberships.filter(
-            organization__name="Rat",
-            role__in=COUNCIL_ROLES,
-        ).filter(
-            Q(end_date__isnull=True) | Q(end_date__gte=today)
-        ).first()
+        council_membership = (
+            all_memberships.filter(
+                organization__name="Rat",
+                role__in=COUNCIL_ROLES,
+            )
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .first()
+        )
         context["council_role"] = council_membership.role if council_membership else None
 
         # Öffentliche Fragen (nur bei Ratsmitgliedern)
@@ -468,9 +459,7 @@ class PersonDetailView(DetailView):
             context["published_questions"] = published_questions
 
             total = published_questions.count()
-            answered = sum(
-                1 for q in published_questions if q.answer_status == "published"
-            )
+            answered = sum(1 for q in published_questions if q.answer_status == "published")
             context["answer_stats"] = {
                 "total": total,
                 "answered": answered,
@@ -812,9 +801,8 @@ class MeetingDetailView(DetailView):
         if agenda_items:
             ext_ids = [item.external_id for item in agenda_items]
             # Alle Consultations + Papers in 1 Query laden
-            consultations = (
-                OParlConsultation.objects.filter(agenda_item_external_id__in=ext_ids)
-                .select_related("paper")
+            consultations = OParlConsultation.objects.filter(agenda_item_external_id__in=ext_ids).select_related(
+                "paper"
             )
             # Papers pro AgendaItem zuordnen
             papers_by_agenda = {}
@@ -1130,9 +1118,7 @@ def _annotate_files_with_context(files):
     all_meeting_pks = set()
 
     if meeting_ext_ids:
-        meetings = OParlMeeting.objects.filter(
-            external_id__in=meeting_ext_ids
-        ).prefetch_related("organizations")
+        meetings = OParlMeeting.objects.filter(external_id__in=meeting_ext_ids).prefetch_related("organizations")
         for m in meetings:
             meetings_by_ext_id[m.external_id] = m
             meetings_by_pk[m.pk] = m
@@ -1141,9 +1127,7 @@ def _annotate_files_with_context(files):
     if meeting_fk_ids:
         missing = meeting_fk_ids - all_meeting_pks
         if missing:
-            fk_meetings = OParlMeeting.objects.filter(
-                pk__in=missing
-            ).prefetch_related("organizations")
+            fk_meetings = OParlMeeting.objects.filter(pk__in=missing).prefetch_related("organizations")
             for m in fk_meetings:
                 meetings_by_pk[m.pk] = m
 
@@ -1233,11 +1217,7 @@ class FileListView(TemplateView):
             qs = OParlFile.objects.filter(body=body).select_related("paper").order_by("-file_date", "-created_at")
 
             if q:
-                qs = qs.filter(
-                    Q(name__icontains=q)
-                    | Q(file_name__icontains=q)
-                    | Q(paper__name__icontains=q)
-                )
+                qs = qs.filter(Q(name__icontains=q) | Q(file_name__icontains=q) | Q(paper__name__icontains=q))
 
             paginator = Paginator(qs, 30)
             page = paginator.get_page(page_num)
@@ -1394,10 +1374,7 @@ def file_proxy(request, file_id):
         )
         upstream.raise_for_status()
 
-        content_type = (
-            file_obj.mime_type
-            or upstream.headers.get("content-type", "application/octet-stream")
-        )
+        content_type = file_obj.mime_type or upstream.headers.get("content-type", "application/octet-stream")
 
         response = HttpResponse(upstream.content, content_type=content_type)
         response["Content-Disposition"] = "inline"
@@ -1636,24 +1613,16 @@ def _check_rate_limit(request) -> tuple[bool, dict]:
     if user:
         # Registered user
         day_limit, week_limit = 25, 100
-        day_count = ChatUsage.objects.filter(
-            user=user, created_at__gte=today_start, filter_result="passed"
-        ).count()
-        week_count = ChatUsage.objects.filter(
-            user=user, created_at__gte=week_start, filter_result="passed"
-        ).count()
+        day_count = ChatUsage.objects.filter(user=user, created_at__gte=today_start, filter_result="passed").count()
+        week_count = ChatUsage.objects.filter(user=user, created_at__gte=week_start, filter_result="passed").count()
     else:
         # Anonymous: check both IP and session, use the stricter count
         day_limit, week_limit = 5, 10
         ip = _get_client_ip(request)
         session_key = request.session.session_key or ""
 
-        ip_day = ChatUsage.objects.filter(
-            ip_address=ip, created_at__gte=today_start, filter_result="passed"
-        ).count()
-        ip_week = ChatUsage.objects.filter(
-            ip_address=ip, created_at__gte=week_start, filter_result="passed"
-        ).count()
+        ip_day = ChatUsage.objects.filter(ip_address=ip, created_at__gte=today_start, filter_result="passed").count()
+        ip_week = ChatUsage.objects.filter(ip_address=ip, created_at__gte=week_start, filter_result="passed").count()
 
         if session_key:
             sess_day = ChatUsage.objects.filter(
@@ -1829,12 +1798,14 @@ def chat_message(request):
     rate_info["remaining_week"] = max(0, rate_info["remaining_week"] - 1)
 
     # 9. Return response
-    return JsonResponse({
-        "response": result["response"],
-        "sources": result["sources"],
-        "remaining_today": rate_info["remaining_today"],
-        "remaining_week": rate_info["remaining_week"],
-    })
+    return JsonResponse(
+        {
+            "response": result["response"],
+            "sources": result["sources"],
+            "remaining_today": rate_info["remaining_today"],
+            "remaining_week": rate_info["remaining_week"],
+        }
+    )
 
 
 # =============================================================================
@@ -2025,8 +1996,7 @@ class AskQuestionView(FormView):
         if not check_rate_limit(email):
             form.add_error(
                 None,
-                "Sie haben heute bereits zu viele Fragen eingereicht. "
-                "Bitte versuchen Sie es morgen erneut.",
+                "Sie haben heute bereits zu viele Fragen eingereicht. Bitte versuchen Sie es morgen erneut.",
             )
             return self.form_invalid(form)
 
@@ -2042,20 +2012,22 @@ class AskQuestionView(FormView):
 
     def _is_council_member(self, person):
         today = timezone.now().date()
-        return OParlMembership.objects.filter(
-            person=person,
-            organization__name="Rat",
-            role__in=COUNCIL_ROLES,
-        ).filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).exists()
+        return (
+            OParlMembership.objects.filter(
+                person=person,
+                organization__name="Rat",
+                role__in=COUNCIL_ROLES,
+            )
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .exists()
+        )
 
 
 class VerifyQuestionView(View):
     """E-Mail-Verifizierung einer eingereichten Frage."""
 
     def get(self, request, token):
-        question = get_object_or_404(
-            PublicQuestion, verification_token=token, status="unverified"
-        )
+        question = get_object_or_404(PublicQuestion, verification_token=token, status="unverified")
         question.status = "pending"
         question.save(update_fields=["status", "updated_at"])
         return render(request, "pages/questions/verified.html", {"question": question})
@@ -2089,9 +2061,14 @@ class AnswerQuestionView(FormView):
         self.question.answer_text = form.cleaned_data["answer_text"]
         self.question.answered_at = timezone.now()
         self.question.answer_status = "pending"
-        self.question.save(update_fields=[
-            "answer_text", "answered_at", "answer_status", "updated_at",
-        ])
+        self.question.save(
+            update_fields=[
+                "answer_text",
+                "answered_at",
+                "answer_status",
+                "updated_at",
+            ]
+        )
         return render(
             self.request,
             "pages/questions/answer_submitted.html",
@@ -2130,19 +2107,17 @@ class MerklisteView(TemplateView):
             for b in bookmarks:
                 bookmark_ids.setdefault(b.entity_type, []).append(b.entity_id)
 
-            context["bookmarked_papers"] = (
-                OParlPaper.objects.filter(id__in=bookmark_ids.get("paper", []))
-                .order_by("-date", "-oparl_created")
+            context["bookmarked_papers"] = OParlPaper.objects.filter(id__in=bookmark_ids.get("paper", [])).order_by(
+                "-date", "-oparl_created"
             )
             context["bookmarked_meetings"] = (
                 OParlMeeting.objects.filter(id__in=bookmark_ids.get("meeting", []))
                 .prefetch_related("organizations")
                 .order_by("-start")
             )
-            context["bookmarked_organizations"] = (
-                OParlOrganization.objects.filter(id__in=bookmark_ids.get("organization", []))
-                .order_by("name")
-            )
+            context["bookmarked_organizations"] = OParlOrganization.objects.filter(
+                id__in=bookmark_ids.get("organization", [])
+            ).order_by("name")
             context["bookmarked_persons"] = (
                 OParlPerson.objects.filter(id__in=bookmark_ids.get("person", []))
                 .select_related("body")
@@ -2218,10 +2193,22 @@ def bookmark_entities(request):
         return HttpResponse("")
 
     template_map = {
-        "paper": ("partials/merkliste_papers.html", OParlPaper.objects.filter(id__in=ids).order_by("-date", "-oparl_created")),
-        "meeting": ("partials/merkliste_meetings.html", OParlMeeting.objects.filter(id__in=ids).prefetch_related("organizations").order_by("-start")),
-        "organization": ("partials/merkliste_organizations.html", OParlOrganization.objects.filter(id__in=ids).order_by("name")),
-        "person": ("partials/merkliste_persons.html", OParlPerson.objects.filter(id__in=ids).select_related("body").order_by("family_name", "given_name")),
+        "paper": (
+            "partials/merkliste_papers.html",
+            OParlPaper.objects.filter(id__in=ids).order_by("-date", "-oparl_created"),
+        ),
+        "meeting": (
+            "partials/merkliste_meetings.html",
+            OParlMeeting.objects.filter(id__in=ids).prefetch_related("organizations").order_by("-start"),
+        ),
+        "organization": (
+            "partials/merkliste_organizations.html",
+            OParlOrganization.objects.filter(id__in=ids).order_by("name"),
+        ),
+        "person": (
+            "partials/merkliste_persons.html",
+            OParlPerson.objects.filter(id__in=ids).select_related("body").order_by("family_name", "given_name"),
+        ),
     }
 
     if entity_type not in template_map:
@@ -2265,9 +2252,7 @@ class NeighborhoodView(TemplateView):
             import json as json_mod
             import os
 
-            data_path = os.path.join(
-                os.path.dirname(__file__), "data", "stadtteile.json"
-            )
+            data_path = os.path.join(os.path.dirname(__file__), "data", "stadtteile.json")
             if os.path.exists(data_path):
                 with open(data_path, encoding="utf-8") as f:
                     all_districts = json_mod.load(f)
@@ -2339,11 +2324,13 @@ def neighborhood_autocomplete(request):
 
             name = ", ".join(parts) if parts else props.get("name", query)
 
-            results.append({
-                "name": name,
-                "lat": lat,
-                "lon": lon,
-            })
+            results.append(
+                {
+                    "name": name,
+                    "lat": lat,
+                    "lon": lon,
+                }
+            )
 
         return JsonResponse(results, safe=False)
 
@@ -2413,25 +2400,31 @@ def neighborhood_results(request):
     for row in rows:
         paper_id, name, reference, paper_type, date, distance, loc_lat, loc_lon = row
         dist_int = int(distance)
-        results.append({
-            "id": str(paper_id),
-            "name": name,
-            "reference": reference,
-            "paper_type": paper_type,
-            "date": date,
-            "distance": dist_int,
-            "distance_km": f"{dist_int / 1000:.1f}",
-            "lat": loc_lat,
-            "lon": loc_lon,
-            "url": f"/insight/vorgaenge/{paper_id}/",
-        })
+        results.append(
+            {
+                "id": str(paper_id),
+                "name": name,
+                "reference": reference,
+                "paper_type": paper_type,
+                "date": date,
+                "distance": dist_int,
+                "distance_km": f"{dist_int / 1000:.1f}",
+                "lat": loc_lat,
+                "lon": loc_lon,
+                "url": f"/insight/vorgaenge/{paper_id}/",
+            }
+        )
 
-    return render(request, "partials/neighborhood_results.html", {
-        "results": results,
-        "lat": lat,
-        "lon": lon,
-        "radius": radius,
-    })
+    return render(
+        request,
+        "partials/neighborhood_results.html",
+        {
+            "results": results,
+            "lat": lat,
+            "lon": lon,
+            "radius": radius,
+        },
+    )
 
 
 # =============================================================================
@@ -2466,9 +2459,9 @@ class SubscribeView(TemplateView):
 
         email = request.POST.get("email", "").strip().lower()
         if not email or "@" not in email:
-            return render(request, "partials/subscribe_error.html", {
-                "error": "Bitte geben Sie eine gültige E-Mail-Adresse ein."
-            })
+            return render(
+                request, "partials/subscribe_error.html", {"error": "Bitte geben Sie eine gültige E-Mail-Adresse ein."}
+            )
 
         # Abo-Typen aus Feldinhalt ableiten (kein Checkbox mehr)
         neighborhood_name = request.POST.get("neighborhood_name", "").strip()
@@ -2484,9 +2477,11 @@ class SubscribeView(TemplateView):
         keyword_active = bool(keyword)
 
         if not neighborhood_active and not keyword_active:
-            return render(request, "partials/subscribe_error.html", {
-                "error": "Bitte geben Sie eine Adresse oder einen Suchbegriff ein."
-            })
+            return render(
+                request,
+                "partials/subscribe_error.html",
+                {"error": "Bitte geben Sie eine Adresse oder einen Suchbegriff ein."},
+            )
 
         # Subscriber erstellen oder aktualisieren
         subscriber, created = InsightSubscriber.objects.get_or_create(
@@ -2499,10 +2494,14 @@ class SubscribeView(TemplateView):
 
         if not created and subscriber.confirmed and subscriber.unsubscribed_at is None:
             # Bereits bestätigt und aktiv → zur Verwaltungsseite leiten
-            return render(request, "partials/subscribe_success.html", {
-                "message": "Sie haben bereits ein aktives Abo. Überprüfen Sie Ihre E-Mail für den Verwaltungslink.",
-                "already_exists": True,
-            })
+            return render(
+                request,
+                "partials/subscribe_success.html",
+                {
+                    "message": "Sie haben bereits ein aktives Abo. Überprüfen Sie Ihre E-Mail für den Verwaltungslink.",
+                    "already_exists": True,
+                },
+            )
 
         # Abo-Daten aktualisieren
         subscriber.neighborhood_active = neighborhood_active
@@ -2529,9 +2528,13 @@ class SubscribeView(TemplateView):
         # Bestätigungsmail senden
         _send_confirmation_email(subscriber)
 
-        return render(request, "partials/subscribe_success.html", {
-            "message": "Fast geschafft! Bitte bestätigen Sie Ihr Abo über den Link in der E-Mail.",
-        })
+        return render(
+            request,
+            "partials/subscribe_success.html",
+            {
+                "message": "Fast geschafft! Bitte bestätigen Sie Ihr Abo über den Link in der E-Mail.",
+            },
+        )
 
 
 def _send_confirmation_email(subscriber):
@@ -2545,15 +2548,17 @@ def _send_confirmation_email(subscriber):
 
     subject = "Bitte bestätigen Sie Ihr Mandari-Abo"
 
-    html_message = render_to_string("emails/insight_confirm.html", {
-        "subscriber": subscriber,
-        "confirm_url": confirm_url,
-        "site_url": site_url,
-    })
+    html_message = render_to_string(
+        "emails/insight_confirm.html",
+        {
+            "subscriber": subscriber,
+            "confirm_url": confirm_url,
+            "site_url": site_url,
+        },
+    )
 
-    from_email = (
-        getattr(django_settings, "INSIGHT_DIGEST_FROM_EMAIL", "")
-        or getattr(django_settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de")
+    from_email = getattr(django_settings, "INSIGHT_DIGEST_FROM_EMAIL", "") or getattr(
+        django_settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"
     )
 
     try:
@@ -2575,19 +2580,27 @@ def confirm_subscription(request, token):
     subscriber = get_object_or_404(InsightSubscriber, token=token)
 
     if subscriber.confirmed:
-        return render(request, "pages/subscription_confirmed.html", {
-            "subscriber": subscriber,
-            "already_confirmed": True,
-        })
+        return render(
+            request,
+            "pages/subscription_confirmed.html",
+            {
+                "subscriber": subscriber,
+                "already_confirmed": True,
+            },
+        )
 
     subscriber.confirmed = True
     subscriber.confirmed_at = timezone.now()
     subscriber.save(update_fields=["confirmed", "confirmed_at", "updated_at"])
 
-    return render(request, "pages/subscription_confirmed.html", {
-        "subscriber": subscriber,
-        "already_confirmed": False,
-    })
+    return render(
+        request,
+        "pages/subscription_confirmed.html",
+        {
+            "subscriber": subscriber,
+            "already_confirmed": False,
+        },
+    )
 
 
 def manage_subscription(request, token):
@@ -2623,14 +2636,22 @@ def manage_subscription(request, token):
 
         subscriber.save()
 
-        return render(request, "pages/subscription_manage.html", {
-            "subscriber": subscriber,
-            "saved": True,
-        })
+        return render(
+            request,
+            "pages/subscription_manage.html",
+            {
+                "subscriber": subscriber,
+                "saved": True,
+            },
+        )
 
-    return render(request, "pages/subscription_manage.html", {
-        "subscriber": subscriber,
-    })
+    return render(
+        request,
+        "pages/subscription_manage.html",
+        {
+            "subscriber": subscriber,
+        },
+    )
 
 
 @require_GET
@@ -2642,9 +2663,13 @@ def unsubscribe(request, token):
         subscriber.unsubscribed_at = timezone.now()
         subscriber.save(update_fields=["unsubscribed_at", "updated_at"])
 
-    return render(request, "pages/subscription_unsubscribed.html", {
-        "subscriber": subscriber,
-    })
+    return render(
+        request,
+        "pages/subscription_unsubscribed.html",
+        {
+            "subscriber": subscriber,
+        },
+    )
 
 
 # =============================================================================

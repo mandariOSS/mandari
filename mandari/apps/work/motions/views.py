@@ -265,26 +265,28 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         inline_comments_data = []
         for comment in comments:
             if comment.mark_id:
-                inline_comments_data.append({
-                    "id": str(comment.id),
-                    "mark_id": str(comment.mark_id),
-                    "content": comment.content,
-                    "selected_text": comment.selected_text or "",
-                    "author_name": comment.author.user.get_display_name(),
-                    "author_initials": comment.author.user.get_initials(),
-                    "created_at": comment.created_at.isoformat(),
-                    "is_resolved": comment.is_resolved,
-                    "replies": [
-                        {
-                            "id": str(reply.id),
-                            "content": reply.content,
-                            "author_name": reply.author.user.get_display_name(),
-                            "author_initials": reply.author.user.get_initials(),
-                            "created_at": reply.created_at.isoformat(),
-                        }
-                        for reply in comment.replies.all()
-                    ],
-                })
+                inline_comments_data.append(
+                    {
+                        "id": str(comment.id),
+                        "mark_id": str(comment.mark_id),
+                        "content": comment.content,
+                        "selected_text": comment.selected_text or "",
+                        "author_name": comment.author.user.get_display_name(),
+                        "author_initials": comment.author.user.get_initials(),
+                        "created_at": comment.created_at.isoformat(),
+                        "is_resolved": comment.is_resolved,
+                        "replies": [
+                            {
+                                "id": str(reply.id),
+                                "content": reply.content,
+                                "author_name": reply.author.user.get_display_name(),
+                                "author_initials": reply.author.user.get_initials(),
+                                "created_at": reply.created_at.isoformat(),
+                            }
+                            for reply in comment.replies.all()
+                        ],
+                    }
+                )
         context["inline_comments_data"] = inline_comments_data
 
         # Documents (attachments)
@@ -307,14 +309,10 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         ).is_available()
 
         # Document types for dropdown
-        context["document_types"] = MotionType.objects.filter(
-            organization=self.organization, is_active=True
-        )
+        context["document_types"] = MotionType.objects.filter(organization=self.organization, is_active=True)
 
         # Letterheads for dropdown
-        letterheads = OrganizationLetterhead.objects.filter(
-            organization=self.organization, is_active=True
-        )
+        letterheads = OrganizationLetterhead.objects.filter(organization=self.organization, is_active=True)
         context["letterheads"] = letterheads
 
         # Current letterhead for editor background preview
@@ -325,15 +323,17 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         letterheads_json = []
         for lh in letterheads:
             if lh.pdf_file:
-                letterheads_json.append({
-                    "id": str(lh.id),
-                    "name": lh.name,
-                    "pdf_url": lh.pdf_file.url,
-                    "margin_top": lh.content_margin_top,
-                    "margin_right": lh.content_margin_right,
-                    "margin_bottom": lh.content_margin_bottom,
-                    "margin_left": lh.content_margin_left,
-                })
+                letterheads_json.append(
+                    {
+                        "id": str(lh.id),
+                        "name": lh.name,
+                        "pdf_url": lh.pdf_file.url,
+                        "margin_top": lh.content_margin_top,
+                        "margin_right": lh.content_margin_right,
+                        "margin_bottom": lh.content_margin_bottom,
+                        "margin_left": lh.content_margin_left,
+                    }
+                )
         context["letterheads_json"] = letterheads_json
 
         # Collaboration cursor color (deterministic from user ID)
@@ -542,12 +542,14 @@ class MotionAIAssistantView(WorkViewMixin, View):
                 return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
 
             if result.success:
-                return JsonResponse({
-                    "success": True,
-                    "content": result.content,
-                    "suggestions": result.suggestions,
-                    "tokens_used": result.total_tokens,
-                })
+                return JsonResponse(
+                    {
+                        "success": True,
+                        "content": result.content,
+                        "suggestions": result.suggestions,
+                        "tokens_used": result.total_tokens,
+                    }
+                )
             return JsonResponse({"error": result.error}, status=500)
 
         except Exception as e:
@@ -714,10 +716,12 @@ class MotionCommentResolveView(WorkViewMixin, View):
         comment.save()
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return JsonResponse({
-                "success": True,
-                "mark_id": str(comment.mark_id) if comment.mark_id else None,
-            })
+            return JsonResponse(
+                {
+                    "success": True,
+                    "mark_id": str(comment.mark_id) if comment.mark_id else None,
+                }
+            )
 
         messages.success(request, "Kommentar als erledigt markiert.")
         return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=comment.motion.id)
@@ -1580,4 +1584,3 @@ class MotionRedirectImportView(View):
     def get(self, request, *args, **kwargs):
         org_slug = kwargs.get("org_slug")
         return redirect("work:document_import", org_slug=org_slug, permanent=True)
-

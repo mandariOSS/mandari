@@ -51,9 +51,20 @@ def _rate_limit():
 # Case-insensitive suffix patterns (Str./str./STR., Straße/straße, etc.)
 _STRONG_SUFFIX = r"(?i:stra(?:ß|ss)e|str\.|gasse|allee|chaussee)"
 _WEAK_SUFFIXES = (
-    "weg", "platz", "ring", "damm", "ufer", "brücke",
-    "pfad", "steig", "stieg", "kamp", "bogen", "graben",
-    "deich", "horst",
+    "weg",
+    "platz",
+    "ring",
+    "damm",
+    "ufer",
+    "brücke",
+    "pfad",
+    "steig",
+    "stieg",
+    "kamp",
+    "bogen",
+    "graben",
+    "deich",
+    "horst",
 )
 _WEAK_SUFFIX = r"(?i:" + "|".join(_WEAK_SUFFIXES) + r")"
 
@@ -64,8 +75,8 @@ STREET_RE = re.compile(
     r"(?<![a-zäöüß/])"  # not preceded by lowercase
     r"("
     r"(?:[A-ZÄÖÜ][a-zäöüß]{2,}(?:[-\s](?:und\s|von\s|der\s)?)?){1,4}"
-    + _STRONG_SUFFIX +
-    r"(?:\s+\d{1,4}\s*[a-zA-Z]?)?"  # optional house number
+    + _STRONG_SUFFIX
+    + r"(?:\s+\d{1,4}\s*[a-zA-Z]?)?"  # optional house number
     r")"
     r"(?![a-zäöüß])",  # not followed by lowercase
     re.UNICODE,
@@ -81,8 +92,7 @@ STREET_WEAK_RE = re.compile(
     r"(?:\s+\d{1,4}\s*[a-zA-Z]?)?"
     r"|"
     # Option B: Compound word, name part ≥ 4 chars: "Domplatz", "Hafenufer"
-    r"[A-ZÄÖÜ][a-zäöüß]{3,}" + _WEAK_SUFFIX +
-    r"(?:\s+\d{1,4}\s*[a-zA-Z]?)?"
+    r"[A-ZÄÖÜ][a-zäöüß]{3,}" + _WEAK_SUFFIX + r"(?:\s+\d{1,4}\s*[a-zA-Z]?)?"
     r")"
     r"(?![a-zäöüß])",
     re.UNICODE,
@@ -104,71 +114,189 @@ PREP_STREET_RE = re.compile(
 # --- Blocklist: words/phrases that are NOT locations ---
 _BLOCKLIST = {
     # Generic nouns with street-like suffixes
-    "hintergrund", "vordergrund", "untergrund",
-    "themenfeld", "arbeitsfeld", "aufgabenfeld", "baufeld",
-    "planungsfeld", "handlungsfeld", "berufsfeld", "sachgebiet",
-    "grundlage", "grundlagen", "sachgrund", "antragsgrund",
-    "einstieg", "ausstieg", "aufstieg", "umstieg", "abstieg",
-    "fortgang", "zugang", "eingang", "ausgang", "übergang",
-    "zustand", "gegenstand", "bestand", "widerstand", "abstand",
-    "vorfeld", "umfeld",
+    "hintergrund",
+    "vordergrund",
+    "untergrund",
+    "themenfeld",
+    "arbeitsfeld",
+    "aufgabenfeld",
+    "baufeld",
+    "planungsfeld",
+    "handlungsfeld",
+    "berufsfeld",
+    "sachgebiet",
+    "grundlage",
+    "grundlagen",
+    "sachgrund",
+    "antragsgrund",
+    "einstieg",
+    "ausstieg",
+    "aufstieg",
+    "umstieg",
+    "abstieg",
+    "fortgang",
+    "zugang",
+    "eingang",
+    "ausgang",
+    "übergang",
+    "zustand",
+    "gegenstand",
+    "bestand",
+    "widerstand",
+    "abstand",
+    "vorfeld",
+    "umfeld",
     # Government/institutional
-    "stadtrat", "stadtverwaltung", "stadtverordnete", "stadtplan",
-    "stadtverband", "stadtteil", "stadtgebiet", "stadtbezirk",
-    "bundesstraße", "bundesfernstraße", "landesstraße", "kreisstraße",
-    "einbahnstraße", "fahrradstraße", "spielstraße", "sackgasse",
-    "anliegerstraße", "sammelstraße", "erschließungsstraße",
-    "haupteinfallstraße", "durchgangsstraße", "schnellstraße",
-    "ortsumgehungsstraße", "umgehungsstraße", "verbindungsstraße",
-    "rettungsgasse", "feuergasse", "notgasse",
+    "stadtrat",
+    "stadtverwaltung",
+    "stadtverordnete",
+    "stadtplan",
+    "stadtverband",
+    "stadtteil",
+    "stadtgebiet",
+    "stadtbezirk",
+    "bundesstraße",
+    "bundesfernstraße",
+    "landesstraße",
+    "kreisstraße",
+    "einbahnstraße",
+    "fahrradstraße",
+    "spielstraße",
+    "sackgasse",
+    "anliegerstraße",
+    "sammelstraße",
+    "erschließungsstraße",
+    "haupteinfallstraße",
+    "durchgangsstraße",
+    "schnellstraße",
+    "ortsumgehungsstraße",
+    "umgehungsstraße",
+    "verbindungsstraße",
+    "rettungsgasse",
+    "feuergasse",
+    "notgasse",
     # Prepositional non-locations
-    "zur umsetzung", "zur erreichung", "zur sicherung", "zur förderung",
-    "zur verbesserung", "zur vermeidung", "zur unterstützung",
-    "zur schriftführung", "zur verfügung", "zur kenntnis",
-    "zur genehmigung", "zur abstimmung", "zur beratung",
-    "zum schutz", "zum schuljahr", "zum sachverhalt", "zum thema",
-    "zum verfahren", "zum zeitpunkt", "zum anlass",
-    "bei auflösung", "bei anbietern", "bei umbenennungsvorhaben",
-    "bei bedarf", "bei fragen", "bei rückfragen",
-    "beim bau", "beim umbau", "beim neubau", "beim ausbau",
-    "am standort", "am anfang", "am ende", "am beispiel",
-    "an der stelle", "an der spitze",
-    "auf der grundlage", "auf der basis", "auf dem markt",
+    "zur umsetzung",
+    "zur erreichung",
+    "zur sicherung",
+    "zur förderung",
+    "zur verbesserung",
+    "zur vermeidung",
+    "zur unterstützung",
+    "zur schriftführung",
+    "zur verfügung",
+    "zur kenntnis",
+    "zur genehmigung",
+    "zur abstimmung",
+    "zur beratung",
+    "zum schutz",
+    "zum schuljahr",
+    "zum sachverhalt",
+    "zum thema",
+    "zum verfahren",
+    "zum zeitpunkt",
+    "zum anlass",
+    "bei auflösung",
+    "bei anbietern",
+    "bei umbenennungsvorhaben",
+    "bei bedarf",
+    "bei fragen",
+    "bei rückfragen",
+    "beim bau",
+    "beim umbau",
+    "beim neubau",
+    "beim ausbau",
+    "am standort",
+    "am anfang",
+    "am ende",
+    "am beispiel",
+    "an der stelle",
+    "an der spitze",
+    "auf der grundlage",
+    "auf der basis",
+    "auf dem markt",
 }
 
 # Generic road-type words (valid German but not specific street names)
 _GENERIC_ROAD_TYPES = {
-    "bundesstraße", "bundesfernstraße", "landesstraße", "kreisstraße",
-    "einbahnstraße", "fahrradstraße", "spielstraße", "sackgasse",
-    "anliegerstraße", "sammelstraße", "erschließungsstraße",
-    "haupteinfallstraße", "durchgangsstraße", "schnellstraße",
-    "ortsumgehungsstraße", "umgehungsstraße", "verbindungsstraße",
-    "rettungsgasse", "feuergasse", "notgasse",
+    "bundesstraße",
+    "bundesfernstraße",
+    "landesstraße",
+    "kreisstraße",
+    "einbahnstraße",
+    "fahrradstraße",
+    "spielstraße",
+    "sackgasse",
+    "anliegerstraße",
+    "sammelstraße",
+    "erschließungsstraße",
+    "haupteinfallstraße",
+    "durchgangsstraße",
+    "schnellstraße",
+    "ortsumgehungsstraße",
+    "umgehungsstraße",
+    "verbindungsstraße",
+    "rettungsgasse",
+    "feuergasse",
+    "notgasse",
     "hauptstraße",  # often used generically
     # Compound nouns that look like streets but aren't
-    "vorzugstraße", "vorzugstrasse",
-    "vorschlagstraße", "vorschlagstrasse",
-    "zufahrtsstraße", "zufahrtstraße",
-    "nebenstraße", "querstraße", "parallelstraße",
-    "gegenstraße", "rückstraße",
-    "wohnstraße", "geschäftsstraße", "einkaufsstraße",
-    "innerortsstraße", "außerortsstraße",
-    "ringstraße", "dorfstraße", "bergstraße", "waldstraße",
+    "vorzugstraße",
+    "vorzugstrasse",
+    "vorschlagstraße",
+    "vorschlagstrasse",
+    "zufahrtsstraße",
+    "zufahrtstraße",
+    "nebenstraße",
+    "querstraße",
+    "parallelstraße",
+    "gegenstraße",
+    "rückstraße",
+    "wohnstraße",
+    "geschäftsstraße",
+    "einkaufsstraße",
+    "innerortsstraße",
+    "außerortsstraße",
+    "ringstraße",
+    "dorfstraße",
+    "bergstraße",
+    "waldstraße",
     # Generic path/road type words
-    "schotterweg", "fußweg", "fahrweg", "radweg", "feldweg",
-    "waldweg", "gehweg", "wanderweg", "reitweg", "wirtschaftsweg",
-    "gemeindeweg", "privatweg",
-    "fahrgasse", "feuergasse",
+    "schotterweg",
+    "fußweg",
+    "fahrweg",
+    "radweg",
+    "feldweg",
+    "waldweg",
+    "gehweg",
+    "wanderweg",
+    "reitweg",
+    "wirtschaftsweg",
+    "gemeindeweg",
+    "privatweg",
+    "fahrgasse",
+    "feuergasse",
     "gemeindestraße",
     "landestraße",  # variant without 's'
     # Generic phrases captured by regex
-    "die straße", "der straße", "eine straße", "dieser straße",
-    "der weg", "die gasse", "die allee",
-    "die brücke", "der brücke", "einer brücke",
-    "umbenennung der straße", "sanierung der brücke",
-    "umgestaltung der straße", "entwässerung der straße",
-    "der name", "straßennamen",
-    "zu beschlusspunkt", "zu beschlusspunkten",
+    "die straße",
+    "der straße",
+    "eine straße",
+    "dieser straße",
+    "der weg",
+    "die gasse",
+    "die allee",
+    "die brücke",
+    "der brücke",
+    "einer brücke",
+    "umbenennung der straße",
+    "sanierung der brücke",
+    "umgestaltung der straße",
+    "entwässerung der straße",
+    "der name",
+    "straßennamen",
+    "zu beschlusspunkt",
+    "zu beschlusspunkten",
     # Not locations
     "carsharing",
 }
@@ -234,11 +362,13 @@ def extract_with_regex(text: str) -> list[dict]:
         key = normalized.lower()
         if key not in seen:
             seen.add(key)
-            results.append({
-                "raw": raw,
-                "type": loc_type,
-                "normalized": normalized,
-            })
+            results.append(
+                {
+                    "raw": raw,
+                    "type": loc_type,
+                    "normalized": normalized,
+                }
+            )
 
     for match in STREET_RE.finditer(text):
         _add(match.group(1))
@@ -330,11 +460,13 @@ def _parse_ai_locations(content: str) -> list[dict]:
         raw = item.get("raw", "").strip()
         if not raw:
             continue
-        results.append({
-            "raw": raw,
-            "type": item.get("type", "unknown"),
-            "normalized": item.get("normalized", raw).strip(),
-        })
+        results.append(
+            {
+                "raw": raw,
+                "type": item.get("type", "unknown"),
+                "normalized": item.get("normalized", raw).strip(),
+            }
+        )
 
     return results
 
@@ -345,15 +477,15 @@ def _parse_ai_locations(content: str) -> list[dict]:
 
 # Photon osm_key values that indicate actual geographic locations
 _VALID_OSM_KEYS = {
-    "highway",    # streets, roads, paths
-    "place",      # named places, districts
-    "building",   # specific buildings (when name matches)
-    "amenity",    # schools, town halls, etc. (validated)
-    "leisure",    # parks, playgrounds
-    "natural",    # lakes, rivers
-    "waterway",   # canals, rivers
-    "landuse",    # specific land areas
-    "boundary",   # administrative boundaries
+    "highway",  # streets, roads, paths
+    "place",  # named places, districts
+    "building",  # specific buildings (when name matches)
+    "amenity",  # schools, town halls, etc. (validated)
+    "leisure",  # parks, playgrounds
+    "natural",  # lakes, rivers
+    "waterway",  # canals, rivers
+    "landuse",  # specific land areas
+    "boundary",  # administrative boundaries
 }
 
 
@@ -481,9 +613,22 @@ def _result_matches_query(query: str, result_name: str, result_street: str) -> b
     # Word-based overlap: at least one significant word (≥4 chars) must match.
     # Exclude generic suffix words that match too broadly.
     _GENERIC_WORDS = {
-        "straße", "strasse", "gasse", "allee", "chaussee",
-        "weg", "platz", "ring", "damm", "ufer", "brücke",
-        "pfad", "steig", "stieg", "stadt", "münster",
+        "straße",
+        "strasse",
+        "gasse",
+        "allee",
+        "chaussee",
+        "weg",
+        "platz",
+        "ring",
+        "damm",
+        "ufer",
+        "brücke",
+        "pfad",
+        "steig",
+        "stieg",
+        "stadt",
+        "münster",
     }
     q_words = {w for w in re.split(r"[-\s]+", q_core) if len(w) >= 4} - _GENERIC_WORDS
     result_words = set()
@@ -507,9 +652,7 @@ def _geocode_nominatim(address: str, body) -> dict | None:
     }
 
     if all([body.bbox_south, body.bbox_north, body.bbox_west, body.bbox_east]):
-        params["viewbox"] = (
-            f"{body.bbox_west},{body.bbox_north},{body.bbox_east},{body.bbox_south}"
-        )
+        params["viewbox"] = f"{body.bbox_west},{body.bbox_north},{body.bbox_east},{body.bbox_south}"
         params["bounded"] = "1"
 
     try:
@@ -579,8 +722,10 @@ def deduplicate_locations(locations: list[dict], threshold_meters: float = 50.0)
         is_dup = False
         for existing in result:
             dist = _haversine_distance(
-                loc["lat"], loc["lon"],
-                existing["lat"], existing["lon"],
+                loc["lat"],
+                loc["lon"],
+                existing["lat"],
+                existing["lon"],
             )
             if dist < threshold_meters:
                 is_dup = True
@@ -733,8 +878,11 @@ def update_paper_georef(paper, result: dict) -> None:
     paper.georef_extracted_at = timezone.now()
 
     update_fields = [
-        "georef_status", "georef_method", "georef_error",
-        "georef_extracted_at", "updated_at",
+        "georef_status",
+        "georef_method",
+        "georef_error",
+        "georef_extracted_at",
+        "updated_at",
     ]
 
     locations = result.get("locations", [])

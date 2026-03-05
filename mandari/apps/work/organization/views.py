@@ -113,13 +113,17 @@ class TeamMemberProfileView(WorkViewMixin, TemplateView):
 
         # Current absence
         today = timezone.now().date()
-        context["current_absence"] = MemberAbsence.objects.filter(
-            membership=member,
-            organization=self.organization,
-            is_active=True,
-            start_date__lte=today,
-            end_date__gte=today,
-        ).select_related("deputy__user").first()
+        context["current_absence"] = (
+            MemberAbsence.objects.filter(
+                membership=member,
+                organization=self.organization,
+                is_active=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            )
+            .select_related("deputy__user")
+            .first()
+        )
 
         # Visibility / contact settings from User.settings
         user_settings = member.user.settings or {}
@@ -1676,9 +1680,7 @@ class ProfileAbsenceView(WorkViewMixin, TemplateView):
         )
 
         past_absences = (
-            my_absences.filter(end_date__lt=today)
-            .select_related("deputy__user")
-            .order_by("-start_date")[:10]
+            my_absences.filter(end_date__lt=today).select_related("deputy__user").order_by("-start_date")[:10]
         )
 
         # Where I'm deputy
@@ -1895,9 +1897,13 @@ class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
             from insight_core.models import OParlOrganization
 
             today = timezone.now().date()
-            context["available_committees"] = OParlOrganization.objects.filter(
-                body=body,
-            ).filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).order_by("name")
+            context["available_committees"] = (
+                OParlOrganization.objects.filter(
+                    body=body,
+                )
+                .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+                .order_by("name")
+            )
             context["current_committee_ids"] = list(self.membership.oparl_committees.values_list("id", flat=True))
         else:
             context["available_committees"] = []
@@ -1957,10 +1963,14 @@ class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
         from apps.work.notifications.models import NotificationType
         from apps.work.notifications.services import NotificationHub
 
-        admins = self.organization.memberships.filter(
-            is_active=True,
-            roles__is_admin=True,
-        ).distinct().exclude(id=self.membership.id)
+        admins = (
+            self.organization.memberships.filter(
+                is_active=True,
+                roles__is_admin=True,
+            )
+            .distinct()
+            .exclude(id=self.membership.id)
+        )
 
         user_name = request.user.get_full_name() or request.user.email
         NotificationHub.send_bulk(
@@ -2211,9 +2221,7 @@ class ProfileDataPrivacyView(WorkViewMixin, TemplateView):
         # Security events (last logins, password changes)
         from apps.accounts.models import UserSession
 
-        context["recent_sessions"] = (
-            UserSession.objects.filter(user=user).order_by("-created_at")[:10]
-        )
+        context["recent_sessions"] = UserSession.objects.filter(user=user).order_by("-created_at")[:10]
 
         context["is_owner"] = self.organization.owner == user
 
@@ -2280,8 +2288,7 @@ class ProfileDataPrivacyView(WorkViewMixin, TemplateView):
         if self.organization.owner == user:
             messages.error(
                 request,
-                "Als Eigentümer müssen Sie zuerst die Eigentümerschaft übertragen, "
-                "bevor Sie Ihr Konto löschen können.",
+                "Als Eigentümer müssen Sie zuerst die Eigentümerschaft übertragen, bevor Sie Ihr Konto löschen können.",
             )
             return redirect("work:profile_data", org_slug=self.organization.slug)
 
@@ -2296,8 +2303,7 @@ class ProfileDataPrivacyView(WorkViewMixin, TemplateView):
 
         messages.success(
             request,
-            "Ihre Mitgliedschaft wurde deaktiviert. "
-            "Kontaktieren Sie den Support für eine vollständige Kontolöschung.",
+            "Ihre Mitgliedschaft wurde deaktiviert. Kontaktieren Sie den Support für eine vollständige Kontolöschung.",
         )
         return redirect("work:dashboard", org_slug=self.organization.slug)
 
@@ -2326,19 +2332,21 @@ class DataExportStatusView(WorkViewMixin, View):
             else None
         )
 
-        return JsonResponse({
-            "id": str(export.id),
-            "status": export.status,
-            "format": export.export_format,
-            "file_size": export.file_size,
-            "file_size_human": export.file_size_human,
-            "is_ready": export.is_ready,
-            "is_in_progress": export.is_in_progress,
-            "download_url": download_url,
-            "error_message": export.error_message,
-            "created_at": export.created_at.isoformat() if export.created_at else None,
-            "completed_at": export.completed_at.isoformat() if export.completed_at else None,
-        })
+        return JsonResponse(
+            {
+                "id": str(export.id),
+                "status": export.status,
+                "format": export.export_format,
+                "file_size": export.file_size,
+                "file_size_human": export.file_size_human,
+                "is_ready": export.is_ready,
+                "is_in_progress": export.is_in_progress,
+                "download_url": download_url,
+                "error_message": export.error_message,
+                "created_at": export.created_at.isoformat() if export.created_at else None,
+                "completed_at": export.completed_at.isoformat() if export.completed_at else None,
+            }
+        )
 
 
 class DataExportDownloadView(WorkViewMixin, View):
@@ -2362,7 +2370,7 @@ class DataExportDownloadView(WorkViewMixin, View):
             raise Http404("Exportdatei nicht gefunden.")
 
         content_type = "application/pdf" if export.export_format == "pdf" else "application/json; charset=utf-8"
-        filename = f'mandari-datenexport-{export.created_at.strftime("%Y%m%d")}.{export.export_format}'
+        filename = f"mandari-datenexport-{export.created_at.strftime('%Y%m%d')}.{export.export_format}"
 
         response = HttpResponse(file_path.read_bytes(), content_type=content_type)
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
@@ -2421,106 +2429,91 @@ class ProfileActivityView(WorkViewMixin, TemplateView):
         from apps.work.tasks.models import Task
 
         # Tasks
-        my_tasks = Task.objects.filter(organization=org).filter(
-            Q(created_by=membership) | Q(assigned_to=membership)
-        )
+        my_tasks = Task.objects.filter(organization=org).filter(Q(created_by=membership) | Q(assigned_to=membership))
         context["tasks_total"] = my_tasks.count()
         context["tasks_completed"] = my_tasks.filter(is_completed=True).count()
         context["tasks_open"] = my_tasks.filter(is_completed=False).count()
 
         # Motions
-        context["motions_authored"] = Motion.objects.filter(
-            organization=org, author=membership
-        ).count()
+        context["motions_authored"] = Motion.objects.filter(organization=org, author=membership).count()
 
         # Motion comments
-        context["motion_comments"] = MotionComment.objects.filter(
-            motion__organization=org, author=membership
-        ).count()
+        context["motion_comments"] = MotionComment.objects.filter(motion__organization=org, author=membership).count()
 
         # Faction meetings
-        attendance_qs = FactionAttendance.objects.filter(
-            membership=membership, meeting__organization=org
-        )
+        attendance_qs = FactionAttendance.objects.filter(membership=membership, meeting__organization=org)
         context["meetings_present"] = attendance_qs.filter(status="present").count()
         context["meetings_excused"] = attendance_qs.filter(status="excused").count()
         context["meetings_absent"] = attendance_qs.filter(status="absent").count()
-        context["meetings_total"] = FactionMeeting.objects.filter(
-            organization=org, status="completed"
-        ).count()
+        context["meetings_total"] = FactionMeeting.objects.filter(organization=org, status="completed").count()
 
         # Meeting preparations
         from apps.work.meetings.models import AgendaItemNote, MeetingPreparation
 
-        context["preparations"] = MeetingPreparation.objects.filter(
-            organization=org, membership=membership
-        ).count()
+        context["preparations"] = MeetingPreparation.objects.filter(organization=org, membership=membership).count()
 
-        context["agenda_notes"] = AgendaItemNote.objects.filter(
-            organization=org, author=membership
-        ).count()
+        context["agenda_notes"] = AgendaItemNote.objects.filter(organization=org, author=membership).count()
 
         # --- Timeline (last 20 activities) ---
         timeline = []
 
         # Recent tasks (created or completed)
-        recent_tasks = (
-            my_tasks.order_by("-updated_at")[:5]
-        )
+        recent_tasks = my_tasks.order_by("-updated_at")[:5]
         for t in recent_tasks:
-            timeline.append({
-                "date": t.updated_at,
-                "icon": "check-square",
-                "color": "green" if t.is_completed else "blue",
-                "title": f"Aufgabe: {t.title}",
-                "detail": "Erledigt" if t.is_completed else f"Status: {t.get_status_display()}",
-            })
+            timeline.append(
+                {
+                    "date": t.updated_at,
+                    "icon": "check-square",
+                    "color": "green" if t.is_completed else "blue",
+                    "title": f"Aufgabe: {t.title}",
+                    "detail": "Erledigt" if t.is_completed else f"Status: {t.get_status_display()}",
+                }
+            )
 
         # Recent motions
-        recent_motions = Motion.objects.filter(
-            organization=org, author=membership
-        ).order_by("-updated_at")[:5]
+        recent_motions = Motion.objects.filter(organization=org, author=membership).order_by("-updated_at")[:5]
         for m in recent_motions:
-            timeline.append({
-                "date": m.updated_at,
-                "icon": "file-text",
-                "color": "indigo",
-                "title": f"Antrag: {m.title}",
-                "detail": m.get_status_display(),
-            })
+            timeline.append(
+                {
+                    "date": m.updated_at,
+                    "icon": "file-text",
+                    "color": "indigo",
+                    "title": f"Antrag: {m.title}",
+                    "detail": m.get_status_display(),
+                }
+            )
 
         # Recent attendance
         recent_attendance = (
-            FactionAttendance.objects.filter(
-                membership=membership, meeting__organization=org
-            )
+            FactionAttendance.objects.filter(membership=membership, meeting__organization=org)
             .select_related("meeting")
             .order_by("-meeting__start")[:5]
         )
         for a in recent_attendance:
-            timeline.append({
-                "date": a.meeting.start if a.meeting.start else a.meeting.created_at,
-                "icon": "users",
-                "color": "purple",
-                "title": f"Sitzung: {a.meeting.title}",
-                "detail": a.get_status_display(),
-            })
+            timeline.append(
+                {
+                    "date": a.meeting.start if a.meeting.start else a.meeting.created_at,
+                    "icon": "users",
+                    "color": "purple",
+                    "title": f"Sitzung: {a.meeting.title}",
+                    "detail": a.get_status_display(),
+                }
+            )
 
         # Recent meeting preparations
-        recent_preps = (
-            MeetingPreparation.objects.filter(
-                organization=org, membership=membership
-            )
-            .order_by("-updated_at")[:5]
-        )
+        recent_preps = MeetingPreparation.objects.filter(organization=org, membership=membership).order_by(
+            "-updated_at"
+        )[:5]
         for p in recent_preps:
-            timeline.append({
-                "date": p.updated_at,
-                "icon": "clipboard-check",
-                "color": "amber",
-                "title": "Sitzungsvorbereitung",
-                "detail": f"Aktualisiert am {p.updated_at.strftime('%d.%m.%Y')}",
-            })
+            timeline.append(
+                {
+                    "date": p.updated_at,
+                    "icon": "clipboard-check",
+                    "color": "amber",
+                    "title": "Sitzungsvorbereitung",
+                    "detail": f"Aktualisiert am {p.updated_at.strftime('%d.%m.%Y')}",
+                }
+            )
 
         # Sort by date descending, take top 20
         timeline.sort(key=lambda x: x["date"] if x["date"] else timezone.now(), reverse=True)

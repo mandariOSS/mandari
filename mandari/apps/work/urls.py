@@ -198,9 +198,21 @@ urlpatterns = [
     ),
     # Legacy /motions/ redirects → /documents/
     path("<slug:org_slug>/motions/", motions_views.MotionRedirectView.as_view(), name="motions"),
-    path("<slug:org_slug>/motions/<uuid:motion_id>/", motions_views.MotionDetailRedirectView.as_view(), name="motion_detail"),
-    path("<slug:org_slug>/motions/<uuid:motion_id>/edit/", motions_views.MotionDetailRedirectView.as_view(), name="motion_edit"),
-    path("<slug:org_slug>/motions/<uuid:motion_id>/share/", motions_views.MotionDetailRedirectView.as_view(), name="motion_share"),
+    path(
+        "<slug:org_slug>/motions/<uuid:motion_id>/",
+        motions_views.MotionDetailRedirectView.as_view(),
+        name="motion_detail",
+    ),
+    path(
+        "<slug:org_slug>/motions/<uuid:motion_id>/edit/",
+        motions_views.MotionDetailRedirectView.as_view(),
+        name="motion_edit",
+    ),
+    path(
+        "<slug:org_slug>/motions/<uuid:motion_id>/share/",
+        motions_views.MotionDetailRedirectView.as_view(),
+        name="motion_share",
+    ),
     path("<slug:org_slug>/motions/create/", motions_views.MotionRedirectCreateView.as_view(), name="motion_create"),
     path("<slug:org_slug>/motions/trash/", motions_views.MotionRedirectTrashView.as_view(), name="motion_trash"),
     path("<slug:org_slug>/motions/import/", motions_views.MotionRedirectImportView.as_view(), name="motion_import"),

@@ -136,15 +136,9 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
         if not self.organization:
             return True, ""
 
-        day_used = OrganizationAITokenUsage.get_tokens_used(
-            self.organization, OrganizationAITokenUsage.PERIOD_DAY
-        )
-        week_used = OrganizationAITokenUsage.get_tokens_used(
-            self.organization, OrganizationAITokenUsage.PERIOD_WEEK
-        )
-        month_used = OrganizationAITokenUsage.get_tokens_used(
-            self.organization, OrganizationAITokenUsage.PERIOD_MONTH
-        )
+        day_used = OrganizationAITokenUsage.get_tokens_used(self.organization, OrganizationAITokenUsage.PERIOD_DAY)
+        week_used = OrganizationAITokenUsage.get_tokens_used(self.organization, OrganizationAITokenUsage.PERIOD_WEEK)
+        month_used = OrganizationAITokenUsage.get_tokens_used(self.organization, OrganizationAITokenUsage.PERIOD_MONTH)
 
         if day_used + estimated_tokens > self.organization.ai_token_limit_daily:
             return False, "Tageslimit für KI-Tokens erreicht."

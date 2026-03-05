@@ -90,9 +90,7 @@ class Command(BaseCommand):
         try:
             import meilisearch
         except ImportError:
-            self.stderr.write(self.style.ERROR(
-                "meilisearch package not installed. Run: pip install meilisearch"
-            ))
+            self.stderr.write(self.style.ERROR("meilisearch package not installed. Run: pip install meilisearch"))
             return
 
         url = getattr(settings, "MEILISEARCH_URL", "http://localhost:7700")
@@ -113,11 +111,7 @@ class Command(BaseCommand):
         body_uuid = options.get("body")
         clear = options.get("clear", False)
 
-        indexes_to_process = (
-            {index_filter: INDEX_CONFIG[index_filter]}
-            if index_filter
-            else INDEX_CONFIG
-        )
+        indexes_to_process = {index_filter: INDEX_CONFIG[index_filter]} if index_filter else INDEX_CONFIG
 
         body_name = ""
         if body_uuid:
@@ -144,9 +138,7 @@ class Command(BaseCommand):
                     task = index.delete_all_documents()
                     client.wait_for_task(task.task_uid, timeout_in_ms=30000)
                 except Exception as e:
-                    self.stdout.write(self.style.WARNING(
-                        f"  Could not clear '{index_name}': {e}"
-                    ))
+                    self.stdout.write(self.style.WARNING(f"  Could not clear '{index_name}': {e}"))
 
             # Build queryset
             qs = model.objects.all()
@@ -156,18 +148,14 @@ class Command(BaseCommand):
                 qs = qs_filter(qs)
 
             count = qs.count()
-            self.stdout.write(
-                f"Indexing {count} {index_name}"
-                + (f" for {body_name}" if body_name else "")
-                + "..."
-            )
+            self.stdout.write(f"Indexing {count} {index_name}" + (f" for {body_name}" if body_name else "") + "...")
 
             indexed = 0
             index = client.index(index_name)
 
             # Process in batches
             for offset in range(0, count, BATCH_SIZE):
-                batch = list(qs[offset:offset + BATCH_SIZE])
+                batch = list(qs[offset : offset + BATCH_SIZE])
                 docs = []
                 for obj in batch:
                     try:
@@ -180,25 +168,17 @@ class Command(BaseCommand):
                         else:
                             docs.append(builder(obj))
                     except Exception as e:
-                        self.stderr.write(self.style.WARNING(
-                            f"  Error building doc for {obj.id}: {e}"
-                        ))
+                        self.stderr.write(self.style.WARNING(f"  Error building doc for {obj.id}: {e}"))
 
                 if docs:
                     try:
                         index.add_documents(docs, primary_key="id")
                         indexed += len(docs)
                     except Exception as e:
-                        self.stderr.write(self.style.ERROR(
-                            f"  Error indexing batch: {e}"
-                        ))
+                        self.stderr.write(self.style.ERROR(f"  Error indexing batch: {e}"))
 
-            self.stdout.write(self.style.SUCCESS(
-                f"  {index_name}: {indexed}/{count} indexed"
-            ))
+            self.stdout.write(self.style.SUCCESS(f"  {index_name}: {indexed}/{count} indexed"))
             total_indexed += indexed
 
         elapsed = time.monotonic() - start_time
-        self.stdout.write(self.style.SUCCESS(
-            f"\nDone! {total_indexed} documents indexed in {elapsed:.1f}s"
-        ))
+        self.stdout.write(self.style.SUCCESS(f"\nDone! {total_indexed} documents indexed in {elapsed:.1f}s"))

@@ -911,11 +911,15 @@ class OrganizationAITokenUsage(models.Model):
     def get_tokens_used(cls, organization, period_type: str, ref_date=None) -> int:
         ref_date = ref_date or timezone.localdate()
         period_start = cls._period_start(period_type, ref_date)
-        entry = cls.objects.filter(
-            organization=organization,
-            period_type=period_type,
-            period_start=period_start,
-        ).only("tokens_used").first()
+        entry = (
+            cls.objects.filter(
+                organization=organization,
+                period_type=period_type,
+                period_start=period_start,
+            )
+            .only("tokens_used")
+            .first()
+        )
         return int(entry.tokens_used) if entry else 0
 
     @classmethod

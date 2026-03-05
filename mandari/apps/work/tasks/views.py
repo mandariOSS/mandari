@@ -78,9 +78,11 @@ class TaskListView(WorkViewMixin, TemplateView):
         priority_filter = self.request.GET.get("priority", "")
 
         # Base queryset
-        tasks = _task_base_queryset().filter(
-            organization=self.organization
-        ).prefetch_related("labels", "checklist_items", "attachments")
+        tasks = (
+            _task_base_queryset()
+            .filter(organization=self.organization)
+            .prefetch_related("labels", "checklist_items", "attachments")
+        )
 
         # Apply filters based on visibility
         if view_mode == "my":
@@ -240,8 +242,7 @@ class TaskBoardAPIView(WorkViewMixin, View):
 
             if old_status != new_status:
                 old_column_tasks = list(
-                    Task.objects.filter(organization=self.organization, status=old_status)
-                    .order_by("position")
+                    Task.objects.filter(organization=self.organization, status=old_status).order_by("position")
                 )
                 for idx, t in enumerate(old_column_tasks):
                     if t.position != idx:
@@ -652,7 +653,9 @@ class TaskPanelActionView(WorkViewMixin, View):
             new_assigned = task.assigned_to.user.get_display_name() if task.assigned_to else "—"
             changes.append(("assigned_to", old_values["assigned_to"], new_assigned, "assigned"))
         if old_values["visibility_raw"] != task.visibility:
-            changes.append(("visibility", old_values["visibility"], task.get_visibility_display(), "visibility_changed"))
+            changes.append(
+                ("visibility", old_values["visibility"], task.get_visibility_display(), "visibility_changed")
+            )
 
         for field_name, old_val, new_val, activity_type in changes:
             log_field_change(task, self.membership, field_name, old_val, new_val, activity_type)
@@ -769,10 +772,12 @@ class TaskPanelActionView(WorkViewMixin, View):
         oob_delete = f'<div id="{card_id}" hx-swap-oob="delete"></div>'
         html = oob_delete + self._render_oob_counts()
         response = HttpResponse(html)
-        response["HX-Trigger"] = json.dumps({
-            "show-toast": {"message": "Aufgabe gelöscht.", "type": "success"},
-            "taskDeleted": {"taskId": str(task_id)},
-        })
+        response["HX-Trigger"] = json.dumps(
+            {
+                "show-toast": {"message": "Aufgabe gelöscht.", "type": "success"},
+                "taskDeleted": {"taskId": str(task_id)},
+            }
+        )
         return response
 
     def _handle_upload_attachment(self, request, task, can_edit):
@@ -794,7 +799,9 @@ class TaskPanelActionView(WorkViewMixin, View):
 
             html = self._render_attachments(task)
             # Also update activity section via OOB
-            activity_html = f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+            activity_html = (
+                f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+            )
             return self._make_response(html + activity_html, f'"{f.name}" hochgeladen.')
 
         return self._make_response("", "Fehler beim Hochladen.", "error")
@@ -812,7 +819,9 @@ class TaskPanelActionView(WorkViewMixin, View):
         log_activity(task, self.membership, "attachment_removed", details={"filename": filename})
 
         html = self._render_attachments(task)
-        activity_html = f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+        activity_html = (
+            f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+        )
         return self._make_response(html + activity_html, f'"{filename}" entfernt.')
 
     def _handle_add_checklist_item(self, request, task, can_edit):
@@ -829,7 +838,9 @@ class TaskPanelActionView(WorkViewMixin, View):
             log_activity(task, self.membership, "checklist_item_added", details={"title": item.title})
 
             html = self._render_checklist(task)
-            activity_html = f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+            activity_html = (
+                f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+            )
             # OOB card update for checklist progress
             oob_card = self._render_oob_card(task)
             return self._make_response(html + activity_html + oob_card, "Punkt hinzugefügt.")
@@ -882,7 +893,9 @@ class TaskPanelActionView(WorkViewMixin, View):
 
         html = self._render_labels(task)
         oob_card = self._render_oob_card(task)
-        activity_html = f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+        activity_html = (
+            f'<div id="panel-activity" hx-swap-oob="innerHTML:#panel-activity">{self._render_activity(task)}</div>'
+        )
         return HttpResponse(html + oob_card + activity_html)
 
     def _handle_reorder_checklist(self, request, task, can_edit):

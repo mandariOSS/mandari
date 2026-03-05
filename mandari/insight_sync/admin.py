@@ -67,7 +67,7 @@ class SyncLogAdmin(ModelAdmin):
         return mark_safe(
             f'<span style="color: {color}; font-weight: 600;">'
             f'<span class="material-symbols-outlined" style="font-size: 16px; vertical-align: middle;">{icon}</span> '
-            f'{label}</span>'
+            f"{label}</span>"
         )
 
     @admin.display(description="Quelle")
@@ -106,9 +106,7 @@ class SyncConfigAdmin(ModelAdmin):
     def changelist_view(self, request, extra_context=None):
         """Direkt zum einzigen Objekt weiterleiten."""
         config = SyncConfig.get()
-        return HttpResponseRedirect(
-            reverse("admin:insight_sync_syncconfig_change", args=[config.pk])
-        )
+        return HttpResponseRedirect(reverse("admin:insight_sync_syncconfig_change", args=[config.pk]))
 
 
 def trigger_sync_view(request):

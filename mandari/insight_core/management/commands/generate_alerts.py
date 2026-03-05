@@ -173,9 +173,7 @@ class Command(BaseCommand):
             papers = OParlPaper.objects.filter(
                 body=subscriber.body,
                 created_at__gte=cutoff,
-            ).filter(
-                Q(name__icontains=keyword) | Q(reference__icontains=keyword)
-            )[:20]
+            ).filter(Q(name__icontains=keyword) | Q(reference__icontains=keyword))[:20]
 
             for paper in papers:
                 if dry_run:

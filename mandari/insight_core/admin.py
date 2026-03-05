@@ -269,34 +269,58 @@ class OParlPaperAdmin(ModelAdmin):
     search_fields = ["name", "reference"]
     date_hierarchy = "date"
     readonly_fields = [
-        "id", "external_id", "created_at", "updated_at",
-        "georef_status", "georef_method", "georef_error",
-        "georef_extracted_at", "locations",
+        "id",
+        "external_id",
+        "created_at",
+        "updated_at",
+        "georef_status",
+        "georef_method",
+        "georef_error",
+        "georef_extracted_at",
+        "locations",
     ]
 
     fieldsets = (
-        (None, {
-            "fields": ("name", "reference", "paper_type", "date", "body"),
-        }),
-        ("Georeferenzierung", {
-            "fields": (
-                "georef_status", "georef_method", "georef_extracted_at",
-                "georef_error", "locations",
-            ),
-            "classes": ("collapse",),
-        }),
-        ("KI-Felder", {
-            "fields": ("summary",),
-            "classes": ("collapse",),
-        }),
-        ("OParl-Daten", {
-            "fields": ("external_id", "oparl_created", "oparl_modified", "raw_json"),
-            "classes": ("collapse",),
-        }),
-        ("Zeitstempel", {
-            "fields": ("created_at", "updated_at"),
-            "classes": ("collapse",),
-        }),
+        (
+            None,
+            {
+                "fields": ("name", "reference", "paper_type", "date", "body"),
+            },
+        ),
+        (
+            "Georeferenzierung",
+            {
+                "fields": (
+                    "georef_status",
+                    "georef_method",
+                    "georef_extracted_at",
+                    "georef_error",
+                    "locations",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "KI-Felder",
+            {
+                "fields": ("summary",),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "OParl-Daten",
+            {
+                "fields": ("external_id", "oparl_created", "oparl_modified", "raw_json"),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Zeitstempel",
+            {
+                "fields": ("created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     @admin.display(description="Georef")
@@ -311,10 +335,7 @@ class OParlPaperAdmin(ModelAdmin):
             "skipped": "#64748b",
         }
         color = colors.get(obj.georef_status, "#64748b")
-        return mark_safe(
-            f'<span style="color: {color}; font-weight: 600;">'
-            f'{obj.get_georef_status_display()}</span>'
-        )
+        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_georef_status_display()}</span>')
 
 
 @admin.register(OParlAgendaItem)
@@ -697,8 +718,14 @@ class ChatUsageAdmin(ModelAdmin):
     list_filter = ["filter_result", "created_at"]
     search_fields = ["ip_address", "session_key", "message"]
     readonly_fields = [
-        "id", "session_key", "ip_address", "user", "message",
-        "filter_result", "tokens_used", "created_at",
+        "id",
+        "session_key",
+        "ip_address",
+        "user",
+        "message",
+        "filter_result",
+        "tokens_used",
+        "created_at",
     ]
     ordering = ["-created_at"]
     list_per_page = 50
@@ -706,6 +733,7 @@ class ChatUsageAdmin(ModelAdmin):
     def short_message(self, obj):
         """Truncated message for list display."""
         return obj.message[:80] + "..." if len(obj.message) > 80 else obj.message
+
     short_message.short_description = "Nachricht"
 
     def has_add_permission(self, request):
@@ -743,8 +771,12 @@ class BookmarkAdmin(ModelAdmin):
 @admin.register(InsightSubscriber)
 class InsightSubscriberAdmin(ModelAdmin):
     list_display = [
-        "email", "body", "confirmed", "active_types_display",
-        "digest_frequency", "created_at",
+        "email",
+        "body",
+        "confirmed",
+        "active_types_display",
+        "digest_frequency",
+        "created_at",
     ]
     list_filter = ["confirmed", "body", "digest_frequency", "neighborhood_active", "keyword_active"]
     search_fields = ["email", "neighborhood_name", "keyword"]
@@ -755,9 +787,18 @@ class InsightSubscriberAdmin(ModelAdmin):
     fieldsets = (
         (None, {"fields": ("email", "body", "token")}),
         ("Status", {"fields": ("confirmed", "confirmed_at", "unsubscribed_at", "digest_frequency")}),
-        ("Nachbarschaft-Abo", {
-            "fields": ("neighborhood_active", "neighborhood_name", "neighborhood_lat", "neighborhood_lon", "neighborhood_radius"),
-        }),
+        (
+            "Nachbarschaft-Abo",
+            {
+                "fields": (
+                    "neighborhood_active",
+                    "neighborhood_name",
+                    "neighborhood_lat",
+                    "neighborhood_lon",
+                    "neighborhood_radius",
+                ),
+            },
+        ),
         ("Suchbegriff-Abo", {"fields": ("keyword_active", "keyword")}),
         ("Gemerkte Elemente", {"fields": ("bookmarks_active", "user")}),
         ("Zeitstempel", {"fields": ("id", "created_at", "updated_at"), "classes": ("collapse",)}),
