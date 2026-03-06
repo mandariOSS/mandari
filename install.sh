@@ -110,21 +110,46 @@ check_prerequisites() {
         info "Package manager not detected, skipping system update"
     fi
 
-    # Check Docker
+    # Install Docker if not present
     if ! command -v docker &>/dev/null; then
-        error "Docker is not installed. Please install Docker first: https://docs.docker.com/engine/install/"
+        log "Docker nicht gefunden — wird automatisch installiert..."
+        if command -v curl &>/dev/null; then
+            curl -fsSL https://get.docker.com | sh
+        elif command -v wget &>/dev/null; then
+            wget -qO- https://get.docker.com | sh
+        else
+            error "Weder curl noch wget verfügbar. Bitte Docker manuell installieren: https://docs.docker.com/engine/install/"
+        fi
+
+        # Enable and start Docker
+        if command -v systemctl &>/dev/null; then
+            systemctl enable docker
+            systemctl start docker
+        fi
+
+        if ! command -v docker &>/dev/null; then
+            error "Docker-Installation fehlgeschlagen. Bitte manuell installieren: https://docs.docker.com/engine/install/"
+        fi
+        log "Docker erfolgreich installiert"
     fi
 
-    # Check Docker Compose
+    # Check Docker Compose (included in modern Docker)
     if ! docker compose version &>/dev/null; then
         if ! docker-compose --version &>/dev/null; then
-            error "Docker Compose is not installed. Please install Docker Compose: https://docs.docker.com/compose/install/"
+            error "Docker Compose nicht verfügbar. Bitte Docker aktualisieren: https://docs.docker.com/compose/install/"
         fi
     fi
 
     # Check Docker is running
     if ! docker info &>/dev/null; then
-        error "Docker daemon is not running. Please start Docker."
+        if command -v systemctl &>/dev/null; then
+            log "Docker-Daemon wird gestartet..."
+            systemctl start docker
+            sleep 2
+        fi
+        if ! docker info &>/dev/null; then
+            error "Docker-Daemon läuft nicht. Bitte starten: sudo systemctl start docker"
+        fi
     fi
 
     local docker_version
