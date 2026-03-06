@@ -94,6 +94,22 @@ check_prerequisites() {
         warn "Running as root. Consider using a non-root user with Docker group access."
     fi
 
+    # System update
+    log "Updating system packages..."
+    if command -v apt-get &>/dev/null; then
+        sudo apt-get update -qq
+        sudo apt-get upgrade -y -qq
+        log "System packages updated"
+    elif command -v dnf &>/dev/null; then
+        sudo dnf upgrade -y --quiet
+        log "System packages updated"
+    elif command -v yum &>/dev/null; then
+        sudo yum update -y --quiet
+        log "System packages updated"
+    else
+        info "Package manager not detected, skipping system update"
+    fi
+
     # Check Docker
     if ! command -v docker &>/dev/null; then
         error "Docker is not installed. Please install Docker first: https://docs.docker.com/engine/install/"
