@@ -158,18 +158,27 @@ check_prerequisites() {
 
     # Check for existing installation
     if [ -f ".env" ]; then
-        warn "Existing .env file found!"
+        warn "Bestehende Installation gefunden!"
         if [ "$UNATTENDED" = "true" ]; then
-            log "Overwriting existing configuration (unattended mode)."
+            log "Überschreibe bestehende Konfiguration (unattended mode)."
         else
             echo ""
-            read -p "Overwrite existing configuration? [y/N]: " overwrite
-            if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
-                log "Keeping existing configuration."
-                log "To update, run: ./update.sh"
+            echo "  Optionen:"
+            echo "    1) Neu installieren (alle Daten werden gelöscht!)"
+            echo "    2) Abbrechen (zum Updaten: ./update.sh)"
+            echo ""
+            read -p "  Auswahl [2]: " reinstall_choice
+            if [[ ! "$reinstall_choice" =~ ^[1]$ ]]; then
+                log "Installation abgebrochen."
+                log "Zum Updaten: ./update.sh"
                 exit 0
             fi
         fi
+
+        # Stop and remove existing containers + volumes (old passwords!)
+        log "Stoppe bestehende Installation..."
+        docker compose down -v 2>/dev/null || true
+        log "Alte Container und Volumes entfernt"
     fi
 
     log "Prerequisites check passed"
