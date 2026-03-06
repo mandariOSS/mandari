@@ -162,6 +162,31 @@ configure_interactively() {
     read -p "Timezone [Europe/Berlin]: " input_tz
     TIMEZONE="${input_tz:-Europe/Berlin}"
 
+    # Superuser
+    echo ""
+    log "Admin-Account erstellen"
+    read -p "Admin E-Mail: " ADMIN_EMAIL
+    while [ -z "$ADMIN_EMAIL" ]; do
+        warn "E-Mail darf nicht leer sein."
+        read -p "Admin E-Mail: " ADMIN_EMAIL
+    done
+
+    while true; do
+        read -sp "Admin Passwort (min. 8 Zeichen): " ADMIN_PASSWORD
+        echo ""
+        if [ ${#ADMIN_PASSWORD} -lt 8 ]; then
+            warn "Passwort muss mindestens 8 Zeichen lang sein."
+            continue
+        fi
+        read -sp "Passwort bestätigen: " admin_password_confirm
+        echo ""
+        if [ "$ADMIN_PASSWORD" != "$admin_password_confirm" ]; then
+            warn "Passwörter stimmen nicht überein."
+            continue
+        fi
+        break
+    done
+
     # Advanced options
     echo ""
     read -p "Configure advanced options? [y/N]: " advanced
@@ -434,6 +459,34 @@ run_migrations() {
     else
         info "Meilisearch setup skipped or already configured"
     fi
+
+    # Create superuser
+    create_superuser
+}
+
+# =============================================================================
+# Create Superuser
+# =============================================================================
+create_superuser() {
+    if [ -z "${ADMIN_EMAIL:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
+        info "Kein Admin-Account konfiguriert. Erstelle manuell:"
+        info "  docker exec -it mandari python manage.py createsuperuser"
+        return
+    fi
+
+    log "Erstelle Admin-Account..."
+    if docker exec \
+        -e DJANGO_SUPERUSER_EMAIL="$ADMIN_EMAIL" \
+        -e DJANGO_SUPERUSER_PASSWORD="$ADMIN_PASSWORD" \
+        mandari python manage.py createsuperuser --noinput 2>&1; then
+        log "Admin-Account erstellt: ${ADMIN_EMAIL}"
+    else
+        warn "Admin-Account konnte nicht erstellt werden (existiert evtl. bereits)."
+        warn "Erstelle manuell: docker exec -it mandari python manage.py createsuperuser"
+    fi
+
+    # Passwort aus dem Speicher löschen
+    unset ADMIN_PASSWORD
 }
 
 # =============================================================================
@@ -542,6 +595,8 @@ main() {
         REDIS_MAXMEMORY="${REDIS_MAXMEMORY:-256mb}"
         INGESTOR_INTERVAL="${INGESTOR_INTERVAL:-15}"
         IMAGE_TAG="${IMAGE_TAG:-latest}"
+        ADMIN_EMAIL="${ADMIN_EMAIL:-}"
+        ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
         log "Running in unattended mode"
     else
         configure_interactively
