@@ -549,7 +549,7 @@ verify_installation() {
         local status
         local health
         status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
-        health=$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "none")
+        health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$container" 2>/dev/null || echo "no-healthcheck")
 
         local label
         case "$container" in
@@ -566,7 +566,7 @@ verify_installation() {
         if [ "$status" = "running" ]; then
             if [ "$health" = "healthy" ]; then
                 echo -e "${GREEN}✓ healthy${NC}"
-            elif [ -z "$health" ] || [ "$health" = "none" ] || [ "$health" = "" ]; then
+            elif [ "$health" = "no-healthcheck" ] || [ -z "$health" ] || [ "$health" = "none" ]; then
                 echo -e "${GREEN}✓ running${NC}"
             elif [ "$health" = "starting" ]; then
                 echo -e "${YELLOW}⏳ starting${NC}"
