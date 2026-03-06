@@ -79,6 +79,9 @@
 			health_uri /health/
 			health_interval 5s
 			health_timeout 3s
+			health_headers {
+				Host {$DOMAIN:localhost}
+			}
 		}
 	}
 
@@ -100,6 +103,9 @@
 			health_uri /health/
 			health_interval 5s
 			health_timeout 3s
+			health_headers {
+				Host {$DOMAIN:localhost}
+			}
 		}
 	}
 

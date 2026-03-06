@@ -462,10 +462,10 @@ start_services() {
     docker compose up -d
 
     echo -n "  Caddy"
-    if wait_for_healthy mandari-caddy 30; then
+    if wait_for_healthy mandari-caddy 60; then
         echo -e " ${GREEN}OK${NC}"
     else
-        echo -e " ${YELLOW}STARTING${NC}"
+        echo -e " ${YELLOW}STARTING${NC} (SSL-Zertifikat wird erstellt...)"
     fi
 
     log "All services started"
@@ -544,12 +544,94 @@ run_website_migrations() {
 }
 
 # =============================================================================
+# Verify Installation
+# =============================================================================
+verify_installation() {
+    log "Verifikation der Installation..."
+    echo ""
+
+    local all_ok=true
+
+    # Check each container
+    for container in mandari-postgres mandari-redis mandari-meilisearch mandari mandari-website mandari-caddy mandari-ingestor; do
+        local status
+        local health
+        status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
+        health=$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "none")
+
+        local label
+        case "$container" in
+            mandari-postgres)   label="PostgreSQL" ;;
+            mandari-redis)      label="Redis" ;;
+            mandari-meilisearch) label="Meilisearch" ;;
+            mandari)            label="Mandari" ;;
+            mandari-website)    label="Website" ;;
+            mandari-caddy)      label="Caddy" ;;
+            mandari-ingestor)   label="Ingestor" ;;
+        esac
+
+        printf "  %-14s " "$label"
+        if [ "$status" = "running" ]; then
+            if [ "$health" = "healthy" ]; then
+                echo -e "${GREEN}✓ healthy${NC}"
+            elif [ "$health" = "none" ]; then
+                echo -e "${GREEN}✓ running${NC}"
+            else
+                echo -e "${YELLOW}⚠ $health${NC}"
+                all_ok=false
+            fi
+        else
+            echo -e "${RED}✗ $status${NC}"
+            all_ok=false
+        fi
+    done
+
+    echo ""
+
+    # Check HTTPS access
+    if [ "$DOMAIN" != "localhost" ]; then
+        printf "  %-14s " "HTTPS"
+        if command -v curl &>/dev/null; then
+            local http_code
+            http_code=$(curl -sk -o /dev/null -w '%{http_code}' "https://${DOMAIN}/health/" 2>/dev/null || echo "000")
+            if [ "$http_code" = "200" ]; then
+                echo -e "${GREEN}✓ https://${DOMAIN} erreichbar${NC}"
+            elif [ "$http_code" = "000" ]; then
+                echo -e "${YELLOW}⚠ Noch nicht erreichbar (SSL-Zertifikat wird erstellt...)${NC}"
+                info "Versuche in 30 Sekunden erneut: curl -I https://${DOMAIN}"
+            else
+                echo -e "${YELLOW}⚠ HTTP $http_code (evtl. noch am Starten)${NC}"
+            fi
+        else
+            echo -e "${YELLOW}⚠ curl nicht installiert, überspringe HTTPS-Test${NC}"
+        fi
+        echo ""
+    fi
+
+    # Show troubleshooting if something is wrong
+    if [ "$all_ok" = "false" ]; then
+        echo ""
+        warn "Einige Services sind noch nicht healthy."
+        echo ""
+        echo "  Fehlerbehebung:"
+        echo "    Logs ansehen:     docker compose logs -f <service>"
+        echo "    Neustart:         docker compose restart <service>"
+        echo "    Status prüfen:    docker compose ps"
+        echo ""
+        echo "  Häufige Probleme:"
+        echo "    Caddy unhealthy → SSL-Zertifikat wird noch erstellt (Port 80/443 offen?)"
+        echo "    Mandari 400     → ALLOWED_HOSTS prüfen in .env"
+        echo ""
+    fi
+}
+
+# =============================================================================
 # Show Summary
 # =============================================================================
 show_summary() {
     echo ""
     echo -e "${GREEN}============================================${NC}"
-    echo -e "${GREEN}  Installation Complete!${NC}"
+    echo -e "${GREEN}  Installation abgeschlossen!${NC}"
     echo -e "${GREEN}============================================${NC}"
     echo ""
 
@@ -559,37 +641,28 @@ show_summary() {
         echo -e "  URL:        ${BLUE}http://localhost${NC}"
     fi
     echo -e "  Version:    ${CYAN}${IMAGE_TAG}${NC}"
-
+    echo -e "  Admin:      ${CYAN}${ADMIN_EMAIL:-nicht konfiguriert}${NC}"
     echo ""
-    echo "  Commands:"
-    echo "    View logs:       docker compose logs -f"
-    echo "    Check status:    docker compose ps"
-    echo "    Stop:            docker compose down"
-    echo "    Update:          ./update.sh"
+
+    verify_installation
+
+    echo "  Befehle:"
+    echo "    Logs ansehen:    docker compose logs -f"
+    echo "    Status prüfen:   docker compose ps"
+    echo "    Stoppen:         docker compose down"
+    echo "    Updaten:         ./update.sh"
     echo "    Backup:          ./backup.sh"
     echo ""
-    echo -e "  ${YELLOW}IMPORTANT: Back up the .env file securely!${NC}"
-    echo -e "  ${YELLOW}           It contains your encryption keys.${NC}"
+    echo -e "  ${YELLOW}WICHTIG: .env-Datei sicher aufbewahren!${NC}"
+    echo -e "  ${YELLOW}         Enthält Verschlüsselungs-Keys.${NC}"
     echo ""
 
-    if [ "$DOMAIN" != "localhost" ]; then
-        info "SSL certificate will be obtained automatically on first request."
-        info "Make sure your domain DNS points to this server."
-    fi
-
-    echo ""
     echo -e "  ${BLUE}Empfohlen: Firewall einrichten${NC}"
     echo "    sudo ufw allow 22/tcp"
     echo "    sudo ufw allow 80/tcp"
     echo "    sudo ufw allow 443/tcp"
     echo "    sudo ufw enable"
     echo ""
-    echo -e "  ${BLUE}Empfohlen: Automatische Sicherheitsupdates${NC}"
-    echo "    sudo apt install unattended-upgrades"
-    echo "    sudo dpkg-reconfigure -plow unattended-upgrades"
-    echo ""
-
-    docker compose ps
 }
 
 # =============================================================================
