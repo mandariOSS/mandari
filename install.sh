@@ -566,8 +566,10 @@ verify_installation() {
         if [ "$status" = "running" ]; then
             if [ "$health" = "healthy" ]; then
                 echo -e "${GREEN}✓ healthy${NC}"
-            elif [ "$health" = "none" ]; then
+            elif [ -z "$health" ] || [ "$health" = "none" ] || [ "$health" = "" ]; then
                 echo -e "${GREEN}✓ running${NC}"
+            elif [ "$health" = "starting" ]; then
+                echo -e "${YELLOW}⏳ starting${NC}"
             else
                 echo -e "${YELLOW}⚠ $health${NC}"
                 all_ok=false
