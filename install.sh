@@ -48,6 +48,44 @@ info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
 
+# Install log file
+INSTALL_LOG="$SCRIPT_DIR/logs/install.log"
+
+# Run a command with spinner, output goes to log file
+# Usage: run_step "Description" command arg1 arg2 ...
+run_step() {
+    local description="$1"
+    shift
+
+    local spin_chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+
+    # Start command in background, output to log
+    "$@" >> "$INSTALL_LOG" 2>&1 &
+    local pid=$!
+
+    # Show spinner
+    printf "  %-30s " "$description"
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\b${spin_chars:$i:1}"
+        i=$(( (i + 1) % ${#spin_chars} ))
+        sleep 0.1
+    done
+
+    # Check exit code
+    wait "$pid"
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
+        printf "\b${GREEN}✓${NC}\n"
+    else
+        printf "\b${RED}✗${NC}\n"
+        warn "Fehlgeschlagen! Details: cat $INSTALL_LOG"
+    fi
+
+    return $exit_code
+}
+
 # Generate secure random string
 generate_secret() {
     local length=${1:-32}
@@ -361,6 +399,8 @@ wait_for_healthy() {
     local container=$1
     local max_attempts=${2:-60}
     local attempt=0
+    local spin_chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
 
     while [ $attempt -lt $max_attempts ]; do
         local status
@@ -371,16 +411,15 @@ wait_for_healthy() {
         fi
 
         if [ "$status" = "unhealthy" ]; then
-            warn "Container $container is unhealthy"
             return 1
         fi
 
         attempt=$((attempt + 1))
-        printf "."
+        printf "\b${spin_chars:$i:1}"
+        i=$(( (i + 1) % ${#spin_chars} ))
         sleep 2
     done
 
-    echo ""
     return 1
 }
 
@@ -411,75 +450,52 @@ setup_cron_backup() {
 #   3. THEN start ingestor and caddy
 # =============================================================================
 start_services() {
-    log "Pulling Docker images..."
-    docker compose pull
+    mkdir -p "$SCRIPT_DIR/logs"
+    echo "" > "$INSTALL_LOG"
+
+    # --- Pull ---
+    run_step "Docker Images herunterladen" docker compose pull -q
 
     # --- Phase 1: Infrastructure ---
-    log "Starting infrastructure services..."
-    docker compose up -d postgres redis meilisearch
+    log "Starte Infrastruktur..."
+    docker compose up -d postgres redis meilisearch >> "$INSTALL_LOG" 2>&1
 
-    echo -n "  PostgreSQL"
-    if wait_for_healthy mandari-postgres 30; then
-        echo -e " ${GREEN}OK${NC}"
-    else
-        echo -e " ${YELLOW}WAITING${NC}"
-    fi
+    printf "  %-30s " "PostgreSQL"
+    if wait_for_healthy mandari-postgres 30; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
-    echo -n "  Redis"
-    if wait_for_healthy mandari-redis 30; then
-        echo -e " ${GREEN}OK${NC}"
-    else
-        echo -e " ${YELLOW}WAITING${NC}"
-    fi
+    printf "  %-30s " "Redis"
+    if wait_for_healthy mandari-redis 30; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
-    echo -n "  Meilisearch"
-    if wait_for_healthy mandari-meilisearch 30; then
-        echo -e " ${GREEN}OK${NC}"
-    else
-        echo -e " ${YELLOW}WAITING${NC}"
-    fi
+    printf "  %-30s " "Meilisearch"
+    if wait_for_healthy mandari-meilisearch 30; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
-    # --- Phase 2: Mandari (Django) + Migrations ---
-    log "Starting Mandari..."
-    docker compose up -d mandari
+    # --- Phase 2: Mandari (Django) ---
+    log "Starte Mandari..."
+    docker compose up -d mandari >> "$INSTALL_LOG" 2>&1
 
-    echo -n "  Mandari"
-    if wait_for_healthy mandari 60; then
-        echo -e " ${GREEN}OK${NC}"
-    else
-        echo -e " ${YELLOW}STARTING${NC}"
-        warn "Mandari is taking longer to start. Check logs: docker logs mandari"
-    fi
+    printf "  %-30s " "Mandari"
+    if wait_for_healthy mandari 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     run_migrations
 
-    # --- Phase 3: Website (Wagtail) + Migrations ---
-    log "Starting Marketing Website..."
-    docker compose up -d website
+    # --- Phase 3: Website (Wagtail) ---
+    log "Starte Website..."
+    docker compose up -d website >> "$INSTALL_LOG" 2>&1
 
-    echo -n "  Website"
-    if wait_for_healthy mandari-website 60; then
-        echo -e " ${GREEN}OK${NC}"
-    else
-        echo -e " ${YELLOW}STARTING${NC}"
-    fi
+    printf "  %-30s " "Website"
+    if wait_for_healthy mandari-website 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     run_website_migrations
 
-    # --- Phase 4: Ingestor + Caddy (after migrations) ---
-    log "Starting remaining services..."
-    docker compose up -d
+    # --- Phase 4: Ingestor + Caddy ---
+    log "Starte verbleibende Services..."
+    docker compose up -d >> "$INSTALL_LOG" 2>&1
 
-    echo -n "  Caddy"
-    if wait_for_healthy mandari-caddy 60; then
-        echo -e " ${GREEN}OK${NC}"
-    else
-        echo -e " ${YELLOW}STARTING${NC} (SSL-Zertifikat wird erstellt...)"
-    fi
+    printf "  %-30s " "Caddy (SSL)"
+    if wait_for_healthy mandari-caddy 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
-    log "All services started"
+    log "Alle Services gestartet"
 
-    # Tägliches Backup um 2:00 Uhr einrichten
     setup_cron_backup
 }
 
@@ -487,30 +503,9 @@ start_services() {
 # Run Migrations
 # =============================================================================
 run_migrations() {
-    log "Running database migrations..."
-
-    if docker exec mandari python manage.py migrate --noinput 2>&1; then
-        log "Migrations completed"
-    else
-        warn "Migration failed. Check logs: docker logs mandari"
-        warn "Run manually: docker exec mandari python manage.py migrate"
-    fi
-
-    log "Setting up default roles..."
-    if docker exec mandari python manage.py setup_roles 2>&1; then
-        log "Roles created"
-    else
-        info "Roles may already exist or setup_roles command not available"
-    fi
-
-    log "Configuring Meilisearch indexes..."
-    if docker exec mandari python manage.py setup_meilisearch 2>&1; then
-        log "Meilisearch indexes configured"
-    else
-        info "Meilisearch setup skipped or already configured"
-    fi
-
-    # Create superuser
+    run_step "Datenbank-Migrationen" docker exec mandari python manage.py migrate --noinput
+    run_step "Rollen einrichten" docker exec mandari python manage.py setup_roles || true
+    run_step "Suchindex konfigurieren" docker exec mandari python manage.py setup_meilisearch
     create_superuser
 }
 
@@ -524,16 +519,10 @@ create_superuser() {
         return
     fi
 
-    log "Erstelle Admin-Account..."
-    if docker exec \
+    run_step "Admin-Account erstellen" docker exec \
         -e DJANGO_SUPERUSER_EMAIL="$ADMIN_EMAIL" \
         -e DJANGO_SUPERUSER_PASSWORD="$ADMIN_PASSWORD" \
-        mandari python manage.py createsuperuser --noinput 2>&1; then
-        log "Admin-Account erstellt: ${ADMIN_EMAIL}"
-    else
-        warn "Admin-Account konnte nicht erstellt werden (existiert evtl. bereits)."
-        warn "Erstelle manuell: docker exec -it mandari python manage.py createsuperuser"
-    fi
+        mandari python manage.py createsuperuser --noinput || true
 
     # Passwort aus dem Speicher löschen
     unset ADMIN_PASSWORD
@@ -543,13 +532,7 @@ create_superuser() {
 # Run Website Migrations
 # =============================================================================
 run_website_migrations() {
-    log "Running website database migrations..."
-
-    if docker exec mandari-website python manage.py migrate --noinput 2>&1; then
-        log "Website migrations completed"
-    else
-        warn "Website migration failed. Check logs: docker logs mandari-website"
-    fi
+    run_step "Website-Migrationen" docker exec mandari-website python manage.py migrate --noinput
 }
 
 # =============================================================================
@@ -665,12 +648,7 @@ show_summary() {
     echo -e "  ${YELLOW}WICHTIG: .env-Datei sicher aufbewahren!${NC}"
     echo -e "  ${YELLOW}         Enthält Verschlüsselungs-Keys.${NC}"
     echo ""
-
-    echo -e "  ${BLUE}Empfohlen: Firewall einrichten${NC}"
-    echo "    sudo ufw allow 22/tcp"
-    echo "    sudo ufw allow 80/tcp"
-    echo "    sudo ufw allow 443/tcp"
-    echo "    sudo ufw enable"
+    info "Detaillierte Logs: cat $INSTALL_LOG"
     echo ""
 }
 
