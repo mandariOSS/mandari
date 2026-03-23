@@ -284,6 +284,34 @@ class Organization(models.Model):
         help_text="Alle Mitglieder müssen 2FA aktivieren",
     )
 
+    # === SELF-REGISTRATION ===
+
+    registration_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Selbstregistrierung aktiviert",
+        help_text="Nutzer können sich selbst für diese Organisation registrieren",
+    )
+    registration_email_domains = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Erlaubte E-Mail-Domains",
+        help_text='Liste von Domains, z.B. ["volt-muenster.de"]. Leer = alle erlaubt.',
+    )
+    registration_auto_approve = models.BooleanField(
+        default=False,
+        verbose_name="Automatische Freischaltung",
+        help_text="Neue Mitglieder werden sofort freigeschaltet (ohne Admin-Bestätigung)",
+    )
+    registration_default_role = models.ForeignKey(
+        "Role",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="default_for_registration",
+        verbose_name="Standardrolle für Registrierungen",
+        help_text="Rolle, die Selbstregistrierten automatisch zugewiesen wird",
+    )
+
     # === STATUS ===
 
     # Owner is nullable for GDPR compliance:
@@ -322,6 +350,16 @@ class Organization(models.Model):
         if self.party_group:
             return f"{self.party_group.full_path} > {self.name}"
         return self.name
+
+    def is_email_allowed_for_registration(self, email: str) -> bool:
+        """Prüft ob eine E-Mail-Adresse für Selbstregistrierung zugelassen ist."""
+        if not self.registration_enabled:
+            return False
+        domains = self.registration_email_domains
+        if not domains:
+            return True  # Keine Einschränkung
+        email_domain = email.rsplit("@", 1)[-1].lower()
+        return email_domain in [d.lower().strip() for d in domains]
 
     @property
     def effective_primary_color(self) -> str:

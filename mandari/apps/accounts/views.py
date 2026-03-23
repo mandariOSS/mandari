@@ -377,3 +377,101 @@ class RegisterView(View):
             return invitation
         except UserInvitation.DoesNotExist:
             return None
+
+
+class SelfRegisterView(View):
+    """
+    Selbstregistrierung für Organisationen mit aktivierter Registrierung.
+
+    URL: /accounts/register/<org_slug>/
+    Prüft E-Mail-Domain gegen Whitelist der Organisation.
+    Erstellt User + Membership (aktiv oder wartend je nach Auto-Approve).
+    """
+
+    template_name = "accounts/self_register.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        from apps.tenants.models import Organization
+
+        self.org = get_object_or_404(Organization, slug=kwargs["org_slug"], is_active=True)
+        if not self.org.registration_enabled:
+            messages.error(request, "Selbstregistrierung ist für diese Organisation nicht aktiviert.")
+            return redirect("accounts:login")
+
+        if request.user.is_authenticated:
+            # Bereits eingeloggt → prüfe ob schon Mitglied
+            from apps.tenants.models import Membership
+
+            if Membership.objects.filter(user=request.user, organization=self.org).exists():
+                messages.info(request, f"Du bist bereits Mitglied bei {self.org.name}.")
+                return redirect("work:dashboard", org_slug=self.org.slug)
+
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, **kwargs):
+        from .forms import SelfRegistrationForm
+
+        form = SelfRegistrationForm(org=self.org, user=request.user if request.user.is_authenticated else None)
+        return render(request, self.template_name, {"form": form, "org": self.org})
+
+    def post(self, request, **kwargs):
+        from .forms import SelfRegistrationForm
+        from apps.tenants.models import Membership
+
+        form = SelfRegistrationForm(
+            request.POST,
+            org=self.org,
+            user=request.user if request.user.is_authenticated else None,
+        )
+
+        if form.is_valid():
+            email = form.cleaned_data["email"]
+
+            # E-Mail-Domain prüfen
+            if not self.org.is_email_allowed_for_registration(email):
+                domains = self.org.registration_email_domains
+                form.add_error(
+                    "email",
+                    f"Nur E-Mail-Adressen mit folgenden Domains sind erlaubt: {', '.join(domains)}",
+                )
+                return render(request, self.template_name, {"form": form, "org": self.org})
+
+            # User erstellen oder finden
+            from .models import User
+
+            user = None
+            if request.user.is_authenticated:
+                user = request.user
+            else:
+                user = User.objects.filter(email=email).first()
+                if not user:
+                    user = User.objects.create_user(
+                        email=email,
+                        password=form.cleaned_data["password1"],
+                        first_name=form.cleaned_data["first_name"],
+                        last_name=form.cleaned_data["last_name"],
+                    )
+
+            # Membership erstellen
+            membership, created = Membership.objects.get_or_create(
+                user=user,
+                organization=self.org,
+                defaults={"is_active": self.org.registration_auto_approve},
+            )
+
+            if created and self.org.registration_default_role:
+                membership.roles.add(self.org.registration_default_role)
+
+            # Einloggen
+            if not request.user.is_authenticated:
+                auth_login(request, user)
+                if request.session.session_key:
+                    SessionService.create_session(user, request, request.session.session_key)
+
+            if self.org.registration_auto_approve:
+                messages.success(request, f"Willkommen bei {self.org.name}!")
+                return redirect("work:dashboard", org_slug=self.org.slug)
+            else:
+                return render(request, "accounts/registration_pending.html", {"org": self.org})
+
+        return render(request, self.template_name, {"form": form, "org": self.org})

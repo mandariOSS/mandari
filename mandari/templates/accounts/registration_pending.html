@@ -1,0 +1,32 @@
+{% extends "accounts/base_auth.html" %}
+
+{% block title %}Registrierung eingereicht{% endblock %}
+
+{% block header_title %}Registrierung eingereicht{% endblock %}
+{% block header_subtitle %}{{ org.name }}{% endblock %}
+
+{% block content %}
+<div class="text-center py-4">
+    <div class="w-16 h-16 mx-auto mb-4 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
+        <svg class="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+    </div>
+
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+        Deine Registrierung wurde eingereicht
+    </h2>
+
+    <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+        Ein Administrator von <strong>{{ org.name }}</strong> muss deine Anfrage bestätigen.
+        Du wirst benachrichtigt, sobald dein Zugang freigeschaltet wurde.
+    </p>
+
+    <div class="space-y-3">
+        <a href="{% url 'accounts:login' %}"
+           class="block w-full py-2.5 px-4 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg shadow-sm transition-colors text-center">
+            Zur Anmeldung
+        </a>
+    </div>
+</div>
+{% endblock %}

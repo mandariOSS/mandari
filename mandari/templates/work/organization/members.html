@@ -68,6 +68,52 @@
 </div>
 {% endif %}
 
+<!-- Pending Self-Registrations -->
+{% if pending_registrations %}
+<div class="mb-6 fade-up bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+    <div class="px-6 py-4 border-b border-blue-200 dark:border-blue-800">
+        <h3 class="font-semibold text-blue-800 dark:text-blue-200 flex items-center gap-2">
+            <i data-lucide="user-plus" class="w-5 h-5"></i>
+            Ausstehende Registrierungen ({{ pending_registrations|length }})
+        </h3>
+    </div>
+    <div class="divide-y divide-blue-200 dark:divide-blue-800">
+        {% for membership in pending_registrations %}
+        <div class="px-6 py-4 flex items-center justify-between">
+            <div>
+                <p class="font-medium text-gray-900 dark:text-white">
+                    {{ membership.user.get_full_name|default:membership.user.email }}
+                </p>
+                <p class="text-sm text-gray-500">
+                    {{ membership.user.email }}
+                    · Registriert am {{ membership.created_at|date:"d.m.Y H:i" }}
+                </p>
+            </div>
+            <div class="flex items-center gap-2">
+                <form method="post" action="{% url 'work:member_approve' org_slug=organization.slug membership_id=membership.id %}">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 shadow-sm">
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                        Freischalten
+                    </button>
+                </form>
+                <form method="post" action="{% url 'work:member_reject' org_slug=organization.slug membership_id=membership.id %}"
+                      x-data @submit.prevent="confirmAction({title: 'Registrierung ablehnen', message: 'Die Registrierungsanfrage wird gelöscht.', confirmText: 'Ablehnen', variant: 'danger'}).then(ok => ok && $el.submit())">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                        Ablehnen
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Active Members List -->
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">

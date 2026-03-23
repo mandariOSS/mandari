@@ -443,6 +443,23 @@ urlpatterns = [
         organization_views.RoleDeleteView.as_view(),
         name="role_delete",
     ),
+    # Registration Settings
+    path(
+        "<slug:org_slug>/organization/registration/",
+        organization_views.RegistrationSettingsView.as_view(),
+        name="organization_registration",
+    ),
+    # Member Approval / Rejection (Self-Registration)
+    path(
+        "<slug:org_slug>/organization/members/<uuid:membership_id>/approve/",
+        organization_views.MemberApproveView.as_view(),
+        name="member_approve",
+    ),
+    path(
+        "<slug:org_slug>/organization/members/<uuid:membership_id>/reject/",
+        organization_views.MemberRejectView.as_view(),
+        name="member_reject",
+    ),
     # Council Parties (Coalition management)
     path(
         "<slug:org_slug>/organization/parties/",

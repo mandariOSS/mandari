@@ -1,0 +1,107 @@
+{% extends "accounts/base_auth.html" %}
+
+{% block title %}Registrieren — {{ org.name }}{% endblock %}
+
+{% block header_title %}Registrieren{% endblock %}
+{% block header_subtitle %}Konto erstellen für {{ org.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-6 p-4 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800">
+    <div class="flex gap-3">
+        <svg class="w-5 h-5 text-indigo-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+        </svg>
+        <div>
+            <p class="text-sm font-medium text-indigo-800 dark:text-indigo-300">
+                {{ org.name }}
+            </p>
+            <p class="text-sm text-indigo-600 dark:text-indigo-400 mt-1">
+                {% if org.registration_auto_approve %}
+                Erstelle dein Konto, um sofort beizutreten.
+                {% else %}
+                Erstelle dein Konto. Ein Administrator wird deine Anfrage prüfen.
+                {% endif %}
+            </p>
+        </div>
+    </div>
+</div>
+
+{% if org.registration_email_domains %}
+<div class="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+    <p class="text-xs text-amber-700 dark:text-amber-300">
+        <strong>Erlaubte E-Mail-Domains:</strong> {{ org.registration_email_domains|join:", " }}
+    </p>
+</div>
+{% endif %}
+
+<form method="post" novalidate class="space-y-5">
+    {% csrf_token %}
+
+    <!-- E-Mail -->
+    <div>
+        <label for="id_email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {{ form.email.label }}
+        </label>
+        {{ form.email }}
+        {% if form.email.errors %}
+        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ form.email.errors.0 }}</p>
+        {% endif %}
+    </div>
+
+    <!-- Vorname / Nachname -->
+    <div class="grid grid-cols-2 gap-4">
+        <div>
+            <label for="id_first_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                {{ form.first_name.label }}
+            </label>
+            {{ form.first_name }}
+            {% if form.first_name.errors %}
+            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ form.first_name.errors.0 }}</p>
+            {% endif %}
+        </div>
+        <div>
+            <label for="id_last_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                {{ form.last_name.label }}
+            </label>
+            {{ form.last_name }}
+            {% if form.last_name.errors %}
+            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ form.last_name.errors.0 }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Passwort (nur für nicht-eingeloggte User) -->
+    {% if form.password1 %}
+    <div>
+        <label for="id_password1" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {{ form.password1.label }}
+        </label>
+        {{ form.password1 }}
+        {% if form.password1.errors %}
+        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ form.password1.errors.0 }}</p>
+        {% endif %}
+    </div>
+    <div>
+        <label for="id_password2" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {{ form.password2.label }}
+        </label>
+        {{ form.password2 }}
+        {% if form.password2.errors %}
+        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ form.password2.errors.0 }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <button type="submit"
+            class="w-full py-3 px-4 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg shadow-sm transition-colors">
+        Registrieren
+    </button>
+</form>
+
+<p class="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+    Bereits ein Konto?
+    <a href="{% url 'accounts:login' %}" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">
+        Anmelden
+    </a>
+</p>
+{% endblock %}

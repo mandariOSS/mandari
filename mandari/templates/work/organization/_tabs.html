@@ -31,6 +31,10 @@ Values: "general", "faction", "documents", "parties", "members", "roles"
            class="{% if active_tab == 'roles' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
             Rollen
         </a>
+        <a href="{% url 'work:organization_registration' org_slug=organization.slug %}"
+           class="{% if active_tab == 'registration' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            Registrierung
+        </a>
         {% endwith %}
     </nav>
 </div>

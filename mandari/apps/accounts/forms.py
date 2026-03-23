@@ -206,3 +206,93 @@ class RegistrationForm(forms.Form):
             last_name=self.cleaned_data["last_name"],
         )
         return user
+
+
+class SelfRegistrationForm(forms.Form):
+    """Formular für Selbstregistrierung (ohne Einladung)."""
+
+    email = forms.EmailField(
+        widget=forms.EmailInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "name@beispiel.de",
+                "autocomplete": "email",
+            }
+        ),
+        label="E-Mail-Adresse",
+    )
+    first_name = forms.CharField(
+        max_length=150,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "Vorname",
+                "autocomplete": "given-name",
+            }
+        ),
+        label="Vorname",
+    )
+    last_name = forms.CharField(
+        max_length=150,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "Nachname",
+                "autocomplete": "family-name",
+            }
+        ),
+        label="Nachname",
+    )
+    password1 = forms.CharField(
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "Mindestens 8 Zeichen",
+                "autocomplete": "new-password",
+            }
+        ),
+        label="Passwort",
+    )
+    password2 = forms.CharField(
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "Passwort wiederholen",
+                "autocomplete": "new-password",
+            }
+        ),
+        label="Passwort bestätigen",
+    )
+
+    def __init__(self, *args, org=None, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.org = org
+        self.user = user
+
+        # Eingeloggte User brauchen kein Passwort/Name
+        if user and user.is_authenticated:
+            self.fields["email"].initial = user.email
+            self.fields["email"].widget.attrs["readonly"] = True
+            self.fields["first_name"].initial = user.first_name
+            self.fields["first_name"].widget.attrs["readonly"] = True
+            self.fields["last_name"].initial = user.last_name
+            self.fields["last_name"].widget.attrs["readonly"] = True
+            del self.fields["password1"]
+            del self.fields["password2"]
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].lower().strip()
+        if self.user and self.user.is_authenticated:
+            return self.user.email
+        return email
+
+    def clean_password2(self):
+        if self.user and self.user.is_authenticated:
+            return None
+        password1 = self.cleaned_data.get("password1")
+        password2 = self.cleaned_data.get("password2")
+        if password1 and password2 and password1 != password2:
+            raise ValidationError("Die Passwörter stimmen nicht überein.")
+        if password1 and len(password1) < 8:
+            raise ValidationError("Das Passwort muss mindestens 8 Zeichen lang sein.")
+        return password2

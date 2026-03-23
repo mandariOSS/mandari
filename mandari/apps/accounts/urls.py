@@ -14,6 +14,7 @@ from .views import (
     PasswordResetDoneView,
     PasswordResetView,
     RegisterView,
+    SelfRegisterView,
 )
 
 app_name = "accounts"
@@ -25,6 +26,8 @@ urlpatterns = [
     path("logged-out/", LoggedOutView.as_view(), name="logged_out"),
     # Registration (for invited users)
     path("register/", RegisterView.as_view(), name="register"),
+    # Self-registration (for organizations with open registration)
+    path("register/<slug:org_slug>/", SelfRegisterView.as_view(), name="self_register"),
     # Password Reset
     path("password-reset/", PasswordResetView.as_view(), name="password_reset"),
     path("password-reset/done/", PasswordResetDoneView.as_view(), name="password_reset_done"),
