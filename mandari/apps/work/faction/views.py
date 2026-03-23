@@ -15,8 +15,9 @@ from datetime import datetime, timedelta
 
 from django.contrib import messages
 from django.core.paginator import Paginator
+from django.db import models
 from django.db.models import Count, Q
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -1100,6 +1101,9 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
             .order_by("user__last_name", "user__first_name")
         )
 
+        # Linked RIS papers
+        linked_papers = item.related_papers.all().order_by("-date")
+
         context.update(
             {
                 "item": item,
@@ -1114,6 +1118,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
                 "attachments": item.attachments.select_related("uploaded_by__user").order_by("-created_at"),
                 "tasks": item.tasks.select_related("assigned_to__user", "created_by__user"),
                 "linked_motions": item.related_motions.all(),
+                "linked_papers": linked_papers,
                 "available_motions": available_motions,
                 "available_members": available_members,
                 "reference_links": item.reference_links or [],
@@ -1150,6 +1155,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             "delete_attachment": self._delete_attachment,
             "link_motion": self._link_motion,
             "unlink_motion": self._unlink_motion,
+            "link_paper": self._link_paper,
+            "unlink_paper": self._unlink_paper,
+            "search_papers": self._search_papers,
             "create_task": self._create_task,
             "add_link": self._add_link,
             "remove_link": self._remove_link,
@@ -1394,6 +1402,69 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             item.related_motions.remove(motion_id)
 
         return self._panel_response(request, meeting, item, "Verknüpfung gelöst")
+
+    def _link_paper(self, request, meeting, item, can_edit):
+        """Link an OParl paper (RIS-Vorlage) to this agenda item."""
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        from insight_core.models import OParlPaper
+
+        paper_id = request.POST.get("paper_id")
+        if paper_id:
+            body = self.organization.body
+            if body:
+                paper = OParlPaper.objects.filter(id=paper_id, body=body).first()
+                if paper:
+                    item.related_papers.add(paper)
+
+        return self._panel_response(request, meeting, item, "RIS-Vorlage verknüpft")
+
+    def _unlink_paper(self, request, meeting, item, can_edit):
+        """Unlink an OParl paper from this agenda item."""
+        if not can_edit:
+            return HttpResponse(status=403)
+
+        paper_id = request.POST.get("paper_id")
+        if paper_id:
+            item.related_papers.remove(paper_id)
+
+        return self._panel_response(request, meeting, item, "Verknüpfung gelöst")
+
+    def _search_papers(self, request, meeting, item, can_edit):
+        """Search OParl papers for linking — returns JSON results."""
+        query = request.POST.get("q", "").strip()
+        if not query or len(query) < 2:
+            return JsonResponse({"results": []})
+
+        from insight_core.models import OParlPaper
+
+        body = self.organization.body
+        if not body:
+            return JsonResponse({"results": []})
+
+        papers = (
+            OParlPaper.objects.filter(body=body)
+            .filter(
+                models.Q(name__icontains=query)
+                | models.Q(reference__icontains=query)
+            )
+            .exclude(id__in=item.related_papers.values_list("id", flat=True))
+            .order_by("-date")[:15]
+        )
+
+        results = [
+            {
+                "id": str(p.id),
+                "name": p.name,
+                "reference": p.reference or "",
+                "paper_type": p.paper_type or "",
+                "date": p.date.strftime("%d.%m.%Y") if p.date else "",
+            }
+            for p in papers
+        ]
+
+        return JsonResponse({"results": results})
 
     def _create_task(self, request, meeting, item, can_edit):
         """Create a task linked to this agenda item."""

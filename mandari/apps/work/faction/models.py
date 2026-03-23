@@ -530,6 +530,14 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
         verbose_name="Verknüpfte Anträge",
     )
 
+    # Linked OParl Papers (RIS-Vorlagen)
+    related_papers = models.ManyToManyField(
+        "insight_core.OParlPaper",
+        blank=True,
+        related_name="linked_faction_items",
+        verbose_name="Verknüpfte RIS-Vorlagen",
+    )
+
     # Reference links (internal/external documents)
     reference_links = models.JSONField(
         default=list,
