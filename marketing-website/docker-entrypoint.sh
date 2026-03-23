@@ -33,12 +33,20 @@ except Exception as e:
     return 1
 }
 
+# Wait for database
+wait_for_db
+
+# Run migrations
+echo "Running migrations..."
+python manage.py migrate --noinput
+
+# Create initial page structure (idempotent)
+echo "Setting up pages..."
+python manage.py setup_initial_pages
+
 # Collect static files
 echo "Collecting static files..."
 python manage.py collectstatic --noinput
-
-# Wait for database
-wait_for_db
 
 # Start gunicorn
 echo "Starting gunicorn..."

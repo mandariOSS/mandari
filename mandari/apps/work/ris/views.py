@@ -381,7 +381,12 @@ class RISMeetingDetailView(WorkViewMixin, TemplateView):
         context["body"] = body
 
         # Get agenda items with related papers
-        agenda_items = meeting.agenda_items.order_by("order", "number")
+        # Natural sort: 1, 2, 10 instead of 1, 10, 2
+        import re
+        agenda_items = sorted(
+            meeting.agenda_items.all(),
+            key=lambda x: [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", x.number or "999") if p]
+        )
 
         # Enrich with papers
         items_with_papers = []
@@ -426,11 +431,14 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
         tab = self.request.GET.get("tab", "active")
         q = self.request.GET.get("q", "").strip()
 
+        # Meetings become "past" at midnight, not at meeting start time
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
         # Subqueries for next/last meeting dates
         next_meeting_sq = Subquery(
             OParlMeeting.objects.filter(
                 organizations=OuterRef("pk"),
-                start__gte=now,
+                start__gte=today_start,
                 cancelled=False,
             )
             .order_by("start")
@@ -439,7 +447,7 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
         last_meeting_sq = Subquery(
             OParlMeeting.objects.filter(
                 organizations=OuterRef("pk"),
-                start__lt=now,
+                start__lt=today_start,
             )
             .order_by("-start")
             .values("start")[:1]
@@ -511,11 +519,38 @@ class RISOrganizationDetailView(WorkViewMixin, TemplateView):
         context["org"] = org
         context["body"] = body
 
-        # Get members
-        context["memberships"] = org.memberships.select_related("person").order_by("-start_date")
+        today = timezone.now().date()
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
-        # Get recent meetings
-        context["recent_meetings"] = org.meetings.order_by("-start")[:10]
+        # Active members (no end_date or end_date >= today)
+        all_memberships = org.memberships.select_related("person")
+        context["active_members"] = (
+            all_memberships
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .order_by("person__family_name", "person__name")
+        )
+        # Past members (end_date < today)
+        context["past_members"] = (
+            all_memberships
+            .filter(end_date__lt=today)
+            .order_by("-end_date")
+        )
+
+        # Upcoming meetings (today + future)
+        context["upcoming_meetings"] = (
+            org.meetings
+            .filter(start__gte=today_start, cancelled=False)
+            .order_by("start")
+        )
+        # Past meetings
+        context["past_meetings"] = (
+            org.meetings
+            .filter(start__lt=today_start)
+            .order_by("-start")[:30]
+        )
+
+        # Active tab from query parameter
+        context["active_tab"] = self.request.GET.get("tab", "members")
 
         return context
 
@@ -603,8 +638,23 @@ class RISPersonDetailView(WorkViewMixin, TemplateView):
         context["person"] = person
         context["body"] = body
 
-        # Get memberships
-        context["memberships"] = person.memberships.select_related("organization").order_by("-start_date")
+        today = timezone.now().date()
+
+        # Split memberships into active and past
+        all_memberships = person.memberships.select_related("organization")
+        context["active_memberships"] = (
+            all_memberships
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+            .order_by("organization__name")
+        )
+        context["past_memberships"] = (
+            all_memberships
+            .filter(end_date__lt=today)
+            .order_by("-end_date")
+        )
+
+        # Active tab
+        context["active_tab"] = self.request.GET.get("tab", "memberships")
 
         return context
 

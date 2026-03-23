@@ -7,7 +7,7 @@ set -e
 # Optimiert für schnellen Startup (Zero-Downtime Updates):
 #   - collectstatic nur wenn nötig
 #   - Meilisearch-Setup im Hintergrund
-#   - Gunicorn mit --preload für schnelleren Worker-Start
+#   - Daphne (ASGI) für HTTP + WebSocket (Echtzeit-Collaboration)
 # =============================================================================
 
 # Function to wait for database
@@ -65,14 +65,15 @@ wait_for_db
 # Meilisearch im Hintergrund konfigurieren (blockiert nicht den Start)
 (python manage.py setup_meilisearch 2>&1 || echo "Meilisearch setup skipped (not available)") &
 
-# Start gunicorn mit --preload für schnelleren Worker-Start (~2-3s gespart)
-echo "Starting gunicorn..."
-exec gunicorn \
-    --bind 0.0.0.0:8000 \
-    --workers 2 \
-    --threads 2 \
-    --timeout 120 \
-    --preload \
-    --access-logfile - \
-    --error-logfile - \
-    mandari.wsgi:application
+# Start Daphne (ASGI) — HTTP + WebSocket auf demselben Port
+# Daphne ist der offizielle ASGI-Server von Django Channels und unterstützt
+# sowohl HTTP als auch WebSocket-Verbindungen (nötig für Echtzeit-Collaboration).
+# Gunicorn (WSGI) kann KEINE WebSocket-Verbindungen handhaben.
+echo "Starting daphne (ASGI)..."
+exec daphne \
+    --bind 0.0.0.0 \
+    --port 8000 \
+    --verbosity 1 \
+    --access-log - \
+    --proxy-headers \
+    mandari.asgi:application

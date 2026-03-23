@@ -42,14 +42,14 @@ class DashboardView(WorkViewMixin, TemplateView):
         from insight_core.models import OParlMeeting, OParlOrganization
 
         now = timezone.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         meetings = []
 
-        # Faction meetings (not completed/cancelled, starting from now)
-        # select_related for any FK fields that might be accessed
+        # Faction meetings (not completed/cancelled, starting from today)
         faction_meetings = (
             FactionMeeting.objects.filter(
                 organization=self.organization,
-                start__gte=now,
+                start__gte=today_start,
                 status__in=["draft", "planned", "invited", "ongoing"],
             )
             .select_related("organization")
@@ -74,7 +74,7 @@ class DashboardView(WorkViewMixin, TemplateView):
         if self.organization.body:
             # Optimize with Prefetch to only fetch needed fields
             ris_meetings = (
-                OParlMeeting.objects.filter(body=self.organization.body, start__gte=now, cancelled=False)
+                OParlMeeting.objects.filter(body=self.organization.body, start__gte=today_start, cancelled=False)
                 .prefetch_related(
                     Prefetch(
                         "organizations",

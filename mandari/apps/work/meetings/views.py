@@ -4,6 +4,7 @@ Meeting preparation views for the Work module.
 """
 
 import json
+import re
 from datetime import datetime, timedelta
 
 from django.http import JsonResponse
@@ -13,6 +14,13 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+
+
+def natural_sort_key(item):
+    """Sort agenda items naturally: 1, 2, 10, 11 instead of 1, 10, 11, 2."""
+    number = item.number or "999"
+    parts = re.split(r"(\d+)", str(number))
+    return [int(p) if p.isdigit() else p.lower() for p in parts if p]
 from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting, OParlOrganization
 
 from .models import (
@@ -188,14 +196,16 @@ class MeetingListView(WorkViewMixin, TemplateView):
                 .select_related("body")
             )
 
-            # Time filter
+            # Time filter — meetings become "past" at midnight, not at start time.
+            # A meeting at 17:00 stays "upcoming" the entire day.
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             if time_filter == "upcoming":
-                future_cutoff = now + timedelta(days=180)
-                qs = qs.filter(start__gte=now, start__lte=future_cutoff)
+                future_cutoff = today_start + timedelta(days=180)
+                qs = qs.filter(start__gte=today_start, start__lte=future_cutoff)
                 qs = qs.order_by("start")
             elif time_filter == "past":
-                past_cutoff = now - timedelta(days=180)
-                qs = qs.filter(start__lt=now, start__gte=past_cutoff)
+                past_cutoff = today_start - timedelta(days=180)
+                qs = qs.filter(start__lt=today_start, start__gte=past_cutoff)
                 qs = qs.order_by("-start")
             else:  # all
                 qs = qs.order_by("-start")
@@ -358,8 +368,8 @@ class MeetingDetailView(WorkViewMixin, TemplateView):
             # Add committee name from raw_json
             meeting.committee_name = MeetingListView._get_organization_name(meeting, {})
 
-            # Sort agenda items by number
-            agenda_items = sorted(meeting.agenda_items.all(), key=lambda x: (x.number or "999"))
+            # Sort agenda items with natural number sorting (1, 2, 10 not 1, 10, 2)
+            agenda_items = sorted(meeting.agenda_items.all(), key=natural_sort_key)
 
             # Pre-fetch papers for agenda items
             papers_by_item = prefetch_papers_for_agenda_items(agenda_items)
@@ -378,7 +388,8 @@ class MeetingDetailView(WorkViewMixin, TemplateView):
             context["meeting"] = meeting
             context["agenda_items"] = agenda_items
             context["preparation"] = preparation
-            context["is_upcoming"] = meeting.start and meeting.start > timezone.now()
+            today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            context["is_upcoming"] = meeting.start and meeting.start >= today_start
 
         return context
 
@@ -421,17 +432,6 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
             preparation, created = MeetingPreparation.objects.get_or_create(
                 organization=organization, membership=membership, meeting=meeting, defaults={}
             )
-
-            # Sort agenda items with natural number sorting
-            def natural_sort_key(item):
-                """Sort agenda items naturally: 1, 2, 10, 11 instead of 1, 10, 11, 2."""
-                import re
-
-                number = item.number or "999"
-                # Split into numeric and non-numeric parts
-                parts = re.split(r"(\d+)", str(number))
-                # Convert numeric parts to integers for proper sorting
-                return [int(p) if p.isdigit() else p.lower() for p in parts if p]
 
             agenda_items = sorted(meeting.agenda_items.all(), key=natural_sort_key)
 

@@ -142,6 +142,9 @@ class SyncScheduler:
             duration = (self._last_sync - start_time).total_seconds()
             console.print(f"[green]Incremental sync completed in {duration:.1f}s[/green]")
 
+            # Write single sync log for the entire cycle
+            await self._write_cycle_log(orchestrator, results, start_time, "incremental")
+
         except Exception as e:
             logger.exception("Incremental sync failed")
             console.print(f"[red]Sync error: {e}[/red]")
@@ -189,11 +192,63 @@ class SyncScheduler:
             duration = (self._last_sync - start_time).total_seconds()
             console.print(f"[bold green]Full sync completed in {duration:.1f}s[/bold green]")
 
+            # Write single sync log for the entire cycle
+            await self._write_cycle_log(orchestrator, results, start_time, "full")
+
         except Exception as e:
             logger.exception("Full sync failed")
             console.print(f"[red]Full sync error: {e}[/red]")
         finally:
             self._is_syncing = False
+
+    async def _write_cycle_log(self, orchestrator, results, start_time, sync_type):
+        """Write a single sync log entry for the entire sync cycle."""
+        from datetime import timezone as tz
+
+        end_time = datetime.now(tz.utc)
+        start_utc = start_time.astimezone(tz.utc) if start_time.tzinfo else start_time.replace(tzinfo=tz.utc)
+        duration = (end_time - start_utc).total_seconds()
+
+        total_entities = 0
+        all_errors = []
+        details = {}
+
+        for result in results:
+            synced = (
+                result.organizations_synced + result.persons_synced
+                + result.memberships_synced + result.meetings_synced
+                + result.papers_synced + result.files_synced
+                + result.locations_synced + result.agenda_items_synced
+                + result.consultations_synced
+            )
+            total_entities += synced
+            all_errors.extend(result.errors)
+            name = result.source_name or "Unknown"
+            details[name] = {
+                "meetings": result.meetings_synced,
+                "papers": result.papers_synced,
+                "persons": result.persons_synced,
+                "organizations": result.organizations_synced,
+                "files": result.files_synced,
+            }
+
+        status = "success" if not all_errors or total_entities > 0 else "failed"
+
+        try:
+            await orchestrator.storage.write_sync_log(
+                source_id=None,
+                sync_type=sync_type,
+                status=status,
+                started_at=start_utc,
+                finished_at=end_time,
+                duration_seconds=duration,
+                entities_synced=total_entities,
+                errors=all_errors[:20],
+                details=details,
+                triggered_by="daemon",
+            )
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not write sync log: {e}[/yellow]")
 
     def get_status(self) -> dict[str, Any]:
         """Get current scheduler status."""

@@ -1,0 +1,75 @@
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+{# Gemeinsame Mitgliedschaftsliste — Insight + Work RIS                     #}
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+{# Parameter (via {% include ... with %}):                                   #}
+{#   items          — QuerySet von OParlMembership                           #}
+{#   title          — Überschrift (z.B. "Aktive Mitgliedschaften")           #}
+{#   empty_text     — Text wenn Liste leer (optional)                        #}
+{#   collapsible    — "1" für einklappbare <details> (für Ehemalige)         #}
+{#   show_end_date  — "1" zeigt Enddatum statt Startdatum                   #}
+{#   link_type      — "person" oder "organization" (was wird verlinkt)       #}
+{#   org_slug       — Work-Portal Org-Slug (wenn gesetzt → Work-URLs)        #}
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+
+{% load i18n %}
+
+{% if items %}
+{% if collapsible %}
+<details class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <summary class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 cursor-pointer select-none font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+        {{ title }} ({{ items|length }})
+    </summary>
+{% else %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+        <h3 class="font-semibold text-gray-900 dark:text-white">
+            {{ title }} ({{ items|length }})
+        </h3>
+    </div>
+{% endif %}
+
+    <table class="w-full">
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for m in items %}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer{% if collapsible %} opacity-70{% endif %}"
+                onclick="window.location='{% if link_type == 'person' %}{% if org_slug %}{% url 'work:ris_person_detail' org_slug=org_slug person_id=m.person.id %}{% else %}{% url 'insight_core:insight:person_detail' m.person.id %}{% endif %}{% else %}{% if org_slug %}{% url 'work:ris_organization_detail' org_slug=org_slug org_id=m.organization.id %}{% else %}{% url 'insight_core:insight:organization_detail' m.organization.id %}{% endif %}{% endif %}'">
+                <td class="px-6 py-3">
+                    {% if link_type == "person" %}
+                    <span class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                        {{ m.person.name }}
+                    </span>
+                    {% else %}
+                    <span class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                        {{ m.organization.name }}
+                    </span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
+                    {{ m.role|default:"—" }}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-400 dark:text-gray-500 max-sm:hidden">
+                    {% if show_end_date and m.end_date %}
+                        bis {{ m.end_date|date:"d.m.Y" }}
+                    {% elif m.start_date %}
+                        seit {{ m.start_date|date:"d.m.Y" }}
+                    {% endif %}
+                </td>
+                <td class="px-2 py-3">
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+{% if collapsible %}
+</details>
+{% else %}
+</div>
+{% endif %}
+
+{% elif not collapsible %}
+<div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+    {{ empty_text|default:"Keine Mitgliedschaften" }}
+</div>
+{% endif %}

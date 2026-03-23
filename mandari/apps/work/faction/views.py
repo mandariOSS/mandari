@@ -202,14 +202,15 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
             meetings = meetings.filter(status=status)
             context["selected_status"] = status
 
-        # Filter by time
+        # Filter by time — meetings become "past" at midnight, not at start time
         time_filter = self.request.GET.get("time", "upcoming")
         now = timezone.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         if time_filter == "upcoming":
-            meetings = meetings.filter(start__gte=now)
+            meetings = meetings.filter(start__gte=today_start)
             context["selected_time"] = "upcoming"
         elif time_filter == "past":
-            meetings = meetings.filter(start__lt=now)
+            meetings = meetings.filter(start__lt=today_start)
             context["selected_time"] = "past"
         else:
             context["selected_time"] = "all"
@@ -240,7 +241,7 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
         all_meetings = FactionMeeting.objects.filter(organization=self.organization)
         context["stats"] = {
             "total": all_meetings.count(),
-            "upcoming": all_meetings.filter(start__gte=now).count(),
+            "upcoming": all_meetings.filter(start__gte=today_start).count(),
             "pending_protocol": all_meetings.filter(status="completed", protocol_approved=False).count(),
         }
 

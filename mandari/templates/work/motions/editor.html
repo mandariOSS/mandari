@@ -281,6 +281,14 @@
         background-color: rgba(251, 191, 36, 0.45) !important;
     }
 
+    /* Active comment mark — persistent highlight when selected (bidirectional with sidebar) */
+    #editor-container .tiptap span.comment-mark--active,
+    .tiptap span[data-comment-id].comment-mark--active {
+        background-color: rgba(251, 191, 36, 0.55) !important;
+        border-bottom: 2px solid #d97706 !important;
+        box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.3);
+    }
+
     #editor-container .tiptap span.comment-mark--resolved,
     .tiptap span[data-comment-id][data-resolved="true"] {
         background-color: rgba(34, 197, 94, 0.15) !important;
@@ -753,7 +761,57 @@
         border-left: 1px solid #e5e7eb;
         overflow: hidden;
         min-height: 0;
+        min-width: 0;
     }
+
+    .editor-sidebar * {
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+
+    /* History diff displayed in main editor area (Google Docs style) */
+    .history-diff-viewer {
+        flex: 1;
+        padding: 30mm 25mm 25mm 25mm;
+        max-width: 210mm;
+        margin: 0 auto;
+        width: 100%;
+        font-size: 11pt;
+        line-height: 1.6;
+        font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .history-diff-viewer h1 { font-size: 1.875rem; font-weight: 700; margin: 1em 0 0.5em; }
+    .history-diff-viewer h2 { font-size: 1.5rem; font-weight: 600; margin: 1em 0 0.5em; }
+    .history-diff-viewer h3 { font-size: 1.25rem; font-weight: 600; margin: 1em 0 0.5em; }
+    .history-diff-viewer p { margin: 0.75em 0; }
+    .history-diff-viewer li { margin: 0.25em 0; }
+    .history-diff-viewer blockquote { border-left: 4px solid #6366f1; padding-left: 1em; margin: 1em 0; }
+
+    .history-diff-viewer .diff-added {
+        background-color: rgba(34, 197, 94, 0.2);
+        color: #166534;
+        text-decoration: none;
+        padding: 1px 2px;
+        border-radius: 2px;
+    }
+    .history-diff-viewer .diff-removed {
+        background-color: rgba(239, 68, 68, 0.2);
+        color: #991b1b;
+        text-decoration: line-through;
+        padding: 1px 2px;
+        border-radius: 2px;
+    }
+    .dark .history-diff-viewer { color: #e5e7eb; }
+    .dark .history-diff-viewer .diff-added {
+        background-color: rgba(34, 197, 94, 0.15);
+        color: #86efac;
+    }
+    .dark .history-diff-viewer .diff-removed {
+        background-color: rgba(239, 68, 68, 0.15);
+        color: #fca5a5;
+    }
+    .dark .history-diff-viewer blockquote { color: #9ca3af; }
 
     .dark .editor-sidebar {
         background: #0f172a;
@@ -1309,10 +1367,63 @@
             </div>
             {% endif %}
 
-            <!-- Editor Content -->
+            <!-- Editor Content / History Diff View -->
             <div class="editor-container editor-paper">
                 {% if can_edit %}
-                <div id="editor-container" class="editor-page"></div>
+                <!-- Normal Editor (hidden during history mode) -->
+                <div id="editor-container" class="editor-page" x-show="!historyMode"></div>
+
+                <!-- History Diff Mode (Google Docs style — diff in main area) -->
+                <div x-show="historyMode" x-cloak class="editor-page" style="position: relative;">
+                    <!-- History Mode Header Bar -->
+                    <div class="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
+                        <div class="flex items-center gap-3">
+                            <button @click="exitHistoryMode()"
+                                    class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+                                <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                                Zurück zum Editor
+                            </button>
+                            <template x-if="selectedRevision">
+                                <span class="text-sm text-amber-800 dark:text-amber-200">
+                                    <span class="font-medium" x-text="'Version ' + selectedRevision.version"></span>
+                                    <span class="mx-1">·</span>
+                                    <span x-text="selectedRevision.changed_by"></span>
+                                    <span class="mx-1">·</span>
+                                    <span x-text="formatTimeAgo(selectedRevision.created_at)"></span>
+                                </span>
+                            </template>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                                <button @click="revisionViewMode = 'diff'"
+                                        :class="revisionViewMode === 'diff' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'text-gray-600 dark:text-gray-400'"
+                                        class="px-3 py-1.5 text-xs font-medium">Vergleich</button>
+                                <button @click="revisionViewMode = 'original'"
+                                        :class="revisionViewMode === 'original' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'text-gray-600 dark:text-gray-400'"
+                                        class="px-3 py-1.5 text-xs font-medium">Original</button>
+                            </div>
+                            {% if can_edit %}
+                            <button @click="restoreRevision(selectedRevision)"
+                                    class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                                Wiederherstellen
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <template x-if="revisionLoading">
+                        <div class="flex justify-center py-16">
+                            <svg class="animate-spin h-8 w-8 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
+                    </template>
+                    <template x-if="!revisionLoading && historyMode">
+                        <div class="history-diff-viewer"
+                             x-html="revisionViewMode === 'diff' ? revisionDiff : revisionContent"></div>
+                    </template>
+                </div>
                 {% else %}
                 <div class="content-readonly">
                     {% if motion_content %}
@@ -1479,88 +1590,58 @@
             </div>
             {% endif %}
 
-            <!-- History Tab -->
+            <!-- History Tab — scrollable version list, diff shows in main editor area -->
             <div x-show="sidebarTab === 'history'" x-cloak class="flex-1 flex flex-col min-h-0">
-                <!-- Revision List / Diff View -->
-                <template x-if="!selectedRevision">
-                    <div class="flex-1 overflow-y-auto p-4 space-y-3">
-                        <template x-if="revisions.length === 0 && !revisionsLoading">
-                            <div class="text-center py-8">
-                                <div class="w-12 h-12 mx-auto mb-3 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
-                                    <i data-lucide="history" class="w-6 h-6 text-gray-400"></i>
-                                </div>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">Noch keine Änderungen</p>
-                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Versionen werden beim Speichern erstellt</p>
+                <div class="flex-1 overflow-y-auto p-4 space-y-2">
+                    <template x-if="revisions.length === 0 && !revisionsLoading">
+                        <div class="text-center py-8">
+                            <div class="w-12 h-12 mx-auto mb-3 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                                <i data-lucide="history" class="w-6 h-6 text-gray-400"></i>
                             </div>
-                        </template>
-                        <template x-if="revisionsLoading">
-                            <div class="flex justify-center py-8">
-                                <svg class="animate-spin h-6 w-6 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                            </div>
-                        </template>
-                        <template x-for="rev in revisions" :key="rev.id">
-                            <button @click="viewRevision(rev)"
-                                    class="w-full text-left p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-700 transition-colors">
-                                <div class="flex items-center gap-2 mb-1">
-                                    <span class="text-xs font-medium text-gray-900 dark:text-white" x-text="'Version ' + rev.version"></span>
-                                    <span class="text-xs text-gray-500" x-text="formatTimeAgo(rev.created_at)"></span>
-                                </div>
-                                <p class="text-xs text-gray-500" x-text="rev.change_summary || 'Keine Beschreibung'"></p>
-                                <p class="text-xs text-gray-400 mt-1" x-text="rev.changed_by"></p>
-                            </button>
-                        </template>
-                    </div>
-                </template>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Noch keine Änderungen</p>
+                            <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Versionen werden beim Speichern erstellt</p>
+                        </div>
+                    </template>
+                    <template x-if="revisionsLoading">
+                        <div class="flex justify-center py-8">
+                            <svg class="animate-spin h-6 w-6 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
+                    </template>
 
-                <!-- Revision Detail / Diff -->
-                <template x-if="selectedRevision">
-                    <div class="flex-1 flex flex-col min-h-0">
-                        <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-                            <div class="flex items-center justify-between mb-2">
-                                <button @click="selectedRevision = null; revisionDiff = ''"
-                                        class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1">
-                                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
-                                    Zurück
-                                </button>
-                                {% if can_edit %}
-                                <button @click="restoreRevision(selectedRevision)"
-                                        class="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 flex items-center gap-1">
-                                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
-                                    Wiederherstellen
-                                </button>
-                                {% endif %}
+                    <!-- Current Version (always first) -->
+                    <template x-if="revisions.length > 0">
+                        <div class="p-3 rounded-lg border-2 transition-colors"
+                             :class="!historyMode ? 'border-primary-400 dark:border-primary-600 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 cursor-pointer hover:border-primary-300'"
+                             @click="exitHistoryMode()">
+                            <div class="flex items-center gap-2">
+                                <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
+                                <span class="text-xs font-medium text-gray-900 dark:text-white">Aktuelle Version</span>
                             </div>
-                            <p class="text-sm font-medium text-gray-900 dark:text-white" x-text="'Version ' + selectedRevision.version"></p>
-                            <p class="text-xs text-gray-500" x-text="selectedRevision.changed_by + ' · ' + formatTimeAgo(selectedRevision.created_at)"></p>
-                            <!-- Diff/Original toggle -->
-                            <div class="flex items-center gap-2 mt-2">
-                                <button @click="revisionViewMode = 'diff'"
-                                        :class="revisionViewMode === 'diff' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'"
-                                        class="px-2.5 py-1 text-xs font-medium rounded-lg">Vergleich</button>
-                                <button @click="revisionViewMode = 'original'"
-                                        :class="revisionViewMode === 'original' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'"
-                                        class="px-2.5 py-1 text-xs font-medium rounded-lg">Original</button>
+                            <p class="text-xs text-gray-500 mt-1 ml-4">Letzte Bearbeitung</p>
+                        </div>
+                    </template>
+
+                    <!-- Revision List -->
+                    <template x-for="rev in revisions" :key="rev.id">
+                        <button @click="viewRevision(rev)"
+                                class="w-full text-left p-3 rounded-lg border-2 transition-colors"
+                                :class="selectedRevision && selectedRevision.id === rev.id
+                                    ? 'border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20'
+                                    : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-primary-300 dark:hover:border-primary-700'">
+                            <div class="flex items-center gap-2 mb-1">
+                                <div class="w-2 h-2 rounded-full flex-shrink-0"
+                                     :class="selectedRevision && selectedRevision.id === rev.id ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'"></div>
+                                <span class="text-xs font-medium text-gray-900 dark:text-white" x-text="'Version ' + rev.version"></span>
+                                <span class="text-xs text-gray-500 ml-auto" x-text="formatTimeAgo(rev.created_at)"></span>
                             </div>
-                        </div>
-                        <div class="flex-1 overflow-y-auto p-4">
-                            <template x-if="revisionLoading">
-                                <div class="flex justify-center py-8">
-                                    <svg class="animate-spin h-6 w-6 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                </div>
-                            </template>
-                            <template x-if="!revisionLoading">
-                                <div class="prose dark:prose-invert prose-sm max-w-none text-sm leading-relaxed whitespace-pre-wrap"
-                                     x-html="revisionViewMode === 'diff' ? revisionDiff : revisionContent"></div>
-                            </template>
-                        </div>
-                    </div>
-                </template>
+                            <p class="text-xs text-gray-500 ml-4 truncate" x-text="rev.change_summary || 'Automatisch gespeichert'"></p>
+                            <p class="text-xs text-gray-400 mt-0.5 ml-4" x-text="rev.changed_by"></p>
+                        </button>
+                    </template>
+                </div>
             </div>
         </div>
 
@@ -1876,6 +1957,8 @@ function documentEditor() {
         selectedText: '',
         selectionStart: 0,
         selectionEnd: 0,
+        // Active comment linking (bidirectional sidebar ↔ editor mark)
+        activeCommentId: null,
         // Inline comment creation popup (on text selection)
         commentPopupVisible: false,
         commentPopupExpanded: false,
@@ -1901,6 +1984,7 @@ function documentEditor() {
         collabUserColor: '{{ collab_color|default:"#3b82f6" }}',
         collabDestroy: null,
         // Revision history state
+        historyMode: false,
         revisions: [],
         revisionsLoading: false,
         selectedRevision: null,
@@ -2031,6 +2115,22 @@ function documentEditor() {
                 }
             });
 
+            // Bidirectional comment highlight — toggle CSS class on editor marks
+            this.$watch('activeCommentId', (newId, oldId) => {
+                const editorEl = document.getElementById('editor-container');
+                if (!editorEl) return;
+                // Remove old highlight
+                if (oldId) {
+                    const oldMark = editorEl.querySelector(`[data-comment-id="${oldId}"]`);
+                    if (oldMark) oldMark.classList.remove('comment-mark--active');
+                }
+                // Add new highlight
+                if (newId) {
+                    const newMark = editorEl.querySelector(`[data-comment-id="${newId}"]`);
+                    if (newMark) newMark.classList.add('comment-mark--active');
+                }
+            });
+
             this.$nextTick(() => {
                 lucide.createIcons();
             });
@@ -2135,14 +2235,15 @@ function documentEditor() {
         scrollToCommentInContent(commentId) {
             // Find the comment mark in the editor and scroll to it
             if (!editor) return;
+            // Set active comment for bidirectional highlighting
+            this.activeCommentId = commentId;
+            this.sidebarTab = 'comments';
+
             const editorEl = document.getElementById('editor-container');
             if (!editorEl) return;
             const mark = editorEl.querySelector(`[data-comment-id="${commentId}"]`);
             if (mark) {
                 mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                // Brief highlight flash
-                mark.style.backgroundColor = 'rgba(251, 191, 36, 0.6)';
-                setTimeout(() => { mark.style.backgroundColor = ''; }, 1500);
             }
         },
 
@@ -2222,24 +2323,27 @@ function documentEditor() {
             const markId = markEl.getAttribute('data-comment-id');
             if (!markId) return;
 
-            // Toggle off if same mark clicked
-            if (this.markCommentPopup && this.markCommentData && this.markCommentData.mark_id === markId) {
-                this.hideMarkPopup();
-                return;
-            }
-
             // Find comment data
             const comment = this.inlineCommentsData.find(c => c.mark_id === markId);
             if (!comment) return;
 
+            // Toggle off if same mark clicked
+            if (this.activeCommentId === markId) {
+                this.activeCommentId = null;
+                this.hideMarkPopup();
+                return;
+            }
+
+            // Set active comment for bidirectional highlighting
+            this.activeCommentId = markId;
+
             // Hide creation popup if visible
             this.commentPopupVisible = false;
 
-            // Position near the mark element
+            // Position popup near the mark element
             const rect = markEl.getBoundingClientRect();
             this.markCommentTop = rect.bottom + 8;
             this.markCommentLeft = Math.min(rect.left, window.innerWidth - 340);
-            // Flip above if near bottom
             if (this.markCommentTop + 300 > window.innerHeight) {
                 this.markCommentTop = rect.top - 280;
             }
@@ -2248,13 +2352,22 @@ function documentEditor() {
             this.markCommentPopup = true;
             this.markReplyText = '';
 
-            this.$nextTick(() => lucide.createIcons());
+            // Switch to comments tab and scroll sidebar to this comment
+            this.sidebarTab = 'comments';
+            this.$nextTick(() => {
+                lucide.createIcons();
+                const sidebarComment = document.getElementById(`comment-sidebar-${comment.id}`);
+                if (sidebarComment) {
+                    sidebarComment.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            });
         },
 
         hideMarkPopup() {
             this.markCommentPopup = false;
             this.markCommentData = null;
             this.markReplyText = '';
+            this.activeCommentId = null;
         },
 
         async submitMarkReply() {
@@ -2874,6 +2987,7 @@ function documentEditor() {
 
         async viewRevision(rev) {
             this.selectedRevision = rev;
+            this.historyMode = true;
             this.revisionLoading = true;
             this.revisionViewMode = 'diff';
 
@@ -2898,6 +3012,13 @@ function documentEditor() {
 
             this.revisionLoading = false;
             this.$nextTick(() => lucide.createIcons());
+        },
+
+        exitHistoryMode() {
+            this.historyMode = false;
+            this.selectedRevision = null;
+            this.revisionDiff = '';
+            this.revisionContent = '';
         },
 
         async restoreRevision(rev) {

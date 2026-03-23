@@ -477,6 +477,7 @@ start_services() {
     if wait_for_healthy mandari 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     run_migrations
+    configure_oparl_sources
 
     # --- Phase 3: Website (Wagtail) ---
     log "Starte Website..."
@@ -533,6 +534,123 @@ create_superuser() {
 # =============================================================================
 run_website_migrations() {
     run_step "Website-Migrationen" docker exec mandari-website python manage.py migrate --noinput
+}
+
+# =============================================================================
+# Configure OParl Sources (Interactive)
+# =============================================================================
+configure_oparl_sources() {
+    if [ "$UNATTENDED" = "true" ]; then
+        run_step "OParl-Quellen importieren" docker exec mandari python manage.py import_oparl_sources
+        info "OParl-Quellen importiert (inaktiv). Im Admin aktivieren."
+        return
+    fi
+
+    echo ""
+    log "OParl-Quellen konfigurieren"
+    echo "============================================"
+    echo ""
+    echo "  Mandari synchronisiert Ratsinformationen über den OParl-Standard."
+    echo "  Verfügbar: 106 Kommunen aus ganz Deutschland."
+    echo ""
+    echo -e "  ${CYAN}1)${NC} Alle Quellen aktivieren (106 Kommunen)"
+    echo -e "  ${CYAN}2)${NC} Nur Großstädte (10 Kommunen)"
+    echo -e "  ${CYAN}3)${NC} Einzelne Kommunen auswählen"
+    echo -e "  ${CYAN}4)${NC} Überspringen (später im Admin aktivieren)"
+    echo ""
+    read -p "  Auswahl [4]: " oparl_choice
+
+    # Import all sources (inactive by default)
+    run_step "OParl-Quellen importieren" docker exec mandari python manage.py import_oparl_sources
+
+    case "${oparl_choice:-4}" in
+        1)
+            run_step "Alle Quellen aktivieren" docker exec mandari python manage.py shell -c "
+from insight_core.models import OParlSource
+n = OParlSource.objects.all().update(is_active=True)
+print(f'{n} Quellen aktiviert')
+"
+            ;;
+        2)
+            run_step "Großstädte aktivieren" docker exec mandari python manage.py shell -c "
+from insight_core.models import OParlSource
+names = [
+    'Stadt Köln', 'Landeshauptstadt Düsseldorf', 'Stadt Dresden',
+    'Stadt Leipzig', 'Stadt Wuppertal', 'Stadt Münster',
+    'Stadt Braunschweig', 'Stadt Krefeld', 'Stadt Freiburg',
+    'München Transparent',
+]
+n = OParlSource.objects.filter(name__in=names).update(is_active=True)
+print(f'{n} Großstadt-Quellen aktiviert')
+"
+            ;;
+        3)
+            select_individual_sources
+            ;;
+        4|"")
+            info "OParl-Quellen können später im Admin aktiviert werden."
+            info "  Admin: https://${DOMAIN}/admin/insight_core/oparlsource/"
+            ;;
+    esac
+}
+
+# =============================================================================
+# Select Individual OParl Sources
+# =============================================================================
+select_individual_sources() {
+    echo ""
+    echo "  Verfügbare OParl-Quellen:"
+    echo "  ─────────────────────────────────────────"
+
+    # Display numbered list from database
+    docker exec mandari python manage.py shell -c "
+from insight_core.models import OParlSource
+for i, s in enumerate(OParlSource.objects.order_by('name'), 1):
+    print(f'  {i:3d}) {s.name}')
+"
+
+    echo ""
+    echo "  Eingabe: Nummern kommagetrennt, Bereiche oder einzeln"
+    echo "  Beispiele: '1,3,5'  '1-10'  '42'  '1-5,8,12-15'"
+    echo ""
+    read -p "  Auswahl: " source_selection
+
+    if [ -z "$source_selection" ]; then
+        info "Keine Quellen ausgewählt."
+        return
+    fi
+
+    echo ""
+    # Activate selected sources via environment variable (safe from injection)
+    docker exec -e SELECTION="$source_selection" mandari python manage.py shell -c "
+import os
+from insight_core.models import OParlSource
+
+selection = os.environ.get('SELECTION', '')
+sources = list(OParlSource.objects.order_by('name'))
+indices = set()
+
+for part in selection.replace(' ', '').split(','):
+    if '-' in part:
+        try:
+            start, end = part.split('-', 1)
+            for i in range(int(start), int(end) + 1):
+                indices.add(i)
+        except ValueError:
+            pass
+    elif part.isdigit():
+        indices.add(int(part))
+
+activated = 0
+for idx in sorted(indices):
+    if 1 <= idx <= len(sources):
+        sources[idx - 1].is_active = True
+        sources[idx - 1].save(update_fields=['is_active', 'updated_at'])
+        print(f'  ✓ {sources[idx - 1].name}')
+        activated += 1
+
+print(f'\n  {activated} Quelle(n) aktiviert.')
+"
 }
 
 # =============================================================================

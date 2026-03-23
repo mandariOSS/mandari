@@ -67,239 +67,25 @@
         </button>
     </div>
 
-    {# ── Tab: Mitglieder & Vertretungen ── #}
-    <div x-show="tab === 'members'" x-cloak>
-
+    {# ── Tab: Mitglieder & Vertretungen — nutzt gemeinsame Komponenten ── #}
+    <div x-show="tab === 'members'" x-cloak class="space-y-4">
         {% if is_rat %}
-            {# === Rat: Ratsmitglieder gesondert === #}
-            {% if council_members %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-4">
-                <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                    <h3 class="font-semibold text-gray-900 dark:text-white">
-                        Ratsmitglieder ({{ council_members|length }})
-                    </h3>
-                </div>
-                <table class="w-full">
-                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                        {% for m in council_members %}
-                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                            onclick="window.location='{% url 'insight_core:insight:person_detail' m.person.id %}'">
-                            <td class="px-6 py-3">
-                                <div class="flex items-center gap-3">
-                                    {% include "components/person_avatar.html" with person=m.person size="sm" %}
-                                    <a href="{% url 'insight_core:insight:person_detail' m.person.id %}"
-                                       class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                                        {{ m.person.display_name }}
-                                    </a>
-                                </div>
-                            </td>
-                            <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                                {{ m.role }}
-                            </td>
-                            <td class="px-2 py-3">
-                                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
-
-            {% if other_members %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-4">
-                <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                    <h3 class="font-semibold text-gray-900 dark:text-white">
-                        Weitere Beteiligte ({{ other_members|length }})
-                    </h3>
-                </div>
-                <table class="w-full">
-                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                        {% for m in other_members %}
-                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                            onclick="window.location='{% url 'insight_core:insight:person_detail' m.person.id %}'">
-                            <td class="px-6 py-3">
-                                <div class="flex items-center gap-3">
-                                    {% include "components/person_avatar.html" with person=m.person size="sm" %}
-                                    <a href="{% url 'insight_core:insight:person_detail' m.person.id %}"
-                                       class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                                        {{ m.person.display_name }}
-                                    </a>
-                                </div>
-                            </td>
-                            <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                                {{ m.role|default:"—" }}
-                            </td>
-                            <td class="px-2 py-3">
-                                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
-
+            {# Rat: Ratsmitglieder + Weitere Beteiligte gesondert #}
+            {% include "components/ris/membership_list.html" with items=council_members title="Ratsmitglieder" empty_text="Keine Ratsmitglieder" link_type="person" %}
+            {% include "components/ris/membership_list.html" with items=other_members title="Weitere Beteiligte" link_type="person" %}
         {% else %}
-            {# === Alle anderen Gremien === #}
-            {% if active_members %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-4">
-                <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                    <h3 class="font-semibold text-gray-900 dark:text-white">
-                        Aktive Mitglieder ({{ active_members|length }})
-                    </h3>
-                </div>
-                <table class="w-full">
-                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                        {% for m in active_members %}
-                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                            onclick="window.location='{% url 'insight_core:insight:person_detail' m.person.id %}'">
-                            <td class="px-6 py-3">
-                                <div class="flex items-center gap-3">
-                                    {% include "components/person_avatar.html" with person=m.person size="sm" %}
-                                    <a href="{% url 'insight_core:insight:person_detail' m.person.id %}"
-                                       class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                                        {{ m.person.display_name }}
-                                    </a>
-                                </div>
-                            </td>
-                            <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                                {{ m.role|default:"—" }}
-                            </td>
-                            <td class="px-2 py-3">
-                                <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-6 py-8 text-center text-gray-500 dark:text-gray-400 mb-4">
-                Keine aktiven Mitglieder
-            </div>
-            {% endif %}
+            {# Alle anderen Gremien #}
+            {% include "components/ris/membership_list.html" with items=active_members title="Aktive Mitglieder" empty_text="Keine aktiven Mitglieder" link_type="person" %}
         {% endif %}
 
-        {# Ehemalige Mitglieder (collapsible) #}
-        {% if past_members %}
-        <details class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <summary class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 cursor-pointer select-none font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                Ehemalige Mitglieder ({{ past_members|length }})
-            </summary>
-            <table class="w-full">
-                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                    {% for m in past_members %}
-                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                        onclick="window.location='{% url 'insight_core:insight:person_detail' m.person.id %}'">
-                        <td class="px-6 py-3">
-                            <div class="flex items-center gap-3">
-                                {% include "components/person_avatar.html" with person=m.person size="sm" %}
-                                <a href="{% url 'insight_core:insight:person_detail' m.person.id %}"
-                                   class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                                    {{ m.person.display_name }}
-                                </a>
-                            </div>
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                            {{ m.role|default:"—" }}
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-400 dark:text-gray-500 max-sm:hidden">
-                            {% if m.end_date %}bis {{ m.end_date|date:"d.m.Y" }}{% endif %}
-                        </td>
-                        <td class="px-2 py-3 max-sm:hidden">
-                            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </details>
-        {% endif %}
+        {% include "components/ris/membership_list.html" with items=past_members title="Ehemalige Mitglieder" link_type="person" collapsible="1" show_end_date="1" %}
     </div>
 
-    {# ── Tab: Sitzungskalender ── #}
-    <div x-show="tab === 'meetings'" x-cloak>
+    {# ── Tab: Sitzungskalender — nutzt gemeinsame Komponenten ── #}
+    <div x-show="tab === 'meetings'" x-cloak class="space-y-4">
+        {% include "components/ris/meeting_list.html" with items=upcoming_meetings title="Kommende Sitzungen" empty_text="Keine kommenden Sitzungen geplant" %}
 
-        {# Kommende Sitzungen #}
-        {% if upcoming_meetings %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-4">
-            <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                <h3 class="font-semibold text-gray-900 dark:text-white">Kommende Sitzungen</h3>
-            </div>
-            <table class="w-full">
-                <thead>
-                    <tr class="border-b border-gray-200 dark:border-gray-700">
-                        <th class="text-left px-6 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Datum</th>
-                        <th class="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Uhrzeit</th>
-                        <th class="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Bezeichnung</th>
-                        <th class="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-sm:hidden">Ort</th>
-                        <th class="w-10 px-2 py-2"></th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                    {% for meeting in upcoming_meetings %}
-                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                        onclick="window.location='{% url 'insight_core:insight:meeting_detail' meeting.id %}'">
-                        <td class="px-6 py-3">
-                            <span class="font-medium text-primary-600 dark:text-primary-400">
-                                {{ meeting.start|date:"d.m.Y" }}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                            {{ meeting.start|date:"H:i" }} Uhr
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 max-sm:hidden">
-                            {{ meeting.name|default:"—" }}
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                            {{ meeting.location_name|default:"—" }}
-                        </td>
-                        <td class="px-2 py-3">
-                            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-6 py-8 text-center text-gray-500 dark:text-gray-400 mb-4">
-            Keine kommenden Sitzungen geplant
-        </div>
-        {% endif %}
-
-        {# Vergangene Sitzungen (collapsible) #}
-        {% if past_meetings %}
-        <details class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <summary class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 cursor-pointer select-none font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                Vergangene Sitzungen
-            </summary>
-            <table class="w-full">
-                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                    {% for meeting in past_meetings %}
-                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                        onclick="window.location='{% url 'insight_core:insight:meeting_detail' meeting.id %}'">
-                        <td class="px-6 py-3">
-                            <span class="text-sm text-gray-700 dark:text-gray-300">
-                                {{ meeting.start|date:"d.m.Y" }}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
-                            {{ meeting.start|date:"H:i" }} Uhr
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                            {{ meeting.name|default:"—" }}
-                        </td>
-                        <td class="px-2 py-3">
-                            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </details>
-        {% endif %}
+        {% include "components/ris/meeting_list.html" with items=past_meetings title="Vergangene Sitzungen" collapsible="1" %}
     </div>
 
     {# ── Tab: Informationen ── #}

@@ -1,0 +1,73 @@
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+{# Gemeinsame Sitzungsliste — Insight + Work RIS                            #}
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+{# Parameter (via {% include ... with %}):                                   #}
+{#   items          — QuerySet von OParlMeeting                              #}
+{#   title          — Überschrift                                            #}
+{#   empty_text     — Text wenn leer                                         #}
+{#   collapsible    — "1" für einklappbare <details>                         #}
+{#   org_slug       — Work-Portal Org-Slug (wenn gesetzt → Work-URLs)        #}
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+
+{% if items %}
+{% if collapsible %}
+<details class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <summary class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 cursor-pointer select-none font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+        {{ title }} ({{ items|length }})
+    </summary>
+{% else %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+        <h3 class="font-semibold text-gray-900 dark:text-white">
+            {{ title }} ({{ items|length }})
+        </h3>
+    </div>
+{% endif %}
+
+    <table class="w-full">
+        <thead class="max-sm:hidden">
+            <tr class="bg-gray-50/50 dark:bg-gray-900/30">
+                <th class="px-6 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Datum</th>
+                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Uhrzeit</th>
+                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Bezeichnung</th>
+                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ort</th>
+                <th class="px-2 py-2"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for meeting in items %}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer{% if collapsible %} opacity-70{% endif %}"
+                onclick="window.location='{% if org_slug %}{% url 'work:ris_meeting_detail' org_slug=org_slug meeting_id=meeting.id %}{% else %}{% url 'insight_core:insight:meeting_detail' meeting.id %}{% endif %}'">
+                <td class="px-6 py-3 text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap">
+                    {{ meeting.start|date:"d.m.Y" }}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                    {{ meeting.start|date:"H:i" }} Uhr
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-900 dark:text-white max-sm:hidden">
+                    <span class="group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                        {{ meeting.name|default:meeting.get_display_name }}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden truncate max-w-[200px]">
+                    {{ meeting.location_name|default:"—" }}
+                </td>
+                <td class="px-2 py-3">
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+{% if collapsible %}
+</details>
+{% else %}
+</div>
+{% endif %}
+
+{% elif not collapsible %}
+<div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+    {{ empty_text|default:"Keine Sitzungen" }}
+</div>
+{% endif %}

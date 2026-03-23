@@ -84,77 +84,11 @@
         </button>
     </div>
 
-    {# ── Tab: Mitgliedschaften ── #}
-    <div x-show="tab === 'memberships'" x-cloak>
-        {% if active_memberships %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-4">
-            <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                <h3 class="font-semibold text-gray-900 dark:text-white">
-                    Aktive Mitgliedschaften ({{ active_memberships|length }})
-                </h3>
-            </div>
-            <table class="w-full">
-                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                    {% for m in active_memberships %}
-                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                        onclick="window.location='{% url 'insight_core:insight:organization_detail' m.organization.id %}'">
-                        <td class="px-6 py-3">
-                            <a href="{% url 'insight_core:insight:organization_detail' m.organization.id %}"
-                               class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                                {{ m.organization.name }}
-                            </a>
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                            {{ m.role|default:"—" }}
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-400 dark:text-gray-500 max-sm:hidden">
-                            {% if m.start_date %}seit {{ m.start_date|date:"d.m.Y" }}{% endif %}
-                        </td>
-                        <td class="px-2 py-3">
-                            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl px-6 py-8 text-center text-gray-500 dark:text-gray-400 mb-4">
-            Keine aktiven Mitgliedschaften
-        </div>
-        {% endif %}
+    {# ── Tab: Mitgliedschaften — nutzt gemeinsame Komponente ── #}
+    <div x-show="tab === 'memberships'" x-cloak class="space-y-4">
+        {% include "components/ris/membership_list.html" with items=active_memberships title="Aktive Mitgliedschaften" empty_text="Keine aktiven Mitgliedschaften" link_type="organization" %}
 
-        {% if past_memberships %}
-        <details class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <summary class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 cursor-pointer select-none font-semibold text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                Ehemalige Mitgliedschaften ({{ past_memberships|length }})
-            </summary>
-            <table class="w-full">
-                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                    {% for m in past_memberships %}
-                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                        onclick="window.location='{% url 'insight_core:insight:organization_detail' m.organization.id %}'">
-                        <td class="px-6 py-3">
-                            <a href="{% url 'insight_core:insight:organization_detail' m.organization.id %}"
-                               class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                                {{ m.organization.name }}
-                            </a>
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-sm:hidden">
-                            {{ m.role|default:"—" }}
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-400 dark:text-gray-500 max-sm:hidden">
-                            {% if m.end_date %}bis {{ m.end_date|date:"d.m.Y" }}{% endif %}
-                        </td>
-                        <td class="px-2 py-3">
-                            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors"></i>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </details>
-        {% endif %}
+        {% include "components/ris/membership_list.html" with items=past_memberships title="Ehemalige Mitgliedschaften" link_type="organization" collapsible="1" show_end_date="1" %}
     </div>
 
     {# ── Tab: Fragen (Abgeordnetenwatch-Stil) — nur bei Ratspersonen ── #}

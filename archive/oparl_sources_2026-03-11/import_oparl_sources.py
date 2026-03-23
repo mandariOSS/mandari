@@ -4,50 +4,35 @@ Django management command to import known German OParl sources.
 
 Adds sources with is_active=False so they don't sync automatically.
 Activate individual sources manually as needed.
-
-Letzte Prüfung: 2026-03-11 (alle Endpoints live getestet)
-Quelle: https://github.com/OParl/resources/blob/main/endpoints.yml
 """
 
 from django.core.management.base import BaseCommand
 
 from insight_core.models import OParlSource
 
-# =============================================================================
-# Geprüfte OParl-Endpoints (Stand: 2026-03-11)
-# =============================================================================
-# Entfernt wurden:
-#   - Stadt Aachen (404), Stadt Hagen (404), Stadt Ulm (404)
-#   - Stadt Erkelenz (404), Berlin Marzahn-Hellersdorf (404)
-#   - Amt Trave-Land (404), Gemeinde Glasau (gleicher Server)
-#   - Landkreis Ludwigslust-Parchim (DNS), Stadt Olpe (DNS)
-#   - OParl Mirror (DNS), Stadt Rees (401)
-#   - Edenkoben (kein Body-Feld), Salzatal (kein Body-Feld)
-# Archiv: archive/oparl_sources_2026-03-11/
-# =============================================================================
-
+# Complete list of known German OParl endpoints
+# Source: https://github.com/OParl/resources/blob/main/endpoints.yml
 OPARL_SOURCES = [
-    # =========================================================================
-    # Großstädte (Prio 1)
-    # =========================================================================
+    # Major Cities (Priority 1)
     ("Stadt Köln", "https://buergerinfo.stadt-koeln.de/oparl/system"),
+    ("Stadt Bonn", "https://www.bonn.sitzung-online.de/public/oparl/system"),
     ("Landeshauptstadt Düsseldorf", "https://ris-oparl.itk-rheinland.de/Oparl/system"),
     ("Stadt Dresden", "https://oparl.dresden.de/system"),
     ("Stadt Leipzig", "https://ratsinformation.leipzig.de/allris_leipzig_public/oparl/system"),
     ("Stadt Wuppertal", "https://oparl.wuppertal.de/oparl/system"),
     ("Stadt Münster", "https://oparl.stadt-muenster.de/system"),
+    ("Stadt Aachen", "https://ratsinfo.aachen.de/bi/oparl/1.0/system.asp"),
     ("Stadt Braunschweig", "https://ratsinfo.braunschweig.de/bi/oparl/1.0/system.asp"),
     ("Stadt Krefeld", "https://ris.krefeld.de/webservice/oparl/v1.1/system"),
     ("Stadt Freiburg", "https://ris.freiburg.de/oparl"),
+    ("Stadt Ulm", "https://buergerinfo.ulm.de/oparl/system"),
     ("München Transparent", "https://www.muenchen-transparent.de/oparl/v1.0"),
-    # =========================================================================
-    # Großstädte (instabil bei Prüfung 2026-03-11, aber behalten)
-    # =========================================================================
-    ("Stadt Bonn", "https://www.bonn.sitzung-online.de/public/oparl/system"),  # HTTP 500
-    # =========================================================================
-    # Mittelstädte (Prio 2)
-    # =========================================================================
-    ("Klingenstadt Solingen", "https://sdnetrim.kdvz-frechen.de/rim4957/webservice/oparl/v1.1/system"),
+    # Medium Cities (Priority 2)
+    ("Stadt Hagen", "https://www.hagen.de/buergerinfo/oparl/1.0/system.asp"),
+    (
+        "Klingenstadt Solingen",
+        "https://sdnetrim.kdvz-frechen.de/rim4957/webservice/oparl/v1.1/system",
+    ),
     ("Stadt Castrop-Rauxel", "https://castroprauxel.gremien.info/oparl"),
     ("Stadt Herford", "https://herford.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     ("Stadt Bergheim", "https://sdnetrim.kdvz-frechen.de/rim4800/webservice/oparl/v1.1/system"),
@@ -59,6 +44,7 @@ OPARL_SOURCES = [
         "https://ratsinfo.rheda-wiedenbrueck.de/webservice/oparl/v1.1/system",
     ),
     ("Stadt Gronau", "https://gronau.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    ("Stadt Erkelenz", "https://ratsinfo.erkelenz.de/bi/oparl/1.0/system.asp"),
     ("Stadt Brühl", "https://ratsinfo.bruehl.de/webservice/oparl/v1.1/system"),
     ("Stadt Lahr/Schwarzwald", "https://lahr.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     ("Stadt Bad Kreuznach", "https://bad-kreuznach-stadt.gremien.info/oparl/system"),
@@ -68,9 +54,11 @@ OPARL_SOURCES = [
     ("Stadt Jülich", "https://sdnetrim.kdvz-frechen.de/rim4240/webservice/oparl/v1.1/system"),
     ("Stadt Emsdetten", "https://emsdetten.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     ("Kolpingstadt Kerpen", "https://ratsinfo.stadt-kerpen.de/webservice/oparl/v1.0/system"),
-    # =========================================================================
-    # Berliner Bezirke (instabil — Timeouts bei Prüfung 2026-03-11)
-    # =========================================================================
+    # Berlin Districts
+    (
+        "Berlin Marzahn-Hellersdorf",
+        "https://www.sitzungsdienst-marzahn-hellersdorf.de/oi/oparl/1.1/system.asp",
+    ),
     (
         "Berlin Steglitz-Zehlendorf",
         "https://www.sitzungsdienst-steglitz-zehlendorf.de/oi/oparl/1.0/system.asp",
@@ -82,9 +70,11 @@ OPARL_SOURCES = [
     ("Berlin Reinickendorf", "https://www.sitzungsdienst-reinickendorf.de/oi/oparl/1.0/system.asp"),
     ("Berlin Pankow", "https://www.sitzungsdienst-pankow.de/oi/oparl/1.0/system.asp"),
     ("Berlin Lichtenberg", "https://www.sitzungsdienst-lichtenberg.de/oi/oparl/1.0/system.asp"),
-    # =========================================================================
-    # Landkreise & Kreise
-    # =========================================================================
+    # Districts/Counties
+    (
+        "Landkreis Ludwigslust-Parchim",
+        "https://www.lwl-pch.sitzung-online.de/bi/oparl/1.0/system.asp",
+    ),
     (
         "Landkreis Märkisch-Oderland",
         "https://ratsinfo-online.net/landkreis-mol-bi/oparl/1.0/system.asp",
@@ -96,20 +86,8 @@ OPARL_SOURCES = [
         "https://sdnetrim.kdvz-frechen.de/rim4520/webservice/oparl/v1.1/system",
     ),
     ("Regionalverband Ruhr", "https://rvr-online.gremien.info/oparl"),
-    # =========================================================================
-    # Verbandsgemeinden (haben jeweils viele Ortsgemeinden als Bodies)
-    # =========================================================================
-    ("Herxheim", "https://herxheim.gremien.info/oparl/system"),
-    ("Emmelshausen", "https://emmelshausen.gremien.info/oparl/system"),
-    ("Montabaur", "https://montabaur.gremien.info/oparl/system"),
-    ("Westerburg", "https://westerburg.gremien.info/oparl/system"),
-    ("Enkenbach-Alsenborn", "https://enkenbach-alsenborn.gremien.info/oparl/system"),
-    ("Verbandsgemeinde Hagenbach", "https://www.hagenbach.sitzung-online.de/bi/oparl/1.0/system.asp"),
-    ("Verbandsgemeinde Weida-Land", "https://weida-land.gremien.info/oparl/system"),
-    ("Amt Itzstedt", "https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/system.asp"),
-    # =========================================================================
-    # Kleine Gemeinden & Städte
-    # =========================================================================
+    # Smaller Municipalities
+    ("Eschwege", "https://rim.ekom21.de/eschwege/webservice/oparl/v1.1/system"),
     ("Stadt Enger", "https://enger.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     ("Stadt Spenge", "https://spenge.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     ("Stadt Vlotho", "https://vlotho.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
@@ -127,21 +105,29 @@ OPARL_SOURCES = [
     ),
     ("Gemeinde Schwalmtal", "https://ris.schwalmtal.de/webservice/oparl/v1.1/system"),
     ("Gemeinde Ladbergen", "https://ladbergen.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
-    ("Rahden", "https://rahden.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     ("Gemeinde Stemwede", "https://stemwede.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     ("Gemeinde Aldenhoven", "https://ratsinfo.aldenhoven.de/webservice/oparl/v1.1/system"),
-    ("Gemeinde Nettersheim", "https://sdnetrim.kdvz-frechen.de/rim4580/webservice/oparl/v1.1/system"),
+    (
+        "Gemeinde Nettersheim",
+        "https://sdnetrim.kdvz-frechen.de/rim4580/webservice/oparl/v1.1/system",
+    ),
+    ("Stadt Olpe", "https://sitzungsdienst.kdz-ws.net/gkz330/webservice/oparl/v1.1/system"),
     ("Gemeinde Steinhagen", "https://ratsinfo.steinhagen.de/webservice/oparl/v1.1/system"),
     ("Gemeinde Langenberg", "https://ratsinfo.langenberg.de/webservice/oparl/v1.0/system"),
-    ("Gemeinde Weilerswist", "https://sdnetrim.kdvz-frechen.de/rim4510/webservice/oparl/v1.1/system"),
+    (
+        "Gemeinde Weilerswist",
+        "https://sdnetrim.kdvz-frechen.de/rim4510/webservice/oparl/v1.1/system",
+    ),
     (
         "Stadt Bad Münstereifel",
         "https://ratsinfo.bad-muenstereifel.de/webservice/oparl/v1.1/system",
     ),
     ("Leopoldshohe", "https://leopoldshoehe.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     ("Gemeinde Wachtendonk", "https://ris.wachtendonk.de/webservice/oparl/v1.1/system"),
+    ("Stadt Rees", "https://sessionnet-oparl.krz.de/oparl/bodies/5205"),
     ("Stadt Bedburg", "https://sdnetrim.kdvz-frechen.de/rim4780/webservice/oparl/v1.1/system"),
     ("Aarbergen", "https://rim.ekom21.de/aarbergen/webservice/oparl/v1.1/system"),
+    ("Westerburg", "https://westerburg.gremien.info/oparl/system"),
     (
         "Gemeinde Wallenhorst",
         "https://wallenhorst.ratsinfomanagement.net/webservice/oparl/v1.1/system",
@@ -154,48 +140,67 @@ OPARL_SOURCES = [
         "https://schiffdorf.ratsinfomanagement.net/webservice/oparl/v1.1/system",
     ),
     ("Willingen", "https://rim.ekom21.de/willingen/webservice/oparl/v1.1/system"),
-    ("Gemeinde Lohfelden", "https://lohfelden.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    (
+        "Verbandsgemeinde Hagenbach",
+        "https://www.hagenbach.sitzung-online.de/bi/oparl/1.0/system.asp",
+    ),
     ("Stadt Boppard", "https://www.boppard.sitzung-online.de/bi/oparl/1.0/system.asp"),
-    ("Gemeinde Cölbe", "https://rim.ekom21.de/coelbe/webservice/oparl/v1.1/system"),
-    ("Gemeinde Ehringshausen", "https://rim.ekom21.de/ehringshausen/webservice/oparl/v1.1/system"),
-    ("Gemeinde Fernwald", "https://rim.ekom21.de/fernwald/webservice/oparl/v1.1/system"),
-    ("Gemeinde Glashütten", "https://rim.ekom21.de/glashuetten/webservice/oparl/v1.1/system"),
-    ("Guxhagen", "https://rim.ekom21.de/guxhagen/webservice/oparl/v1.1/system"),
+    ("Gemeinde Harsum", "https://www.harsum.sitzung-online.de/bi/oparl/1.0/system.asp"),
+    ("Stadt Großalmerode", "https://rim.ekom21.de/grossalmerode/webservice/oparl/v1.1/system"),
+    ("Amt Itzstedt", "https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/system.asp"),
+    ("Amt Trave-Land", "https://www.trave.sitzung-online.de/bi/oparl/1.0/system.asp"),
+    ("Verbandsgemeinde Weida-Land", "https://weida-land.gremien.info/oparl/system"),
     ("Hessisch Lichtenau", "https://rim.ekom21.de/hessisch-lichtenau/webservice/oparl/v1.1/system"),
-    ("Kreisstadt Homberg (Efze)", "https://rim.ekom21.de/homberg-efze/webservice/oparl/v1.1/system"),
-    ("Homberg (Ohm)", "https://rim.ekom21.de/homberg-ohm/webservice/oparl/v1.1/system"),
-    ("Schmitten", "https://rim.ekom21.de/schmitten/webservice/oparl/v1.1/system"),
-    ("Schwarzenborn", "https://rim.ekom21.de/schwarzenborn/webservice/oparl/v1.1/system"),
+    (
+        "Kreisstadt Homberg (Efze)",
+        "https://rim.ekom21.de/homberg-efze/webservice/oparl/v1.1/system",
+    ),
+    ("Stadt Parchim", "https://www.parchim.sitzung-online.de/bi/oparl/1.0/system.asp"),
+    ("Uplengen", "https://uplengen.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    ("Gemeinde Cölbe", "https://rim.ekom21.de/coelbe/webservice/oparl/v1.1/system"),
+    ("Gemeinde Lohfelden", "https://lohfelden.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    ("Herxheim", "https://herxheim.gremien.info/oparl/system"),
+    ("Stadt Bleckede", "https://www.bleckede.sitzung-online.de/bi/oparl/1.0/system.asp"),
     (
         "Gemeinde Waldbrunn im Westerwald",
         "https://rim.ekom21.de/waldbrunn/webservice/oparl/v1.1/system",
     ),
-    ("Samtgemeinde Sögel", "https://soegel.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
-    ("Uplengen", "https://uplengen.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
-    ("Stadt Parchim", "https://www.parchim.sitzung-online.de/bi/oparl/1.0/system.asp"),
     ("Stadt Rosbach", "https://www.rosbach.sitzung-online.de/bi/oparl/1.0/system.asp"),
-    ("Gemeinde Hürtgenwald", "https://sdnetrim.kdvz-frechen.de/rim4220/webservice/oparl/v1.1/system"),
+    ("Schmitten", "https://rim.ekom21.de/schmitten/webservice/oparl/v1.1/system"),
+    ("Stadtverwaltung Ortenberg", "https://rim.ekom21.de/ortenberg/webservice/oparl/v1.1/system"),
+    ("Homberg (Ohm)", "https://rim.ekom21.de/homberg-ohm/webservice/oparl/v1.1/system"),
+    ("Schwarzenborn", "https://rim.ekom21.de/schwarzenborn/webservice/oparl/v1.1/system"),
+    ("Gemeinde Fernwald", "https://rim.ekom21.de/fernwald/webservice/oparl/v1.1/system"),
+    ("Guxhagen", "https://rim.ekom21.de/guxhagen/webservice/oparl/v1.1/system"),
+    ("Gemeinde Ehringshausen", "https://rim.ekom21.de/ehringshausen/webservice/oparl/v1.1/system"),
+    ("Samtgemeinde Sögel", "https://soegel.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    ("Gemeinde Glashütten", "https://rim.ekom21.de/glashuetten/webservice/oparl/v1.1/system"),
+    ("Emmelshausen", "https://emmelshausen.gremien.info/oparl/system"),
+    ("Montabaur", "https://montabaur.gremien.info/oparl/system"),
+    ("Edenkoben", "https://edenkoben.gremien.info/oparl/system"),
+    ("Enkenbach-Alsenborn", "https://enkenbach-alsenborn.gremien.info/oparl/system"),
+    ("Salzatal", "https://salzatal.gremien.info/oparl/system"),
+    ("Gemeinde Glasau", "https://www.trave.sitzung-online.de/bi/oparl/1.0/system.asp"),
+    ("Rahden", "https://rahden.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    (
+        "Gemeinde Hürtgenwald",
+        "https://sdnetrim.kdvz-frechen.de/rim4220/webservice/oparl/v1.1/system",
+    ),
     ("Gemeinde Inden", "https://sdnetrim.kdvz-frechen.de/rim4230/webservice/oparl/v1.1/system"),
     ("Gemeinde Kreuzau", "https://sdnetrim.kdvz-frechen.de/rim4250/webservice/oparl/v1.1/system"),
-    ("Gemeinde Langerwehe", "https://sdnetrim.kdvz-frechen.de/rim4260/webservice/oparl/v1.1/system"),
-    ("Stadt Linnich", "https://sdnetrim.kdvz-frechen.de/rim4270/webservice/oparl/v1.1/system"),
+    (
+        "Gemeinde Langerwehe",
+        "https://sdnetrim.kdvz-frechen.de/rim4260/webservice/oparl/v1.1/system",
+    ),
     ("Gemeinde Merzenich", "https://sdnetrim.kdvz-frechen.de/rim4280/webservice/oparl/v1.1/system"),
     ("Gemeinde Nörvenich", "https://sdnetrim.kdvz-frechen.de/rim4160/webservice/oparl/v1.1/system"),
     ("Gemeinde Titz", "https://sdnetrim.kdvz-frechen.de/rim4170/webservice/oparl/v1.1/system"),
     ("Gemeinde Vettweiß", "https://sdnetrim.kdvz-frechen.de/rim4180/webservice/oparl/v1.1/system"),
+    ("Stadt Linnich", "https://sdnetrim.kdvz-frechen.de/rim4270/webservice/oparl/v1.1/system"),
     ("Gemeinde Kall", "https://sdnetrim.kdvz-frechen.de/rim4550/webservice/oparl/v1.1/system"),
-    # =========================================================================
-    # Instabil bei Prüfung 2026-03-11 (HTTP 400/500), aber behalten
-    # =========================================================================
-    ("Stadt Bleckede", "https://www.bleckede.sitzung-online.de/bi/oparl/1.0/system.asp"),  # HTTP 500
-    ("Gemeinde Harsum", "https://www.harsum.sitzung-online.de/bi/oparl/1.0/system.asp"),  # HTTP 500
-    ("Eschwege", "https://rim.ekom21.de/eschwege/webservice/oparl/v1.1/system"),  # HTTP 400
-    ("Stadtverwaltung Ortenberg", "https://rim.ekom21.de/ortenberg/webservice/oparl/v1.1/system"),  # HTTP 400
-    ("Stadt Großalmerode", "https://rim.ekom21.de/grossalmerode/webservice/oparl/v1.1/system"),
-    # =========================================================================
-    # Aggregatoren (liefern Daten vieler Kommunen gebündelt)
-    # =========================================================================
+    # Aggregators
     ("Politik bei Uns", "https://oparl.politik-bei-uns.de/system"),
+    ("OParl Mirror", "https://mirror.oparl.org/system"),
 ]
 
 

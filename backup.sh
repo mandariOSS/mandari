@@ -33,7 +33,12 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m'
+
+# Log file
+mkdir -p "$SCRIPT_DIR/logs"
+BACKUP_LOG="$SCRIPT_DIR/logs/backup.log"
 
 # =============================================================================
 # Helper Functions
@@ -66,6 +71,169 @@ get_env_var() {
     local val
     val=$(grep -E "^${key}=" .env 2>/dev/null | head -1 | cut -d'=' -f2-)
     echo "${val:-$default}"
+}
+
+# Run a command with spinner, output goes to log file
+# Usage: run_step "Description" command arg1 arg2 ...
+run_step() {
+    if [ "$QUIET" = true ]; then
+        # Im Quiet-Modus: direkt ausführen, nur Fehler ausgeben
+        "$@" >> "$BACKUP_LOG" 2>&1
+        return $?
+    fi
+
+    local description="$1"
+    shift
+
+    local spin_chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+
+    # Start command in background, output to log
+    "$@" >> "$BACKUP_LOG" 2>&1 &
+    local pid=$!
+
+    # Show spinner
+    printf "  %-30s " "$description"
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\b${spin_chars:$i:1}"
+        i=$(( (i + 1) % ${#spin_chars} ))
+        sleep 0.1
+    done
+
+    # Check exit code
+    wait "$pid"
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
+        printf "\b${GREEN}✓${NC}\n"
+    else
+        printf "\b${RED}✗${NC}\n"
+        warn "Fehlgeschlagen! Details: cat $BACKUP_LOG"
+    fi
+
+    return $exit_code
+}
+
+# Run a command that writes to a specific file (stdout → file, stderr → log)
+# Usage: run_step_to_file "Description" output_file command arg1 ...
+run_step_to_file() {
+    if [ "$QUIET" = true ]; then
+        local out="$1"
+        shift
+        "$@" > "$out" 2>> "$BACKUP_LOG"
+        return $?
+    fi
+
+    local description="$1"
+    local output_file="$2"
+    shift 2
+
+    local spin_chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+
+    # Start command in background, stdout → file, stderr → log
+    "$@" > "$output_file" 2>> "$BACKUP_LOG" &
+    local pid=$!
+
+    # Show spinner
+    printf "  %-30s " "$description"
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\b${spin_chars:$i:1}"
+        i=$(( (i + 1) % ${#spin_chars} ))
+        sleep 0.1
+    done
+
+    # Check exit code
+    wait "$pid"
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
+        printf "\b${GREEN}✓${NC}\n"
+    else
+        printf "\b${RED}✗${NC}\n"
+        warn "Fehlgeschlagen! Details: cat $BACKUP_LOG"
+    fi
+
+    return $exit_code
+}
+
+# Warte bis Container healthy ist (mit Spinner + Go-Template-Fix)
+wait_for_healthy() {
+    local container=$1
+    local max_attempts=${2:-30}
+    local attempt=0
+    local spin_chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        local status
+        status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$container" 2>/dev/null || echo "unknown")
+
+        if [ "$status" = "healthy" ]; then
+            return 0
+        fi
+
+        if [ "$status" = "unhealthy" ]; then
+            return 1
+        fi
+
+        if [ "$status" = "no-healthcheck" ]; then
+            local running
+            running=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "")
+            if [ "$running" = "running" ]; then
+                return 0
+            fi
+        fi
+
+        attempt=$((attempt + 1))
+        if [ "$QUIET" = false ]; then
+            printf "\b${spin_chars:$i:1}"
+            i=$(( (i + 1) % ${#spin_chars} ))
+        fi
+        sleep 2
+    done
+
+    return 1
+}
+
+# Verifikation aller Container (wie install.sh)
+verify_installation() {
+    log "Verifikation..."
+    echo ""
+
+    for container in mandari-postgres mandari-redis mandari-meilisearch mandari mandari-website mandari-caddy mandari-ingestor; do
+        local status
+        local health
+        status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
+        health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$container" 2>/dev/null || echo "no-healthcheck")
+
+        local label
+        case "$container" in
+            mandari-postgres)    label="PostgreSQL" ;;
+            mandari-redis)       label="Redis" ;;
+            mandari-meilisearch) label="Meilisearch" ;;
+            mandari)             label="Mandari" ;;
+            mandari-website)     label="Website" ;;
+            mandari-caddy)       label="Caddy" ;;
+            mandari-ingestor)    label="Ingestor" ;;
+        esac
+
+        printf "  %-14s " "$label"
+        if [ "$status" = "running" ]; then
+            if [ "$health" = "healthy" ]; then
+                echo -e "${GREEN}✓ healthy${NC}"
+            elif [ "$health" = "no-healthcheck" ] || [ -z "$health" ] || [ "$health" = "none" ]; then
+                echo -e "${GREEN}✓ running${NC}"
+            elif [ "$health" = "starting" ]; then
+                echo -e "${YELLOW}⏳ starting${NC}"
+            else
+                echo -e "${YELLOW}⚠ $health${NC}"
+            fi
+        else
+            echo -e "${RED}✗ $status${NC}"
+        fi
+    done
+    echo ""
 }
 
 # =============================================================================
@@ -114,6 +282,9 @@ if [ ${#args[@]} -gt 0 ]; then
     BACKUP_DIR="${args[0]}"
 fi
 
+# Log-Datei initialisieren
+echo "=== Mandari Backup $(date) ===" > "$BACKUP_LOG"
+
 # =============================================================================
 # Restore Mode
 # =============================================================================
@@ -139,52 +310,75 @@ if [ "$RESTORE_MODE" = true ]; then
     trap "rm -rf $RESTORE_DIR" EXIT
 
     # Extract backup
-    log "Backup entpacken..."
-    tar -xzf "$RESTORE_FILE" -C "$RESTORE_DIR"
+    run_step "Backup entpacken" tar -xzf "$RESTORE_FILE" -C "$RESTORE_DIR"
 
     BACKUP_CONTENT="$RESTORE_DIR/$(ls "$RESTORE_DIR")"
 
     # Stop services
-    log "Services stoppen..."
-    docker compose down
+    run_step "Services stoppen" docker compose down
 
     # Restore .env
     if [ -f "$BACKUP_CONTENT/.env" ]; then
-        log "Konfiguration wiederherstellen..."
-        cp "$BACKUP_CONTENT/.env" .env
+        run_step "Konfiguration wiederherstellen" cp "$BACKUP_CONTENT/.env" .env
         chmod 600 .env
     fi
 
-    # Start only postgres
+    # Start only postgres — wait for healthy statt sleep
     log "Datenbank starten..."
-    docker compose up -d postgres
-    sleep 10
+    docker compose up -d postgres >> "$BACKUP_LOG" 2>&1
+    printf "  %-30s " "PostgreSQL"
+    if wait_for_healthy mandari-postgres 30; then
+        printf "\b${GREEN}✓ healthy${NC}\n"
+    else
+        printf "\b${YELLOW}⏳${NC}\n"
+        sleep 5
+    fi
 
     # Restore database
     if [ -f "$BACKUP_CONTENT/postgres.sql" ]; then
-        log "Datenbank wiederherstellen..."
-        local restore_user restore_db
-        restore_user=$(get_env_var POSTGRES_USER mandari)
-        restore_db=$(get_env_var POSTGRES_DB mandari)
-        docker exec -i mandari-postgres psql -U "$restore_user" "$restore_db" < "$BACKUP_CONTENT/postgres.sql"
+        local_restore_user=$(get_env_var POSTGRES_USER mandari)
+        local_restore_db=$(get_env_var POSTGRES_DB mandari)
+        run_step "Mandari-DB wiederherstellen" docker exec -i mandari-postgres psql -U "$local_restore_user" "$local_restore_db" < "$BACKUP_CONTENT/postgres.sql"
+    fi
+
+    # Restore website DB if present
+    if [ -f "$BACKUP_CONTENT/postgres_website.sql" ]; then
+        local_website_db=$(get_env_var WEBSITE_DB mandari_website)
+        local_restore_user=$(get_env_var POSTGRES_USER mandari)
+        run_step "Website-DB wiederherstellen" docker exec -i mandari-postgres psql -U "$local_restore_user" "$local_website_db" < "$BACKUP_CONTENT/postgres_website.sql"
     fi
 
     # Restore Meilisearch data
     if [ -f "$BACKUP_CONTENT/meilisearch.tar" ]; then
-        log "Suchindex wiederherstellen..."
-        docker compose up -d meilisearch
-        sleep 5
+        log "Meilisearch-Daten gefunden..."
+        docker compose up -d meilisearch >> "$BACKUP_LOG" 2>&1
+        printf "  %-30s " "Meilisearch"
+        if wait_for_healthy mandari-meilisearch 30; then
+            printf "\b${GREEN}✓ healthy${NC}\n"
+        else
+            printf "\b${YELLOW}⏳${NC}\n"
+        fi
         warn "Meilisearch-Daten gefunden. Manuelle Wiederherstellung ggf. nötig."
     fi
 
     # Start all services
-    log "Alle Services starten..."
-    docker compose up -d
+    run_step "Alle Services starten" docker compose up -d
 
-    log "Wiederherstellung abgeschlossen!"
-    log "Suchindex neu aufbauen..."
-    docker exec mandari python manage.py rebuild_search_index || warn "Suchindex-Rebuild ggf. manuell nötig"
+    # Wait for main services
+    sleep 3
+    verify_installation
 
+    run_step "Suchindex neu aufbauen" docker exec mandari python manage.py rebuild_search_index || \
+        warn "Suchindex-Rebuild ggf. manuell nötig"
+
+    echo ""
+    echo -e "${GREEN}============================================${NC}"
+    echo -e "${GREEN}  Wiederherstellung abgeschlossen!${NC}"
+    echo -e "${GREEN}============================================${NC}"
+    echo ""
+    echo "  Quelle:  $RESTORE_FILE"
+    echo "  Logs:    cat $BACKUP_LOG"
+    echo ""
     exit 0
 fi
 
@@ -214,30 +408,34 @@ mkdir -p "$BACKUP_DIR"
 BACKUP_PATH="$BACKUP_DIR/$BACKUP_NAME"
 mkdir -p "$BACKUP_PATH"
 
-log "Erstelle Backup: $BACKUP_NAME"
+info "Erstelle Backup: ${CYAN}$BACKUP_NAME${NC}"
 
 # =============================================================================
 # Backup Configuration
 # =============================================================================
-log "Konfiguration sichern..."
-cp .env "$BACKUP_PATH/.env"
+run_step "Konfiguration sichern" cp .env "$BACKUP_PATH/.env"
 
 # =============================================================================
 # Backup PostgreSQL
 # =============================================================================
-log "Datenbank sichern..."
-if docker exec mandari-postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > "$BACKUP_PATH/postgres.sql" 2>/dev/null; then
-    DB_SIZE=$(du -h "$BACKUP_PATH/postgres.sql" | cut -f1)
-    log "  Mandari-DB: $DB_SIZE"
+if run_step_to_file "Mandari-DB sichern" "$BACKUP_PATH/postgres.sql" \
+    docker exec mandari-postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"; then
+    if [ "$QUIET" = false ]; then
+        DB_SIZE=$(du -h "$BACKUP_PATH/postgres.sql" | cut -f1)
+        info "  Mandari-DB: $DB_SIZE"
+    fi
 else
     error "Datenbank-Backup fehlgeschlagen. Läuft PostgreSQL?"
 fi
 
 # Website-Datenbank (Wagtail) — falls vorhanden
 if docker exec mandari-postgres psql -U "$POSTGRES_USER" -lqt 2>/dev/null | grep -q "$WEBSITE_DB"; then
-    if docker exec mandari-postgres pg_dump -U "$POSTGRES_USER" "$WEBSITE_DB" > "$BACKUP_PATH/postgres_website.sql" 2>/dev/null; then
-        WDB_SIZE=$(du -h "$BACKUP_PATH/postgres_website.sql" | cut -f1)
-        log "  Website-DB: $WDB_SIZE"
+    if run_step_to_file "Website-DB sichern" "$BACKUP_PATH/postgres_website.sql" \
+        docker exec mandari-postgres pg_dump -U "$POSTGRES_USER" "$WEBSITE_DB"; then
+        if [ "$QUIET" = false ]; then
+            WDB_SIZE=$(du -h "$BACKUP_PATH/postgres_website.sql" | cut -f1)
+            info "  Website-DB: $WDB_SIZE"
+        fi
     else
         warn "  Website-DB-Backup fehlgeschlagen"
     fi
@@ -246,24 +444,26 @@ fi
 # =============================================================================
 # Backup Meilisearch (optional - kann neu aufgebaut werden)
 # =============================================================================
-log "Suchindex sichern..."
 if docker exec mandari-meilisearch curl -sf http://localhost:7700/health &>/dev/null; then
     SNAPSHOT_RESULT=$(docker exec mandari-meilisearch curl -sf -X POST http://localhost:7700/snapshots \
         -H "Authorization: Bearer ${MEILISEARCH_KEY}" 2>/dev/null || echo "")
     if [ -n "$SNAPSHOT_RESULT" ]; then
-        log "  Meilisearch-Snapshot erstellt"
+        if [ "$QUIET" = false ]; then
+            printf "  %-30s ${GREEN}✓${NC}\n" "Suchindex-Snapshot"
+        fi
     else
         warn "  Meilisearch-Snapshot fehlgeschlagen (Index kann neu aufgebaut werden)"
     fi
 else
-    warn "  Meilisearch läuft nicht. Suchindex-Backup übersprungen."
+    if [ "$QUIET" = false ]; then
+        warn "  Meilisearch läuft nicht. Suchindex-Backup übersprungen."
+    fi
 fi
 
 # =============================================================================
 # Backup Docker Volumes Info
 # =============================================================================
-log "Volume-Informationen erfassen..."
-docker volume ls --filter name=mandari > "$BACKUP_PATH/volumes.txt" 2>/dev/null || true
+run_step "Volume-Informationen" docker volume ls --filter name=mandari > "$BACKUP_PATH/volumes.txt" 2>/dev/null || true
 
 # =============================================================================
 # Backup Metadata
@@ -281,9 +481,8 @@ EOF
 # =============================================================================
 # Create Archive
 # =============================================================================
-log "Archiv erstellen..."
 ARCHIVE_FILE="$BACKUP_DIR/${BACKUP_NAME}.tar.gz"
-tar -czf "$ARCHIVE_FILE" -C "$BACKUP_DIR" "$BACKUP_NAME"
+run_step "Archiv erstellen" tar -czf "$ARCHIVE_FILE" -C "$BACKUP_DIR" "$BACKUP_NAME"
 
 # Cleanup temp directory
 rm -rf "$BACKUP_PATH"
@@ -301,10 +500,12 @@ if [ "$VERIFY" = true ]; then
     trap "rm -rf $VERIFY_DIR" EXIT
 
     # tar-Archiv testen
+    printf "  %-30s " "Archiv-Integrität"
     if tar -tzf "$ARCHIVE_FILE" > /dev/null 2>&1; then
-        log "  Archiv-Integrität: OK"
+        echo -e "${GREEN}✓${NC}"
     else
-        error "  Archiv-Integrität: FEHLGESCHLAGEN — Backup ist beschädigt!"
+        echo -e "${RED}✗${NC}"
+        error "  Archiv ist beschädigt!"
     fi
 
     # Inhalt extrahieren und pg_dump prüfen
@@ -312,40 +513,40 @@ if [ "$VERIFY" = true ]; then
     VERIFY_CONTENT="$VERIFY_DIR/$(ls "$VERIFY_DIR")"
 
     if [ -f "$VERIFY_CONTENT/postgres.sql" ]; then
-        # Prüfe ob pg_dump-Header vorhanden
+        printf "  %-30s " "Datenbank-Dump"
         if head -5 "$VERIFY_CONTENT/postgres.sql" | grep -q "PostgreSQL database dump"; then
-            log "  Datenbank-Dump: OK"
+            sql_size=$(du -h "$VERIFY_CONTENT/postgres.sql" | cut -f1)
+            echo -e "${GREEN}✓${NC} ($sql_size)"
         else
-            warn "  Datenbank-Dump: Header nicht gefunden — möglicherweise unvollständig"
+            echo -e "${YELLOW}⚠ Header nicht gefunden${NC}"
         fi
-
-        sql_size=$(du -h "$VERIFY_CONTENT/postgres.sql" | cut -f1)
-        log "  Datenbank-Größe: $sql_size"
     fi
 
+    printf "  %-30s " "Konfiguration"
     if [ -f "$VERIFY_CONTENT/.env" ]; then
-        log "  Konfiguration: OK"
+        echo -e "${GREEN}✓${NC}"
+    else
+        echo -e "${RED}✗${NC}"
     fi
 
+    printf "  %-30s " "Metadaten"
     if [ -f "$VERIFY_CONTENT/metadata.json" ]; then
-        log "  Metadaten: OK"
+        echo -e "${GREEN}✓${NC}"
+    else
+        echo -e "${RED}✗${NC}"
     fi
 
     rm -rf "$VERIFY_DIR"
-    log "Verifikation abgeschlossen"
+    echo ""
 fi
 
 # =============================================================================
 # Optional: S3 Upload
 # =============================================================================
 if [ -n "${S3_BACKUP_BUCKET:-}" ]; then
-    log "Backup nach S3 hochladen..."
     if command -v aws &>/dev/null; then
-        if aws s3 cp "$ARCHIVE_FILE" "s3://$S3_BACKUP_BUCKET/mandari/" 2>&1; then
-            log "  S3-Upload erfolgreich: s3://$S3_BACKUP_BUCKET/mandari/$(basename "$ARCHIVE_FILE")"
-        else
+        run_step "S3-Upload" aws s3 cp "$ARCHIVE_FILE" "s3://$S3_BACKUP_BUCKET/mandari/" || \
             warn "  S3-Upload fehlgeschlagen"
-        fi
     else
         warn "  AWS CLI nicht installiert. S3-Upload übersprungen."
     fi
@@ -357,11 +558,11 @@ fi
 if [ "$QUIET" = false ]; then
     echo ""
     echo -e "${GREEN}============================================${NC}"
-    echo -e "${GREEN}  Backup abgeschlossen${NC}"
+    echo -e "${GREEN}  Backup abgeschlossen!${NC}"
     echo -e "${GREEN}============================================${NC}"
     echo ""
-    echo "  Datei: $ARCHIVE_FILE"
-    echo "  Größe: $ARCHIVE_SIZE"
+    echo -e "  Datei:   $ARCHIVE_FILE"
+    echo -e "  Größe:   $ARCHIVE_SIZE"
     echo ""
     echo "  Inhalt:"
     echo "    - Konfiguration (.env)"
@@ -372,6 +573,8 @@ if [ "$QUIET" = false ]; then
     echo "  Wiederherstellen:"
     echo "    ./backup.sh --restore $ARCHIVE_FILE"
     echo ""
+    echo "  Logs:    cat $BACKUP_LOG"
+    echo ""
 fi
 
 # =============================================================================
@@ -379,8 +582,9 @@ fi
 # =============================================================================
 BACKUP_COUNT=$(ls -1 "$BACKUP_DIR"/*.tar.gz 2>/dev/null | wc -l || echo 0)
 if [ "$BACKUP_COUNT" -gt 7 ]; then
-    log "Alte Backups aufräumen (behalte letzte 7)..."
-    ls -1t "$BACKUP_DIR"/*.tar.gz | tail -n +8 | xargs rm -f
+    if [ "$QUIET" = false ]; then
+        run_step "Alte Backups aufräumen" bash -c "ls -1t '$BACKUP_DIR'/*.tar.gz | tail -n +8 | xargs rm -f"
+    else
+        ls -1t "$BACKUP_DIR"/*.tar.gz | tail -n +8 | xargs rm -f
+    fi
 fi
-
-log "Fertig!"

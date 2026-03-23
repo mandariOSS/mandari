@@ -10,7 +10,7 @@ from datetime import timedelta
 
 from django.core.paginator import Paginator
 from django.db.models import Exists, OuterRef, Q, Subquery
-from django.http import Http404, HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
@@ -797,7 +797,10 @@ class MeetingDetailView(DetailView):
         meeting = self.object
 
         # Tagesordnungspunkte mit batch-loaded Papers (vermeidet N+1 Queries)
-        agenda_items = list(meeting.agenda_items.all().order_by("order", "number"))
+        agenda_items = list(meeting.agenda_items.all())
+        # Natural sort: 1, 2, 10 instead of 1, 10, 2
+        import re
+        agenda_items.sort(key=lambda x: [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", x.number or "999") if p])
         if agenda_items:
             ext_ids = [item.external_id for item in agenda_items]
             # Alle Consultations + Papers in 1 Query laden
@@ -1351,11 +1354,11 @@ a{{color:#4f46e5;text-decoration:underline}}
 @xframe_options_exempt
 def file_proxy(request, file_id):
     """
-    Proxy für OParl-Dateien (PDFs etc.) — ermöglicht iframe-Embedding.
+    Streaming-Proxy für OParl-Dateien (PDFs etc.) — ermöglicht iframe-Embedding.
 
     Externe Server setzen X-Frame-Options, wodurch PDFs nicht im iframe
-    angezeigt werden können. Dieser Proxy lädt die Datei und liefert sie
-    mit korrekten Headern aus.
+    angezeigt werden können. Dieser Proxy streamt die Datei durch, ohne sie
+    komplett im RAM zu halten (konstanter Speicherverbrauch).
 
     Auch DSGVO-konform: Browser verbindet sich nicht direkt mit dem RIS-Server.
     """
@@ -1365,22 +1368,41 @@ def file_proxy(request, file_id):
     if not url:
         raise Http404("Keine Download-URL verfügbar")
 
+    # ?download=1 → Direkter Download statt Inline-Anzeige
+    force_download = request.GET.get("download") == "1"
+
     try:
-        upstream = httpx.get(
+        # Streaming-Request: Datei wird chunk-weise durchgereicht
+        with httpx.stream(
+            "GET",
             url,
             timeout=60.0,
             follow_redirects=True,
             headers={"User-Agent": "Mandari/1.0 (https://mandari.de)"},
-        )
-        upstream.raise_for_status()
+        ) as upstream:
+            upstream.raise_for_status()
 
-        content_type = file_obj.mime_type or upstream.headers.get("content-type", "application/octet-stream")
+            content_type = file_obj.mime_type or upstream.headers.get("content-type", "application/octet-stream")
 
-        response = HttpResponse(upstream.content, content_type=content_type)
-        response["Content-Disposition"] = "inline"
-        response["Cache-Control"] = "public, max-age=86400"  # 1 Tag
-        # Kein X-Frame-Options → iframe-Embedding erlaubt
-        return response
+            response = StreamingHttpResponse(
+                upstream.iter_bytes(chunk_size=65536),
+                content_type=content_type,
+            )
+
+            if force_download:
+                filename = file_obj.file_name or file_obj.name or "dokument.pdf"
+                response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            else:
+                response["Content-Disposition"] = "inline"
+
+            # Größe weiterleiten falls vorhanden
+            content_length = upstream.headers.get("content-length")
+            if content_length:
+                response["Content-Length"] = content_length
+
+            response["Cache-Control"] = "public, max-age=86400"  # 1 Tag
+            # Kein X-Frame-Options → iframe-Embedding erlaubt
+            return response
 
     except httpx.HTTPStatusError as e:
         return _file_proxy_error(

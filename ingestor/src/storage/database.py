@@ -127,6 +127,52 @@ class DatabaseStorage:
         """Get a new database session."""
         return self._session_factory()
 
+    async def write_sync_log(
+        self,
+        *,
+        source_id: UUID | None,
+        sync_type: str,
+        status: str,
+        started_at: datetime,
+        finished_at: datetime,
+        duration_seconds: float,
+        entities_synced: int,
+        errors: list[str],
+        details: dict,
+        triggered_by: str = "daemon",
+    ) -> None:
+        """Write a sync log entry to insight_sync_synclog (Django's SyncLog table)."""
+        import json
+
+        errors_json = json.dumps(errors or [])
+        details_json = json.dumps(details or {})
+
+        async with self.get_session() as session:
+            async with session.begin():
+                await session.execute(
+                    text(
+                        "INSERT INTO insight_sync_synclog"
+                        " (sync_type, status, started_at, finished_at, duration_seconds,"
+                        "  entities_synced, errors, details, triggered_by, source_id)"
+                        " VALUES"
+                        " (:sync_type, :status, :started_at, :finished_at, :duration_seconds,"
+                        "  :entities_synced, cast(:errors as jsonb), cast(:details as jsonb),"
+                        "  :triggered_by, :source_id)"
+                    ),
+                    {
+                        "sync_type": sync_type,
+                        "status": status,
+                        "started_at": started_at,
+                        "finished_at": finished_at,
+                        "duration_seconds": duration_seconds,
+                        "entities_synced": entities_synced,
+                        "errors": errors_json,
+                        "details": details_json,
+                        "triggered_by": triggered_by,
+                        "source_id": source_id,
+                    },
+                )
+
     # ========== Source Operations ==========
 
     async def upsert_source(

@@ -327,14 +327,19 @@ class SyncOrchestrator:
                     + result.agenda_items_synced + result.consultations_synced
                 )
 
+                end_time = datetime.now(timezone.utc)
+                duration = (end_time - start_time).total_seconds()
+
                 if self._event_emitter:
                     await self._event_emitter.emit_sync_completed(
                         source_url=url,
                         source_name=result.source_name,
-                        duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+                        duration_seconds=duration,
                         entities_synced=total_synced,
                         errors_count=len(result.errors),
                     )
+
+                # Sync log is written by the scheduler (one per cycle, not per source)
 
                 metrics.record_entities_batch(result.source_name, total_synced)
 
@@ -485,15 +490,44 @@ class SyncOrchestrator:
                     + result.consultations_synced
                 )
 
+                end_time = datetime.now(timezone.utc)
+                duration = (end_time - start_time).total_seconds()
+
                 # Emit sync completed event
                 if self._event_emitter:
                     await self._event_emitter.emit_sync_completed(
                         source_url=url,
                         source_name=result.source_name,
-                        duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+                        duration_seconds=duration,
                         entities_synced=total_synced,
                         errors_count=len(result.errors),
                     )
+
+                # Write sync log to Django's SyncLog table
+                try:
+                    await self.storage.write_sync_log(
+                        source_id=source_id,
+                        sync_type="full" if full else "incremental",
+                        status="success",
+                        started_at=start_time,
+                        finished_at=end_time,
+                        duration_seconds=duration,
+                        entities_synced=total_synced,
+                        errors=result.errors,
+                        details={
+                            "meetings": result.meetings_synced,
+                            "papers": result.papers_synced,
+                            "persons": result.persons_synced,
+                            "organizations": result.organizations_synced,
+                            "memberships": result.memberships_synced,
+                            "files": result.files_synced,
+                            "agenda_items": result.agenda_items_synced,
+                            "consultations": result.consultations_synced,
+                        },
+                        triggered_by="daemon",
+                    )
+                except Exception as log_err:
+                    console.print(f"[yellow]Warning: Could not write sync log: {log_err}[/yellow]")
 
                 # Record metrics
                 metrics.record_entities_batch(result.source_name, total_synced)
@@ -501,6 +535,8 @@ class SyncOrchestrator:
         except Exception as e:
             result.errors.append(str(e))
             console.print(f"[red]Sync failed: {e}[/red]")
+
+            # Sync log is written by the scheduler (one per cycle, not per source)
 
             # Emit sync failed event
             if self._event_emitter:

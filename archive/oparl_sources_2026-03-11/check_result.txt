@@ -1,0 +1,315 @@
+Prüfe 118 OParl-Endpoints...
+
+  [1/118] Stadt Bonn                                          [2/118] Stadt Aachen                                        [3/118] Stadt MÃ¼nster                                      [4/118] Stadt Leipzig                                       [5/118] Stadt KÃ¶ln                                         [6/118] Stadt Krefeld                                       [7/118] Stadt Wuppertal                                     [8/118] Landeshauptstadt DÃ¼sseldorf                        [9/118] Stadt Dresden                                       [10/118] Stadt Hagen                                         [11/118] MÃ¼nchen Transparent                                [12/118] Klingenstadt Solingen                               [13/118] Stadt Bergheim                                      [14/118] Stadt Willich                                       [15/118] Stadt Castrop-Rauxel                                [16/118] Stadt Freiburg                                      [17/118] Stadt Erftstadt                                     [18/118] Stadt Pulheim                                       [19/118] Stadt Rheda-WiedenbrÃ¼ck                            [20/118] Stadt Erkelenz                                      [21/118] Stadt Herford                                       [22/118] Stadt Ulm                                           [23/118] Stadt BrÃ¼hl                                        [24/118] Stadt Bad Kreuznach                                 [25/118] Stadt Pirmasens                                     [26/118] Stadt Goch                                          [27/118] Stadt JÃ¼lich                                       [28/118] Stadt Gronau                                        [29/118] Stadt Wesseling                                     [30/118] Kolpingstadt Kerpen                                 [31/118] Landkreis Ludwigslust-Parchim                       [32/118] Stadt Lahr/Schwarzwald                              [33/118] Stadt Emsdetten                                     [34/118] Landkreis MÃ¤rkisch-Oderland                        [35/118] Kreisverwaltung Euskirchen                          [36/118] Kreis GÃ¼tersloh                                    [37/118] Kreis Viersen                                       [38/118] Eschwege                                            [39/118] Regionalverband Ruhr                                [40/118] Stadt Enger                                         [41/118] Stadt Spenge                                        [42/118] Stadt Braunschweig                                  [43/118] Gemeinde Hiddenhausen                               [44/118] Stadt Vlotho                                        [45/118] Gemeinde Schwalmtal                                 [46/118] Gemeinde Kirchlengern                               [47/118] Gemeinde RÃ¶dinghausen                              [48/118] Gemeinde Aldenhoven                                 [49/118] Stadt Olpe                                          [50/118] Gemeinde Stemwede                                   [51/118] Gemeinde Ladbergen                                  [52/118] Gemeinde Nettersheim                                [53/118] Gemeinde Langenberg                                 [54/118] Gemeinde Weilerswist                                [55/118] Gemeinde Steinhagen                                 [56/118] Stadt Bad MÃ¼nstereifel                             [57/118] Stadt Rees                                          [58/118] Gemeinde Wachtendonk                                [59/118] Stadt Bedburg                                       [60/118] Aarbergen                                           [61/118] Leopoldshohe                                        [62/118] Kronberg im Taunus                                  [63/118] Stadt Bad Pyrmont                                   [64/118] Gemeinde Wallenhorst                                [65/118] Willingen                                           [66/118] Velen                                               [67/118] Gemeinde Schiffdorf                                 [68/118] Gemeinde Harsum                                     [69/118] Stadt Boppard                                       [70/118] Verbandsgemeinde Hagenbach                          [71/118] Amt Trave-Land                                      [72/118] Westerburg                                          [73/118] Stadt GroÃŸalmerode                                 [74/118] Verbandsgemeinde Weida-Land                         [75/118] Hessisch Lichtenau                                  [76/118] Amt Itzstedt                                        [77/118] Kreisstadt Homberg (Efze)                           [78/118] Stadt Parchim                                       [79/118] Gemeinde CÃ¶lbe                                     [80/118] Stadt Bleckede                                      [81/118] Herxheim                                            [82/118] Uplengen                                            [83/118] Gemeinde Waldbrunn im Westerwald                    [84/118] Gemeinde Lohfelden                                  [85/118] Stadt Rosbach                                       [86/118] Stadtverwaltung Ortenberg                           [87/118] Schmitten                                           [88/118] Homberg (Ohm)                                       [89/118] Schwarzenborn                                       [90/118] Gemeinde Fernwald                                   [91/118] Guxhagen                                            [92/118] Gemeinde Ehringshausen                              [93/118] Gemeinde GlashÃ¼tten                                [94/118] Emmelshausen                                        [95/118] Edenkoben                                           [96/118] Samtgemeinde SÃ¶gel                                 [97/118] Salzatal                                            [98/118] Enkenbach-Alsenborn                                 [99/118] Montabaur                                           [100/118] Gemeinde Inden                                      [101/118] Gemeinde HÃ¼rtgenwald                               [102/118] Rahden                                              [103/118] Gemeinde Kreuzau                                    [104/118] Gemeinde Merzenich                                  [105/118] Gemeinde Langerwehe                                 [106/118] Gemeinde NÃ¶rvenich                                 [107/118] Gemeinde Titz                                       [108/118] Gemeinde VettweiÃŸ                                  [109/118] Stadt Linnich                                       [110/118] OParl Mirror                                        [111/118] Politik bei Uns                                     [112/118] Gemeinde Kall                                       [113/118] Berlin Marzahn-Hellersdorf                          [114/118] Berlin Treptow-KÃ¶penick                            [115/118] Berlin Lichtenberg                                  [116/118] Berlin Steglitz-Zehlendorf                          [117/118] Berlin Reinickendorf                                [118/118] Berlin Pankow                                     
+
+============================================================================================================================================
+ERGEBNIS: 272 Bodies erreichbar, 22 Fehler
+============================================================================================================================================
+
+ Nr.  Status    Body-Name                                      Body-URL / Fehler
+--------------------------------------------------------------------------------------------------------------------------------------------
+   1  OK        Aachen                                         https://oparl.politik-bei-uns.de/body/5b92c3741d8f32e918458564
+   2  OK        Abwasserbeirat Itzstedt / Kayhude / Nahe / HSE  https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=1000006
+   3  OK        Aldenhoven                                     https://oparl.politik-bei-uns.de/body/5a428b9244875ce977202587
+   4  OK        Amt Itzstedt                                   https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=1
+   5  FEHLER    Amt Trave-Land                                 HTTP_404  (System: https://www.trave.sitzung-online.de/bi/oparl/1.0/system.asp)
+   6  OK        Bad Münstereifel                               https://oparl.politik-bei-uns.de/body/5a425d0e44875ce977ea93fb
+   7  OK        Bedburg                                        https://oparl.politik-bei-uns.de/body/5a42458944875ce977b6b484
+   8  OK        Berlin Charlottenburg-Wilmersdorf              https://oparl.politik-bei-uns.de/body/5614dd6e1ae6a01178c354aa
+   9  OK        Berlin Friedrichshain-Kreuzberg                https://oparl.politik-bei-uns.de/body/5614ddcd1ae6a01178c354ab
+  10  OK        Berlin Lichtenberg                             https://oparl.politik-bei-uns.de/body/5614d7591ae6a01178c354a0
+  11  FEHLER    Berlin Lichtenberg                             ERROR: The read operation timed out  (System: https://www.sitzungsdienst-lichtenberg.de/oi/oparl/1.0/system.asp)
+  12  OK        Berlin Marzahn-Hellersdorf                     https://oparl.politik-bei-uns.de/body/5614dc981ae6a01178c354a7
+  13  FEHLER    Berlin Marzahn-Hellersdorf                     HTTP_404  (System: https://www.sitzungsdienst-marzahn-hellersdorf.de/oi/oparl/1.1/system.asp)
+  14  OK        Berlin Mitte                                   https://oparl.politik-bei-uns.de/body/5614dcb81ae6a01178c354a8
+  15  OK        Berlin Neukölln                                https://oparl.politik-bei-uns.de/body/5614db111ae6a01178c354a6
+  16  OK        Berlin Pankow                                  https://oparl.politik-bei-uns.de/body/5614daf51ae6a01178c354a5
+  17  FEHLER    Berlin Pankow                                  BODY_FETCH_ERROR: The read operation timed out  (System: https://www.sitzungsdienst-pankow.de/oi/oparl/1.0/system.asp)
+  18  OK        Berlin Reinickendorf                           https://oparl.politik-bei-uns.de/body/5614d96f1ae6a01178c354a1
+  19  FEHLER    Berlin Reinickendorf                           ERROR: The read operation timed out  (System: https://www.sitzungsdienst-reinickendorf.de/oi/oparl/1.0/system.asp)
+  20  OK        Berlin Spandau                                 https://oparl.politik-bei-uns.de/body/5614dd471ae6a01178c354a9
+  21  OK        Berlin Steglitz Zehlendorf                     https://oparl.politik-bei-uns.de/body/5614da3f1ae6a01178c354a3
+  22  FEHLER    Berlin Steglitz-Zehlendorf                     ERROR: The read operation timed out  (System: https://www.sitzungsdienst-steglitz-zehlendorf.de/oi/oparl/1.0/system.asp)
+  23  OK        Berlin Tempelhof-Schöneberg                    https://oparl.politik-bei-uns.de/body/5614dac21ae6a01178c354a4
+  24  OK        Berlin Treptow Köpenick                        https://oparl.politik-bei-uns.de/body/5614d9a71ae6a01178c354a2
+  25  FEHLER    Berlin Treptow-KÃ¶penick                       ERROR: The read operation timed out  (System: https://www.sitzungsdienst-treptow-koepenick.de/oi/oparl/1.0/system.asp)
+  26  OK        Bezirksausschuss 10: Moosach                   https://www.muenchen-transparent.de/oparl/v1.0/body/10
+  27  OK        Bezirksausschuss 11: Milbertshofen-Am Hart     https://www.muenchen-transparent.de/oparl/v1.0/body/11
+  28  OK        Bezirksausschuss 12: Schwabing-Freimann        https://www.muenchen-transparent.de/oparl/v1.0/body/12
+  29  OK        Bezirksausschuss 13: Bogenhausen               https://www.muenchen-transparent.de/oparl/v1.0/body/13
+  30  OK        Bezirksausschuss 14: Berg am Laim              https://www.muenchen-transparent.de/oparl/v1.0/body/14
+  31  OK        Bezirksausschuss 15: Trudering-Riem            https://www.muenchen-transparent.de/oparl/v1.0/body/15
+  32  OK        Bezirksausschuss 16: Ramersdorf-Perlach        https://www.muenchen-transparent.de/oparl/v1.0/body/16
+  33  OK        Bezirksausschuss 17: Obergiesing-Fasangarten   https://www.muenchen-transparent.de/oparl/v1.0/body/17
+  34  OK        Bezirksausschuss 18: Untergiesing-Harlaching   https://www.muenchen-transparent.de/oparl/v1.0/body/18
+  35  OK        Bezirksausschuss 19: Thalkirchen-Obersendling-Forstenried-Fürstenried-Solln  https://www.muenchen-transparent.de/oparl/v1.0/body/19
+  36  OK        Bezirksausschuss 1: Altstadt-Lehel             https://www.muenchen-transparent.de/oparl/v1.0/body/1
+  37  OK        Bezirksausschuss 20: Hadern                    https://www.muenchen-transparent.de/oparl/v1.0/body/20
+  38  OK        Bezirksausschuss 21: Pasing-Obermenzing        https://www.muenchen-transparent.de/oparl/v1.0/body/21
+  39  OK        Bezirksausschuss 22: Aubing-Lochhausen-Langwied  https://www.muenchen-transparent.de/oparl/v1.0/body/22
+  40  OK        Bezirksausschuss 23: Allach-Untermenzing       https://www.muenchen-transparent.de/oparl/v1.0/body/23
+  41  OK        Bezirksausschuss 24: Feldmoching-Hasenbergl    https://www.muenchen-transparent.de/oparl/v1.0/body/24
+  42  OK        Bezirksausschuss 25: Laim                      https://www.muenchen-transparent.de/oparl/v1.0/body/25
+  43  OK        Bezirksausschuss 2: Ludwigsvorstadt-Isarvorstadt  https://www.muenchen-transparent.de/oparl/v1.0/body/2
+  44  OK        Bezirksausschuss 3: Maxvorstadt                https://www.muenchen-transparent.de/oparl/v1.0/body/3
+  45  OK        Bezirksausschuss 4: Schwabing-West             https://www.muenchen-transparent.de/oparl/v1.0/body/4
+  46  OK        Bezirksausschuss 5: Au-Haidhausen              https://www.muenchen-transparent.de/oparl/v1.0/body/5
+  47  OK        Bezirksausschuss 6: Sendling                   https://www.muenchen-transparent.de/oparl/v1.0/body/6
+  48  OK        Bezirksausschuss 7: Sendling-Westpark          https://www.muenchen-transparent.de/oparl/v1.0/body/7
+  49  OK        Bezirksausschuss 8: Schwanthalerhöhe           https://www.muenchen-transparent.de/oparl/v1.0/body/8
+  50  OK        Bezirksausschuss 9: Neuhausen-Nymphenburg      https://www.muenchen-transparent.de/oparl/v1.0/body/9
+  51  OK        Bochum                                         https://oparl.politik-bei-uns.de/body/549ad6881ae6a038f9b5e1a1
+  52  OK        Brühl                                          https://oparl.politik-bei-uns.de/body/5a427bc544875ce9770f760e
+  53  OK        EUV                                            https://castroprauxel.gremien.info/oparl/body/EUV
+  54  FEHLER    Edenkoben                                      NO_BODY_FIELD  (System: https://edenkoben.gremien.info/oparl/system)
+  55  OK        Erftstadt                                      https://oparl.politik-bei-uns.de/body/5a4243f744875ce977aca94b
+  56  OK        Erkelenz                                       https://oparl.politik-bei-uns.de/body/5a6ca2c6835b944a49fc7861
+  57  FEHLER    Eschwege                                       HTTP_400  (System: https://rim.ekom21.de/eschwege/webservice/oparl/v1.1/system)
+  58  OK        Gemeinde Aarbergen                             https://rim.ekom21.de/aarbergen/webservice/oparl/v1.1/body/1
+  59  OK        Gemeinde Aldenhoven                            https://ratsinfo.aldenhoven.de/webservice/oparl/v1.1/body/1
+  60  OK        Gemeinde Barnstädt                             https://weida-land.gremien.info/oparl/body/GemB
+  61  OK        Gemeinde Cölbe                                 https://rim.ekom21.de/coelbe/webservice/oparl/v1.1/body/1
+  62  OK        Gemeinde Ehringshausen                         https://rim.ekom21.de/ehringshausen/webservice/oparl/v1.1/body/1
+  63  OK        Gemeinde Farnstädt                             https://weida-land.gremien.info/oparl/body/GemF
+  64  OK        Gemeinde Fernwald                              https://rim.ekom21.de/fernwald/webservice/oparl/v1.1/body/1
+  65  OK        Gemeinde Glashütten                            https://rim.ekom21.de/glashuetten/webservice/oparl/v1.1/body/1
+  66  OK        Gemeinde Guxhagen                              https://rim.ekom21.de/guxhagen/webservice/oparl/v1.1/body/1
+  67  FEHLER    Gemeinde Harsum                                HTTP_500  (System: https://www.harsum.sitzung-online.de/bi/oparl/1.0/system.asp)
+  68  OK        Gemeinde Hiddenhausen                          https://hiddenhausen.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+  69  OK        Gemeinde Hürtgenwald                           https://sdnetrim.kdvz-frechen.de/rim4220/webservice/oparl/v1.1/body/1
+  70  OK        Gemeinde Inden                                 https://sdnetrim.kdvz-frechen.de/rim4230/webservice/oparl/v1.1/body/1
+  71  OK        Gemeinde Itzstedt                              https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=4
+  72  OK        Gemeinde Kall                                  https://sdnetrim.kdvz-frechen.de/rim4550/webservice/oparl/v1.1/body/1
+  73  OK        Gemeinde Kayhude                               https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=5
+  74  OK        Gemeinde Kirchlengern                          https://kirchlengern.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+  75  OK        Gemeinde Kreuzau                               https://sdnetrim.kdvz-frechen.de/rim4250/webservice/oparl/v1.1/body/1
+  76  OK        Gemeinde Ladbergen                             https://ladbergen.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+  77  OK        Gemeinde Langenberg                            https://ratsinfo.langenberg.de/webservice/oparl/v1.0/body/1
+  78  OK        Gemeinde Langerwehe                            https://sdnetrim.kdvz-frechen.de/rim4260/webservice/oparl/v1.1/body/1
+  79  OK        Gemeinde Leopoldshöhe                          https://leopoldshoehe.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+  80  OK        Gemeinde Lohfelden                             https://lohfelden.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+  81  OK        Gemeinde Merzenich                             https://sdnetrim.kdvz-frechen.de/rim4280/webservice/oparl/v1.1/body/1
+  82  OK        Gemeinde Nahe                                  https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=6
+  83  OK        Gemeinde Nemsdorf-Göhrendorf                   https://weida-land.gremien.info/oparl/body/GemNG
+  84  OK        Gemeinde Nettersheim                           https://sdnetrim.kdvz-frechen.de/rim4580/webservice/oparl/v1.1/body/1
+  85  OK        Gemeinde Nörvenich                             https://sdnetrim.kdvz-frechen.de/rim4160/webservice/oparl/v1.1/body/1
+  86  OK        Gemeinde Obhausen                              https://weida-land.gremien.info/oparl/body/GemO
+  87  OK        Gemeinde Oering                                https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=7
+  88  OK        Gemeinde Rödinghausen                          https://roedinghausen.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+  89  OK        Gemeinde Schiffdorf                            https://schiffdorf.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+  90  OK        Gemeinde Schmitten im Taunus                   https://rim.ekom21.de/schmitten/webservice/oparl/v1.1/body/1
+  91  OK        Gemeinde Schwalmtal                            https://ris.schwalmtal.de/webservice/oparl/v1.1/body/1
+  92  OK        Gemeinde Seth                                  https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=8
+  93  OK        Gemeinde Steigra                               https://weida-land.gremien.info/oparl/body/GemS
+  94  OK        Gemeinde Steinhagen                            https://ratsinfo.steinhagen.de/webservice/oparl/v1.1/body/1
+  95  OK        Gemeinde Stemwede                              https://stemwede.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+  96  OK        Gemeinde Sülfeld                               https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=9
+  97  OK        Gemeinde Tangstedt                             https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=10
+  98  OK        Gemeinde Titz                                  https://sdnetrim.kdvz-frechen.de/rim4170/webservice/oparl/v1.1/body/1
+  99  OK        Gemeinde Uplengen                              https://uplengen.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 100  OK        Gemeinde Vettweiß                              https://sdnetrim.kdvz-frechen.de/rim4180/webservice/oparl/v1.1/body/1
+ 101  OK        Gemeinde Wachtendonk                           https://ris.wachtendonk.de/webservice/oparl/v1.1/body/1
+ 102  OK        Gemeinde Waldbrunn im Westerwald               https://rim.ekom21.de/waldbrunn/webservice/oparl/v1.1/body/1
+ 103  OK        Gemeinde Wallenhorst                           https://wallenhorst.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 104  OK        Gemeinde Weilerswist                           https://sdnetrim.kdvz-frechen.de/rim4510/webservice/oparl/v1.1/body/1
+ 105  OK        Gemeinde Willingen (Upland)                    https://rim.ekom21.de/willingen/webservice/oparl/v1.1/body/1
+ 106  OK        Hürtgenwald                                    https://oparl.politik-bei-uns.de/body/5a4243f744875ce977aca948
+ 107  OK        Inden                                          https://oparl.politik-bei-uns.de/body/5a429a6a44875ce9772d62df
+ 108  OK        Instance 0001                                  http://oparl.wuppertal.de/oparl/bodies/0001
+ 109  OK        Instance 0001                                  http://oparl.dresden.de/bodies/0001
+ 110  OK        Instance 0001                                  https://oparl.stadt-pirmasens.de/oparl/bodies/0001
+ 111  OK        Jülich                                         https://oparl.politik-bei-uns.de/body/5a4251d944875ce977d70a8e
+ 112  OK        Kall                                           https://oparl.politik-bei-uns.de/body/5a4243f944875ce977acc0b5
+ 113  OK        Kamen                                          https://oparl.politik-bei-uns.de/body/566349fe1ae6a0740409c270
+ 114  OK        Kerpen                                         https://oparl.politik-bei-uns.de/body/5a427aa244875ce9770dfc0c
+ 115  OK        Kindergartenzweckverband Gackenbach-Horbach    https://montabaur.gremien.info/oparl/body/44Gac
+ 116  OK        Kindergartenzweckverband Heilberscheid-Nomborn  https://montabaur.gremien.info/oparl/body/45Hei
+ 117  OK        Klingenstadt Solingen                          https://sdnetrim.kdvz-frechen.de/rim4957/webservice/oparl/v1.1/body/1
+ 118  OK        Kolpingstadt Kerpen                            https://ratsinfo.stadt-kerpen.de/webservice/oparl/v1.0/body/1
+ 119  OK        Krefeld                                        https://oparl.politik-bei-uns.de/body/5c476a1b2c66dc3b52c4c9cf
+ 120  OK        Kreis Euskirchen                               https://oparl.politik-bei-uns.de/body/5a4243f844875ce977acb348
+ 121  OK        Kreis Gütersloh                                https://sdnetrim.kdvz-frechen.de/rim4890/webservice/oparl/v1.1/body/1
+ 122  OK        Kreis Unna                                     https://oparl.politik-bei-uns.de/body/566344c81ae6a0740409c26e
+ 123  OK        Kreis Viersen                                  https://kis.kreis-viersen.de/webservice/oparl/v1.0/body/1
+ 124  OK        Kreis Viersen                                  https://oparl.politik-bei-uns.de/body/5b93e06c1d8f32e918743b14
+ 125  OK        Kreisstadt Homberg (Efze)                      https://rim.ekom21.de/homberg-efze/webservice/oparl/v1.1/body/1
+ 126  OK        Kreisverwaltung Euskirchen                     https://sdnetrim.kdvz-frechen.de/rim4520/webservice/oparl/v1.1/body/1
+ 127  OK        Kreuzau                                        https://oparl.politik-bei-uns.de/body/5a424a7e44875ce977c68967
+ 128  OK        Köln                                           https://oparl.politik-bei-uns.de/body/549ad6b51ae6a038f9b5e1a3
+ 129  FEHLER    Landkreis Ludwigslust-Parchim                  URL_ERROR: [Errno 11001] getaddrinfo failed  (System: https://www.lwl-pch.sitzung-online.de/bi/oparl/1.0/system.asp)
+ 130  OK        Landkreis Ludwigslust-Parchim                  https://oparl.politik-bei-uns.de/body/5a73013af24bb7ed5127a72a
+ 131  OK        Landkreis Märkisch-Oderland                    https://ratsinfo-online.net/landkreis-mol-bi/oparl/1.0/bodies.asp?id=1
+ 132  OK        Langerwehe                                     https://oparl.politik-bei-uns.de/body/5a42744c44875ce977075062
+ 133  OK        Leipzig                                        https://oparl.politik-bei-uns.de/body/5c07eb7b2c66dc3b523ef15c
+ 134  OK        Leopoldshöhe                                   https://oparl.politik-bei-uns.de/body/5a4243f844875ce977acb30d
+ 135  OK        Linnich                                        https://oparl.politik-bei-uns.de/body/5a4254da44875ce977dd55df
+ 136  OK        Merzenich                                      https://oparl.politik-bei-uns.de/body/5a4248c844875ce977c1ef4d
+ 137  OK        Moers                                          https://oparl.politik-bei-uns.de/body/549ad6a31ae6a038f9b5e1a2
+ 138  OK        Nettersheim                                    https://oparl.politik-bei-uns.de/body/5a426fd244875ce9770255fd
+ 139  OK        Nörvenich                                      https://oparl.politik-bei-uns.de/body/5a4272f344875ce97705cd0b
+ 140  FEHLER    OParl Mirror                                   URL_ERROR: [Errno 11001] getaddrinfo failed  (System: https://mirror.oparl.org/system)
+ 141  OK        Ortsbezirk Hayna                               https://herxheim.gremien.info/oparl/body/6
+ 142  OK        Ortsgemeinde Ailertchen                        https://westerburg.gremien.info/oparl/body/01
+ 143  OK        Ortsgemeinde Bellingen                         https://westerburg.gremien.info/oparl/body/02
+ 144  OK        Ortsgemeinde Berg (Pfalz)                      https://www.hagenbach.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=5
+ 145  OK        Ortsgemeinde Berzhahn                          https://westerburg.gremien.info/oparl/body/03
+ 146  OK        Ortsgemeinde Bickenbach                        https://emmelshausen.gremien.info/oparl/body/Bic
+ 147  OK        Ortsgemeinde Boden                             https://montabaur.gremien.info/oparl/body/02Bod
+ 148  OK        Ortsgemeinde Brandscheid                       https://westerburg.gremien.info/oparl/body/04
+ 149  OK        Ortsgemeinde Daubach                           https://montabaur.gremien.info/oparl/body/03Dau
+ 150  OK        Ortsgemeinde Eitelborn                         https://montabaur.gremien.info/oparl/body/04Eit
+ 151  OK        Ortsgemeinde Enkenbach-Alsenborn               https://enkenbach-alsenborn.gremien.info/oparl/body/OGEA
+ 152  OK        Ortsgemeinde Enspel                            https://westerburg.gremien.info/oparl/body/05
+ 153  OK        Ortsgemeinde Fischbach                         https://enkenbach-alsenborn.gremien.info/oparl/body/OGFIBA
+ 154  OK        Ortsgemeinde Frankenstein                      https://enkenbach-alsenborn.gremien.info/oparl/body/OGFRA
+ 155  OK        Ortsgemeinde Gackenbach                        https://montabaur.gremien.info/oparl/body/05Gac
+ 156  OK        Ortsgemeinde Gemünden                          https://westerburg.gremien.info/oparl/body/06
+ 157  OK        Ortsgemeinde Girkenroth                        https://westerburg.gremien.info/oparl/body/07
+ 158  OK        Ortsgemeinde Girod                             https://montabaur.gremien.info/oparl/body/06Gir
+ 159  OK        Ortsgemeinde Großholbach                       https://montabaur.gremien.info/oparl/body/08Gro
+ 160  OK        Ortsgemeinde Guckheim                          https://westerburg.gremien.info/oparl/body/08
+ 161  OK        Ortsgemeinde Görgeshausen                      https://montabaur.gremien.info/oparl/body/07Goe
+ 162  OK        Ortsgemeinde Halbs                             https://westerburg.gremien.info/oparl/body/10
+ 163  OK        Ortsgemeinde Heilberscheid                     https://montabaur.gremien.info/oparl/body/09Hei
+ 164  OK        Ortsgemeinde Heiligenroth                      https://montabaur.gremien.info/oparl/body/10Hei
+ 165  OK        Ortsgemeinde Hergenroth                        https://westerburg.gremien.info/oparl/body/11
+ 166  OK        Ortsgemeinde Herxheim                          https://herxheim.gremien.info/oparl/body/2
+ 167  OK        Ortsgemeinde Herxheimweyher                    https://herxheim.gremien.info/oparl/body/5
+ 168  OK        Ortsgemeinde Hochspeyer                        https://enkenbach-alsenborn.gremien.info/oparl/body/OGHSP
+ 169  OK        Ortsgemeinde Holler                            https://montabaur.gremien.info/oparl/body/11Hol
+ 170  OK        Ortsgemeinde Horbach                           https://montabaur.gremien.info/oparl/body/12Hor
+ 171  OK        Ortsgemeinde Härtlingen                        https://westerburg.gremien.info/oparl/body/09
+ 172  OK        Ortsgemeinde Höhn                              https://westerburg.gremien.info/oparl/body/12
+ 173  OK        Ortsgemeinde Hübingen                          https://montabaur.gremien.info/oparl/body/13Hue
+ 174  OK        Ortsgemeinde Insheim                           https://herxheim.gremien.info/oparl/body/3
+ 175  OK        Ortsgemeinde Kaden                             https://westerburg.gremien.info/oparl/body/13
+ 176  OK        Ortsgemeinde Kadenbach                         https://montabaur.gremien.info/oparl/body/14Kad
+ 177  OK        Ortsgemeinde Karbach                           https://emmelshausen.gremien.info/oparl/body/Kar
+ 178  OK        Ortsgemeinde Kölbingen                         https://westerburg.gremien.info/oparl/body/14
+ 179  OK        Ortsgemeinde Langenhahn                        https://westerburg.gremien.info/oparl/body/15
+ 180  OK        Ortsgemeinde Mehlingen                         https://enkenbach-alsenborn.gremien.info/oparl/body/OGM
+ 181  OK        Ortsgemeinde Nentershausen                     https://montabaur.gremien.info/oparl/body/15Nen
+ 182  OK        Ortsgemeinde Neuburg am Rhein                  https://www.hagenbach.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=2
+ 183  OK        Ortsgemeinde Neuhemsbach                       https://enkenbach-alsenborn.gremien.info/oparl/body/OGN
+ 184  OK        Ortsgemeinde Neuhäusel                         https://montabaur.gremien.info/oparl/body/16Neu
+ 185  OK        Ortsgemeinde Niederelbert                      https://montabaur.gremien.info/oparl/body/17Nie
+ 186  OK        Ortsgemeinde Niedererbach                      https://montabaur.gremien.info/oparl/body/18Nie
+ 187  OK        Ortsgemeinde Nomborn                           https://montabaur.gremien.info/oparl/body/19Nom
+ 188  OK        Ortsgemeinde Oberelbert                        https://montabaur.gremien.info/oparl/body/20Obe
+ 189  OK        Ortsgemeinde Pottum                            https://westerburg.gremien.info/oparl/body/16
+ 190  OK        Ortsgemeinde Rohrbach                          https://herxheim.gremien.info/oparl/body/4
+ 191  OK        Ortsgemeinde Rotenhain                         https://westerburg.gremien.info/oparl/body/17
+ 192  OK        Ortsgemeinde Rothenbach                        https://westerburg.gremien.info/oparl/body/18
+ 193  OK        Ortsgemeinde Ruppach-Goldhausen                https://montabaur.gremien.info/oparl/body/21Rug
+ 194  OK        Ortsgemeinde Scheibenhardt                     https://www.hagenbach.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=4
+ 195  OK        Ortsgemeinde Sembach                           https://enkenbach-alsenborn.gremien.info/oparl/body/OGS
+ 196  OK        Ortsgemeinde Simmern                           https://montabaur.gremien.info/oparl/body/22Sim
+ 197  OK        Ortsgemeinde Stahlhofen                        https://montabaur.gremien.info/oparl/body/23Sta
+ 198  OK        Ortsgemeinde Stahlhofen a.W.                   https://westerburg.gremien.info/oparl/body/19
+ 199  OK        Ortsgemeinde Stockum-Püschen                   https://westerburg.gremien.info/oparl/body/20
+ 200  OK        Ortsgemeinde Untershausen                      https://montabaur.gremien.info/oparl/body/24Unt
+ 201  OK        Ortsgemeinde Waldleiningen                     https://enkenbach-alsenborn.gremien.info/oparl/body/OGWDL
+ 202  OK        Ortsgemeinde Welschneudorf                     https://montabaur.gremien.info/oparl/body/25Wel
+ 203  OK        Ortsgemeinde Weltersburg                       https://westerburg.gremien.info/oparl/body/21
+ 204  OK        Ortsgemeinde Willmenrod                        https://westerburg.gremien.info/oparl/body/23
+ 205  OK        Ortsgemeinde Winnen                            https://westerburg.gremien.info/oparl/body/24
+ 206  OK        Politik bei Uns                                https://oparl.politik-bei-uns.de/body/5b92c3741d8f32e918458513
+ 207  OK        Politik bei Uns                                https://oparl.politik-bei-uns.de/body/5c065d9e2c66dc3b52d3995c
+ 208  OK        Politik bei Uns                                https://oparl.politik-bei-uns.de/body/5c48170b2c66dc3b52c89470
+ 209  OK        Pulheim                                        https://oparl.politik-bei-uns.de/body/5a427f6144875ce97713a6ea
+ 210  OK        Regionalverband Ruhr                           https://ruhrparlament.de/oparl/body/RVR
+ 211  OK        Rosbach v. d. Höhe                             https://www.rosbach.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=1
+ 212  FEHLER    Salzatal                                       NO_BODY_FIELD  (System: https://salzatal.gremien.info/oparl/system)
+ 213  OK        Samtgemeinde Sögel                             https://soegel.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 214  OK        Schulverband im Amt Itzstedt                   https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=1000001
+ 215  OK        Schulzweckverband IGS Enkenbach-Alsenborn      https://enkenbach-alsenborn.gremien.info/oparl/body/SZVIGS
+ 216  OK        Schwalmtal                                     https://oparl.politik-bei-uns.de/body/5c065d9e2c66dc3b52d39926
+ 217  OK        Stadrat der Landeshauptstadt München           https://www.muenchen-transparent.de/oparl/v1.0/body/0
+ 218  FEHLER    Stadt Aachen                                   HTTP_404  (System: https://ratsinfo.aachen.de/bi/oparl/1.0/system.asp)
+ 219  OK        Stadt Bad Kreuznach                            https://bad-kreuznach-stadt.gremien.info/oparl/body/KH
+ 220  OK        Stadt Bad Münstereifel                         https://ratsinfo.bad-muenstereifel.de/webservice/oparl/v1.1/body/1
+ 221  OK        Stadt Bad Pyrmont                              https://badpyrmont.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 222  OK        Stadt Bedburg                                  https://sdnetrim.kdvz-frechen.de/rim4780/webservice/oparl/v1.1/body/1
+ 223  OK        Stadt Bergheim                                 https://sdnetrim.kdvz-frechen.de/rim4800/webservice/oparl/v1.1/body/1
+ 224  FEHLER    Stadt Bleckede                                 HTTP_500  (System: https://www.bleckede.sitzung-online.de/bi/oparl/1.0/system.asp)
+ 225  FEHLER    Stadt Bonn                                     HTTP_500  (System: https://www.bonn.sitzung-online.de/public/oparl/system)
+ 226  OK        Stadt Braunschweig                             https://ratsinfo.braunschweig.de/bi/oparl/1.0/bodies.asp?id=1
+ 227  OK        Stadt Brühl                                    https://ratsinfo.bruehl.de/webservice/oparl/v1.1/body/1
+ 228  OK        Stadt Castrop-Rauxel                           https://castroprauxel.gremien.info/oparl/body/CAS
+ 229  OK        Stadt Duesseldorf                              http://ris-oparl.itk-rheinland.de/Oparl/bodies/0015
+ 230  OK        Stadt Emmelshausen                             https://emmelshausen.gremien.info/oparl/body/Emm
+ 231  OK        Stadt Emsdetten                                https://emsdetten.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 232  OK        Stadt Enger                                    https://enger.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 233  OK        Stadt Erftstadt                                https://sdnetrim.kdvz-frechen.de/rim4490/webservice/oparl/v1.1/body/1
+ 234  FEHLER    Stadt Erkelenz                                 HTTP_404  (System: https://ratsinfo.erkelenz.de/bi/oparl/1.0/system.asp)
+ 235  OK        Stadt Goch                                     https://ris.goch.de/webservice/oparl/v1.1/body/1
+ 236  OK        Stadt Gronau                                   https://gronau.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 237  OK        Stadt Großalmerode                             https://rim.ekom21.de/grossalmerode/webservice/oparl/v1.1/body/1
+ 238  FEHLER    Stadt Hagen                                    HTTP_404  (System: https://www.hagen.de/buergerinfo/oparl/1.0/system.asp)
+ 239  OK        Stadt Hagenbach                                https://www.hagenbach.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=3
+ 240  OK        Stadt Herford                                  https://herford.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 241  OK        Stadt Hessisch Lichtenau                       https://rim.ekom21.de/hessisch-lichtenau/webservice/oparl/v1.1/body/1
+ 242  OK        Stadt Homberg (Ohm)                            https://rim.ekom21.de/homberg-ohm/webservice/oparl/v1.1/body/1
+ 243  OK        Stadt Jülich                                   https://sdnetrim.kdvz-frechen.de/rim4240/webservice/oparl/v1.1/body/1
+ 244  OK        Stadt Krefeld                                  https://ris.krefeld.de/webservice/oparl/v1.1/body/1
+ 245  OK        Stadt Kronberg im Taunus                       https://kronberg.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 246  OK        Stadt Köln, kreisfreie Stadt                   https://buergerinfo.stadt-koeln.de/oparl/bodies/stadtverwaltung_koeln
+ 247  OK        Stadt Lahr                                     https://lahr.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 248  OK        Stadt Leipzig                                  https://ratsinformation.leipzig.de/allris_leipzig_public/oparl/bodies?id=2387
+ 249  OK        Stadt Linnich                                  https://sdnetrim.kdvz-frechen.de/rim4270/webservice/oparl/v1.1/body/1
+ 250  OK        Stadt Montabaur                                https://montabaur.gremien.info/oparl/body/01Stadt
+ 251  OK        Stadt Münster                                  https://oparl.stadt-muenster.de/bodies/0001
+ 252  OK        Stadt Neuss                                    http://ris-oparl.itk-rheinland.de/Oparl/bodies/0009
+ 253  OK        Stadt Oberwesel                                https://emmelshausen.gremien.info/oparl/body/Obe
+ 254  FEHLER    Stadt Olpe                                     URL_ERROR: [Errno 11001] getaddrinfo failed  (System: https://sitzungsdienst.kdz-ws.net/gkz330/webservice/oparl/v1.1/system)
+ 255  OK        Stadt Parchim                                  https://www.parchim.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=1
+ 256  OK        Stadt Pulheim                                  https://sdnetrim.kdvz-frechen.de/rim4350/webservice/oparl/v1.1/body/1
+ 257  OK        Stadt Rahden                                   https://rahden.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 258  FEHLER    Stadt Rees                                     HTTP_401  (System: https://sessionnet-oparl.krz.de/oparl/bodies/5205)
+ 259  OK        Stadt Rheda-Wiedenbrück                        https://ratsinfo.rheda-wiedenbrueck.de/webservice/oparl/v1.1/body/1
+ 260  OK        Stadt Sankt Goar                               https://emmelshausen.gremien.info/oparl/body/Goa
+ 261  OK        Stadt Schraplau                                https://weida-land.gremien.info/oparl/body/StadtS
+ 262  OK        Stadt Schwarzenborn                            https://rim.ekom21.de/schwarzenborn/webservice/oparl/v1.1/body/1
+ 263  OK        Stadt Spenge                                   https://spenge.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 264  FEHLER    Stadt Ulm                                      HTTP_404  (System: https://buergerinfo.ulm.de/oparl/system)
+ 265  OK        Stadt Velen                                    https://velen.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 266  OK        Stadt Vlotho                                   https://vlotho.ratsinfomanagement.net/webservice/oparl/v1.1/body/1
+ 267  OK        Stadt Wesseling                                https://ratsinfo.wesseling.de/webservice/oparl/v1.1/body/1
+ 268  OK        Stadt Westerburg                               https://westerburg.gremien.info/oparl/body/22
+ 269  OK        Stadt Willich                                  https://ris.stadt-willich.de/webservice/oparl/v1.1/body/1
+ 270  OK        Stadtrat                                       https://www.boppard.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=1
+ 271  OK        Stadtverwaltung Freiburg                       https://ris.freiburg.de/oparl/body/FR
+ 272  FEHLER    Stadtverwaltung Ortenberg                      HTTP_400  (System: https://rim.ekom21.de/ortenberg/webservice/oparl/v1.1/system)
+ 273  OK        Steinhagen                                     https://oparl.politik-bei-uns.de/body/5aa2f906d43196d9028a9a02
+ 274  OK        Stemwede                                       https://oparl.politik-bei-uns.de/body/5a740d6af24bb7ed5173ec8f
+ 275  OK        Titz                                           https://oparl.politik-bei-uns.de/body/5a42697444875ce977facd2f
+ 276  OK        Ulm                                            https://oparl.politik-bei-uns.de/body/5614e69d1ae6a03e7a661225
+ 277  OK        Unna                                           https://oparl.politik-bei-uns.de/body/566348611ae6a0740409c26f
+ 278  OK        VEGA-net GmbH                                  https://enkenbach-alsenborn.gremien.info/oparl/body/VEGA-net
+ 279  OK        Verbandsgemeinde Emmelshausen                  https://emmelshausen.gremien.info/oparl/body/VG
+ 280  OK        Verbandsgemeinde Enkenbach-Alsenborn           https://enkenbach-alsenborn.gremien.info/oparl/body/VGEA
+ 281  OK        Verbandsgemeinde Hagenbach                     https://www.hagenbach.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=1
+ 282  OK        Verbandsgemeinde Herxheim                      https://herxheim.gremien.info/oparl/body/1
+ 283  OK        Verbandsgemeinde Hunsrück-Mittelrhein          https://emmelshausen.gremien.info/oparl/body/VG_HM
+ 284  OK        Verbandsgemeinde Montabaur                     https://montabaur.gremien.info/oparl/body/00VG
+ 285  OK        Verbandsgemeinde Weida-Land                    https://weida-land.gremien.info/oparl/body/VGR
+ 286  OK        Verbandsgemeinde Westerburg                    https://westerburg.gremien.info/oparl/body/50
+ 287  OK        Vettweiß                                       https://oparl.politik-bei-uns.de/body/5a424c3a44875ce977cb0243
+ 288  OK        Waldgemark Neukirchen, Mehlingen, Baalborn     https://enkenbach-alsenborn.gremien.info/oparl/body/WGNMB
+ 289  OK        Weilerswist                                    https://oparl.politik-bei-uns.de/body/5a959fb3d43196d9029e03fc
+ 290  OK        Wesseling                                      https://oparl.politik-bei-uns.de/body/5a4243f744875ce977aca949
+ 291  OK        Willich                                        https://oparl.politik-bei-uns.de/body/5a70bbe0835b944a49c61b66
+ 292  OK        Wuppertal                                      https://oparl.politik-bei-uns.de/body/54eaf4911ae6a017fc442c3a
+ 293  OK        Zweckverband Friedhof Nahe                     https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/bodies.asp?id=1000002
+ 294  OK        Zweckverband Stöffelpark                       https://westerburg.gremien.info/oparl/body/45
+
+============================================================================================================================================
+NICHT ERREICHBAR (22):
+============================================================================================================================================
+Traceback (most recent call last):
+  File "D:\10_Coding\mandari.de\dev\check_oparl_sources.py", line 163, in <module>
+    print(f"  \u2717 {body_name:<45s}  {sys_url}")
+  File "C:\Users\Sven\AppData\Local\Programs\Python\Python312\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2717' in position 2: character maps to <undefined>
