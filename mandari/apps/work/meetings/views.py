@@ -20,7 +20,7 @@ def natural_sort_key(item):
     """Sort agenda items naturally: 1, 2, 10, 11 instead of 1, 10, 11, 2."""
     number = item.number or "999"
     parts = re.split(r"(\d+)", str(number))
-    return [int(p) if p.isdigit() else p.lower() for p in parts if p]
+    return [(0, int(p)) if p.isdigit() else (1, p.lower()) for p in parts if p]
 from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting, OParlOrganization
 
 from .models import (

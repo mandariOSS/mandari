@@ -800,7 +800,7 @@ class MeetingDetailView(DetailView):
         agenda_items = list(meeting.agenda_items.all())
         # Natural sort: 1, 2, 10 instead of 1, 10, 2
         import re
-        agenda_items.sort(key=lambda x: [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", x.number or "999") if p])
+        agenda_items.sort(key=lambda x: [(0, int(p)) if p.isdigit() else (1, p.lower()) for p in re.split(r"(\d+)", x.number or "999") if p])
         if agenda_items:
             ext_ids = [item.external_id for item in agenda_items]
             # Alle Consultations + Papers in 1 Query laden

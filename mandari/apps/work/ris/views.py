@@ -385,7 +385,7 @@ class RISMeetingDetailView(WorkViewMixin, TemplateView):
         import re
         agenda_items = sorted(
             meeting.agenda_items.all(),
-            key=lambda x: [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", x.number or "999") if p]
+            key=lambda x: [(0, int(p)) if p.isdigit() else (1, p.lower()) for p in re.split(r"(\d+)", x.number or "999") if p]
         )
 
         # Enrich with papers
