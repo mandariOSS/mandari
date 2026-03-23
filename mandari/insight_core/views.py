@@ -817,17 +817,23 @@ class MeetingDetailView(DetailView):
                 item._prefetched_papers = papers_by_agenda.get(item.external_id, [])
         context["agenda_items"] = agenda_items
 
-        # Location Koordinaten für Karte
-        if meeting.location_name and meeting.body:
+        # Location Koordinaten für Karte (body kann fehlen bei verwaisten Meetings)
+        try:
+            meeting_body = meeting.body
+        except OParlBody.DoesNotExist:
+            meeting_body = None
+        if meeting.location_name and meeting_body:
             from .models import LocationMapping
 
-            coords = LocationMapping.get_coordinates_for_location(meeting.body, meeting.location_name)
+            coords = LocationMapping.get_coordinates_for_location(meeting_body, meeting.location_name)
             context["location_coordinates"] = coords
 
         # SEO-Kontext
-        from .seo import get_meeting_seo
-
-        context["seo"] = get_meeting_seo(meeting, self.request).to_dict()
+        try:
+            from .seo import get_meeting_seo
+            context["seo"] = get_meeting_seo(meeting, self.request).to_dict()
+        except (OParlBody.DoesNotExist, Exception):
+            context["seo"] = {}
 
         return context
 
