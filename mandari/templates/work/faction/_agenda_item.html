@@ -5,12 +5,13 @@
 <div class="group border-b border-gray-200 dark:border-gray-700 last:border-b-0 {% if is_internal %}bg-amber-50/30 dark:bg-amber-900/10{% endif %}"
      x-data="{ expanded: false }">
 
-    {# Collapsed header #}
-    <div class="p-4 flex items-start gap-3 hover:bg-gray-50 dark:hover:bg-gray-900/30 transition-colors">
+    {# Collapsed header — gesamte Zeile öffnet die Sidebar #}
+    <div class="p-4 flex items-start gap-3 hover:bg-gray-50 dark:hover:bg-gray-900/30 transition-colors cursor-pointer"
+         @click="$dispatch('open-item-panel', { id: '{{ item.id }}' })">
 
         {# Move buttons #}
         {% if can_edit and not item.is_approval_item %}
-        <div class="flex flex-col gap-0.5 flex-shrink-0">
+        <div class="flex flex-col gap-0.5 flex-shrink-0" @click.stop>
             <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                     hx-vals='{"action": "move_item", "item_id": "{{ item.id }}", "direction": "up"}'
                     hx-target="#agenda-container"
@@ -41,11 +42,10 @@
         </span>
 
         {# Title + description + badges #}
-        <div class="flex-1 min-w-0 cursor-pointer"
-             @click="$dispatch('open-item-panel', { id: '{{ item.id }}' })">
+        <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-2">
                 <div>
-                    <h4 class="font-medium text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400 transition-colors">{{ item.title }}</h4>
+                    <h4 class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{{ item.title }}</h4>
                     {% if item.is_approval_item and item.approves_meeting %}
                     <p class="text-xs text-purple-600 dark:text-purple-400 mt-0.5">
                         Genehmigt: {{ item.approves_meeting.title }} ({{ item.approves_meeting.start|date:"d.m.Y" }})
@@ -57,17 +57,32 @@
                     {% endif %}
                     {% endwith %}
                 </div>
-                <div class="flex items-center gap-2" @click.stop>
+                <div class="flex items-center gap-2 flex-shrink-0">
                     {% if item.has_decision %}
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
                         <i data-lucide="check-circle" class="w-3 h-3"></i>
                         {{ item.votes_for }}/{{ item.votes_against }}/{{ item.votes_abstain }}
                     </span>
                     {% endif %}
-                    {% if item.protocol_entries.all|length > 0 %}
-                    <span class="text-xs text-gray-400">{{ item.protocol_entries.all|length }}</span>
+                    {% if item.tasks.count > 0 %}
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20">
+                        <i data-lucide="check-square" class="w-3 h-3"></i>
+                        {{ item.tasks.count }}
+                    </span>
                     {% endif %}
-                    <button type="button" @click="expanded = !expanded" class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                    {% if item.attachments.count > 0 %}
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-gray-500 bg-gray-100 dark:bg-gray-700">
+                        <i data-lucide="paperclip" class="w-3 h-3"></i>
+                        {{ item.attachments.count }}
+                    </span>
+                    {% endif %}
+                    {% if item.protocol_entries.all|length > 0 %}
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-gray-500 bg-gray-100 dark:bg-gray-700">
+                        <i data-lucide="file-text" class="w-3 h-3"></i>
+                        {{ item.protocol_entries.all|length }}
+                    </span>
+                    {% endif %}
+                    <button type="button" @click.stop="expanded = !expanded" class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                         <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 transition-transform" :class="expanded ? 'rotate-180' : ''"></i>
                     </button>
                 </div>
