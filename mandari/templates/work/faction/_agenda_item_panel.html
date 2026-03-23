@@ -7,7 +7,7 @@
      @panel-autosaving.window="saving = true"
      class="flex flex-col h-full">
 
-    {# ── Auto-Save Form (wraps title, description, visibility) ── #}
+    {# ── Auto-Save Form (wraps title, visibility — header only) ── #}
     <form id="agenda-item-update-form"
           hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
           hx-trigger="focusout from:find textarea changed delay:300ms,
@@ -16,7 +16,7 @@
           hx-swap="none"
           hx-on::before-request="window.dispatchEvent(new Event('panel-autosaving'))"
           hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new Event('panel-autosaved'))"
-          class="flex flex-col h-full overflow-hidden">
+          class="flex-shrink-0">
         <input type="hidden" name="action" value="update">
 
         {# ══ Header ══ #}
