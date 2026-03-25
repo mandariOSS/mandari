@@ -1,5 +1,5 @@
 """
-Django Signals für automatische Meilisearch-Indexierung.
+Django Signals für automatische Elasticsearch-Indexierung.
 
 Aktualisiert die Suchindizes automatisch bei Änderungen an OParl-Modellen.
 """
@@ -31,54 +31,51 @@ logger = logging.getLogger(__name__)
 
 def is_auto_indexing_enabled() -> bool:
     """Prüft ob automatische Indexierung aktiviert ist."""
-    return getattr(settings, "MEILISEARCH_AUTO_INDEX", True)
+    return getattr(settings, "ELASTICSEARCH_AUTO_INDEX", True)
 
 
-def _get_meilisearch_client():
-    """Gibt den Meilisearch-Client zurück."""
+def _get_elasticsearch_client():
+    """Gibt den Elasticsearch-Client zurück."""
     try:
-        import meilisearch
+        from elasticsearch import Elasticsearch
 
-        url = getattr(settings, "MEILISEARCH_URL", "http://localhost:7700")
-        key = getattr(settings, "MEILISEARCH_KEY", "")
-        return meilisearch.Client(url, key)
+        url = getattr(settings, "ELASTICSEARCH_URL", "http://localhost:9200")
+        return Elasticsearch(url)
     except ImportError:
-        logger.warning("meilisearch nicht installiert")
+        logger.warning("elasticsearch nicht installiert")
         return None
     except Exception as e:
-        logger.warning(f"Meilisearch-Client Fehler: {e}")
+        logger.warning(f"Elasticsearch-Client Fehler: {e}")
         return None
 
 
 def _index_document(index_name: str, doc_id: str, document: dict[str, Any]):
-    """Indexiert ein Dokument in Meilisearch."""
+    """Indexiert ein Dokument in Elasticsearch."""
     if not is_auto_indexing_enabled():
         return
 
-    client = _get_meilisearch_client()
+    client = _get_elasticsearch_client()
     if not client:
         return
 
     try:
-        index = client.index(index_name)
-        index.add_documents([document], primary_key="id")
+        client.index(index=index_name, id=doc_id, document=document)
         logger.debug(f"Dokument indexiert: {index_name}/{doc_id}")
     except Exception as e:
         logger.warning(f"Indexierung fehlgeschlagen für {index_name}/{doc_id}: {e}")
 
 
 def _delete_document(index_name: str, doc_id: str):
-    """Löscht ein Dokument aus Meilisearch."""
+    """Löscht ein Dokument aus Elasticsearch."""
     if not is_auto_indexing_enabled():
         return
 
-    client = _get_meilisearch_client()
+    client = _get_elasticsearch_client()
     if not client:
         return
 
     try:
-        index = client.index(index_name)
-        index.delete_document(doc_id)
+        client.delete(index=index_name, id=doc_id, ignore=[404])
         logger.debug(f"Dokument gelöscht: {index_name}/{doc_id}")
     except Exception as e:
         logger.warning(f"Löschung fehlgeschlagen für {index_name}/{doc_id}: {e}")

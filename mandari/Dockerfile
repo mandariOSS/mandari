@@ -87,6 +87,9 @@ COPY --from=python-builder /install /usr/local
 # Application code
 COPY --chown=mandari:mandari mandari/ .
 
+# Ingestor code (für den eingebauten Sync-Daemon)
+COPY --chown=mandari:mandari ingestor/ /ingestor/
+
 # Frontend assets aus Node-Builder-Stage (überschreibt Source-Versionen)
 COPY --from=node-builder /build/static/css/styles.css ./static/css/styles.css
 COPY --from=node-builder /build/static/js/editor.bundle.js ./static/js/editor.bundle.js

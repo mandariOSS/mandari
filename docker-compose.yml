@@ -59,11 +59,11 @@ services:
       - no-new-privileges:true
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null --no-check-certificate --header \"Host: ${DOMAIN:-localhost}\" https://127.0.0.1/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      test: ["CMD-SHELL", "pidof caddy > /dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # ===========================================================================
   # PostgreSQL Database
@@ -119,18 +119,21 @@ services:
       retries: 5
 
   # ===========================================================================
-  # Meilisearch (Full-text search)
+  # Elasticsearch (Full-text search)
   # ===========================================================================
-  meilisearch:
-    image: getmeili/meilisearch:v1.12
-    container_name: mandari-meilisearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: mandari-elasticsearch
     restart: unless-stopped
     environment:
-      MEILI_ENV: production
-      MEILI_MASTER_KEY: ${MEILISEARCH_KEY:?Meilisearch key required}
-      MEILI_NO_ANALYTICS: "true"
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.ml.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx1g"
+      cluster.name: mandari
     volumes:
-      - meilisearch_data:/meili_data
+      - elasticsearch_data:/usr/share/elasticsearch/data
     networks:
       - mandari
     mem_limit: 2g
@@ -138,11 +141,11 @@ services:
       - no-new-privileges:true
     logging: *default-logging
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:7700/health"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 60s
 
   # ===========================================================================
   # Mandari (Django Backend)
@@ -157,8 +160,7 @@ services:
       # Cache (password-protected)
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       # Search
-      MEILISEARCH_URL: http://meilisearch:7700
-      MEILISEARCH_KEY: ${MEILISEARCH_KEY}
+      ELASTICSEARCH_URL: http://elasticsearch:9200
       # Security
       SECRET_KEY: ${SECRET_KEY:?Django secret key required}
       ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:?Encryption key required}
@@ -169,14 +171,18 @@ services:
       SITE_URL: https://${DOMAIN:-localhost}
       # AI (optional)
       NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
+      # Sync Daemon
+      SYNC_DAEMON_AUTOSTART: "true"
       # Timezone
       TZ: ${TZ:-Europe/Berlin}
+    volumes:
+      - mandari_media:/app/media
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      meilisearch:
+      elasticsearch:
         condition: service_healthy
     networks:
       - mandari
@@ -238,8 +244,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      MEILISEARCH_URL: http://meilisearch:7700
-      MEILISEARCH_KEY: ${MEILISEARCH_KEY}
+      ELASTICSEARCH_URL: http://elasticsearch:9200
       TZ: ${TZ:-Europe/Berlin}
     volumes:
       - ingestor_data:/app/data
@@ -263,8 +268,10 @@ volumes:
     name: mandari_postgres_data
   redis_data:
     name: mandari_redis_data
-  meilisearch_data:
-    name: mandari_meilisearch_data
+  elasticsearch_data:
+    name: mandari_elasticsearch_data
+  mandari_media:
+    name: mandari_media_data
   ingestor_data:
     name: mandari_ingestor_data
   caddy_data:

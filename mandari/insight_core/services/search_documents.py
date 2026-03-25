@@ -1,7 +1,7 @@
 """
-Meilisearch Document Builders.
+Elasticsearch Document Builders.
 
-Converts Django OParl model instances to Meilisearch document dicts.
+Converts Django OParl model instances to Elasticsearch document dicts.
 Single source of truth for both signal-based indexing and bulk reindex.
 """
 
@@ -11,7 +11,7 @@ from typing import Any
 
 
 def paper_to_doc(paper, files=None) -> dict[str, Any]:
-    """Convert an OParlPaper to a Meilisearch document.
+    """Convert an OParlPaper to a Elasticsearch document.
 
     Args:
         paper: OParlPaper instance.
@@ -62,7 +62,7 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
 
 
 def meeting_to_doc(meeting) -> dict[str, Any]:
-    """Convert an OParlMeeting to a Meilisearch document."""
+    """Convert an OParlMeeting to a Elasticsearch document."""
     org_names = []
     try:
         org_names = [org.name for org in meeting.organizations.all() if org.name]
@@ -91,7 +91,7 @@ def meeting_to_doc(meeting) -> dict[str, Any]:
 
 
 def person_to_doc(person) -> dict[str, Any]:
-    """Convert an OParlPerson to a Meilisearch document."""
+    """Convert an OParlPerson to a Elasticsearch document."""
     name = person.name or ""
     if not name:
         try:
@@ -112,7 +112,7 @@ def person_to_doc(person) -> dict[str, Any]:
 
 
 def organization_to_doc(org) -> dict[str, Any]:
-    """Convert an OParlOrganization to a Meilisearch document."""
+    """Convert an OParlOrganization to a Elasticsearch document."""
     return {
         "id": str(org.id),
         "type": "organization",
@@ -126,7 +126,7 @@ def organization_to_doc(org) -> dict[str, Any]:
 
 
 def file_to_doc(file, context_info: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Convert an OParlFile to a Meilisearch document.
+    """Convert an OParlFile to a Elasticsearch document.
 
     Args:
         file: OParlFile instance.

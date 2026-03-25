@@ -3,7 +3,7 @@ Management Command: Generate Subscription Alerts
 
 Generates SubscriptionAlert entries for active subscribers based on:
 1. Neighborhood subscriptions (Haversine proximity query)
-2. Keyword subscriptions (Meilisearch or Django ORM fallback)
+2. Keyword subscriptions (Elasticsearch or Django ORM fallback)
 
 Run as cronjob: daily or before digest sending.
 Usage: python manage.py generate_alerts
@@ -129,7 +129,7 @@ class Command(BaseCommand):
         keyword = subscriber.keyword
         count = 0
 
-        # Try Meilisearch first, fall back to Django ORM
+        # Try Elasticsearch first, fall back to Django ORM
         try:
             from insight_core.services.search_service import INDEX_PAPERS, get_search_service
 
@@ -166,7 +166,7 @@ class Command(BaseCommand):
                     count += 1
 
         except Exception as e:
-            logger.warning(f"Meilisearch unavailable for keyword alerts, falling back to ORM: {e}")
+            logger.warning(f"Elasticsearch unavailable for keyword alerts, falling back to ORM: {e}")
 
             from django.db.models import Q
 

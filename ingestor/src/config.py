@@ -42,8 +42,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
 
     # Search
-    meilisearch_url: str = "http://localhost:7700"
-    meilisearch_key: str = "masterKey"
+    elasticsearch_url: str = "http://localhost:9200"
 
     # OParl Sync Settings
     oparl_request_timeout: int = 60  # Sekunden pro HTTP-Request (zuvor 300)
@@ -87,11 +86,9 @@ class Settings(BaseSettings):
     text_extraction_timeout: float = 120.0
     text_extraction_batch_size: int = 500
 
-    # Meilisearch Indexing
-    meilisearch_indexing_enabled: bool = True
-    meilisearch_batch_size: int = 500
-    meilisearch_embedding_model: str = "BAAI/bge-m3"
-    meilisearch_semantic_ratio: float = 0.0
+    # Elasticsearch Indexing
+    elasticsearch_indexing_enabled: bool = True
+    elasticsearch_batch_size: int = 500
 
 
 @lru_cache

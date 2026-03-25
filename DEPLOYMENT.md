@@ -52,7 +52,7 @@ Gehe zu **Settings** → **Secrets and variables** → **Actions** und füge hin
 | `POSTGRES_PASSWORD` | DB Passwort | (generiert) |
 | `POSTGRES_DB` | DB Name | `mandari` |
 | `REPLICATION_PASSWORD` | Replikations-Passwort | (generiert) |
-| `MEILISEARCH_KEY` | Meilisearch API Key | (generiert) |
+| `ELASTICSEARCH_URL` | Elasticsearch URL | `http://elasticsearch:9200` |
 
 **Secrets generieren:**
 ```bash

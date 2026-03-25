@@ -750,14 +750,14 @@ class SyncOrchestrator:
                 else:
                     console.print(f"[dim]  No pending files for text extraction[/dim]")
 
-        # Phase 3: Meilisearch Indexing
+        # Phase 3: Elasticsearch Indexing
         # Only re-index during full sync or when entities actually changed.
         total_synced = sum(
             stats.get(k, 0) for k in
             ("organizations", "persons", "memberships", "meetings", "papers",
              "files", "agenda_items", "consultations", "locations")
         )
-        if settings.meilisearch_indexing_enabled and (full or total_synced > 0):
+        if settings.elasticsearch_indexing_enabled and (full or total_synced > 0):
             try:
                 from src.indexing.document_builders import (
                     file_to_doc,
@@ -766,7 +766,7 @@ class SyncOrchestrator:
                     paper_to_doc,
                     person_to_doc,
                 )
-                from src.indexing.meilisearch import MeilisearchIndexer
+                from src.indexing.elasticsearch import ElasticsearchIndexer
                 from src.storage.models import (
                     OParlFile as FileModel,
                     OParlMeeting as MeetingModel,
@@ -775,14 +775,14 @@ class SyncOrchestrator:
                     OParlPerson as PersonModel,
                 )
 
-                console.print(f"\n[bold yellow]Meilisearch Indexing...[/bold yellow]")
-                async with MeilisearchIndexer() as indexer:
+                console.print(f"\n[bold yellow]Elasticsearch Indexing...[/bold yellow]")
+                async with ElasticsearchIndexer() as indexer:
                     if not await indexer.is_healthy():
-                        console.print("[yellow]  Meilisearch not reachable, skipping indexing[/yellow]")
+                        console.print("[yellow]  Elasticsearch not reachable, skipping indexing[/yellow]")
                     else:
                         # Ensure index settings before first indexing
                         await indexer.ensure_index_settings()
-                        batch_size = settings.meilisearch_batch_size
+                        batch_size = settings.elasticsearch_batch_size
                         indexed_total = 0
 
                         # Index papers (with file contents for paper-boosting)
@@ -832,13 +832,13 @@ class SyncOrchestrator:
                             indexed_total += len(docs)
 
                         stats["indexed"] = indexed_total
-                        console.print(f"[green]  Indexed {indexed_total} documents in Meilisearch[/green]")
+                        console.print(f"[green]  Indexed {indexed_total} documents in Elasticsearch[/green]")
 
             except Exception as e:
-                console.print(f"[red]  Meilisearch indexing error: {e}[/red]")
-                stats["errors"].append(f"Meilisearch indexing: {e}")
-        elif settings.meilisearch_indexing_enabled and not full:
-            console.print(f"[dim]  Meilisearch indexing skipped (no changes)[/dim]")
+                console.print(f"[red]  Elasticsearch indexing error: {e}[/red]")
+                stats["errors"].append(f"Elasticsearch indexing: {e}")
+        elif settings.elasticsearch_indexing_enabled and not full:
+            console.print(f"[dim]  Elasticsearch indexing skipped (no changes)[/dim]")
 
         # Print summary
         console.print(f"[green]Body sync complete:[/green]")

@@ -1,11 +1,11 @@
 """
-Management Command: Bulk-Reindex aller OParl-Entitäten in Meilisearch.
+Management Command: Bulk-Reindex aller OParl-Entitäten in Elasticsearch.
 
 Usage:
-    python manage.py reindex_meilisearch              # Alles
-    python manage.py reindex_meilisearch --index files # Nur Files
-    python manage.py reindex_meilisearch --body <uuid> # Nur eine Kommune
-    python manage.py reindex_meilisearch --clear       # Index leeren + rebuild
+    python manage.py reindex_elasticsearch              # Alles
+    python manage.py reindex_elasticsearch --index files # Nur Files
+    python manage.py reindex_elasticsearch --body <uuid> # Nur eine Kommune
+    python manage.py reindex_elasticsearch --clear       # Index leeren + rebuild
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ INDEX_CONFIG = {
 
 
 class Command(BaseCommand):
-    help = "Bulk-reindex OParl entities into Meilisearch."
+    help = "Bulk-reindex OParl entities into Elasticsearch."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -88,23 +88,22 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         try:
-            import meilisearch
+            from elasticsearch import Elasticsearch
+            from elasticsearch.helpers import bulk
         except ImportError:
-            self.stderr.write(self.style.ERROR("meilisearch package not installed. Run: pip install meilisearch"))
+            self.stderr.write(self.style.ERROR("elasticsearch package not installed. Run: pip install elasticsearch"))
             return
 
-        url = getattr(settings, "MEILISEARCH_URL", "http://localhost:7700")
-        key = getattr(settings, "MEILISEARCH_KEY", "")
-        client = meilisearch.Client(url, key)
+        url = getattr(settings, "ELASTICSEARCH_URL", "http://localhost:9200")
+        client = Elasticsearch(url)
 
         # Health check
         try:
-            health = client.health()
-            if health.get("status") != "available":
-                self.stderr.write(self.style.ERROR("Meilisearch is not healthy"))
+            if not client.ping():
+                self.stderr.write(self.style.ERROR("Elasticsearch is not healthy"))
                 return
         except Exception as e:
-            self.stderr.write(self.style.ERROR(f"Cannot reach Meilisearch: {e}"))
+            self.stderr.write(self.style.ERROR(f"Cannot reach Elasticsearch: {e}"))
             return
 
         index_filter = options.get("index")
@@ -134,9 +133,12 @@ class Command(BaseCommand):
             if clear:
                 self.stdout.write(f"  Clearing index '{index_name}'...")
                 try:
-                    index = client.index(index_name)
-                    task = index.delete_all_documents()
-                    client.wait_for_task(task.task_uid, timeout_in_ms=30000)
+                    if client.indices.exists(index=index_name):
+                        client.delete_by_query(
+                            index=index_name,
+                            body={"query": {"match_all": {}}},
+                            refresh=True,
+                        )
                 except Exception as e:
                     self.stdout.write(self.style.WARNING(f"  Could not clear '{index_name}': {e}"))
 
@@ -151,12 +153,11 @@ class Command(BaseCommand):
             self.stdout.write(f"Indexing {count} {index_name}" + (f" for {body_name}" if body_name else "") + "...")
 
             indexed = 0
-            index = client.index(index_name)
 
             # Process in batches
             for offset in range(0, count, BATCH_SIZE):
                 batch = list(qs[offset : offset + BATCH_SIZE])
-                docs = []
+                actions = []
                 for obj in batch:
                     try:
                         if index_name == "papers":
@@ -164,16 +165,25 @@ class Command(BaseCommand):
                                 text_content__isnull=False,
                                 text_extraction_status="completed",
                             )
-                            docs.append(builder(obj, files=files))
+                            doc = builder(obj, files=files)
                         else:
-                            docs.append(builder(obj))
+                            doc = builder(obj)
+
+                        actions.append({
+                            "_index": index_name,
+                            "_id": doc["id"],
+                            "_source": doc,
+                        })
                     except Exception as e:
                         self.stderr.write(self.style.WARNING(f"  Error building doc for {obj.id}: {e}"))
 
-                if docs:
+                if actions:
                     try:
-                        index.add_documents(docs, primary_key="id")
-                        indexed += len(docs)
+                        success, errors = bulk(client, actions, raise_on_error=False)
+                        indexed += success
+                        if errors:
+                            for err in errors[:3]:
+                                self.stderr.write(self.style.WARNING(f"  Bulk error: {err}"))
                     except Exception as e:
                         self.stderr.write(self.style.ERROR(f"  Error indexing batch: {e}"))
 

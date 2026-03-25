@@ -306,7 +306,6 @@ generate_secrets() {
 
     SECRET_KEY=$(generate_secret 50)
     POSTGRES_PASSWORD=$(generate_password 32)
-    MEILISEARCH_KEY=$(generate_secret 32)
     ENCRYPTION_MASTER_KEY=$(generate_secret 32)
     WEBSITE_SECRET_KEY=$(generate_secret 50)
     REDIS_PASSWORD=$(generate_password 32)
@@ -353,7 +352,6 @@ POSTGRES_DB=${POSTGRES_DB}
 # Changing these keys will make existing encrypted data unreadable
 SECRET_KEY=${SECRET_KEY}
 ENCRYPTION_MASTER_KEY=${ENCRYPTION_MASTER_KEY}
-MEILISEARCH_KEY=${MEILISEARCH_KEY}
 WEBSITE_SECRET_KEY=${WEBSITE_SECRET_KEY}
 REDIS_PASSWORD=${REDIS_PASSWORD}
 
@@ -445,7 +443,7 @@ setup_cron_backup() {
 #
 # The ingestor creates oparl_* tables on startup. If it starts before
 # Django migrations run, we get "DuplicateTable" errors. So we must:
-#   1. Start infrastructure (postgres, redis, meilisearch)
+#   1. Start infrastructure (postgres, redis, elasticsearch)
 #   2. Start mandari (Django) and run migrations
 #   3. THEN start ingestor and caddy
 # =============================================================================
@@ -458,7 +456,7 @@ start_services() {
 
     # --- Phase 1: Infrastructure ---
     log "Starte Infrastruktur..."
-    docker compose up -d postgres redis meilisearch >> "$INSTALL_LOG" 2>&1
+    docker compose up -d postgres redis elasticsearch >> "$INSTALL_LOG" 2>&1
 
     printf "  %-30s " "PostgreSQL"
     if wait_for_healthy mandari-postgres 30; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
@@ -466,8 +464,8 @@ start_services() {
     printf "  %-30s " "Redis"
     if wait_for_healthy mandari-redis 30; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
-    printf "  %-30s " "Meilisearch"
-    if wait_for_healthy mandari-meilisearch 30; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
+    printf "  %-30s " "Elasticsearch"
+    if wait_for_healthy mandari-elasticsearch 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     # --- Phase 2: Mandari (Django) ---
     log "Starte Mandari..."
@@ -506,7 +504,7 @@ start_services() {
 run_migrations() {
     run_step "Datenbank-Migrationen" docker exec mandari python manage.py migrate --noinput
     run_step "Rollen einrichten" docker exec mandari python manage.py setup_roles || true
-    run_step "Suchindex konfigurieren" docker exec mandari python manage.py setup_meilisearch
+    run_step "Suchindex konfigurieren" docker exec mandari python manage.py setup_elasticsearch
     create_superuser
 }
 
@@ -663,7 +661,7 @@ verify_installation() {
     local all_ok=true
 
     # Check each container
-    for container in mandari-postgres mandari-redis mandari-meilisearch mandari mandari-website mandari-caddy mandari-ingestor; do
+    for container in mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor; do
         local status
         local health
         status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
@@ -673,7 +671,7 @@ verify_installation() {
         case "$container" in
             mandari-postgres)   label="PostgreSQL" ;;
             mandari-redis)      label="Redis" ;;
-            mandari-meilisearch) label="Meilisearch" ;;
+            mandari-elasticsearch) label="Elasticsearch" ;;
             mandari)            label="Mandari" ;;
             mandari-website)    label="Website" ;;
             mandari-caddy)      label="Caddy" ;;

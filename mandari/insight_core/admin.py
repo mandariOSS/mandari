@@ -7,6 +7,7 @@ Verwendet Django Unfold für modernes Admin-Interface.
 import threading
 
 from django.contrib import admin, messages
+from django.shortcuts import redirect
 from django.utils import timezone
 from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin
@@ -108,14 +109,14 @@ class OParlSourceAdmin(ModelAdmin):
         obj = self.model.objects.get(pk=object_id)
         run_sync_in_thread(obj, full=False)
         messages.success(request, f"Inkrementeller Sync für '{obj.name}' gestartet. Läuft im Hintergrund.")
-        return None
+        return redirect(f"../../{object_id}/change/")
 
     @action(description="Vollständiger Sync", url_path="sync-full")
     def sync_full_action(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
         run_sync_in_thread(obj, full=True)
         messages.success(request, f"Vollständiger Sync für '{obj.name}' gestartet. Läuft im Hintergrund.")
-        return None
+        return redirect(f"../../{object_id}/change/")
 
     @admin.action(description="Inkrementeller Sync (ausgewählte)")
     def sync_all_incremental(self, request, queryset):

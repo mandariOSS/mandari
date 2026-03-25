@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Chat service with RAG context from Meilisearch.
+Chat service with RAG context from Elasticsearch.
 
 Handles:
-- RAG context building from Meilisearch search results
+- RAG context building from Elasticsearch search results
 - Token budget management
 - Chat completion via NebiusProvider
 """
@@ -44,7 +44,7 @@ def _truncate_to_tokens(text: str, max_tokens: int) -> str:
 
 def build_rag_context(query: str, body_id: str | None) -> tuple[str, list[dict]]:
     """
-    Search relevant documents via Meilisearch and build RAG context.
+    Search relevant documents via Elasticsearch and build RAG context.
 
     Args:
         query: User's question
@@ -64,7 +64,7 @@ def build_rag_context(query: str, body_id: str | None) -> tuple[str, list[dict]]
             page_size=5,
         )
     except Exception as e:
-        logger.warning(f"Meilisearch RAG search failed: {e}")
+        logger.warning(f"Elasticsearch RAG search failed: {e}")
         return "", []
 
     hits = result.get("results", [])
@@ -187,7 +187,7 @@ def process_chat_message(
     if not provider.is_available():
         raise ValueError("KI-Assistent ist nicht konfiguriert. Bitte setzen Sie den NEBIUS_API_KEY.")
 
-    # 1. Build RAG context from Meilisearch
+    # 1. Build RAG context from Elasticsearch
     rag_context, sources = build_rag_context(message, body_id)
 
     # 2. Build system prompt with RAG context

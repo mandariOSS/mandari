@@ -204,7 +204,7 @@ verify_installation() {
 
     local all_ok=true
 
-    for container in mandari-postgres mandari-redis mandari-meilisearch mandari mandari-website mandari-caddy mandari-ingestor; do
+    for container in mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor; do
         local status
         local health
         status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
@@ -214,7 +214,7 @@ verify_installation() {
         case "$container" in
             mandari-postgres)    label="PostgreSQL" ;;
             mandari-redis)       label="Redis" ;;
-            mandari-meilisearch) label="Meilisearch" ;;
+            mandari-elasticsearch) label="Elasticsearch" ;;
             mandari)             label="Mandari" ;;
             mandari-website)     label="Website" ;;
             mandari-caddy)       label="Caddy" ;;

@@ -194,7 +194,7 @@ desktop.ini
 docker-compose.override.yml
 **/postgres-data/
 **/redis-data/
-**/meilisearch-data/
+**/elasticsearch-data/
 
 # =============================================================================
 # Temporary files

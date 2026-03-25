@@ -466,16 +466,6 @@ urlpatterns = [
         organization_views.CouncilPartyListView.as_view(),
         name="council_parties",
     ),
-    path(
-        "<slug:org_slug>/organization/parties/create/",
-        organization_views.CouncilPartyCreateView.as_view(),
-        name="council_party_create",
-    ),
-    path(
-        "<slug:org_slug>/organization/parties/<uuid:party_id>/",
-        organization_views.CouncilPartyEditView.as_view(),
-        name="council_party_edit",
-    ),
     # Support
     path("<slug:org_slug>/support/", support_views.SupportListView.as_view(), name="support"),
     path(

@@ -1,5 +1,5 @@
 """
-Entity -> Meilisearch Document Converters.
+Entity -> Elasticsearch Document Converters.
 
 Mirrors the logic in mandari/insight_core/signals.py but works with
 SQLAlchemy model instances from the ingestor's storage layer.
@@ -11,7 +11,7 @@ from typing import Any
 
 
 def paper_to_doc(paper, files=None) -> dict[str, Any]:
-    """Convert a Paper SQLAlchemy row to a Meilisearch document.
+    """Convert a Paper SQLAlchemy row to a Elasticsearch document.
 
     Args:
         paper: Paper SQLAlchemy row.
@@ -52,7 +52,7 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
 
 
 def meeting_to_doc(meeting) -> dict[str, Any]:
-    """Convert a Meeting SQLAlchemy row to a Meilisearch document.
+    """Convert a Meeting SQLAlchemy row to a Elasticsearch document.
 
     Note: organization_names is not available here (M2M only in Django).
     """
@@ -70,7 +70,7 @@ def meeting_to_doc(meeting) -> dict[str, Any]:
 
 
 def person_to_doc(person) -> dict[str, Any]:
-    """Convert a Person SQLAlchemy row to a Meilisearch document."""
+    """Convert a Person SQLAlchemy row to a Elasticsearch document."""
     return {
         "id": str(person.id),
         "type": "person",
@@ -84,7 +84,7 @@ def person_to_doc(person) -> dict[str, Any]:
 
 
 def organization_to_doc(org) -> dict[str, Any]:
-    """Convert an Organization SQLAlchemy row to a Meilisearch document."""
+    """Convert an Organization SQLAlchemy row to a Elasticsearch document."""
     return {
         "id": str(org.id),
         "type": "organization",
@@ -98,10 +98,10 @@ def organization_to_doc(org) -> dict[str, Any]:
 
 
 def file_to_doc(file) -> dict[str, Any]:
-    """Convert a File SQLAlchemy row to a Meilisearch document.
+    """Convert a File SQLAlchemy row to a Elasticsearch document.
 
     Note: paper_name/paper_reference not available here (needs Django JOIN).
-    The Django reindex_meilisearch command fills those fields.
+    The Django reindex_elasticsearch command fills those fields.
     """
     text_preview = ""
     if file.text_content:

@@ -201,7 +201,7 @@ verify_installation() {
     log "Verifikation..."
     echo ""
 
-    for container in mandari-postgres mandari-redis mandari-meilisearch mandari mandari-website mandari-caddy mandari-ingestor; do
+    for container in mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor; do
         local status
         local health
         status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
@@ -211,7 +211,7 @@ verify_installation() {
         case "$container" in
             mandari-postgres)    label="PostgreSQL" ;;
             mandari-redis)       label="Redis" ;;
-            mandari-meilisearch) label="Meilisearch" ;;
+            mandari-elasticsearch) label="Elasticsearch" ;;
             mandari)             label="Mandari" ;;
             mandari-website)     label="Website" ;;
             mandari-caddy)       label="Caddy" ;;
@@ -348,18 +348,9 @@ if [ "$RESTORE_MODE" = true ]; then
         run_step "Website-DB wiederherstellen" docker exec -i mandari-postgres psql -U "$local_restore_user" "$local_website_db" < "$BACKUP_CONTENT/postgres_website.sql"
     fi
 
-    # Restore Meilisearch data
-    if [ -f "$BACKUP_CONTENT/meilisearch.tar" ]; then
-        log "Meilisearch-Daten gefunden..."
-        docker compose up -d meilisearch >> "$BACKUP_LOG" 2>&1
-        printf "  %-30s " "Meilisearch"
-        if wait_for_healthy mandari-meilisearch 30; then
-            printf "\b${GREEN}✓ healthy${NC}\n"
-        else
-            printf "\b${YELLOW}⏳${NC}\n"
-        fi
-        warn "Meilisearch-Daten gefunden. Manuelle Wiederherstellung ggf. nötig."
-    fi
+    # Elasticsearch: Index wird beim Start automatisch neu aufgebaut
+    # (setup_elasticsearch + reindex_elasticsearch)
+    log "Elasticsearch-Index wird nach dem Start automatisch neu aufgebaut."
 
     # Start all services
     run_step "Alle Services starten" docker compose up -d
@@ -399,7 +390,7 @@ fi
 POSTGRES_USER=$(get_env_var POSTGRES_USER mandari)
 POSTGRES_DB=$(get_env_var POSTGRES_DB mandari)
 WEBSITE_DB=$(get_env_var WEBSITE_DB mandari_website)
-MEILISEARCH_KEY=$(get_env_var MEILISEARCH_KEY "")
+# (Elasticsearch benötigt keinen API-Key)
 DOMAIN=$(get_env_var DOMAIN unknown)
 IMAGE_TAG=$(get_env_var IMAGE_TAG latest)
 
@@ -442,22 +433,10 @@ if docker exec mandari-postgres psql -U "$POSTGRES_USER" -lqt 2>/dev/null | grep
 fi
 
 # =============================================================================
-# Backup Meilisearch (optional - kann neu aufgebaut werden)
+# Elasticsearch (Suchindex wird beim Restore automatisch neu aufgebaut)
 # =============================================================================
-if docker exec mandari-meilisearch curl -sf http://localhost:7700/health &>/dev/null; then
-    SNAPSHOT_RESULT=$(docker exec mandari-meilisearch curl -sf -X POST http://localhost:7700/snapshots \
-        -H "Authorization: Bearer ${MEILISEARCH_KEY}" 2>/dev/null || echo "")
-    if [ -n "$SNAPSHOT_RESULT" ]; then
-        if [ "$QUIET" = false ]; then
-            printf "  %-30s ${GREEN}✓${NC}\n" "Suchindex-Snapshot"
-        fi
-    else
-        warn "  Meilisearch-Snapshot fehlgeschlagen (Index kann neu aufgebaut werden)"
-    fi
-else
-    if [ "$QUIET" = false ]; then
-        warn "  Meilisearch läuft nicht. Suchindex-Backup übersprungen."
-    fi
+if [ "$QUIET" = false ]; then
+    info "  Elasticsearch-Index: wird beim Restore automatisch neu aufgebaut"
 fi
 
 # =============================================================================

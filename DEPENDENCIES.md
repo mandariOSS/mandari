@@ -10,7 +10,7 @@ Mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der O
 | **Django 6.0** | Web-Framework | BSD-3-Clause | [djangoproject.com](https://djangoproject.com) |
 | **PostgreSQL 16** | Relationale Datenbank | PostgreSQL License | [postgresql.org](https://postgresql.org) |
 | **Redis 7** | In-Memory Cache | BSD-3-Clause | [redis.io](https://redis.io) |
-| **Meilisearch** | Volltextsuche | MIT License | [meilisearch.com](https://meilisearch.com) |
+| **Elasticsearch 8** | Volltextsuche | SSPL / Elastic License 2.0 | [elastic.co](https://www.elastic.co) |
 | **Docker** | Container-Plattform | Apache 2.0 | [docker.com](https://docker.com) |
 
 ## Frontend & UI
@@ -34,7 +34,7 @@ Mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der O
 | **django-unfold** | Modernes Admin-Theme | MIT | [GitHub](https://github.com/unfoldadmin/django-unfold) |
 | **whitenoise** | Static File Serving | MIT | [Docs](https://whitenoise.readthedocs.io/) |
 | **psycopg** | PostgreSQL-Adapter | LGPL | [Docs](https://www.psycopg.org/psycopg3/) |
-| **meilisearch** | Meilisearch Python Client | MIT | [GitHub](https://github.com/meilisearch/meilisearch-python) |
+| **elasticsearch** | Elasticsearch Python Client | Apache 2.0 | [GitHub](https://github.com/elastic/elasticsearch-py) |
 | **Pillow** | Bildverarbeitung | HPND | [Docs](https://pillow.readthedocs.io/) |
 | **cryptography** | Verschlüsselung (AES-256-GCM) | BSD/Apache 2.0 | [Docs](https://cryptography.io/) |
 | **pytesseract** | OCR für PDFs | Apache 2.0 | [GitHub](https://github.com/tesseract-ocr/tesseract) |

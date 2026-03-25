@@ -281,16 +281,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Marketing-Website URL (lokal: http://localhost:8001, Produktion: leer = gleiche Domain)
 MARKETING_URL = os.environ.get("MARKETING_URL", "http://localhost:8001" if DEBUG else "")
 
-# Meilisearch
-MEILISEARCH_URL = os.environ.get("MEILISEARCH_URL", "http://localhost:7700")
-MEILISEARCH_KEY = os.environ.get("MEILISEARCH_KEY", "masterKey")
-MEILISEARCH_AUTO_INDEX = os.environ.get("MEILISEARCH_AUTO_INDEX", "True").lower() in (
+# Elasticsearch
+ELASTICSEARCH_URL = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200")
+ELASTICSEARCH_AUTO_INDEX = os.environ.get("ELASTICSEARCH_AUTO_INDEX", "True").lower() in (
     "true",
     "1",
     "yes",
 )
-MEILISEARCH_EMBEDDING_MODEL = os.environ.get("MEILISEARCH_EMBEDDING_MODEL", "BAAI/bge-m3")
-MEILISEARCH_SEMANTIC_RATIO = float(os.environ.get("MEILISEARCH_SEMANTIC_RATIO", "0.0"))
 
 # Nebius AI (KI-Features: Dokumenten-Assistent, Zusammenfassungen)
 NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")

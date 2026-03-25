@@ -6,7 +6,7 @@ set -e
 # =============================================================================
 # Optimiert für schnellen Startup (Zero-Downtime Updates):
 #   - collectstatic nur wenn nötig
-#   - Meilisearch-Setup im Hintergrund
+#   - Elasticsearch-Setup im Hintergrund
 #   - Daphne (ASGI) für HTTP + WebSocket (Echtzeit-Collaboration)
 # =============================================================================
 
@@ -62,8 +62,8 @@ wait_for_db
 #   update.sh Phase 4: migrate (post-deploy, nach Container-Swap)
 # Erststart: install.sh führt migrate nach dem Start separat aus.
 
-# Meilisearch im Hintergrund konfigurieren (blockiert nicht den Start)
-(python manage.py setup_meilisearch 2>&1 || echo "Meilisearch setup skipped (not available)") &
+# Elasticsearch im Hintergrund konfigurieren (blockiert nicht den Start)
+(python manage.py setup_elasticsearch 2>&1 || echo "Elasticsearch setup skipped (not available)") &
 
 # Start Daphne (ASGI) — HTTP + WebSocket auf demselben Port
 # Daphne ist der offizielle ASGI-Server von Django Channels und unterstützt

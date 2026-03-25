@@ -68,7 +68,7 @@ mandari/
 │   ├── insight_core/           # OParl-Datenmodelle & Services
 │   │   └── services/           # Text-Extraktion, OCR, Suche
 │   ├── insight_sync/           # OParl-Synchronisation
-│   ├── insight_search/         # Meilisearch-Integration
+│   ├── insight_search/         # Elasticsearch-Integration
 │   ├── insight_ai/             # KI-Pipelines
 │   ├── templates/              # Django Templates
 │   ├── static/                 # Statische Dateien
@@ -369,7 +369,7 @@ class OParlXxx(models.Model):
 | `document_extraction.py` | PDF-Textextraktion (pypdf → Mistral → Tesseract) |
 | `mistral_ocr.py` | Mistral AI OCR-Integration |
 | `text_extraction_queue.py` | Async Queue für Batch-Extraktion |
-| `search_service.py` | Meilisearch Multi-Index-Suche |
+| `search_service.py` | Elasticsearch Multi-Index-Suche |
 
 ### SEO & Sitemaps
 
@@ -506,8 +506,8 @@ python manage.py fix_permissions
 python manage.py sync_oparl --full
 python manage.py extract_texts  # OCR für PDFs
 
-# Meilisearch konfigurieren (Synonyme, Typo-Toleranz)
-python manage.py setup_meilisearch
+# Elasticsearch konfigurieren (Synonyme, Typo-Toleranz)
+python manage.py setup_elasticsearch
 
 # Statische Dateien
 python manage.py collectstatic
@@ -539,10 +539,9 @@ EMAIL_HOST_PASSWORD=pass
 EMAIL_USE_TLS=True
 DEFAULT_FROM_EMAIL=noreply@example.com
 
-# Meilisearch (Volltextsuche)
-MEILISEARCH_URL=http://localhost:7700
-MEILISEARCH_KEY=masterKey
-MEILISEARCH_AUTO_INDEX=True
+# Elasticsearch (Volltextsuche)
+ELASTICSEARCH_URL=http://localhost:9200
+ELASTICSEARCH_AUTO_INDEX=True
 
 # Text-Extraktion
 TEXT_EXTRACTION_ENABLED=True

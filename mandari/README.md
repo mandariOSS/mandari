@@ -8,7 +8,7 @@ Mandari Insight ist eine Open-Source-Plattform für die Darstellung und Analyse 
 
 - **Django 5.2+** - Web Framework mit Server-Side Rendering
 - **PostgreSQL 15+** - Datenbank
-- **Meilisearch** - Volltextsuche
+- **Elasticsearch** - Volltextsuche
 - **Redis** - Caching und Sessions
 - **Groq API** - KI-Features (Zusammenfassungen, Chatbot)
 - **HTMX** - Interaktivität ohne JavaScript-Framework
@@ -32,7 +32,7 @@ Mandari Insight ist eine Open-Source-Plattform für die Darstellung und Analyse 
 - Python 3.12+
 - PostgreSQL 15+
 - Redis 7+
-- Meilisearch (optional)
+- Elasticsearch (optional)
 
 ### Setup
 
@@ -72,9 +72,8 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mandari
 # Redis
 REDIS_URL=redis://localhost:6379/0
 
-# Meilisearch (optional)
-MEILISEARCH_URL=http://localhost:7700
-MEILISEARCH_KEY=masterKey
+# Elasticsearch (optional)
+ELASTICSEARCH_URL=http://localhost:9200
 
 # Groq API (für KI-Features)
 GROQ_API_KEY=your-api-key
@@ -91,7 +90,7 @@ mandari/
 ├── mandari/           # Django Projekt-Settings
 ├── insight_core/      # Hauptanwendung (Views, Templates)
 ├── insight_sync/      # OParl Synchronisation
-├── insight_search/    # Meilisearch Integration
+├── insight_search/    # Elasticsearch Integration
 ├── insight_ai/        # KI-Features (Groq)
 ├── templates/         # Django Templates
 └── static/           # Statische Dateien

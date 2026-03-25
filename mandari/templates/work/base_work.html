@@ -47,6 +47,8 @@
             --org-color-light: {{ organization.primary_color|default:'#4f46e5' }}15;
             --org-color-dark: {{ organization.primary_color|default:'#4f46e5' }}30;
             --org-color-text: {{ organization.primary_color|default:'#4f46e5' }};
+            --sidebar-w: 260px;
+            --sidebar-collapsed-w: 64px;
         }
 
         /* Work Portal Layout */
@@ -57,7 +59,7 @@
 
         /* Sidebar */
         .work-sidebar {
-            width: 260px;
+            width: var(--sidebar-w);
             background: white;
             border-right: 1px solid #e5e7eb;
             display: flex;
@@ -67,8 +69,12 @@
             bottom: 0;
             left: 0;
             z-index: 40;
-            transition: transform 0.2s ease;
+            transition: width 0.2s cubic-bezier(.4,0,.2,1), transform 0.2s ease;
             overflow: hidden;
+        }
+
+        .work-sidebar.collapsed {
+            width: var(--sidebar-collapsed-w);
         }
 
         .dark .work-sidebar {
@@ -79,6 +85,7 @@
         /* Mobile sidebar */
         @media (max-width: 1024px) {
             .work-sidebar {
+                width: var(--sidebar-w) !important;
                 transform: translateX(-100%);
             }
             .work-sidebar.open {
@@ -99,11 +106,16 @@
         /* Main Content */
         .work-main {
             flex: 1;
-            margin-left: 260px;
+            margin-left: var(--sidebar-w);
             background: #faf9f7;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
+            transition: margin-left 0.2s cubic-bezier(.4,0,.2,1);
+        }
+
+        .work-main.sidebar-collapsed {
+            margin-left: var(--sidebar-collapsed-w);
         }
 
         .dark .work-main {
@@ -112,7 +124,7 @@
 
         @media (max-width: 1024px) {
             .work-main {
-                margin-left: 0;
+                margin-left: 0 !important;
             }
         }
 
@@ -128,6 +140,8 @@
             border-radius: 8px;
             margin: 1px 8px;
             transition: all 0.15s ease;
+            white-space: nowrap;
+            overflow: hidden;
         }
 
         .work-nav-item:hover {
@@ -166,6 +180,18 @@
             flex-shrink: 0;
         }
 
+        /* Collapsed sidebar: center icons, hide text */
+        .work-sidebar.collapsed .work-nav-item {
+            justify-content: center;
+            padding: 10px;
+            margin: 1px 6px;
+        }
+
+        .work-sidebar.collapsed .work-nav-item.active {
+            padding-left: 10px;
+            box-shadow: inset 3px 0 0 var(--org-color, #4f46e5);
+        }
+
         /* Sidebar Section */
         .work-nav-section {
             padding: 12px 12px 6px;
@@ -174,6 +200,25 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
             color: #9ca3af;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .work-sidebar.collapsed .work-nav-section {
+            text-align: center;
+            padding: 10px 4px 4px;
+            font-size: 0;
+        }
+        .work-sidebar.collapsed .work-nav-section::after {
+            content: '';
+            display: block;
+            width: 16px;
+            height: 1px;
+            background: #d1d5db;
+            margin: 0 auto;
+        }
+        .dark .work-sidebar.collapsed .work-nav-section::after {
+            background: #4b5563;
         }
 
         /* Organization Header in Sidebar */
@@ -185,28 +230,48 @@
             gap: 12px;
         }
 
+        .work-sidebar.collapsed .work-org-header {
+            justify-content: center;
+            padding: 12px;
+        }
+
         .dark .work-org-header {
             border-color: #374151;
         }
 
         .work-org-logo {
-            width: 40px;
-            height: 40px;
+            height: 36px;
+            max-width: 120px;
             border-radius: 8px;
-            background: #e5e7eb;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 600;
-            color: #6b7280;
             flex-shrink: 0;
         }
 
+        /* Fallback (kein Logo): farbiges Quadrat mit Initialen */
+        .work-org-logo.has-fallback {
+            width: 40px;
+            height: 40px;
+            background: #e5e7eb;
+            font-weight: 600;
+            color: #6b7280;
+        }
+
+        .work-sidebar.collapsed .work-org-logo {
+            height: 32px;
+            max-width: 36px;
+        }
+        .work-sidebar.collapsed .work-org-logo.has-fallback {
+            width: 36px;
+            height: 36px;
+        }
+
         .work-org-logo img {
-            width: 100%;
             height: 100%;
-            object-fit: cover;
-            border-radius: 8px;
+            width: auto;
+            max-width: 100%;
+            object-fit: contain;
         }
 
         .work-org-info {
@@ -234,6 +299,33 @@
 
         .dark .work-org-type {
             color: #9ca3af;
+        }
+
+        /* Scrollbar styling for sidebar nav */
+        .work-sidebar nav::-webkit-scrollbar {
+            width: 4px;
+        }
+        .work-sidebar nav::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .work-sidebar nav::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 2px;
+        }
+        .dark .work-sidebar nav::-webkit-scrollbar-thumb {
+            background: #4b5563;
+        }
+
+        /* Hide text labels and user info in collapsed state */
+        .work-sidebar.collapsed .nav-label,
+        .work-sidebar.collapsed .work-org-info,
+        .work-sidebar.collapsed .user-info-details {
+            display: none;
+        }
+
+        /* User area collapsed */
+        .work-sidebar.collapsed .user-info-area {
+            justify-content: center;
         }
 
         /* Page Header */
@@ -308,6 +400,7 @@
 <body class="bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-org-slug="{{ organization.slug }}">
     <div class="work-layout" x-data="{
         sidebarOpen: false,
+        sidebarCollapsed: localStorage.getItem('sidebarCollapsed') === 'true',
         docViewerUrl: '',
         docViewerName: '',
         docViewerMeta: '',
@@ -335,10 +428,10 @@
              @click="sidebarOpen = false"></div>
 
         <!-- Sidebar -->
-        <aside class="work-sidebar" :class="{ 'open': sidebarOpen }">
+        <aside class="work-sidebar" :class="{ 'open': sidebarOpen, 'collapsed': sidebarCollapsed }">
             <!-- Organization Header -->
             <div class="work-org-header">
-                <a href="/" class="work-org-logo" style="{% if organization.primary_color %}background: {{ organization.primary_color }}20; color: {{ organization.primary_color }};{% endif %}">
+                <a href="/" class="work-org-logo {% if not organization.logo %}has-fallback{% endif %}" {% if not organization.logo and organization.primary_color %}style="background: {{ organization.primary_color }}20; color: {{ organization.primary_color }};"{% endif %}>
                     {% if organization.logo %}
                         <img src="{{ organization.logo.url }}" alt="{{ organization.name }}">
                     {% else %}
@@ -359,117 +452,133 @@
             <nav class="flex-1 py-4 overflow-y-auto overflow-x-hidden">
                 <!-- Hauptbereich -->
                 <a href="{% url 'work:dashboard' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_nav == 'dashboard' %}active{% endif %}">
+                   class="work-nav-item {% if active_nav == 'dashboard' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Dashboard' : ''">
                     <i data-lucide="layout-dashboard"></i>
-                    Dashboard
+                    <span class="nav-label">Dashboard</span>
                 </a>
 
-                <div class="work-nav-section">Arbeit</div>
+                <div class="work-nav-section"><span class="nav-label">Arbeit</span></div>
 
                 <a href="{% url 'work:meetings' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_nav == 'meetings' %}active{% endif %}">
+                   class="work-nav-item {% if active_nav == 'meetings' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Meine Sitzungen' : ''">
                     <i data-lucide="calendar"></i>
-                    Meine Sitzungen
+                    <span class="nav-label">Meine Sitzungen</span>
                 </a>
 
                 <a href="{% url 'work:documents' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_nav == 'documents' %}active{% endif %}">
+                   class="work-nav-item {% if active_nav == 'documents' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Dokumente' : ''">
                     <i data-lucide="file-text"></i>
-                    Dokumente
+                    <span class="nav-label">Dokumente</span>
                 </a>
 
                 <a href="{% url 'work:faction' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_nav == 'faction' %}active{% endif %}">
+                   class="work-nav-item {% if active_nav == 'faction' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Fraktionssitzungen' : ''">
                     <i data-lucide="users"></i>
-                    Fraktionssitzungen
+                    <span class="nav-label">Fraktionssitzungen</span>
                 </a>
 
                 <a href="{% url 'work:tasks' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_nav == 'tasks' %}active{% endif %}">
+                   class="work-nav-item {% if active_nav == 'tasks' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Aufgaben' : ''">
                     <i data-lucide="check-square"></i>
-                    Aufgaben
+                    <span class="nav-label">Aufgaben</span>
                 </a>
 
                 <a href="{% url 'work:team' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_nav == 'team' %}active{% endif %}">
+                   class="work-nav-item {% if active_nav == 'team' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Team' : ''">
                     <i data-lucide="contact"></i>
-                    Team
+                    <span class="nav-label">Team</span>
                 </a>
 
-                <div class="work-nav-section">Ratsinformation</div>
+                <div class="work-nav-section"><span class="nav-label">Ratsinformation</span></div>
 
                 <a href="{% url 'work:ris_overview' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_subnav == 'ris_overview' %}active{% endif %}">
+                   class="work-nav-item {% if active_subnav == 'ris_overview' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Übersicht' : ''">
                     <i data-lucide="layout-dashboard"></i>
-                    Übersicht
+                    <span class="nav-label">Übersicht</span>
                 </a>
 
                 <a href="{% url 'work:ris_meetings' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_subnav == 'ris_meetings' %}active{% endif %}">
+                   class="work-nav-item {% if active_subnav == 'ris_meetings' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Sitzungen' : ''">
                     <i data-lucide="calendar-days"></i>
-                    Sitzungen
+                    <span class="nav-label">Sitzungen</span>
                 </a>
 
                 <a href="{% url 'work:ris_papers' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_subnav == 'ris_papers' %}active{% endif %}">
+                   class="work-nav-item {% if active_subnav == 'ris_papers' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Vorgänge' : ''">
                     <i data-lucide="file-text"></i>
-                    Vorgänge
+                    <span class="nav-label">Vorgänge</span>
                 </a>
 
                 <a href="{% url 'work:ris_organizations' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_subnav == 'ris_organizations' %}active{% endif %}">
+                   class="work-nav-item {% if active_subnav == 'ris_organizations' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Gremien' : ''">
                     <i data-lucide="building-2"></i>
-                    Gremien
+                    <span class="nav-label">Gremien</span>
                 </a>
 
                 <a href="{% url 'work:ris_persons' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_subnav == 'ris_persons' %}active{% endif %}">
+                   class="work-nav-item {% if active_subnav == 'ris_persons' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Personen' : ''">
                     <i data-lucide="users"></i>
-                    Personen
+                    <span class="nav-label">Personen</span>
                 </a>
 
                 <a href="{% url 'work:ris_files' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_subnav == 'ris_files' %}active{% endif %}">
+                   class="work-nav-item {% if active_subnav == 'ris_files' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Dokumente' : ''">
                     <i data-lucide="files"></i>
-                    Dokumente
+                    <span class="nav-label">Dokumente</span>
                 </a>
 
                 <a href="{% url 'work:ris_map' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_subnav == 'ris_map' %}active{% endif %}">
+                   class="work-nav-item {% if active_subnav == 'ris_map' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Karte' : ''">
                     <i data-lucide="map"></i>
-                    Karte
+                    <span class="nav-label">Karte</span>
                 </a>
 
                 <a href="{% url 'work:ris_search' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_subnav == 'ris_search' %}active{% endif %}">
+                   class="work-nav-item {% if active_subnav == 'ris_search' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Suche' : ''">
                     <i data-lucide="search"></i>
-                    Suche
+                    <span class="nav-label">Suche</span>
                 </a>
 
                 {% if membership|has_perm:"organization.view" %}
-                <div class="work-nav-section">Verwaltung</div>
+                <div class="work-nav-section"><span class="nav-label">Verwaltung</span></div>
 
                 <a href="{% url 'work:organization' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_nav == 'organization' %}active{% endif %}">
+                   class="work-nav-item {% if active_nav == 'organization' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Einstellungen' : ''">
                     <i data-lucide="settings"></i>
-                    Einstellungen
+                    <span class="nav-label">Einstellungen</span>
                 </a>
                 {% endif %}
 
                 <a href="{% url 'work:support' org_slug=organization.slug %}"
-                   class="work-nav-item {% if active_nav == 'support' %}active{% endif %}">
+                   class="work-nav-item {% if active_nav == 'support' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Support' : ''">
                     <i data-lucide="help-circle"></i>
-                    Support
+                    <span class="nav-label">Support</span>
                 </a>
             </nav>
 
             <!-- User Info (Bottom) -->
             <div class="border-t border-gray-200 dark:border-gray-700 p-4">
-                <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center text-primary-600 dark:text-primary-400 font-medium text-sm">
+                <div class="flex items-center gap-3 user-info-area">
+                    <div class="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center text-primary-600 dark:text-primary-400 font-medium text-sm shrink-0">
                         {% if request.user.get_initials %}{{ request.user.get_initials }}{% else %}{{ request.user.email|slice:":2"|upper }}{% endif %}
                     </div>
-                    <div class="flex-1 min-w-0">
+                    <div class="flex-1 min-w-0 user-info-details">
                         <div class="text-sm font-medium text-gray-900 dark:text-white truncate">
                             {% if request.user.display_name %}{{ request.user.display_name }}{% else %}{{ request.user.email }}{% endif %}
                         </div>
@@ -486,18 +595,27 @@
         </aside>
 
         <!-- Main Content -->
-        <main class="work-main">
+        <main class="work-main" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
             <!-- Top Bar -->
             <div class="work-topbar z-30">
-                <div class="flex items-center gap-4">
+                <div class="flex items-center gap-1">
                     <!-- Mobile menu button -->
                     <button @click="sidebarOpen = !sidebarOpen"
-                            class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+                            class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                            title="Menü">
                         <i data-lucide="menu" class="w-5 h-5"></i>
                     </button>
 
+                    <!-- Desktop: Sidebar collapse toggle -->
+                    <button @click="sidebarCollapsed = !sidebarCollapsed; localStorage.setItem('sidebarCollapsed', sidebarCollapsed)"
+                            class="hidden lg:flex p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                            :title="sidebarCollapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'">
+                        <i x-show="!sidebarCollapsed" data-lucide="panel-left-close" class="w-5 h-5"></i>
+                        <i x-show="sidebarCollapsed" data-lucide="panel-left-open" class="w-5 h-5" x-cloak></i>
+                    </button>
+
                     <!-- Breadcrumb / Title for mobile -->
-                    <span class="lg:hidden font-medium">{{ organization.name }}</span>
+                    <span class="lg:hidden font-medium ml-1">{{ organization.name }}</span>
                 </div>
 
                 <div class="flex items-center gap-2">

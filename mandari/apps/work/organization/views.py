@@ -399,7 +399,7 @@ class MemberListView(WorkViewMixin, TemplateView):
                 invitation_accepted_at__isnull=True,
             )
             .select_related("user")
-            .order_by("-created_at")
+            .order_by("-joined_at")
         )
 
         context["members"] = members
@@ -1472,7 +1472,7 @@ class SecurityView(WorkViewMixin, TemplateView):
 
 
 class CouncilPartyListView(WorkViewMixin, TemplateView):
-    """List and manage council parties for coalition settings."""
+    """Ratsfraktionen, Koalition und Verwaltungskontakte verwalten."""
 
     template_name = "work/organization/parties.html"
     permission_required = "organization.edit"
@@ -1482,66 +1482,86 @@ class CouncilPartyListView(WorkViewMixin, TemplateView):
         context["active_nav"] = "organization"
         context["active_tab"] = "parties"
 
-        # Check if user can manage faction settings
         from apps.common.permissions import PermissionChecker
 
         checker = PermissionChecker(self.membership)
         context["can_manage_faction"] = checker.has_permission("faction.manage")
 
-        from apps.tenants.models import CouncilParty
+        from apps.tenants.models import AdministrationContact, CouncilParty
 
         parties = CouncilParty.objects.filter(organization=self.organization).order_by("coalition_order", "name")
-
         context["parties"] = parties
         context["coalition_parties"] = parties.filter(is_coalition_member=True)
         context["other_parties"] = parties.filter(is_coalition_member=False)
 
-        # Organization settings
+        # Verwaltungskontakte
+        context["admin_contacts"] = AdministrationContact.objects.filter(organization=self.organization)
+
+        # Koalitionsname
         context["coalition_name"] = self.organization.coalition_name
-        context["administration_email"] = self.organization.administration_email
 
         return context
 
     def post(self, request, *args, **kwargs):
-        """Handle organization settings update."""
         action = request.POST.get("action")
 
-        if action == "update_org_settings":
+        if action == "update_coalition":
             self.organization.coalition_name = request.POST.get("coalition_name", "").strip()
-            self.organization.administration_email = request.POST.get("administration_email", "").strip()
-            self.organization.save()
-            messages.success(request, "Einstellungen gespeichert.")
+            self.organization.save(update_fields=["coalition_name"])
+            messages.success(request, "Koalitionsname gespeichert.")
+
+        elif action == "add_admin_contact":
+            self._handle_add_admin_contact(request)
+
+        elif action == "delete_admin_contact":
+            self._handle_delete_admin_contact(request)
+
+        elif action == "add_party":
+            self._handle_add_party(request)
+
+        elif action == "update_party":
+            self._handle_update_party(request)
+
+        elif action == "delete_party":
+            self._handle_delete_party(request)
 
         return redirect("work:council_parties", org_slug=self.organization.slug)
 
+    def _handle_add_admin_contact(self, request):
+        from apps.tenants.models import AdministrationContact
 
-class CouncilPartyCreateView(WorkViewMixin, TemplateView):
-    """Create a new council party."""
+        label = request.POST.get("contact_label", "").strip()
+        email = request.POST.get("contact_email", "").strip()
+        if label and email:
+            AdministrationContact.objects.create(
+                organization=self.organization, label=label, email=email,
+            )
+            messages.success(request, f"Kontakt '{label}' hinzugefügt.")
+        else:
+            messages.error(request, "Bezeichnung und E-Mail sind erforderlich.")
 
-    template_name = "work/organization/party_form.html"
-    permission_required = "organization.edit"
+    def _handle_delete_admin_contact(self, request):
+        from apps.tenants.models import AdministrationContact
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["active_nav"] = "organization"
-        context["is_edit"] = False
-        context["party"] = None
-        return context
+        contact_id = request.POST.get("contact_id")
+        deleted, _ = AdministrationContact.objects.filter(
+            id=contact_id, organization=self.organization,
+        ).delete()
+        if deleted:
+            messages.success(request, "Kontakt entfernt.")
 
-    def post(self, request, *args, **kwargs):
+    def _handle_add_party(self, request):
         from apps.tenants.models import CouncilParty
 
         name = request.POST.get("name", "").strip()
         short_name = request.POST.get("short_name", "").strip()
-
         if not name or not short_name:
             messages.error(request, "Name und Kurzname sind erforderlich.")
-            return redirect("work:council_party_create", org_slug=self.organization.slug)
+            return
 
-        # Check for duplicate short name
         if CouncilParty.objects.filter(organization=self.organization, short_name=short_name).exists():
-            messages.error(request, f"Eine Fraktion mit dem Kurzname '{short_name}' existiert bereits.")
-            return redirect("work:council_party_create", org_slug=self.organization.slug)
+            messages.error(request, f"Kurzname '{short_name}' existiert bereits.")
+            return
 
         CouncilParty.objects.create(
             organization=self.organization,
@@ -1554,9 +1574,49 @@ class CouncilPartyCreateView(WorkViewMixin, TemplateView):
             is_coalition_member=request.POST.get("is_coalition_member") == "on",
             coalition_order=int(request.POST.get("coalition_order", 0) or 0),
         )
+        messages.success(request, f"Fraktion '{name}' hinzugefügt.")
 
-        messages.success(request, f"Fraktion '{name}' wurde erstellt.")
-        return redirect("work:council_parties", org_slug=self.organization.slug)
+    def _handle_update_party(self, request):
+        from apps.tenants.models import CouncilParty
+
+        party_id = request.POST.get("party_id")
+        party = CouncilParty.objects.filter(id=party_id, organization=self.organization).first()
+        if not party:
+            return
+
+        name = request.POST.get("name", "").strip()
+        short_name = request.POST.get("short_name", "").strip()
+        if not name or not short_name:
+            messages.error(request, "Name und Kurzname sind erforderlich.")
+            return
+
+        if CouncilParty.objects.filter(
+            organization=self.organization, short_name=short_name,
+        ).exclude(id=party_id).exists():
+            messages.error(request, f"Kurzname '{short_name}' existiert bereits.")
+            return
+
+        party.name = name
+        party.short_name = short_name
+        party.email = request.POST.get("email", "").strip()
+        party.contact_name = request.POST.get("contact_name", "").strip()
+        party.contact_phone = request.POST.get("contact_phone", "").strip()
+        party.color = request.POST.get("color", "#6b7280").strip()
+        party.is_coalition_member = request.POST.get("is_coalition_member") == "on"
+        party.coalition_order = int(request.POST.get("coalition_order", 0) or 0)
+        party.is_active = request.POST.get("is_active") == "on"
+        party.save()
+        messages.success(request, f"Fraktion '{name}' aktualisiert.")
+
+    def _handle_delete_party(self, request):
+        from apps.tenants.models import CouncilParty
+
+        party_id = request.POST.get("party_id")
+        party = CouncilParty.objects.filter(id=party_id, organization=self.organization).first()
+        if party:
+            name = party.name
+            party.delete()
+            messages.success(request, f"Fraktion '{name}' gelöscht.")
 
 
 # =============================================================================
@@ -2148,68 +2208,8 @@ class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
 # =============================================================================
 
 
-class CouncilPartyEditView(WorkViewMixin, TemplateView):
-    """Edit an existing council party."""
 
-    template_name = "work/organization/party_form.html"
-    permission_required = "organization.edit"
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["active_nav"] = "organization"
-        context["is_edit"] = True
-
-        from apps.tenants.models import CouncilParty
-
-        party_id = kwargs.get("party_id")
-        party = get_object_or_404(CouncilParty, id=party_id, organization=self.organization)
-        context["party"] = party
-        return context
-
-    def post(self, request, *args, **kwargs):
-        from apps.tenants.models import CouncilParty
-
-        party_id = kwargs.get("party_id")
-        party = get_object_or_404(CouncilParty, id=party_id, organization=self.organization)
-
-        action = request.POST.get("action")
-
-        if action == "delete":
-            name = party.name
-            party.delete()
-            messages.success(request, f"Fraktion '{name}' wurde gelöscht.")
-            return redirect("work:council_parties", org_slug=self.organization.slug)
-
-        # Update party
-        name = request.POST.get("name", "").strip()
-        short_name = request.POST.get("short_name", "").strip()
-
-        if not name or not short_name:
-            messages.error(request, "Name und Kurzname sind erforderlich.")
-            return redirect("work:council_party_edit", org_slug=self.organization.slug, party_id=party_id)
-
-        # Check for duplicate short name (excluding current party)
-        if (
-            CouncilParty.objects.filter(organization=self.organization, short_name=short_name)
-            .exclude(id=party_id)
-            .exists()
-        ):
-            messages.error(request, f"Eine andere Fraktion mit dem Kurzname '{short_name}' existiert bereits.")
-            return redirect("work:council_party_edit", org_slug=self.organization.slug, party_id=party_id)
-
-        party.name = name
-        party.short_name = short_name
-        party.email = request.POST.get("email", "").strip()
-        party.contact_name = request.POST.get("contact_name", "").strip()
-        party.contact_phone = request.POST.get("contact_phone", "").strip()
-        party.color = request.POST.get("color", "#6b7280").strip()
-        party.is_coalition_member = request.POST.get("is_coalition_member") == "on"
-        party.coalition_order = int(request.POST.get("coalition_order", 0) or 0)
-        party.is_active = request.POST.get("is_active") != "off"
-        party.save()
-
-        messages.success(request, f"Fraktion '{name}' wurde aktualisiert.")
-        return redirect("work:council_parties", org_slug=self.organization.slug)
 
 
 # =============================================================================

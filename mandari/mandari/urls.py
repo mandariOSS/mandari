@@ -52,9 +52,8 @@ urlpatterns = [
     path("", include("insight_core.urls")),
 ]
 
-# Serve media files in development
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Serve media files (logos, uploads) — in production via Caddy → Django
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 
 # =============================================================================

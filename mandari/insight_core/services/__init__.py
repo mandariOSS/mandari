@@ -16,7 +16,7 @@ from .search_service import (
     INDEX_ORGANIZATIONS,
     INDEX_PAPERS,
     INDEX_PERSONS,
-    MeilisearchService,
+    ElasticsearchService,
     format_search_result,
     get_search_service,
 )
@@ -28,7 +28,7 @@ __all__ = [
     "download_and_extract",
     "extract_text_from_file",
     # Search service
-    "MeilisearchService",
+    "ElasticsearchService",
     "get_search_service",
     "format_search_result",
     "INDEX_MEETINGS",

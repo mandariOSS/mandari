@@ -931,7 +931,7 @@ def search_results(request):
     """
     HTMX Endpoint für Suchergebnisse.
 
-    Nutzt Meilisearch für Volltextsuche.
+    Nutzt Elasticsearch für Volltextsuche.
     """
     query = request.GET.get("q", "").strip()
     search_type = request.GET.get("type", "all")
@@ -949,7 +949,7 @@ def search_results(request):
             },
         )
 
-    # Meilisearch verwenden
+    # Elasticsearch verwenden
     try:
         from .services.search_service import (
             INDEX_FILES,
@@ -1009,7 +1009,7 @@ def search_results(request):
         import logging
 
         logger = logging.getLogger(__name__)
-        logger.warning(f"Meilisearch-Suche fehlgeschlagen, Fallback auf Django: {e}")
+        logger.warning(f"Elasticsearch-Suche fehlgeschlagen, Fallback auf Django: {e}")
 
         results = []
 
@@ -1378,37 +1378,35 @@ def file_proxy(request, file_id):
     force_download = request.GET.get("download") == "1"
 
     try:
-        # Streaming-Request: Datei wird chunk-weise durchgereicht
-        with httpx.stream(
-            "GET",
+        # Datei komplett laden (httpx.stream + with-Block ist inkompatibel mit
+        # Django's StreamingHttpResponse — der with-Block schließt den Stream
+        # bevor Django die Chunks liest).
+        # Für PDFs < 50 MB ist das vertretbar.
+        upstream = httpx.get(
             url,
             timeout=60.0,
             follow_redirects=True,
             headers={"User-Agent": "Mandari/1.0 (https://mandari.de)"},
-        ) as upstream:
-            upstream.raise_for_status()
+        )
+        upstream.raise_for_status()
 
-            content_type = file_obj.mime_type or upstream.headers.get("content-type", "application/octet-stream")
+        content_type = file_obj.mime_type or upstream.headers.get("content-type", "application/octet-stream")
 
-            response = StreamingHttpResponse(
-                upstream.iter_bytes(chunk_size=65536),
-                content_type=content_type,
-            )
+        response = HttpResponse(
+            upstream.content,
+            content_type=content_type,
+        )
 
-            if force_download:
-                filename = file_obj.file_name or file_obj.name or "dokument.pdf"
-                response["Content-Disposition"] = f'attachment; filename="{filename}"'
-            else:
-                response["Content-Disposition"] = "inline"
+        if force_download:
+            filename = file_obj.file_name or file_obj.name or "dokument.pdf"
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        else:
+            response["Content-Disposition"] = "inline"
 
-            # Größe weiterleiten falls vorhanden
-            content_length = upstream.headers.get("content-length")
-            if content_length:
-                response["Content-Length"] = content_length
-
-            response["Cache-Control"] = "public, max-age=86400"  # 1 Tag
-            # Kein X-Frame-Options → iframe-Embedding erlaubt
-            return response
+        response["Content-Length"] = len(upstream.content)
+        response["Cache-Control"] = "public, max-age=86400"  # 1 Tag
+        # Kein X-Frame-Options → iframe-Embedding erlaubt
+        return response
 
     except httpx.HTTPStatusError as e:
         return _file_proxy_error(
@@ -1687,7 +1685,7 @@ def chat_message(request):
     3. Check DSGVO consent (session)
     4. Check rate limit
     5. Run content filters (PII, spam, injection)
-    6. Build RAG context from Meilisearch
+    6. Build RAG context from Elasticsearch
     7. Call NebiusProvider via chat_service
     8. Log ChatUsage
     9. Return response + sources + remaining counts

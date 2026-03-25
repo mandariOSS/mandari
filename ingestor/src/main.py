@@ -277,7 +277,7 @@ def status() -> None:
     console.print("[bold]Configuration:[/bold]")
     console.print(f"  Database: {settings.database_url.split('@')[-1] if '@' in settings.database_url else settings.database_url}")
     console.print(f"  Redis: {settings.redis_url}")
-    console.print(f"  Meilisearch: {settings.meilisearch_url}")
+    console.print(f"  Elasticsearch: {settings.elasticsearch_url}")
     console.print()
 
     asyncio.run(run_status())

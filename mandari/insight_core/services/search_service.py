@@ -1,16 +1,16 @@
 """
-Meilisearch Service für Django.
+Elasticsearch Service für Django.
 
-Bietet Volltextsuche über Meilisearch für alle OParl-Entitäten.
+Bietet Volltextsuche über Elasticsearch für alle OParl-Entitäten.
 """
 
 import logging
 from typing import Any
 
-import meilisearch
 from django.conf import settings
 from django.utils.html import escape
-from meilisearch.errors import MeilisearchApiError
+from elasticsearch import Elasticsearch
+from elasticsearch.exceptions import NotFoundError
 
 HIGHLIGHT_PRE = '<mark class="bg-yellow-200 dark:bg-yellow-800">'
 HIGHLIGHT_POST = "</mark>"
@@ -27,23 +27,19 @@ INDEX_FILES = "files"
 ALL_INDEXES = [INDEX_MEETINGS, INDEX_PAPERS, INDEX_PERSONS, INDEX_ORGANIZATIONS, INDEX_FILES]
 
 
-class MeilisearchService:
-    """Service für Meilisearch-Integration in Django."""
+class ElasticsearchService:
+    """Service für Elasticsearch-Integration in Django."""
 
     def __init__(self):
-        """Initialisiert den Meilisearch-Client."""
-        self.client = meilisearch.Client(
-            settings.MEILISEARCH_URL,
-            settings.MEILISEARCH_KEY,
-        )
+        """Initialisiert den Elasticsearch-Client."""
+        self.client = Elasticsearch(settings.ELASTICSEARCH_URL)
 
     def is_healthy(self) -> bool:
-        """Prüft ob Meilisearch verfügbar ist."""
+        """Prüft ob Elasticsearch verfügbar ist."""
         try:
-            health = self.client.health()
-            return health.get("status") == "available"
+            return self.client.ping()
         except Exception as e:
-            logger.warning(f"Meilisearch health check fehlgeschlagen: {e}")
+            logger.warning(f"Elasticsearch health check fehlgeschlagen: {e}")
             return False
 
     def search_all(
@@ -73,59 +69,53 @@ class MeilisearchService:
         all_results: list[dict[str, Any]] = []
         total_hits = 0
 
-        # Filter aufbauen
-        filter_str = None
-        if body_id:
-            filter_str = f"body_id = '{body_id}'"
-
-        # Jeden Index durchsuchen
         for index_name in index_names:
             try:
-                index = self.client.index(index_name)
-                search_params: dict[str, Any] = {
-                    "limit": page_size * 2,  # Mehr laden für Merge
-                    "offset": 0,
-                    "showRankingScore": True,
-                    # Highlighting für bessere Suchergebnisse
-                    "attributesToHighlight": ["name", "text_content", "reference"],
-                    "highlightPreTag": '<mark class="bg-yellow-200 dark:bg-yellow-800">',
-                    "highlightPostTag": "</mark>",
-                    "attributesToCrop": ["text_content"],
-                    "cropLength": 200,
-                }
-                if filter_str:
-                    search_params["filter"] = filter_str
+                # Prüfen ob Index existiert
+                if not self.client.indices.exists(index=index_name):
+                    continue
 
-                # Hybrid search (keyword + vector) via Meilisearch embedders
-                semantic_ratio = getattr(settings, "MEILISEARCH_SEMANTIC_RATIO", 0.5)
-                if semantic_ratio > 0:
-                    search_params["hybrid"] = {
-                        "semanticRatio": semantic_ratio,
-                        "embedder": "default",
-                    }
+                # Query aufbauen
+                es_query = self._build_query(query, body_id, index_name)
 
-                try:
-                    result = index.search(query, search_params)
-                except MeilisearchApiError:
-                    # Graceful degradation: retry without hybrid if embedders not configured
-                    if "hybrid" in search_params:
-                        del search_params["hybrid"]
-                        result = index.search(query, search_params)
-                    else:
-                        raise
+                result = self.client.search(
+                    index=index_name,
+                    body={
+                        "query": es_query,
+                        "size": page_size * 2,  # Mehr laden für Merge
+                        "from": 0,
+                        "highlight": {
+                            "pre_tags": [HIGHLIGHT_PRE],
+                            "post_tags": [HIGHLIGHT_POST],
+                            "fields": {
+                                "name": {"number_of_fragments": 0},
+                                "text_content": {"fragment_size": 200, "number_of_fragments": 1},
+                                "reference": {"number_of_fragments": 0},
+                            },
+                        },
+                    },
+                )
 
-                # Typ zu jedem Treffer hinzufügen
-                for hit in result.get("hits", []):
-                    # Singularform für Type (meetings -> meeting)
-                    hit["_index"] = index_name
-                    if "type" not in hit:
-                        hit["type"] = index_name.rstrip("s")
-                    all_results.append(hit)
+                for hit in result["hits"]["hits"]:
+                    doc = hit["_source"]
+                    doc["_rankingScore"] = hit.get("_score", 0)
+                    doc["_index"] = index_name
+                    if "type" not in doc:
+                        doc["type"] = index_name.rstrip("s")
 
-                total_hits += result.get("estimatedTotalHits", 0)
+                    # Highlighting in _formatted übersetzen (Kompatibilität)
+                    if "highlight" in hit:
+                        formatted = dict(doc)
+                        for field, fragments in hit["highlight"].items():
+                            formatted[field] = fragments[0] if fragments else doc.get(field, "")
+                        doc["_formatted"] = formatted
 
-            except MeilisearchApiError as e:
-                logger.warning(f"Suche in Index '{index_name}' fehlgeschlagen: {e}")
+                    all_results.append(doc)
+
+                total_hits += result["hits"]["total"]["value"]
+
+            except NotFoundError:
+                pass
             except Exception as e:
                 logger.error(f"Unerwarteter Fehler bei Index '{index_name}': {e}")
 
@@ -145,6 +135,45 @@ class MeilisearchService:
             "pages": (total_hits + page_size - 1) // page_size if total_hits > 0 else 0,
         }
 
+    def _build_query(self, query: str, body_id: str | None, index_name: str) -> dict[str, Any]:
+        """Baut die Elasticsearch-Query für einen Index."""
+        must = []
+        filter_clauses = []
+
+        if query:
+            must.append({
+                "multi_match": {
+                    "query": query,
+                    "fields": self._get_search_fields(index_name),
+                    "type": "best_fields",
+                    "fuzziness": "AUTO",
+                }
+            })
+        else:
+            must.append({"match_all": {}})
+
+        if body_id:
+            filter_clauses.append({"term": {"body_id": body_id}})
+
+        return {
+            "bool": {
+                "must": must,
+                "filter": filter_clauses,
+            }
+        }
+
+    @staticmethod
+    def _get_search_fields(index_name: str) -> list[str]:
+        """Gibt die durchsuchbaren Felder für einen Index zurück."""
+        fields_map = {
+            "papers": ["name^3", "reference^2", "paper_type", "file_contents_preview", "file_names"],
+            "meetings": ["name^3", "organization_names^2", "location_name"],
+            "persons": ["name^3", "given_name^2", "family_name^2", "title"],
+            "organizations": ["name^3", "short_name^2", "organization_type", "classification"],
+            "files": ["name^2", "file_name", "text_content", "paper_name", "paper_reference", "organization_names"],
+        }
+        return fields_map.get(index_name, ["name"])
+
     def search_papers(
         self,
         query: str,
@@ -154,31 +183,11 @@ class MeilisearchService:
         page_size: int = 20,
         include_files: bool = True,
     ) -> dict[str, Any]:
-        """
-        Sucht in Papers und optional deren Dateien.
-
-        Args:
-            query: Suchbegriff
-            body_id: Filter nach Kommune
-            filters: Zusätzliche Filter (paper_type, date, etc.)
-            page: Seitennummer
-            page_size: Ergebnisse pro Seite
-            include_files: Auch in Dateiinhalten suchen
-
-        Returns:
-            Dict mit results, total, page, page_size, pages
-        """
+        """Sucht in Papers und optional deren Dateien."""
         indexes = [INDEX_PAPERS]
         if include_files:
             indexes.append(INDEX_FILES)
-
-        return self.search_all(
-            query=query,
-            body_id=body_id,
-            page=page,
-            page_size=page_size,
-            index_names=indexes,
-        )
+        return self.search_all(query=query, body_id=body_id, page=page, page_size=page_size, index_names=indexes)
 
     def search_meetings(
         self,
@@ -187,25 +196,8 @@ class MeilisearchService:
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
-        """
-        Sucht nur in Sitzungen.
-
-        Args:
-            query: Suchbegriff
-            body_id: Filter nach Kommune
-            page: Seitennummer
-            page_size: Ergebnisse pro Seite
-
-        Returns:
-            Dict mit results, total, page, page_size, pages
-        """
-        return self.search_all(
-            query=query,
-            body_id=body_id,
-            page=page,
-            page_size=page_size,
-            index_names=[INDEX_MEETINGS],
-        )
+        """Sucht nur in Sitzungen."""
+        return self.search_all(query=query, body_id=body_id, page=page, page_size=page_size, index_names=[INDEX_MEETINGS])
 
     def search_persons(
         self,
@@ -214,25 +206,8 @@ class MeilisearchService:
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
-        """
-        Sucht nur in Personen.
-
-        Args:
-            query: Suchbegriff
-            body_id: Filter nach Kommune
-            page: Seitennummer
-            page_size: Ergebnisse pro Seite
-
-        Returns:
-            Dict mit results, total, page, page_size, pages
-        """
-        return self.search_all(
-            query=query,
-            body_id=body_id,
-            page=page,
-            page_size=page_size,
-            index_names=[INDEX_PERSONS],
-        )
+        """Sucht nur in Personen."""
+        return self.search_all(query=query, body_id=body_id, page=page, page_size=page_size, index_names=[INDEX_PERSONS])
 
     def search_organizations(
         self,
@@ -241,25 +216,8 @@ class MeilisearchService:
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
-        """
-        Sucht nur in Gremien.
-
-        Args:
-            query: Suchbegriff
-            body_id: Filter nach Kommune
-            page: Seitennummer
-            page_size: Ergebnisse pro Seite
-
-        Returns:
-            Dict mit results, total, page, page_size, pages
-        """
-        return self.search_all(
-            query=query,
-            body_id=body_id,
-            page=page,
-            page_size=page_size,
-            index_names=[INDEX_ORGANIZATIONS],
-        )
+        """Sucht nur in Gremien."""
+        return self.search_all(query=query, body_id=body_id, page=page, page_size=page_size, index_names=[INDEX_ORGANIZATIONS])
 
     def search_files(
         self,
@@ -268,25 +226,8 @@ class MeilisearchService:
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
-        """
-        Sucht nur in Dateiinhalten.
-
-        Args:
-            query: Suchbegriff
-            body_id: Filter nach Kommune
-            page: Seitennummer
-            page_size: Ergebnisse pro Seite
-
-        Returns:
-            Dict mit results, total, page, page_size, pages
-        """
-        return self.search_all(
-            query=query,
-            body_id=body_id,
-            page=page,
-            page_size=page_size,
-            index_names=[INDEX_FILES],
-        )
+        """Sucht nur in Dateiinhalten."""
+        return self.search_all(query=query, body_id=body_id, page=page, page_size=page_size, index_names=[INDEX_FILES])
 
     def search_single_index(
         self,
@@ -309,44 +250,48 @@ class MeilisearchService:
             page: Seitennummer
             page_size: Ergebnisse pro Seite
             sort: Sortierausdrücke (z.B. ["name:asc", "date:desc"])
-
-        Returns:
-            Dict mit results, total, page, page_size, pages
         """
         try:
-            index = self.client.index(index_name)
+            es_query = self._build_query(query, body_id, index_name)
 
-            # Filter aufbauen
-            filter_parts = []
-            if body_id:
-                filter_parts.append(f"body_id = '{body_id}'")
+            # Zusätzliche Filter
             if filters:
                 for key, value in filters.items():
                     if isinstance(value, list):
-                        filter_parts.append(f"{key} IN {value}")
+                        es_query["bool"]["filter"].append({"terms": {key: value}})
                     elif value is not None:
-                        filter_parts.append(f"{key} = '{value}'")
+                        es_query["bool"]["filter"].append({"term": {key: value}})
 
-            search_params: dict[str, Any] = {
-                "limit": page_size,
-                "offset": (page - 1) * page_size,
-                "showRankingScore": True,
+            body: dict[str, Any] = {
+                "query": es_query,
+                "size": page_size,
+                "from": (page - 1) * page_size,
             }
 
-            if filter_parts:
-                search_params["filter"] = " AND ".join(filter_parts)
+            # Sortierung
             if sort:
-                search_params["sort"] = sort
+                es_sort = []
+                for s in sort:
+                    field, _, order = s.partition(":")
+                    es_sort.append({field: {"order": order or "asc"}})
+                body["sort"] = es_sort
 
-            result = index.search(query, search_params)
+            result = self.client.search(index=index_name, body=body)
 
+            hits = []
+            for hit in result["hits"]["hits"]:
+                doc = hit["_source"]
+                doc["_rankingScore"] = hit.get("_score", 0)
+                hits.append(doc)
+
+            total = result["hits"]["total"]["value"]
             return {
-                "results": result.get("hits", []),
-                "total": result.get("estimatedTotalHits", 0),
+                "results": hits,
+                "total": total,
                 "page": page,
                 "page_size": page_size,
-                "pages": (result.get("estimatedTotalHits", 0) + page_size - 1) // page_size,
-                "processing_time_ms": result.get("processingTimeMs", 0),
+                "pages": (total + page_size - 1) // page_size,
+                "processing_time_ms": result.get("took", 0),
             }
 
         except Exception as e:
@@ -365,11 +310,13 @@ class MeilisearchService:
         stats = {}
         for index_name in ALL_INDEXES:
             try:
-                index = self.client.index(index_name)
-                index_stats = index.get_stats()
+                if not self.client.indices.exists(index=index_name):
+                    stats[index_name] = {"numberOfDocuments": 0, "isIndexing": False}
+                    continue
+                count = self.client.count(index=index_name)
                 stats[index_name] = {
-                    "numberOfDocuments": index_stats.get("numberOfDocuments", 0),
-                    "isIndexing": index_stats.get("isIndexing", False),
+                    "numberOfDocuments": count["count"],
+                    "isIndexing": False,
                 }
             except Exception as e:
                 stats[index_name] = {"error": str(e)}
@@ -377,14 +324,14 @@ class MeilisearchService:
 
 
 # Singleton-Instanz
-_search_service: MeilisearchService | None = None
+_search_service: ElasticsearchService | None = None
 
 
-def get_search_service() -> MeilisearchService:
+def get_search_service() -> ElasticsearchService:
     """Gibt die Singleton-Instanz des Search-Service zurück."""
     global _search_service
     if _search_service is None:
-        _search_service = MeilisearchService()
+        _search_service = ElasticsearchService()
     return _search_service
 
 
@@ -405,7 +352,7 @@ def _safe_highlight(text: str | None) -> str:
 
 def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
     """
-    Formatiert ein Meilisearch-Treffer für die Template-Anzeige.
+    Formatiert einen Elasticsearch-Treffer für die Template-Anzeige.
 
     Returns:
         Dict mit type, title, subtitle, url, highlight

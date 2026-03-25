@@ -1249,7 +1249,7 @@ class DatabaseStorage:
             await session.execute(stmt)
             await session.commit()
 
-    # ========== Meilisearch Query Helpers ==========
+    # ========== Search Indexing Query Helpers ==========
 
     async def get_all_for_body(
         self,

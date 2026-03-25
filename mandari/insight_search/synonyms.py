@@ -1,5 +1,5 @@
 """
-Deutsche Kommunal-Synonyme für Meilisearch.
+Deutsche Kommunal-Synonyme für Elasticsearch.
 
 Diese Synonyme verbessern die Sucherfahrung für kommunalpolitische Begriffe.
 """
@@ -110,21 +110,32 @@ GERMAN_MUNICIPAL_SYNONYMS = {
 }
 
 
-def get_meilisearch_synonyms() -> dict[str, list[str]]:
+def get_elasticsearch_synonyms() -> list[str]:
     """
-    Gibt die Synonyme im Meilisearch-Format zurück.
+    Gibt die Synonyme im Elasticsearch-Format zurück.
 
-    Meilisearch erwartet: {"Begriff": ["Synonym1", "Synonym2"]}
+    Elasticsearch erwartet Solr-Format: "Begriff, Synonym1, Synonym2"
     """
+    synonym_lines: list[str] = []
+    seen: set[frozenset] = set()
+
+    for key, values in GERMAN_MUNICIPAL_SYNONYMS.items():
+        group = frozenset([key] + values)
+        if group not in seen:
+            seen.add(group)
+            synonym_lines.append(", ".join(sorted(group)))
+
+    return synonym_lines
+
+
+# Rückwärtskompatibilität
+def get_meilisearch_synonyms() -> dict[str, list[str]]:
+    """Veraltet — verwende get_elasticsearch_synonyms()."""
     return GERMAN_MUNICIPAL_SYNONYMS.copy()
 
 
 def get_synonym_list() -> list[tuple[str, list[str]]]:
-    """
-    Gibt die Synonyme als Liste von Tupeln zurück.
-
-    Nützlich für UI-Anzeige oder Debugging.
-    """
+    """Gibt die Synonyme als Liste von Tupeln zurück."""
     return [(k, v) for k, v in sorted(GERMAN_MUNICIPAL_SYNONYMS.items())]
 
 

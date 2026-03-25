@@ -15,14 +15,17 @@ class InsightSyncConfig(AppConfig):
         if not getattr(settings, "SYNC_DAEMON_AUTOSTART", False):
             return
 
-        # Nicht bei Management Commands
-        if len(sys.argv) > 1 and sys.argv[1] != "runserver":
+        # Erkennung: Laufen wir als Webserver oder als Management Command?
+        is_management_command = (
+            len(sys.argv) > 1
+            and sys.argv[0].endswith("manage.py")
+            and sys.argv[1] not in ("runserver", "runworker")
+        )
+        if is_management_command:
             return
 
-        # NUR im Reloader-Worker starten (RUN_MAIN=true).
-        # Der Eltern-Prozess (kein RUN_MAIN) darf NICHT starten,
-        # weil er den Worker jederzeit neu spawnen kann.
-        if os.environ.get("RUN_MAIN") != "true":
+        # Bei runserver mit Auto-Reload: NUR im Worker starten (RUN_MAIN=true).
+        if "runserver" in sys.argv and os.environ.get("RUN_MAIN") != "true":
             return
 
         from . import daemon

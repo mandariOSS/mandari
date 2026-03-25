@@ -824,6 +824,38 @@ class UserInvitation(models.Model):
         return invitation
 
 
+class AdministrationContact(models.Model):
+    """
+    Verwaltungs-E-Mail-Empfänger für Anträge/Änderungsanträge.
+
+    Mehrere Empfänger pro Organisation möglich (z.B. Ratsbüro, OB-Büro).
+    Anträge werden immer an alle hinterlegten Kontakte versendet.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    organization = models.ForeignKey(
+        "Organization",
+        on_delete=models.CASCADE,
+        related_name="administration_contacts",
+        verbose_name="Organisation",
+    )
+
+    label = models.CharField(max_length=200, verbose_name="Bezeichnung", help_text="z.B. Ratsbüro, OB-Büro")
+    email = models.EmailField(verbose_name="E-Mail")
+    order = models.IntegerField(default=0, verbose_name="Reihenfolge")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Verwaltungskontakt"
+        verbose_name_plural = "Verwaltungskontakte"
+        ordering = ["order", "label"]
+
+    def __str__(self):
+        return f"{self.label} <{self.email}>"
+
+
 class CouncilParty(models.Model):
     """
     Council party/faction for coalition management.

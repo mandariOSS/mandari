@@ -91,7 +91,7 @@ Detaillierte Anleitung: [docs/installation.md](docs/installation.md)
 | Backend | Django 6.0, Python 3.12+ |
 | Frontend | HTMX, Alpine.js, Tailwind |
 | Datenbank | PostgreSQL 16 |
-| Suche | Meilisearch |
+| Suche | Elasticsearch 8 |
 | Cache | Redis 7 |
 | Proxy | Caddy |
 

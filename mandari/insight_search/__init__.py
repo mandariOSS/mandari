@@ -1,2 +1,2 @@
 # Mandari Insight Search
-# Meilisearch Integration
+# Elasticsearch Integration

@@ -10,14 +10,14 @@ import os
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger("insight_sync.daemon")
 
 _daemon_thread: threading.Thread | None = None
 _stop_event = threading.Event()
 _start_lock = threading.Lock()
-_started = False  # Extra guard — einmal True, nie wieder False
+_started = False
 
 
 def is_running() -> bool:
@@ -72,6 +72,36 @@ def _get_config():
         return None
 
 
+def _is_sync_running() -> bool:
+    """Prüft ob aktuell ein Sync in der DB als 'running' markiert ist."""
+    try:
+        from .models import SyncLog
+
+        return SyncLog.objects.filter(status="running").exists()
+    except Exception:
+        return False
+
+
+def _cleanup_stale_syncs():
+    """Markiert hängende Syncs (>15 Min) als fehlgeschlagen."""
+    try:
+        from django.utils import timezone
+
+        from .models import SyncLog
+
+        cutoff = timezone.now() - timedelta(minutes=15)
+        stale = SyncLog.objects.filter(status="running", started_at__lt=cutoff)
+        count = stale.update(
+            status="failed",
+            finished_at=timezone.now(),
+            errors=["Sync-Timeout: Prozess hat nicht innerhalb von 15 Minuten geantwortet"],
+        )
+        if count:
+            logger.warning(f"{count} hängende Sync-Logs bereinigt (>15 Min ohne Abschluss)")
+    except Exception:
+        pass
+
+
 def _daemon_loop():
     """Haupt-Loop: Liest Config, wartet, synct."""
     from pathlib import Path
@@ -88,10 +118,12 @@ def _daemon_loop():
             sys.path.insert(0, str(path))
 
     last_full_sync_date = None
-    last_sync_at = 0.0  # time.monotonic() des letzten Sync-Laufs
 
     # Kurz warten bis Django vollständig gestartet ist
     _wait(5)
+
+    # Beim Start: hängende Syncs aufräumen
+    _cleanup_stale_syncs()
 
     logger.info("Sync-Daemon-Loop gestartet. Konfiguration wird aus DB gelesen (Admin → Sync-Einstellungen).")
 
@@ -111,16 +143,6 @@ def _daemon_loop():
             full_hour = config.full_sync_hour
             max_concurrent = config.max_concurrent
 
-            # Mindestabstand zum letzten Sync einhalten (verhindert Doppel-Syncs)
-            if last_sync_at > 0:
-                elapsed = time.monotonic() - last_sync_at
-                min_gap = max(interval * 60 - 10, 60)  # Mindestens 60s
-                if elapsed < min_gap:
-                    remaining = min_gap - elapsed
-                    if _wait(remaining):
-                        break
-                    continue  # Config neu lesen
-
             # Berechne Wartezeit bis zum nächsten Intervall-Grenzwert
             now = datetime.now()
             if interval > 0:
@@ -139,9 +161,15 @@ def _daemon_loop():
                     break
                 continue  # Config neu lesen nach dem Warten
 
+            # Prüfen ob bereits ein Sync läuft
+            _cleanup_stale_syncs()
+            if _is_sync_running():
+                logger.warning("Sync läuft bereits — überspringe diesen Intervall.")
+                _wait(60)
+                continue
+
             # Sync ausführen
             now = datetime.now()
-            # Full-Sync nur wenn gültige Stunde (0-23). Wert > 23 = deaktiviert.
             is_full = (
                 0 <= full_hour <= 23
                 and now.hour == full_hour
@@ -156,8 +184,8 @@ def _daemon_loop():
                 logger.info(f"Starte Incremental Sync ({now.strftime('%H:%M')})...")
                 _run_sync(full=False, max_concurrent=max_concurrent)
 
-            # Zeitpunkt merken — verhindert sofortige Wiederholung
-            last_sync_at = time.monotonic()
+            # Nach Sync mindestens 1 Intervall warten
+            _wait(max(interval * 60 - 10, 60))
 
         except Exception:
             logger.exception("Fehler im Sync-Daemon-Loop")
@@ -167,30 +195,15 @@ def _daemon_loop():
 
 
 def _run_sync(*, full: bool, max_concurrent: int):
-    """Führt einen Sync mit Logging und Timeout aus."""
-    import concurrent.futures
-
-    # Max 10 Minuten für Incremental, 30 für Full — danach abbrechen
-    timeout = 1800 if full else 600
-
+    """Führt einen Sync synchron aus (blockiert den Daemon-Thread)."""
     try:
         from .tasks import run_sync_with_logging
 
-        # Sync in einem separaten Thread mit Timeout ausführen
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(
-                run_sync_with_logging,
-                full=full,
-                triggered_by="daemon",
-                max_concurrent=max_concurrent,
-            )
-            try:
-                future.result(timeout=timeout)
-            except concurrent.futures.TimeoutError:
-                logger.error(
-                    f"Sync-Timeout nach {timeout}s — API möglicherweise nicht erreichbar. "
-                    f"Nächster Versuch beim nächsten Intervall."
-                )
+        run_sync_with_logging(
+            full=full,
+            triggered_by="daemon",
+            max_concurrent=max_concurrent,
+        )
     except ImportError as e:
         logger.error(
             f"Ingestor nicht verfügbar: {e} — "
