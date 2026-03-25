@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             ${props.reference ? `<p class="text-xs text-gray-500 mb-1">${props.reference}</p>` : ''}
                             ${props.location_name ? `<p class="text-sm text-gray-600 mb-2">${props.location_name}</p>` : ''}
                             ${props.date ? `<p class="text-xs text-gray-400">${new Date(props.date).toLocaleDateString('de-DE')}</p>` : ''}
-                            <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id='PLACEHOLDER' %}".replace('PLACEHOLDER', props.id)
+                            <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id='00000000-0000-0000-0000-000000000000' %}".replace('00000000-0000-0000-0000-000000000000', props.id)
                                class="inline-block mt-2 text-sm text-primary-600 hover:underline">
                                 Details anzeigen &rarr;
                             </a>
