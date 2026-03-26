@@ -222,6 +222,11 @@ class OParlPaper(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     locations: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    # Georeferenzierung (Django verwaltet, Ingestor setzt Default)
+    georef_status: Mapped[str] = mapped_column(
+        String(20), server_default="pending", default="pending"
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

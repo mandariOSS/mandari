@@ -274,11 +274,7 @@ class OParlPaperAdmin(ModelAdmin):
         "external_id",
         "created_at",
         "updated_at",
-        "georef_status",
-        "georef_method",
-        "georef_error",
         "georef_extracted_at",
-        "locations",
     ]
 
     fieldsets = (
