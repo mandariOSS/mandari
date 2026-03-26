@@ -238,7 +238,7 @@ services:
     restart: unless-stopped
     command: >
       python -m src.main daemon
-      --interval ${INGESTOR_INTERVAL:-15}
+      --interval ${INGESTOR_INTERVAL:-10}
       --full-sync-hour ${INGESTOR_FULL_SYNC_HOUR:-3}
       --concurrent ${INGESTOR_CONCURRENT:-10}
     environment:

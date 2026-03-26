@@ -69,7 +69,7 @@ def dashboard_callback(request, context):
         context["recent_sync_logs"] = SyncLog.objects.order_by("-started_at")[:5]
         context["sync_config"] = SyncConfig.get()
         context["is_syncing"] = SyncLog.objects.filter(status=SyncLog.Status.RUNNING).exists()
-        context["daemon_running"] = daemon.is_running()
+        context["daemon_running"] = daemon.is_ingestor_active()
     except Exception:
         context["recent_sync_logs"] = []
         context["sync_config"] = None

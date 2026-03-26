@@ -1211,3 +1211,57 @@ class SyncOrchestrator:
                 console.print(f"  - {error}")
             if len(result.errors) > 10:
                 console.print(f"  ... and {len(result.errors) - 10} more")
+
+    async def write_results_to_synclog(
+        self,
+        results: list[SyncResult],
+        start_time: datetime,
+        sync_type: str = "incremental",
+        triggered_by: str = "daemon",
+    ) -> None:
+        """Schreibt aggregierte Sync-Ergebnisse in Django's SyncLog-Tabelle."""
+        end_time = datetime.now(timezone.utc)
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=timezone.utc)
+
+        total_entities = 0
+        all_errors: list[str] = []
+        details: dict = {}
+
+        for result in results:
+            synced = (
+                result.organizations_synced + result.persons_synced
+                + result.memberships_synced + result.meetings_synced
+                + result.papers_synced + result.files_synced
+                + result.locations_synced + result.agenda_items_synced
+                + result.consultations_synced
+            )
+            total_entities += synced
+            all_errors.extend(result.errors)
+            details[result.source_name or "Unknown"] = {
+                "organizations": result.organizations_synced,
+                "persons": result.persons_synced,
+                "meetings": result.meetings_synced,
+                "papers": result.papers_synced,
+                "files": result.files_synced,
+            }
+
+        status = "success" if not all_errors or total_entities > 0 else "failed"
+        duration = (end_time - start_time).total_seconds()
+
+        try:
+            await self.storage.write_sync_log(
+                source_id=None,
+                sync_type=sync_type,
+                status=status,
+                started_at=start_time,
+                finished_at=end_time,
+                duration_seconds=duration,
+                entities_synced=total_entities,
+                errors=all_errors[:20],
+                details=details,
+                triggered_by=triggered_by,
+            )
+            console.print(f"[dim]SyncLog geschrieben: {status}, {total_entities} Entitäten, {duration:.1f}s[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]Warning: SyncLog konnte nicht geschrieben werden: {e}[/yellow]")

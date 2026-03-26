@@ -10,12 +10,7 @@ class InsightSyncConfig(AppConfig):
     verbose_name = "Mandari Insight Sync"
 
     def ready(self):
-        from django.conf import settings
-
-        if not getattr(settings, "SYNC_DAEMON_AUTOSTART", False):
-            return
-
-        # Erkennung: Laufen wir als Webserver oder als Management Command?
+        # Nicht bei Management Commands (außer runserver)
         is_management_command = (
             len(sys.argv) > 1
             and sys.argv[0].endswith("manage.py")
@@ -24,7 +19,7 @@ class InsightSyncConfig(AppConfig):
         if is_management_command:
             return
 
-        # Bei runserver mit Auto-Reload: NUR im Worker starten (RUN_MAIN=true).
+        # Bei runserver mit Auto-Reload: NUR im Worker starten
         if "runserver" in sys.argv and os.environ.get("RUN_MAIN") != "true":
             return
 

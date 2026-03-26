@@ -55,6 +55,7 @@ class SyncScheduler:
         self._is_syncing = False
         self._last_sync: datetime | None = None
         self._sync_stats: dict[str, Any] = {}
+        self._redis_listener_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         """Start the scheduler and register jobs."""
@@ -86,6 +87,9 @@ class SyncScheduler:
         )
 
         self.scheduler.start()
+
+        # Redis-Listener für manuelle Trigger aus dem Django-Admin
+        self._redis_listener_task = asyncio.create_task(self._listen_for_triggers())
 
         console.print("[green]Scheduler started successfully[/green]")
         console.print()
@@ -202,53 +206,42 @@ class SyncScheduler:
             self._is_syncing = False
 
     async def _write_cycle_log(self, orchestrator, results, start_time, sync_type):
-        """Write a single sync log entry for the entire sync cycle."""
-        from datetime import timezone as tz
+        """Write a single sync log entry via orchestrator's shared method."""
+        await orchestrator.write_results_to_synclog(
+            results, start_time, sync_type, triggered_by="daemon",
+        )
 
-        end_time = datetime.now(tz.utc)
-        start_utc = start_time.astimezone(tz.utc) if start_time.tzinfo else start_time.replace(tzinfo=tz.utc)
-        duration = (end_time - start_utc).total_seconds()
-
-        total_entities = 0
-        all_errors = []
-        details = {}
-
-        for result in results:
-            synced = (
-                result.organizations_synced + result.persons_synced
-                + result.memberships_synced + result.meetings_synced
-                + result.papers_synced + result.files_synced
-                + result.locations_synced + result.agenda_items_synced
-                + result.consultations_synced
-            )
-            total_entities += synced
-            all_errors.extend(result.errors)
-            name = result.source_name or "Unknown"
-            details[name] = {
-                "meetings": result.meetings_synced,
-                "papers": result.papers_synced,
-                "persons": result.persons_synced,
-                "organizations": result.organizations_synced,
-                "files": result.files_synced,
-            }
-
-        status = "success" if not all_errors or total_entities > 0 else "failed"
+    async def _listen_for_triggers(self):
+        """Hört auf Redis-Events vom Django-Admin ('Jetzt synchronisieren')."""
+        import json
 
         try:
-            await orchestrator.storage.write_sync_log(
-                source_id=None,
-                sync_type=sync_type,
-                status=status,
-                started_at=start_utc,
-                finished_at=end_time,
-                duration_seconds=duration,
-                entities_synced=total_entities,
-                errors=all_errors[:20],
-                details=details,
-                triggered_by="daemon",
-            )
+            import redis.asyncio as aioredis
+        except ImportError:
+            logger.warning("redis.asyncio nicht verfügbar, Trigger-Listener deaktiviert")
+            return
+
+        try:
+            r = aioredis.from_url(settings.redis_url)
+            pubsub = r.pubsub()
+            await pubsub.subscribe("mandari:sync:trigger")
+            console.print("[dim]Redis trigger listener aktiv (mandari:sync:trigger)[/dim]")
+
+            async for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+                try:
+                    data = json.loads(message["data"])
+                    full = data.get("full", False)
+                    console.print(f"\n[bold yellow]Sync-Trigger empfangen (full={full})[/bold yellow]")
+                    if full:
+                        await self._run_full_sync()
+                    else:
+                        await self._run_incremental_sync()
+                except Exception as e:
+                    logger.warning(f"Fehler bei Trigger-Verarbeitung: {e}")
         except Exception as e:
-            console.print(f"[yellow]Warning: Could not write sync log: {e}[/yellow]")
+            logger.warning(f"Redis trigger listener Fehler: {e}")
 
     def get_status(self) -> dict[str, Any]:
         """Get current scheduler status."""

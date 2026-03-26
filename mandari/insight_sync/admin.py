@@ -110,7 +110,7 @@ class SyncConfigAdmin(ModelAdmin):
 
 
 def trigger_sync_view(request):
-    """POST-Endpoint: Startet einen Sync vom Dashboard."""
+    """POST-Endpoint: Triggert einen Sync via Redis an den Ingestor-Container."""
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
 
@@ -126,14 +126,12 @@ def trigger_sync_view(request):
 
     full = request.POST.get("full") == "1"
 
-    def _run():
-        from .tasks import run_sync_with_logging
+    from . import daemon
 
-        run_sync_with_logging(full=full, triggered_by="admin")
+    if daemon.trigger_sync(full=full):
+        sync_label = "Vollständiger" if full else "Inkrementeller"
+        messages.success(request, f"{sync_label} Sync an Ingestor gesendet.")
+    else:
+        messages.error(request, "Sync-Trigger konnte nicht gesendet werden (Redis nicht erreichbar?).")
 
-    thread = threading.Thread(target=_run, daemon=True)
-    thread.start()
-
-    sync_label = "Vollständiger" if full else "Inkrementeller"
-    messages.success(request, f"{sync_label} Sync gestartet. Läuft im Hintergrund.")
     return HttpResponseRedirect(reverse("admin:index"))

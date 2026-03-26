@@ -120,14 +120,19 @@ def sync(
     console.print()
 
     async def run_sync() -> None:
+        from datetime import datetime, timezone as tz
+
+        start_time = datetime.now(tz.utc)
+        sync_type = "full" if full else "incremental"
+
         async with SyncOrchestrator(max_concurrent=max_concurrent) as orchestrator:
+            results = []
             if all_sources:
                 console.print("[blue]Syncing all registered sources...[/blue]")
                 results = await orchestrator.sync_all(full=full)
                 for result in results:
                     orchestrator.print_result(result)
             elif body_url:
-                # Body-First: sync each body URL via auto-detection
                 for url in body_url:
                     console.print(f"[blue]Syncing: {url}[/blue]")
                     result = await orchestrator.sync_body_url(
@@ -136,8 +141,8 @@ def sync(
                         max_concurrent=max_concurrent,
                     )
                     orchestrator.print_result(result)
+                    results.append(result)
             else:
-                # Legacy: system URL
                 assert source_url is not None
                 result = await orchestrator.sync_source(
                     url=source_url,
@@ -145,6 +150,13 @@ def sync(
                     body_filter=body_filter,
                 )
                 orchestrator.print_result(result)
+                results.append(result)
+
+            # SyncLog in Django's Tabelle schreiben
+            if results:
+                await orchestrator.write_results_to_synclog(
+                    results, start_time, sync_type, triggered_by="cli",
+                )
 
     try:
         asyncio.run(run_sync())
