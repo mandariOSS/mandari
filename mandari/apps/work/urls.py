@@ -69,26 +69,38 @@ urlpatterns = [
         meetings_views.AgendaNotesAPIView.as_view(),
         name="meeting_note_delete",
     ),
-    # Speech notes (teleprompter)
+    # Private notes (per user)
+    path(
+        "<slug:org_slug>/meetings/<uuid:meeting_id>/private-note/<uuid:item_id>/",
+        meetings_views.PrivateNoteAPIView.as_view(),
+        name="meeting_private_note_api",
+    ),
+    # Speech notes (per user, shareable)
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/speech/<uuid:item_id>/",
         meetings_views.SpeechNoteAPIView.as_view(),
         name="meeting_speech_api",
     ),
+    # Supplementary documents (links + uploads + OParl refs)
     path(
-        "<slug:org_slug>/meetings/<uuid:meeting_id>/teleprompter/<uuid:item_id>/",
-        meetings_views.TeleprompterView.as_view(),
-        name="meeting_teleprompter",
+        "<slug:org_slug>/meetings/<uuid:meeting_id>/supplementary/<uuid:item_id>/",
+        meetings_views.SupplementaryDocumentAPIView.as_view(),
+        name="meeting_supplementary_api",
     ),
-    # Document links
+    path(
+        "<slug:org_slug>/meetings/supplementary/<uuid:doc_id>/delete/",
+        meetings_views.SupplementaryDocumentAPIView.as_view(),
+        name="meeting_supplementary_delete",
+    ),
+    # Legacy URL compatibility (redirects to new supplementary endpoint)
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/documents/<uuid:item_id>/",
-        meetings_views.DocumentLinkAPIView.as_view(),
+        meetings_views.SupplementaryDocumentAPIView.as_view(),
         name="meeting_documents_api",
     ),
     path(
         "<slug:org_slug>/meetings/documents/<uuid:link_id>/delete/",
-        meetings_views.DocumentLinkAPIView.as_view(),
+        meetings_views.SupplementaryDocumentAPIView.as_view(),
         name="meeting_document_delete",
     ),
     # Paper comments (cross-committee collaboration)
