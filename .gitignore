@@ -22,6 +22,7 @@
 
 # Claude Code (local settings)
 .claude/
+.claudeignore
 
 # =============================================================================
 # SECRETS & SENSITIVE DATA (CRITICAL!)
