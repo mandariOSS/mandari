@@ -134,7 +134,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Scan mandari image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.34.2
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${{ steps.tags.outputs.scan_tag }}
           severity: 'CRITICAL,HIGH'
@@ -157,7 +157,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Scan ingestor image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.34.2
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${{ steps.tags.outputs.scan_tag }}
           severity: 'CRITICAL,HIGH'
@@ -180,7 +180,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Scan website image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.34.2
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${{ steps.tags.outputs.scan_tag }}
           severity: 'CRITICAL,HIGH'
