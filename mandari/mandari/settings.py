@@ -182,7 +182,10 @@ if REDIS_URL and not DEBUG:
             "LOCATION": REDIS_URL,
         }
     }
-    SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+    # cached_db statt cache: Redis läuft mit allkeys-lru und darf Session-Keys
+    # evicten — reine Cache-Sessions führen dann zu zufälligen Logouts (Issue #5).
+    # Die DB bleibt die Quelle der Wahrheit, der Cache beschleunigt nur.
+    SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
     SESSION_CACHE_ALIAS = "default"
 else:
     # Use local memory cache for development
