@@ -45,13 +45,14 @@
                 <a href="{% url 'work:document_create' org_slug=organization.slug %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-800/40 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-all">
                     <i data-lucide="plus" class="w-3.5 h-3.5"></i> Neuer Antrag
                 </a>
-                <a href="{% url 'work:faction' org_slug=organization.slug %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all">
+                {# Akzentfarben aus dem alten Design: Fraktion=Purple, Ratsinfo=Cyan, Support=Rose #}
+                <a href="{% url 'work:faction' org_slug=organization.slug %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-all">
                     <i data-lucide="users" class="w-3.5 h-3.5"></i> Fraktion
                 </a>
-                <a href="{% url 'work:ris_overview' org_slug=organization.slug %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all">
+                <a href="{% url 'work:ris_overview' org_slug=organization.slug %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/30 transition-all">
                     <i data-lucide="building-2" class="w-3.5 h-3.5"></i> Ratsinformation
                 </a>
-                <a href="{% url 'work:support' org_slug=organization.slug %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all">
+                <a href="{% url 'work:support' org_slug=organization.slug %}" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/40 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all">
                     <i data-lucide="life-buoy" class="w-3.5 h-3.5"></i> Support
                 </a>
             </div>
@@ -77,7 +78,7 @@
         <div>
             <div class="flex items-center justify-between mb-1">
                 <h2 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <i data-lucide="calendar-days" class="w-4 h-4 text-primary-500"></i>
+                    <i data-lucide="calendar-days" class="w-4 h-4 text-blue-500"></i>
                     Kommende Sitzungen
                 </h2>
                 <a href="{% url 'work:meetings' org_slug=organization.slug %}" class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-0.5">
@@ -91,9 +92,10 @@
                 {% for meeting in upcoming_meetings %}
                 <a href="{% url meeting.url_name org_slug=organization.slug meeting_id=meeting.id %}"
                    class="group flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
-                    <div class="flex flex-col items-center justify-center flex-shrink-0 w-12 h-12 rounded-lg leading-none {% if meeting.type == 'faction' %}bg-purple-50 dark:bg-purple-900/20{% else %}bg-primary-50 dark:bg-primary-900/20{% endif %}">
-                        <span class="text-lg font-extrabold {% if meeting.type == 'faction' %}text-purple-600 dark:text-purple-400{% else %}text-primary-600 dark:text-primary-400{% endif %}">{{ meeting.start|date:"d" }}</span>
-                        <span class="text-[10px] font-bold uppercase tracking-wide mt-0.5 {% if meeting.type == 'faction' %}text-purple-500 dark:text-purple-400{% else %}text-primary-500 dark:text-primary-400{% endif %}">{{ meeting.start|date:"M" }}</span>
+                    {# Datums-Box: Fraktionssitzungen Purple, Gremien-Termine Blau (altes Farbschema) #}
+                    <div class="flex flex-col items-center justify-center flex-shrink-0 w-12 h-12 rounded-lg leading-none {% if meeting.type == 'faction' %}bg-purple-50 dark:bg-purple-900/20{% else %}bg-blue-50 dark:bg-blue-900/20{% endif %}">
+                        <span class="text-lg font-extrabold {% if meeting.type == 'faction' %}text-purple-600 dark:text-purple-400{% else %}text-blue-600 dark:text-blue-400{% endif %}">{{ meeting.start|date:"d" }}</span>
+                        <span class="text-[10px] font-bold uppercase tracking-wide mt-0.5 {% if meeting.type == 'faction' %}text-purple-500 dark:text-purple-400{% else %}text-blue-500 dark:text-blue-400{% endif %}">{{ meeting.start|date:"M" }}</span>
                     </div>
                     <div class="min-w-0 flex-1">
                         <div class="flex items-center gap-1.5">
@@ -123,7 +125,7 @@
         <div>
             <div class="flex items-center justify-between mb-1">
                 <h2 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <i data-lucide="check-square" class="w-4 h-4 text-primary-500"></i>
+                    <i data-lucide="check-square" class="w-4 h-4 text-amber-500"></i>
                     Meine Aufgaben
                 </h2>
                 <a href="{% url 'work:tasks' org_slug=organization.slug %}" class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-0.5">
@@ -173,7 +175,7 @@
         <div>
             <div class="flex items-center justify-between mb-1">
                 <h2 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <i data-lucide="file-text" class="w-4 h-4 text-primary-500"></i>
+                    <i data-lucide="file-text" class="w-4 h-4 text-cyan-500"></i>
                     Aktuelle Dokumente
                 </h2>
                 <a href="{% url 'work:motions' org_slug=organization.slug %}" class="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-0.5">
