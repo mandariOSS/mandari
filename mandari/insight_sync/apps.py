@@ -12,9 +12,7 @@ class InsightSyncConfig(AppConfig):
     def ready(self):
         # Nicht bei Management Commands (außer runserver)
         is_management_command = (
-            len(sys.argv) > 1
-            and sys.argv[0].endswith("manage.py")
-            and sys.argv[1] not in ("runserver", "runworker")
+            len(sys.argv) > 1 and sys.argv[0].endswith("manage.py") and sys.argv[1] not in ("runserver", "runworker")
         )
         if is_management_command:
             return

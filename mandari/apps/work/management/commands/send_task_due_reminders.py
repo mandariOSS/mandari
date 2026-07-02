@@ -74,9 +74,7 @@ class Command(BaseCommand):
 
             days_left = (task.due_date - today).days
             if dry_run:
-                self.stdout.write(
-                    f"DRY-RUN: '{task.title}' -> {recipient.user.email} (faellig in {days_left} Tagen)"
-                )
+                self.stdout.write(f"DRY-RUN: '{task.title}' -> {recipient.user.email} (faellig in {days_left} Tagen)")
             else:
                 NotificationHub.notify_task_due_soon(task, recipient, days_left)
             sent += 1

@@ -100,9 +100,9 @@ class DashboardView(WorkViewMixin, TemplateView):
             if unresolved_refs:
                 orgs_by_external_id = {
                     org.external_id: org
-                    for org in OParlOrganization.objects.filter(
-                        external_id__in=unresolved_refs
-                    ).only("id", "external_id", "name", "short_name")
+                    for org in OParlOrganization.objects.filter(external_id__in=unresolved_refs).only(
+                        "id", "external_id", "name", "short_name"
+                    )
                 }
 
             for meeting in ris_meetings:

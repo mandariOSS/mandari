@@ -141,14 +141,16 @@ class ElasticsearchService:
         filter_clauses = []
 
         if query:
-            must.append({
-                "multi_match": {
-                    "query": query,
-                    "fields": self._get_search_fields(index_name),
-                    "type": "best_fields",
-                    "fuzziness": "AUTO",
+            must.append(
+                {
+                    "multi_match": {
+                        "query": query,
+                        "fields": self._get_search_fields(index_name),
+                        "type": "best_fields",
+                        "fuzziness": "AUTO",
+                    }
                 }
-            })
+            )
         else:
             must.append({"match_all": {}})
 
@@ -197,7 +199,9 @@ class ElasticsearchService:
         page_size: int = 20,
     ) -> dict[str, Any]:
         """Sucht nur in Sitzungen."""
-        return self.search_all(query=query, body_id=body_id, page=page, page_size=page_size, index_names=[INDEX_MEETINGS])
+        return self.search_all(
+            query=query, body_id=body_id, page=page, page_size=page_size, index_names=[INDEX_MEETINGS]
+        )
 
     def search_persons(
         self,
@@ -207,7 +211,9 @@ class ElasticsearchService:
         page_size: int = 20,
     ) -> dict[str, Any]:
         """Sucht nur in Personen."""
-        return self.search_all(query=query, body_id=body_id, page=page, page_size=page_size, index_names=[INDEX_PERSONS])
+        return self.search_all(
+            query=query, body_id=body_id, page=page, page_size=page_size, index_names=[INDEX_PERSONS]
+        )
 
     def search_organizations(
         self,
@@ -217,7 +223,9 @@ class ElasticsearchService:
         page_size: int = 20,
     ) -> dict[str, Any]:
         """Sucht nur in Gremien."""
-        return self.search_all(query=query, body_id=body_id, page=page, page_size=page_size, index_names=[INDEX_ORGANIZATIONS])
+        return self.search_all(
+            query=query, body_id=body_id, page=page, page_size=page_size, index_names=[INDEX_ORGANIZATIONS]
+        )
 
     def search_files(
         self,

@@ -169,11 +169,13 @@ class Command(BaseCommand):
                         else:
                             doc = builder(obj)
 
-                        actions.append({
-                            "_index": index_name,
-                            "_id": doc["id"],
-                            "_source": doc,
-                        })
+                        actions.append(
+                            {
+                                "_index": index_name,
+                                "_id": doc["id"],
+                                "_source": doc,
+                            }
+                        )
                     except Exception as e:
                         self.stderr.write(self.style.WARNING(f"  Error building doc for {obj.id}: {e}"))
 

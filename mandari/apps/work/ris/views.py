@@ -383,9 +383,12 @@ class RISMeetingDetailView(WorkViewMixin, TemplateView):
         # Get agenda items with related papers
         # Natural sort: 1, 2, 10 instead of 1, 10, 2
         import re
+
         agenda_items = sorted(
             meeting.agenda_items.all(),
-            key=lambda x: [(0, int(p)) if p.isdigit() else (1, p.lower()) for p in re.split(r"(\d+)", x.number or "999") if p]
+            key=lambda x: [
+                (0, int(p)) if p.isdigit() else (1, p.lower()) for p in re.split(r"(\d+)", x.number or "999") if p
+            ],
         )
 
         # Enrich with papers
@@ -524,30 +527,16 @@ class RISOrganizationDetailView(WorkViewMixin, TemplateView):
 
         # Active members (no end_date or end_date >= today)
         all_memberships = org.memberships.select_related("person")
-        context["active_members"] = (
-            all_memberships
-            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
-            .order_by("person__family_name", "person__name")
+        context["active_members"] = all_memberships.filter(Q(end_date__isnull=True) | Q(end_date__gte=today)).order_by(
+            "person__family_name", "person__name"
         )
         # Past members (end_date < today)
-        context["past_members"] = (
-            all_memberships
-            .filter(end_date__lt=today)
-            .order_by("-end_date")
-        )
+        context["past_members"] = all_memberships.filter(end_date__lt=today).order_by("-end_date")
 
         # Upcoming meetings (today + future)
-        context["upcoming_meetings"] = (
-            org.meetings
-            .filter(start__gte=today_start, cancelled=False)
-            .order_by("start")
-        )
+        context["upcoming_meetings"] = org.meetings.filter(start__gte=today_start, cancelled=False).order_by("start")
         # Past meetings
-        context["past_meetings"] = (
-            org.meetings
-            .filter(start__lt=today_start)
-            .order_by("-start")[:30]
-        )
+        context["past_meetings"] = org.meetings.filter(start__lt=today_start).order_by("-start")[:30]
 
         # Active tab from query parameter
         context["active_tab"] = self.request.GET.get("tab", "members")
@@ -642,16 +631,10 @@ class RISPersonDetailView(WorkViewMixin, TemplateView):
 
         # Split memberships into active and past
         all_memberships = person.memberships.select_related("organization")
-        context["active_memberships"] = (
-            all_memberships
-            .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
-            .order_by("organization__name")
-        )
-        context["past_memberships"] = (
-            all_memberships
-            .filter(end_date__lt=today)
-            .order_by("-end_date")
-        )
+        context["active_memberships"] = all_memberships.filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=today)
+        ).order_by("organization__name")
+        context["past_memberships"] = all_memberships.filter(end_date__lt=today).order_by("-end_date")
 
         # Active tab
         context["active_tab"] = self.request.GET.get("tab", "memberships")

@@ -1445,10 +1445,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
         papers = (
             OParlPaper.objects.filter(body=body)
-            .filter(
-                models.Q(name__icontains=query)
-                | models.Q(reference__icontains=query)
-            )
+            .filter(models.Q(name__icontains=query) | models.Q(reference__icontains=query))
             .exclude(id__in=item.related_papers.values_list("id", flat=True))
             .order_by("-date")[:15]
         )

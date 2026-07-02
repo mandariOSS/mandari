@@ -21,11 +21,9 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
-
 from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting, OParlOrganization
 
 from .models import (
-    AgendaDocumentLink,
     AgendaItemNote,
     AgendaItemPosition,
     AgendaPrivateNote,
@@ -186,17 +184,11 @@ class MeetingListView(WorkViewMixin, TemplateView):
 
         # Filter by view mode (my committees only)
         if view_mode == "my" and assigned_committee_ids:
-            meetings = [
-                m for m in meetings if any(org.id in assigned_committee_ids for org in m.organizations.all())
-            ]
+            meetings = [m for m in meetings if any(org.id in assigned_committee_ids for org in m.organizations.all())]
 
         # Committee filter
         if committee_filter:
-            meetings = [
-                m
-                for m in meetings
-                if any(str(org.id) == committee_filter for org in m.organizations.all())
-            ]
+            meetings = [m for m in meetings if any(str(org.id) == committee_filter for org in m.organizations.all())]
 
         # Search
         if search_query:
@@ -210,9 +202,9 @@ class MeetingListView(WorkViewMixin, TemplateView):
 
         # Check which meetings are prepared (org-level now)
         prepared_meeting_ids = set(
-            MeetingPreparation.objects.filter(
-                organization=organization, is_prepared=True
-            ).values_list("meeting_id", flat=True)
+            MeetingPreparation.objects.filter(organization=organization, is_prepared=True).values_list(
+                "meeting_id", flat=True
+            )
         )
         for meeting in meetings:
             meeting.is_user_prepared = meeting.id in prepared_meeting_ids
@@ -384,11 +376,14 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         # Org-weite Preparation (eine pro Org+Meeting)
         # Übergangsphase: Es können noch alte per-User-Einträge existieren
         preparation = MeetingPreparation.objects.filter(
-            organization=organization, meeting=meeting,
+            organization=organization,
+            meeting=meeting,
         ).first()
         if not preparation:
             preparation = MeetingPreparation.objects.create(
-                organization=organization, meeting=meeting, membership=membership,
+                organization=organization,
+                meeting=meeting,
+                membership=membership,
             )
 
         agenda_items = sorted(meeting.agenda_items.all(), key=natural_sort_key)
@@ -397,7 +392,8 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         # Org-weite Positionen
         positions_by_item = {}
         for pos in AgendaItemPosition.objects.filter(
-            organization=organization, agenda_item__in=agenda_items,
+            organization=organization,
+            agenda_item__in=agenda_items,
         ).select_related("agenda_item", "set_by", "set_by__user"):
             positions_by_item[pos.agenda_item_id] = pos
 
@@ -410,7 +406,8 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         own_speeches_by_item = {}
         shared_speeches_by_item = {}
         for sn in AgendaSpeechNote.objects.filter(
-            organization=organization, agenda_item__in=agenda_items,
+            organization=organization,
+            agenda_item__in=agenda_items,
         ).select_related("author", "author__user"):
             if sn.author == membership:
                 own_speeches_by_item[sn.agenda_item_id] = sn
@@ -420,14 +417,16 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         # Org-weite Diskussionsnotizen
         notes_by_item = {}
         for note in AgendaItemNote.objects.filter(
-            organization=organization, agenda_item__in=agenda_items,
+            organization=organization,
+            agenda_item__in=agenda_items,
         ).select_related("author", "author__user"):
             notes_by_item.setdefault(note.agenda_item_id, []).append(note)
 
         # Ergänzende Dokumente
         docs_by_item = {}
         for doc in AgendaSupplementaryDocument.objects.filter(
-            organization=organization, agenda_item__in=agenda_items,
+            organization=organization,
+            agenda_item__in=agenda_items,
         ).select_related("added_by__user", "oparl_file"):
             docs_by_item.setdefault(doc.agenda_item_id, []).append(doc)
 
@@ -442,18 +441,20 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
             own_speech = own_speeches_by_item.get(item.id)
             shared_speeches = shared_speeches_by_item.get(item.id, [])
 
-            prepared_items.append({
-                "item": item,
-                "position": position,
-                "private_note": private_note,
-                "own_speech": own_speech,
-                "shared_speeches": shared_speeches,
-                "notes": notes_by_item.get(item.id, []),
-                "documents": docs_by_item.get(item.id, []),
-                "papers": papers,
-                "primary_paper": primary_paper,
-                "has_files": has_files,
-            })
+            prepared_items.append(
+                {
+                    "item": item,
+                    "position": position,
+                    "private_note": private_note,
+                    "own_speech": own_speech,
+                    "shared_speeches": shared_speeches,
+                    "notes": notes_by_item.get(item.id, []),
+                    "documents": docs_by_item.get(item.id, []),
+                    "papers": papers,
+                    "primary_paper": primary_paper,
+                    "has_files": has_files,
+                }
+            )
 
         # Stats
         stats = {
@@ -469,47 +470,60 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         context["stats"] = stats
 
         # JSON für Alpine.js
-        context["prepared_items_json"] = json.dumps([
-            {
-                "id": str(item["item"].id),
-                "number": item["item"].number or str(idx + 1),
-                "name": item["item"].name or "Ohne Titel",
-                # Position (org-weit)
-                "position": item["position"].position if item["position"] else "open",
-                "isFinal": item["position"].is_final if item["position"] else False,
-                "setBy": item["position"].set_by.user.get_display_name() if item["position"] and item["position"].set_by else None,
-                # Private Notiz (pro User)
-                "privateNote": item["private_note"].get_content_decrypted() if item["private_note"] else "",
-                # Redebeitrag (pro User)
-                "speechContent": item["own_speech"].get_content_decrypted() if item["own_speech"] else "",
-                "speechShared": item["own_speech"].is_shared if item["own_speech"] else False,
-                "sharedSpeeches": [
-                    {"author": s.author.user.get_display_name(), "content": s.get_content_decrypted()}
-                    for s in item["shared_speeches"]
-                ],
-                # Paper
-                "paper": {
-                    "id": str(item["primary_paper"].id),
-                    "name": item["primary_paper"].name or "Ohne Titel",
-                    "reference": item["primary_paper"].reference or "",
-                    "paperType": item["primary_paper"].paper_type or "",
-                    "consultationCount": getattr(item["primary_paper"], "_prefetched_consultation_count", 0),
-                } if item["primary_paper"] else None,
-                "hasFiles": item["has_files"],
-                "files": [
-                    {"name": f.name or f.file_name or "Dokument", "url": f.access_url or f.download_url}
-                    for p in item["papers"] for f in p.files.all()
-                    if f.access_url or f.download_url
-                ],
-                # Dokumente
-                "documents": [
-                    {"id": str(d.id), "title": d.title, "url": d.display_url, "type": d.document_type, "addedBy": d.added_by.user.get_display_name()}
-                    for d in item["documents"]
-                ],
-                "notesCount": len(item["notes"]),
-            }
-            for idx, item in enumerate(prepared_items)
-        ])
+        context["prepared_items_json"] = json.dumps(
+            [
+                {
+                    "id": str(item["item"].id),
+                    "number": item["item"].number or str(idx + 1),
+                    "name": item["item"].name or "Ohne Titel",
+                    # Position (org-weit)
+                    "position": item["position"].position if item["position"] else "open",
+                    "isFinal": item["position"].is_final if item["position"] else False,
+                    "setBy": item["position"].set_by.user.get_display_name()
+                    if item["position"] and item["position"].set_by
+                    else None,
+                    # Private Notiz (pro User)
+                    "privateNote": item["private_note"].get_content_decrypted() if item["private_note"] else "",
+                    # Redebeitrag (pro User)
+                    "speechContent": item["own_speech"].get_content_decrypted() if item["own_speech"] else "",
+                    "speechShared": item["own_speech"].is_shared if item["own_speech"] else False,
+                    "sharedSpeeches": [
+                        {"author": s.author.user.get_display_name(), "content": s.get_content_decrypted()}
+                        for s in item["shared_speeches"]
+                    ],
+                    # Paper
+                    "paper": {
+                        "id": str(item["primary_paper"].id),
+                        "name": item["primary_paper"].name or "Ohne Titel",
+                        "reference": item["primary_paper"].reference or "",
+                        "paperType": item["primary_paper"].paper_type or "",
+                        "consultationCount": getattr(item["primary_paper"], "_prefetched_consultation_count", 0),
+                    }
+                    if item["primary_paper"]
+                    else None,
+                    "hasFiles": item["has_files"],
+                    "files": [
+                        {"name": f.name or f.file_name or "Dokument", "url": f.access_url or f.download_url}
+                        for p in item["papers"]
+                        for f in p.files.all()
+                        if f.access_url or f.download_url
+                    ],
+                    # Dokumente
+                    "documents": [
+                        {
+                            "id": str(d.id),
+                            "title": d.title,
+                            "url": d.display_url,
+                            "type": d.document_type,
+                            "addedBy": d.added_by.user.get_display_name(),
+                        }
+                        for d in item["documents"]
+                    ],
+                    "notesCount": len(item["notes"]),
+                }
+                for idx, item in enumerate(prepared_items)
+            ]
+        )
 
         return context
 
@@ -527,7 +541,8 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
 
         if membership:
             preparation = MeetingPreparation.objects.filter(
-                organization=organization, meeting=meeting,
+                organization=organization,
+                meeting=meeting,
             ).first()
 
             if preparation:
@@ -575,7 +590,8 @@ class AgendaPositionAPIView(WorkViewMixin, View):
 
         # Org-weite Position (eine pro Org+TOP)
         position, _ = AgendaItemPosition.objects.get_or_create(
-            organization=organization, agenda_item=agenda_item,
+            organization=organization,
+            agenda_item=agenda_item,
         )
 
         data = json.loads(request.body) if request.content_type == "application/json" else request.POST
@@ -587,13 +603,15 @@ class AgendaPositionAPIView(WorkViewMixin, View):
         position.set_by = membership
         position.save()
 
-        return JsonResponse({
-            "success": True,
-            "position": position.position,
-            "position_display": position.get_position_display(),
-            "is_final": position.is_final,
-            "set_by": membership.user.get_display_name(),
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "position": position.position,
+                "position_display": position.get_position_display(),
+                "is_final": position.is_final,
+                "set_by": membership.user.get_display_name(),
+            }
+        )
 
 
 class PrivateNoteAPIView(WorkViewMixin, View):
@@ -614,7 +632,8 @@ class PrivateNoteAPIView(WorkViewMixin, View):
         content = data.get("content", "")
 
         note, _ = AgendaPrivateNote.objects.get_or_create(
-            author=membership, agenda_item=agenda_item,
+            author=membership,
+            agenda_item=agenda_item,
             defaults={"organization": organization},
         )
         note.set_content_encrypted(content)
@@ -641,20 +660,27 @@ class SpeechNoteAPIView(WorkViewMixin, View):
         # Eigener Redebeitrag
         own = AgendaSpeechNote.objects.filter(author=membership, agenda_item=agenda_item).first()
         # Geteilte Redebeiträge anderer
-        shared = AgendaSpeechNote.objects.filter(
-            organization=organization, agenda_item=agenda_item, is_shared=True,
-        ).exclude(author=membership).select_related("author__user")
+        shared = (
+            AgendaSpeechNote.objects.filter(
+                organization=organization,
+                agenda_item=agenda_item,
+                is_shared=True,
+            )
+            .exclude(author=membership)
+            .select_related("author__user")
+        )
 
-        return JsonResponse({
-            "own": {
-                "content": own.get_content_decrypted() if own else "",
-                "is_shared": own.is_shared if own else False,
-            },
-            "shared": [
-                {"author": s.author.user.get_display_name(), "content": s.get_content_decrypted()}
-                for s in shared
-            ],
-        })
+        return JsonResponse(
+            {
+                "own": {
+                    "content": own.get_content_decrypted() if own else "",
+                    "is_shared": own.is_shared if own else False,
+                },
+                "shared": [
+                    {"author": s.author.user.get_display_name(), "content": s.get_content_decrypted()} for s in shared
+                ],
+            }
+        )
 
     def post(self, request, *args, **kwargs):
         item_id = self.kwargs.get("item_id")
@@ -668,7 +694,8 @@ class SpeechNoteAPIView(WorkViewMixin, View):
         data = json.loads(request.body) if request.content_type == "application/json" else request.POST
 
         note, _ = AgendaSpeechNote.objects.get_or_create(
-            author=membership, agenda_item=agenda_item,
+            author=membership,
+            agenda_item=agenda_item,
             defaults={"organization": organization},
         )
         note.set_content_encrypted(data.get("content", ""))
@@ -697,20 +724,22 @@ class AgendaNotesAPIView(WorkViewMixin, View):
             .order_by("-is_pinned", "-is_decision", "-created_at")
         )
 
-        return JsonResponse({
-            "notes": [
-                {
-                    "id": str(n.id),
-                    "content": n.get_content_decrypted(),
-                    "is_decision": n.is_decision,
-                    "is_pinned": n.is_pinned,
-                    "author": n.author.user.get_display_name(),
-                    "is_own": n.author == membership,
-                    "created_at": n.created_at.isoformat(),
-                }
-                for n in notes
-            ]
-        })
+        return JsonResponse(
+            {
+                "notes": [
+                    {
+                        "id": str(n.id),
+                        "content": n.get_content_decrypted(),
+                        "is_decision": n.is_decision,
+                        "is_pinned": n.is_pinned,
+                        "author": n.author.user.get_display_name(),
+                        "is_own": n.author == membership,
+                        "created_at": n.created_at.isoformat(),
+                    }
+                    for n in notes
+                ]
+            }
+        )
 
     def post(self, request, *args, **kwargs):
         meeting_id = self.kwargs.get("meeting_id")
@@ -742,15 +771,17 @@ class AgendaNotesAPIView(WorkViewMixin, View):
         note.set_content_encrypted(content)
         note.save()
 
-        return JsonResponse({
-            "success": True,
-            "note": {
-                "id": str(note.id),
-                "content": content,
-                "is_decision": note.is_decision,
-                "author": membership.user.get_display_name(),
-            },
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "note": {
+                    "id": str(note.id),
+                    "content": content,
+                    "is_decision": note.is_decision,
+                    "author": membership.user.get_display_name(),
+                },
+            }
+        )
 
     def delete(self, request, *args, **kwargs):
         note_id = self.kwargs.get("note_id")
@@ -774,23 +805,26 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
         organization = self.organization
 
         docs = AgendaSupplementaryDocument.objects.filter(
-            organization=organization, agenda_item_id=item_id,
+            organization=organization,
+            agenda_item_id=item_id,
         ).select_related("added_by__user", "oparl_file")
 
-        return JsonResponse({
-            "documents": [
-                {
-                    "id": str(d.id),
-                    "title": d.title,
-                    "url": d.display_url,
-                    "document_type": d.document_type,
-                    "description": d.description,
-                    "added_by": d.added_by.user.get_display_name(),
-                    "created_at": d.created_at.isoformat(),
-                }
-                for d in docs
-            ]
-        })
+        return JsonResponse(
+            {
+                "documents": [
+                    {
+                        "id": str(d.id),
+                        "title": d.title,
+                        "url": d.display_url,
+                        "document_type": d.document_type,
+                        "description": d.description,
+                        "added_by": d.added_by.user.get_display_name(),
+                        "created_at": d.created_at.isoformat(),
+                    }
+                    for d in docs
+                ]
+            }
+        )
 
     def post(self, request, *args, **kwargs):
         meeting_id = self.kwargs.get("meeting_id")
@@ -826,10 +860,17 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
             description=data.get("description", ""),
         )
 
-        return JsonResponse({
-            "success": True,
-            "document": {"id": str(doc.id), "title": doc.title, "url": doc.display_url, "document_type": doc.document_type},
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "document": {
+                    "id": str(doc.id),
+                    "title": doc.title,
+                    "url": doc.display_url,
+                    "document_type": doc.document_type,
+                },
+            }
+        )
 
     def _handle_file_upload(self, request, organization, membership, agenda_item):
         """Datei-Upload verarbeiten."""
@@ -859,10 +900,12 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
             description=request.POST.get("description", ""),
         )
 
-        return JsonResponse({
-            "success": True,
-            "document": {"id": str(doc.id), "title": doc.title, "url": doc.display_url, "document_type": "file"},
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "document": {"id": str(doc.id), "title": doc.title, "url": doc.display_url, "document_type": "file"},
+            }
+        )
 
     def delete(self, request, *args, **kwargs):
         doc_id = self.kwargs.get("doc_id") or self.kwargs.get("link_id")
@@ -912,8 +955,13 @@ class PreparationSummaryView(WorkViewMixin, TemplateView):
         )
 
         positions_by_type = {
-            "for": [], "against": [], "abstain": [],
-            "defer": [], "refer": [], "amended": [], "info": [],
+            "for": [],
+            "against": [],
+            "abstain": [],
+            "defer": [],
+            "refer": [],
+            "amended": [],
+            "info": [],
         }
         for pos in positions:
             if pos.position in positions_by_type:
@@ -956,23 +1004,25 @@ class PaperCommentAPIView(WorkViewMixin, View):
         paper = get_object_or_404(OParlPaper, id=paper_id)
         visible_comments = PaperComment.get_visible_comments_for_paper(paper, membership)
 
-        return JsonResponse({
-            "comments": [
-                {
-                    "id": str(c.id),
-                    "content": c.get_content_decrypted(),
-                    "visibility": c.visibility,
-                    "visibility_display": c.get_visibility_display(),
-                    "is_recommendation": c.is_recommendation,
-                    "author": c.author.user.get_display_name(),
-                    "organization": c.organization.name,
-                    "is_own": c.author == membership,
-                    "is_own_org": c.organization == membership.organization,
-                    "created_at": c.created_at.isoformat(),
-                }
-                for c in visible_comments
-            ]
-        })
+        return JsonResponse(
+            {
+                "comments": [
+                    {
+                        "id": str(c.id),
+                        "content": c.get_content_decrypted(),
+                        "visibility": c.visibility,
+                        "visibility_display": c.get_visibility_display(),
+                        "is_recommendation": c.is_recommendation,
+                        "author": c.author.user.get_display_name(),
+                        "organization": c.organization.name,
+                        "is_own": c.author == membership,
+                        "is_own_org": c.organization == membership.organization,
+                        "created_at": c.created_at.isoformat(),
+                    }
+                    for c in visible_comments
+                ]
+            }
+        )
 
     def post(self, request, *args, **kwargs):
         from insight_core.models import OParlPaper
@@ -1006,17 +1056,19 @@ class PaperCommentAPIView(WorkViewMixin, View):
         comment.set_content_encrypted(content)
         comment.save()
 
-        return JsonResponse({
-            "success": True,
-            "comment": {
-                "id": str(comment.id),
-                "content": content,
-                "visibility_display": comment.get_visibility_display(),
-                "is_recommendation": comment.is_recommendation,
-                "author": membership.user.get_display_name(),
-                "organization": organization.name,
-            },
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "comment": {
+                    "id": str(comment.id),
+                    "content": content,
+                    "visibility_display": comment.get_visibility_display(),
+                    "is_recommendation": comment.is_recommendation,
+                    "author": membership.user.get_display_name(),
+                    "organization": organization.name,
+                },
+            }
+        )
 
     def delete(self, request, *args, **kwargs):
         from .models import PaperComment

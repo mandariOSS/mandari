@@ -46,7 +46,8 @@ class MeetingPreparation(EncryptionMixin, models.Model):
         on_delete=models.CASCADE,
         related_name="meeting_preparations",
         verbose_name="Mitglied",
-        null=True, blank=True,
+        null=True,
+        blank=True,
     )
 
     # Org-weite allgemeine Notizen zur Sitzung (verschlüsselt)
@@ -115,7 +116,8 @@ class AgendaItemPosition(models.Model):
         on_delete=models.CASCADE,
         related_name="positions",
         verbose_name="Vorbereitung",
-        null=True, blank=True,
+        null=True,
+        blank=True,
     )
 
     # Phase 1: nullable für Datenmigration, wird in Phase 3 NOT NULL
@@ -124,7 +126,8 @@ class AgendaItemPosition(models.Model):
         on_delete=models.CASCADE,
         related_name="agenda_positions",
         verbose_name="Organisation",
-        null=True, blank=True,
+        null=True,
+        blank=True,
     )
     agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",
@@ -243,7 +246,8 @@ class AgendaSpeechNote(EncryptionMixin, models.Model):
         on_delete=models.CASCADE,
         related_name="work_speech_notes",
         verbose_name="Sitzung",
-        null=True, blank=True,
+        null=True,
+        blank=True,
     )
     agenda_item = models.ForeignKey(
         "insight_core.OParlAgendaItem",

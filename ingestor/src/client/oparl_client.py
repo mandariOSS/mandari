@@ -15,7 +15,7 @@ import asyncio
 import hashlib
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from typing import Any, AsyncIterator
 from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
 
@@ -424,8 +424,12 @@ class OParlClient:
         """Append modified_since as OParl query parameter to URL."""
         parsed = urlparse(url)
         params = parse_qs(parsed.query)
-        # OParl spec format: yyyy-mm-ddThh:mm:ss±hh:mm
-        params["modified_since"] = [modified_since.isoformat()]
+        # OParl-Spec 2.5.5 verlangt das Format yyyy-mm-ddThh:mm:ss±hh:mm —
+        # der Zeitzonen-Offset ist Pflicht. Naive datetimes als UTC auszeichnen,
+        # sonst ist der Wert spec-widrig und Server dürfen ihn ablehnen.
+        if modified_since.tzinfo is None:
+            modified_since = modified_since.replace(tzinfo=dt_timezone.utc)
+        params["modified_since"] = [modified_since.isoformat(timespec="seconds")]
         new_query = urlencode(params, doseq=True)
         return urlunparse(parsed._replace(query=new_query))
 

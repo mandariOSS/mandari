@@ -153,12 +153,24 @@ class Command(BaseCommand):
                         "type": {"type": "keyword"},
                         "body_id": {"type": "keyword"},
                         "name": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
-                        "reference": {"type": "text", "analyzer": "standard", "fields": {"keyword": {"type": "keyword"}}},
+                        "reference": {
+                            "type": "text",
+                            "analyzer": "standard",
+                            "fields": {"keyword": {"type": "keyword"}},
+                        },
                         "paper_type": {"type": "keyword"},
-                        "date": {"type": "date", "format": "strict_date_optional_time||yyyy-MM-dd", "ignore_malformed": True},
+                        "date": {
+                            "type": "date",
+                            "format": "strict_date_optional_time||yyyy-MM-dd",
+                            "ignore_malformed": True,
+                        },
                         "oparl_created": {"type": "date", "ignore_malformed": True},
                         "oparl_modified": {"type": "date", "ignore_malformed": True},
-                        "file_contents_preview": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
+                        "file_contents_preview": {
+                            "type": "text",
+                            "analyzer": "german_custom",
+                            "search_analyzer": "german_search",
+                        },
                         "file_names": {"type": "text"},
                     }
                 },
@@ -171,7 +183,11 @@ class Command(BaseCommand):
                         "type": {"type": "keyword"},
                         "body_id": {"type": "keyword"},
                         "name": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
-                        "organization_names": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
+                        "organization_names": {
+                            "type": "text",
+                            "analyzer": "german_custom",
+                            "search_analyzer": "german_search",
+                        },
                         "location_name": {"type": "text"},
                         "start": {"type": "date", "ignore_malformed": True},
                         "end": {"type": "date", "ignore_malformed": True},
@@ -202,7 +218,12 @@ class Command(BaseCommand):
                         "id": {"type": "keyword"},
                         "type": {"type": "keyword"},
                         "body_id": {"type": "keyword"},
-                        "name": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search", "fields": {"keyword": {"type": "keyword"}}},
+                        "name": {
+                            "type": "text",
+                            "analyzer": "german_custom",
+                            "search_analyzer": "german_search",
+                            "fields": {"keyword": {"type": "keyword"}},
+                        },
                         "short_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                         "organization_type": {"type": "keyword"},
                         "classification": {"type": "keyword"},
@@ -221,13 +242,21 @@ class Command(BaseCommand):
                         "file_name": {"type": "text"},
                         "mime_type": {"type": "keyword"},
                         "access_url": {"type": "keyword", "index": False},
-                        "text_content": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
+                        "text_content": {
+                            "type": "text",
+                            "analyzer": "german_custom",
+                            "search_analyzer": "german_search",
+                        },
                         "text_preview": {"type": "text", "index": False},
                         "paper_id": {"type": "keyword"},
                         "paper_name": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
                         "paper_reference": {"type": "text", "analyzer": "standard"},
                         "meeting_id": {"type": "keyword"},
-                        "organization_names": {"type": "text", "analyzer": "german_custom", "search_analyzer": "german_search"},
+                        "organization_names": {
+                            "type": "text",
+                            "analyzer": "german_custom",
+                            "search_analyzer": "german_search",
+                        },
                         "meeting_name": {"type": "text"},
                         "meeting_date": {"type": "date", "ignore_malformed": True},
                         "agenda_number": {"type": "keyword"},
@@ -251,13 +280,10 @@ class Command(BaseCommand):
             if client.indices.exists(index=index_name):
                 # Index existiert — dynamische Settings aktualisieren
                 # Statische Settings (number_of_shards) können nicht geändert werden
-                dynamic_settings = {
-                    k: v for k, v in config["settings"].items()
-                    if k not in ("number_of_shards",)
-                }
+                dynamic_settings = {k: v for k, v in config["settings"].items() if k not in ("number_of_shards",)}
                 if "analysis" in dynamic_settings:
                     # Analysis-Settings erfordern close/open
-                    self.stdout.write(f"  Index existiert, schließe für Settings-Update...")
+                    self.stdout.write("  Index existiert, schließe für Settings-Update...")
                     client.indices.close(index=index_name)
                     try:
                         client.indices.put_settings(
@@ -268,7 +294,7 @@ class Command(BaseCommand):
                     finally:
                         client.indices.open(index=index_name)
                 else:
-                    self.stdout.write(f"  Index existiert, aktualisiere Settings...")
+                    self.stdout.write("  Index existiert, aktualisiere Settings...")
                     client.indices.put_settings(
                         index=index_name,
                         body=dynamic_settings,

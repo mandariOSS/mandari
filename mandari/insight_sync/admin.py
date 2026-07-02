@@ -6,8 +6,6 @@ Admin-Konfiguration für Sync-Verwaltung.
 - trigger-sync/: POST-Endpoint zum Starten eines Syncs vom Dashboard
 """
 
-import threading
-
 from django.contrib import admin, messages
 from django.http import HttpResponseNotAllowed, HttpResponseRedirect
 from django.urls import reverse

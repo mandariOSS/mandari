@@ -1534,7 +1534,9 @@ class CouncilPartyListView(WorkViewMixin, TemplateView):
         email = request.POST.get("contact_email", "").strip()
         if label and email:
             AdministrationContact.objects.create(
-                organization=self.organization, label=label, email=email,
+                organization=self.organization,
+                label=label,
+                email=email,
             )
             messages.success(request, f"Kontakt '{label}' hinzugefügt.")
         else:
@@ -1545,7 +1547,8 @@ class CouncilPartyListView(WorkViewMixin, TemplateView):
 
         contact_id = request.POST.get("contact_id")
         deleted, _ = AdministrationContact.objects.filter(
-            id=contact_id, organization=self.organization,
+            id=contact_id,
+            organization=self.organization,
         ).delete()
         if deleted:
             messages.success(request, "Kontakt entfernt.")
@@ -1590,9 +1593,14 @@ class CouncilPartyListView(WorkViewMixin, TemplateView):
             messages.error(request, "Name und Kurzname sind erforderlich.")
             return
 
-        if CouncilParty.objects.filter(
-            organization=self.organization, short_name=short_name,
-        ).exclude(id=party_id).exists():
+        if (
+            CouncilParty.objects.filter(
+                organization=self.organization,
+                short_name=short_name,
+            )
+            .exclude(id=party_id)
+            .exists()
+        ):
             messages.error(request, f"Kurzname '{short_name}' existiert bereits.")
             return
 
@@ -2208,10 +2216,6 @@ class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
 # =============================================================================
 
 
-
-
-
-
 # =============================================================================
 # PROFILE: DATA & PRIVACY (DSGVO)
 # =============================================================================
@@ -2615,11 +2619,7 @@ class RegistrationSettingsView(WorkViewMixin, TemplateView):
 
         # Domains parsen (eine pro Zeile, bereinigt)
         domains_text = request.POST.get("registration_email_domains", "")
-        domains = [
-            d.strip().lower().lstrip("@")
-            for d in domains_text.splitlines()
-            if d.strip()
-        ]
+        domains = [d.strip().lower().lstrip("@") for d in domains_text.splitlines() if d.strip()]
         org.registration_email_domains = domains
 
         # Standardrolle
@@ -2632,12 +2632,14 @@ class RegistrationSettingsView(WorkViewMixin, TemplateView):
         else:
             org.registration_default_role = None
 
-        org.save(update_fields=[
-            "registration_enabled",
-            "registration_email_domains",
-            "registration_auto_approve",
-            "registration_default_role",
-        ])
+        org.save(
+            update_fields=[
+                "registration_enabled",
+                "registration_email_domains",
+                "registration_auto_approve",
+                "registration_default_role",
+            ]
+        )
 
         messages.success(request, "Registrierungseinstellungen gespeichert.")
         return redirect("work:organization_registration", org_slug=org.slug)

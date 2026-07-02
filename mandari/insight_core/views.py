@@ -10,7 +10,7 @@ from datetime import timedelta
 
 from django.core.paginator import Paginator
 from django.db.models import Exists, OuterRef, Q, Subquery
-from django.http import Http404, HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
@@ -800,7 +800,12 @@ class MeetingDetailView(DetailView):
         agenda_items = list(meeting.agenda_items.all())
         # Natural sort: 1, 2, 10 instead of 1, 10, 2
         import re
-        agenda_items.sort(key=lambda x: [(0, int(p)) if p.isdigit() else (1, p.lower()) for p in re.split(r"(\d+)", x.number or "999") if p])
+
+        agenda_items.sort(
+            key=lambda x: [
+                (0, int(p)) if p.isdigit() else (1, p.lower()) for p in re.split(r"(\d+)", x.number or "999") if p
+            ]
+        )
         if agenda_items:
             ext_ids = [item.external_id for item in agenda_items]
             # Alle Consultations + Papers in 1 Query laden
@@ -831,6 +836,7 @@ class MeetingDetailView(DetailView):
         # SEO-Kontext
         try:
             from .seo import get_meeting_seo
+
             context["seo"] = get_meeting_seo(meeting, self.request).to_dict()
         except (OParlBody.DoesNotExist, Exception):
             context["seo"] = {}

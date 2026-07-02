@@ -22,7 +22,7 @@ from django.contrib.auth.views import (
 from django.contrib.auth.views import (
     PasswordResetView as DjangoPasswordResetView,
 )
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import TemplateView
@@ -415,8 +415,9 @@ class SelfRegisterView(View):
         return render(request, self.template_name, {"form": form, "org": self.org})
 
     def post(self, request, **kwargs):
-        from .forms import SelfRegistrationForm
         from apps.tenants.models import Membership
+
+        from .forms import SelfRegistrationForm
 
         form = SelfRegistrationForm(
             request.POST,

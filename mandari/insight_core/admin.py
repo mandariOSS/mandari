@@ -176,8 +176,7 @@ class OParlBodyAdmin(ModelAdmin):
         threading.Thread(target=deletion_task, daemon=True).start()
         messages.info(
             request,
-            f"Löschung von „{obj.name}“ läuft im Hintergrund. "
-            "Je nach Datenmenge kann das einige Minuten dauern.",
+            f"Löschung von „{obj.name}“ läuft im Hintergrund. Je nach Datenmenge kann das einige Minuten dauern.",
         )
 
     def delete_queryset(self, request, queryset):
