@@ -267,7 +267,7 @@ def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int |
             logger.warning("pypdf extraction failed: %s", exc)
 
     # 2. Tesseract OCR (local)
-    text, success = _extract_text_with_ocr(data)
+    text, success = _extract_text_with_ocr(data, page_count=page_count)
     if success and text.strip():
         logger.debug("Tesseract OCR ok: %d chars", len(text))
         return text, page_count, "tesseract"
@@ -276,32 +276,57 @@ def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int |
     return "", page_count, "none"
 
 
-def _extract_text_with_ocr(data: bytes) -> tuple[str, bool]:
-    """Extract text via Tesseract OCR."""
+OCR_MAX_PAGES = 100  # Schutz vor Extremfaellen (Anlagenbaende etc.)
+OCR_DPI = 200  # 200 dpi reicht Tesseract; 300 dpi verdoppelt den Speicher
+
+
+def _extract_text_with_ocr(data: bytes, page_count: int | None = None) -> tuple[str, bool]:
+    """
+    Extract text via Tesseract OCR — seitenweise.
+
+    convert_from_bytes ohne first_page/last_page rendert ALLE Seiten
+    gleichzeitig in den RAM (~26 MB pro A4-Seite bei 300 dpi) — ein
+    50-Seiten-Scan sprengt damit jedes Container-Limit (OOM-Kill).
+    Deshalb: eine Seite rendern, OCRen, freigeben, naechste Seite.
+    """
     if convert_from_bytes is None or pytesseract is None:
         logger.warning("OCR not available (pdf2image or pytesseract missing)")
         return "", False
 
-    try:
-        images = convert_from_bytes(data, dpi=300)
-    except Exception as exc:
-        if PDFInfoNotInstalledError and isinstance(exc, PDFInfoNotInstalledError):
-            logger.warning("Poppler not installed, skipping OCR")
-        else:
-            logger.warning("Error converting PDF for OCR: %s", exc)
-        return "", False
-
+    max_pages = min(page_count, OCR_MAX_PAGES) if page_count else OCR_MAX_PAGES
     ocr_fragments: list[str] = []
-    for image in images:
+    rendered_any = False
+
+    for page_no in range(1, max_pages + 1):
         try:
-            ocr_text = pytesseract.image_to_string(image, lang="deu")
+            images = convert_from_bytes(
+                data, dpi=OCR_DPI, first_page=page_no, last_page=page_no
+            )
         except Exception as exc:
-            logger.warning("OCR error for page: %s", exc)
+            if PDFInfoNotInstalledError and isinstance(exc, PDFInfoNotInstalledError):
+                logger.warning("Poppler not installed, skipping OCR")
+                return "", False
+            # Hinter der letzten Seite / defekte Seite: abbrechen
+            if rendered_any:
+                break
+            logger.warning("Error converting PDF for OCR: %s", exc)
+            return "", False
+
+        if not images:
+            break
+        rendered_any = True
+
+        try:
+            ocr_text = pytesseract.image_to_string(images[0], lang="deu")
+        except Exception as exc:
+            logger.warning("OCR error for page %d: %s", page_no, exc)
             ocr_text = ""
         ocr_fragments.append(ocr_text.strip())
+        images[0].close()
+        del images
 
     text = "\n\n".join(f for f in ocr_fragments if f)
-    return text, True
+    return text, rendered_any
 
 
 def _extract_text_from_plain(data: bytes) -> str:
