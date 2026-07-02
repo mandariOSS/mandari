@@ -76,6 +76,9 @@ class TaskListView(WorkViewMixin, TemplateView):
         show_completed = self.request.GET.get("completed", "0") == "1"
         search = self.request.GET.get("q", "").strip()
         priority_filter = self.request.GET.get("priority", "")
+        label_filter = self.request.GET.get("label", "")
+        assignee_filter = self.request.GET.get("assignee", "")
+        overdue_only = self.request.GET.get("overdue", "0") == "1"
 
         # Base queryset
         tasks = (
@@ -99,6 +102,11 @@ class TaskListView(WorkViewMixin, TemplateView):
             ).distinct()
             context["view_mode"] = "all"
 
+        # Sichtbarkeitsgefilterte Basis für die Statistiken festhalten,
+        # bevor Such-/Detailfilter greifen (sonst zählen fremde private
+        # Aufgaben in die Kacheln, siehe Issue #6)
+        visible_tasks = tasks
+
         if search:
             tasks = tasks.filter(Q(title__icontains=search) | Q(description__icontains=search))
             context["search_query"] = search
@@ -106,6 +114,18 @@ class TaskListView(WorkViewMixin, TemplateView):
         if priority_filter:
             tasks = tasks.filter(priority=priority_filter)
             context["priority_filter"] = priority_filter
+
+        if label_filter:
+            tasks = tasks.filter(labels__id=label_filter)
+            context["label_filter"] = label_filter
+
+        if assignee_filter:
+            tasks = tasks.filter(assigned_to__id=assignee_filter)
+            context["assignee_filter"] = assignee_filter
+
+        if overdue_only:
+            tasks = tasks.filter(due_date__lt=timezone.now().date(), status__in=["todo", "in_progress"])
+            context["overdue_only"] = True
 
         # Group by status for Kanban
         context["todo_tasks"] = tasks.filter(status="todo").order_by("position", "-priority", "due_date")
@@ -118,17 +138,16 @@ class TaskListView(WorkViewMixin, TemplateView):
             context["done_tasks"] = tasks.filter(status="done").order_by("-completed_at")[:10]
             context["show_completed"] = False
 
-        # Statistics
-        all_tasks = Task.objects.filter(organization=self.organization)
-        if view_mode == "my":
-            all_tasks = all_tasks.filter(Q(assigned_to=self.membership) | Q(created_by=self.membership))
-
+        # Statistics — auf Basis der sichtbarkeitsgefilterten Aufgaben,
+        # damit keine Zahlen fremder privater Aufgaben auftauchen (Issue #6)
         context["stats"] = {
-            "total": all_tasks.count(),
-            "todo": all_tasks.filter(status="todo").count(),
-            "in_progress": all_tasks.filter(status="in_progress").count(),
-            "done": all_tasks.filter(status="done").count(),
-            "overdue": all_tasks.filter(due_date__lt=timezone.now().date(), status__in=["todo", "in_progress"]).count(),
+            "total": visible_tasks.count(),
+            "todo": visible_tasks.filter(status="todo").count(),
+            "in_progress": visible_tasks.filter(status="in_progress").count(),
+            "done": visible_tasks.filter(status="done").count(),
+            "overdue": visible_tasks.filter(
+                due_date__lt=timezone.now().date(), status__in=["todo", "in_progress"]
+            ).count(),
         }
 
         # Form for quick add
@@ -138,6 +157,7 @@ class TaskListView(WorkViewMixin, TemplateView):
         context["members"] = self.organization.memberships.filter(is_active=True).select_related("user")
 
         context["priority_choices"] = Task.PRIORITY_CHOICES
+        context["labels"] = TaskLabel.objects.filter(organization=self.organization)
 
         # Auto-open panel via URL param
         context["auto_open_task_id"] = self.request.GET.get("open", "")
@@ -223,6 +243,10 @@ class TaskBoardAPIView(WorkViewMixin, View):
                 new_label = dict(Task.STATUS_CHOICES).get(new_status, new_status)
                 if new_status == "done":
                     log_activity(task, self.membership, "completed")
+
+                    from apps.work.notifications.services import NotificationHub
+
+                    NotificationHub.notify_task_completed(task, self.membership)
                 elif old_status == "done":
                     log_activity(task, self.membership, "reopened")
                 else:
@@ -407,6 +431,11 @@ class TaskCreateView(WorkViewMixin, TemplateView):
 
             task.save()
             log_activity(task, self.membership, "created")
+
+            if task.assigned_to and task.assigned_to != self.membership:
+                from apps.work.notifications.services import NotificationHub
+
+                NotificationHub.notify_task_assigned(task, task.assigned_to, self.membership)
 
             messages.success(request, "Aufgabe erfolgreich erstellt.")
             return redirect("work:tasks", org_slug=self.organization.slug)
@@ -635,15 +664,25 @@ class TaskPanelActionView(WorkViewMixin, View):
         }
 
     def _log_changes(self, task, old_values):
-        """Log field changes as activities."""
+        """Log field changes as activities and notify affected members."""
+        from apps.work.notifications.services import NotificationHub
+
         changes = []
         if old_values["status_raw"] != task.status:
             if task.status == "done":
                 log_activity(task, self.membership, "completed")
+                NotificationHub.notify_task_completed(task, self.membership)
             elif old_values["status_raw"] == "done":
                 log_activity(task, self.membership, "reopened")
             else:
                 changes.append(("status", old_values["status"], task.get_status_display(), "status_changed"))
+
+        if (
+            old_values["assigned_to_raw"] != task.assigned_to_id
+            and task.assigned_to
+            and task.assigned_to != self.membership
+        ):
+            NotificationHub.notify_task_assigned(task, task.assigned_to, self.membership)
         if old_values["priority_raw"] != task.priority:
             changes.append(("priority", old_values["priority"], task.get_priority_display(), "priority_changed"))
         if old_values["due_date_raw"] != task.due_date:
@@ -733,7 +772,11 @@ class TaskPanelActionView(WorkViewMixin, View):
         if not content:
             return HttpResponse(status=400)
 
-        log_activity(task, self.membership, "comment", content=content)
+        activity = log_activity(task, self.membership, "comment", content=content)
+
+        from apps.work.notifications.services import NotificationHub
+
+        NotificationHub.notify_task_comment(task, activity, self.membership)
 
         html = self._render_activity(task)
         return self._make_response(html, "Kommentar hinzugefügt.")
@@ -755,6 +798,11 @@ class TaskPanelActionView(WorkViewMixin, View):
             msg = "Aufgabe als erledigt markiert."
             log_activity(task, self.membership, "completed")
         task.save()
+
+        if task.is_completed:
+            from apps.work.notifications.services import NotificationHub
+
+            NotificationHub.notify_task_completed(task, self.membership)
 
         task = _task_panel_queryset().get(id=task.id)
         html = self._render_panel(task)

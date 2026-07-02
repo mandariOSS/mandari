@@ -357,7 +357,7 @@ class NotificationHub:
             notification_type=NotificationType.TASK_ASSIGNED,
             title="Neue Aufgabe zugewiesen",
             message=f'Dir wurde die Aufgabe "{task.title}" zugewiesen.',
-            link=f"/work/{task.organization.slug}/tasks/{task.id}/",
+            link=f"/work/{task.organization.slug}/tasks/?open={task.id}",
             actor=assigner,
             metadata={"task_id": str(task.id)},
         )
@@ -366,7 +366,7 @@ class NotificationHub:
     def notify_task_comment(
         cls,
         task,
-        comment,
+        comment,  # TaskActivity mit activity_type="comment"
         commenter,  # Membership
     ):
         """Notify task assignee/creator about a new comment."""
@@ -377,14 +377,71 @@ class NotificationHub:
         if task.created_by and task.created_by.id != commenter.id:
             recipients.add(task.created_by)
 
+        if not recipients:
+            return []
+
+        preview = (comment.content or "").strip()
+        if len(preview) > 100:
+            preview = preview[:100] + "…"
+
         return cls.send_bulk(
             recipients=list(recipients),
             notification_type=NotificationType.TASK_COMMENT,
             title="Neuer Kommentar zur Aufgabe",
-            message=f'Neuer Kommentar zu "{task.title}": {comment.content[:100]}...',
-            link=f"/work/{task.organization.slug}/tasks/{task.id}/",
+            message=f'Neuer Kommentar zu "{task.title}": {preview}',
+            link=f"/work/{task.organization.slug}/tasks/?open={task.id}",
             actor=commenter,
             metadata={"task_id": str(task.id), "comment_id": str(comment.id)},
+        )
+
+    @classmethod
+    def notify_task_completed(
+        cls,
+        task,
+        completer,  # Membership
+    ):
+        """Notify creator and assignee when someone else completes a task."""
+        recipients = set()
+        if task.created_by and task.created_by.id != completer.id:
+            recipients.add(task.created_by)
+        if task.assigned_to and task.assigned_to.id != completer.id:
+            recipients.add(task.assigned_to)
+
+        if not recipients:
+            return []
+
+        return cls.send_bulk(
+            recipients=list(recipients),
+            notification_type=NotificationType.TASK_COMPLETED,
+            title="Aufgabe erledigt",
+            message=f'Die Aufgabe "{task.title}" wurde als erledigt markiert.',
+            link=f"/work/{task.organization.slug}/tasks/?open={task.id}",
+            actor=completer,
+            metadata={"task_id": str(task.id)},
+        )
+
+    @classmethod
+    def notify_task_due_soon(
+        cls,
+        task,
+        recipient,  # Membership
+        days_left: int,
+    ):
+        """Remind assignee about an upcoming or overdue due date."""
+        if days_left < 0:
+            message = f'Die Aufgabe "{task.title}" ist seit {abs(days_left)} Tag(en) überfällig.'
+        elif days_left == 0:
+            message = f'Die Aufgabe "{task.title}" ist heute fällig.'
+        else:
+            message = f'Die Aufgabe "{task.title}" ist in {days_left} Tag(en) fällig.'
+
+        return cls.send(
+            recipient=recipient,
+            notification_type=NotificationType.TASK_DUE_SOON,
+            title="Aufgabe bald fällig" if days_left >= 0 else "Aufgabe überfällig",
+            message=message,
+            link=f"/work/{task.organization.slug}/tasks/?open={task.id}",
+            metadata={"task_id": str(task.id), "days_left": days_left},
         )
 
     @classmethod
