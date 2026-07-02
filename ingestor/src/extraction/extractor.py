@@ -266,7 +266,19 @@ def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int |
         except Exception as exc:
             logger.warning("pypdf extraction failed: %s", exc)
 
-    # 2. Tesseract OCR (local)
+    # 2. Mistral OCR (API, optional) — schneller als lokales Tesseract
+    from src.config import settings as _settings
+
+    if _settings.mistral_api_key:
+        try:
+            text = _extract_text_with_mistral(data, file_name)
+            if text.strip():
+                logger.debug("Mistral OCR ok: %d chars", len(text))
+                return text, page_count, "mistral"
+        except Exception as exc:
+            logger.warning("Mistral OCR failed for %s, falling back to Tesseract: %s", file_name, exc)
+
+    # 3. Tesseract OCR (local)
     text, success = _extract_text_with_ocr(data, page_count=page_count)
     if success and text.strip():
         logger.debug("Tesseract OCR ok: %d chars", len(text))
@@ -274,6 +286,57 @@ def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int |
 
     logger.warning("No text extracted from PDF")
     return "", page_count, "none"
+
+
+def _extract_text_with_mistral(data: bytes, file_name: str = "") -> str:
+    """
+    OCR über die Mistral-API (synchron, läuft im Extraktions-Thread).
+
+    Nutzt dasselbe Request-Format wie die Django-Seite
+    (insight_core/services/mistral_ocr.py), damit sich beide Pfade
+    identisch verhalten.
+    """
+    import base64
+
+    import httpx
+
+    from src.config import settings
+
+    pdf_base64 = base64.b64encode(data).decode("utf-8")
+    payload = {
+        "model": settings.mistral_ocr_model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Extrahiere den vollständigen Text aus diesem PDF-Dokument. "
+                            "Gib nur den extrahierten Text zurück, ohne Kommentare oder Formatierung. "
+                            "Behalte Absätze und Strukturierung bei. "
+                            "Falls das Dokument auf Deutsch ist, behalte die deutsche Sprache bei."
+                        ),
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:application/pdf;base64,{pdf_base64}"},
+                    },
+                ],
+            }
+        ],
+        "max_tokens": 32000,
+    }
+
+    response = httpx.post(
+        "https://api.mistral.ai/v1/chat/completions",
+        json=payload,
+        headers={"Authorization": f"Bearer {settings.mistral_api_key}"},
+        timeout=settings.text_extraction_timeout,
+    )
+    response.raise_for_status()
+    result = response.json()
+    return (result.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
 
 
 OCR_MAX_PAGES = 100  # Schutz vor Extremfaellen (Anlagenbaende etc.)

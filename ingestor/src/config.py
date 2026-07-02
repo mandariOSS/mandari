@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     text_extraction_timeout: float = 120.0
     text_extraction_batch_size: int = 500
 
+    # Mistral OCR (optional): wenn ein API-Key gesetzt ist, laeuft OCR fuer
+    # Scan-PDFs ueber die Mistral-API statt lokal per Tesseract (deutlich
+    # schneller bei grossen Backlogs). Tesseract bleibt Fallback.
+    mistral_api_key: str = ""
+    mistral_ocr_model: str = "pixtral-12b-2409"
+
     # Elasticsearch Indexing
     elasticsearch_indexing_enabled: bool = True
     elasticsearch_batch_size: int = 500
