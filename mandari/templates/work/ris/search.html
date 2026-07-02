@@ -111,7 +111,7 @@
             {% if hit.paper_type %}<span class="normal-case font-normal text-gray-400">· {{ hit.paper_type }}</span>{% endif %}
             {% if hit.date %}<span class="normal-case font-normal text-gray-400">· {{ hit.date|slice:":10" }}</span>{% endif %}
         </div>
-        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit._formatted.name %}{{ hit._formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
+        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit.formatted.name %}{{ hit.formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
         {% if hit.reference %}<span class="text-xs font-mono text-gray-500">{{ hit.reference }}</span>{% endif %}
     </a>
     {% elif hit.type == 'file' %}
@@ -121,8 +121,8 @@
             {% if hit.meeting_date %}<span class="normal-case font-normal text-gray-400">· {{ hit.meeting_date|slice:":10" }}</span>{% endif %}
         </div>
         <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{{ hit.name|default:hit.file_name }}</p>
-        {% if hit._formatted.text_content %}
-        <p class="text-xs text-gray-600 dark:text-gray-400 mt-1 leading-relaxed">…{{ hit._formatted.text_content|safe }}…</p>
+        {% if hit.formatted.text_content %}
+        <p class="text-xs text-gray-600 dark:text-gray-400 mt-1 leading-relaxed">…{{ hit.formatted.text_content|safe }}…</p>
         {% endif %}
         {% if hit.paper_name %}<span class="text-xs text-gray-500">zu: {{ hit.paper_name|truncatechars:70 }}</span>{% endif %}
     {% if hit.paper_id %}</a>{% else %}</div>{% endif %}
@@ -132,7 +132,7 @@
             <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Sitzung
             {% if hit.start %}<span class="normal-case font-normal text-gray-400">· {{ hit.start|slice:":10" }}</span>{% endif %}
         </div>
-        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit._formatted.name %}{{ hit._formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
+        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit.formatted.name %}{{ hit.formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
         {% if hit.organization_names %}<span class="text-xs text-gray-500">{{ hit.organization_names|join:", "|truncatechars:80 }}</span>{% endif %}
     </a>
     {% elif hit.type == 'organization' %}
@@ -140,14 +140,14 @@
         <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-purple-500 mb-0.5">
             <i data-lucide="building-2" class="w-3.5 h-3.5"></i> Gremium
         </div>
-        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit._formatted.name %}{{ hit._formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
+        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit.formatted.name %}{{ hit.formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
     </a>
     {% elif hit.type == 'person' %}
     <a href="{% url 'work:ris_person_detail' org_slug=organization.slug person_id=hit.id %}" class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
         <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-500 mb-0.5">
             <i data-lucide="user" class="w-3.5 h-3.5"></i> Person
         </div>
-        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit._formatted.name %}{{ hit._formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
+        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit.formatted.name %}{{ hit.formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
     </a>
     {% endif %}
     {% endfor %}

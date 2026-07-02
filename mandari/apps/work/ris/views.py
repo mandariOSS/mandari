@@ -859,6 +859,9 @@ class RISSearchView(WorkViewMixin, TemplateView):
                 organization_name=committee or None,
                 paper_type=paper_type or None,
             )
+            # Django-Templates erlauben keinen Zugriff auf _-Attribute
+            for doc in result["results"]:
+                doc["formatted"] = doc.get("_formatted", {})
             context["es_results"] = result["results"]
             context["total_results"] = result["total"]
             context["page"] = result["page"]
