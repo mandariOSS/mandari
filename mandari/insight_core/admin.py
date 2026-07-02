@@ -133,6 +133,57 @@ class OParlSourceAdmin(ModelAdmin):
 
 @admin.register(OParlBody)
 class OParlBodyAdmin(ModelAdmin):
+    # -------------------------------------------------------------------------
+    # Löschen: Djangos Standard-Delete sammelt ALLE abhängigen Objekte im RAM
+    # (bei einer Kommune hunderttausende Zeilen) und OOM-killt den Container.
+    # Stattdessen: leichte Zusammenfassung auf der Bestätigungsseite und
+    # Batch-Löschung im Hintergrund-Task.
+    # -------------------------------------------------------------------------
+
+    def get_deleted_objects(self, objs, request):
+        summaries = []
+        model_count = {}
+        for body in objs:
+            n_meetings = body.meetings.count()
+            n_papers = body.papers.count()
+            n_files = body.files.count()
+            summaries.append(
+                f"Kommune „{body.name}“ mit allen RIS-Daten "
+                f"({n_meetings} Sitzungen, {n_papers} Vorlagen, {n_files} Dateien) — "
+                "Löschung läuft nach Bestätigung im Hintergrund"
+            )
+            model_count["Sitzungen"] = model_count.get("Sitzungen", 0) + n_meetings
+            model_count["Vorlagen"] = model_count.get("Vorlagen", 0) + n_papers
+            model_count["Dateien"] = model_count.get("Dateien", 0) + n_files
+        # (to_delete, model_count, perms_needed, protected)
+        return summaries, model_count, set(), []
+
+    def delete_model(self, request, obj):
+        # Thread statt django.tasks: das Default-TASKS-Backend (Immediate)
+        # würde synchron im Request laufen und den Proxy-Timeout reißen.
+        from .services.body_deletion import delete_body_data
+
+        body_id = str(obj.id)
+
+        def deletion_task():
+            from django.db import connection
+
+            try:
+                delete_body_data(body_id)
+            finally:
+                connection.close()
+
+        threading.Thread(target=deletion_task, daemon=True).start()
+        messages.info(
+            request,
+            f"Löschung von „{obj.name}“ läuft im Hintergrund. "
+            "Je nach Datenmenge kann das einige Minuten dauern.",
+        )
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            self.delete_model(request, obj)
+
     list_display = [
         "get_display_name",
         "name",
