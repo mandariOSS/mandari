@@ -172,6 +172,12 @@ class Command(BaseCommand):
                             "search_analyzer": "german_search",
                         },
                         "file_names": {"type": "text"},
+                        # Gremien der Beratungen — für Ausschuss-Filter
+                        "organization_names": {
+                            "type": "text",
+                            "analyzer": "german_custom",
+                            "search_analyzer": "german_search",
+                        },
                     }
                 },
             },

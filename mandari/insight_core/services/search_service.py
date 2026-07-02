@@ -49,6 +49,10 @@ class ElasticsearchService:
         page: int = 1,
         page_size: int = 20,
         index_names: list[str] | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        organization_name: str | None = None,
+        paper_type: str | None = None,
     ) -> dict[str, Any]:
         """
         Multi-Index-Suche über alle Entitäten.
@@ -59,6 +63,12 @@ class ElasticsearchService:
             page: Seitennummer (1-indiziert)
             page_size: Ergebnisse pro Seite
             index_names: Zu durchsuchende Indexe (Standard: alle)
+            date_from: Zeitraum-Filter ab (ISO-Datum, je nach Index auf
+                       date/start/meeting_date angewendet)
+            date_to: Zeitraum-Filter bis (ISO-Datum)
+            organization_name: Gremium-Filter (exakter Name, wirkt auf
+                       papers/meetings/files über organization_names)
+            paper_type: Vorlagen-Art (nur papers-Index)
 
         Returns:
             Dict mit results, total, page, page_size, pages
@@ -76,7 +86,15 @@ class ElasticsearchService:
                     continue
 
                 # Query aufbauen
-                es_query = self._build_query(query, body_id, index_name)
+                es_query = self._build_query(
+                    query,
+                    body_id,
+                    index_name,
+                    date_from=date_from,
+                    date_to=date_to,
+                    organization_name=organization_name,
+                    paper_type=paper_type,
+                )
 
                 result = self.client.search(
                     index=index_name,
@@ -135,7 +153,23 @@ class ElasticsearchService:
             "pages": (total_hits + page_size - 1) // page_size if total_hits > 0 else 0,
         }
 
-    def _build_query(self, query: str, body_id: str | None, index_name: str) -> dict[str, Any]:
+    # Datumsfeld je Index für Zeitraum-Filter
+    DATE_FIELD_BY_INDEX = {
+        "papers": "date",
+        "meetings": "start",
+        "files": "meeting_date",
+    }
+
+    def _build_query(
+        self,
+        query: str,
+        body_id: str | None,
+        index_name: str,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        organization_name: str | None = None,
+        paper_type: str | None = None,
+    ) -> dict[str, Any]:
         """Baut die Elasticsearch-Query für einen Index."""
         must = []
         filter_clauses = []
@@ -157,6 +191,24 @@ class ElasticsearchService:
         if body_id:
             filter_clauses.append({"term": {"body_id": body_id}})
 
+        # Zeitraum-Filter (nur bei Indexen mit Datumsfeld)
+        date_field = self.DATE_FIELD_BY_INDEX.get(index_name)
+        if date_field and (date_from or date_to):
+            range_clause: dict[str, str] = {}
+            if date_from:
+                range_clause["gte"] = date_from
+            if date_to:
+                range_clause["lte"] = date_to
+            filter_clauses.append({"range": {date_field: range_clause}})
+
+        # Gremium-Filter: organization_names ist ein analysiertes Textfeld,
+        # daher match_phrase statt term (exakter Namens-Treffer)
+        if organization_name and index_name in ("papers", "meetings", "files"):
+            filter_clauses.append({"match_phrase": {"organization_names": organization_name}})
+
+        if paper_type and index_name == "papers":
+            filter_clauses.append({"term": {"paper_type": paper_type}})
+
         return {
             "bool": {
                 "must": must,
@@ -168,7 +220,14 @@ class ElasticsearchService:
     def _get_search_fields(index_name: str) -> list[str]:
         """Gibt die durchsuchbaren Felder für einen Index zurück."""
         fields_map = {
-            "papers": ["name^3", "reference^2", "paper_type", "file_contents_preview", "file_names"],
+            "papers": [
+                "name^3",
+                "reference^2",
+                "paper_type",
+                "organization_names",
+                "file_contents_preview",
+                "file_names",
+            ],
             "meetings": ["name^3", "organization_names^2", "location_name"],
             "persons": ["name^3", "given_name^2", "family_name^2", "title"],
             "organizations": ["name^3", "short_name^2", "organization_type", "classification"],

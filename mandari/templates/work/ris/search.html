@@ -25,13 +25,13 @@
 </div>
 {% else %}
 
-<!-- Search Input -->
+<!-- Search Input + Filter -->
 <div class="fade-up mb-6">
-    <form method="get" class="max-w-2xl">
-        <div class="relative">
+    <form method="get" class="max-w-4xl space-y-3">
+        <div class="relative max-w-2xl">
             <i data-lucide="search" class="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
             <input type="text" name="q" value="{{ search_query|default:'' }}"
-                   placeholder="Suche in Vorgängen, Sitzungen, Gremien, Personen..."
+                   placeholder="Suche in Vorgängen, Sitzungen, Dokumenten (inkl. PDF-Volltext), Gremien, Personen..."
                    autofocus
                    class="w-full px-5 py-3 pl-12 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <button type="submit"
@@ -39,18 +39,136 @@
                 Suchen
             </button>
         </div>
+
+        <!-- Filterleiste -->
+        <div class="flex flex-wrap items-center gap-2">
+            <label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                <i data-lucide="calendar-range" class="w-3.5 h-3.5"></i>
+                <input type="date" name="von" value="{{ date_from|default:'' }}" onchange="this.form.submit()"
+                       class="px-2 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500">
+                bis
+                <input type="date" name="bis" value="{{ date_to|default:'' }}" onchange="this.form.submit()"
+                       class="px-2 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500">
+            </label>
+
+            <select name="gremium" onchange="this.form.submit()"
+                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500 max-w-[220px]">
+                <option value="">Alle Gremien</option>
+                {% for name in committees %}
+                <option value="{{ name }}" {% if committee_filter == name %}selected{% endif %}>{{ name|truncatechars:40 }}</option>
+                {% endfor %}
+            </select>
+
+            <select name="art" onchange="this.form.submit()"
+                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500 max-w-[200px]">
+                <option value="">Alle Vorlagen-Arten</option>
+                {% for pt in paper_types %}
+                <option value="{{ pt }}" {% if paper_type_filter == pt %}selected{% endif %}>{{ pt|truncatechars:35 }}</option>
+                {% endfor %}
+            </select>
+
+            <select name="typ" onchange="this.form.submit()"
+                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500">
+                <option value="">Alle Bereiche</option>
+                <option value="papers" {% if result_type_filter == 'papers' %}selected{% endif %}>Vorgänge</option>
+                <option value="files" {% if result_type_filter == 'files' %}selected{% endif %}>Dokumente (PDF-Volltext)</option>
+                <option value="meetings" {% if result_type_filter == 'meetings' %}selected{% endif %}>Sitzungen</option>
+                <option value="organizations" {% if result_type_filter == 'organizations' %}selected{% endif %}>Gremien</option>
+                <option value="persons" {% if result_type_filter == 'persons' %}selected{% endif %}>Personen</option>
+            </select>
+
+            {% if date_from or date_to or committee_filter or paper_type_filter or result_type_filter %}
+            <a href="?q={{ search_query|urlencode }}"
+               class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                <i data-lucide="x" class="w-3.5 h-3.5"></i> Filter zurücksetzen
+            </a>
+            {% endif %}
+        </div>
     </form>
 </div>
 
-{% if search_query %}
+{% if search_query or date_from or date_to or committee_filter or paper_type_filter %}
 <!-- Results Summary -->
-<div class="fade-up d1 mb-6">
+<div class="fade-up d1 mb-6 flex items-center justify-between">
     <p class="text-gray-600 dark:text-gray-400">
-        {{ total_results }} Ergebnisse für "<span class="font-medium text-gray-900 dark:text-white">{{ search_query }}</span>"
+        {{ total_results }} Ergebnisse{% if search_query %} für "<span class="font-medium text-gray-900 dark:text-white">{{ search_query }}</span>"{% endif %}
     </p>
+    {% if search_backend == 'orm' %}
+    <span class="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+        <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i> Eingeschränkte Suche (Volltext-Index nicht erreichbar)
+    </span>
+    {% endif %}
 </div>
 
-{% if total_results > 0 %}
+{% if es_results %}
+<!-- Elasticsearch-Treffer: einheitliche Liste mit Highlights -->
+<div class="fade-up d2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700 overflow-hidden">
+    {% for hit in es_results %}
+    {% if hit.type == 'paper' %}
+    <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=hit.id %}" class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-blue-500 mb-0.5">
+            <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Vorgang
+            {% if hit.paper_type %}<span class="normal-case font-normal text-gray-400">· {{ hit.paper_type }}</span>{% endif %}
+            {% if hit.date %}<span class="normal-case font-normal text-gray-400">· {{ hit.date|slice:":10" }}</span>{% endif %}
+        </div>
+        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit._formatted.name %}{{ hit._formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
+        {% if hit.reference %}<span class="text-xs font-mono text-gray-500">{{ hit.reference }}</span>{% endif %}
+    </a>
+    {% elif hit.type == 'file' %}
+    {% if hit.paper_id %}<a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=hit.paper_id %}"{% else %}<div{% endif %} class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-teal-500 mb-0.5">
+            <i data-lucide="file-search" class="w-3.5 h-3.5"></i> Dokument (Volltext-Treffer)
+            {% if hit.meeting_date %}<span class="normal-case font-normal text-gray-400">· {{ hit.meeting_date|slice:":10" }}</span>{% endif %}
+        </div>
+        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{{ hit.name|default:hit.file_name }}</p>
+        {% if hit._formatted.text_content %}
+        <p class="text-xs text-gray-600 dark:text-gray-400 mt-1 leading-relaxed">…{{ hit._formatted.text_content|safe }}…</p>
+        {% endif %}
+        {% if hit.paper_name %}<span class="text-xs text-gray-500">zu: {{ hit.paper_name|truncatechars:70 }}</span>{% endif %}
+    {% if hit.paper_id %}</a>{% else %}</div>{% endif %}
+    {% elif hit.type == 'meeting' %}
+    <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=hit.id %}" class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-green-500 mb-0.5">
+            <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Sitzung
+            {% if hit.start %}<span class="normal-case font-normal text-gray-400">· {{ hit.start|slice:":10" }}</span>{% endif %}
+        </div>
+        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit._formatted.name %}{{ hit._formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
+        {% if hit.organization_names %}<span class="text-xs text-gray-500">{{ hit.organization_names|join:", "|truncatechars:80 }}</span>{% endif %}
+    </a>
+    {% elif hit.type == 'organization' %}
+    <a href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=hit.id %}" class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-purple-500 mb-0.5">
+            <i data-lucide="building-2" class="w-3.5 h-3.5"></i> Gremium
+        </div>
+        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit._formatted.name %}{{ hit._formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
+    </a>
+    {% elif hit.type == 'person' %}
+    <a href="{% url 'work:ris_person_detail' org_slug=organization.slug person_id=hit.id %}" class="group block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-500 mb-0.5">
+            <i data-lucide="user" class="w-3.5 h-3.5"></i> Person
+        </div>
+        <p class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 transition-colors">{% if hit._formatted.name %}{{ hit._formatted.name|safe }}{% else %}{{ hit.name }}{% endif %}</p>
+    </a>
+    {% endif %}
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if pages > 1 %}
+<div class="fade-up mt-6 flex items-center justify-center gap-2">
+    {% if page > 1 %}
+    <a href="?q={{ search_query|urlencode }}&von={{ date_from }}&bis={{ date_to }}&gremium={{ committee_filter|urlencode }}&art={{ paper_type_filter|urlencode }}&typ={{ result_type_filter }}&seite={{ page|add:'-1' }}"
+       class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-primary-500">&larr; Zurück</a>
+    {% endif %}
+    <span class="text-sm text-gray-500">Seite {{ page }} von {{ pages }}</span>
+    {% if page < pages %}
+    <a href="?q={{ search_query|urlencode }}&von={{ date_from }}&bis={{ date_to }}&gremium={{ committee_filter|urlencode }}&art={{ paper_type_filter|urlencode }}&typ={{ result_type_filter }}&seite={{ page|add:'1' }}"
+       class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-primary-500">Weiter &rarr;</a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% elif total_results > 0 %}
 <div class="fade-up d2 space-y-6">
 
     <!-- Papers -->

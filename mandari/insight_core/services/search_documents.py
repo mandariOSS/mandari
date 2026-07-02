@@ -46,6 +46,26 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
     if len(file_contents_preview) > max_total:
         file_contents_preview = file_contents_preview[:max_total]
 
+    # Gremien über Beratungen (Consultations) auflösen — ermöglicht den
+    # Ausschuss-Filter in der Suche. Die Consultation-raw_json enthält die
+    # OParl-Organization-URLs.
+    organization_names: list[str] = []
+    try:
+        org_refs: set[str] = set()
+        for consultation in paper.consultations.all():
+            refs = (consultation.raw_json or {}).get("organization", [])
+            if isinstance(refs, str):
+                refs = [refs]
+            org_refs.update(r for r in refs if r)
+        if org_refs:
+            from insight_core.models import OParlOrganization
+
+            organization_names = list(
+                OParlOrganization.objects.filter(external_id__in=org_refs).values_list("name", flat=True).distinct()
+            )
+    except Exception:
+        organization_names = []
+
     return {
         "id": str(paper.id),
         "type": "paper",
@@ -58,6 +78,7 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
         "oparl_modified": paper.oparl_modified.isoformat() if paper.oparl_modified else None,
         "file_contents_preview": file_contents_preview,
         "file_names": file_names,
+        "organization_names": organization_names,
     }
 
 

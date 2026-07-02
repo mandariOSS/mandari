@@ -771,10 +771,18 @@ class RISFilesView(WorkViewMixin, TemplateView):
 
 
 class RISSearchView(WorkViewMixin, TemplateView):
-    """RIS search across all entities."""
+    """
+    RIS search across all entities.
+
+    Nutzt Elasticsearch (inkl. OCR-Volltexte der Dokumente) mit Filtern für
+    Zeitraum, Gremium und Vorlagen-Art. Fällt auf Django-ORM zurück, wenn
+    Elasticsearch nicht erreichbar ist.
+    """
 
     template_name = "work/ris/search.html"
     permission_required = "ris.view"
+
+    PAGE_SIZE = 25
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -788,46 +796,115 @@ class RISSearchView(WorkViewMixin, TemplateView):
 
         context["body"] = body
 
+        # Filter-Optionen (immer anzeigen, auch ohne Query)
+        from insight_core.models import OParlOrganization, OParlPaper
+
+        context["committees"] = (
+            OParlOrganization.objects.filter(body=body).exclude(name="").order_by("name").values_list("name", flat=True)
+        )
+        context["paper_types"] = (
+            OParlPaper.objects.filter(body=body)
+            .exclude(paper_type__isnull=True)
+            .exclude(paper_type="")
+            .values_list("paper_type", flat=True)
+            .distinct()
+            .order_by("paper_type")
+        )
+
         query = self.request.GET.get("q", "").strip()
-        if not query:
+        date_from = self.request.GET.get("von", "").strip()
+        date_to = self.request.GET.get("bis", "").strip()
+        committee = self.request.GET.get("gremium", "").strip()
+        paper_type = self.request.GET.get("art", "").strip()
+        result_type = self.request.GET.get("typ", "").strip()
+        try:
+            page = max(1, int(self.request.GET.get("seite", "1")))
+        except ValueError:
+            page = 1
+
+        context.update(
+            {
+                "search_query": query,
+                "date_from": date_from,
+                "date_to": date_to,
+                "committee_filter": committee,
+                "paper_type_filter": paper_type,
+                "result_type_filter": result_type,
+            }
+        )
+
+        has_filters = any([date_from, date_to, committee, paper_type])
+        if not query and not has_filters:
             return context
 
-        context["search_query"] = query
+        index_names = None
+        if result_type in ("papers", "meetings", "persons", "organizations", "files"):
+            index_names = [result_type]
+        elif committee or paper_type:
+            # Diese Filter wirken nur auf Dokument-/Sitzungs-Indexe
+            index_names = ["papers", "meetings", "files"] if not paper_type else ["papers"]
 
-        from insight_core.models import (
-            OParlMeeting,
-            OParlOrganization,
-            OParlPaper,
-            OParlPerson,
-        )
+        try:
+            from insight_core.services.search_service import ElasticsearchService
 
-        # Search papers
-        papers = (
-            OParlPaper.objects.filter(body=body)
-            .filter(Q(name__icontains=query) | Q(reference__icontains=query))
-            .order_by("-date")[:10]
-        )
+            service = ElasticsearchService()
+            result = service.search_all(
+                query=query,
+                body_id=str(body.id),
+                page=page,
+                page_size=self.PAGE_SIZE,
+                index_names=index_names,
+                date_from=date_from or None,
+                date_to=date_to or None,
+                organization_name=committee or None,
+                paper_type=paper_type or None,
+            )
+            context["es_results"] = result["results"]
+            context["total_results"] = result["total"]
+            context["page"] = result["page"]
+            context["pages"] = result["pages"]
+            context["search_backend"] = "elasticsearch"
+            return context
+        except Exception as e:
+            import logging
 
-        # Search meetings
-        meetings = (
-            OParlMeeting.objects.filter(body=body)
-            .filter(Q(name__icontains=query) | Q(location_name__icontains=query))
-            .prefetch_related("organizations")
-            .order_by("-start")[:10]
-        )
+            logging.getLogger(__name__).warning(f"RIS-Suche: Elasticsearch nicht verfügbar, ORM-Fallback: {e}")
 
-        # Search organizations
+        # ---- Fallback: Django ORM (ohne OCR-Volltext, einfache Filter) ----
+        from insight_core.models import OParlMeeting, OParlPerson
+
+        papers = OParlPaper.objects.filter(body=body)
+        meetings = OParlMeeting.objects.filter(body=body)
+        if query:
+            papers = papers.filter(Q(name__icontains=query) | Q(reference__icontains=query))
+            meetings = meetings.filter(Q(name__icontains=query) | Q(location_name__icontains=query))
+        if date_from:
+            papers = papers.filter(date__gte=date_from)
+            meetings = meetings.filter(start__gte=date_from)
+        if date_to:
+            papers = papers.filter(date__lte=date_to)
+            meetings = meetings.filter(start__lte=date_to)
+        if paper_type:
+            papers = papers.filter(paper_type=paper_type)
+        if committee:
+            meetings = meetings.filter(organizations__name=committee)
+
+        papers = papers.order_by("-date")[:10]
+        meetings = meetings.prefetch_related("organizations").order_by("-start")[:10]
+
         organizations = (
             OParlOrganization.objects.filter(body=body)
             .filter(Q(name__icontains=query) | Q(short_name__icontains=query))
             .order_by("name")[:10]
+            if query
+            else OParlOrganization.objects.none()
         )
-
-        # Search persons
         persons = (
             OParlPerson.objects.filter(body=body)
             .filter(Q(name__icontains=query) | Q(family_name__icontains=query) | Q(given_name__icontains=query))
             .order_by("family_name")[:10]
+            if query
+            else OParlPerson.objects.none()
         )
 
         context["results"] = {
@@ -836,7 +913,7 @@ class RISSearchView(WorkViewMixin, TemplateView):
             "organizations": organizations,
             "persons": persons,
         }
-
-        context["total_results"] = papers.count() + meetings.count() + organizations.count() + persons.count()
+        context["total_results"] = len(papers) + len(meetings) + organizations.count() + persons.count()
+        context["search_backend"] = "orm"
 
         return context
