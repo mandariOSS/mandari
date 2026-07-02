@@ -84,20 +84,50 @@ class DashboardView(WorkViewMixin, TemplateView):
                 .order_by("start")[:5]
             )
 
+            ris_meetings = list(ris_meetings)
+
+            # Fallback für Meetings ohne verknüpfte Gremien: Referenzen aus
+            # raw_json auflösen (eine Batch-Query für alle betroffenen Meetings)
+            unresolved_refs = set()
+            for meeting in ris_meetings:
+                if not meeting.organizations.all():
+                    refs = (meeting.raw_json or {}).get("organization", [])
+                    if isinstance(refs, str):
+                        refs = [refs]
+                    unresolved_refs.update(refs)
+
+            orgs_by_external_id = {}
+            if unresolved_refs:
+                orgs_by_external_id = {
+                    org.external_id: org
+                    for org in OParlOrganization.objects.filter(
+                        external_id__in=unresolved_refs
+                    ).only("id", "external_id", "name", "short_name")
+                }
+
             for meeting in ris_meetings:
                 # Get the committee name (first organization, typically the main committee)
                 # Use prefetched cache - don't trigger new query
                 orgs = list(meeting.organizations.all())
+                if not orgs:
+                    refs = (meeting.raw_json or {}).get("organization", [])
+                    if isinstance(refs, str):
+                        refs = [refs]
+                    orgs = [orgs_by_external_id[ref] for ref in refs if ref in orgs_by_external_id]
+
                 if orgs:
                     committee_name = orgs[0].name or orgs[0].short_name or "Gremium"
+                    subtitle = meeting.name or ""
                 else:
                     committee_name = meeting.name or "RIS-Sitzung"
+                    subtitle = ""
 
                 meetings.append(
                     {
                         "type": "ris",
                         "id": meeting.id,
                         "title": committee_name,
+                        "subtitle": subtitle,
                         "start": meeting.start,
                         "location": meeting.location_name or "",
                         "status": meeting.meeting_state or "",

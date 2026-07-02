@@ -103,6 +103,7 @@
                             {% endif %}
                         </div>
                         <div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2.5 mt-0.5">
+                            {% if meeting.subtitle %}<span class="truncate">{{ meeting.subtitle|truncatechars:30 }}</span>{% endif %}
                             {% if meeting.start %}<span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> {{ meeting.start|date:"H:i" }}</span>{% endif %}
                             {% if meeting.location %}<span class="flex items-center gap-1 truncate"><i data-lucide="map-pin" class="w-3 h-3 flex-shrink-0"></i> {{ meeting.location|truncatechars:20 }}</span>{% endif %}
                         </div>
