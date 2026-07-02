@@ -3,6 +3,10 @@
 # =============================================================================
 # Builds and publishes Docker images to GitHub Container Registry (ghcr.io)
 #
+# NOTE: The marketing website (ghcr.io/mandarioss/website) is built from a
+# separate repository (../marketing-website) and has its own release workflow.
+# This workflow only builds the mandari and ingestor images.
+#
 # Branch → Tag mapping:
 #   dev    → :dev, :dev-<sha>
 #   beta   → :beta, :beta-<sha>
@@ -65,43 +69,36 @@ jobs:
             VERSION="${{ github.event.release.tag_name }}"
             MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${VERSION},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest"
             INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${VERSION},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest"
-            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${VERSION},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:latest"
 
           elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             # Manual: custom tag
             TAG="${{ github.event.inputs.tag }}"
             MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${TAG}"
             INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${TAG}"
-            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${TAG}"
 
           elif [ "$BRANCH" == "main" ]; then
             # main: latest + sha
             MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${SHORT_SHA}"
             INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${SHORT_SHA}"
-            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:latest,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${SHORT_SHA}"
 
           elif [ "$BRANCH" == "beta" ]; then
             # beta: beta + beta-sha
             MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:beta,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:beta-${SHORT_SHA}"
             INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:beta,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:beta-${SHORT_SHA}"
-            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:beta,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:beta-${SHORT_SHA}"
 
           elif [ "$BRANCH" == "dev" ]; then
             # dev: dev + dev-sha
             MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:dev,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:dev-${SHORT_SHA}"
             INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:dev,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:dev-${SHORT_SHA}"
-            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:dev,${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:dev-${SHORT_SHA}"
 
           else
             # Fallback
             MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${SHORT_SHA}"
             INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${SHORT_SHA}"
-            WEBSITE_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${SHORT_SHA}"
           fi
 
           echo "mandari_tags=$MANDARI_TAGS" >> $GITHUB_OUTPUT
           echo "ingestor_tags=$INGESTOR_TAGS" >> $GITHUB_OUTPUT
-          echo "website_tags=$WEBSITE_TAGS" >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
           # Scan-Tag: erstes Tag aus der komma-separierten Liste (für Trivy)
@@ -112,7 +109,6 @@ jobs:
           echo "Scan tag: $SCAN_TAG"
           echo "Mandari tags: $MANDARI_TAGS"
           echo "Ingestor tags: $INGESTOR_TAGS"
-          echo "Website tags: $WEBSITE_TAGS"
 
       # =====================================================================
       # Build, scan, and push all images
@@ -164,28 +160,8 @@ jobs:
           exit-code: '0'
           format: 'table'
 
-      - name: Build and push website image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./marketing-website
-          file: ./marketing-website/Dockerfile
-          push: true
-          tags: ${{ steps.tags.outputs.website_tags }}
-          cache-from: type=gha,scope=website
-          cache-to: type=gha,scope=website,mode=max
-          labels: |
-            org.opencontainers.image.source=https://github.com/mandariOSS/mandari
-            org.opencontainers.image.description=Mandari Marketing Website - Wagtail CMS
-            org.opencontainers.image.licenses=AGPL-3.0
-            org.opencontainers.image.revision=${{ github.sha }}
-
-      - name: Scan website image for vulnerabilities
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:${{ steps.tags.outputs.scan_tag }}
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          format: 'table'
+      # NOTE: The website image is built from the separate marketing-website
+      # repository and has its own release workflow. See ../marketing-website/.
 
       # =====================================================================
       # Make packages public (required for unauthenticated pulls)
@@ -195,7 +171,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for pkg in mandari ingestor website; do
+          for pkg in mandari ingestor; do
             gh api \
               --method PUT \
               -H "Accept: application/vnd.github+json" \

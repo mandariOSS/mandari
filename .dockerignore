@@ -5,9 +5,6 @@
 # Private docs
 .private
 
-# Marketing website (has its own context)
-marketing-website
-
 # Python caches
 __pycache__
 *.py[cod]
