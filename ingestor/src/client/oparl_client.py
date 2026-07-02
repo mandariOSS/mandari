@@ -342,13 +342,32 @@ class OParlClient:
         """
         current_url: str | None = url
         pages_fetched = 0
+        tried_modified_since = False
 
         # Append modified_since as OParl query parameter if provided
         if modified_since and current_url:
             current_url = self._append_modified_since(current_url, modified_since)
+            tried_modified_since = True
 
         while current_url:
             result = await self.fetch(current_url, use_cache=False)
+
+            # Fallback: manche RIS (z. B. Stadt Münster) beantworten
+            # modified_since mit 401/403/400. Dann einmalig ohne den Filter
+            # neu ansetzen — der Upsert überspringt unveränderte Objekte.
+            if (
+                tried_modified_since
+                and pages_fetched == 0
+                and result.status_code in (400, 401, 403)
+            ):
+                console.print(
+                    f"[yellow]{url}: modified_since nicht unterstützt "
+                    f"(HTTP {result.status_code}) — Fallback auf vollständige Liste[/yellow]"
+                )
+                metrics.record_http_error(self.source_name, "modified_since_unsupported")
+                tried_modified_since = False
+                current_url = url
+                continue
 
             if result.error:
                 console.print(f"[red]Error fetching {current_url}: {result.error}[/red]")
