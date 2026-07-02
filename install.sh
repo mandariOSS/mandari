@@ -512,6 +512,34 @@ run_migrations() {
 # Create Superuser
 # =============================================================================
 create_superuser() {
+    # Interaktiver Modus: nach Admin-Zugangsdaten fragen, wenn keine
+    # Umgebungsvariablen gesetzt sind (Issue #16)
+    if [ "$UNATTENDED" != "true" ] && { [ -z "${ADMIN_EMAIL:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; }; then
+        echo ""
+        log "Admin-Account erstellen"
+        echo "============================================"
+        echo ""
+        echo "  Ohne Admin-Account ist kein Login möglich (weder /admin noch Plattform)."
+        echo "  Leer lassen zum Überspringen."
+        echo ""
+        read -p "  Admin E-Mail: " ADMIN_EMAIL
+        if [ -n "$ADMIN_EMAIL" ]; then
+            while true; do
+                read -s -p "  Admin Passwort (min. 8 Zeichen): " ADMIN_PASSWORD; echo ""
+                if [ "${#ADMIN_PASSWORD}" -lt 8 ]; then
+                    echo "  Passwort zu kurz, bitte erneut."
+                    continue
+                fi
+                read -s -p "  Passwort bestätigen: " ADMIN_PASSWORD2; echo ""
+                if [ "$ADMIN_PASSWORD" = "$ADMIN_PASSWORD2" ]; then
+                    unset ADMIN_PASSWORD2
+                    break
+                fi
+                echo "  Passwörter stimmen nicht überein, bitte erneut."
+            done
+        fi
+    fi
+
     if [ -z "${ADMIN_EMAIL:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
         info "Kein Admin-Account konfiguriert. Erstelle manuell:"
         info "  docker exec -it mandari python manage.py createsuperuser"
