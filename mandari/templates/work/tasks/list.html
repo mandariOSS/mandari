@@ -43,33 +43,65 @@
             </a>
         </div>
 
-        <!-- Search -->
-        <div class="flex-1 max-w-xs">
-            <form method="get" class="relative">
-                <input type="hidden" name="view" value="{{ view_mode }}">
+        <!-- Filter: ein gemeinsames Formular, damit Filter kombinierbar bleiben -->
+        <form method="get" class="flex flex-wrap items-center gap-4 flex-1">
+            <input type="hidden" name="view" value="{{ view_mode }}">
+
+            <!-- Search -->
+            <div class="flex-1 max-w-xs relative">
                 <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
                 <input type="text" name="q" value="{{ search_query|default:'' }}"
                        placeholder="Aufgaben suchen..."
                        class="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
-            </form>
-        </div>
+            </div>
 
-        <!-- Priority Filter -->
-        <select onchange="window.location.href=this.value"
-                class="px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
-            <option value="?view={{ view_mode }}" {% if not priority_filter %}selected{% endif %}>Alle Prioritäten</option>
-            {% for value, label in priority_choices %}
-            <option value="?view={{ view_mode }}&priority={{ value }}" {% if priority_filter == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-        </select>
+            <!-- Priority Filter -->
+            <select name="priority" onchange="this.form.submit()"
+                    class="px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                <option value="" {% if not priority_filter %}selected{% endif %}>Alle Prioritäten</option>
+                {% for value, label in priority_choices %}
+                <option value="{{ value }}" {% if priority_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
 
-        <!-- Show Completed Toggle -->
-        <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
-            <input type="checkbox" onchange="window.location.href='?view={{ view_mode }}&completed=' + (this.checked ? '1' : '0')"
-                   {% if show_completed %}checked{% endif %}
-                   class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
-            Erledigte anzeigen
-        </label>
+            <!-- Label Filter -->
+            {% if labels %}
+            <select name="label" onchange="this.form.submit()"
+                    class="px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                <option value="" {% if not label_filter %}selected{% endif %}>Alle Labels</option>
+                {% for label in labels %}
+                <option value="{{ label.id }}" {% if label_filter == label.id|stringformat:"s" %}selected{% endif %}>{{ label.name }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+
+            <!-- Personen-Filter (nur in "Alle"-Ansicht) -->
+            {% if view_mode == 'all' %}
+            <select name="assignee" onchange="this.form.submit()"
+                    class="px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                <option value="" {% if not assignee_filter %}selected{% endif %}>Alle Personen</option>
+                {% for member in members %}
+                <option value="{{ member.id }}" {% if assignee_filter == member.id|stringformat:"s" %}selected{% endif %}>{{ member.user.get_display_name }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+
+            <!-- Überfällig-Chip -->
+            <label class="flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl border cursor-pointer transition-colors {% if overdue_only %}bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300{% else %}bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                <input type="checkbox" name="overdue" value="1" {% if overdue_only %}checked{% endif %}
+                       onchange="this.form.submit()" class="sr-only">
+                <i data-lucide="alarm-clock" class="w-4 h-4"></i>
+                Überfällig{% if stats.overdue %} ({{ stats.overdue }}){% endif %}
+            </label>
+
+            <!-- Show Completed Toggle -->
+            <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+                <input type="checkbox" name="completed" value="1" {% if show_completed %}checked{% endif %}
+                       onchange="this.form.submit()"
+                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                Erledigte anzeigen
+            </label>
+        </form>
     </div>
 
     <!-- Kanban Board -->
