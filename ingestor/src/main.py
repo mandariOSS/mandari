@@ -381,6 +381,62 @@ def daemon(
         raise typer.Exit(130)
 
 
+@app.command("extract-daemon")
+def extract_daemon(
+    interval: int = typer.Option(
+        10, "--interval", "-i", help="Minutes to sleep when no files are pending"
+    ),
+) -> None:
+    """
+    Start the standalone text-extraction worker (separate from the sync daemon).
+
+    Continuously processes files with text_extraction_status='pending'.
+    Runs as its own container so OCR memory spikes never impact the
+    OParl data sync. Disable inline extraction in the sync daemon via
+    TEXT_EXTRACTION_ENABLED=false when this worker is deployed.
+
+    Examples:
+
+        # Start worker (checks every 10 minutes when idle)
+        mandari-ingestor extract-daemon
+
+        # Shorter idle interval
+        mandari-ingestor extract-daemon --interval 5
+    """
+    print_banner()
+
+    console.print("[bold]Starting Text-Extraction Worker[/bold]")
+    console.print(f"  Idle interval: {interval} minutes")
+    console.print(f"  Concurrency: {settings.text_extraction_concurrency}")
+    console.print(f"  Max file size: {settings.text_extraction_max_size_mb} MB")
+    console.print(f"  Batch size: {settings.text_extraction_batch_size}")
+    console.print()
+
+    async def run_worker() -> None:
+        from src.extraction.extractor import TextExtractor
+
+        async with SyncOrchestrator() as orchestrator:
+            extractor = TextExtractor(orchestrator.storage)
+            while True:
+                total = 0
+                bodies = await orchestrator.storage.get_all_bodies()
+                for body in bodies:
+                    try:
+                        total += await extractor.extract_pending_files(body.id)
+                    except Exception as e:
+                        console.print(f"[red]Extraction error for body {body.id}: {e}[/red]")
+                if total:
+                    console.print(f"[green]{total} files extracted — continuing with next batch[/green]")
+                else:
+                    await asyncio.sleep(interval * 60)
+
+    try:
+        asyncio.run(run_worker())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Extraction worker stopped by user[/yellow]")
+        raise typer.Exit(130)
+
+
 @app.command()
 def test_connection(
     url: str = typer.Argument(..., help="OParl API URL to test"),
