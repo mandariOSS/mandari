@@ -161,9 +161,17 @@ class OParlBodyAdmin(ModelAdmin):
     def delete_model(self, request, obj):
         # Thread statt django.tasks: das Default-TASKS-Backend (Immediate)
         # würde synchron im Request laufen und den Proxy-Timeout reißen.
+        from django.core.cache import cache
+
         from .services.body_deletion import delete_body_data
 
         body_id = str(obj.id)
+
+        # Doppelklick-Schutz: pro Body nur eine laufende Löschung
+        # (cache.add ist atomar; Lock verfällt nach 2h von selbst)
+        if not cache.add(f"body-deletion-{body_id}", "running", timeout=7200):
+            messages.warning(request, f"Löschung von „{obj.name}“ läuft bereits.")
+            return
 
         def deletion_task():
             from django.db import connection
@@ -171,6 +179,7 @@ class OParlBodyAdmin(ModelAdmin):
             try:
                 delete_body_data(body_id)
             finally:
+                cache.delete(f"body-deletion-{body_id}")
                 connection.close()
 
         threading.Thread(target=deletion_task, daemon=True).start()
