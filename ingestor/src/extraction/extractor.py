@@ -360,11 +360,18 @@ def _extract_text_with_ocr(data: bytes, page_count: int | None = None) -> tuple[
     ocr_fragments: list[str] = []
     rendered_any = False
 
+    import tempfile
+
     for page_no in range(1, max_pages + 1):
         try:
-            images = convert_from_bytes(
-                data, dpi=OCR_DPI, first_page=page_no, last_page=page_no
-            )
+            # Eigenes Temp-Verzeichnis pro Seite: pdf2image raeumt seine
+            # Zwischendateien sonst bei Abbruechen nicht auf (57GB-Vorfall)
+            with tempfile.TemporaryDirectory(prefix="ocr-page-") as tmpdir:
+                images = convert_from_bytes(
+                    data, dpi=OCR_DPI, first_page=page_no, last_page=page_no, output_folder=tmpdir
+                )
+                if images:
+                    images[0].load()
         except Exception as exc:
             if PDFInfoNotInstalledError and isinstance(exc, PDFInfoNotInstalledError):
                 logger.warning("Poppler not installed, skipping OCR")
