@@ -99,6 +99,7 @@ INSTALLED_APPS = [
     "apps.common",
     "apps.accounts",
     "apps.tenants",
+    "apps.provisioning",
     "apps.work",
     # Mandari Session RIS (OSS - AGPL 3.0)
     "apps.session",

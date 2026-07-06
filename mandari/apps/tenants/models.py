@@ -328,6 +328,27 @@ class Organization(models.Model):
         help_text="Wird automatisch gesetzt wenn erste Person beitritt",
     )
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+
+    # SaaS/Hosting: gesetzt vom Billing-Portal über die Provisioning-API
+    plan = models.CharField(
+        max_length=50,
+        default="community",
+        verbose_name="Plan",
+        help_text="Abo-Plan (community = selbst gehostet/kostenlos)",
+    )
+    billing_reference = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Billing-Referenz",
+        help_text="Subscription-ID im Billing-Portal",
+    )
+    member_limit = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Mitglieder-Limit",
+        help_text="Maximale aktive Mitglieder laut Plan (leer = unbegrenzt)",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

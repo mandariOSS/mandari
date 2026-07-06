@@ -42,6 +42,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     # Public API (stats, contact form - consumed by Wagtail marketing site)
     path("api/", include("insight_core.api_urls")),
+    # Provisioning-API fürs Billing-Portal (nur aktiv wenn PROVISIONING_API_KEY gesetzt)
+    path("api/provisioning/", include("apps.provisioning.urls", namespace="provisioning")),
     # Authentication (login, logout, password reset)
     path("accounts/", include("apps.accounts.urls", namespace="accounts")),
     # Session RIS (administrative portal)
