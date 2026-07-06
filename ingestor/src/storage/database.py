@@ -5,11 +5,11 @@ High-performance async database operations with proper upsert support.
 Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, or_, select, func, text, update
+from sqlalchemy import and_, delete, or_, select, func, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from rich.console import Console
@@ -47,6 +47,65 @@ from mandari_oparl import (
 )
 
 console = Console()
+
+
+# Columns that are populated by enrichment workers AFTER the initial sync
+# (text extraction pipeline, OCR workers, Django georeferencing / AI
+# summaries, photo scraping, ...). They must NEVER appear in the
+# ON CONFLICT update-set of an OParl upsert, otherwise a routine re-sync
+# would silently wipe the workers' results.
+#
+# Some of these columns only exist in Django's schema (not in the
+# ingestor's SQLAlchemy models) — they are listed anyway so the guard
+# also catches future model additions.
+ENRICHMENT_FIELDS: frozenset[str] = frozenset({
+    # OParlFile: text extraction / OCR pipeline
+    "text_content",
+    "text_extraction_status",
+    "text_extraction_method",
+    "text_extraction_error",
+    "text_extracted_at",
+    "page_count",
+    "sha256_hash",
+    "local_path",
+    # OParlPaper: AI enrichment + georeferencing (Django-managed)
+    "summary",
+    "locations",
+    "georef_status",
+    # OParlBody: Django-managed presentation + geo fields
+    "display_name",
+    "logo",
+    "slug",
+    "latitude",
+    "longitude",
+    "bbox_north",
+    "bbox_south",
+    "bbox_east",
+    "bbox_west",
+    "osm_relation_id",
+    # OParlBody: person photo scraping configuration (Django-managed)
+    "person_photo_url_template",
+    "person_photo_id_pattern",
+})
+
+
+def _assert_no_enrichment_overwrite(update_set: dict) -> None:
+    """
+    Guard rail for upsert update-sets.
+
+    Raises immediately (in every build) if an ON CONFLICT update-set would
+    overwrite worker-populated enrichment columns. Call this before every
+    ``on_conflict_do_update(set_=...)`` so a future edit cannot silently
+    add a protected column.
+    """
+    overlap = ENRICHMENT_FIELDS.intersection(update_set)
+    if overlap:
+        raise AssertionError(
+            "Upsert update-set would overwrite worker-populated enrichment "
+            f"columns: {sorted(overlap)}. See ENRICHMENT_FIELDS in "
+            "src/storage/database.py — these columns must never be part of "
+            "an ON CONFLICT update-set."
+        )
 
 
 class DatabaseStorage:
@@ -195,13 +254,15 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            update_set = {
+                "name": stmt.excluded.name,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["url"],
-                set_={
-                    "name": stmt.excluded.name,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlSource.id)
 
             result = await session.execute(stmt)
@@ -283,26 +344,28 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            update_set = {
+                "name": stmt.excluded.name,
+                "short_name": stmt.excluded.short_name,
+                "website": stmt.excluded.website,
+                "license": stmt.excluded.license,
+                "classification": stmt.excluded.classification,
+                "organization_list_url": stmt.excluded.organization_list_url,
+                "person_list_url": stmt.excluded.person_list_url,
+                "meeting_list_url": stmt.excluded.meeting_list_url,
+                "paper_list_url": stmt.excluded.paper_list_url,
+                "membership_list_url": stmt.excluded.membership_list_url,
+                "agenda_item_list_url": stmt.excluded.agenda_item_list_url,
+                "file_list_url": stmt.excluded.file_list_url,
+                "oparl_created": stmt.excluded.oparl_created,
+                "oparl_modified": stmt.excluded.oparl_modified,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
-                set_={
-                    "name": stmt.excluded.name,
-                    "short_name": stmt.excluded.short_name,
-                    "website": stmt.excluded.website,
-                    "license": stmt.excluded.license,
-                    "classification": stmt.excluded.classification,
-                    "organization_list_url": stmt.excluded.organization_list_url,
-                    "person_list_url": stmt.excluded.person_list_url,
-                    "meeting_list_url": stmt.excluded.meeting_list_url,
-                    "paper_list_url": stmt.excluded.paper_list_url,
-                    "membership_list_url": stmt.excluded.membership_list_url,
-                    "agenda_item_list_url": stmt.excluded.agenda_item_list_url,
-                    "file_list_url": stmt.excluded.file_list_url,
-                    "oparl_created": stmt.excluded.oparl_created,
-                    "oparl_modified": stmt.excluded.oparl_modified,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlBody.id)
 
             result = await session.execute(stmt)
@@ -500,21 +563,23 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            update_set = {
+                "name": stmt.excluded.name,
+                "meeting_state": stmt.excluded.meeting_state,
+                "cancelled": stmt.excluded.cancelled,
+                "start": stmt.excluded.start,
+                "end": stmt.excluded.end,
+                "location_name": stmt.excluded.location_name,
+                "location_address": stmt.excluded.location_address,
+                "oparl_created": stmt.excluded.oparl_created,
+                "oparl_modified": stmt.excluded.oparl_modified,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
-                set_={
-                    "name": stmt.excluded.name,
-                    "meeting_state": stmt.excluded.meeting_state,
-                    "cancelled": stmt.excluded.cancelled,
-                    "start": stmt.excluded.start,
-                    "end": stmt.excluded.end,
-                    "location_name": stmt.excluded.location_name,
-                    "location_address": stmt.excluded.location_address,
-                    "oparl_created": stmt.excluded.oparl_created,
-                    "oparl_modified": stmt.excluded.oparl_modified,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlMeeting.id)
 
             result = await session.execute(stmt)
@@ -528,11 +593,10 @@ class DatabaseStorage:
             if isinstance(org_urls, str):
                 org_urls = [org_urls]
             if org_urls:
-                org_ids = []
-                for url in org_urls:
-                    oid = self._organization_uuid_cache.get(url)
-                    if oid:
-                        org_ids.append(oid)
+                # Batched lookup (cache-first, DB fallback) — previously this
+                # relied on a globally pre-loaded organization cache.
+                org_map = await self.get_organization_ids_by_external_ids(org_urls)
+                org_ids = [org_map[url] for url in org_urls if url in org_map]
                 if org_ids:
                     # Clear existing M2M links
                     await session.execute(
@@ -597,18 +661,20 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            update_set = {
+                "name": stmt.excluded.name,
+                "reference": stmt.excluded.reference,
+                "paper_type": stmt.excluded.paper_type,
+                "date": stmt.excluded.date,
+                "oparl_created": stmt.excluded.oparl_created,
+                "oparl_modified": stmt.excluded.oparl_modified,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
-                set_={
-                    "name": stmt.excluded.name,
-                    "reference": stmt.excluded.reference,
-                    "paper_type": stmt.excluded.paper_type,
-                    "date": stmt.excluded.date,
-                    "oparl_created": stmt.excluded.oparl_created,
-                    "oparl_modified": stmt.excluded.oparl_modified,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlPaper.id)
 
             result = await session.execute(stmt)
@@ -665,21 +731,23 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            update_set = {
+                "name": stmt.excluded.name,
+                "family_name": stmt.excluded.family_name,
+                "given_name": stmt.excluded.given_name,
+                "title": stmt.excluded.title,
+                "gender": stmt.excluded.gender,
+                "email": stmt.excluded.email,
+                "phone": stmt.excluded.phone,
+                "oparl_created": stmt.excluded.oparl_created,
+                "oparl_modified": stmt.excluded.oparl_modified,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
-                set_={
-                    "name": stmt.excluded.name,
-                    "family_name": stmt.excluded.family_name,
-                    "given_name": stmt.excluded.given_name,
-                    "title": stmt.excluded.title,
-                    "gender": stmt.excluded.gender,
-                    "email": stmt.excluded.email,
-                    "phone": stmt.excluded.phone,
-                    "oparl_created": stmt.excluded.oparl_created,
-                    "oparl_modified": stmt.excluded.oparl_modified,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlPerson.id)
 
             result = await session.execute(stmt)
@@ -715,21 +783,23 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            update_set = {
+                "name": stmt.excluded.name,
+                "short_name": stmt.excluded.short_name,
+                "organization_type": stmt.excluded.organization_type,
+                "classification": stmt.excluded.classification,
+                "start_date": stmt.excluded.start_date,
+                "end_date": stmt.excluded.end_date,
+                "website": stmt.excluded.website,
+                "oparl_created": stmt.excluded.oparl_created,
+                "oparl_modified": stmt.excluded.oparl_modified,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
-                set_={
-                    "name": stmt.excluded.name,
-                    "short_name": stmt.excluded.short_name,
-                    "organization_type": stmt.excluded.organization_type,
-                    "classification": stmt.excluded.classification,
-                    "start_date": stmt.excluded.start_date,
-                    "end_date": stmt.excluded.end_date,
-                    "website": stmt.excluded.website,
-                    "oparl_created": stmt.excluded.oparl_created,
-                    "oparl_modified": stmt.excluded.oparl_modified,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlOrganization.id)
 
             result = await session.execute(stmt)
@@ -739,31 +809,73 @@ class DatabaseStorage:
             self._organization_uuid_cache[org.external_id] = org_id
             return org_id
 
-    async def load_fk_caches(self) -> None:
-        """Pre-populate person and organization UUID caches from DB.
-
-        Must be called before syncing memberships in incremental mode,
-        because the caches are otherwise only filled during upsert operations.
+    async def get_person_ids_by_external_ids(
+        self,
+        external_ids: list[str],
+    ) -> dict[str, UUID]:
         """
-        async with self.get_session() as session:
-            # Load all persons: external_id -> UUID
-            result = await session.execute(
-                select(OParlPerson.external_id, OParlPerson.id)
-            )
-            for ext_id, uuid in result.all():
-                self._person_uuid_cache[ext_id] = uuid
+        Resolve person external_ids to UUIDs with one batched SELECT.
 
-            # Load all organizations: external_id -> UUID
-            result = await session.execute(
-                select(OParlOrganization.external_id, OParlOrganization.id)
-            )
-            for ext_id, uuid in result.all():
-                self._organization_uuid_cache[ext_id] = uuid
+        Replaces the former global FK cache pre-load (which pulled ALL
+        persons into memory). Resolved IDs are added to the instance cache
+        so subsequent lookups (e.g. upsert_membership) are free.
 
-            console.print(
-                f"[dim]  FK caches loaded: {len(self._person_uuid_cache)} persons, "
-                f"{len(self._organization_uuid_cache)} organizations[/dim]"
-            )
+        Returns:
+            Dict mapping external_id -> UUID. External IDs not found in the
+            database are absent from the result.
+        """
+        result_map: dict[str, UUID] = {}
+        missing: list[str] = []
+        for ext_id in external_ids:
+            cached = self._person_uuid_cache.get(ext_id)
+            if cached is not None:
+                result_map[ext_id] = cached
+            else:
+                missing.append(ext_id)
+
+        if missing:
+            async with self.get_session() as session:
+                stmt = select(OParlPerson.external_id, OParlPerson.id).where(
+                    OParlPerson.external_id.in_(missing)
+                )
+                result = await session.execute(stmt)
+                for ext_id, uuid in result.all():
+                    self._person_uuid_cache[ext_id] = uuid
+                    result_map[ext_id] = uuid
+
+        return result_map
+
+    async def get_organization_ids_by_external_ids(
+        self,
+        external_ids: list[str],
+    ) -> dict[str, UUID]:
+        """
+        Resolve organization external_ids to UUIDs with one batched SELECT.
+
+        Same contract as get_person_ids_by_external_ids: cached-first,
+        missing IDs resolved in a single WHERE external_id IN (...) query,
+        results cached; not-found IDs are absent from the result dict.
+        """
+        result_map: dict[str, UUID] = {}
+        missing: list[str] = []
+        for ext_id in external_ids:
+            cached = self._organization_uuid_cache.get(ext_id)
+            if cached is not None:
+                result_map[ext_id] = cached
+            else:
+                missing.append(ext_id)
+
+        if missing:
+            async with self.get_session() as session:
+                stmt = select(
+                    OParlOrganization.external_id, OParlOrganization.id
+                ).where(OParlOrganization.external_id.in_(missing))
+                result = await session.execute(stmt)
+                for ext_id, uuid in result.all():
+                    self._organization_uuid_cache[ext_id] = uuid
+                    result_map[ext_id] = uuid
+
+        return result_map
 
     # ========== Agenda Item Operations ==========
 
@@ -790,21 +902,23 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            update_set = {
+                "meeting_id": meeting_id,
+                "number": stmt.excluded.number,
+                "order": stmt.excluded.order,
+                "name": stmt.excluded.name,
+                "public": stmt.excluded.public,
+                "result": stmt.excluded.result,
+                "resolution_text": stmt.excluded.resolution_text,
+                "oparl_created": stmt.excluded.oparl_created,
+                "oparl_modified": stmt.excluded.oparl_modified,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
-                set_={
-                    "meeting_id": meeting_id,
-                    "number": stmt.excluded.number,
-                    "order": stmt.excluded.order,
-                    "name": stmt.excluded.name,
-                    "public": stmt.excluded.public,
-                    "result": stmt.excluded.result,
-                    "resolution_text": stmt.excluded.resolution_text,
-                    "oparl_created": stmt.excluded.oparl_created,
-                    "oparl_modified": stmt.excluded.oparl_modified,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlAgendaItem.id)
 
             result = await session.execute(stmt)
@@ -867,6 +981,7 @@ class DatabaseStorage:
             if meeting_id is not None:
                 update_set["meeting_id"] = meeting_id
 
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
@@ -902,20 +1017,22 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            update_set = {
+                "description": stmt.excluded.description,
+                "street_address": stmt.excluded.street_address,
+                "room": stmt.excluded.room,
+                "postal_code": stmt.excluded.postal_code,
+                "locality": stmt.excluded.locality,
+                "geojson": stmt.excluded.geojson,
+                "oparl_created": stmt.excluded.oparl_created,
+                "oparl_modified": stmt.excluded.oparl_modified,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
-                set_={
-                    "description": stmt.excluded.description,
-                    "street_address": stmt.excluded.street_address,
-                    "room": stmt.excluded.room,
-                    "postal_code": stmt.excluded.postal_code,
-                    "locality": stmt.excluded.locality,
-                    "geojson": stmt.excluded.geojson,
-                    "oparl_created": stmt.excluded.oparl_created,
-                    "oparl_modified": stmt.excluded.oparl_modified,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlLocation.id)
 
             result = await session.execute(stmt)
@@ -949,20 +1066,22 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            update_set = {
+                "paper_id": paper_id,
+                "paper_external_id": stmt.excluded.paper_external_id,
+                "meeting_external_id": stmt.excluded.meeting_external_id,
+                "agenda_item_external_id": stmt.excluded.agenda_item_external_id,
+                "role": stmt.excluded.role,
+                "authoritative": stmt.excluded.authoritative,
+                "oparl_created": stmt.excluded.oparl_created,
+                "oparl_modified": stmt.excluded.oparl_modified,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
-                set_={
-                    "paper_id": paper_id,
-                    "paper_external_id": stmt.excluded.paper_external_id,
-                    "meeting_external_id": stmt.excluded.meeting_external_id,
-                    "agenda_item_external_id": stmt.excluded.agenda_item_external_id,
-                    "role": stmt.excluded.role,
-                    "authoritative": stmt.excluded.authoritative,
-                    "oparl_created": stmt.excluded.oparl_created,
-                    "oparl_modified": stmt.excluded.oparl_modified,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlConsultation.id)
 
             result = await session.execute(stmt)
@@ -978,17 +1097,22 @@ class DatabaseStorage:
         body_id: UUID,
     ) -> UUID | None:
         """Insert or update a membership. Returns None if FKs can't be resolved."""
-        # Resolve person and organization UUIDs (both required by Django schema)
+        # Resolve person and organization UUIDs (both required by Django schema).
+        # Cache-first with targeted DB fallback (no global cache pre-load).
         person_id = None
         organization_id = None
 
         if membership.person_external_id:
-            if membership.person_external_id in self._person_uuid_cache:
-                person_id = self._person_uuid_cache[membership.person_external_id]
+            person_map = await self.get_person_ids_by_external_ids(
+                [membership.person_external_id]
+            )
+            person_id = person_map.get(membership.person_external_id)
 
         if membership.organization_external_id:
-            if membership.organization_external_id in self._organization_uuid_cache:
-                organization_id = self._organization_uuid_cache[membership.organization_external_id]
+            org_map = await self.get_organization_ids_by_external_ids(
+                [membership.organization_external_id]
+            )
+            organization_id = org_map.get(membership.organization_external_id)
 
         # Both FKs are NOT NULL in Django schema - skip if unresolved
         if not person_id or not organization_id:
@@ -1010,20 +1134,22 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            update_set = {
+                "person_id": person_id,
+                "organization_id": organization_id,
+                "role": stmt.excluded.role,
+                "voting_right": stmt.excluded.voting_right,
+                "start_date": stmt.excluded.start_date,
+                "end_date": stmt.excluded.end_date,
+                "oparl_created": stmt.excluded.oparl_created,
+                "oparl_modified": stmt.excluded.oparl_modified,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
-                set_={
-                    "person_id": person_id,
-                    "organization_id": organization_id,
-                    "role": stmt.excluded.role,
-                    "voting_right": stmt.excluded.voting_right,
-                    "start_date": stmt.excluded.start_date,
-                    "end_date": stmt.excluded.end_date,
-                    "oparl_created": stmt.excluded.oparl_created,
-                    "oparl_modified": stmt.excluded.oparl_modified,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlMembership.id)
 
             result = await session.execute(stmt)
@@ -1053,17 +1179,19 @@ class DatabaseStorage:
                 created_at=func.now(),
                 updated_at=func.now(),
             )
+            update_set = {
+                "name": stmt.excluded.name,
+                "start_date": stmt.excluded.start_date,
+                "end_date": stmt.excluded.end_date,
+                "oparl_created": stmt.excluded.oparl_created,
+                "oparl_modified": stmt.excluded.oparl_modified,
+                "raw_json": stmt.excluded.raw_json,
+                "updated_at": func.now(),
+            }
+            _assert_no_enrichment_overwrite(update_set)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
-                set_={
-                    "name": stmt.excluded.name,
-                    "start_date": stmt.excluded.start_date,
-                    "end_date": stmt.excluded.end_date,
-                    "oparl_created": stmt.excluded.oparl_created,
-                    "oparl_modified": stmt.excluded.oparl_modified,
-                    "raw_json": stmt.excluded.raw_json,
-                    "updated_at": func.now(),
-                },
+                set_=update_set,
             ).returning(OParlLegislativeTerm.id)
 
             result = await session.execute(stmt)
@@ -1175,6 +1303,10 @@ class DatabaseStorage:
 
     # ========== Text Extraction Queries ==========
 
+    # Files stuck in 'processing' longer than this are considered abandoned
+    # (worker crash) and become claimable again.
+    PROCESSING_STALE_AFTER = timedelta(hours=2)
+
     async def get_pending_files(
         self,
         body_id: UUID,
@@ -1182,19 +1314,38 @@ class DatabaseStorage:
         max_size_bytes: int | None = None,
     ) -> list[OParlFile]:
         """
-        Get files pending text extraction.
+        Atomically CLAIM files pending text extraction (multi-worker safe).
+
+        Candidate rows are selected with FOR UPDATE SKIP LOCKED and their
+        text_extraction_status is set to 'processing' in one atomic
+        UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED) RETURNING
+        statement, so two concurrent extraction workers (e.g. server + local
+        PC) never claim the same file twice.
+
+        The extractor later overwrites the transient 'processing' status with
+        completed/failed/skipped via update_file_text. Crash recovery: rows
+        stuck in 'processing' with updated_at older than PROCESSING_STALE_AFTER
+        are treated as claimable again.
 
         Args:
             body_id: Body to query files for
-            batch_size: Maximum number of files to return
+            batch_size: Maximum number of files to claim
             max_size_bytes: Skip files larger than this (optional)
         """
+        stale_cutoff = datetime.now(timezone.utc) - self.PROCESSING_STALE_AFTER
+
         async with self.get_session() as session:
-            stmt = (
-                select(OParlFile)
+            candidates = (
+                select(OParlFile.id)
                 .where(
                     OParlFile.body_id == body_id,
-                    OParlFile.text_extraction_status == "pending",
+                    or_(
+                        OParlFile.text_extraction_status == "pending",
+                        and_(
+                            OParlFile.text_extraction_status == "processing",
+                            OParlFile.updated_at < stale_cutoff,
+                        ),
+                    ),
                     or_(
                         OParlFile.download_url.isnot(None),
                         OParlFile.access_url.isnot(None),
@@ -1203,16 +1354,33 @@ class DatabaseStorage:
             )
 
             if max_size_bytes is not None:
-                stmt = stmt.where(
+                candidates = candidates.where(
                     or_(
                         OParlFile.size.is_(None),
                         OParlFile.size <= max_size_bytes,
                     )
                 )
 
-            stmt = stmt.order_by(OParlFile.created_at).limit(batch_size)
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+            candidates = (
+                candidates.order_by(OParlFile.created_at)
+                .limit(batch_size)
+                .with_for_update(skip_locked=True)
+            )
+
+            claim_stmt = (
+                update(OParlFile)
+                .where(OParlFile.id.in_(candidates.scalar_subquery()))
+                .values(
+                    text_extraction_status="processing",
+                    updated_at=func.now(),
+                )
+                .returning(OParlFile)
+            )
+
+            result = await session.execute(claim_stmt)
+            files = list(result.scalars().all())
+            await session.commit()
+            return files
 
     async def update_file_text(
         self,

@@ -83,7 +83,10 @@ class OParlClient:
     """
 
     # Prozessweiter Capability-Cache: Hosts, die modified_since ablehnen
-    # (401/403/400) — überlebt Client-Instanzen innerhalb des Daemons
+    # (401/403/400) — überlebt Client-Instanzen innerhalb des Daemons.
+    # NOTE: Class-level and therefore process-lifetime by design — keyed by
+    # host, shared across all OParlClient instances, never expires until
+    # the daemon restarts. Bounded by the number of distinct OParl hosts.
     _modified_since_unsupported: set[str] = set()
 
     def __init__(

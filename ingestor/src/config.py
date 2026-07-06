@@ -55,13 +55,17 @@ class Settings(BaseSettings):
 
     # Parallel Processing
     max_workers: int = 8  # Increased from 4
+    # Max bodies of one source synced concurrently. Bounds peak memory:
+    # each in-flight body sync holds pages, caches and extraction buffers.
+    # Env-overridable (SYNC_BODY_CONCURRENCY).
+    sync_body_concurrency: int = 2
 
     # File Storage
     file_storage_path: str = "./data/files"
     download_files: bool = True
 
     # Scheduler Settings
-    sync_interval_minutes: int = 15  # Incremental sync every 15 minutes
+    sync_interval_minutes: int = 10  # Incremental sync every 10 minutes
     full_sync_interval_hours: int = 24  # Full sync once a day
     sync_enabled: bool = True
 

@@ -284,17 +284,22 @@ class SyncOrchestrator:
                     self._parallel_mode = True
                     console.print(f"[bold green]Starting PARALLEL sync of {len(bodies_data)} bodies...[/bold green]")
 
+                # Bound per-body concurrency so multi-body sources don't
+                # multiply peak memory (each body sync holds pages + caches).
+                body_semaphore = asyncio.Semaphore(settings.sync_body_concurrency)
+
                 async def sync_body_wrapper(body_data):
-                    try:
-                        return await self._sync_body(
-                            client=client,
-                            body_data=body_data,
-                            source_id=source_id,
-                            full=full,
-                        )
-                    except Exception as e:
-                        console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
-                        return {"errors": [str(e)]}
+                    async with body_semaphore:
+                        try:
+                            return await self._sync_body(
+                                client=client,
+                                body_data=body_data,
+                                source_id=source_id,
+                                full=full,
+                            )
+                        except Exception as e:
+                            console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
+                            return {"errors": [str(e)]}
 
                 body_results = await asyncio.gather(
                     *[sync_body_wrapper(bd) for bd in bodies_data],
@@ -440,20 +445,25 @@ class SyncOrchestrator:
                 if len(bodies_data) > 1:
                     self._parallel_mode = True
 
+                # Bound per-body concurrency so multi-body sources don't
+                # multiply peak memory (each body sync holds pages + caches).
+                body_semaphore = asyncio.Semaphore(settings.sync_body_concurrency)
+
                 async def sync_body_wrapper(body_data):
                     """Wrapper to catch exceptions per body."""
-                    try:
-                        return await self._sync_body(
-                            client=client,
-                            body_data=body_data,
-                            source_id=source_id,
-                            full=full,
-                        )
-                    except Exception as e:
-                        console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
-                        return {"errors": [str(e)]}
+                    async with body_semaphore:
+                        try:
+                            return await self._sync_body(
+                                client=client,
+                                body_data=body_data,
+                                source_id=source_id,
+                                full=full,
+                            )
+                        except Exception as e:
+                            console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
+                            return {"errors": [str(e)]}
 
-                # Run all body syncs in parallel
+                # Run all body syncs in parallel (bounded by semaphore)
                 body_results = await asyncio.gather(
                     *[sync_body_wrapper(body_data) for body_data in bodies_data],
                     return_exceptions=False
@@ -664,8 +674,9 @@ class SyncOrchestrator:
                 stats["persons"] = person_result
                 progress.update(task2, completed=person_result, total=person_result)
 
-            # Pre-populate FK caches from DB (needed for membership FK resolution)
-            await self.storage.load_fk_caches()
+            # Membership FK resolution uses per-page batched lookups
+            # (get_person_ids_by_external_ids / get_organization_ids_by_external_ids)
+            # instead of a global FK cache pre-load — see _sync_entity_type.
 
             # Second: Memberships (depends on persons + organizations)
             task3 = progress.add_task("[cyan]Memberships...", total=None)
@@ -895,6 +906,25 @@ class SyncOrchestrator:
 
         async for page in client.fetch_list(list_url, modified_since=server_modified_since):
             pages_checked += 1
+
+            # Memberships reference persons/organizations by external_id.
+            # Resolve the FKs needed for THIS page with one batched SELECT
+            # each (WHERE external_id IN (...)) — replaces the former global
+            # load_fk_caches() that pulled ALL persons/orgs into memory.
+            if entity_type == "membership":
+                person_refs = {
+                    ref for ref in (item.get("person") for item in page)
+                    if isinstance(ref, str) and ref
+                }
+                org_refs = {
+                    ref for ref in (item.get("organization") for item in page)
+                    if isinstance(ref, str) and ref
+                }
+                if person_refs:
+                    await self.storage.get_person_ids_by_external_ids(list(person_refs))
+                if org_refs:
+                    await self.storage.get_organization_ids_by_external_ids(list(org_refs))
+
             new_on_page = 0
             updated_on_page = 0
             deleted_on_page = 0

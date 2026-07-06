@@ -322,7 +322,7 @@ def init_db() -> None:
 @app.command()
 def daemon(
     interval: int = typer.Option(
-        15, "--interval", "-i", help="Minutes between incremental syncs"
+        10, "--interval", "-i", help="Minutes between incremental syncs"
     ),
     full_sync_hour: int = typer.Option(
         3, "--full-sync-hour", help="Hour of day for full sync (24h format)"
