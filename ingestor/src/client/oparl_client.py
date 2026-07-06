@@ -82,6 +82,10 @@ class OParlClient:
     - Prometheus metrics collection
     """
 
+    # Prozessweiter Capability-Cache: Hosts, die modified_since ablehnen
+    # (401/403/400) — überlebt Client-Instanzen innerhalb des Daemons
+    _modified_since_unsupported: set[str] = set()
+
     def __init__(
         self,
         max_concurrent: int = 10,
@@ -344,8 +348,12 @@ class OParlClient:
         pages_fetched = 0
         tried_modified_since = False
 
-        # Append modified_since as OParl query parameter if provided
-        if modified_since and current_url:
+        # Append modified_since as OParl query parameter if provided.
+        # Capability-Cache: Hosts, die den Filter bereits abgelehnt haben
+        # (z. B. Stadt Münster mit 401), gar nicht erst erneut damit anfragen —
+        # spart pro Liste einen toten Request samt Timeout/Retry.
+        host = urlparse(url).netloc
+        if modified_since and current_url and host not in self._modified_since_unsupported:
             current_url = self._append_modified_since(current_url, modified_since)
             tried_modified_since = True
 
@@ -354,7 +362,8 @@ class OParlClient:
 
             # Fallback: manche RIS (z. B. Stadt Münster) beantworten
             # modified_since mit 401/403/400. Dann einmalig ohne den Filter
-            # neu ansetzen — der Upsert überspringt unveränderte Objekte.
+            # neu ansetzen — die Client-seitige modified-Prüfung plus
+            # Early-Stop hält den Mehraufwand klein.
             if (
                 tried_modified_since
                 and pages_fetched == 0
@@ -365,6 +374,7 @@ class OParlClient:
                     f"(HTTP {result.status_code}) — Fallback auf vollständige Liste[/yellow]"
                 )
                 metrics.record_http_error(self.source_name, "modified_since_unsupported")
+                self._modified_since_unsupported.add(host)
                 tried_modified_since = False
                 current_url = url
                 continue
