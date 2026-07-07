@@ -105,6 +105,12 @@ def _org_payload(org: Organization) -> dict:
         "billing_reference": org.billing_reference,
         "member_count": org.memberships.filter(is_active=True).count(),
         "work_url": f"/work/{org.slug}/",
+        # Alle verknüpften Kommunen (primärer FK + M2M)
+        "bodies": [
+            {"slug": body.slug, "name": body.get_display_name()} for body in org.get_all_bodies().order_by("name")
+        ],
+        # Parteizugehörigkeit (primäre Parteigruppe + M2M)
+        "parties": [party.name for party in org.get_all_parties().order_by("name")],
     }
 
 
@@ -227,9 +233,31 @@ class OrganizationDetailView(ProvisioningView):
             org.billing_reference = data["billing_reference"].strip()
             fields.append("billing_reference")
 
-        if not fields:
+        # Parteien: Liste von Namen — get_or_create je Name
+        parties_updated = False
+        if "parties" in data and isinstance(data["parties"], list) and all(isinstance(p, str) for p in data["parties"]):
+            from apps.tenants.models import PartyGroup
+
+            names = [p.strip() for p in data["parties"] if p.strip()]
+            parties = []
+            for name in names:
+                party = PartyGroup.objects.filter(name__iexact=name).first()
+                if party is None:
+                    party = PartyGroup.objects.create(name=name)
+                if party not in parties:
+                    parties.append(party)
+            # Primäre Parteigruppe (FK) bleibt immer verknüpft
+            if org.party_group and org.party_group not in parties:
+                parties.append(org.party_group)
+            org.parties.set(parties)
+            parties_updated = True
+
+        if not fields and not parties_updated:
             return JsonResponse({"error": "no_valid_fields"}, status=400)
 
-        org.save(update_fields=fields + ["updated_at"])
-        logger.info(f"[Provisioning] Organisation '{slug}' aktualisiert: {fields}")
+        if fields:
+            org.save(update_fields=fields + ["updated_at"])
+        logger.info(
+            f"[Provisioning] Organisation '{slug}' aktualisiert: {fields + (['parties'] if parties_updated else [])}"
+        )
         return JsonResponse(_org_payload(org))

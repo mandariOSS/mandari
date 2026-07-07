@@ -28,14 +28,14 @@ from .models import (
 class PartyGroupAdmin(ModelAdmin):
     """Admin for party group hierarchy."""
 
-    list_display = ["name", "parent", "level", "is_active", "created_at"]
+    list_display = ["name", "abbreviation", "parent", "level", "is_active", "created_at"]
     list_filter = ["is_active", "parent"]
-    search_fields = ["name", "slug"]
+    search_fields = ["name", "abbreviation", "slug"]
     prepopulated_fields = {"slug": ["name"]}
     ordering = ["name"]
 
     fieldsets = (
-        (None, {"fields": ("name", "slug", "description", "parent")}),
+        (None, {"fields": ("name", "abbreviation", "slug", "description", "parent")}),
         (
             "Status",
             {
@@ -113,7 +113,7 @@ class OrganizationAdmin(ModelAdmin):
     list_filter = ["is_active", "party_group", "body", "require_2fa"]
     search_fields = ["name", "slug"]
     prepopulated_fields = {"slug": ["name"]}
-    filter_horizontal = ["oparl_organizations"]
+    filter_horizontal = ["oparl_organizations", "bodies", "parties"]
     readonly_fields = ["encryption_key", "created_at", "updated_at", "member_list_link"]
     autocomplete_fields = ["owner"]
 
@@ -138,8 +138,12 @@ class OrganizationAdmin(ModelAdmin):
         (
             "Gruppierung",
             {
-                "fields": ("party_group", "body", "oparl_organizations"),
-                "description": "Organisation kann einer Partei-Hierarchie UND einer regionalen Gruppe angehören.",
+                "fields": ("party_group", "parties", "body", "bodies", "oparl_organizations"),
+                "description": (
+                    "Organisation kann einer Partei-Hierarchie UND einer regionalen Gruppe angehören. "
+                    "'Primäre Kommune' und 'Primäre Parteigruppe' dienen als Standard; über 'Kommunen' "
+                    "und 'Parteien' können mehrere verknüpft werden."
+                ),
             },
         ),
         (

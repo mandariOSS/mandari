@@ -209,6 +209,91 @@
         {% endif %}
     </div>
 
+    <!-- Card 3: Kommunen -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Kommunen</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Verknüpfte Kommunen bestimmen, welche Ratsinformationen (RIS) der Organisation zur Verfügung stehen.
+        </p>
+        {% if linked_bodies %}
+        <ul class="divide-y divide-gray-200 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+            {% for linked_body in linked_bodies %}
+            <li class="flex items-center gap-3 px-4 py-3">
+                <i data-lucide="landmark" class="w-4 h-4 text-primary-500 flex-shrink-0"></i>
+                <span class="text-sm font-medium text-gray-900 dark:text-white">{{ linked_body.get_display_name }}</span>
+                {% if linked_body.id == organization.body_id %}
+                <span class="ml-auto px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 rounded-full">Primär</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-amber-600 dark:text-amber-400">Noch keine Kommune verknüpft.</p>
+        {% endif %}
+        <p class="mt-3 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+            <i data-lucide="info" class="w-3.5 h-3.5"></i>
+            Weitere Kommunen können über den Support verknüpft werden.
+        </p>
+    </div>
+
+    <!-- Card 4: Parteien -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Parteien</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Parteizugehörigkeit der Organisation — Grundlage für den späteren Austausch von Dokumenten
+            mit Organisationen derselben Partei (andere Kommunen) oder derselben Kommune (andere Parteien).
+        </p>
+
+        {% if can_edit %}
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_parties">
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl p-3">
+                {% for party in available_parties %}
+                <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
+                    <input type="checkbox" name="parties" value="{{ party.id }}"
+                           {% if party.id|stringformat:"s" in org_party_ids %}checked{% endif %}
+                           {% if party.id == organization.party_group_id %}onclick="return false;" title="Primäre Parteigruppe (im Admin verwaltet)"{% endif %}
+                           class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                    <span class="text-sm text-gray-900 dark:text-white">
+                        {{ party.name }}{% if party.abbreviation %} <span class="text-gray-400">({{ party.abbreviation }})</span>{% endif %}
+                    </span>
+                </label>
+                {% empty %}
+                <p class="text-sm text-gray-500 col-span-2">Noch keine Parteien angelegt.</p>
+                {% endfor %}
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Neue Partei anlegen</label>
+                <input type="text" name="new_party" placeholder="z.B. Volt Deutschland"
+                       class="w-full max-w-md px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                <p class="mt-1 text-xs text-gray-500">Wird beim Speichern angelegt und der Organisation zugeordnet.</p>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Speichern
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <div class="flex flex-wrap gap-2">
+            {% for party in org_parties %}
+            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-full text-gray-700 dark:text-gray-300">
+                <i data-lucide="flag" class="w-3.5 h-3.5 text-primary-500"></i>
+                {{ party.name }}
+            </span>
+            {% empty %}
+            <p class="text-sm text-gray-500">Keine Parteizugehörigkeit hinterlegt.</p>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
     <!-- Members Overview -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
         <div class="flex items-center justify-between mb-4">

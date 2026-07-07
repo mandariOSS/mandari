@@ -42,6 +42,16 @@
 
         <!-- Filterleiste -->
         <div class="flex flex-wrap items-center gap-2">
+            {% if has_multiple_bodies %}
+            <select name="kommune" onchange="this.form.submit()"
+                    class="px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:border-primary-500 max-w-[220px]">
+                <option value="">Alle Kommunen</option>
+                {% for b in bodies %}
+                <option value="{{ b.id }}" {% if body_filter == b.id|stringformat:"s" %}selected{% endif %}>{{ b.get_display_name|truncatechars:40 }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+
             <label class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                 <i data-lucide="calendar-range" class="w-3.5 h-3.5"></i>
                 <input type="date" name="von" value="{{ date_from|default:'' }}" onchange="this.form.submit()"
@@ -77,7 +87,7 @@
                 <option value="persons" {% if result_type_filter == 'persons' %}selected{% endif %}>Personen</option>
             </select>
 
-            {% if date_from or date_to or committee_filter or paper_type_filter or result_type_filter %}
+            {% if date_from or date_to or committee_filter or paper_type_filter or result_type_filter or body_filter %}
             <a href="?q={{ search_query|urlencode }}"
                class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
                 <i data-lucide="x" class="w-3.5 h-3.5"></i> Filter zurücksetzen
@@ -157,12 +167,12 @@
 {% if pages > 1 %}
 <div class="fade-up mt-6 flex items-center justify-center gap-2">
     {% if page > 1 %}
-    <a href="?q={{ search_query|urlencode }}&von={{ date_from }}&bis={{ date_to }}&gremium={{ committee_filter|urlencode }}&art={{ paper_type_filter|urlencode }}&typ={{ result_type_filter }}&seite={{ page|add:'-1' }}"
+    <a href="?q={{ search_query|urlencode }}&von={{ date_from }}&bis={{ date_to }}&gremium={{ committee_filter|urlencode }}&art={{ paper_type_filter|urlencode }}&typ={{ result_type_filter }}&kommune={{ body_filter }}&seite={{ page|add:'-1' }}"
        class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-primary-500">&larr; Zurück</a>
     {% endif %}
     <span class="text-sm text-gray-500">Seite {{ page }} von {{ pages }}</span>
     {% if page < pages %}
-    <a href="?q={{ search_query|urlencode }}&von={{ date_from }}&bis={{ date_to }}&gremium={{ committee_filter|urlencode }}&art={{ paper_type_filter|urlencode }}&typ={{ result_type_filter }}&seite={{ page|add:'1' }}"
+    <a href="?q={{ search_query|urlencode }}&von={{ date_from }}&bis={{ date_to }}&gremium={{ committee_filter|urlencode }}&art={{ paper_type_filter|urlencode }}&typ={{ result_type_filter }}&kommune={{ body_filter }}&seite={{ page|add:'1' }}"
        class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-primary-500">Weiter &rarr;</a>
     {% endif %}
 </div>

@@ -53,6 +53,7 @@ class ElasticsearchService:
         date_to: str | None = None,
         organization_name: str | None = None,
         paper_type: str | None = None,
+        body_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """
         Multi-Index-Suche über alle Entitäten.
@@ -60,6 +61,8 @@ class ElasticsearchService:
         Args:
             query: Suchbegriff
             body_id: Filter nach Kommune (UUID als String)
+            body_ids: Filter nach mehreren Kommunen (terms-Query, z.B. alle
+                       Kommunen einer Work-Organisation); hat Vorrang vor body_id
             page: Seitennummer (1-indiziert)
             page_size: Ergebnisse pro Seite
             index_names: Zu durchsuchende Indexe (Standard: alle)
@@ -94,6 +97,7 @@ class ElasticsearchService:
                     date_to=date_to,
                     organization_name=organization_name,
                     paper_type=paper_type,
+                    body_ids=body_ids,
                 )
 
                 result = self.client.search(
@@ -169,6 +173,7 @@ class ElasticsearchService:
         date_to: str | None = None,
         organization_name: str | None = None,
         paper_type: str | None = None,
+        body_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """Baut die Elasticsearch-Query für einen Index."""
         must = []
@@ -188,7 +193,11 @@ class ElasticsearchService:
         else:
             must.append({"match_all": {}})
 
-        if body_id:
+        # Kommune(n)-Filter: mehrere body_ids (terms) haben Vorrang vor
+        # dem einzelnen body_id (term)
+        if body_ids:
+            filter_clauses.append({"terms": {"body_id": [str(b) for b in body_ids]}})
+        elif body_id:
             filter_clauses.append({"term": {"body_id": body_id}})
 
         # Zeitraum-Filter (nur bei Indexen mit Datumsfeld)

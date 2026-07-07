@@ -155,6 +155,16 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
         context["can_manage_faction"] = checker.has_permission("faction.manage")
         context["can_edit"] = checker.has_permission("organization.edit")
 
+        # Kommunen (read-only: weitere Kommunen nur über Support/Admin)
+        context["linked_bodies"] = self.organization.get_all_bodies().order_by("name")
+
+        # Parteien (durch Org-Admins editierbar)
+        from apps.tenants.models import PartyGroup
+
+        context["org_parties"] = self.organization.get_all_parties().order_by("name")
+        context["available_parties"] = PartyGroup.objects.filter(is_active=True).order_by("name")
+        context["org_party_ids"] = [str(p.id) for p in context["org_parties"]]
+
         return context
 
     def post(self, request, *args, **kwargs):
@@ -232,6 +242,29 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
             self.organization.address = request.POST.get("address", "").strip()
             self.organization.save()
             messages.success(request, "Kontaktdaten gespeichert.")
+
+        elif action == "update_parties":
+            from apps.tenants.models import PartyGroup
+
+            party_ids = request.POST.getlist("parties")
+            parties = list(PartyGroup.objects.filter(id__in=party_ids, is_active=True))
+
+            # Optional: neue Partei anlegen
+            new_party_name = request.POST.get("new_party", "").strip()
+            if new_party_name:
+                existing = PartyGroup.objects.filter(name__iexact=new_party_name).first()
+                if existing:
+                    if existing not in parties:
+                        parties.append(existing)
+                else:
+                    parties.append(PartyGroup.objects.create(name=new_party_name))
+
+            # Primäre Parteigruppe (FK) bleibt immer verknüpft
+            if self.organization.party_group and self.organization.party_group not in parties:
+                parties.append(self.organization.party_group)
+
+            self.organization.parties.set(parties)
+            messages.success(request, "Parteizugehörigkeit gespeichert.")
 
         return redirect("work:organization", org_slug=self.organization.slug)
 
@@ -417,7 +450,7 @@ class MemberDetailView(WorkViewMixin, TemplateView):
     template_name = "work/organization/member_detail.html"
     permission_required = "members.view"
 
-    def _find_matching_persons(self, user, body):
+    def _find_matching_persons(self, user, bodies):
         """Findet OParl-Personen anhand des Benutzernamens."""
         from django.db.models import Q
 
@@ -429,7 +462,7 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         if not first and not last:
             return []
 
-        query = Q(body=body)
+        query = Q(body__in=bodies)
         if first and last:
             query &= (
                 Q(given_name__iexact=first, family_name__iexact=last)
@@ -441,14 +474,14 @@ class MemberDetailView(WorkViewMixin, TemplateView):
 
         return list(OParlPerson.objects.filter(query)[:5])
 
-    def _get_suggested_committees(self, oparl_person, body, today):
+    def _get_suggested_committees(self, oparl_person, bodies, today):
         """Holt aktive Gremienmitgliedschaften einer OParl-Person."""
         from django.db.models import Q
 
         from insight_core.models import OParlMembership
 
         memberships = (
-            OParlMembership.objects.filter(person=oparl_person, organization__body=body)
+            OParlMembership.objects.filter(person=oparl_person, organization__body__in=bodies)
             .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
             .select_related("organization")
         )
@@ -475,17 +508,18 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         checker = PermissionChecker(self.membership)
         context["can_edit"] = checker.has_permission("members.edit") or checker.is_admin()
 
-        # Committee assignment (OParl committees from linked body)
-        body = self.organization.body
-        context["has_body"] = body is not None
+        # Committee assignment (OParl committees from all linked bodies)
+        bodies = self.organization.get_all_bodies()
+        has_body = bodies.exists()
+        context["has_body"] = has_body
 
-        if body:
+        if has_body:
             from insight_core.models import OParlOrganization
 
             today = timezone.now().date()
 
             # Gremien nach Status aufteilen
-            all_committees = OParlOrganization.objects.filter(body=body)
+            all_committees = OParlOrganization.objects.filter(body__in=bodies)
 
             context["active_committees"] = all_committees.filter(
                 Q(end_date__isnull=True) | Q(end_date__gte=today)
@@ -501,11 +535,11 @@ class MemberDetailView(WorkViewMixin, TemplateView):
 
             if member.oparl_person:
                 # Aktive Mitgliedschaften der verknüpften Person
-                suggested = self._get_suggested_committees(member.oparl_person, body, today)
+                suggested = self._get_suggested_committees(member.oparl_person, bodies, today)
                 context["suggested_committee_ids"] = [c.id for c in suggested]
             else:
                 # Namens-Matching für Vorschläge
-                context["potential_oparl_persons"] = self._find_matching_persons(member.user, body)
+                context["potential_oparl_persons"] = self._find_matching_persons(member.user, bodies)
         else:
             context["active_committees"] = []
             context["inactive_committees"] = []
@@ -536,11 +570,11 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         if action == "update_committees":
             # Update member's OParl committee assignments
             committee_ids = request.POST.getlist("committees")
-            body = self.organization.body
-            if body:
+            bodies = self.organization.get_all_bodies()
+            if bodies.exists():
                 from insight_core.models import OParlOrganization
 
-                committees = OParlOrganization.objects.filter(id__in=committee_ids, body=body)
+                committees = OParlOrganization.objects.filter(id__in=committee_ids, body__in=bodies)
                 member.oparl_committees.set(committees)
                 messages.success(
                     request,
@@ -605,11 +639,11 @@ class MemberDetailView(WorkViewMixin, TemplateView):
 
         elif action == "link_oparl_person":
             person_id = request.POST.get("oparl_person_id")
-            body = self.organization.body
-            if body and person_id:
+            bodies = self.organization.get_all_bodies()
+            if bodies.exists() and person_id:
                 from insight_core.models import OParlPerson
 
-                oparl_person = get_object_or_404(OParlPerson, id=person_id, body=body)
+                oparl_person = get_object_or_404(OParlPerson, id=person_id, body__in=bodies)
                 member.oparl_person = oparl_person
                 member.save()
                 messages.success(request, f"RIS-Person '{oparl_person.display_name}' verknüpft.")
@@ -622,10 +656,10 @@ class MemberDetailView(WorkViewMixin, TemplateView):
             messages.success(request, "RIS-Verknüpfung entfernt.")
 
         elif action == "apply_suggestions":
-            body = self.organization.body
-            if body and member.oparl_person:
+            bodies = self.organization.get_all_bodies()
+            if bodies.exists() and member.oparl_person:
                 today = timezone.now().date()
-                suggested = self._get_suggested_committees(member.oparl_person, body, today)
+                suggested = self._get_suggested_committees(member.oparl_person, bodies, today)
                 member.oparl_committees.set(suggested)
                 messages.success(request, f"{len(suggested)} Gremien übernommen.")
             else:
@@ -1970,8 +2004,8 @@ class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
         context["current_role_ids"] = list(self.membership.roles.values_list("id", flat=True))
 
         # Available committees
-        body = self.organization.body
-        if body:
+        bodies = self.organization.get_all_bodies()
+        if bodies.exists():
             from django.db.models import Q
 
             from insight_core.models import OParlOrganization
@@ -1979,7 +2013,7 @@ class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
             today = timezone.now().date()
             context["available_committees"] = (
                 OParlOrganization.objects.filter(
-                    body=body,
+                    body__in=bodies,
                 )
                 .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
                 .order_by("name")
@@ -2143,11 +2177,11 @@ class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
 
         elif change_request.request_type == "committee_change":
             committee_ids = data.get("requested_committees", [])
-            body = self.organization.body
-            if body:
+            bodies = self.organization.get_all_bodies()
+            if bodies.exists():
                 from insight_core.models import OParlOrganization
 
-                committees = OParlOrganization.objects.filter(id__in=committee_ids, body=body)
+                committees = OParlOrganization.objects.filter(id__in=committee_ids, body__in=bodies)
                 requester.oparl_committees.set(committees)
 
         elif change_request.request_type == "permission_request":

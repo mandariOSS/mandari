@@ -70,11 +70,12 @@ class DashboardView(WorkViewMixin, TemplateView):
                 }
             )
 
-        # RIS/Committee meetings (if organization has OParl body)
-        if self.organization.body:
+        # RIS/Committee meetings (if organization has OParl bodies)
+        org_bodies = self.organization.get_all_bodies()
+        if org_bodies.exists():
             # Optimize with Prefetch to only fetch needed fields
             ris_meetings = (
-                OParlMeeting.objects.filter(body=self.organization.body, start__gte=today_start, cancelled=False)
+                OParlMeeting.objects.filter(body__in=org_bodies, start__gte=today_start, cancelled=False)
                 .prefetch_related(
                     Prefetch(
                         "organizations",

@@ -1412,9 +1412,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
         paper_id = request.POST.get("paper_id")
         if paper_id:
-            body = self.organization.body
-            if body:
-                paper = OParlPaper.objects.filter(id=paper_id, body=body).first()
+            bodies = self.organization.get_all_bodies()
+            if bodies.exists():
+                paper = OParlPaper.objects.filter(id=paper_id, body__in=bodies).first()
                 if paper:
                     item.related_papers.add(paper)
 
@@ -1439,12 +1439,12 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
         from insight_core.models import OParlPaper
 
-        body = self.organization.body
-        if not body:
+        bodies = self.organization.get_all_bodies()
+        if not bodies.exists():
             return JsonResponse({"results": []})
 
         papers = (
-            OParlPaper.objects.filter(body=body)
+            OParlPaper.objects.filter(body__in=bodies)
             .filter(models.Q(name__icontains=query) | models.Q(reference__icontains=query))
             .exclude(id__in=item.related_papers.values_list("id", flat=True))
             .order_by("-date")[:15]

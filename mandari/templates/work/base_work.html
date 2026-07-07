@@ -442,8 +442,8 @@
                     <div class="work-org-name">{{ organization.name }}</div>
                     {% if organization.party_group %}
                     <div class="work-org-type">{{ organization.party_group.name }}</div>
-                    {% elif organization.body %}
-                    <div class="work-org-type">{{ organization.body.name }}</div>
+                    {% elif organization.get_primary_body %}
+                    <div class="work-org-type">{{ organization.get_primary_body.name }}</div>
                     {% endif %}
                 </div>
             </div>

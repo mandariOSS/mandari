@@ -41,6 +41,13 @@ class PartyGroup(models.Model):
     # Basic info
     name = models.CharField(max_length=200, verbose_name="Name")
     slug = models.SlugField(max_length=100, unique=True, verbose_name="URL-Slug")
+    abbreviation = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Kürzel",
+        help_text="z.B. SPD, B90/Grüne, Volt",
+    )
     description = models.TextField(blank=True, verbose_name="Beschreibung")
 
     # Hierarchy (self-referencing for nested structure)
@@ -154,14 +161,38 @@ class Organization(models.Model):
     )
 
     # Regional grouping via OParl Body (optional)
+    # Primäre Kommune — bleibt als FK erhalten (Anzeige, Fallback).
     body = models.ForeignKey(
         "insight_core.OParlBody",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="work_organizations",
-        verbose_name="Kommune/Region",
-        help_text="OParl-Body für RIS-Daten (z.B. Stadt Münster)",
+        verbose_name="Primäre Kommune/Region",
+        help_text="Primärer OParl-Body für RIS-Daten (z.B. Stadt Münster)",
+    )
+
+    # Weitere Kommunen (M2M) — eine Organisation kann mit mehreren
+    # OParl-Bodies (und damit mehreren OParl-Schnittstellen) verknüpft sein.
+    bodies = models.ManyToManyField(
+        "insight_core.OParlBody",
+        blank=True,
+        related_name="linked_work_organizations",
+        verbose_name="Kommunen/Regionen",
+        help_text="Alle verknüpften OParl-Bodies (inkl. der primären Kommune)",
+    )
+
+    # Partei-Zugehörigkeit (M2M) — eine Organisation kann einer oder
+    # mehreren Parteien/Parteigruppen angehören. Mehrere Organisationen
+    # können dieselbe Partei teilen (Basis für vertikalen Austausch:
+    # gleiche Partei, verschiedene Kommunen — und horizontalen Austausch:
+    # gleiche Kommune, verschiedene Parteien).
+    parties = models.ManyToManyField(
+        PartyGroup,
+        blank=True,
+        related_name="member_organizations",
+        verbose_name="Parteien",
+        help_text="Parteien/Parteigruppen, denen die Organisation angehört",
     )
 
     # Optional: specific OParl organizations (factions/committees)
@@ -365,6 +396,57 @@ class Organization(models.Model):
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
 
+    # === MULTI-BODY / MULTI-PARTY HELPERS ===
+
+    def get_all_bodies(self):
+        """
+        Alle verknüpften Kommunen (M2M `bodies` + primärer FK `body`).
+
+        Dedupliziertes QuerySet — nutzbar für `body__in=...`-Filter.
+        """
+        from insight_core.models import OParlBody
+
+        q = models.Q(pk__in=self.bodies.values("pk"))
+        if self.body_id:
+            q |= models.Q(pk=self.body_id)
+        return OParlBody.objects.filter(q)
+
+    @property
+    def all_bodies(self):
+        """Alias für get_all_bodies() (Template-freundlich)."""
+        return self.get_all_bodies()
+
+    @property
+    def all_body_ids(self) -> list:
+        """Liste aller verknüpften Body-UUIDs (für ES-terms-Queries)."""
+        return list(self.get_all_bodies().values_list("id", flat=True))
+
+    def get_primary_body(self):
+        """Primäre Kommune (FK), Fallback: erste verknüpfte Kommune."""
+        if self.body_id:
+            return self.body
+        return self.get_all_bodies().order_by("name").first()
+
+    @property
+    def has_multiple_bodies(self) -> bool:
+        return self.get_all_bodies().count() > 1
+
+    def get_all_parties(self):
+        """
+        Alle Parteien (M2M `parties` + primärer FK `party_group`).
+
+        Dedupliziertes QuerySet.
+        """
+        q = models.Q(pk__in=self.parties.values("pk"))
+        if self.party_group_id:
+            q |= models.Q(pk=self.party_group_id)
+        return PartyGroup.objects.filter(q)
+
+    @property
+    def all_parties(self):
+        """Alias für get_all_parties() (Template-freundlich)."""
+        return self.get_all_parties()
+
     @property
     def full_party_path(self) -> str:
         """Return full party hierarchy path if in a party group."""
@@ -401,16 +483,26 @@ class Organization(models.Model):
         return None
 
     def get_party_siblings(self):
-        """Get organizations in the same party group."""
-        if not self.party_group:
+        """Get organizations sharing at least one party (group)."""
+        party_ids = list(self.get_all_parties().values_list("id", flat=True))
+        if not party_ids:
             return Organization.objects.none()
-        return Organization.objects.filter(party_group=self.party_group).exclude(id=self.id)
+        return (
+            Organization.objects.filter(models.Q(party_group_id__in=party_ids) | models.Q(parties__id__in=party_ids))
+            .exclude(id=self.id)
+            .distinct()
+        )
 
     def get_regional_siblings(self):
-        """Get organizations in the same OParl Body (same municipality)."""
-        if not self.body:
+        """Get organizations sharing at least one OParl Body (same municipality)."""
+        body_ids = self.all_body_ids
+        if not body_ids:
             return Organization.objects.none()
-        return Organization.objects.filter(body=self.body).exclude(id=self.id)
+        return (
+            Organization.objects.filter(models.Q(body_id__in=body_ids) | models.Q(bodies__id__in=body_ids))
+            .exclude(id=self.id)
+            .distinct()
+        )
 
     def get_party_ancestry_organizations(self):
         """Get all organizations in parent party groups."""

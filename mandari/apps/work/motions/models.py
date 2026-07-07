@@ -652,7 +652,11 @@ class MotionShare(models.Model):
             return org_group in all_groups
 
         if self.scope == "regional":
-            return membership.organization.body == self.body
+            if not self.body_id:
+                return False
+            org = membership.organization
+            # Multi-Kommune: primäre Kommune (FK) ODER eine der M2M-Kommunen
+            return org.body_id == self.body_id or org.bodies.filter(pk=self.body_id).exists()
 
         return False
 

@@ -121,7 +121,7 @@
                 <div class="sm:col-span-2">
                     <dt class="text-sm text-gray-500 dark:text-gray-400">Website</dt>
                     <dd>
-                        <a href="{{ organization.website }}" target="_blank" rel="noopener noreferrer"
+                        <a href="{% if '://' not in organization.website %}https://{% endif %}{{ organization.website }}" target="_blank" rel="noopener noreferrer"
                            class="text-primary-600 dark:text-primary-400 hover:underline break-all">
                             {{ organization.website }}
                         </a>

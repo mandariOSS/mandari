@@ -139,14 +139,16 @@ class MeetingListView(WorkViewMixin, TemplateView):
 
         organization = self.organization
         membership = self.membership
-        body = organization.body if organization else None
+        bodies = organization.get_all_bodies() if organization else None
 
-        if not body:
+        if bodies is None or not bodies.exists():
             context["has_body"] = False
             context["meetings"] = []
             return context
 
         context["has_body"] = True
+        context["bodies"] = bodies
+        context["has_multiple_bodies"] = bodies.count() > 1
         now = timezone.now()
 
         # Filters
@@ -158,12 +160,12 @@ class MeetingListView(WorkViewMixin, TemplateView):
         # Get assigned committees
         assigned_committees = []
         if membership:
-            assigned_committees = list(membership.oparl_committees.filter(body=body))
+            assigned_committees = list(membership.oparl_committees.filter(body__in=bodies))
 
         assigned_committee_ids = [c.id for c in assigned_committees]
 
         # Build queryset
-        meetings_qs = OParlMeeting.objects.filter(body=body).prefetch_related("organizations")
+        meetings_qs = OParlMeeting.objects.filter(body__in=bodies).prefetch_related("organizations")
 
         if time_filter == "upcoming":
             meetings_qs = meetings_qs.filter(start__gte=now - timedelta(hours=2)).order_by("start")
@@ -211,7 +213,7 @@ class MeetingListView(WorkViewMixin, TemplateView):
 
         # All committees for filter dropdown
         all_committees = list(
-            OParlOrganization.objects.filter(body=body, organization_type__icontains="committee")
+            OParlOrganization.objects.filter(body__in=bodies, organization_type__icontains="committee")
             .order_by("name")
             .values("id", "name")
         )
@@ -253,8 +255,8 @@ class MeetingCalendarEventsView(WorkViewMixin, View):
 
     def get(self, request, *args, **kwargs):
         organization = self.organization
-        body = organization.body if organization else None
-        if not body:
+        bodies = organization.get_all_bodies() if organization else None
+        if bodies is None or not bodies.exists():
             return JsonResponse([], safe=False)
 
         start_str = request.GET.get("start", "")
@@ -266,7 +268,7 @@ class MeetingCalendarEventsView(WorkViewMixin, View):
         except (ValueError, TypeError):
             return JsonResponse([], safe=False)
 
-        meetings = OParlMeeting.objects.filter(body=body, start__gte=start, start__lte=end).prefetch_related(
+        meetings = OParlMeeting.objects.filter(body__in=bodies, start__gte=start, start__lte=end).prefetch_related(
             "organizations"
         )
 
@@ -312,16 +314,16 @@ class MeetingDetailView(WorkViewMixin, TemplateView):
 
         meeting_id = self.kwargs.get("meeting_id")
         organization = self.organization
-        body = organization.body if organization else None
+        bodies = organization.get_all_bodies() if organization else None
 
-        if not body:
+        if bodies is None or not bodies.exists():
             context["error"] = "Keine OParl-Körperschaft verknüpft"
             return context
 
         meeting = get_object_or_404(
             OParlMeeting.objects.prefetch_related("organizations", "agenda_items"),
             id=meeting_id,
-            body=body,
+            body__in=bodies,
         )
 
         meeting.committee_name = MeetingListView._get_organization_name(meeting, {})
@@ -357,15 +359,15 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         organization = self.organization
         membership = self.membership
 
-        body = organization.body if organization else None
-        if not body:
+        bodies = organization.get_all_bodies() if organization else None
+        if bodies is None or not bodies.exists():
             context["error"] = "Keine OParl-Körperschaft verknüpft"
             return context
 
         meeting = get_object_or_404(
             OParlMeeting.objects.prefetch_related("organizations", "agenda_items"),
             id=meeting_id,
-            body=body,
+            body__in=bodies,
         )
         meeting.committee_name = MeetingListView._get_organization_name(meeting, {})
         context["meeting"] = meeting
@@ -533,11 +535,11 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         organization = self.organization
         membership = self.membership
 
-        body = organization.body if organization else None
-        if not body:
+        bodies = organization.get_all_bodies() if organization else None
+        if bodies is None or not bodies.exists():
             return redirect("work:meetings", org_slug=organization.slug)
 
-        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body=body)
+        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body__in=bodies)
 
         if membership:
             preparation = MeetingPreparation.objects.filter(
@@ -581,11 +583,11 @@ class AgendaPositionAPIView(WorkViewMixin, View):
         organization = self.organization
         membership = self.membership
 
-        body = organization.body if organization else None
-        if not body or not membership:
+        bodies = organization.get_all_bodies() if organization else None
+        if bodies is None or not bodies.exists() or not membership:
             return JsonResponse({"error": "Unauthorized"}, status=403)
 
-        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body=body)
+        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body__in=bodies)
         agenda_item = get_object_or_404(OParlAgendaItem, id=item_id, meeting=meeting)
 
         # Org-weite Position (eine pro Org+TOP)
@@ -750,8 +752,10 @@ class AgendaNotesAPIView(WorkViewMixin, View):
         if not membership:
             return JsonResponse({"error": "Unauthorized"}, status=403)
 
-        body = organization.body if organization else None
-        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body=body)
+        bodies = organization.get_all_bodies() if organization else None
+        if bodies is None or not bodies.exists():
+            return JsonResponse({"error": "Unauthorized"}, status=403)
+        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body__in=bodies)
         agenda_item = get_object_or_404(OParlAgendaItem, id=item_id, meeting=meeting)
 
         data = json.loads(request.body) if request.content_type == "application/json" else request.POST
@@ -832,11 +836,11 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
         organization = self.organization
         membership = self.membership
 
-        body = organization.body if organization else None
-        if not body or not membership:
+        bodies = organization.get_all_bodies() if organization else None
+        if bodies is None or not bodies.exists() or not membership:
             return JsonResponse({"error": "Unauthorized"}, status=403)
 
-        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body=body)
+        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body__in=bodies)
         agenda_item = get_object_or_404(OParlAgendaItem, id=item_id, meeting=meeting)
 
         # Unterstützt sowohl JSON (Links) als auch Multipart (Uploads)
@@ -938,12 +942,12 @@ class PreparationSummaryView(WorkViewMixin, TemplateView):
         meeting_id = self.kwargs.get("meeting_id")
         organization = self.organization
 
-        body = organization.body if organization else None
-        if not body:
+        bodies = organization.get_all_bodies() if organization else None
+        if bodies is None or not bodies.exists():
             context["error"] = "Keine OParl-Körperschaft verknüpft"
             return context
 
-        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body=body)
+        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body__in=bodies)
         context["meeting"] = meeting
 
         preparation = MeetingPreparation.objects.filter(organization=organization, meeting=meeting).first()

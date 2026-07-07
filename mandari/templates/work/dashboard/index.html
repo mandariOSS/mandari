@@ -57,16 +57,18 @@
                 </a>
             </div>
         </div>
-        {% if organization.body and organization.body.hero_image %}
+        {% with primary_body=organization.get_primary_body %}
+        {% if primary_body and primary_body.hero_image %}
         <div class="lg:col-span-2 hidden lg:block">
             <div class="relative overflow-hidden rounded-2xl shadow-lg">
-                <img src="{{ organization.body.hero_image.url }}" alt="{{ organization.name }}" class="w-full h-64 object-cover">
-                {% if organization.body.hero_image_credit %}
-                <p class="absolute bottom-0 right-0 px-2 py-1 text-[10px] text-white/70 bg-black/30 rounded-tl-lg">{{ organization.body.hero_image_credit }}</p>
+                <img src="{{ primary_body.hero_image.url }}" alt="{{ organization.name }}" class="w-full h-64 object-cover">
+                {% if primary_body.hero_image_credit %}
+                <p class="absolute bottom-0 right-0 px-2 py-1 text-[10px] text-white/70 bg-black/30 rounded-tl-lg">{{ primary_body.hero_image_credit }}</p>
                 {% endif %}
             </div>
         </div>
         {% endif %}
+        {% endwith %}
     </div>
 </section>
 

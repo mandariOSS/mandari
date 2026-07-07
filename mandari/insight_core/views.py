@@ -1947,7 +1947,7 @@ class PublicProtocolDetailView(TemplateView):
 
         context["meeting"] = meeting
         context["organization"] = meeting.organization
-        context["body"] = meeting.organization.body if meeting.organization else None
+        context["body"] = meeting.organization.get_primary_body() if meeting.organization else None
 
         # Only show public agenda items
         agenda_items = meeting.agenda_items.filter(

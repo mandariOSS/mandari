@@ -16,7 +16,37 @@ from django.views.generic import TemplateView, View
 from apps.common.mixins import WorkViewMixin
 
 
-class RISOverviewView(WorkViewMixin, TemplateView):
+class RISBodiesMixin:
+    """
+    Multi-Kommune-Unterstützung für RIS-Views.
+
+    Eine Organisation kann mit mehreren OParl-Bodies verknüpft sein
+    (Organization.bodies M2M + primärer FK Organization.body).
+    """
+
+    def get_bodies(self):
+        """Alle verknüpften Kommunen als QuerySet (für body__in-Filter)."""
+        return self.organization.get_all_bodies()
+
+    def setup_body_context(self, context):
+        """
+        Setzt bodies/body/no_body_linked in den Context.
+
+        Returns:
+            QuerySet der Bodies oder None, wenn keine Kommune verknüpft ist.
+        """
+        bodies = self.get_bodies()
+        if not bodies.exists():
+            context["no_body_linked"] = True
+            return None
+        context["bodies"] = bodies
+        context["has_multiple_bodies"] = bodies.count() > 1
+        # Primäre Kommune für Anzeige (Subtitle, Karte etc.)
+        context["body"] = self.organization.get_primary_body()
+        return bodies
+
+
+class RISOverviewView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS overview page with statistics."""
 
     template_name = "work/ris/overview.html"
@@ -27,13 +57,10 @@ class RISOverviewView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_overview"
 
-        # Get the linked OParl body
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        # Get the linked OParl bodies (multi-Kommune-fähig)
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
-
-        context["body"] = body
 
         # Import here to avoid circular imports
         from insight_core.models import (
@@ -47,23 +74,25 @@ class RISOverviewView(WorkViewMixin, TemplateView):
         today = timezone.now().date()
 
         # Papers (Vorgänge)
-        papers_total = OParlPaper.objects.filter(body=body).count()
-        papers_this_year = OParlPaper.objects.filter(body=body, date__year=today.year).count()
+        papers_total = OParlPaper.objects.filter(body__in=bodies).count()
+        papers_this_year = OParlPaper.objects.filter(body__in=bodies, date__year=today.year).count()
 
         # Meetings (Sitzungen)
-        meetings_total = OParlMeeting.objects.filter(body=body).count()
-        meetings_upcoming = OParlMeeting.objects.filter(body=body, start__gt=timezone.now(), cancelled=False).count()
+        meetings_total = OParlMeeting.objects.filter(body__in=bodies).count()
+        meetings_upcoming = OParlMeeting.objects.filter(
+            body__in=bodies, start__gt=timezone.now(), cancelled=False
+        ).count()
 
         # Organizations (Gremien)
-        organizations_total = OParlOrganization.objects.filter(body=body).count()
+        organizations_total = OParlOrganization.objects.filter(body__in=bodies).count()
         organizations_active = (
-            OParlOrganization.objects.filter(body=body)
+            OParlOrganization.objects.filter(body__in=bodies)
             .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
             .count()
         )
 
         # Persons (Personen)
-        persons_total = OParlPerson.objects.filter(body=body).count()
+        persons_total = OParlPerson.objects.filter(body__in=bodies).count()
 
         context["stats"] = {
             "papers_total": papers_total,
@@ -76,11 +105,11 @@ class RISOverviewView(WorkViewMixin, TemplateView):
         }
 
         # Recent papers
-        context["recent_papers"] = OParlPaper.objects.filter(body=body).order_by("-date", "-oparl_created")[:5]
+        context["recent_papers"] = OParlPaper.objects.filter(body__in=bodies).order_by("-date", "-oparl_created")[:5]
 
         # Upcoming meetings
         context["upcoming_meetings"] = (
-            OParlMeeting.objects.filter(body=body, start__gt=timezone.now(), cancelled=False)
+            OParlMeeting.objects.filter(body__in=bodies, start__gt=timezone.now(), cancelled=False)
             .prefetch_related("organizations")
             .order_by("start")[:5]
         )
@@ -88,7 +117,7 @@ class RISOverviewView(WorkViewMixin, TemplateView):
         return context
 
 
-class RISPapersView(WorkViewMixin, TemplateView):
+class RISPapersView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS papers list with search and filtering."""
 
     template_name = "work/ris/papers.html"
@@ -99,17 +128,14 @@ class RISPapersView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_papers"
 
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
-
-        context["body"] = body
 
         from insight_core.models import OParlPaper
 
         # Base queryset
-        papers = OParlPaper.objects.filter(body=body)
+        papers = OParlPaper.objects.filter(body__in=bodies)
 
         # Search
         search = self.request.GET.get("q", "").strip()
@@ -134,10 +160,15 @@ class RISPapersView(WorkViewMixin, TemplateView):
 
         # Get available filters
         context["paper_types"] = (
-            OParlPaper.objects.filter(body=body).values_list("paper_type", flat=True).distinct().order_by("paper_type")
+            OParlPaper.objects.filter(body__in=bodies)
+            .values_list("paper_type", flat=True)
+            .distinct()
+            .order_by("paper_type")
         )
 
-        context["years"] = OParlPaper.objects.filter(body=body, date__isnull=False).dates("date", "year", order="DESC")
+        context["years"] = OParlPaper.objects.filter(body__in=bodies, date__isnull=False).dates(
+            "date", "year", order="DESC"
+        )
 
         # Order and paginate
         papers = papers.order_by("-date", "-oparl_created")
@@ -150,7 +181,7 @@ class RISPapersView(WorkViewMixin, TemplateView):
         return context
 
 
-class RISPaperDetailView(WorkViewMixin, TemplateView):
+class RISPaperDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS paper detail view."""
 
     template_name = "work/ris/paper_detail.html"
@@ -161,17 +192,15 @@ class RISPaperDetailView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_papers"
 
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
 
         from insight_core.models import OParlPaper
 
-        paper = get_object_or_404(OParlPaper, id=kwargs.get("paper_id"), body=body)
+        paper = get_object_or_404(OParlPaper, id=kwargs.get("paper_id"), body__in=bodies)
 
         context["paper"] = paper
-        context["body"] = body
 
         # Get files - first try database relationship
         db_files = paper.files.all()
@@ -288,7 +317,7 @@ class RISPaperDetailView(WorkViewMixin, TemplateView):
         return result
 
 
-class RISMeetingsView(WorkViewMixin, TemplateView):
+class RISMeetingsView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS meetings list."""
 
     template_name = "work/ris/meetings.html"
@@ -299,17 +328,14 @@ class RISMeetingsView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_meetings"
 
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
-
-        context["body"] = body
 
         from insight_core.models import OParlMeeting, OParlOrganization
 
         # Base queryset
-        meetings = OParlMeeting.objects.filter(body=body).prefetch_related("organizations")
+        meetings = OParlMeeting.objects.filter(body__in=bodies).prefetch_related("organizations")
 
         # Filter: upcoming/past
         view_mode = self.request.GET.get("view", "upcoming")
@@ -333,7 +359,7 @@ class RISMeetingsView(WorkViewMixin, TemplateView):
             context["selected_org"] = org_id
 
         # Get available organizations for filter
-        context["organizations"] = OParlOrganization.objects.filter(body=body).order_by("name")
+        context["organizations"] = OParlOrganization.objects.filter(body__in=bodies).order_by("name")
 
         # Filter by year
         year = self.request.GET.get("year")
@@ -344,7 +370,7 @@ class RISMeetingsView(WorkViewMixin, TemplateView):
             except ValueError:
                 pass
 
-        context["years"] = OParlMeeting.objects.filter(body=body, start__isnull=False).dates(
+        context["years"] = OParlMeeting.objects.filter(body__in=bodies, start__isnull=False).dates(
             "start", "year", order="DESC"
         )
 
@@ -357,7 +383,7 @@ class RISMeetingsView(WorkViewMixin, TemplateView):
         return context
 
 
-class RISMeetingDetailView(WorkViewMixin, TemplateView):
+class RISMeetingDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS meeting detail view."""
 
     template_name = "work/ris/meeting_detail.html"
@@ -368,17 +394,15 @@ class RISMeetingDetailView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_meetings"
 
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
 
         from insight_core.models import OParlMeeting
 
-        meeting = get_object_or_404(OParlMeeting, id=kwargs.get("meeting_id"), body=body)
+        meeting = get_object_or_404(OParlMeeting, id=kwargs.get("meeting_id"), body__in=bodies)
 
         context["meeting"] = meeting
-        context["body"] = body
 
         # Get agenda items with related papers
         # Natural sort: 1, 2, 10 instead of 1, 10, 2
@@ -408,7 +432,7 @@ class RISMeetingDetailView(WorkViewMixin, TemplateView):
         return context
 
 
-class RISOrganizationsView(WorkViewMixin, TemplateView):
+class RISOrganizationsView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS organizations list."""
 
     template_name = "work/ris/organizations.html"
@@ -419,12 +443,9 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_organizations"
 
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
-
-        context["body"] = body
 
         from insight_core.models import OParlMeeting, OParlOrganization
         from insight_core.ranking import sort_organizations_by_ranking
@@ -458,7 +479,7 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
         has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
 
         # Base queryset with meeting annotations
-        organizations = OParlOrganization.objects.filter(body=body).annotate(
+        organizations = OParlOrganization.objects.filter(body__in=bodies).annotate(
             next_meeting=next_meeting_sq,
             last_meeting=last_meeting_sq,
             has_meetings=has_any_meeting,
@@ -478,7 +499,7 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
         context["tab"] = tab
 
         # Tab counts (without search filter)
-        all_orgs = OParlOrganization.objects.filter(body=body).annotate(
+        all_orgs = OParlOrganization.objects.filter(body__in=bodies).annotate(
             has_meetings=has_any_meeting,
         )
         context["active_count"] = all_orgs.filter(
@@ -499,7 +520,7 @@ class RISOrganizationsView(WorkViewMixin, TemplateView):
         return context
 
 
-class RISOrganizationDetailView(WorkViewMixin, TemplateView):
+class RISOrganizationDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS organization detail view."""
 
     template_name = "work/ris/organization_detail.html"
@@ -510,17 +531,15 @@ class RISOrganizationDetailView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_organizations"
 
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
 
         from insight_core.models import OParlOrganization
 
-        org = get_object_or_404(OParlOrganization, id=kwargs.get("org_id"), body=body)
+        org = get_object_or_404(OParlOrganization, id=kwargs.get("org_id"), body__in=bodies)
 
         context["org"] = org
-        context["body"] = body
 
         today = timezone.now().date()
         today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -544,7 +563,7 @@ class RISOrganizationDetailView(WorkViewMixin, TemplateView):
         return context
 
 
-class RISPersonsView(WorkViewMixin, TemplateView):
+class RISPersonsView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS persons list."""
 
     template_name = "work/ris/persons.html"
@@ -555,26 +574,23 @@ class RISPersonsView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_persons"
 
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
-
-        context["body"] = body
 
         from insight_core.models import OParlMembership, OParlOrganization, OParlPerson
 
         # Base queryset
-        persons = OParlPerson.objects.filter(body=body)
+        persons = OParlPerson.objects.filter(body__in=bodies)
 
         # Council role annotation (like Insight portal)
         today = timezone.now().date()
-        rat = OParlOrganization.objects.filter(body=body, name="Rat").first()
-        if rat:
+        rat_orgs = OParlOrganization.objects.filter(body__in=bodies, name="Rat")
+        if rat_orgs.exists():
             council_role_sq = Subquery(
                 OParlMembership.objects.filter(
                     person=OuterRef("pk"),
-                    organization=rat,
+                    organization__in=rat_orgs,
                 )
                 .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
                 .values("role")[:1]
@@ -604,7 +620,7 @@ class RISPersonsView(WorkViewMixin, TemplateView):
         return context
 
 
-class RISPersonDetailView(WorkViewMixin, TemplateView):
+class RISPersonDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS person detail view."""
 
     template_name = "work/ris/person_detail.html"
@@ -615,17 +631,15 @@ class RISPersonDetailView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_persons"
 
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
 
         from insight_core.models import OParlPerson
 
-        person = get_object_or_404(OParlPerson, id=kwargs.get("person_id"), body=body)
+        person = get_object_or_404(OParlPerson, id=kwargs.get("person_id"), body__in=bodies)
 
         context["person"] = person
-        context["body"] = body
 
         today = timezone.now().date()
 
@@ -642,7 +656,7 @@ class RISPersonDetailView(WorkViewMixin, TemplateView):
         return context
 
 
-class RISMapView(WorkViewMixin, TemplateView):
+class RISMapView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS map view showing geolocalized papers."""
 
     template_name = "work/ris/map.html"
@@ -653,12 +667,12 @@ class RISMapView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_overview"
 
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
 
-        context["body"] = body
+        # Kartenzentrum: primäre Kommune
+        body = context["body"]
 
         # Map center and bounds
         context["map_config"] = {
@@ -678,20 +692,20 @@ class RISMapView(WorkViewMixin, TemplateView):
         return context
 
 
-class RISMapDataView(WorkViewMixin, View):
+class RISMapDataView(RISBodiesMixin, WorkViewMixin, View):
     """API endpoint for map data (GeoJSON)."""
 
     permission_required = "ris.view"
 
     def get(self, request, *args, **kwargs):
-        body = self.organization.body
-        if not body:
+        bodies = self.get_bodies()
+        if not bodies.exists():
             return JsonResponse({"type": "FeatureCollection", "features": []})
 
         from insight_core.models import OParlPaper
 
         # Get papers with locations
-        papers = OParlPaper.objects.filter(body=body, locations__isnull=False).exclude(locations=[])[:500]
+        papers = OParlPaper.objects.filter(body__in=bodies, locations__isnull=False).exclude(locations=[])[:500]
 
         features = []
         for paper in papers:
@@ -723,7 +737,7 @@ class RISMapDataView(WorkViewMixin, View):
         return JsonResponse({"type": "FeatureCollection", "features": features})
 
 
-class RISFilesView(WorkViewMixin, TemplateView):
+class RISFilesView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS files/documents list."""
 
     template_name = "work/ris/files.html"
@@ -734,18 +748,15 @@ class RISFilesView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_files"
 
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
-
-        context["body"] = body
 
         from insight_core.models import OParlFile
         from insight_core.views import _annotate_files_with_context
 
         # Base queryset
-        files = OParlFile.objects.filter(body=body).select_related("paper").order_by("-file_date", "-created_at")
+        files = OParlFile.objects.filter(body__in=bodies).select_related("paper").order_by("-file_date", "-created_at")
 
         # Search
         search = self.request.GET.get("q", "").strip()
@@ -770,13 +781,15 @@ class RISFilesView(WorkViewMixin, TemplateView):
         return context
 
 
-class RISSearchView(WorkViewMixin, TemplateView):
+class RISSearchView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """
     RIS search across all entities.
 
     Nutzt Elasticsearch (inkl. OCR-Volltexte der Dokumente) mit Filtern für
-    Zeitraum, Gremium und Vorlagen-Art. Fällt auf Django-ORM zurück, wenn
-    Elasticsearch nicht erreichbar ist.
+    Zeitraum, Gremium und Vorlagen-Art. Bei Organisationen mit mehreren
+    Kommunen wird über alle body_ids gesucht (terms-Query) — optional per
+    Kommunen-Dropdown auf eine Kommune eingeschränkt. Fällt auf Django-ORM
+    zurück, wenn Elasticsearch nicht erreichbar ist.
     """
 
     template_name = "work/ris/search.html"
@@ -789,21 +802,33 @@ class RISSearchView(WorkViewMixin, TemplateView):
         context["active_nav"] = "ris"
         context["active_subnav"] = "ris_search"
 
-        body = self.organization.body
-        if not body:
-            context["no_body_linked"] = True
+        bodies = self.setup_body_context(context)
+        if bodies is None:
             return context
 
-        context["body"] = body
+        all_bodies = list(bodies)
+        all_body_ids = [str(b.id) for b in all_bodies]
+
+        # Kommunen-Filter (nur relevant bei mehreren Kommunen)
+        body_filter = self.request.GET.get("kommune", "").strip()
+        if body_filter and body_filter in all_body_ids:
+            search_body_ids = [body_filter]
+        else:
+            body_filter = ""
+            search_body_ids = all_body_ids
+        context["body_filter"] = body_filter
 
         # Filter-Optionen (immer anzeigen, auch ohne Query)
         from insight_core.models import OParlOrganization, OParlPaper
 
         context["committees"] = (
-            OParlOrganization.objects.filter(body=body).exclude(name="").order_by("name").values_list("name", flat=True)
+            OParlOrganization.objects.filter(body__in=bodies)
+            .exclude(name="")
+            .order_by("name")
+            .values_list("name", flat=True)
         )
         context["paper_types"] = (
-            OParlPaper.objects.filter(body=body)
+            OParlPaper.objects.filter(body__in=bodies)
             .exclude(paper_type__isnull=True)
             .exclude(paper_type="")
             .values_list("paper_type", flat=True)
@@ -833,7 +858,7 @@ class RISSearchView(WorkViewMixin, TemplateView):
             }
         )
 
-        has_filters = any([date_from, date_to, committee, paper_type])
+        has_filters = any([date_from, date_to, committee, paper_type, body_filter])
         if not query and not has_filters:
             return context
 
@@ -850,7 +875,7 @@ class RISSearchView(WorkViewMixin, TemplateView):
             service = ElasticsearchService()
             result = service.search_all(
                 query=query,
-                body_id=str(body.id),
+                body_ids=search_body_ids,
                 page=page,
                 page_size=self.PAGE_SIZE,
                 index_names=index_names,
@@ -876,8 +901,8 @@ class RISSearchView(WorkViewMixin, TemplateView):
         # ---- Fallback: Django ORM (ohne OCR-Volltext, einfache Filter) ----
         from insight_core.models import OParlMeeting, OParlPerson
 
-        papers = OParlPaper.objects.filter(body=body)
-        meetings = OParlMeeting.objects.filter(body=body)
+        papers = OParlPaper.objects.filter(body_id__in=search_body_ids)
+        meetings = OParlMeeting.objects.filter(body_id__in=search_body_ids)
         if query:
             papers = papers.filter(Q(name__icontains=query) | Q(reference__icontains=query))
             meetings = meetings.filter(Q(name__icontains=query) | Q(location_name__icontains=query))
@@ -896,14 +921,14 @@ class RISSearchView(WorkViewMixin, TemplateView):
         meetings = meetings.prefetch_related("organizations").order_by("-start")[:10]
 
         organizations = (
-            OParlOrganization.objects.filter(body=body)
+            OParlOrganization.objects.filter(body_id__in=search_body_ids)
             .filter(Q(name__icontains=query) | Q(short_name__icontains=query))
             .order_by("name")[:10]
             if query
             else OParlOrganization.objects.none()
         )
         persons = (
-            OParlPerson.objects.filter(body=body)
+            OParlPerson.objects.filter(body_id__in=search_body_ids)
             .filter(Q(name__icontains=query) | Q(family_name__icontains=query) | Q(given_name__icontains=query))
             .order_by("family_name")[:10]
             if query
