@@ -46,6 +46,34 @@ Mandari ist eine Open-Source-Plattform, die Ratsinformationen aus deutschen Komm
 - **Verschlüsselung** — AES-256 für sensible Daten
 - **Automatische Updates** — OParl-Sync läuft im Hintergrund
 
+## Architektur
+
+Mandari besteht aus drei Repositories:
+
+| Repository | Inhalt |
+|------------|--------|
+| [`mandariOSS/mandari`](https://github.com/mandariOSS/mandari) | Haupt-App (Insight, Work, Session) + Python-basierter OParl-Ingestor (`ingestor/`) |
+| [`mandariOSS/marketing-website`](https://github.com/mandariOSS/marketing-website) | Öffentliche Website (Wagtail CMS) |
+| `portal` (privat) | Kundenportal für Buchung & Billing |
+
+Alle Dienste laufen auf **einer Domain** hinter Caddy (siehe `Caddyfile`):
+`/insight/`, `/work/`, `/session/`, `/accounts/`, `/admin/`, `/api/` usw.
+werden an die Django-App geroutet, alles andere — inklusive `/` — an die
+Marketing-Website. Der Docker-Compose-Stack im Repo-Root umfasst Caddy (TLS),
+PostgreSQL 16, Redis 7, Elasticsearch 8 sowie drei Anwendungs-Container:
+die Django-App (`ghcr.io/mandarioss/mandari`), die Website
+(`ghcr.io/mandarioss/website`) und den Ingestor
+(`ghcr.io/mandarioss/ingestor`).
+
+Der Betriebsstatus aller Dienste ist öffentlich einsehbar:
+<https://status.mandari.de>.
+
+**Provisioning-API**: Für den SaaS-Betrieb kann das (private) Kundenportal
+Organisationen über `/api/provisioning/` anlegen und verwalten. Das Feature
+wird über die Umgebungsvariable `PROVISIONING_API_KEY` aktiviert — ohne
+gesetzten Key ist die API deaktiviert (alle Requests → 404), sodass
+Community-Installationen keine offene Angriffsfläche haben.
+
 ## Installation
 
 ### Voraussetzungen
@@ -89,6 +117,8 @@ Detaillierte Anleitung: [docs/installation.md](docs/installation.md)
 | Komponente | Technologie |
 |------------|-------------|
 | Backend | Django 6.0, Python 3.12+ |
+| OParl-Ingestor | Python 3.12+ (httpx, SQLAlchemy, APScheduler) |
+| Marketing-Website | Wagtail 7 ([eigenes Repo](https://github.com/mandariOSS/marketing-website)) |
 | Frontend | HTMX, Alpine.js, Tailwind |
 | Datenbank | PostgreSQL 16 |
 | Suche | Elasticsearch 8 |
