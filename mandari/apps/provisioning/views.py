@@ -109,7 +109,30 @@ def _org_payload(org: Organization) -> dict:
 
 
 class OrganizationCollectionView(ProvisioningView):
-    """POST /api/provisioning/organizations/ — Organisation anlegen."""
+    """
+    GET  /api/provisioning/organizations/ — Organisationen auflisten
+    POST /api/provisioning/organizations/ — Organisation anlegen
+    """
+
+    def get(self, request):
+        """Liste aller Organisationen (für Bestandskunden-Import ins Portal)."""
+        orgs = []
+        for org in Organization.objects.all().order_by("name"):
+            payload = _org_payload(org)
+            owner = org.owner
+            if owner is None:
+                # Fallback: ältestes aktives Admin-Mitglied
+                admin_membership = (
+                    org.memberships.filter(is_active=True, roles__is_admin=True)
+                    .select_related("user")
+                    .order_by("joined_at")
+                    .first()
+                )
+                owner = admin_membership.user if admin_membership else None
+            payload["owner_email"] = owner.email if owner else None
+            payload["created_at"] = org.created_at.isoformat()
+            orgs.append(payload)
+        return JsonResponse({"organizations": orgs, "count": len(orgs)})
 
     def post(self, request):
         data = self.json_body(request)
