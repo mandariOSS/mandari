@@ -66,9 +66,11 @@
     <script type="application/ld+json">{{ seo.json_ld|safe }}</script>
     {% endif %}
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" href="{% static 'images/favicon.png' %}">
-    <link rel="icon" type="image/x-icon" href="{% static 'images/favicon.ico' %}">
+    <!-- Favicon (Brand "m." — Quelle: marketing-website/scripts/generate_logo.py) -->
+    <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/favicon-32.png' %}">
+    <link rel="icon" type="image/png" sizes="192x192" href="{% static 'brand/favicon-192.png' %}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'brand/apple-touch-icon.png' %}">
 
     <!-- TailwindCSS (lokal kompiliert, DSGVO-konform) -->
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
