@@ -19,7 +19,29 @@ from apps.work.tasks import views as tasks_views
 
 app_name = "work"
 
+
+def _work_root_redirect(request):
+    """
+    /work/ ohne Org-Slug: eingeloggte Nutzer zur eigenen Organisation,
+    alle anderen zum Login (mit Rücksprung hierher).
+    """
+    from django.shortcuts import redirect
+
+    if request.user.is_authenticated:
+        membership = (
+            request.user.memberships.filter(is_active=True, organization__is_active=True)
+            .select_related("organization")
+            .first()
+        )
+        if membership:
+            return redirect("work:dashboard", org_slug=membership.organization.slug)
+        return redirect("/insight/")
+    return redirect("/accounts/login/?next=/work/")
+
+
 urlpatterns = [
+    # /work/ ohne Slug -> eigene Organisation bzw. Login
+    path("", _work_root_redirect, name="root"),
     # Dashboard
     path("<slug:org_slug>/", dashboard_views.DashboardView.as_view(), name="dashboard"),
     path(
