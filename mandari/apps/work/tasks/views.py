@@ -397,6 +397,16 @@ class TaskCreateView(WorkViewMixin, TemplateView):
         context["active_nav"] = "tasks"
         context["form"] = TaskForm(organization=self.organization)
 
+        # Prefill: Aufgabe aus einem Dokument heraus erstellen (?related_motion=)
+        related_motion_id = self.request.GET.get("related_motion")
+        if related_motion_id:
+            from apps.work.motions.models import Motion
+
+            try:
+                context["related_motion"] = Motion.objects.get(id=related_motion_id, organization=self.organization)
+            except (Motion.DoesNotExist, ValueError):
+                pass
+
         from_protocol = self.request.GET.get("from_protocol")
         if from_protocol:
             from apps.work.faction.models import FactionProtocolEntry
@@ -426,6 +436,16 @@ class TaskCreateView(WorkViewMixin, TemplateView):
             task.created_by = self.membership
             if not task.assigned_to:
                 task.assigned_to = self.membership
+
+            # Verknüpfung mit Dokument (Prefill aus dem Editor)
+            related_motion_id = request.POST.get("related_motion")
+            if related_motion_id:
+                from apps.work.motions.models import Motion
+
+                try:
+                    task.related_motion = Motion.objects.get(id=related_motion_id, organization=self.organization)
+                except (Motion.DoesNotExist, ValueError):
+                    pass
 
             task.position = Task.objects.filter(organization=self.organization, status=task.status).count()
 

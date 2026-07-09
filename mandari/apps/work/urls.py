@@ -174,6 +174,26 @@ urlpatterns = [
         name="document_status",
     ),
     path(
+        "<slug:org_slug>/documents/<uuid:motion_id>/meta/",
+        motions_views.MotionMetaUpdateView.as_view(),
+        name="document_meta",
+    ),
+    path(
+        "<slug:org_slug>/documents/<uuid:motion_id>/checklist/",
+        motions_views.MotionChecklistActionView.as_view(),
+        name="document_checklist",
+    ),
+    path(
+        "<slug:org_slug>/documents/<uuid:motion_id>/approvals/request/",
+        motions_views.MotionApprovalRequestView.as_view(),
+        name="document_approval_request",
+    ),
+    path(
+        "<slug:org_slug>/documents/<uuid:motion_id>/approvals/<uuid:approval_id>/decide/",
+        motions_views.MotionApprovalDecideView.as_view(),
+        name="document_approval_decide",
+    ),
+    path(
         "<slug:org_slug>/documents/<uuid:motion_id>/comment/",
         motions_views.MotionCommentView.as_view(),
         name="document_comment",
@@ -275,6 +295,21 @@ urlpatterns = [
         "<slug:org_slug>/organization/documents/types/<uuid:type_id>/delete/",
         motions_views.MotionTypeDeleteView.as_view(),
         name="document_type_delete",
+    ),
+    path(
+        "<slug:org_slug>/organization/documents/topics/",
+        motions_views.TopicListView.as_view(),
+        name="document_topic_list",
+    ),
+    path(
+        "<slug:org_slug>/organization/documents/topics/<uuid:topic_id>/update/",
+        motions_views.TopicUpdateView.as_view(),
+        name="document_topic_update",
+    ),
+    path(
+        "<slug:org_slug>/organization/documents/topics/<uuid:topic_id>/delete/",
+        motions_views.TopicDeleteView.as_view(),
+        name="document_topic_delete",
     ),
     path(
         "<slug:org_slug>/organization/documents/templates/",

@@ -548,6 +548,12 @@ class MemberDetailView(WorkViewMixin, TemplateView):
             context["suggested_committee_ids"] = []
             context["potential_oparl_persons"] = []
 
+        # Fachgebiete (Themenkatalog)
+        from apps.tenants.models import Topic
+
+        context["org_topics"] = Topic.objects.filter(organization=self.organization)
+        context["member_expertise_ids"] = set(member.expertise_topics.values_list("id", flat=True))
+
         return context
 
     def post(self, request, *args, **kwargs):
@@ -582,6 +588,18 @@ class MemberDetailView(WorkViewMixin, TemplateView):
                 )
             else:
                 messages.error(request, "Keine Kommune verknüpft. Gremien können nicht zugewiesen werden.")
+
+        elif action == "update_expertise":
+            # Fachgebiete des Mitglieds setzen (Themenkatalog der Organisation)
+            from apps.tenants.models import Topic
+
+            topic_ids = request.POST.getlist("expertise_topics")
+            topics = Topic.objects.filter(id__in=topic_ids, organization=self.organization)
+            member.expertise_topics.set(topics)
+            messages.success(
+                request,
+                f"Fachgebiete für {member.user.get_full_name() or member.user.email} aktualisiert.",
+            )
 
         elif action == "update_roles":
             # Update member roles
@@ -2655,10 +2673,26 @@ class ProfileCommitteesView(WorkViewMixin, TemplateView):
         context["assigned_committees"] = self.membership.oparl_committees.all().order_by("name")
         context["show_body_names"] = self.organization.has_multiple_bodies
 
+        # Fachgebiete (Themenkatalog der Organisation)
+        from apps.tenants.models import Topic
+
+        context["org_topics"] = Topic.objects.filter(organization=self.organization)
+        context["expertise_ids"] = set(self.membership.expertise_topics.values_list("id", flat=True))
+
         return context
 
     def post(self, request, *args, **kwargs):
         from insight_core.models import OParlOrganization
+
+        # Fachgebiete speichern (eigenes Formular auf derselben Seite)
+        if request.POST.get("action") == "save_expertise":
+            from apps.tenants.models import Topic
+
+            topic_ids = request.POST.getlist("expertise_topics")
+            topics = Topic.objects.filter(id__in=topic_ids, organization=self.organization)
+            self.membership.expertise_topics.set(topics)
+            messages.success(request, "Fachgebiete gespeichert.")
+            return redirect("work:profile_committees", org_slug=self.organization.slug)
 
         committee_ids = request.POST.getlist("committees")
         bodies = self.organization.get_all_bodies()

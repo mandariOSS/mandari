@@ -108,6 +108,7 @@ class MotionImportService:
                 title=title,
                 status="draft",
                 visibility=visibility,
+                responsible=author,
             )
 
             # Set document type if provided
@@ -130,6 +131,7 @@ class MotionImportService:
                 )
 
             motion.save()
+            motion.apply_default_checklist()
 
             # Create MotionDocument attachment
             document = MotionDocument(
@@ -253,6 +255,7 @@ class MotionImportService:
                 title=title,
                 status="draft",
                 visibility=visibility,
+                responsible=author,
             )
             if motion_type:
                 motion.document_type = motion_type
@@ -262,6 +265,7 @@ class MotionImportService:
             else:
                 motion.set_content_encrypted("<p><em>Kein Text im Dokument gefunden.</em></p>")
             motion.save()
+            motion.apply_default_checklist()
 
             # Create attachment
             document = MotionDocument(

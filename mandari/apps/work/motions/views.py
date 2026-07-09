@@ -31,6 +31,8 @@ from .forms import (
 from .import_service import motion_import_service
 from .models import (
     Motion,
+    MotionApproval,
+    MotionChecklistItem,
     MotionComment,
     MotionRevision,
     MotionShare,
@@ -48,23 +50,41 @@ class MotionListView(WorkViewMixin, TemplateView):
     permission_required = "motions.view"
 
     def get_context_data(self, **kwargs):
+        from apps.tenants.models import Membership, Topic
+
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "documents"
 
         # Base queryset - exclude deleted items by default
         motions = Motion.objects.filter(organization=self.organization).exclude(status="deleted")
 
-        # Filter by status
-        status = self.request.GET.get("status")
-        if status:
-            motions = motions.filter(status=status)
-            context["selected_status"] = status
+        # Filter by status (Mehrfachauswahl möglich: ?status=a&status=b)
+        statuses = [s for s in self.request.GET.getlist("status") if s]
+        if statuses:
+            motions = motions.filter(status__in=statuses)
+            context["selected_status"] = statuses[0]
+            context["selected_statuses"] = statuses
 
         # Filter by type
         motion_type = self.request.GET.get("type")
         if motion_type:
             motions = motions.filter(motion_type=motion_type)
             context["selected_type"] = motion_type
+
+        # Filter by topic
+        topic_id = self.request.GET.get("thema")
+        if topic_id:
+            motions = motions.filter(topics__id=topic_id)
+            context["selected_topic"] = topic_id
+
+        # Filter by responsible ("me" oder Membership-ID)
+        responsible = self.request.GET.get("verantwortlich")
+        if responsible == "me":
+            motions = motions.filter(responsible=self.membership)
+            context["selected_responsible"] = "me"
+        elif responsible:
+            motions = motions.filter(responsible__id=responsible)
+            context["selected_responsible"] = responsible
 
         # Search
         search = self.request.GET.get("q", "").strip()
@@ -79,25 +99,56 @@ class MotionListView(WorkViewMixin, TemplateView):
 
         # Order
         order = self.request.GET.get("order", "-updated_at")
-        if order in ["-updated_at", "-created_at", "title", "-title"]:
+        if order in ["-updated_at", "-created_at", "title", "-title", "due_date"]:
             motions = motions.order_by(order)
 
-        # Select related
-        motions = motions.select_related("author__user", "template")
+        motions = motions.distinct()
 
-        # Pagination
-        paginator = Paginator(motions, 20)
+        # Select/prefetch related for tracker, chips and progress columns
+        related = ("author__user", "responsible__user", "document_type", "template")
+        prefetches = ("topics", "checklist_items", "approvals")
+
+        # Hauptanträge paginieren, Änderungsanträge (parent_motion) unter
+        # ihrem Hauptantrag eingerückt anzeigen
+        parents = motions.filter(parent_motion__isnull=True).select_related(*related).prefetch_related(*prefetches)
+
+        paginator = Paginator(parents, 20)
         page = self.request.GET.get("page", 1)
-        context["motions"] = paginator.get_page(page)
+        page_obj = paginator.get_page(page)
+        context["motions"] = page_obj
         context["paginator"] = paginator
 
+        # Kinder der Seite laden und gruppiert anhängen
+        amendments = (
+            Motion.objects.filter(organization=self.organization, parent_motion__in=list(page_obj))
+            .exclude(status="deleted")
+            .select_related(*related)
+            .prefetch_related(*prefetches)
+            .order_by("-updated_at")
+        )
+        amendments_by_parent = {}
+        for amendment in amendments:
+            amendments_by_parent.setdefault(amendment.parent_motion_id, []).append(amendment)
+
+        motion_rows = []
+        for motion in page_obj:
+            motion_rows.append({"motion": motion, "is_amendment": False})
+            for amendment in amendments_by_parent.get(motion.id, []):
+                motion_rows.append({"motion": amendment, "is_amendment": True})
+        context["motion_rows"] = motion_rows
+
         # Statistics (exclude deleted)
+        today = timezone.localdate()
         all_motions = Motion.objects.filter(organization=self.organization).exclude(status="deleted")
         context["stats"] = {
             "total": all_motions.count(),
             "draft": all_motions.filter(status="draft").count(),
             "submitted": all_motions.filter(status="submitted").count(),
             "completed": all_motions.filter(status="completed").count(),
+            "in_consultation": all_motions.filter(status__in=["at_admin", "on_agenda"]).count(),
+            "overdue": all_motions.filter(due_date__lt=today)
+            .exclude(status__in=["completed", "rejected", "archived"])
+            .count(),
         }
 
         # Filter out 'deleted' from visible status choices
@@ -105,10 +156,16 @@ class MotionListView(WorkViewMixin, TemplateView):
         context["type_choices"] = Motion.LEGACY_TYPE_CHOICES
 
         # Also get custom document types for this organization
-        from .models import MotionType
-
         context["document_types"] = MotionType.objects.filter(organization=self.organization, is_active=True).order_by(
             "sort_order", "name"
+        )
+
+        # Filter-Dropdowns: Themen und Mitglieder der Organisation
+        context["org_topics"] = Topic.objects.filter(organization=self.organization)
+        context["org_members"] = (
+            Membership.objects.filter(organization=self.organization, is_active=True)
+            .select_related("user")
+            .order_by("user__first_name", "user__last_name")
         )
 
         return context
@@ -162,6 +219,7 @@ class MotionCreateView(WorkViewMixin, TemplateView):
             title=title,
             summary=summary,
             status="draft",
+            responsible=self.membership,  # Standard: Federführung = Autor
         )
 
         # Handle document type (new system)
@@ -204,6 +262,9 @@ class MotionCreateView(WorkViewMixin, TemplateView):
 
         motion.save()
 
+        # Standard-Checkliste des Dokumenttyps anlegen
+        motion.apply_default_checklist()
+
         messages.success(request, "Dokument erstellt. Sie können jetzt den Inhalt bearbeiten.")
         return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
@@ -223,7 +284,7 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         has_edit_all = self.membership.has_permission("motions.edit_all")
         has_edit = self.membership.has_permission("motions.edit")
         has_comment = self.membership.has_permission("motions.comment")
-        editable_status = motion.status in ["draft", "review"]
+        editable_status = motion.status in ["draft", "review", "internal_review", "external_review"]
 
         if is_author and editable_status:
             return "admin"
@@ -304,6 +365,48 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
         context["comment_form"] = MotionCommentForm()
         context["status_form"] = MotionStatusForm(initial={"status": motion.status})
+
+        # Zuständigkeit, Themen, Checkliste, Aufgaben und Freigaben (Sidebar)
+        from apps.tenants.models import Membership, Topic
+        from apps.work.tasks.models import Task
+
+        context["org_members"] = (
+            Membership.objects.filter(organization=self.organization, is_active=True)
+            .select_related("user")
+            .order_by("user__first_name", "user__last_name")
+        )
+        context["org_topics"] = Topic.objects.filter(organization=self.organization)
+        context["motion_topic_ids"] = set(motion.topics.values_list("id", flat=True))
+        context["contributor_ids"] = set(motion.contributors.values_list("id", flat=True))
+
+        # Kompetenz im Thema: Mitglieder, deren Fachgebiete sich mit den
+        # Dokument-Themen schneiden (eine Query)
+        context["competent_members"] = (
+            Membership.objects.filter(
+                organization=self.organization,
+                is_active=True,
+                expertise_topics__in=motion.topics.all(),
+            )
+            .select_related("user")
+            .distinct()
+            .order_by("user__first_name", "user__last_name")
+        )
+
+        context["checklist_items"] = motion.checklist_items.all()
+        context["checklist_progress"] = motion.checklist_progress
+        context["linked_tasks"] = (
+            Task.objects.filter(organization=self.organization, related_motion=motion)
+            .select_related("assigned_to__user")
+            .order_by("is_completed", "due_date", "-created_at")
+        )
+
+        approvals = motion.approvals.select_related("approver__user").order_by("created_at")
+        context["approvals"] = approvals
+        context["approval_summary"] = motion.approval_summary
+        context["my_pending_approval"] = next(
+            (a for a in approvals if a.approver_id == self.membership.id and a.approved is None), None
+        )
+        context["approval_type_choices"] = MotionApproval.APPROVAL_TYPE_CHOICES
         context["ai_available"] = MotionAIService(
             organization=self.organization, user_id=self.request.user.id
         ).is_available()
@@ -617,18 +720,8 @@ class MotionStatusView(WorkViewMixin, View):
         if new_status not in dict(Motion.STATUS_CHOICES):
             return JsonResponse({"error": "Ungültiger Status"}, status=400)
 
-        # Validate status transitions
-        valid_transitions = {
-            "draft": ["review", "archived"],
-            "review": ["draft", "approved", "rejected"],
-            "approved": ["submitted", "draft"],
-            "submitted": ["completed", "rejected"],
-            "completed": ["archived"],
-            "rejected": ["draft", "archived"],
-            "archived": ["draft"],
-        }
-
-        if new_status not in valid_transitions.get(motion.status, []):
+        # Zentrale Übergangsmatrix (Motion.VALID_TRANSITIONS)
+        if new_status not in Motion.VALID_TRANSITIONS.get(motion.status, []):
             return JsonResponse(
                 {
                     "error": f"Ungültiger Statusübergang von '{motion.get_status_display()}' zu '{dict(Motion.STATUS_CHOICES)[new_status]}'"
@@ -652,6 +745,203 @@ class MotionStatusView(WorkViewMixin, View):
 
         messages.success(request, f"Status geändert zu '{motion.get_status_display()}'.")
         return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
+
+
+class MotionMetaUpdateView(WorkViewMixin, View):
+    """API endpoint for updating tracking metadata (Zuständigkeit, Themen, Frist)."""
+
+    permission_required = "motions.edit"
+
+    def post(self, request, *args, **kwargs):
+        from apps.tenants.models import Membership, Topic
+        from apps.work.notifications.services import NotificationHub
+
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
+        action = request.POST.get("action")
+
+        if action == "set_responsible":
+            responsible_id = request.POST.get("responsible", "").strip()
+            old_responsible_id = motion.responsible_id
+            if responsible_id:
+                responsible = get_object_or_404(
+                    Membership, id=responsible_id, organization=self.organization, is_active=True
+                )
+                motion.responsible = responsible
+            else:
+                motion.responsible = None
+            motion.save(update_fields=["responsible", "updated_at"])
+
+            # Benachrichtigung an neu zugewiesene Person
+            if motion.responsible and motion.responsible_id != old_responsible_id:
+                NotificationHub.notify_motion_assigned(motion, motion.responsible, self.membership)
+
+        elif action == "set_contributors":
+            contributor_ids = request.POST.getlist("contributors")
+            contributors = Membership.objects.filter(
+                id__in=contributor_ids, organization=self.organization, is_active=True
+            )
+            motion.contributors.set(contributors)
+
+        elif action == "set_topics":
+            topic_ids = request.POST.getlist("topics")
+            topics = Topic.objects.filter(id__in=topic_ids, organization=self.organization)
+            motion.topics.set(topics)
+
+        elif action == "set_due_date":
+            due_date = request.POST.get("due_date", "").strip()
+            if due_date:
+                from datetime import date
+
+                try:
+                    motion.due_date = date.fromisoformat(due_date)
+                except ValueError:
+                    return JsonResponse({"error": "Ungültiges Datum"}, status=400)
+            else:
+                motion.due_date = None
+            motion.save(update_fields=["due_date", "updated_at"])
+
+        else:
+            return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
+
+        return JsonResponse({"success": True})
+
+
+class MotionChecklistActionView(WorkViewMixin, View):
+    """API endpoint for the document checklist (add, toggle, delete)."""
+
+    permission_required = "motions.edit"
+
+    def post(self, request, *args, **kwargs):
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
+        action = request.POST.get("action")
+
+        if action == "add":
+            title = request.POST.get("title", "").strip()
+            if not title:
+                return JsonResponse({"error": "Titel ist erforderlich"}, status=400)
+            position = motion.checklist_items.count()
+            MotionChecklistItem.objects.create(motion=motion, title=title[:300], position=position)
+
+        elif action == "toggle":
+            item = get_object_or_404(MotionChecklistItem, id=request.POST.get("item_id"), motion=motion)
+            item.is_completed = not item.is_completed
+            if item.is_completed:
+                item.completed_by = self.membership
+                item.completed_at = timezone.now()
+            else:
+                item.completed_by = None
+                item.completed_at = None
+            item.save(update_fields=["is_completed", "completed_by", "completed_at"])
+
+        elif action == "delete":
+            item = get_object_or_404(MotionChecklistItem, id=request.POST.get("item_id"), motion=motion)
+            item.delete()
+
+        else:
+            return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
+
+        # Panel neu rendern (Fetch-Swap im Editor)
+        from django.template.loader import render_to_string
+
+        html = render_to_string(
+            "work/motions/partials/_checklist_panel.html",
+            {
+                "motion": motion,
+                "checklist_items": motion.checklist_items.all(),
+                "checklist_progress": motion.checklist_progress,
+                "can_edit": True,
+                "organization": self.organization,
+            },
+            request=request,
+        )
+        progress = motion.checklist_progress
+        return JsonResponse({"success": True, "html": html, "progress": progress})
+
+
+class MotionApprovalRequestView(WorkViewMixin, View):
+    """Request an approval from a member (Freigaben-Panel)."""
+
+    permission_required = "motions.edit"
+
+    def post(self, request, *args, **kwargs):
+        from apps.tenants.models import Membership
+        from apps.work.notifications.services import NotificationHub
+
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
+
+        approver = get_object_or_404(
+            Membership, id=request.POST.get("approver", ""), organization=self.organization, is_active=True
+        )
+        approval_type = request.POST.get("approval_type")
+        if approval_type not in dict(MotionApproval.APPROVAL_TYPE_CHOICES):
+            return JsonResponse({"error": "Ungültiger Genehmigungstyp"}, status=400)
+
+        approval, created = MotionApproval.objects.get_or_create(
+            motion=motion,
+            approver=approver,
+            approval_type=approval_type,
+        )
+        if not created and approval.approved is not None:
+            return JsonResponse({"error": "Diese Freigabe wurde bereits entschieden."}, status=400)
+
+        if created:
+            # Angefragte Person braucht Zugriff auf das Dokument,
+            # um die Freigabe entscheiden zu können
+            if not motion.can_access(approver):
+                MotionShare.objects.get_or_create(
+                    motion=motion,
+                    scope="user",
+                    user=approver.user,
+                    defaults={"level": "comment", "created_by": request.user},
+                )
+                if motion.visibility == "private":
+                    motion.visibility = "shared"
+                    motion.save(update_fields=["visibility"])
+
+            NotificationHub.notify_motion_approval_requested(approval, self.membership)
+
+        return JsonResponse({"success": True, "created": created})
+
+
+class MotionApprovalDecideView(WorkViewMixin, View):
+    """Decide a requested approval (Freigeben/Ablehnen + Kommentar)."""
+
+    permission_required = "motions.view"
+
+    def post(self, request, *args, **kwargs):
+        from apps.work.notifications.services import NotificationHub
+
+        approval = get_object_or_404(
+            MotionApproval,
+            id=kwargs.get("approval_id"),
+            motion__id=kwargs.get("motion_id"),
+            motion__organization=self.organization,
+        )
+
+        # Nur die angefragte Person darf entscheiden
+        if approval.approver_id != self.membership.id:
+            return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+        if approval.approved is not None:
+            return JsonResponse({"error": "Diese Freigabe wurde bereits entschieden."}, status=400)
+
+        decision = request.POST.get("decision")
+        if decision not in ("approve", "reject"):
+            return JsonResponse({"error": "Ungültige Entscheidung"}, status=400)
+
+        approval.approved = decision == "approve"
+        approval.comment = request.POST.get("comment", "").strip()
+        approval.decided_at = timezone.now()
+        approval.save(update_fields=["approved", "comment", "decided_at"])
+
+        # Autor und Federführung informieren
+        motion = approval.motion
+        recipients = {motion.author_id: motion.author}
+        if motion.responsible:
+            recipients[motion.responsible_id] = motion.responsible
+        for recipient in recipients.values():
+            NotificationHub.notify_motion_approval_decided(approval, self.membership, recipient)
+
+        return JsonResponse({"success": True, "approved": approval.approved})
 
 
 class MotionDocumentUploadView(WorkViewMixin, View):
@@ -943,9 +1233,12 @@ class MotionSettingsView(WorkViewMixin, TemplateView):
         context["settings_tab"] = "documents"
 
         # Get counts
+        from apps.tenants.models import Topic
+
         context["type_count"] = MotionType.objects.filter(organization=self.organization).count()
         context["template_count"] = MotionTemplate.objects.filter(organization=self.organization).count()
         context["letterhead_count"] = OrganizationLetterhead.objects.filter(organization=self.organization).count()
+        context["topic_count"] = Topic.objects.filter(organization=self.organization).count()
 
         return context
 
@@ -988,6 +1281,9 @@ class MotionTypeCreateView(WorkViewMixin, TemplateView):
         requires_approval = request.POST.get("requires_approval") == "on"
         is_submittable = request.POST.get("is_submittable") == "on"
         is_default = request.POST.get("is_default") == "on"
+        default_checklist = [
+            line.strip() for line in request.POST.get("default_checklist", "").splitlines() if line.strip()
+        ]
 
         if not name or not slug:
             messages.error(request, "Name und Kurzname sind erforderlich.")
@@ -1012,6 +1308,7 @@ class MotionTypeCreateView(WorkViewMixin, TemplateView):
             requires_approval=requires_approval,
             is_submittable=is_submittable,
             is_default=is_default,
+            default_checklist=default_checklist,
         )
 
         messages.success(request, f"Dokumenttyp '{name}' erstellt.")
@@ -1030,7 +1327,9 @@ class MotionTypeEditView(WorkViewMixin, TemplateView):
         context["settings_tab"] = "types"
         context["is_new"] = False
 
-        context["motion_type"] = get_object_or_404(MotionType, id=kwargs.get("type_id"), organization=self.organization)
+        motion_type = get_object_or_404(MotionType, id=kwargs.get("type_id"), organization=self.organization)
+        context["motion_type"] = motion_type
+        context["default_checklist_text"] = "\n".join(motion_type.default_checklist or [])
         return context
 
     def post(self, request, *args, **kwargs):
@@ -1043,6 +1342,9 @@ class MotionTypeEditView(WorkViewMixin, TemplateView):
         motion_type.color = request.POST.get("color", "blue").strip()
         motion_type.requires_approval = request.POST.get("requires_approval") == "on"
         motion_type.is_submittable = request.POST.get("is_submittable") == "on"
+        motion_type.default_checklist = [
+            line.strip() for line in request.POST.get("default_checklist", "").splitlines() if line.strip()
+        ]
         is_default = request.POST.get("is_default") == "on"
 
         if is_default and not motion_type.is_default:
@@ -1075,6 +1377,92 @@ class MotionTypeDeleteView(WorkViewMixin, View):
             messages.success(request, f"Dokumenttyp '{name}' gelöscht.")
 
         return redirect("work:document_type_list", org_slug=self.organization.slug)
+
+
+class TopicListView(WorkViewMixin, TemplateView):
+    """List and manage the organization's topic catalog (Themenkatalog)."""
+
+    template_name = "work/motions/settings/topics.html"
+    permission_required = "organization.edit"
+
+    def get_context_data(self, **kwargs):
+        from apps.tenants.models import Topic
+
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = "organization"
+        context["settings_tab"] = "topics"
+        context["topics"] = Topic.objects.filter(organization=self.organization)
+        context["color_choices"] = Topic.COLOR_CHOICES
+        return context
+
+    def post(self, request, *args, **kwargs):
+        """Create a new topic (inline form on the list page)."""
+        from apps.tenants.models import Topic
+
+        name = request.POST.get("name", "").strip()
+        color = request.POST.get("color", "blue").strip()
+        if color not in dict(Topic.COLOR_CHOICES):
+            color = "blue"
+
+        if not name:
+            messages.error(request, "Name ist erforderlich.")
+        elif Topic.objects.filter(organization=self.organization, name=name).exists():
+            messages.error(request, f"Das Thema '{name}' existiert bereits.")
+        else:
+            sort_order = Topic.objects.filter(organization=self.organization).count()
+            Topic.objects.create(organization=self.organization, name=name, color=color, sort_order=sort_order)
+            messages.success(request, f"Thema '{name}' erstellt.")
+
+        return redirect("work:document_topic_list", org_slug=self.organization.slug)
+
+
+class TopicUpdateView(WorkViewMixin, View):
+    """Update a topic (name, color, sort order)."""
+
+    permission_required = "organization.edit"
+
+    def post(self, request, *args, **kwargs):
+        from apps.tenants.models import Topic
+
+        topic = get_object_or_404(Topic, id=kwargs.get("topic_id"), organization=self.organization)
+
+        name = request.POST.get("name", "").strip()
+        color = request.POST.get("color", topic.color).strip()
+
+        if not name:
+            messages.error(request, "Name ist erforderlich.")
+            return redirect("work:document_topic_list", org_slug=self.organization.slug)
+
+        if Topic.objects.filter(organization=self.organization, name=name).exclude(id=topic.id).exists():
+            messages.error(request, f"Das Thema '{name}' existiert bereits.")
+            return redirect("work:document_topic_list", org_slug=self.organization.slug)
+
+        topic.name = name
+        if color in dict(Topic.COLOR_CHOICES):
+            topic.color = color
+        try:
+            topic.sort_order = int(request.POST.get("sort_order", topic.sort_order))
+        except (TypeError, ValueError):
+            pass
+        topic.save()
+
+        messages.success(request, f"Thema '{topic.name}' aktualisiert.")
+        return redirect("work:document_topic_list", org_slug=self.organization.slug)
+
+
+class TopicDeleteView(WorkViewMixin, View):
+    """Delete a topic."""
+
+    permission_required = "organization.edit"
+
+    def post(self, request, *args, **kwargs):
+        from apps.tenants.models import Topic
+
+        topic = get_object_or_404(Topic, id=kwargs.get("topic_id"), organization=self.organization)
+        name = topic.name
+        topic.delete()
+        messages.success(request, f"Thema '{name}' gelöscht.")
+        return redirect("work:document_topic_list", org_slug=self.organization.slug)
 
 
 class MotionTemplateListView(WorkViewMixin, TemplateView):
