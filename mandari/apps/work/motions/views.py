@@ -11,7 +11,8 @@ from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView, View
 
@@ -246,9 +247,11 @@ class MotionCreateView(WorkViewMixin, TemplateView):
                 if template.letterhead:
                     motion.letterhead = template.letterhead
 
-                # Pre-fill content from template
+                # Pre-fill content from template (placeholders replaced)
                 if template.content_template:
-                    motion.content_encrypted = template.content_template
+                    from .export_service import replace_placeholders
+
+                    motion.set_content_encrypted(replace_placeholders(template.content_template, motion))
             except MotionTemplate.DoesNotExist:
                 pass
 
@@ -419,24 +422,34 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         context["letterheads"] = letterheads
 
         # Current letterhead for editor background preview
-        if motion.letterhead and motion.letterhead.pdf_file:
+        if motion.letterhead and (motion.letterhead.is_generated or motion.letterhead.pdf_file):
             context["letterhead"] = motion.letterhead
 
         # Serialize letterheads as JSON for dynamic JS-side rendering
         letterheads_json = []
         for lh in letterheads:
-            if lh.pdf_file:
-                letterheads_json.append(
-                    {
-                        "id": str(lh.id),
-                        "name": lh.name,
-                        "pdf_url": lh.pdf_file.url,
-                        "margin_top": lh.content_margin_top,
-                        "margin_right": lh.content_margin_right,
-                        "margin_bottom": lh.content_margin_bottom,
-                        "margin_left": lh.content_margin_left,
-                    }
-                )
+            if not lh.is_generated and not lh.pdf_file:
+                continue
+            letterheads_json.append(
+                {
+                    "id": str(lh.id),
+                    "name": lh.name,
+                    "kind": lh.kind,
+                    "pdf_url": lh.pdf_file.url if (not lh.is_generated and lh.pdf_file) else "",
+                    "preview_url": (
+                        reverse(
+                            "work:document_letterhead_editor_preview",
+                            kwargs={"org_slug": self.organization.slug, "letterhead_id": lh.id},
+                        )
+                        if lh.is_generated
+                        else ""
+                    ),
+                    "margin_top": lh.content_margin_top,
+                    "margin_right": lh.content_margin_right,
+                    "margin_bottom": lh.content_margin_bottom,
+                    "margin_left": lh.content_margin_left,
+                }
+            )
         context["letterheads_json"] = letterheads_json
 
         # Collaboration cursor color (deterministic from user ID)
@@ -1240,6 +1253,21 @@ class MotionSettingsView(WorkViewMixin, TemplateView):
         context["letterhead_count"] = OrganizationLetterhead.objects.filter(organization=self.organization).count()
         context["topic_count"] = Topic.objects.filter(organization=self.organization).count()
 
+        # Branding-Kachel: Logo/Farben aus tenants + Briefkopf-Status
+        primary_letterhead = (
+            OrganizationLetterhead.objects.filter(organization=self.organization, is_active=True)
+            .order_by("-is_default", "name")
+            .first()
+        )
+        if primary_letterhead is None:
+            letterhead_status = "keiner"
+        elif primary_letterhead.is_generated:
+            letterhead_status = "generiert"
+        else:
+            letterhead_status = "PDF"
+        context["primary_letterhead"] = primary_letterhead
+        context["letterhead_status"] = letterhead_status
+
         return context
 
 
@@ -1509,9 +1537,11 @@ class MotionTemplateCreateView(WorkViewMixin, TemplateView):
             template = form.save(commit=False)
             template.organization = self.organization
 
-            # If setting as default, unset others
+            # Ein Default je Typ: beim Setzen andere Vorlagen desselben Typs zurücksetzen
             if template.is_default:
-                MotionTemplate.objects.filter(organization=self.organization, is_default=True).update(is_default=False)
+                MotionTemplate.objects.filter(
+                    organization=self.organization, is_default=True, motion_type=template.motion_type
+                ).update(is_default=False)
 
             template.save()
             messages.success(request, f"Vorlage '{template.name}' erstellt.")
@@ -1550,10 +1580,11 @@ class MotionTemplateEditView(WorkViewMixin, TemplateView):
         if form.is_valid():
             template = form.save(commit=False)
 
+            # Ein Default je Typ: beim Setzen andere Vorlagen desselben Typs zurücksetzen
             if template.is_default:
-                MotionTemplate.objects.filter(organization=self.organization, is_default=True).exclude(
-                    id=template.id
-                ).update(is_default=False)
+                MotionTemplate.objects.filter(
+                    organization=self.organization, is_default=True, motion_type=template.motion_type
+                ).exclude(id=template.id).update(is_default=False)
 
             template.save()
             messages.success(request, f"Vorlage '{template.name}' aktualisiert.")
@@ -1604,6 +1635,28 @@ class LetterheadListView(WorkViewMixin, TemplateView):
         return context
 
 
+def _generated_letterhead_defaults(organization) -> dict:
+    """
+    Sinnvolle Vorbelegung für einen generierten Briefkopf aus den Org-Daten
+    (Name, Adresse, Kontakt — falls vorhanden).
+    """
+    address_lines = [line.strip() for line in (organization.address or "").splitlines() if line.strip()]
+
+    contact_parts = []
+    if organization.contact_email:
+        contact_parts.append(organization.contact_email)
+    if organization.contact_phone:
+        contact_parts.append(f"Tel. {organization.contact_phone}")
+    if organization.website:
+        contact_parts.append(organization.website)
+
+    return {
+        "sender_line": " · ".join([organization.name] + address_lines),
+        "address_block": "\n".join([organization.name] + address_lines),
+        "footer_text": " · ".join(contact_parts),
+    }
+
+
 class LetterheadCreateView(WorkViewMixin, TemplateView):
     """Create a new letterhead."""
 
@@ -1615,21 +1668,30 @@ class LetterheadCreateView(WorkViewMixin, TemplateView):
         context["active_nav"] = "organization"
         context["settings_tab"] = "letterheads"
         context["is_new"] = True
+        context["generated_defaults"] = _generated_letterhead_defaults(self.organization)
         return context
 
     def post(self, request, *args, **kwargs):
         name = request.POST.get("name", "").strip()
         description = request.POST.get("description", "").strip()
+        kind = request.POST.get("kind", "pdf")
+        if kind not in dict(OrganizationLetterhead.KIND_CHOICES):
+            kind = "pdf"
         pdf_file = request.FILES.get("pdf_file")
 
-        if not name or not pdf_file:
-            messages.error(request, "Name und PDF-Datei sind erforderlich.")
+        if not name:
+            messages.error(request, "Name ist erforderlich.")
             return self.render_to_response(self.get_context_data(**kwargs))
 
-        # Validate file is PDF
-        if not pdf_file.name.lower().endswith(".pdf"):
-            messages.error(request, "Nur PDF-Dateien sind erlaubt.")
-            return self.render_to_response(self.get_context_data(**kwargs))
+        if kind == "pdf":
+            if not pdf_file:
+                messages.error(request, "Für einen PDF-Briefkopf ist eine PDF-Datei erforderlich.")
+                return self.render_to_response(self.get_context_data(**kwargs))
+            if not pdf_file.name.lower().endswith(".pdf"):
+                messages.error(request, "Nur PDF-Dateien sind erlaubt.")
+                return self.render_to_response(self.get_context_data(**kwargs))
+        else:
+            pdf_file = None
 
         is_default = request.POST.get("is_default") == "on"
         if is_default:
@@ -1641,7 +1703,13 @@ class LetterheadCreateView(WorkViewMixin, TemplateView):
             organization=self.organization,
             name=name,
             description=description,
+            kind=kind,
             pdf_file=pdf_file,
+            header_logo_enabled=request.POST.get("header_logo_enabled") == "on",
+            sender_line=request.POST.get("sender_line", "").strip(),
+            address_block=request.POST.get("address_block", "").strip(),
+            footer_text=request.POST.get("footer_text", "").strip(),
+            accent_color_enabled=request.POST.get("accent_color_enabled") == "on",
             content_margin_top=int(request.POST.get("content_margin_top", 60)),
             content_margin_left=int(request.POST.get("content_margin_left", 25)),
             content_margin_right=int(request.POST.get("content_margin_right", 20)),
@@ -1680,6 +1748,10 @@ class LetterheadEditView(WorkViewMixin, TemplateView):
         letterhead.name = request.POST.get("name", "").strip()
         letterhead.description = request.POST.get("description", "").strip()
 
+        kind = request.POST.get("kind", letterhead.kind)
+        if kind in dict(OrganizationLetterhead.KIND_CHOICES):
+            letterhead.kind = kind
+
         # Handle file upload (optional for edit)
         new_file = request.FILES.get("pdf_file")
         if new_file:
@@ -1687,6 +1759,17 @@ class LetterheadEditView(WorkViewMixin, TemplateView):
                 messages.error(request, "Nur PDF-Dateien sind erlaubt.")
                 return self.render_to_response(self.get_context_data(**kwargs))
             letterhead.pdf_file = new_file
+
+        if letterhead.kind == "pdf" and not letterhead.pdf_file:
+            messages.error(request, "Für einen PDF-Briefkopf ist eine PDF-Datei erforderlich.")
+            return self.render_to_response(self.get_context_data(**kwargs))
+
+        # Felder für generierten Briefkopf
+        letterhead.header_logo_enabled = request.POST.get("header_logo_enabled") == "on"
+        letterhead.sender_line = request.POST.get("sender_line", "").strip()
+        letterhead.address_block = request.POST.get("address_block", "").strip()
+        letterhead.footer_text = request.POST.get("footer_text", "").strip()
+        letterhead.accent_color_enabled = request.POST.get("accent_color_enabled") == "on"
 
         letterhead.content_margin_top = int(request.POST.get("content_margin_top", 60))
         letterhead.content_margin_left = int(request.POST.get("content_margin_left", 25))
@@ -1735,6 +1818,100 @@ class LetterheadDeleteView(WorkViewMixin, View):
             messages.success(request, f"Briefkopf '{name}' gelöscht.")
 
         return redirect("work:document_letterhead_list", org_slug=self.organization.slug)
+
+
+class LetterheadPreviewView(WorkViewMixin, View):
+    """
+    Live-Vorschau des generierten Briefkopfs im Briefkopf-Formular.
+
+    Rendert das gemeinsame Partial mit Beispieltext aus den (ungespeicherten)
+    Formularwerten (per GET-Parametern).
+    """
+
+    permission_required = "organization.edit"
+
+    def get(self, request, *args, **kwargs):
+        org = self.organization
+        params = request.GET
+
+        logo_url = ""
+        if params.get("header_logo_enabled") in ("on", "true", "1"):
+            logo = org.effective_logo
+            if logo:
+                try:
+                    logo_url = logo.url
+                except ValueError:
+                    logo_url = ""
+
+        context = {
+            "org_name": org.name,
+            "primary_color": org.effective_primary_color,
+            "accent_enabled": params.get("accent_color_enabled") in ("on", "true", "1"),
+            "logo_url": logo_url,
+            "sender_line": params.get("sender_line", "").strip(),
+            "address_lines": [line for line in params.get("address_block", "").splitlines() if line.strip()],
+            "footer_lines": [line for line in params.get("footer_text", "").splitlines() if line.strip()],
+            "show_sample": True,
+            "show_footer": True,
+        }
+        return render(request, "work/motions/_generated_letterhead.html", context)
+
+
+class LetterheadEditorPreviewView(WorkViewMixin, View):
+    """
+    HTML-Briefkopf-Vorschau für den Dokument-Editor (kind=generated).
+
+    Der Editor rendert dieses Partial über dem Inhalt statt des
+    pdfjs-Overlays.
+    """
+
+    permission_required = "motions.view"
+
+    def get(self, request, *args, **kwargs):
+        from .export_service import generated_letterhead_context
+
+        letterhead = get_object_or_404(
+            OrganizationLetterhead,
+            id=kwargs.get("letterhead_id"),
+            organization=self.organization,
+            kind="generated",
+        )
+        context = generated_letterhead_context(letterhead)
+        context.update({"show_sample": False, "show_footer": False})
+        return render(request, "work/motions/_generated_letterhead.html", context)
+
+
+class MotionTemplatePreviewView(WorkViewMixin, TemplateView):
+    """
+    Vorschau einer Dokumentvorlage: Inhaltsvorlage + gewählter Briefkopf
+    als HTML-Seite (Platzhalter mit Beispielwerten ersetzt).
+    """
+
+    template_name = "work/motions/settings/template_preview.html"
+    permission_required = "organization.edit"
+
+    def get_context_data(self, **kwargs):
+        from django.template.loader import render_to_string
+
+        from .export_service import apply_placeholders, build_placeholder_values, generated_letterhead_context
+
+        context = super().get_context_data(**kwargs)
+        template = get_object_or_404(MotionTemplate, id=kwargs.get("template_id"), organization=self.organization)
+        context["template"] = template
+
+        values = build_placeholder_values(self.organization, responsible_name="Erika Musterfrau")
+        context["content_html"] = apply_placeholders(template.content_template or "", values)
+        context["signature_text"] = apply_placeholders(template.signature_block or "", values)
+
+        letterhead = template.letterhead
+        context["letterhead_obj"] = letterhead
+        context["letterhead_html"] = ""
+        if letterhead and letterhead.is_generated:
+            lh_context = generated_letterhead_context(letterhead)
+            lh_context.update({"show_sample": False, "show_footer": True})
+            context["letterhead_html"] = render_to_string("work/motions/_generated_letterhead.html", lh_context)
+
+        return context
 
 
 # =============================================================================

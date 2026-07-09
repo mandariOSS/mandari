@@ -92,10 +92,18 @@ class MotionType(models.Model):
 
 class OrganizationLetterhead(models.Model):
     """
-    PDF letterhead for document exports.
+    Letterhead for document exports.
 
-    The PDF serves as a background/template where content is overlaid.
+    Two kinds:
+    - pdf: An uploaded PDF serves as background, content is overlaid.
+    - generated: The letterhead is rendered from the organization's
+      corporate design (logo, colors) plus the fields below.
     """
+
+    KIND_CHOICES = [
+        ("pdf", "PDF-Datei"),
+        ("generated", "Generiert (Corporate Design)"),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -109,8 +117,44 @@ class OrganizationLetterhead(models.Model):
     name = models.CharField(max_length=200, verbose_name="Name")
     description = models.TextField(blank=True, verbose_name="Beschreibung")
 
-    # The PDF file
-    pdf_file = models.FileField(upload_to="motions/letterheads/%Y/%m/", verbose_name="PDF-Datei")
+    kind = models.CharField(
+        max_length=20,
+        choices=KIND_CHOICES,
+        default="pdf",
+        verbose_name="Art",
+        help_text="PDF-Hintergrund oder aus dem Corporate Design generierter Briefkopf",
+    )
+
+    # The PDF file (only for kind=pdf)
+    pdf_file = models.FileField(upload_to="motions/letterheads/%Y/%m/", blank=True, null=True, verbose_name="PDF-Datei")
+
+    # === Generated letterhead (kind=generated) ===
+    header_logo_enabled = models.BooleanField(
+        default=True,
+        verbose_name="Logo anzeigen",
+        help_text="Nutzt das Logo der Organisation (bzw. der Parteigruppe)",
+    )
+    sender_line = models.CharField(
+        max_length=300,
+        blank=True,
+        verbose_name="Absenderzeile",
+        help_text="Einzeilige Absenderzeile über dem Adressfeld, z. B. „Fraktion XYZ · Rathausplatz 1 · 12345 Stadt“",
+    )
+    address_block = models.TextField(
+        blank=True,
+        verbose_name="Absenderblock",
+        help_text="Absenderblock rechts oben (mehrzeilig)",
+    )
+    footer_text = models.TextField(
+        blank=True,
+        verbose_name="Fußzeile",
+        help_text="Fußzeile auf jeder Seite, z. B. Kontakt/Bank/Web; Angaben je Zeile mit · trennbar",
+    )
+    accent_color_enabled = models.BooleanField(
+        default=True,
+        verbose_name="Akzentfarbe verwenden",
+        help_text="Akzentlinie in der Primärfarbe der Organisation",
+    )
 
     # Content positioning (in mm from top-left)
     content_margin_top = models.PositiveIntegerField(
@@ -140,6 +184,11 @@ class OrganizationLetterhead(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.organization.name})"
+
+    @property
+    def is_generated(self) -> bool:
+        """True, wenn der Briefkopf aus dem Corporate Design generiert wird."""
+        return self.kind == "generated"
 
 
 class MotionTemplate(models.Model):

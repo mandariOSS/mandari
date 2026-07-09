@@ -213,6 +213,12 @@ urlpatterns = [
         motions_views.MotionExportView.as_view(),
         name="document_export",
     ),
+    # Briefkopf-Vorschau im Editor (generierter Briefkopf)
+    path(
+        "<slug:org_slug>/documents/letterheads/<uuid:letterhead_id>/preview/",
+        motions_views.LetterheadEditorPreviewView.as_view(),
+        name="document_letterhead_editor_preview",
+    ),
     # Trash (Papierkorb)
     path(
         "<slug:org_slug>/documents/trash/",
@@ -332,6 +338,11 @@ urlpatterns = [
         name="document_template_delete",
     ),
     path(
+        "<slug:org_slug>/organization/documents/templates/<uuid:template_id>/preview/",
+        motions_views.MotionTemplatePreviewView.as_view(),
+        name="document_template_preview",
+    ),
+    path(
         "<slug:org_slug>/organization/documents/letterheads/",
         motions_views.LetterheadListView.as_view(),
         name="document_letterhead_list",
@@ -340,6 +351,11 @@ urlpatterns = [
         "<slug:org_slug>/organization/documents/letterheads/create/",
         motions_views.LetterheadCreateView.as_view(),
         name="document_letterhead_create",
+    ),
+    path(
+        "<slug:org_slug>/organization/documents/letterheads/preview/",
+        motions_views.LetterheadPreviewView.as_view(),
+        name="document_letterhead_preview",
     ),
     path(
         "<slug:org_slug>/organization/documents/letterheads/<uuid:letterhead_id>/",
