@@ -32,8 +32,25 @@
     </div>
     {% endif %}
 
+    {% if related_motion %}
+    <div class="mb-6 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-4 flex items-start gap-3">
+        <div class="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex-shrink-0">
+            <i data-lucide="file-text" class="w-5 h-5 text-indigo-600 dark:text-indigo-400"></i>
+        </div>
+        <div>
+            <p class="font-medium text-indigo-800 dark:text-indigo-200">Mit Dokument verknüpft</p>
+            <p class="text-sm text-indigo-600 dark:text-indigo-400 mt-1">
+                Diese Aufgabe wird mit dem Dokument "{{ related_motion.title }}" verknüpft.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
     <form method="post" class="space-y-6">
         {% csrf_token %}
+        {% if related_motion %}
+        <input type="hidden" name="related_motion" value="{{ related_motion.id }}">
+        {% endif %}
 
         <!-- Basic Details -->
         <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">

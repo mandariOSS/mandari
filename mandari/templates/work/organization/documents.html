@@ -211,6 +211,21 @@
         {% endif %}
     </div>
 
+    <!-- Themen (Themenkatalog) -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">Themen</h3>
+                <p class="text-sm text-gray-500 mt-1">Themenkatalog für die Zuordnung von Dokumenten und Fachgebieten der Mitglieder</p>
+            </div>
+            <a href="{% url 'work:document_topic_list' org_slug=organization.slug %}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                <i data-lucide="tags" class="w-4 h-4"></i>
+                Themen verwalten
+            </a>
+        </div>
+    </div>
+
     <!-- Info Box -->
     <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-6">
         <div class="flex items-start gap-4">

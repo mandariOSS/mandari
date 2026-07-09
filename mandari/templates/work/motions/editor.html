@@ -1145,11 +1145,15 @@
                         <i data-lucide="flag" class="w-5 h-5"></i>
                     </button>
                     <div x-show="open" @click.away="open = false" x-cloak
-                         class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[160px] z-50">
-                        <button @click="changeStatus('draft'); open = false" class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Entwurf</button>
-                        <button @click="changeStatus('review'); open = false" class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Prüfen</button>
-                        <button @click="changeStatus('approved'); open = false" class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Genehmigt</button>
-                        <button @click="changeStatus('submitted'); open = false" class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Eingereicht</button>
+                         class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[200px] z-50">
+                        <div class="px-4 py-2 text-xs text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                            Aktuell: {{ motion.get_status_display }}
+                        </div>
+                        {% for value, label in motion.allowed_next_statuses %}
+                        <button @click="changeStatus('{{ value }}'); open = false" class="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">{{ label }}</button>
+                        {% empty %}
+                        <div class="px-4 py-2 text-sm text-gray-400">Keine Übergänge möglich</div>
+                        {% endfor %}
                     </div>
                 </div>
 
@@ -1450,6 +1454,14 @@
                     <i data-lucide="message-square" class="w-3.5 h-3.5 inline-block mr-1"></i>
                     Kommentare
                 </button>
+                <button @click="sidebarTab = 'details'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'details' }">
+                    <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 inline-block mr-1"></i>
+                    Details
+                </button>
+                <button @click="sidebarTab = 'tasks'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'tasks' }">
+                    <i data-lucide="list-checks" class="w-3.5 h-3.5 inline-block mr-1"></i>
+                    Aufgaben
+                </button>
                 {% if can_edit %}
                 <button @click="sidebarTab = 'ai'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'ai' }">
                     <i data-lucide="sparkles" class="w-3.5 h-3.5 inline-block mr-1"></i>
@@ -1469,6 +1481,16 @@
             <!-- Comments Tab -->
             <div x-show="sidebarTab === 'comments'" class="flex-1 flex flex-col min-h-0">
                 {% include "work/motions/partials/_comments_sidebar.html" %}
+            </div>
+
+            <!-- Details Tab (Zuständigkeit, Themen, Frist, Freigaben) -->
+            <div x-show="sidebarTab === 'details'" x-cloak class="flex-1 flex flex-col min-h-0">
+                {% include "work/motions/partials/_details_sidebar.html" %}
+            </div>
+
+            <!-- Tasks Tab (Checkliste + Board-Aufgaben) -->
+            <div x-show="sidebarTab === 'tasks'" x-cloak class="flex-1 flex flex-col min-h-0">
+                {% include "work/motions/partials/_tasks_sidebar.html" %}
             </div>
 
             <!-- AI Tab -->
@@ -3066,6 +3088,124 @@ function documentEditor() {
         }
     }
 }
+</script>
+
+<script>
+// =====================================================================
+// Tracking-Sidebar (Details / Aufgaben): Zuständigkeit, Themen, Frist,
+// Freigaben und Checkliste. Bewusst Vanilla-JS (unabhängig von Alpine),
+// da das Checklisten-Panel per innerHTML-Swap ersetzt wird.
+// =====================================================================
+(function () {
+    const csrfToken = '{{ csrf_token }}';
+    const checklistUrl = '{% url "work:document_checklist" org_slug=organization.slug motion_id=motion.id %}';
+
+    async function postForm(url, formData) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrfToken },
+            body: formData,
+        });
+        return response.json();
+    }
+
+    // Details-Formulare (set_responsible, set_contributors, set_topics, set_due_date)
+    window.mandariMotionMeta = function (event) {
+        event.preventDefault();
+        const form = event.target;
+        postForm(form.action, new FormData(form))
+            .then((data) => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            })
+            .catch(() => showToast('Fehler beim Speichern', 'error'));
+        return false;
+    };
+
+    // Freigabe anfordern
+    window.mandariApprovalRequest = function (event) {
+        event.preventDefault();
+        const form = event.target;
+        postForm(form.action, new FormData(form))
+            .then((data) => {
+                if (data.success) {
+                    showToast(data.created ? 'Freigabe angefragt.' : 'Freigabe war bereits angefragt.', 'success');
+                    location.reload();
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            })
+            .catch(() => showToast('Fehler beim Anfragen der Freigabe', 'error'));
+        return false;
+    };
+
+    // Freigabe entscheiden (Freigeben/Ablehnen + Kommentar)
+    window.mandariApprovalDecide = function (url, decision) {
+        const formData = new FormData();
+        formData.append('decision', decision);
+        const commentEl = document.getElementById('approval-decide-comment');
+        formData.append('comment', commentEl ? commentEl.value : '');
+        postForm(url, formData)
+            .then((data) => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            })
+            .catch(() => showToast('Fehler beim Entscheiden', 'error'));
+    };
+
+    // Checkliste: Event-Delegation auf dem stabilen Wrapper, Panel-Swap per innerHTML
+    function checklistAction(formData) {
+        postForm(checklistUrl, formData)
+            .then((data) => {
+                if (data.success) {
+                    const wrapper = document.getElementById('checklist-panel-wrapper');
+                    if (wrapper) {
+                        wrapper.innerHTML = data.html;
+                        if (window.lucide) window.lucide.createIcons();
+                    }
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            })
+            .catch(() => showToast('Fehler bei der Checkliste', 'error'));
+    }
+
+    function handleChecklistAdd() {
+        const input = document.getElementById('checklist-new-title');
+        if (!input || !input.value.trim()) return;
+        const formData = new FormData();
+        formData.append('action', 'add');
+        formData.append('title', input.value.trim());
+        checklistAction(formData);
+    }
+
+    document.addEventListener('click', function (event) {
+        const button = event.target.closest('[data-checklist-action]');
+        if (!button) return;
+        const action = button.dataset.checklistAction;
+        if (action === 'add') {
+            handleChecklistAdd();
+            return;
+        }
+        const formData = new FormData();
+        formData.append('action', action);
+        formData.append('item_id', button.dataset.itemId || '');
+        checklistAction(formData);
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && event.target && event.target.id === 'checklist-new-title') {
+            event.preventDefault();
+            handleChecklistAdd();
+        }
+    });
+})();
 </script>
 {% endblock %}
 

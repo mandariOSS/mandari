@@ -109,6 +109,15 @@
                     </label>
                 </div>
             </div>
+
+            <!-- Standard-Checkliste -->
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                <label for="default_checklist" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Standard-Checkliste</label>
+                <textarea id="default_checklist" name="default_checklist" rows="5"
+                          class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none font-mono text-sm"
+                          placeholder="Recherche abgeschlossen&#10;Abstimmung mit Fraktion&#10;Formale Prüfung">{{ default_checklist_text|default:"" }}</textarea>
+                <p class="text-xs text-gray-500 mt-1">Ein Punkt je Zeile. Wird bei neuen Dokumenten dieses Typs automatisch als Checkliste angelegt.</p>
+            </div>
         </div>
 
         <!-- Actions -->

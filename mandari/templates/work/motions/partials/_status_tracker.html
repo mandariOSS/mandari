@@ -1,0 +1,25 @@
+{% comment %}
+Mini-Status-Tracker (Pipeline) für Listen- und Karten-Ansicht.
+Kontext: motion
+{% endcomment %}
+{% if motion.pipeline_state == "on" %}
+<div class="flex items-center gap-1" title="{{ motion.get_status_display }}">
+    {% for step in motion.get_pipeline_steps %}
+    <span class="rounded-full transition-colors
+        {% if step.current %}w-2.5 h-2.5 bg-primary-600 ring-2 ring-primary-200 dark:ring-primary-800
+        {% elif step.reached %}w-2 h-2 bg-primary-400 dark:bg-primary-500
+        {% else %}w-2 h-2 bg-gray-200 dark:bg-gray-600{% endif %}"
+        title="{{ step.label }}"></span>
+    {% endfor %}
+    <span class="ml-1.5 text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ motion.get_status_display }}</span>
+</div>
+{% elif motion.pipeline_state == "rejected" %}
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300" title="Abgelehnt">
+    <i data-lucide="x-circle" class="w-3 h-3"></i>
+    Abgelehnt
+</span>
+{% else %}
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+    {{ motion.get_status_display }}
+</span>
+{% endif %}

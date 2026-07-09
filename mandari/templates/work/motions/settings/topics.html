@@ -1,0 +1,93 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Themen{% endblock %}
+
+{% block header_title %}Themen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Themenkatalog für Dokumente und Fachgebiete der Mitglieder</p>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-3xl space-y-6">
+    {% if messages %}
+    <div class="space-y-2">
+        {% for message in messages %}
+        <div class="p-3 rounded-lg flex items-center gap-3 {% if message.tags == 'success' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400{% elif message.tags == 'error' %}bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400{% else %}bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400{% endif %}">
+            <i data-lucide="{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}alert-circle{% else %}info{% endif %}" class="w-4 h-4 flex-shrink-0"></i>
+            <span class="text-sm">{{ message }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Neues Thema -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 fade-up">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Neues Thema</h3>
+        <form method="post" class="flex flex-wrap items-center gap-3">
+            {% csrf_token %}
+            <input type="text" name="name" required maxlength="100" placeholder="z.B. Verkehr, Klima, Bildung..."
+                   class="flex-1 min-w-[200px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            <select name="color"
+                    class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                {% for value, label in color_choices %}
+                <option value="{{ value }}" {% if value == "blue" %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Anlegen
+            </button>
+        </form>
+    </div>
+
+    <!-- Themenliste -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden fade-up d1">
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for topic in topics %}
+            <div class="px-4 py-3">
+                <form method="post" action="{% url 'work:document_topic_update' org_slug=organization.slug topic_id=topic.id %}"
+                      class="flex flex-wrap items-center gap-3">
+                    {% csrf_token %}
+                    <span class="w-3 h-3 rounded-full bg-{{ topic.color }}-500 flex-shrink-0"></span>
+                    <input type="text" name="name" value="{{ topic.name }}" required maxlength="100"
+                           class="flex-1 min-w-[160px] px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    <select name="color"
+                            class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none">
+                        {% for value, label in color_choices %}
+                        <option value="{{ value }}" {% if topic.color == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="number" name="sort_order" value="{{ topic.sort_order }}" title="Sortierung"
+                           class="w-16 px-2 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none">
+                    <button type="submit" class="p-2 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Speichern">
+                        <i data-lucide="save" class="w-4 h-4"></i>
+                    </button>
+                </form>
+                <form method="post" action="{% url 'work:document_topic_delete' org_slug=organization.slug topic_id=topic.id %}"
+                      class="inline" onsubmit="return confirm('Thema „{{ topic.name|escapejs }}“ wirklich löschen? Zuordnungen zu Dokumenten und Fachgebieten werden entfernt.')">
+                    {% csrf_token %}
+                    <button type="submit" class="mt-1 inline-flex items-center gap-1 text-xs text-gray-400 hover:text-red-500" title="Löschen">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        Löschen
+                    </button>
+                </form>
+            </div>
+            {% empty %}
+            <div class="px-4 py-8 text-center">
+                <p class="text-sm text-gray-400 dark:text-gray-500">Noch keine Themen angelegt.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Back Link -->
+    <div>
+        <a href="{% url 'work:document_settings' org_slug=organization.slug %}"
+           class="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-primary-600">
+            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+            Zurück zu Dokumenteinstellungen
+        </a>
+    </div>
+</div>
+{% endblock %}

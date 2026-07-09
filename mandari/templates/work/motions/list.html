@@ -27,6 +27,34 @@
 
 {% block work_content %}
 <div x-data="documentManager()">
+    <!-- Stats Tiles -->
+    <div class="fade-up grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">Gesamt</p>
+            <p class="text-xl font-bold text-gray-900 dark:text-white">{{ stats.total }}</p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">Entwürfe</p>
+            <p class="text-xl font-bold text-gray-600 dark:text-gray-300">{{ stats.draft }}</p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">Eingereicht</p>
+            <p class="text-xl font-bold text-blue-600 dark:text-blue-400">{{ stats.submitted }}</p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">In Beratung</p>
+            <p class="text-xl font-bold text-indigo-600 dark:text-indigo-400">{{ stats.in_consultation }}</p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">Überfällig</p>
+            <p class="text-xl font-bold {% if stats.overdue %}text-red-600 dark:text-red-400{% else %}text-gray-900 dark:text-white{% endif %}">{{ stats.overdue }}</p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">Erledigt</p>
+            <p class="text-xl font-bold text-purple-600 dark:text-purple-400">{{ stats.completed }}</p>
+        </div>
+    </div>
+
     <!-- Filters & View Toggle -->
     <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
         <form method="get" class="flex flex-wrap items-center gap-4">
@@ -62,6 +90,27 @@
                 {% endfor %}
             </select>
 
+            <!-- Topic Filter -->
+            {% if org_topics %}
+            <select name="thema" onchange="this.form.submit()"
+                    class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                <option value="">Alle Themen</option>
+                {% for topic in org_topics %}
+                <option value="{{ topic.id }}" {% if selected_topic == topic.id|stringformat:"s" %}selected{% endif %}>{{ topic.name }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+
+            <!-- Responsible Filter -->
+            <select name="verantwortlich" onchange="this.form.submit()"
+                    class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                <option value="">Alle Verantwortlichen</option>
+                <option value="me" {% if selected_responsible == "me" %}selected{% endif %}>Meine Federführung</option>
+                {% for member in org_members %}
+                <option value="{{ member.id }}" {% if selected_responsible == member.id|stringformat:"s" %}selected{% endif %}>{{ member.user.get_display_name }}</option>
+                {% endfor %}
+            </select>
+
             <!-- My Motions -->
             <label class="inline-flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" name="mine" value="1" {% if filter_mine %}checked{% endif %}
@@ -88,186 +137,222 @@
         </form>
     </div>
 
-    <!-- Grid View -->
-    <div x-show="viewMode === 'grid'" x-cloak class="fade-up d1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        {% for motion in motions %}
-        <div class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md transition-all cursor-pointer"
+    <!-- Grid View (Karten) -->
+    <div x-show="viewMode === 'grid'" x-cloak class="fade-up d1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {% for row in motion_rows %}
+        {% with motion=row.motion %}
+        <div class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md transition-all cursor-pointer {% if row.is_amendment %}border-l-4 border-l-primary-300 dark:border-l-primary-700{% endif %}"
              @click="window.location.href='{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}'">
-            <!-- Document Icon -->
-            <div class="aspect-[4/3] bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800 rounded-lg mb-3 flex items-center justify-center relative overflow-hidden">
-                <i data-lucide="{{ motion.get_type_icon }}"
-                   class="w-12 h-12
-                    {% if motion.status == 'draft' %}text-gray-400
-                    {% elif motion.status == 'review' %}text-amber-500
-                    {% elif motion.status == 'approved' %}text-green-500
-                    {% elif motion.status == 'submitted' %}text-blue-500
-                    {% elif motion.status == 'completed' %}text-purple-500
-                    {% elif motion.status == 'rejected' %}text-red-500
-                    {% else %}text-gray-400{% endif %}"></i>
-
-                <!-- Visibility Badge -->
-                <div class="absolute top-2 right-2">
-                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full {{ motion.get_visibility_badge_class }}">
-                        <i data-lucide="{{ motion.get_visibility_icon }}" class="w-3 h-3"></i>
-                    </span>
+            <div class="flex items-start gap-2 mb-2">
+                <i data-lucide="{{ motion.get_type_icon }}" class="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5"></i>
+                <div class="flex-1 min-w-0">
+                    {% if row.is_amendment %}
+                    <p class="text-[10px] text-gray-400 flex items-center gap-1 mb-0.5">
+                        <i data-lucide="corner-down-right" class="w-3 h-3"></i>
+                        Änderungsantrag zu „{{ motion.parent_motion.title|truncatechars:40 }}“
+                    </p>
+                    {% endif %}
+                    <h3 class="font-medium text-gray-900 dark:text-white text-sm truncate group-hover:text-primary-600">{{ motion.title }}</h3>
+                    <p class="text-xs text-gray-500 mt-0.5">{{ motion.get_type_display }}</p>
                 </div>
-
-                <!-- Hover Actions -->
-                <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2" @click.stop>
-                    <button type="button"
-                            @click="openShareModal('{{ motion.id }}', '{{ motion.title|escapejs }}', '{{ motion.visibility }}')"
-                            class="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors">
-                        <i data-lucide="share-2" class="w-4 h-4 text-gray-700"></i>
-                    </button>
-                    <a href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf"
-                       class="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors">
-                        <i data-lucide="download" class="w-4 h-4 text-gray-700"></i>
-                    </a>
-                </div>
-            </div>
-
-            <!-- Title & Meta -->
-            <h3 class="font-medium text-gray-900 dark:text-white text-sm truncate group-hover:text-primary-600">
-                {{ motion.title }}
-            </h3>
-            <div class="flex items-center gap-2 mt-1">
-                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium
-                    {% if motion.status == 'draft' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
-                    {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
-                    {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
-                    {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
-                    {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
-                    {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
-                    {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
-                    {{ motion.get_status_display }}
+                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full flex-shrink-0 {{ motion.get_visibility_badge_class }}">
+                    <i data-lucide="{{ motion.get_visibility_icon }}" class="w-3 h-3"></i>
                 </span>
             </div>
-            <p class="text-xs text-gray-500 mt-2">
-                {{ motion.updated_at|timesince }}
-            </p>
+
+            <!-- Status-Tracker -->
+            {% include "work/motions/partials/_status_tracker.html" %}
+
+            <!-- Themen-Chips -->
+            {% if motion.topics.all %}
+            <div class="flex flex-wrap gap-1 mt-2">
+                {% for topic in motion.topics.all|slice:":3" %}
+                <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-{{ topic.color }}-100 dark:bg-{{ topic.color }}-900/30 text-{{ topic.color }}-700 dark:text-{{ topic.color }}-300">{{ topic.name }}</span>
+                {% endfor %}
+                {% if motion.topics.all|length > 3 %}
+                <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">+{{ motion.topics.all|length|add:"-3" }}</span>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
+                <span class="flex items-center gap-1.5 min-w-0">
+                    {% if motion.responsible %}
+                    <span class="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center flex-shrink-0">
+                        <span class="text-[9px] font-bold text-primary-700 dark:text-primary-300">{{ motion.responsible.user.get_initials }}</span>
+                    </span>
+                    <span class="truncate">{{ motion.responsible.user.get_display_name }}</span>
+                    {% else %}
+                    <span class="text-gray-400">–</span>
+                    {% endif %}
+                </span>
+                {% if motion.due_date %}
+                <span class="flex items-center gap-1 flex-shrink-0 {% if motion.is_overdue %}text-red-600 dark:text-red-400 font-semibold{% endif %}">
+                    <i data-lucide="calendar-clock" class="w-3 h-3"></i>
+                    {{ motion.due_date|date:"d.m.y" }}
+                </span>
+                {% endif %}
+            </div>
+
+            {% with progress=motion.checklist_progress %}
+            {% if progress.total %}
+            <div class="flex items-center gap-2 mt-2">
+                <div class="flex-1 h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-primary-500 rounded-full" style="width: {{ progress.percent }}%"></div>
+                </div>
+                <span class="text-[10px] text-gray-400">{{ progress.done }}/{{ progress.total }}</span>
+            </div>
+            {% endif %}
+            {% endwith %}
         </div>
+        {% endwith %}
         {% empty %}
         <div class="col-span-full">
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
                 <p class="text-sm text-gray-400 dark:text-gray-500">
-                    {% if search_query or selected_status or selected_type or filter_mine %}
+                    {% if search_query or selected_status or selected_type or filter_mine or selected_topic or selected_responsible %}
                     Keine Dokumente mit diesen Filterkriterien gefunden.
                     {% else %}
                     Noch keine Dokumente vorhanden.
                     {% endif %}
                 </p>
-                {% if not search_query and not selected_status and not selected_type and not filter_mine %}
-                <div class="flex items-center justify-center gap-3 mt-3">
-                    <a href="{% url 'work:document_import' org_slug=organization.slug %}"
-                       class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 hover:underline">
-                        <i data-lucide="upload" class="w-3.5 h-3.5"></i> PDF importieren
-                    </a>
-                    <a href="{% url 'work:document_create' org_slug=organization.slug %}"
-                       class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline">
-                        <i data-lucide="plus" class="w-3.5 h-3.5"></i> Neues Dokument
-                    </a>
-                </div>
-                {% endif %}
             </div>
         </div>
         {% endfor %}
     </div>
 
-    <!-- List View -->
-    <div x-show="viewMode === 'list'" class="fade-up d1 item-list bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
-            {% for motion in motions %}
-            <div class="group relative cursor-pointer px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
-                 @click="window.location.href='{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}'">
-                <div class="flex items-start gap-4">
-                    <!-- Icon -->
-                    <div class="flex-shrink-0 p-2 rounded-lg
-                        {% if motion.status == 'draft' %}bg-gray-100 dark:bg-gray-700
-                        {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30
-                        {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30
-                        {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30
-                        {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30
-                        {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30
-                        {% else %}bg-gray-100 dark:bg-gray-700{% endif %}">
-                        <i data-lucide="{{ motion.get_type_icon }}"
-                           class="w-5 h-5
-                            {% if motion.status == 'draft' %}text-gray-500
-                            {% elif motion.status == 'review' %}text-amber-600 dark:text-amber-400
-                            {% elif motion.status == 'approved' %}text-green-600 dark:text-green-400
-                            {% elif motion.status == 'submitted' %}text-blue-600 dark:text-blue-400
-                            {% elif motion.status == 'completed' %}text-purple-600 dark:text-purple-400
-                            {% elif motion.status == 'rejected' %}text-red-600 dark:text-red-400
-                            {% else %}text-gray-500{% endif %}"></i>
-                    </div>
-
-                    <!-- Content -->
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2">
-                            <h3 class="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600">{{ motion.title }}</h3>
-                            <!-- Visibility Badge -->
-                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs {{ motion.get_visibility_badge_class }}">
-                                <i data-lucide="{{ motion.get_visibility_icon }}" class="w-3 h-3"></i>
+    <!-- List View (Tracking-Tabelle) -->
+    <div x-show="viewMode === 'list'" class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                        <th class="px-4 py-3 font-semibold">Titel</th>
+                        <th class="px-4 py-3 font-semibold">Typ</th>
+                        <th class="px-4 py-3 font-semibold">Status</th>
+                        <th class="px-4 py-3 font-semibold">Verantwortlich</th>
+                        <th class="px-4 py-3 font-semibold">Themen</th>
+                        <th class="px-4 py-3 font-semibold">Frist</th>
+                        <th class="px-4 py-3 font-semibold">Fortschritt</th>
+                        <th class="px-4 py-3 font-semibold">Aktualisiert</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                    {% for row in motion_rows %}
+                    {% with motion=row.motion %}
+                    <tr class="group cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                        @click="window.location.href='{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}'">
+                        <!-- Titel (+ Einrückung für Änderungsanträge) -->
+                        <td class="px-4 py-3 max-w-xs">
+                            <div class="flex items-center gap-2 {% if row.is_amendment %}pl-6{% endif %}">
+                                {% if row.is_amendment %}
+                                <i data-lucide="corner-down-right" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0"></i>
+                                {% endif %}
+                                <span class="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600">{{ motion.title }}</span>
+                                <span class="inline-flex items-center px-1 py-0.5 rounded text-[10px] flex-shrink-0 {{ motion.get_visibility_badge_class }}">
+                                    <i data-lucide="{{ motion.get_visibility_icon }}" class="w-2.5 h-2.5"></i>
+                                </span>
+                                {% with approvals=motion.approval_summary %}
+                                {% if approvals.total %}
+                                <span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] flex-shrink-0 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300"
+                                      title="Freigaben: {{ approvals.approved }} von {{ approvals.total }} erteilt">
+                                    <i data-lucide="file-check" class="w-2.5 h-2.5"></i>
+                                    {{ approvals.approved }}/{{ approvals.total }}
+                                </span>
+                                {% endif %}
+                                {% endwith %}
+                            </div>
+                        </td>
+                        <!-- Typ -->
+                        <td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ motion.get_type_display }}</td>
+                        <!-- Status-Tracker -->
+                        <td class="px-4 py-3">
+                            {% include "work/motions/partials/_status_tracker.html" %}
+                        </td>
+                        <!-- Verantwortlich -->
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            {% if motion.responsible %}
+                            <span class="flex items-center gap-1.5">
+                                <span class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center flex-shrink-0">
+                                    <span class="text-[10px] font-bold text-primary-700 dark:text-primary-300">{{ motion.responsible.user.get_initials }}</span>
+                                </span>
+                                <span class="text-gray-700 dark:text-gray-300">{{ motion.responsible.user.get_display_name }}</span>
                             </span>
-                        </div>
-                        <div class="flex flex-wrap items-center gap-2 mt-1">
-                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
-                                {% if motion.status == 'draft' %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400
-                                {% elif motion.status == 'review' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300
-                                {% elif motion.status == 'approved' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
-                                {% elif motion.status == 'submitted' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
-                                {% elif motion.status == 'completed' %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300
-                                {% elif motion.status == 'rejected' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
-                                {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
-                                {{ motion.get_status_display }}
+                            {% else %}
+                            <span class="text-gray-400">–</span>
+                            {% endif %}
+                        </td>
+                        <!-- Themen -->
+                        <td class="px-4 py-3">
+                            <div class="flex flex-wrap gap-1 max-w-[180px]">
+                                {% for topic in motion.topics.all|slice:":3" %}
+                                <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-{{ topic.color }}-100 dark:bg-{{ topic.color }}-900/30 text-{{ topic.color }}-700 dark:text-{{ topic.color }}-300">{{ topic.name }}</span>
+                                {% endfor %}
+                                {% if motion.topics.all|length > 3 %}
+                                <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">+{{ motion.topics.all|length|add:"-3" }}</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <!-- Frist -->
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            {% if motion.due_date %}
+                            <span class="text-gray-700 dark:text-gray-300">{{ motion.due_date|date:"d.m.Y" }}</span>
+                            {% if motion.is_overdue %}
+                            <span class="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+                                <i data-lucide="alert-triangle" class="w-2.5 h-2.5"></i>
+                                überfällig
                             </span>
-                            <span class="text-xs text-gray-500">{{ motion.get_type_display }}</span>
-                            <span class="text-xs text-gray-500">·</span>
-                            <span class="text-xs text-gray-500">{{ motion.author.user.get_display_name }}</span>
-                        </div>
-                        <p class="text-sm text-gray-500 mt-1">
-                            Zuletzt bearbeitet {{ motion.updated_at|timesince }}
-                        </p>
-                    </div>
-
-                    <!-- Actions (visible on hover) -->
-                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" @click.stop>
-                        <button type="button"
-                                @click="openShareModal('{{ motion.id }}', '{{ motion.title|escapejs }}', '{{ motion.visibility }}')"
-                                class="p-2 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                            <i data-lucide="share-2" class="w-4 h-4"></i>
-                        </button>
-                        <a href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf"
-                           class="p-2 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                            <i data-lucide="download" class="w-4 h-4"></i>
-                        </a>
-                    </div>
-
-                    <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
-                </div>
-            </div>
-            {% empty %}
-            <div class="px-4 py-8 text-center">
-                <p class="text-sm text-gray-400 dark:text-gray-500">
-                    {% if search_query or selected_status or selected_type or filter_mine %}
-                    Keine Dokumente mit diesen Filterkriterien gefunden.
-                    {% else %}
-                    Noch keine Dokumente vorhanden.
-                    {% endif %}
-                </p>
-                {% if not search_query and not selected_status and not selected_type and not filter_mine %}
-                <div class="flex items-center justify-center gap-3 mt-3">
-                    <a href="{% url 'work:document_import' org_slug=organization.slug %}"
-                       class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 hover:underline">
-                        <i data-lucide="upload" class="w-3.5 h-3.5"></i> PDF importieren
-                    </a>
-                    <a href="{% url 'work:document_create' org_slug=organization.slug %}"
-                       class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline">
-                        <i data-lucide="plus" class="w-3.5 h-3.5"></i> Neues Dokument
-                    </a>
-                </div>
-                {% endif %}
-            </div>
-            {% endfor %}
+                            {% endif %}
+                            {% else %}
+                            <span class="text-gray-400">–</span>
+                            {% endif %}
+                        </td>
+                        <!-- Fortschritt (Checkliste) -->
+                        <td class="px-4 py-3">
+                            {% with progress=motion.checklist_progress %}
+                            {% if progress.total %}
+                            <div class="flex items-center gap-2 min-w-[90px]">
+                                <div class="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                                    <div class="h-full bg-primary-500 rounded-full" style="width: {{ progress.percent }}%"></div>
+                                </div>
+                                <span class="text-[10px] text-gray-400 whitespace-nowrap">{{ progress.done }}/{{ progress.total }}</span>
+                            </div>
+                            {% else %}
+                            <span class="text-gray-400 text-xs">–</span>
+                            {% endif %}
+                            {% endwith %}
+                        </td>
+                        <!-- Aktualisiert -->
+                        <td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ motion.updated_at|timesince }}</td>
+                    </tr>
+                    {% endwith %}
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="px-4 py-8 text-center">
+                            <p class="text-sm text-gray-400 dark:text-gray-500">
+                                {% if search_query or selected_status or selected_type or filter_mine or selected_topic or selected_responsible %}
+                                Keine Dokumente mit diesen Filterkriterien gefunden.
+                                {% else %}
+                                Noch keine Dokumente vorhanden.
+                                {% endif %}
+                            </p>
+                            {% if not search_query and not selected_status and not selected_type and not filter_mine and not selected_topic and not selected_responsible %}
+                            <div class="flex items-center justify-center gap-3 mt-3">
+                                <a href="{% url 'work:document_import' org_slug=organization.slug %}"
+                                   class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 hover:underline">
+                                    <i data-lucide="upload" class="w-3.5 h-3.5"></i> PDF importieren
+                                </a>
+                                <a href="{% url 'work:document_create' org_slug=organization.slug %}"
+                                   class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+                                    <i data-lucide="plus" class="w-3.5 h-3.5"></i> Neues Dokument
+                                </a>
+                            </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
 
         <!-- Pagination -->
@@ -275,11 +360,11 @@
         <div class="px-5 py-4 border-t border-gray-200 dark:border-gray-700">
             <div class="flex items-center justify-between">
                 <p class="text-sm text-gray-500">
-                    Zeige {{ motions.start_index }}-{{ motions.end_index }} von {{ paginator.count }}
+                    Zeige {{ motions.start_index }}-{{ motions.end_index }} von {{ paginator.count }} Hauptanträgen
                 </p>
                 <nav class="flex items-center gap-1">
                     {% if motions.has_previous %}
-                    <a href="?page={{ motions.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
+                    <a href="?page={{ motions.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_topic %}&thema={{ selected_topic }}{% endif %}{% if selected_responsible %}&verantwortlich={{ selected_responsible }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
                        class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                         <i data-lucide="chevron-left" class="w-5 h-5"></i>
                     </a>
@@ -289,13 +374,13 @@
                     {% if motions.number == num %}
                     <span class="px-3 py-2 bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400 rounded-lg font-medium text-sm">{{ num }}</span>
                     {% elif num > motions.number|add:'-3' and num < motions.number|add:'3' %}
-                    <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
+                    <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_topic %}&thema={{ selected_topic }}{% endif %}{% if selected_responsible %}&verantwortlich={{ selected_responsible }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
                        class="px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-sm">{{ num }}</a>
                     {% endif %}
                     {% endfor %}
 
                     {% if motions.has_next %}
-                    <a href="?page={{ motions.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
+                    <a href="?page={{ motions.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_topic %}&thema={{ selected_topic }}{% endif %}{% if selected_responsible %}&verantwortlich={{ selected_responsible }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
                        class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
                         <i data-lucide="chevron-right" class="w-5 h-5"></i>
                     </a>

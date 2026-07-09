@@ -379,6 +379,55 @@
     </div>
     {% endif %}
 
+    <!-- Fachgebiete -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="lightbulb" class="w-5 h-5 text-gray-400"></i>
+                Fachgebiete
+            </h3>
+            <p class="text-sm text-gray-500 mt-1">Themen, in denen dieses Mitglied Fachwissen hat („Kompetenz im Thema“).</p>
+        </div>
+        {% if can_edit and org_topics %}
+        <form method="post" class="p-6">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_expertise">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto mb-4">
+                {% for topic in org_topics %}
+                <label class="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <input type="checkbox" name="expertise_topics" value="{{ topic.id }}"
+                           {% if topic.id in member_expertise_ids %}checked{% endif %}
+                           class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                    <span class="w-2.5 h-2.5 rounded-full bg-{{ topic.color }}-500 flex-shrink-0"></span>
+                    <span class="text-sm text-gray-900 dark:text-white truncate">{{ topic.name }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                Fachgebiete speichern
+            </button>
+        </form>
+        {% else %}
+        <div class="p-6">
+            {% if member.expertise_topics.all %}
+            <div class="flex flex-wrap gap-2">
+                {% for topic in member.expertise_topics.all %}
+                <span class="px-3 py-1.5 text-sm bg-{{ topic.color }}-100 dark:bg-{{ topic.color }}-900/30 text-{{ topic.color }}-700 dark:text-{{ topic.color }}-300 rounded-lg">
+                    {{ topic.name }}
+                </span>
+                {% endfor %}
+            </div>
+            {% elif org_topics %}
+            <p class="text-gray-500 dark:text-gray-400">Keine Fachgebiete zugewiesen</p>
+            {% else %}
+            <p class="text-gray-500 dark:text-gray-400">Es sind noch keine Themen im Katalog angelegt.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
     <!-- Actions -->
     {% if can_edit %}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">

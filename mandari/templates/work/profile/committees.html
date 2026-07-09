@@ -100,4 +100,53 @@
     {% endif %}
 </div>
 </form>
+
+<!-- Fachgebiete (eigenes Formular) -->
+<form method="post" class="mt-6">
+{% csrf_token %}
+<input type="hidden" name="action" value="save_expertise">
+<div class="space-y-6">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 100ms">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="lightbulb" class="w-4 h-4 text-gray-400"></i>
+                Meine Fachgebiete
+            </h4>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Wähle Themen, in denen du Fachwissen hast. Bei Dokumenten mit diesen Themen
+                wirst du in der Kachel „Kompetenz im Thema“ als Ansprechperson vorgeschlagen.
+            </p>
+        </div>
+        <div class="px-6 py-4">
+            {% if org_topics %}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-96 overflow-y-auto pr-1">
+                {% for topic in org_topics %}
+                <label class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                    <input type="checkbox" name="expertise_topics" value="{{ topic.id }}"
+                           class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                           {% if topic.id in expertise_ids %}checked{% endif %}>
+                    <span class="w-2.5 h-2.5 rounded-full bg-{{ topic.color }}-500 flex-shrink-0"></span>
+                    <span class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ topic.name }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-400 dark:text-gray-500 py-4 text-center">
+                Es sind noch keine Themen im Katalog der Organisation angelegt.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if org_topics %}
+    <div class="flex justify-end">
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+            <i data-lucide="save" class="w-4 h-4"></i>
+            Fachgebiete speichern
+        </button>
+    </div>
+    {% endif %}
+</div>
+</form>
 {% endblock %}

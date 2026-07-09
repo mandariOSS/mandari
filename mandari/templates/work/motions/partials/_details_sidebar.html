@@ -1,0 +1,209 @@
+{% comment %}
+Sidebar-Tab "Details" im Dokument-Editor: Zuständigkeit, Themen,
+Kompetenz im Thema, Frist und Freigaben.
+Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
+         competent_members, approvals, approval_summary, my_pending_approval,
+         approval_type_choices, can_edit, membership, organization
+{% endcomment %}
+<div class="flex-1 overflow-y-auto p-4 space-y-6">
+
+    <!-- Zuständigkeit -->
+    <div>
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
+            Zuständigkeit
+        </h4>
+        {% if can_edit %}
+        <form onsubmit="return mandariMotionMeta(event)" action="{% url 'work:document_meta' org_slug=organization.slug motion_id=motion.id %}" class="mb-3">
+            <input type="hidden" name="action" value="set_responsible">
+            <label class="block text-[11px] font-medium text-gray-400 mb-1">Federführung</label>
+            <select name="responsible" onchange="this.form.requestSubmit()"
+                    class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                <option value="">– Keine –</option>
+                {% for member in org_members %}
+                <option value="{{ member.id }}" {% if motion.responsible_id == member.id %}selected{% endif %}>{{ member.user.get_display_name }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        <form onsubmit="return mandariMotionMeta(event)" action="{% url 'work:document_meta' org_slug=organization.slug motion_id=motion.id %}">
+            <input type="hidden" name="action" value="set_contributors">
+            <label class="block text-[11px] font-medium text-gray-400 mb-1">Mitarbeit</label>
+            <div class="max-h-36 overflow-y-auto space-y-1 border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+                {% for member in org_members %}
+                <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                    <input type="checkbox" name="contributors" value="{{ member.id }}"
+                           {% if member.id in contributor_ids %}checked{% endif %}
+                           class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                    <span class="truncate">{{ member.user.get_display_name }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <button type="submit" class="mt-2 px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Mitarbeit speichern</button>
+        </form>
+        {% else %}
+        <p class="text-sm text-gray-700 dark:text-gray-300">
+            Federführung: {% if motion.responsible %}{{ motion.responsible.user.get_display_name }}{% else %}–{% endif %}
+        </p>
+        {% if motion.contributors.all %}
+        <p class="text-xs text-gray-500 mt-1">Mitarbeit:
+            {% for member in motion.contributors.all %}{{ member.user.get_display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+        </p>
+        {% endif %}
+        {% endif %}
+    </div>
+
+    <!-- Themen -->
+    <div>
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <i data-lucide="tags" class="w-3.5 h-3.5"></i>
+            Themen
+        </h4>
+        {% if can_edit and org_topics %}
+        <form onsubmit="return mandariMotionMeta(event)" action="{% url 'work:document_meta' org_slug=organization.slug motion_id=motion.id %}">
+            <input type="hidden" name="action" value="set_topics">
+            <div class="max-h-36 overflow-y-auto space-y-1 border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+                {% for topic in org_topics %}
+                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" name="topics" value="{{ topic.id }}"
+                           {% if topic.id in motion_topic_ids %}checked{% endif %}
+                           class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                    <span class="w-2.5 h-2.5 rounded-full bg-{{ topic.color }}-500 flex-shrink-0"></span>
+                    <span class="text-gray-700 dark:text-gray-300 truncate">{{ topic.name }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <button type="submit" class="mt-2 px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Themen speichern</button>
+        </form>
+        {% elif org_topics %}
+        <div class="flex flex-wrap gap-1.5">
+            {% for topic in motion.topics.all %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-{{ topic.color }}-100 dark:bg-{{ topic.color }}-900/30 text-{{ topic.color }}-700 dark:text-{{ topic.color }}-300">{{ topic.name }}</span>
+            {% empty %}
+            <span class="text-xs text-gray-400">Keine Themen zugeordnet.</span>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-xs text-gray-400">Noch keine Themen im Katalog.
+            {% if membership %}<a href="{% url 'work:document_topic_list' org_slug=organization.slug %}" class="text-primary-600 hover:underline">Themen verwalten</a>{% endif %}
+        </p>
+        {% endif %}
+    </div>
+
+    <!-- Kompetenz im Thema -->
+    {% if competent_members %}
+    <div class="bg-primary-50/50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30 rounded-xl p-3">
+        <h4 class="text-xs font-bold text-primary-700 dark:text-primary-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <i data-lucide="lightbulb" class="w-3.5 h-3.5"></i>
+            Kompetenz im Thema
+        </h4>
+        <div class="space-y-1.5">
+            {% for member in competent_members %}
+            <a href="{% url 'work:team_profile' org_slug=organization.slug member_id=member.id %}"
+               class="flex items-center gap-2 hover:underline">
+                <span class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center flex-shrink-0">
+                    <span class="text-[10px] font-bold text-primary-700 dark:text-primary-300">{{ member.user.get_initials }}</span>
+                </span>
+                <span class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ member.user.get_display_name }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Frist -->
+    <div>
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <i data-lucide="calendar-clock" class="w-3.5 h-3.5"></i>
+            Frist
+        </h4>
+        {% if can_edit %}
+        <form onsubmit="return mandariMotionMeta(event)" action="{% url 'work:document_meta' org_slug=organization.slug motion_id=motion.id %}">
+            <input type="hidden" name="action" value="set_due_date">
+            <input type="date" name="due_date" value="{{ motion.due_date|date:'Y-m-d' }}"
+                   onchange="this.form.requestSubmit()"
+                   class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+        </form>
+        {% else %}
+        <p class="text-sm text-gray-700 dark:text-gray-300">{% if motion.due_date %}{{ motion.due_date|date:"d.m.Y" }}{% else %}–{% endif %}</p>
+        {% endif %}
+        {% if motion.is_overdue %}
+        <span class="inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded text-[11px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+            <i data-lucide="alert-triangle" class="w-3 h-3"></i>
+            Überfällig
+        </span>
+        {% endif %}
+    </div>
+
+    <!-- Freigaben -->
+    <div>
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <i data-lucide="file-check" class="w-3.5 h-3.5"></i>
+            Freigaben
+            {% if approval_summary.total %}
+            <span class="ml-auto text-[11px] font-semibold text-gray-500">{{ approval_summary.approved }}/{{ approval_summary.total }} erteilt</span>
+            {% endif %}
+        </h4>
+
+        {% if my_pending_approval %}
+        <!-- Entscheiden-Block für die angefragte Person -->
+        <div class="mb-3 p-3 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-900/10">
+            <p class="text-sm font-medium text-gray-900 dark:text-white mb-1">Deine Freigabe wurde angefragt</p>
+            <p class="text-xs text-gray-500 mb-2">Als {{ my_pending_approval.get_approval_type_display }}</p>
+            <textarea id="approval-decide-comment" rows="2" placeholder="Kommentar (optional)"
+                      class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-amber-500 mb-2"></textarea>
+            <div class="flex gap-2">
+                <button type="button"
+                        onclick="mandariApprovalDecide('{% url 'work:document_approval_decide' org_slug=organization.slug motion_id=motion.id approval_id=my_pending_approval.id %}', 'approve')"
+                        class="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700">Freigeben</button>
+                <button type="button"
+                        onclick="mandariApprovalDecide('{% url 'work:document_approval_decide' org_slug=organization.slug motion_id=motion.id approval_id=my_pending_approval.id %}', 'reject')"
+                        class="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700">Ablehnen</button>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="space-y-1.5 mb-3">
+            {% for approval in approvals %}
+            <div class="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                {% if approval.approved is True %}
+                <i data-lucide="check-circle" class="w-4 h-4 text-green-500 flex-shrink-0"></i>
+                {% elif approval.approved is False %}
+                <i data-lucide="x-circle" class="w-4 h-4 text-red-500 flex-shrink-0"></i>
+                {% else %}
+                <i data-lucide="clock" class="w-4 h-4 text-amber-500 flex-shrink-0"></i>
+                {% endif %}
+                <div class="flex-1 min-w-0">
+                    <span class="block text-sm text-gray-800 dark:text-gray-200 truncate">{{ approval.approver.user.get_display_name }}</span>
+                    <span class="block text-[11px] text-gray-400 truncate">{{ approval.get_approval_type_display }}{% if approval.comment %} · „{{ approval.comment }}“{% endif %}</span>
+                </div>
+            </div>
+            {% empty %}
+            <p class="text-xs text-gray-400 px-1">Noch keine Freigaben angefragt.</p>
+            {% endfor %}
+        </div>
+
+        {% if can_edit and motion.status == 'internal_review' %}
+        <!-- Freigabe anfordern (nur im Status "Interne Absprache") -->
+        <form onsubmit="return mandariApprovalRequest(event)" action="{% url 'work:document_approval_request' org_slug=organization.slug motion_id=motion.id %}" class="space-y-2">
+            <select name="approver" required
+                    class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                <option value="">Mitglied wählen...</option>
+                {% for member in org_members %}
+                {% if member.id != membership.id %}
+                <option value="{{ member.id }}">{{ member.user.get_display_name }}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+            <select name="approval_type"
+                    class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                {% for value, label in approval_type_choices %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="w-full px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Freigabe anfordern</button>
+        </form>
+        {% elif can_edit %}
+        <p class="text-[11px] text-gray-400">Freigaben können im Status „Interne Absprache“ angefragt werden.</p>
+        {% endif %}
+    </div>
+</div>
