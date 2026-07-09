@@ -1001,6 +1001,23 @@
                 }));
             });
         };
+
+        // hx-confirm auf den Custom-Dialog umleiten (statt nativem Browser-confirm)
+        document.body.addEventListener('htmx:confirm', (event) => {
+            const question = event.detail.question;
+            if (!question) return;  // kein hx-confirm gesetzt
+            event.preventDefault();
+            window.confirmAction({
+                title: 'Bist du sicher?',
+                message: question,
+                confirmText: 'Bestätigen',
+                variant: 'danger'
+            }).then(confirmed => {
+                if (confirmed) {
+                    event.detail.issueRequest(true);
+                }
+            });
+        });
     </script>
 
     {% block extra_scripts %}{% endblock %}

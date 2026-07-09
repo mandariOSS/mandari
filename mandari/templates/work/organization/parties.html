@@ -259,7 +259,7 @@
 
                         <div class="flex items-center justify-between pt-2">
                             <button type="button"
-                                    @click="if(confirm('Fraktion \'{{ party.name }}\' wirklich löschen?')) { $refs.deleteForm{{ forloop.counter }}.submit() }"
+                                    @click="confirmAction({ title: 'Fraktion löschen?', message: 'Fraktion \'{{ party.name|escapejs }}\' wirklich löschen?', confirmText: 'Löschen', variant: 'danger' }).then(ok => { if (ok) $refs.deleteForm{{ forloop.counter }}.submit() })"
                                     class="text-sm text-red-600 hover:text-red-700 dark:text-red-400">
                                 Löschen
                             </button>
