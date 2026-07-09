@@ -23,7 +23,7 @@
         {% if can_manage_attendance and meeting.status == 'ongoing' %}
             {% if attendance.status != 'present' %}
             <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
-                    hx-vals='{"action": "check_in", "member_id": "{{ attendance.membership_id }}"}'
+                    hx-vals='{"action": "check_in", "attendance_id": "{{ attendance.id }}"}'
                     hx-target="#attendance-list"
                     hx-swap="innerHTML"
                     class="px-2 py-0.5 text-xs text-green-600 hover:bg-green-50 rounded"
@@ -32,7 +32,7 @@
             </button>
             {% else %}
             <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
-                    hx-vals='{"action": "check_out", "member_id": "{{ attendance.membership_id }}"}'
+                    hx-vals='{"action": "check_out", "attendance_id": "{{ attendance.id }}"}'
                     hx-target="#attendance-list"
                     hx-swap="innerHTML"
                     class="px-2 py-0.5 text-xs text-amber-600 hover:bg-amber-50 rounded"

@@ -432,6 +432,23 @@ class FactionActionView(WorkViewMixin, View):
             return resp
         return self._redirect_detail(meeting)
 
+    # -- Permission helpers ----------------------------------------------
+
+    def _can_manage_agenda(self, meeting):
+        """Ersteller der Sitzung oder faction.manage — entspricht can_edit in der UI."""
+        return meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
+
+    def _can_protocol(self, meeting):
+        """Wer darf Protokolleinträge/Beschlüsse erfassen (solange Protokoll nicht genehmigt)."""
+        if meeting.protocol_approved:
+            return False
+        return (
+            meeting.created_by == self.membership
+            or self.membership.has_permission("faction.manage")
+            or self.membership.has_permission("protocols.create")
+            or self.membership.has_permission("protocols.edit")
+        )
+
     # -- Status handlers -----------------------------------------------
 
     def _start(self, request, meeting):
@@ -536,7 +553,7 @@ class FactionActionView(WorkViewMixin, View):
     # -- Agenda handlers -----------------------------------------------
 
     def _add_item(self, request, meeting):
-        if not self.membership.has_permission("faction.manage"):
+        if not self._can_manage_agenda(meeting) and not self.membership.has_permission("agenda.create"):
             return HttpResponse(status=403)
 
         title = request.POST.get("title", "").strip()
@@ -592,7 +609,7 @@ class FactionActionView(WorkViewMixin, View):
         return self._redirect_detail(meeting)
 
     def _edit_item(self, request, meeting):
-        if not self.membership.has_permission("faction.manage"):
+        if not self._can_manage_agenda(meeting):
             return HttpResponse(status=403)
 
         item_id = request.POST.get("item_id")
@@ -623,7 +640,7 @@ class FactionActionView(WorkViewMixin, View):
         return self._redirect_detail(meeting)
 
     def _delete_item(self, request, meeting):
-        if not self.membership.has_permission("faction.manage"):
+        if not self._can_manage_agenda(meeting):
             return HttpResponse(status=403)
 
         item_id = request.POST.get("item_id")
@@ -641,7 +658,7 @@ class FactionActionView(WorkViewMixin, View):
         return self._redirect_detail(meeting)
 
     def _move_item(self, request, meeting):
-        if not self.membership.has_permission("faction.manage"):
+        if not self._can_manage_agenda(meeting):
             return HttpResponse(status=403)
 
         item_id = request.POST.get("item_id")
@@ -686,6 +703,9 @@ class FactionActionView(WorkViewMixin, View):
     # -- Protocol handlers ---------------------------------------------
 
     def _add_entry(self, request, meeting):
+        if not self._can_protocol(meeting):
+            return HttpResponse(status=403)
+
         entry_type = request.POST.get("entry_type", "note")
         content = request.POST.get("content", "").strip()
         agenda_item_id = request.POST.get("agenda_item_id")
@@ -753,6 +773,8 @@ class FactionActionView(WorkViewMixin, View):
             return HttpResponse(status=400)
 
         entry = get_object_or_404(FactionProtocolEntry, id=entry_id, meeting=meeting)
+        if not self._can_protocol(meeting) and entry.created_by != self.membership:
+            return HttpResponse(status=403)
         entry.set_content_encrypted(content)
 
         entry_type = request.POST.get("entry_type")
@@ -775,6 +797,8 @@ class FactionActionView(WorkViewMixin, View):
         entry_id = request.POST.get("entry_id")
         entry = FactionProtocolEntry.objects.filter(id=entry_id, meeting=meeting).first()
         if entry:
+            if not self._can_protocol(meeting) and entry.created_by != self.membership:
+                return HttpResponse(status=403)
             entry.delete()
 
         if request.headers.get("HX-Request"):
@@ -784,6 +808,9 @@ class FactionActionView(WorkViewMixin, View):
         return self._redirect_detail(meeting)
 
     def _record_decision(self, request, meeting):
+        if not self._can_protocol(meeting):
+            return HttpResponse(status=403)
+
         agenda_item_id = request.POST.get("agenda_item_id")
         agenda_item = get_object_or_404(FactionAgendaItem, id=agenda_item_id, meeting=meeting)
 
@@ -859,15 +886,25 @@ class FactionActionView(WorkViewMixin, View):
 
         return self._redirect_detail(meeting)
 
-    def _check_in(self, request, meeting):
+    def _get_attendance(self, request, meeting):
+        """Attendance über attendance_id (auch Gäste) oder member_id (Legacy) auflösen."""
+        attendance_id = request.POST.get("attendance_id")
+        if attendance_id:
+            return meeting.attendances.filter(id=attendance_id).first()
         member_id = request.POST.get("member_id")
-        try:
-            attendance = meeting.attendances.get(membership_id=member_id)
+        if member_id:
+            return meeting.attendances.filter(membership_id=member_id).first()
+        return None
+
+    def _check_in(self, request, meeting):
+        if not self.membership.has_permission("faction.manage"):
+            return HttpResponse(status=403)
+
+        attendance = self._get_attendance(request, meeting)
+        if attendance:
             attendance.status = "present"
             attendance.checked_in_at = timezone.now()
             attendance.save()
-        except FactionAttendance.DoesNotExist:
-            pass
 
         if request.headers.get("HX-Request"):
             html = self._render_attendance(request, meeting)
@@ -876,13 +913,13 @@ class FactionActionView(WorkViewMixin, View):
         return self._redirect_detail(meeting)
 
     def _check_out(self, request, meeting):
-        member_id = request.POST.get("member_id")
-        try:
-            attendance = meeting.attendances.get(membership_id=member_id)
+        if not self.membership.has_permission("faction.manage"):
+            return HttpResponse(status=403)
+
+        attendance = self._get_attendance(request, meeting)
+        if attendance:
             attendance.checked_out_at = timezone.now()
             attendance.save()
-        except FactionAttendance.DoesNotExist:
-            pass
 
         if request.headers.get("HX-Request"):
             html = self._render_attendance(request, meeting)
@@ -1169,6 +1206,17 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
         return handler(request, meeting, item, can_edit)
 
+    def _can_protocol(self, meeting):
+        """Wer darf Protokolleinträge/Beschlüsse erfassen (solange Protokoll nicht genehmigt)."""
+        if meeting.protocol_approved:
+            return False
+        return (
+            meeting.created_by == self.membership
+            or self.membership.has_permission("faction.manage")
+            or self.membership.has_permission("protocols.create")
+            or self.membership.has_permission("protocols.edit")
+        )
+
     def _render_panel(self, request, meeting, item):
         """Re-render the full panel."""
         view = FactionItemPanelView()
@@ -1232,6 +1280,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
     def _add_entry(self, request, meeting, item, can_edit):
         """Add protocol entry."""
+        if not can_edit and not self._can_protocol(meeting):
+            return HttpResponse(status=403)
+
         entry_type = request.POST.get("entry_type", "note")
         content = request.POST.get("content", "").strip()
 
@@ -1273,6 +1324,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             return HttpResponse(status=400)
 
         entry = get_object_or_404(FactionProtocolEntry, id=entry_id, meeting=meeting)
+        if not can_edit and not self._can_protocol(meeting) and entry.created_by != self.membership:
+            return HttpResponse(status=403)
+
         entry.set_content_encrypted(content)
 
         entry_type = request.POST.get("entry_type")
@@ -1297,6 +1351,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
     def _record_decision(self, request, meeting, item, can_edit):
         """Record or update a decision/vote."""
+        if not can_edit and not self._can_protocol(meeting):
+            return HttpResponse(status=403)
+
         try:
             votes_yes = int(request.POST.get("votes_yes", 0))
             votes_no = int(request.POST.get("votes_no", 0))
