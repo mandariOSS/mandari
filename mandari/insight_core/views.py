@@ -42,7 +42,12 @@ from .ranking import sort_organizations_by_ranking
 def get_active_body(request):
     """Holt die aktive Kommune aus der Session oder setzt einen Standard."""
     body_id = request.session.get("active_body_id")
-    if body_id and body_id != "all":
+    if body_id == "all":
+        # "Alle Kommunen"-Modus: Auswahl NICHT überschreiben. Views, die zwingend
+        # eine einzelne Kommune brauchen, erhalten die erste Kommune als Fallback,
+        # is_all_bodies_mode() bleibt dabei True.
+        return OParlBody.objects.first()
+    if body_id:
         try:
             return OParlBody.objects.get(id=body_id)
         except OParlBody.DoesNotExist:
