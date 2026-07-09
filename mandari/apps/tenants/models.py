@@ -762,6 +762,17 @@ class Membership(models.Model):
         help_text="OParl-Gremien deren Sitzungen angezeigt werden",
     )
 
+    # Personally followed OParl committees ("Meine Gremien")
+    # Freely editable by the member (unlike oparl_committees, which is
+    # admin-assigned). Used to personalize dashboard meeting/document lists.
+    followed_organizations = models.ManyToManyField(
+        "insight_core.OParlOrganization",
+        blank=True,
+        related_name="following_memberships",
+        verbose_name="Meine Gremien",
+        help_text="Vom Mitglied selbst gewählte Gremien für personalisierte Ansichten",
+    )
+
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     is_sworn_in = models.BooleanField(

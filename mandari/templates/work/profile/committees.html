@@ -1,0 +1,103 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Meine Gremien{% endblock %}
+
+{% block header_title %}Mein Profil{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Persönliche Einstellungen und Kontoinformationen</p>
+{% endblock %}
+
+{% block work_content %}
+{% include "work/profile/_tabs.html" with active_tab="committees" %}
+
+{% if messages %}
+<div class="space-y-2 mb-6">
+    {% for message in messages %}
+    <div class="p-3 rounded-lg flex items-center gap-3 {% if message.tags == 'success' %}bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400{% elif message.tags == 'error' %}bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400{% else %}bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400{% endif %}">
+        <i data-lucide="{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}alert-circle{% else %}info{% endif %}" class="w-4 h-4 flex-shrink-0"></i>
+        <span class="text-sm">{{ message }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<form method="post">
+{% csrf_token %}
+<div class="space-y-6">
+    <!-- Followed committees -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="landmark" class="w-4 h-4 text-gray-400"></i>
+                Meine Gremien
+            </h4>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Wähle die Gremien, die dich interessieren. Das Dashboard zeigt dann bevorzugt
+                Sitzungen und Dokumente dieser Gremien. Ohne Auswahl gelten deine zugewiesenen
+                Gremien bzw. alle Gremien der Organisation.
+            </p>
+        </div>
+        <div class="px-6 py-4">
+            {% if available_committees %}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-96 overflow-y-auto pr-1">
+                {% for committee in available_committees %}
+                <label class="flex items-start gap-2.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                    <input type="checkbox" name="committees" value="{{ committee.id }}"
+                           class="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                           {% if committee.id in followed_ids %}checked{% endif %}>
+                    <span class="min-w-0">
+                        <span class="block text-sm font-medium text-gray-900 dark:text-white truncate">{{ committee.name|default:committee.short_name }}</span>
+                        <span class="block text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {% if committee.organization_type %}{{ committee.organization_type }}{% endif %}
+                            {% if show_body_names and committee.body %}{% if committee.organization_type %} &middot; {% endif %}{{ committee.body.display_name|default:committee.body.name }}{% endif %}
+                        </span>
+                    </span>
+                </label>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-400 dark:text-gray-500 py-4 text-center">
+                Für diese Organisation sind keine Gremien verknüpft.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Assigned committees (read-only info) -->
+    {% if assigned_committees %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up" style="animation-delay: 50ms">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h4 class="text-[15px] font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="badge-check" class="w-4 h-4 text-gray-400"></i>
+                Zugewiesene Gremien
+            </h4>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Diese Gremien wurden dir von der Organisation zugewiesen. Änderungen kannst du
+                über den Tab „Anträge" beantragen. Solange du oben nichts auswählst, werden sie
+                für die Personalisierung verwendet.
+            </p>
+        </div>
+        <div class="px-6 py-4 flex flex-wrap gap-1.5">
+            {% for committee in assigned_committees %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40">
+                <i data-lucide="landmark" class="w-3 h-3"></i>
+                {{ committee.name|default:committee.short_name }}
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Save Button -->
+    {% if available_committees %}
+    <div class="flex justify-end">
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm transition-colors">
+            <i data-lucide="save" class="w-4 h-4"></i>
+            Speichern
+        </button>
+    </div>
+    {% endif %}
+</div>
+</form>
+{% endblock %}

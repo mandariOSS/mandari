@@ -2620,6 +2620,55 @@ class ProfileVisibilityView(WorkViewMixin, TemplateView):
         return redirect("work:profile_visibility", org_slug=self.organization.slug)
 
 
+class ProfileCommitteesView(WorkViewMixin, TemplateView):
+    """Personal selection of followed committees ("Meine Gremien").
+
+    Unlike the admin-assigned ``Membership.oparl_committees`` this list is
+    freely editable by the member and only personalizes dashboard views.
+    """
+
+    template_name = "work/profile/committees.html"
+    permission_required = "dashboard.view"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = None
+        context["active_tab"] = "committees"
+
+        from django.db.models import Q
+
+        from insight_core.models import OParlOrganization
+
+        bodies = self.organization.get_all_bodies()
+        if bodies.exists():
+            today = timezone.now().date()
+            context["available_committees"] = (
+                OParlOrganization.objects.filter(body__in=bodies)
+                .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+                .select_related("body")
+                .order_by("name")
+            )
+        else:
+            context["available_committees"] = OParlOrganization.objects.none()
+
+        context["followed_ids"] = set(self.membership.followed_organizations.values_list("id", flat=True))
+        context["assigned_committees"] = self.membership.oparl_committees.all().order_by("name")
+        context["show_body_names"] = self.organization.has_multiple_bodies
+
+        return context
+
+    def post(self, request, *args, **kwargs):
+        from insight_core.models import OParlOrganization
+
+        committee_ids = request.POST.getlist("committees")
+        bodies = self.organization.get_all_bodies()
+        committees = OParlOrganization.objects.filter(id__in=committee_ids, body__in=bodies)
+        self.membership.followed_organizations.set(committees)
+
+        messages.success(request, "Meine Gremien gespeichert.")
+        return redirect("work:profile_committees", org_slug=self.organization.slug)
+
+
 class RegistrationSettingsView(WorkViewMixin, TemplateView):
     """Selbstregistrierungs-Einstellungen für die Organisation."""
 

@@ -20,18 +20,49 @@ class DashboardView(WorkViewMixin, TemplateView):
         context["active_nav"] = "dashboard"
         context["today"] = timezone.now()
 
+        # "Meine Gremien" personalization: filter meetings/documents to the
+        # user's committees unless they explicitly requested the org-wide view.
+        show_all = self.request.GET.get("alle") == "1"
+        my_committee_ids = self.get_my_committee_ids()
+        context["has_my_committees"] = bool(my_committee_ids)
+        context["dashboard_personalized"] = bool(my_committee_ids) and not show_all
+        context["my_committees"] = self.get_my_committees_display()
+        if show_all:
+            my_committee_ids = None
+
         # Upcoming meetings (faction + RIS)
-        context["upcoming_meetings"] = self.get_upcoming_meetings()
+        context["upcoming_meetings"] = self.get_upcoming_meetings(my_committee_ids)
 
         # My open tasks
         context["my_tasks"] = self.get_my_tasks()
 
         # Recent documents
-        context["recent_documents"] = self.get_recent_documents()
+        context["recent_documents"] = self.get_recent_documents(my_committee_ids)
 
         return context
 
-    def get_upcoming_meetings(self):
+    def get_my_committee_ids(self):
+        """
+        IDs of the committees relevant for the current member ("Meine Gremien").
+
+        Preference order: self-selected followed committees, then the
+        admin-assigned committees. Returns None when neither is set, meaning
+        the dashboard stays org-wide.
+        """
+        followed = set(self.membership.followed_organizations.values_list("id", flat=True))
+        if followed:
+            return followed
+        assigned = set(self.membership.oparl_committees.values_list("id", flat=True))
+        return assigned or None
+
+    def get_my_committees_display(self):
+        """Committee objects for the header badges (followed, else assigned)."""
+        followed = list(self.membership.followed_organizations.all().order_by("name")[:4])
+        if followed:
+            return followed
+        return list(self.membership.oparl_committees.all().order_by("name")[:4])
+
+    def get_upcoming_meetings(self, my_committee_ids=None):
         """
         Get upcoming meetings combining faction meetings and RIS committee meetings.
         Returns a unified list sorted by start time.
@@ -73,6 +104,11 @@ class DashboardView(WorkViewMixin, TemplateView):
         # RIS/Committee meetings (if organization has OParl bodies)
         org_bodies = self.organization.get_all_bodies()
         if org_bodies.exists():
+            # When filtering on "Meine Gremien" fetch a wider window, because
+            # committee references may only exist in raw_json and can only be
+            # matched after resolution below.
+            ris_limit = 25 if my_committee_ids else 5
+
             # Optimize with Prefetch to only fetch needed fields
             ris_meetings = (
                 OParlMeeting.objects.filter(body__in=org_bodies, start__gte=today_start, cancelled=False)
@@ -82,7 +118,7 @@ class DashboardView(WorkViewMixin, TemplateView):
                         queryset=OParlOrganization.objects.only("id", "name", "short_name"),
                     )
                 )
-                .order_by("start")[:5]
+                .order_by("start")[:ris_limit]
             )
 
             ris_meetings = list(ris_meetings)
@@ -106,6 +142,7 @@ class DashboardView(WorkViewMixin, TemplateView):
                     )
                 }
 
+            ris_count = 0
             for meeting in ris_meetings:
                 # Get the committee name (first organization, typically the main committee)
                 # Use prefetched cache - don't trigger new query
@@ -115,6 +152,14 @@ class DashboardView(WorkViewMixin, TemplateView):
                     if isinstance(refs, str):
                         refs = [refs]
                     orgs = [orgs_by_external_id[ref] for ref in refs if ref in orgs_by_external_id]
+
+                # "Meine Gremien" filter: skip meetings of other committees
+                if my_committee_ids and not any(org.id in my_committee_ids for org in orgs):
+                    continue
+
+                ris_count += 1
+                if ris_count > 5:
+                    break
 
                 if orgs:
                     committee_name = orgs[0].name or orgs[0].short_name or "Gremium"
@@ -158,13 +203,19 @@ class DashboardView(WorkViewMixin, TemplateView):
             .order_by("-priority", "due_date", "-created_at")[:5]
         )
 
-    def get_recent_documents(self):
+    def get_recent_documents(self, my_committee_ids=None):
         """Get recently updated documents/motions."""
+        from django.db.models import Q
+
         from apps.work.motions.models import Motion
 
-        return (
-            Motion.objects.filter(organization=self.organization)
-            .exclude(status__in=["deleted", "archived"])
-            .select_related("author__user")
-            .order_by("-updated_at")[:5]
-        )
+        queryset = Motion.objects.filter(organization=self.organization).exclude(status__in=["deleted", "archived"])
+
+        if my_committee_ids:
+            # "Meine Gremien": keep internal documents (no committee link) and
+            # documents targeted at one of the user's committees.
+            queryset = queryset.filter(
+                Q(related_meeting__isnull=True) | Q(related_meeting__organizations__id__in=my_committee_ids)
+            ).distinct()
+
+        return queryset.select_related("author__user").order_by("-updated_at")[:5]

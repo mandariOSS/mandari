@@ -16,13 +16,21 @@
             <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-1">
                 {{ organization.name }} &ndash; {{ today|date:"l, d. F Y" }}
             </p>
-            {% if membership.roles.all %}
+            {% if membership.roles.all or my_committees %}
             <div class="flex flex-wrap gap-1.5 mb-5">
                 {% for role in membership.roles.all|slice:":3" %}
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border"
                       style="background-color: {{ role.color }}10; color: {{ role.color }}; border-color: {{ role.color }}25;">
                     {{ role.name }}
                 </span>
+                {% endfor %}
+                {% for committee in my_committees %}
+                <a href="{% url 'work:profile_committees' org_slug=organization.slug %}"
+                   class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                   title="Meine Gremien bearbeiten">
+                    <i data-lucide="landmark" class="w-3 h-3"></i>
+                    {{ committee.short_name|default:committee.name|truncatechars:28 }}
+                </a>
                 {% endfor %}
             </div>
             {% else %}
@@ -74,6 +82,24 @@
 
 <!-- ===== Three Columns: Sitzungen | Aufgaben | Dokumente ===== -->
 <section class="fade-up d1 mb-8">
+    {% if has_my_committees %}
+    <div class="flex items-center justify-end gap-2 mb-3 text-xs">
+        {% if dashboard_personalized %}
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-800/40">
+            <i data-lucide="filter" class="w-3 h-3"></i> Gefiltert auf „Meine Gremien"
+        </span>
+        <a href="?alle=1" class="font-semibold text-primary-600 dark:text-primary-400 hover:underline">Alle anzeigen</a>
+        {% else %}
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
+            <i data-lucide="globe" class="w-3 h-3"></i> Alle Inhalte der Organisation
+        </span>
+        <a href="{% url 'work:dashboard' org_slug=organization.slug %}" class="font-semibold text-primary-600 dark:text-primary-400 hover:underline">Nur meine Gremien</a>
+        {% endif %}
+        <a href="{% url 'work:profile_committees' org_slug=organization.slug %}" class="text-gray-400 dark:text-gray-500 hover:underline" title="Meine Gremien bearbeiten">
+            <i data-lucide="settings-2" class="w-3.5 h-3.5"></i>
+        </a>
+    </div>
+    {% endif %}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         <!-- Sitzungen -->

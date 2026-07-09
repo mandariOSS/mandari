@@ -631,6 +631,11 @@ urlpatterns = [
         organization_views.ProfileVisibilityView.as_view(),
         name="profile_visibility",
     ),
+    path(
+        "<slug:org_slug>/profile/committees/",
+        organization_views.ProfileCommitteesView.as_view(),
+        name="profile_committees",
+    ),
     # Public invitation acceptance (no org_slug needed, token contains info)
     path(
         "invitation/<str:token>/",
