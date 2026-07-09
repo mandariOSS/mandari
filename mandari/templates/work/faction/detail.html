@@ -112,8 +112,13 @@
         </div>
         {% endif %}
 
-        {# Agenda (HTMX target) #}
-        <div id="agenda-container" class="fade-up d1">
+        {# Agenda (HTMX target) — lädt sich nach Panel-Aktionen selbst neu (agenda-refresh) #}
+        <div id="agenda-container" class="fade-up d1"
+             hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+             hx-vals='{"action": "refresh_agenda"}'
+             hx-trigger="agenda-refresh from:body"
+             hx-target="this"
+             hx-swap="innerHTML">
             {% include "work/faction/_agenda.html" %}
         </div>
     </div>

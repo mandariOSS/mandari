@@ -83,6 +83,16 @@ def _get_meeting_context(view, meeting):
         meeting.created_by == view.membership or view.membership.has_permission("faction.manage")
     ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
 
+    # Protokollphase: während der Sitzung und nach Sitzungsende bis zur
+    # Protokoll-Genehmigung dürfen Berechtigte protokollieren/abstimmen.
+    is_protocol_phase = meeting.status in ["ongoing", "completed"] and not meeting.protocol_approved
+    can_protocol = is_protocol_phase and (
+        meeting.created_by == view.membership
+        or view.membership.has_permission("faction.manage")
+        or view.membership.has_permission("protocols.create")
+        or view.membership.has_permission("protocols.edit")
+    )
+
     start_allowed_from = meeting.start - timedelta(minutes=30)
     can_start = (
         view.membership.has_permission("faction.start")
@@ -122,6 +132,8 @@ def _get_meeting_context(view, meeting):
         "my_attendance": my_attendance,
         "attendance_stats": attendance_stats,
         "can_edit": can_edit,
+        "is_protocol_phase": is_protocol_phase,
+        "can_protocol": can_protocol,
         "can_start": can_start,
         "can_manage_attendance": can_manage_attendance,
         "can_propose_agenda": can_propose and not can_create_directly,
@@ -379,6 +391,8 @@ class FactionActionView(WorkViewMixin, View):
             "reject_proposal": self._reject_proposal,
             # Tasks
             "create_task": self._create_task,
+            # Partial refresh (z. B. nach Panel-Aktionen)
+            "refresh_agenda": self._refresh_agenda_action,
         }
 
         handler = handlers.get(action)
@@ -418,6 +432,11 @@ class FactionActionView(WorkViewMixin, View):
         except Exception:
             logger.exception("Fehler beim Rendern der Attendance-Liste für Meeting %s", meeting.id)
             raise
+
+    def _refresh_agenda_action(self, request, meeting):
+        """Agenda-Liste neu rendern (getriggert nach Panel-Aktionen, damit Badges aktuell bleiben)."""
+        html = self._render_agenda(request, meeting)
+        return _htmx_response(html)
 
     def _redirect_detail(self, meeting):
         return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
@@ -773,7 +792,8 @@ class FactionActionView(WorkViewMixin, View):
             return HttpResponse(status=400)
 
         entry = get_object_or_404(FactionProtocolEntry, id=entry_id, meeting=meeting)
-        if not self._can_protocol(meeting) and entry.created_by != self.membership:
+        is_own = entry.created_by == self.membership and not meeting.protocol_approved
+        if not self._can_protocol(meeting) and not is_own:
             return HttpResponse(status=403)
         entry.set_content_encrypted(content)
 
@@ -797,7 +817,8 @@ class FactionActionView(WorkViewMixin, View):
         entry_id = request.POST.get("entry_id")
         entry = FactionProtocolEntry.objects.filter(id=entry_id, meeting=meeting).first()
         if entry:
-            if not self._can_protocol(meeting) and entry.created_by != self.membership:
+            is_own = entry.created_by == self.membership and not meeting.protocol_approved
+            if not self._can_protocol(meeting) and not is_own:
                 return HttpResponse(status=403)
             entry.delete()
 
@@ -1116,6 +1137,12 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
         ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
 
         is_protocol_phase = meeting.status in ["ongoing", "completed"] and not meeting.protocol_approved
+        can_protocol = is_protocol_phase and (
+            meeting.created_by == self.membership
+            or self.membership.has_permission("faction.manage")
+            or self.membership.has_permission("protocols.create")
+            or self.membership.has_permission("protocols.edit")
+        )
 
         # Attendances for speaker select
         attendances = meeting.attendances.select_related("membership__user")
@@ -1148,6 +1175,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
                 "decision": decision,
                 "can_edit": can_edit,
                 "is_protocol_phase": is_protocol_phase,
+                "can_protocol": can_protocol,
                 "attendances": attendances,
                 "protocol_entries": item.protocol_entries.select_related("speaker__user", "created_by__user").order_by(
                     "order", "created_at"
@@ -1234,8 +1262,10 @@ class FactionItemPanelActionView(WorkViewMixin, View):
     def _success_response(self, html, message=None):
         """Build response with optional toast trigger."""
         response = HttpResponse(html)
+        triggers = {"agenda-refresh": True}
         if message:
-            response["HX-Trigger"] = json.dumps({"show-toast": {"message": message, "type": "success"}})
+            triggers["show-toast"] = {"message": message, "type": "success"}
+        response["HX-Trigger"] = json.dumps(triggers)
         return response
 
     def _panel_response(self, request, meeting, item, message=None):
@@ -1249,8 +1279,10 @@ class FactionItemPanelActionView(WorkViewMixin, View):
     def _none_response(self, message=None):
         """Return empty response for hx-swap=none (auto-save)."""
         response = HttpResponse(status=204)
+        triggers = {"agenda-refresh": True}
         if message:
-            response["HX-Trigger"] = json.dumps({"panel-autosaved": True})
+            triggers["panel-autosaved"] = True
+        response["HX-Trigger"] = json.dumps(triggers)
         return response
 
     # -- Action handlers ---------------------------------------------------
@@ -1294,7 +1326,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             agenda_item=item,
             entry_type=entry_type,
             created_by=self.membership,
-            order=item.protocol_entries.count() + 1,
+            # Sitzungsweite Nummerierung — identisch zum Inline-Formular
+            # (FactionActionView._add_entry), damit die Reihenfolge konsistent bleibt
+            order=meeting.protocol_entries.count() + 1,
         )
 
         speaker_id = request.POST.get("speaker")
@@ -1324,7 +1358,8 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             return HttpResponse(status=400)
 
         entry = get_object_or_404(FactionProtocolEntry, id=entry_id, meeting=meeting)
-        if not can_edit and not self._can_protocol(meeting) and entry.created_by != self.membership:
+        is_own = entry.created_by == self.membership and not meeting.protocol_approved
+        if not can_edit and not self._can_protocol(meeting) and not is_own:
             return HttpResponse(status=403)
 
         entry.set_content_encrypted(content)
@@ -1342,11 +1377,15 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
     def _delete_entry(self, request, meeting, item, can_edit):
         """Delete protocol entry."""
-        if not can_edit:
-            return HttpResponse(status=403)
-
         entry_id = request.POST.get("entry_id")
-        FactionProtocolEntry.objects.filter(id=entry_id, meeting=meeting, agenda_item=item).delete()
+        entry = FactionProtocolEntry.objects.filter(id=entry_id, meeting=meeting, agenda_item=item).first()
+        if entry:
+            # Gleiche Regel wie im Inline-Formular (FactionActionView._delete_entry):
+            # Protokollberechtigte oder der Ersteller (solange Protokoll nicht genehmigt)
+            is_own = entry.created_by == self.membership and not meeting.protocol_approved
+            if not can_edit and not self._can_protocol(meeting) and not is_own:
+                return HttpResponse(status=403)
+            entry.delete()
         return self._panel_response(request, meeting, item, "Eintrag gelöscht")
 
     def _record_decision(self, request, meeting, item, can_edit):
@@ -1388,7 +1427,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
     def _clear_decision(self, request, meeting, item, can_edit):
         """Remove decision from agenda item."""
-        if not can_edit:
+        if not can_edit and not self._can_protocol(meeting):
             return HttpResponse(status=403)
 
         FactionDecision.objects.filter(agenda_item=item).delete()

@@ -1,5 +1,5 @@
 {# Single agenda item with accordion, protocol entries, and inline forms #}
-{# Variables: item, meeting, can_edit, can_view_internal, attendances, is_internal, is_first, is_last #}
+{# Variables: item, meeting, can_edit, can_protocol, membership, can_view_internal, attendances, is_internal, is_first, is_last #}
 {% load permission_tags %}
 
 <div class="group border-b border-gray-200 dark:border-gray-700 last:border-b-0 {% if is_internal %}bg-amber-50/30 dark:bg-amber-900/10{% endif %}"
@@ -141,7 +141,7 @@
                 {% if entry.speaker %}<span class="font-medium text-gray-700 dark:text-gray-300">{{ entry.speaker.user.get_display_name }}:</span>{% endif %}
                 <span class="text-gray-600 dark:text-gray-400">{{ entry.get_content_decrypted }}</span>
             </div>
-            {% if can_edit %}
+            {% if can_edit or can_protocol or entry.created_by == membership and not meeting.protocol_approved %}
             <div class="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100" @click.stop>
                 <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                         hx-vals='{"action": "delete_entry", "entry_id": "{{ entry.id }}"}'
@@ -155,15 +155,15 @@
             {% endif %}
         </div>
         {% empty %}
-        {% if meeting.status == 'ongoing' or meeting.status == 'completed' and not meeting.protocol_approved %}
+        {% if can_protocol %}
         <div class="px-4 py-4 text-center">
             <p class="text-xs text-gray-400 dark:text-gray-500">Noch keine Protokolleinträge</p>
         </div>
         {% endif %}
         {% endfor %}
 
-        {# Add protocol entry form #}
-        {% if meeting.status == 'ongoing' or meeting.status == 'completed' and not meeting.protocol_approved %}
+        {# Add protocol entry form — sichtbar in der Protokollphase (auch nach Sitzungsende bis zur Genehmigung) #}
+        {% if can_protocol %}
         <div class="p-3 border-t {% if is_internal %}border-amber-200 dark:border-amber-700{% else %}border-gray-200 dark:border-gray-700{% endif %}">
             <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                   hx-target="#agenda-container"
@@ -211,7 +211,7 @@
                         class="px-3 py-1.5 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1.5">
                     <i data-lucide="edit" class="w-3 h-3"></i> Bearbeiten
                 </button>
-                {% if meeting.status == 'ongoing' or meeting.status == 'completed' and not meeting.protocol_approved %}
+                {% if can_protocol %}
                 <button @click="$dispatch('open-decision', { item_id: '{{ item.id }}', title: '{{ item.title|escapejs }}' })"
                         class="px-3 py-1.5 text-xs text-green-600 hover:bg-green-50 rounded-lg flex items-center gap-1.5">
                     <i data-lucide="vote" class="w-3 h-3"></i> Abstimmung
@@ -222,6 +222,14 @@
                     <i data-lucide="trash-2" class="w-3 h-3"></i> Löschen
                 </button>
             </div>
+        </div>
+        {% elif can_protocol and not item.is_approval_item %}
+        {# Protokollphase nach Sitzungsende: Abstimmung bleibt möglich, auch wenn die TO nicht mehr bearbeitbar ist #}
+        <div class="px-4 py-3 border-t {% if is_internal %}border-amber-200 dark:border-amber-700{% else %}border-gray-200 dark:border-gray-700{% endif %} flex items-center justify-end" @click.stop>
+            <button @click="$dispatch('open-decision', { item_id: '{{ item.id }}', title: '{{ item.title|escapejs }}' })"
+                    class="px-3 py-1.5 text-xs text-green-600 hover:bg-green-50 rounded-lg flex items-center gap-1.5">
+                <i data-lucide="vote" class="w-3 h-3"></i> Abstimmung
+            </button>
         </div>
         {% endif %}
     </div>
