@@ -458,6 +458,9 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
                 }
             )
 
+        # Konkrete Beratungsfolge je Vorlage auflösen (welche Gremien, wann)
+        consultations_by_paper = self._resolve_consultations(prepared_items, meeting)
+
         # Stats
         stats = {
             "total_items": len(agenda_items),
@@ -500,6 +503,7 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
                         "reference": item["primary_paper"].reference or "",
                         "paperType": item["primary_paper"].paper_type or "",
                         "consultationCount": getattr(item["primary_paper"], "_prefetched_consultation_count", 0),
+                        "consultations": consultations_by_paper.get(item["primary_paper"].id, []),
                     }
                     if item["primary_paper"]
                     else None,
@@ -528,6 +532,44 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         )
 
         return context
+
+    @staticmethod
+    def _resolve_consultations(prepared_items, current_meeting):
+        """Löst je Vorlage die konkrete Beratungsfolge auf: welches Gremium berät wann (mit Sitzungs-Link)."""
+        paper_ids = {item["primary_paper"].id for item in prepared_items if item["primary_paper"]}
+        if not paper_ids:
+            return {}
+
+        consults = list(OParlConsultation.objects.filter(paper_id__in=paper_ids))
+        meeting_ext_ids = {c.meeting_external_id for c in consults if c.meeting_external_id}
+        meetings_by_ext = {
+            m.external_id: m
+            for m in OParlMeeting.objects.filter(external_id__in=meeting_ext_ids).prefetch_related("organizations")
+        }
+
+        consultations_by_paper = {}
+        for c in consults:
+            m = meetings_by_ext.get(c.meeting_external_id) if c.meeting_external_id else None
+            org_names = ", ".join(o.short_name or o.name or "" for o in m.organizations.all()) if m else ""
+            consultations_by_paper.setdefault(c.paper_id, []).append(
+                {
+                    "role": c.role or "",
+                    "authoritative": c.authoritative,
+                    "meetingId": str(m.id) if m else None,
+                    "meetingName": (m.name or "") if m else "",
+                    "meetingStart": timezone.localtime(m.start).strftime("%d.%m.%Y") if m and m.start else "",
+                    "organization": org_names,
+                    "isCurrent": bool(m and m.id == current_meeting.id),
+                    "_sort": m.start.isoformat() if m and m.start else "",
+                }
+            )
+
+        for entries in consultations_by_paper.values():
+            entries.sort(key=lambda e: e["_sort"])
+            for e in entries:
+                e.pop("_sort", None)
+
+        return consultations_by_paper
 
     def post(self, request, *args, **kwargs):
         """Handle form submissions (mark as prepared, save general notes)."""
