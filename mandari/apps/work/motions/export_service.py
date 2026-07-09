@@ -552,6 +552,10 @@ class MotionExportService:
                             self._indent_px = int(match.group(1))
                 elif tag_lower == "br":
                     self._text_buf.append("\n")
+                elif tag_lower == "div" and "page-break" in attrs_dict.get("class", ""):
+                    # Manueller Seitenumbruch aus dem Editor
+                    self._flush_text()
+                    self.doc.add_page_break()
                 elif tag_lower == "hr":
                     self._flush_text()
                     # Add a thin horizontal line as paragraph
