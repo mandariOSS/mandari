@@ -5,18 +5,44 @@
     <title>{{ title }}</title>
     <style>
         @page {
-            size: A4;
-            margin: 25mm 25mm 25mm 25mm;
+            size: A4 portrait;
+            @frame content_frame {
+                left: {{ frame.content_left }}mm;
+                top: {{ frame.content_top }}mm;
+                width: {{ frame.content_width }}mm;
+                height: {{ frame.content_height }}mm;
+            }
+            {% if generated %}
+            @frame footer_frame {
+                -pdf-frame-content: page_footer;
+                left: {{ frame.content_left }}mm;
+                top: {{ frame.footer_top }}mm;
+                width: {{ frame.content_width }}mm;
+                height: {{ frame.footer_height }}mm;
+            }
+            {% endif %}
         }
 
         body {
-            font-family: "Helvetica", "Arial", sans-serif;
-            font-size: 11pt;
+            font-family: "{{ font_family|default:'Helvetica' }}", "Helvetica", "Arial", sans-serif;
+            font-size: {{ font_size|default:11 }}pt;
             line-height: 1.6;
             color: #1f2937;
             margin: 0;
             padding: 0;
         }
+
+        /* Generierter Briefkopf */
+        .lh-header { width: 100%; margin-bottom: 4mm; }
+        .lh-header td { vertical-align: top; }
+        .lh-logo { width: 50%; text-align: left; }
+        .lh-address { width: 50%; text-align: right; font-size: 9pt; line-height: 1.4; }
+        .lh-accent { border-bottom: 1.5pt solid {{ primary_color|default:"#6366f1" }}; margin-bottom: 4mm; }
+        .lh-sender { font-size: 7pt; color: #4b5563; text-decoration: underline; margin: 0 0 6mm; }
+        .lh-title { font-size: 14pt; font-weight: 700; margin: 0 0 6mm; }
+        .lh-footer { font-size: 8pt; color: #4b5563; text-align: center; line-height: 1.4; }
+
+        .signature-block { margin-top: 12mm; }
 
         /* Match editor typography exactly */
         .document-content h1 {
@@ -88,8 +114,37 @@
     </style>
 </head>
 <body>
+    {% if generated %}
+    <table class="lh-header">
+        <tr>
+            <td class="lh-logo">
+                {% if logo_path %}<img src="{{ logo_path }}" style="height: 15mm;" alt="">{% endif %}
+            </td>
+            <td class="lh-address">
+                {% for line in address_lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}
+            </td>
+        </tr>
+    </table>
+    {% if accent_enabled %}<div class="lh-accent"></div>{% endif %}
+    {% if sender_line %}<p class="lh-sender">{{ sender_line }}</p>{% endif %}
+    <div class="lh-title">{{ title }}</div>
+    {% endif %}
+
     <div class="document-content">
         {{ content|safe }}
     </div>
+
+    {% if signature_html %}
+    <div class="signature-block">
+        {{ signature_html|safe }}
+    </div>
+    {% endif %}
+
+    {% if generated %}
+    <div id="page_footer" class="lh-footer">
+        {% for line in footer_lines %}{{ line }}<br>{% endfor %}
+        Seite <pdf:pagenumber> von <pdf:pagecount>
+    </div>
+    {% endif %}
 </body>
 </html>

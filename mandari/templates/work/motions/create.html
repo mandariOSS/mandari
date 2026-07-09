@@ -85,6 +85,24 @@
                     </template>
                 </select>
                 <p class="mt-1 text-xs text-gray-500">Vorlagen enthalten vorgefertigte Inhalte und Strukturhinweise.</p>
+
+                <!-- Details zur gewählten Vorlage -->
+                <div x-show="selectedTemplateInfo" x-cloak
+                     class="mt-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <p x-show="selectedTemplateInfo && selectedTemplateInfo.description"
+                       x-text="selectedTemplateInfo && selectedTemplateInfo.description"
+                       class="text-xs text-gray-600 dark:text-gray-400 mb-2"></p>
+                    <div class="flex items-center gap-4 text-xs text-gray-500">
+                        <span class="inline-flex items-center gap-1">
+                            <i data-lucide="tag" class="w-3 h-3"></i>
+                            <span x-text="(selectedTemplateInfo && selectedTemplateInfo.type_name) || 'Alle Typen'"></span>
+                        </span>
+                        <span class="inline-flex items-center gap-1">
+                            <i data-lucide="file-badge" class="w-3 h-3"></i>
+                            <span x-text="(selectedTemplateInfo && selectedTemplateInfo.letterhead_name) || 'Kein Briefkopf'"></span>
+                        </span>
+                    </div>
+                </div>
             </div>
 
             <!-- Letterhead Selection -->
@@ -161,6 +179,9 @@ function createMotion() {
         {
             id: '{{ template.id }}',
             name: '{{ template.name|escapejs }}',
+            description: '{{ template.description|escapejs }}',
+            type_name: {% if template.motion_type %}'{{ template.motion_type.name|escapejs }}'{% else %}null{% endif %},
+            letterhead_name: {% if template.letterhead %}'{{ template.letterhead.name|escapejs }}'{% else %}null{% endif %},
             motion_type_id: {% if template.motion_type %}'{{ template.motion_type.id }}'{% else %}null{% endif %},
             is_default: {{ template.is_default|yesno:"true,false" }}
         }{% if not forloop.last %},{% endif %}
@@ -181,6 +202,10 @@ function createMotion() {
             return this.allTemplates.filter(tpl =>
                 !tpl.motion_type_id || tpl.motion_type_id === this.documentType
             );
+        },
+
+        get selectedTemplateInfo() {
+            return this.allTemplates.find(tpl => tpl.id === this.selectedTemplate) || null;
         },
 
         filterTemplates() {

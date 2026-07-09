@@ -60,6 +60,11 @@
                 </div>
             </div>
             <div class="flex items-center gap-2">
+                <a href="{% url 'work:document_template_preview' org_slug=organization.slug template_id=template.id %}"
+                   target="_blank" title="Vorschau"
+                   class="p-2 text-gray-400 hover:text-primary-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                    <i data-lucide="eye" class="w-4 h-4"></i>
+                </a>
                 <a href="{% url 'work:document_template_edit' org_slug=organization.slug template_id=template.id %}"
                    class="p-2 text-gray-400 hover:text-primary-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                     <i data-lucide="pencil" class="w-4 h-4"></i>

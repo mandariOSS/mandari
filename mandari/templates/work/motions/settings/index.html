@@ -8,6 +8,46 @@
 {% endblock %}
 
 {% block work_content %}
+<!-- Branding (Corporate Design) -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6 fade-up">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+            {% if organization.effective_logo %}
+            <img src="{{ organization.effective_logo.url }}" alt="Logo" class="h-12 w-auto max-w-[120px] object-contain rounded">
+            {% else %}
+            <div class="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                <i data-lucide="palette" class="w-6 h-6 text-gray-500 dark:text-gray-400"></i>
+            </div>
+            {% endif %}
+            <div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Corporate Design</h3>
+                <div class="flex flex-wrap items-center gap-4 mt-1 text-sm text-gray-500">
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="inline-block w-4 h-4 rounded-full border border-gray-200 dark:border-gray-600" style="background-color: {{ organization.effective_primary_color }};"></span>
+                        Primärfarbe
+                    </span>
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="inline-block w-4 h-4 rounded-full border border-gray-200 dark:border-gray-600" style="background-color: {{ organization.secondary_color }};"></span>
+                        Sekundärfarbe
+                    </span>
+                    <span class="inline-flex items-center gap-1.5">
+                        <i data-lucide="file-badge" class="w-4 h-4"></i>
+                        Briefkopf: {{ letterhead_status }}{% if primary_letterhead %} ({{ primary_letterhead.name }}){% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+        <div class="text-right">
+            <a href="{% url 'work:organization' org_slug=organization.slug %}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+                <i data-lucide="settings-2" class="w-4 h-4"></i>
+                Logo & Farben pflegen
+            </a>
+            <p class="text-xs text-gray-500 mt-2">Logo und Farben werden in den Organisationseinstellungen gepflegt.</p>
+        </div>
+    </div>
+</div>
+
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 fade-up">
     <!-- Document Types -->
     <a href="{% url 'work:document_type_list' org_slug=organization.slug %}"

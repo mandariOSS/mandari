@@ -5,7 +5,7 @@
 {% block header_title %}{% if is_new %}Neuer Briefkopf{% else %}{{ letterhead.name }} bearbeiten{% endif %}{% endblock %}
 
 {% block work_content %}
-<div class="max-w-2xl">
+<div class="max-w-2xl" x-data="letterheadForm()">
     <form method="post" enctype="multipart/form-data" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
         {% csrf_token %}
 
@@ -27,8 +27,33 @@
                           placeholder="Kurze Beschreibung des Briefkopfs">{% if letterhead %}{{ letterhead.description }}{% endif %}</textarea>
             </div>
 
-            <!-- PDF File -->
+            <!-- Art des Briefkopfs -->
             <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Art des Briefkopfs</label>
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="flex items-start gap-3 p-3 border rounded-xl cursor-pointer transition-colors"
+                           :class="kind === 'generated' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700'">
+                        <input type="radio" name="kind" value="generated" x-model="kind" @change="refreshPreview()"
+                               class="mt-1 text-primary-600 focus:ring-primary-500">
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                            <span class="font-medium block">Generiert</span>
+                            <span class="text-xs text-gray-500">Aus dem Corporate Design der Organisation (Logo, Farben)</span>
+                        </span>
+                    </label>
+                    <label class="flex items-start gap-3 p-3 border rounded-xl cursor-pointer transition-colors"
+                           :class="kind === 'pdf' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700'">
+                        <input type="radio" name="kind" value="pdf" x-model="kind"
+                               class="mt-1 text-primary-600 focus:ring-primary-500">
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                            <span class="font-medium block">PDF-Datei</span>
+                            <span class="text-xs text-gray-500">Eigenes PDF als Hintergrund für den Export</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- PDF File (nur kind=pdf) -->
+            <div x-show="kind === 'pdf'" x-cloak>
                 <label for="pdf_file" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     PDF-Datei {% if is_new %}*{% endif %}
                 </label>
@@ -43,9 +68,65 @@
                 <p class="text-xs text-gray-500 mb-2">Laden Sie eine neue Datei hoch, um die bestehende zu ersetzen:</p>
                 {% endif %}
                 <input type="file" id="pdf_file" name="pdf_file" accept=".pdf"
-                       {% if is_new %}required{% endif %}
                        class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100">
                 <p class="text-xs text-gray-500 mt-1">Nur PDF-Dateien, max. 10MB. Das PDF dient als Hintergrund für exportierte Dokumente.</p>
+            </div>
+
+            <!-- Generierter Briefkopf (nur kind=generated) -->
+            <div x-show="kind === 'generated'" x-cloak class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" name="header_logo_enabled" x-model="headerLogoEnabled" @change="refreshPreview()"
+                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                            Logo anzeigen
+                            <span class="block text-xs text-gray-500">Logo der Organisation im Kopf</span>
+                        </span>
+                    </label>
+                    <label class="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" name="accent_color_enabled" x-model="accentColorEnabled" @change="refreshPreview()"
+                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                        <span class="text-sm text-gray-700 dark:text-gray-300">
+                            Akzentfarbe
+                            <span class="block text-xs text-gray-500">Linie in der Primärfarbe</span>
+                        </span>
+                    </label>
+                </div>
+
+                <div>
+                    <label for="sender_line" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Absenderzeile</label>
+                    <input type="text" id="sender_line" name="sender_line" x-model="senderLine" @input.debounce.400ms="refreshPreview()"
+                           class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                           placeholder="Fraktion XYZ · Rathausplatz 1 · 12345 Stadt">
+                    <p class="text-xs text-gray-500 mt-1">Einzeilige Absenderzeile über dem Adressfeld.</p>
+                </div>
+
+                <div>
+                    <label for="address_block" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Absenderblock</label>
+                    <textarea id="address_block" name="address_block" rows="4" x-model="addressBlock" @input.debounce.400ms="refreshPreview()"
+                              class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                              placeholder="Fraktion XYZ&#10;Rathausplatz 1&#10;12345 Stadt"></textarea>
+                    <p class="text-xs text-gray-500 mt-1">Wird rechts oben im Briefkopf angezeigt (eine Angabe je Zeile).</p>
+                </div>
+
+                <div>
+                    <label for="footer_text" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Fußzeile</label>
+                    <textarea id="footer_text" name="footer_text" rows="3" x-model="footerText" @input.debounce.400ms="refreshPreview()"
+                              class="block w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                              placeholder="fraktion@beispielstadt.de · Tel. 0123 456789 · www.beispiel.de"></textarea>
+                    <p class="text-xs text-gray-500 mt-1">Erscheint auf jeder Seite unten (z. B. Kontakt/Bank/Web, Angaben mit · trennbar).</p>
+                </div>
+
+                <!-- Live-Vorschau -->
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="block text-sm font-medium text-gray-700 dark:text-gray-300">Vorschau</span>
+                        <button type="button" @click="refreshPreview()" class="text-xs text-primary-600 hover:underline">Aktualisieren</button>
+                    </div>
+                    <div id="letterhead-preview" class="border border-gray-200 dark:border-gray-700 rounded-xl bg-white p-6 overflow-auto">
+                        <p class="text-sm text-gray-400">Vorschau wird geladen …</p>
+                    </div>
+                </div>
             </div>
 
             <!-- Content Margins -->
@@ -134,4 +215,44 @@
         </div>
     </form>
 </div>
+
+<script>
+function letterheadForm() {
+    return {
+        kind: '{% if letterhead %}{{ letterhead.kind }}{% else %}generated{% endif %}',
+        headerLogoEnabled: {% if letterhead %}{{ letterhead.header_logo_enabled|yesno:"true,false" }}{% else %}true{% endif %},
+        accentColorEnabled: {% if letterhead %}{{ letterhead.accent_color_enabled|yesno:"true,false" }}{% else %}true{% endif %},
+        senderLine: '{% if letterhead %}{{ letterhead.sender_line|escapejs }}{% else %}{{ generated_defaults.sender_line|escapejs }}{% endif %}',
+        addressBlock: '{% if letterhead %}{{ letterhead.address_block|escapejs }}{% else %}{{ generated_defaults.address_block|escapejs }}{% endif %}',
+        footerText: '{% if letterhead %}{{ letterhead.footer_text|escapejs }}{% else %}{{ generated_defaults.footer_text|escapejs }}{% endif %}',
+
+        init() {
+            this.$nextTick(() => this.refreshPreview());
+        },
+
+        async refreshPreview() {
+            if (this.kind !== 'generated') return;
+            const target = document.getElementById('letterhead-preview');
+            if (!target) return;
+
+            const params = new URLSearchParams({
+                header_logo_enabled: this.headerLogoEnabled ? 'on' : '',
+                accent_color_enabled: this.accentColorEnabled ? 'on' : '',
+                sender_line: this.senderLine,
+                address_block: this.addressBlock,
+                footer_text: this.footerText,
+            });
+
+            try {
+                const response = await fetch(`{% url 'work:document_letterhead_preview' org_slug=organization.slug %}?${params}`);
+                if (response.ok) {
+                    target.innerHTML = await response.text();
+                }
+            } catch (e) {
+                target.innerHTML = '<p class="text-sm text-red-500">Vorschau konnte nicht geladen werden.</p>';
+            }
+        }
+    }
+}
+</script>
 {% endblock %}

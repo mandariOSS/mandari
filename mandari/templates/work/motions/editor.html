@@ -2084,6 +2084,18 @@ function documentEditor() {
 
             // Render letterhead background if available
             {% if letterhead %}
+            {% if letterhead.is_generated %}
+            // Generierter Briefkopf: HTML-Vorschau über dem Inhalt (statt pdfjs-Overlay)
+            this._renderGeneratedLetterhead(
+                '{% url "work:document_letterhead_editor_preview" org_slug=organization.slug letterhead_id=letterhead.id %}',
+                {
+                    top: {{ letterhead.content_margin_top|default:"25" }},
+                    right: {{ letterhead.content_margin_right|default:"20" }},
+                    bottom: {{ letterhead.content_margin_bottom|default:"25" }},
+                    left: {{ letterhead.content_margin_left|default:"20" }},
+                }
+            );
+            {% else %}
             if (typeof MandariEditor !== 'undefined' && MandariEditor.renderLetterhead) {
                 MandariEditor.renderLetterhead({
                     pdfUrl: '{{ letterhead.pdf_file.url }}',
@@ -2097,6 +2109,7 @@ function documentEditor() {
                     }
                 });
             }
+            {% endif %}
             {% endif %}
 
             // Load inline comments data for click-on-mark popup
@@ -2793,11 +2806,12 @@ function documentEditor() {
 
             // Re-render letterhead background
             const container = document.getElementById('editor-container');
-            if (!container || typeof MandariEditor === 'undefined' || !MandariEditor.renderLetterhead) return;
+            if (!container) return;
 
-            // Remove existing letterhead canvas
+            // Remove existing letterhead canvas and HTML preview
             const existingCanvas = container.querySelector('.letterhead-canvas');
             if (existingCanvas) existingCanvas.remove();
+            this._removeGeneratedLetterhead(container);
 
             // Reset editor padding to default
             const tiptapEl = container.querySelector('.tiptap');
@@ -2811,6 +2825,19 @@ function documentEditor() {
             const lhData = this.letterheadsData.find(lh => lh.id === id);
             if (!lhData) return;
 
+            if (lhData.kind === 'generated') {
+                // Generierter Briefkopf: HTML-Vorschau statt pdfjs-Overlay
+                this._renderGeneratedLetterhead(lhData.preview_url, {
+                    top: lhData.margin_top,
+                    right: lhData.margin_right,
+                    bottom: lhData.margin_bottom,
+                    left: lhData.margin_left,
+                });
+                return;
+            }
+
+            if (typeof MandariEditor === 'undefined' || !MandariEditor.renderLetterhead) return;
+
             MandariEditor.renderLetterhead({
                 pdfUrl: lhData.pdf_url,
                 container: container,
@@ -2822,6 +2849,38 @@ function documentEditor() {
                     left: lhData.margin_left,
                 }
             });
+        },
+
+        async _renderGeneratedLetterhead(previewUrl, margins) {
+            const container = document.getElementById('editor-container');
+            if (!container || !previewUrl) return;
+
+            this._removeGeneratedLetterhead(container);
+
+            try {
+                const response = await fetch(previewUrl);
+                if (!response.ok) return;
+                const html = await response.text();
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'letterhead-html-preview';
+                wrapper.style.padding = `12mm ${margins.right}mm 0 ${margins.left}mm`;
+                wrapper.innerHTML = html;
+                container.insertBefore(wrapper, container.firstChild);
+
+                // Inhalt rückt unter den Briefkopf: oberes Padding reduzieren
+                const tiptapEl = container.querySelector('.tiptap');
+                if (tiptapEl) {
+                    tiptapEl.style.padding = `6mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm`;
+                }
+            } catch (e) {
+                // Vorschau ist optional — Fehler still ignorieren
+            }
+        },
+
+        _removeGeneratedLetterhead(container) {
+            const existing = container.querySelector('.letterhead-html-preview');
+            if (existing) existing.remove();
         },
 
         async changeStatus(newStatus) {

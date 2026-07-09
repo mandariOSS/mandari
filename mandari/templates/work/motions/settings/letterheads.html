@@ -4,7 +4,7 @@
 
 {% block header_title %}Briefköpfe{% endblock %}
 {% block header_subtitle %}
-<p class="work-page-subtitle">PDF-Briefköpfe für den Dokumentexport</p>
+<p class="work-page-subtitle">Briefköpfe für den Dokumentexport – generiert aus dem Corporate Design oder als PDF-Hintergrund</p>
 {% endblock %}
 
 {% block header_actions %}
@@ -27,6 +27,9 @@
                 <div>
                     <div class="flex items-center gap-2">
                         <h3 class="font-medium text-gray-900 dark:text-white">{{ letterhead.name }}</h3>
+                        <span class="px-2 py-0.5 text-xs {% if letterhead.is_generated %}bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300{% else %}bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300{% endif %} rounded">
+                            {% if letterhead.is_generated %}Generiert{% else %}PDF{% endif %}
+                        </span>
                         {% if letterhead.is_default %}
                         <span class="px-2 py-0.5 text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded">Standard</span>
                         {% endif %}
