@@ -424,6 +424,13 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         ).select_related("author", "author__user"):
             notes_by_item.setdefault(note.agenda_item_id, []).append(note)
 
+        # Consulting-Notizen aus Vorbereitungen anderer Gremien (gleiche Vorlage,
+        # gleiche Organisation)
+        for item_id, consulting_notes in AgendaItemNote.get_consulting_notes_for_items(
+            organization, agenda_items
+        ).items():
+            notes_by_item.setdefault(item_id, []).extend(consulting_notes)
+
         # Ergänzende Dokumente
         docs_by_item = {}
         for doc in AgendaSupplementaryDocument.objects.filter(
@@ -472,6 +479,7 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         context["preparation"] = preparation
         context["prepared_items"] = prepared_items
         context["position_choices"] = AgendaItemPosition.POSITION_CHOICES
+        context["visibility_choices"] = AgendaItemNote.VISIBILITY_CHOICES
         context["stats"] = stats
 
         # JSON für Alpine.js
@@ -762,26 +770,48 @@ class AgendaNotesAPIView(WorkViewMixin, View):
         if not membership:
             return JsonResponse({"error": "Unauthorized"}, status=403)
 
-        notes = (
+        notes = list(
             AgendaItemNote.objects.filter(organization=organization, agenda_item_id=item_id)
             .select_related("author", "author__user")
             .order_by("-is_pinned", "-is_decision", "-created_at")
         )
 
+        # Consulting-Notizen aus Vorbereitungen anderer Gremien zur selben
+        # Vorlage (gleiche Organisation)
+        agenda_item = OParlAgendaItem.objects.filter(id=item_id).first()
+        foreign_notes = []
+        if agenda_item:
+            consulting_by_item = AgendaItemNote.get_consulting_notes_for_items(organization, [agenda_item])
+            foreign_notes = sorted(
+                consulting_by_item.get(agenda_item.id, []),
+                key=lambda n: n.created_at,
+                reverse=True,
+            )
+
+        def serialize(note, origin_meeting=None):
+            origin = None
+            if origin_meeting is not None:
+                label = origin_meeting.get_display_name()
+                if origin_meeting.start:
+                    label = f"{label}, {timezone.localtime(origin_meeting.start).strftime('%d.%m.%Y')}"
+                origin = {"meeting_id": str(origin_meeting.id), "label": label}
+            return {
+                "id": str(note.id),
+                "content": note.get_content_decrypted(),
+                "is_decision": note.is_decision,
+                "is_pinned": note.is_pinned,
+                "author": note.author.user.get_display_name(),
+                "is_own": note.author == membership,
+                "created_at": note.created_at.isoformat(),
+                "visibility": note.visibility,
+                "visibility_display": note.get_visibility_display(),
+                "origin": origin,
+            }
+
         return JsonResponse(
             {
-                "notes": [
-                    {
-                        "id": str(n.id),
-                        "content": n.get_content_decrypted(),
-                        "is_decision": n.is_decision,
-                        "is_pinned": n.is_pinned,
-                        "author": n.author.user.get_display_name(),
-                        "is_own": n.author == membership,
-                        "created_at": n.created_at.isoformat(),
-                    }
-                    for n in notes
-                ]
+                "notes": [serialize(n) for n in notes]
+                + [serialize(n, origin_meeting=n.origin_meeting) for n in foreign_notes]
             }
         )
 
@@ -807,11 +837,15 @@ class AgendaNotesAPIView(WorkViewMixin, View):
 
         is_decision = data.get("is_decision", False) in [True, "true", "1", "on"]
 
+        visibility = data.get("visibility", "organization")
+        if visibility not in dict(AgendaItemNote.VISIBILITY_CHOICES):
+            visibility = "organization"
+
         note = AgendaItemNote(
             organization=organization,
             agenda_item=agenda_item,
             author=membership,
-            visibility="organization",
+            visibility=visibility,
             is_decision=is_decision,
         )
         note.set_content_encrypted(content)

@@ -295,6 +295,13 @@ class AgendaItemNote(EncryptionMixin, models.Model):
 
     Alle Mitglieder der Organisation sehen und können beitragen.
     Kann als Beschluss oder wichtig markiert werden.
+
+    Sichtbarkeitsstufen:
+    - organization: Nur am eigenen TOP sichtbar
+    - consulting: Zusätzlich in den Vorbereitungen aller anderen Sitzungen
+      sichtbar, deren TOP dieselbe Vorlage berät (Beratungsfolge). Die
+      Organisation bleibt dabei immer die Grenze - Notizen sind nie für
+      andere Organisationen sichtbar.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -312,9 +319,9 @@ class AgendaItemNote(EncryptionMixin, models.Model):
         verbose_name="Tagesordnungspunkt",
     )
 
-    # Phase 1: visibility bleibt für Datenmigration, wird in Phase 3 entfernt
     VISIBILITY_CHOICES = [
         ("organization", "Meine Organisation"),
+        ("consulting", "Beratende Gremien"),
     ]
     visibility = models.CharField(
         max_length=20,
@@ -360,6 +367,68 @@ class AgendaItemNote(EncryptionMixin, models.Model):
 
     def get_encryption_organization(self):
         return self.organization
+
+    @classmethod
+    def get_consulting_notes_for_items(cls, organization, agenda_items):
+        """
+        Consulting-Notizen aus anderen Sitzungsvorbereitungen derselben Organisation.
+
+        Findet für die übergebenen TOPs alle Notizen mit Sichtbarkeit
+        "consulting", die an TOPs anderer Sitzungen hängen, welche dieselbe
+        Vorlage beraten (Lookup über OParlConsultation). Die Organisation
+        bleibt dabei immer die Grenze.
+
+        Returns:
+            dict: {agenda_item_id des aktuellen TOPs: [AgendaItemNote, ...]}
+            Jede Notiz trägt ``origin_meeting`` (OParlMeeting des Herkunfts-TOPs).
+        """
+        from insight_core.models import OParlConsultation
+
+        item_ids_by_ext = {item.external_id: item.id for item in agenda_items if item.external_id}
+        if not item_ids_by_ext:
+            return {}
+
+        # Vorlagen, die von den aktuellen TOPs beraten werden
+        paper_items = {}  # paper_id -> {aktuelle agenda_item ids}
+        for cons in OParlConsultation.objects.filter(
+            agenda_item_external_id__in=item_ids_by_ext.keys(),
+            paper__isnull=False,
+        ):
+            paper_items.setdefault(cons.paper_id, set()).add(item_ids_by_ext[cons.agenda_item_external_id])
+
+        if not paper_items:
+            return {}
+
+        # TOPs anderer Sitzungen, die dieselben Vorlagen beraten
+        sibling_papers = {}  # sibling external_id -> {paper ids}
+        sibling_consultations = (
+            OParlConsultation.objects.filter(paper_id__in=paper_items.keys())
+            .exclude(agenda_item_external_id__isnull=True)
+            .exclude(agenda_item_external_id="")
+            .exclude(agenda_item_external_id__in=item_ids_by_ext.keys())
+        )
+        for cons in sibling_consultations:
+            sibling_papers.setdefault(cons.agenda_item_external_id, set()).add(cons.paper_id)
+
+        if not sibling_papers:
+            return {}
+
+        notes_by_item = {}
+        notes = cls.objects.filter(
+            organization=organization,  # Organisation bleibt immer Grenze
+            visibility="consulting",
+            agenda_item__external_id__in=sibling_papers.keys(),
+        ).select_related("author", "author__user", "agenda_item", "agenda_item__meeting")
+
+        for note in notes:
+            note.origin_meeting = note.agenda_item.meeting
+            for paper_id in sibling_papers.get(note.agenda_item.external_id, ()):
+                for current_item_id in paper_items.get(paper_id, ()):
+                    bucket = notes_by_item.setdefault(current_item_id, [])
+                    if note not in bucket:
+                        bucket.append(note)
+
+        return notes_by_item
 
 
 # =============================================================================
