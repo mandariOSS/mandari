@@ -24,8 +24,11 @@ import Image from '@tiptap/extension-image'
 import { CommentMark } from './extensions/comment-mark'
 import { Indent } from './extensions/indent'
 import { PageBreaks } from './extensions/page-breaks'
+import { PageBreakNode } from './extensions/page-break-node'
 import { YjsUndo } from './extensions/yjs-undo'
 import { SlashCommands } from './extensions/slash-commands'
+import { FindReplace } from './extensions/find-replace'
+import { cleanPastedHtml } from './paste-cleanup'
 import { renderDiff } from './diff'
 import { renderLetterhead } from './letterhead'
 import { initCollaboration } from './collaboration'
@@ -38,6 +41,8 @@ export interface EditorOptions {
   onUpdate?: (html: string) => void
   onSelectionUpdate?: (state: FormatState) => void
   onPageCount?: (count: number, currentPage: number) => void
+  /** Suchen & Ersetzen: wird bei Änderung der Trefferliste aufgerufen */
+  onSearchUpdate?: (current: number, total: number) => void
   placeholder?: string
 }
 
@@ -65,6 +70,7 @@ export interface FormatState {
   link: boolean
   textAlign: string
   textColor: string | false
+  highlight: boolean
   table: boolean
 }
 
@@ -98,6 +104,7 @@ function getFormatState(editor: Editor): FormatState {
           ? 'justify'
           : 'left',
     textColor: editor.getAttributes('textStyle').color || false,
+    highlight: editor.isActive('highlight'),
     table: editor.isActive('table'),
   }
 }
@@ -153,9 +160,22 @@ function getBaseExtensions(options: EditorOptions) {
     PageBreaks.configure({
       onPageCount: options.onPageCount,
     }),
+    // Manueller Seitenumbruch (Strg+Enter, Toolbar, /-Menü)
+    PageBreakNode,
+    // Suchen & Ersetzen (lokale Decorations, kollaborationssicher)
+    FindReplace.configure({
+      onSearchUpdate: options.onSearchUpdate,
+    }),
     // Slash Commands
     SlashCommands,
   ]
+}
+
+/** Gemeinsame editorProps: Paste-Cleanup für Word/Google-Docs-HTML */
+function getEditorProps() {
+  return {
+    transformPastedHTML: (html: string) => cleanPastedHtml(html),
+  }
 }
 
 /** Create a standalone (non-collaborative) TipTap editor */
@@ -164,6 +184,7 @@ export function createEditor(options: EditorOptions): Editor {
     element: options.element,
     editable: options.editable,
     content: options.content,
+    editorProps: getEditorProps(),
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
@@ -215,6 +236,7 @@ export function createCollaborativeEditor(
   editor = new Editor({
     element: options.element,
     editable: options.editable,
+    editorProps: getEditorProps(),
     // Content is loaded via Yjs (from server state or seeded in onInitialState)
     extensions: [
       StarterKit.configure({
@@ -245,6 +267,9 @@ export {
   Editor,
   getFormatState,
   CommentMark,
+  FindReplace,
+  PageBreakNode,
+  cleanPastedHtml,
   renderDiff,
   renderLetterhead,
   initCollaboration,

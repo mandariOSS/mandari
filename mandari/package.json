@@ -8,6 +8,7 @@
     "build:editor": "esbuild frontend/editor/index.ts --bundle --outfile=static/js/editor.bundle.js --format=iife --global-name=MandariEditor --minify --target=es2020",
     "watch:editor": "esbuild frontend/editor/index.ts --bundle --outfile=static/js/editor.bundle.js --format=iife --global-name=MandariEditor --target=es2020 --watch",
     "build": "npm run build:css && npm run build:editor",
+    "test:paste": "node frontend/editor/test/paste-cleanup.test.mjs",
     "watch": "concurrently \"npm run watch:css\" \"npm run watch:editor\""
   },
   "dependencies": {

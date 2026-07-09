@@ -171,6 +171,9 @@ export const PageBreaks = Extension.create<PageBreakOptions>({
             const decorations: Decoration[] = []
             let pageNum = 1
             let existingGapCount = 0
+            // Content-space offset (px) where the current page starts —
+            // advances at automatic AND manual page breaks.
+            let pageStart = 0
             const newGapPositions: number[] = []
 
             // Use actual DOM positions to determine page breaks.
@@ -187,12 +190,45 @@ export const PageBreaks = Extension.create<PageBreakOptions>({
               }
 
               const rect = child.getBoundingClientRect()
-              // Bottom edge relative to content start (after padding)
-              const childBottom = rect.bottom - tiptapRect.top - padTop
-              // Subtract height of existing gap widgets to get pure content position
-              const contentBottom = childBottom - (existingGapCount * extensionOptions.gapHeight)
+              // Edges relative to content start (after padding), minus
+              // heights of existing gap widgets → pure content position
+              const contentTop =
+                rect.top - tiptapRect.top - padTop - existingGapCount * extensionOptions.gapHeight
+              const contentBottom =
+                rect.bottom - tiptapRect.top - padTop - existingGapCount * extensionOptions.gapHeight
 
-              if (contentBottom > usableHeight * pageNum) {
+              // Manual page break node: force a new page after it
+              if (child.hasAttribute('data-page-break')) {
+                newGapPositions.push(rect.bottom - tiptapRect.top)
+                try {
+                  const pos = editorView.posAtDOM(child, 0)
+                  const resolvedPos = doc.resolve(pos)
+                  // Atom-Leaf: posAtDOM liefert die Position VOR dem Node
+                  // (depth 0 auf Dokumentebene) — Ende = pos + nodeSize
+                  const nodeEnd =
+                    resolvedPos.depth === 0
+                      ? pos + (resolvedPos.nodeAfter?.nodeSize ?? 1)
+                      : resolvedPos.after(resolvedPos.depth)
+
+                  decorations.push(
+                    Decoration.widget(
+                      nodeEnd,
+                      () => createGapWidget(extensionOptions.gapHeight),
+                      {
+                        side: 1,
+                        key: `page-gap-${pageNum}`,
+                      }
+                    )
+                  )
+                  pageNum++
+                  pageStart = contentBottom
+                } catch {
+                  // posAtDOM can fail for edge cases — skip
+                }
+                continue
+              }
+
+              if (contentBottom - pageStart > usableHeight) {
                 // This block crosses the page boundary
                 const gapY = rect.top - tiptapRect.top
                 newGapPositions.push(gapY)
@@ -213,6 +249,7 @@ export const PageBreaks = Extension.create<PageBreakOptions>({
                     )
                   )
                   pageNum++
+                  pageStart = contentTop
                   // Do NOT increment existingGapCount — new gaps aren't in the DOM yet
                   // so they don't affect getBoundingClientRect positions of subsequent children
                 } catch {

@@ -91,6 +91,14 @@ function getCommandItems(): SlashCommandItem[] {
       },
     },
     {
+      title: 'Seitenumbruch',
+      description: 'Neue Seite beginnen',
+      icon: 'file-output',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setPageBreak().run()
+      },
+    },
+    {
       title: 'Bild',
       description: 'Bild per URL einfügen',
       icon: 'image',
