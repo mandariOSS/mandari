@@ -448,6 +448,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                     "margin_right": lh.content_margin_right,
                     "margin_bottom": lh.content_margin_bottom,
                     "margin_left": lh.content_margin_left,
+                    "font_family": lh.font_family,
+                    "font_size": lh.font_size,
                 }
             )
         context["letterheads_json"] = letterheads_json

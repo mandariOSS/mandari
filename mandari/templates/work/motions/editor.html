@@ -95,19 +95,27 @@
         background: #111827;
     }
 
-    /* TipTap ProseMirror editor styles — matches PDF export margins for WYSIWYG */
+    /* TipTap ProseMirror editor styles — matches PDF export margins for WYSIWYG.
+       Ränder und Schrift kommen aus dem gewählten Briefkopf (Fallback: Standardwerte),
+       damit Editor-Ansicht und PDF-Export deckungsgleich sind. */
     #editor-container .tiptap {
         flex: 1;
+        {% if letterhead %}
+        padding: {{ letterhead.content_margin_top }}mm {{ letterhead.content_margin_right }}mm {{ letterhead.content_margin_bottom }}mm {{ letterhead.content_margin_left }}mm;
+        font-size: {{ letterhead.font_size|default:11 }}pt;
+        font-family: "{{ letterhead.font_family|default:'Arial' }}", Arial, Helvetica, sans-serif;
+        {% else %}
         padding: 30mm 25mm 25mm 25mm;
+        font-size: 11pt;
+        font-family: Arial, Helvetica, sans-serif;
+        {% endif %}
         max-width: 210mm;
         margin: 0 auto;
         width: 100%;
-        font-size: 11pt;
         line-height: 1.6;
         color: #1f2937;
         outline: none;
         min-height: 100%;
-        font-family: Arial, Helvetica, sans-serif;
     }
 
     .dark #editor-container .tiptap {
@@ -245,6 +253,60 @@
     .editor-page .tiptap {
         position: relative;
         z-index: 1;
+    }
+
+    /* Manueller Seitenumbruch (PageBreakNode) — dezente Linie mit Label */
+    #editor-container .tiptap div.page-break {
+        position: relative;
+        height: 14px;
+        margin: 4px 0;
+        cursor: default;
+        user-select: none;
+    }
+    #editor-container .tiptap div.page-break::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        border-top: 2px dotted #94a3b8;
+    }
+    #editor-container .tiptap div.page-break::after {
+        content: 'Seitenumbruch';
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 9px;
+        font-family: Arial, sans-serif;
+        color: #64748b;
+        background: #faf9f7;
+        padding: 0 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+    .dark #editor-container .tiptap div.page-break::after {
+        background: #111827;
+        color: #94a3b8;
+    }
+    #editor-container .tiptap div.page-break.ProseMirror-selectednode::before {
+        border-top-color: #4f46e5;
+    }
+
+    /* Suchen & Ersetzen — Treffer-Markierungen (lokale Decorations) */
+    #editor-container .tiptap .search-match {
+        background-color: rgba(250, 204, 21, 0.45);
+        border-radius: 2px;
+    }
+    #editor-container .tiptap .search-match--active {
+        background-color: rgba(249, 115, 22, 0.65);
+        outline: 1px solid #ea580c;
+    }
+    .dark #editor-container .tiptap .search-match {
+        background-color: rgba(202, 138, 4, 0.5);
+    }
+    .dark #editor-container .tiptap .search-match--active {
+        background-color: rgba(234, 88, 12, 0.7);
     }
 
     /* Page gap widgets — rendered by PageBreaks TipTap extension (widget decorations) */
@@ -1200,8 +1262,40 @@
             {% if can_edit %}
             <!-- Toolbar (only shown when editable) -->
             <div id="editor-toolbar" class="border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex flex-wrap items-center gap-1 bg-white dark:bg-gray-800 flex-shrink-0">
-                <!-- Text Formatting -->
-                <div class="flex items-center gap-0.5 pr-2 border-r border-gray-200 dark:border-gray-700">
+                <!-- Formatvorlagen (Standard / H1–H3 / Zitat) — folgt dem Cursor -->
+                <div x-data="{ styleMenu: false }" class="flex items-center pr-2 border-r border-gray-200 dark:border-gray-700 relative">
+                    <button type="button" @mousedown.prevent="styleMenu = !styleMenu"
+                            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-sm min-w-[7.5rem] justify-between"
+                            title="Formatvorlage">
+                        <span class="truncate" x-text="styleLabel"></span>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 opacity-50 flex-shrink-0"></i>
+                    </button>
+                    <div x-show="styleMenu" @click.away="styleMenu = false" x-cloak class="table-actions-dropdown">
+                        <button type="button" data-editor-cmd="paragraph" @mousedown="styleMenu = false"
+                                :class="{ 'bg-gray-100 dark:bg-gray-700': !formats.header && !formats.blockquote }">
+                            <i data-lucide="pilcrow" class="w-3.5 h-3.5"></i> Standard
+                        </button>
+                        <button type="button" data-editor-cmd="heading" data-editor-level="1" @mousedown="styleMenu = false"
+                                :class="{ 'bg-gray-100 dark:bg-gray-700': formats.header === 1 }">
+                            <i data-lucide="heading-1" class="w-3.5 h-3.5"></i> <span class="font-bold">Überschrift 1</span>
+                        </button>
+                        <button type="button" data-editor-cmd="heading" data-editor-level="2" @mousedown="styleMenu = false"
+                                :class="{ 'bg-gray-100 dark:bg-gray-700': formats.header === 2 }">
+                            <i data-lucide="heading-2" class="w-3.5 h-3.5"></i> <span class="font-semibold">Überschrift 2</span>
+                        </button>
+                        <button type="button" data-editor-cmd="heading" data-editor-level="3" @mousedown="styleMenu = false"
+                                :class="{ 'bg-gray-100 dark:bg-gray-700': formats.header === 3 }">
+                            <i data-lucide="heading-3" class="w-3.5 h-3.5"></i> <span class="font-medium">Überschrift 3</span>
+                        </button>
+                        <button type="button" data-editor-cmd="blockquote" @mousedown="styleMenu = false"
+                                :class="{ 'bg-gray-100 dark:bg-gray-700': formats.blockquote }">
+                            <i data-lucide="quote" class="w-3.5 h-3.5"></i> <span class="italic">Zitat</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Zeichenformat: B I U S, Textfarbe, Hervorhebung -->
+                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
                     <button type="button" data-editor-cmd="bold"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.bold }"
                             class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Fett (Strg+B)">
@@ -1217,50 +1311,84 @@
                             class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Unterstrichen (Strg+U)">
                         <i data-lucide="underline" class="w-4 h-4"></i>
                     </button>
+                    <button type="button" data-editor-cmd="strike"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.strike }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Durchgestrichen (Strg+Umschalt+S)">
+                        <i data-lucide="strikethrough" class="w-4 h-4"></i>
+                    </button>
+                    <!-- Textfarbe -->
+                    <div x-data="{ colorMenu: false }" class="relative">
+                        <button type="button" @mousedown.prevent="colorMenu = !colorMenu"
+                                class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 relative" title="Textfarbe">
+                            <i data-lucide="palette" class="w-4 h-4"></i>
+                            <span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded"
+                                  :style="formats.textColor ? 'background:' + formats.textColor : 'background:#374151'"></span>
+                        </button>
+                        <div x-show="colorMenu" @click.away="colorMenu = false" x-cloak class="color-picker-dropdown">
+                            <div class="grid grid-cols-6 gap-1.5">
+                                <button type="button" @mousedown.prevent="$dispatch('editor-color-cmd', ''); colorMenu = false"
+                                        class="color-swatch border-gray-300" :class="{ 'active': !formats.textColor }"
+                                        style="background: #374151" title="Standard">
+                                </button>
+                                <template x-for="c in ['#dc2626','#ea580c','#d97706','#16a34a','#0891b2','#2563eb','#7c3aed','#db2777','#059669','#0d9488','#4f46e5']" :key="c">
+                                    <button type="button" @mousedown.prevent="$dispatch('editor-color-cmd', c); colorMenu = false"
+                                            class="color-swatch" :class="{ 'active': formats.textColor === c }"
+                                            :style="'background:' + c">
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" data-editor-cmd="highlight"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.highlight }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Hervorheben (Strg+Umschalt+H)">
+                        <i data-lucide="highlighter" class="w-4 h-4"></i>
+                    </button>
                 </div>
 
-                <!-- Headings -->
-                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
-                    <button type="button" data-editor-cmd="heading" data-editor-level="1"
-                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.header === 1 }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Überschrift 1">
-                        <span class="text-xs font-bold">H1</span>
+                <!-- Ausrichtung -->
+                <div class="hidden lg:flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" data-editor-cmd="align" data-editor-value="left"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'left' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Linksbündig (Strg+Umschalt+L)">
+                        <i data-lucide="align-left" class="w-4 h-4"></i>
                     </button>
-                    <button type="button" data-editor-cmd="heading" data-editor-level="2"
-                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.header === 2 }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Überschrift 2">
-                        <span class="text-xs font-bold">H2</span>
+                    <button type="button" data-editor-cmd="align" data-editor-value="center"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'center' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Zentriert (Strg+Umschalt+E)">
+                        <i data-lucide="align-center" class="w-4 h-4"></i>
                     </button>
-                    <button type="button" data-editor-cmd="heading" data-editor-level="3"
-                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.header === 3 }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Überschrift 3">
-                        <span class="text-xs font-bold">H3</span>
+                    <button type="button" data-editor-cmd="align" data-editor-value="right"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'right' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Rechtsbündig (Strg+Umschalt+R)">
+                        <i data-lucide="align-right" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="align" data-editor-value="justify"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'justify' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Blocksatz (Strg+Umschalt+J)">
+                        <i data-lucide="align-justify" class="w-4 h-4"></i>
                     </button>
                 </div>
 
-                <!-- Lists -->
-                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                <!-- Listen, Checkliste, Einzug -->
+                <div class="hidden md:flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
                     <button type="button" data-editor-cmd="bulletList"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'bullet' }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufzählung">
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufzählung (Strg+Umschalt+8)">
                         <i data-lucide="list" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="orderedList"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'ordered' }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Nummerierung">
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Nummerierung (Strg+Umschalt+7)">
                         <i data-lucide="list-ordered" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="taskList"
                             :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'task' }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufgabenliste">
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufgabenliste (Strg+Umschalt+9)">
                         <i data-lucide="list-checks" class="w-4 h-4"></i>
                     </button>
-                </div>
-
-                <!-- Indent -->
-                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
                     <button type="button" data-editor-cmd="outdent"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Weniger einrücken (Shift+Tab)">
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Weniger einrücken (Umschalt+Tab)">
                         <i data-lucide="indent-decrease" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="indent"
@@ -1269,12 +1397,53 @@
                     </button>
                 </div>
 
-                <!-- Block -->
-                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
-                    <button type="button" data-editor-cmd="blockquote"
-                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.blockquote }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Zitat">
-                        <i data-lucide="quote" class="w-4 h-4"></i>
+                <!-- Einfügen: Link, Tabelle, Bild, Seitenumbruch, Trennlinie -->
+                <div class="hidden lg:flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" @mousedown.prevent="openLinkDialog()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.link }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Link einfügen (Strg+K)">
+                        <i data-lucide="link" class="w-4 h-4"></i>
+                    </button>
+                    <div x-data="{ tableMenu: false }" class="relative">
+                        <button type="button" @mousedown.prevent="tableMenu = !tableMenu"
+                                :class="{ 'bg-gray-200 dark:bg-gray-600': formats.table }"
+                                class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Tabelle">
+                            <i data-lucide="table" class="w-4 h-4"></i>
+                        </button>
+                        <div x-show="tableMenu" @click.away="tableMenu = false" x-cloak class="table-actions-dropdown">
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'insertTable'); tableMenu = false">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Tabelle einfügen
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnAfter'); tableMenu = false">
+                                <i data-lucide="columns-3" class="w-3.5 h-3.5"></i> Spalte rechts
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnBefore'); tableMenu = false">
+                                <i data-lucide="columns-3" class="w-3.5 h-3.5"></i> Spalte links
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowAfter'); tableMenu = false">
+                                <i data-lucide="rows-3" class="w-3.5 h-3.5"></i> Zeile darunter
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowBefore'); tableMenu = false">
+                                <i data-lucide="rows-3" class="w-3.5 h-3.5"></i> Zeile darüber
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteColumn'); tableMenu = false" class="text-red-600 dark:text-red-400">
+                                <i data-lucide="x" class="w-3.5 h-3.5"></i> Spalte löschen
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteRow'); tableMenu = false" class="text-red-600 dark:text-red-400">
+                                <i data-lucide="x" class="w-3.5 h-3.5"></i> Zeile löschen
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteTable'); tableMenu = false" class="text-red-600 dark:text-red-400">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Tabelle löschen
+                            </button>
+                        </div>
+                    </div>
+                    <button type="button" @mousedown.prevent="showImageModal = true"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Bild einfügen">
+                        <i data-lucide="image" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="pageBreak"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Seitenumbruch (Strg+Enter)">
+                        <i data-lucide="file-output" class="w-4 h-4"></i>
                     </button>
                     <button type="button" data-editor-cmd="horizontalRule"
                             class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Trennlinie">
@@ -1282,74 +1451,7 @@
                     </button>
                 </div>
 
-                <!-- Table -->
-                <div x-data="{ tableMenu: false }" class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700 relative">
-                    <button type="button" @mousedown.prevent="tableMenu = !tableMenu"
-                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.table }"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Tabelle">
-                        <i data-lucide="table" class="w-4 h-4"></i>
-                    </button>
-                    <div x-show="tableMenu" @click.away="tableMenu = false" x-cloak class="table-actions-dropdown">
-                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'insertTable'); tableMenu = false">
-                            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Tabelle einfügen
-                        </button>
-                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnAfter'); tableMenu = false">
-                            <i data-lucide="columns-3" class="w-3.5 h-3.5"></i> Spalte rechts
-                        </button>
-                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnBefore'); tableMenu = false">
-                            <i data-lucide="columns-3" class="w-3.5 h-3.5"></i> Spalte links
-                        </button>
-                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowAfter'); tableMenu = false">
-                            <i data-lucide="rows-3" class="w-3.5 h-3.5"></i> Zeile darunter
-                        </button>
-                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowBefore'); tableMenu = false">
-                            <i data-lucide="rows-3" class="w-3.5 h-3.5"></i> Zeile darüber
-                        </button>
-                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteColumn'); tableMenu = false" class="text-red-600 dark:text-red-400">
-                            <i data-lucide="x" class="w-3.5 h-3.5"></i> Spalte löschen
-                        </button>
-                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteRow'); tableMenu = false" class="text-red-600 dark:text-red-400">
-                            <i data-lucide="x" class="w-3.5 h-3.5"></i> Zeile löschen
-                        </button>
-                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteTable'); tableMenu = false" class="text-red-600 dark:text-red-400">
-                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Tabelle löschen
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Text Color -->
-                <div x-data="{ colorMenu: false }" class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700 relative">
-                    <button type="button" @mousedown.prevent="colorMenu = !colorMenu"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 relative" title="Textfarbe">
-                        <i data-lucide="palette" class="w-4 h-4"></i>
-                        <span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded"
-                              :style="formats.textColor ? 'background:' + formats.textColor : 'background:#374151'"></span>
-                    </button>
-                    <div x-show="colorMenu" @click.away="colorMenu = false" x-cloak class="color-picker-dropdown">
-                        <div class="grid grid-cols-6 gap-1.5">
-                            <button type="button" @mousedown.prevent="$dispatch('editor-color-cmd', ''); colorMenu = false"
-                                    class="color-swatch border-gray-300" :class="{ 'active': !formats.textColor }"
-                                    style="background: #374151" title="Standard">
-                            </button>
-                            <template x-for="c in ['#dc2626','#ea580c','#d97706','#16a34a','#0891b2','#2563eb','#7c3aed','#db2777','#059669','#0d9488','#4f46e5']" :key="c">
-                                <button type="button" @mousedown.prevent="$dispatch('editor-color-cmd', c); colorMenu = false"
-                                        class="color-swatch" :class="{ 'active': formats.textColor === c }"
-                                        :style="'background:' + c">
-                                </button>
-                            </template>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Image -->
-                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
-                    <button type="button" @mousedown.prevent="showImageModal = true"
-                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Bild einfügen">
-                        <i data-lucide="image" class="w-4 h-4"></i>
-                    </button>
-                </div>
-
-                <!-- Undo/Redo -->
+                <!-- Verlauf & Suche -->
                 <div class="flex items-center gap-0.5 px-2">
                     <button type="button" data-editor-cmd="undo"
                             class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Rückgängig (Strg+Z)">
@@ -1359,15 +1461,145 @@
                             class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Wiederholen (Strg+Y)">
                         <i data-lucide="redo" class="w-4 h-4"></i>
                     </button>
+                    <button type="button" @mousedown.prevent="toggleSearch()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': searchOpen }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Suchen und Ersetzen (Strg+F)">
+                        <i data-lucide="search" class="w-4 h-4"></i>
+                    </button>
                 </div>
 
-                <!-- Page Count & Word Count -->
-                <div class="ml-auto flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-                    <span>Seite <span x-text="currentPage"></span>/<span x-text="pageCount"></span></span>
-                    <span class="border-l border-gray-300 dark:border-gray-600 pl-3">
-                        <span x-text="wordCount"></span> Wörter
-                    </span>
+                <!-- Überlauf-Menü für schmale Screens -->
+                <div x-data="{ moreMenu: false }" class="lg:hidden relative flex items-center px-1">
+                    <button type="button" @mousedown.prevent="moreMenu = !moreMenu"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Weitere Werkzeuge">
+                        <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                    </button>
+                    <div x-show="moreMenu" @click.away="moreMenu = false" x-cloak class="table-actions-dropdown">
+                        <button type="button" data-editor-cmd="align" data-editor-value="left" @mousedown="moreMenu = false">
+                            <i data-lucide="align-left" class="w-3.5 h-3.5"></i> Linksbündig
+                        </button>
+                        <button type="button" data-editor-cmd="align" data-editor-value="center" @mousedown="moreMenu = false">
+                            <i data-lucide="align-center" class="w-3.5 h-3.5"></i> Zentriert
+                        </button>
+                        <button type="button" data-editor-cmd="align" data-editor-value="right" @mousedown="moreMenu = false">
+                            <i data-lucide="align-right" class="w-3.5 h-3.5"></i> Rechtsbündig
+                        </button>
+                        <button type="button" data-editor-cmd="align" data-editor-value="justify" @mousedown="moreMenu = false">
+                            <i data-lucide="align-justify" class="w-3.5 h-3.5"></i> Blocksatz
+                        </button>
+                        <button type="button" class="md:hidden" data-editor-cmd="bulletList" @mousedown="moreMenu = false">
+                            <i data-lucide="list" class="w-3.5 h-3.5"></i> Aufzählung
+                        </button>
+                        <button type="button" class="md:hidden" data-editor-cmd="orderedList" @mousedown="moreMenu = false">
+                            <i data-lucide="list-ordered" class="w-3.5 h-3.5"></i> Nummerierung
+                        </button>
+                        <button type="button" class="md:hidden" data-editor-cmd="taskList" @mousedown="moreMenu = false">
+                            <i data-lucide="list-checks" class="w-3.5 h-3.5"></i> Aufgabenliste
+                        </button>
+                        <button type="button" @mousedown.prevent="openLinkDialog(); moreMenu = false">
+                            <i data-lucide="link" class="w-3.5 h-3.5"></i> Link einfügen
+                        </button>
+                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'insertTable'); moreMenu = false">
+                            <i data-lucide="table" class="w-3.5 h-3.5"></i> Tabelle einfügen
+                        </button>
+                        <button type="button" @mousedown.prevent="showImageModal = true; moreMenu = false">
+                            <i data-lucide="image" class="w-3.5 h-3.5"></i> Bild einfügen
+                        </button>
+                        <button type="button" data-editor-cmd="pageBreak" @mousedown="moreMenu = false">
+                            <i data-lucide="file-output" class="w-3.5 h-3.5"></i> Seitenumbruch
+                        </button>
+                        <button type="button" data-editor-cmd="horizontalRule" @mousedown="moreMenu = false">
+                            <i data-lucide="minus" class="w-3.5 h-3.5"></i> Trennlinie
+                        </button>
+                    </div>
                 </div>
+
+                <!-- Wortzähler -->
+                <div class="ml-auto hidden sm:flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+                    <span><span x-text="wordCount"></span> Wörter</span>
+                </div>
+            </div>
+
+            <!-- Tabellen-Kontextleiste (erscheint, wenn der Cursor in einer Tabelle steht) -->
+            <div x-show="formats.table" x-cloak
+                 class="border-b border-gray-200 dark:border-gray-700 px-4 py-1 flex flex-wrap items-center gap-1 bg-gray-50 dark:bg-gray-800/60 flex-shrink-0 text-xs text-gray-600 dark:text-gray-300">
+                <span class="font-medium mr-2 flex items-center gap-1">
+                    <i data-lucide="table" class="w-3.5 h-3.5"></i> Tabelle:
+                </span>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowBefore')"
+                        class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Zeile oberhalb einfügen">
+                    Zeile davor
+                </button>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowAfter')"
+                        class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Zeile unterhalb einfügen">
+                    Zeile danach
+                </button>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnBefore')"
+                        class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Spalte links einfügen">
+                    Spalte davor
+                </button>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnAfter')"
+                        class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Spalte rechts einfügen">
+                    Spalte danach
+                </button>
+                <span class="border-l border-gray-300 dark:border-gray-600 h-4 mx-1"></span>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteRow')"
+                        class="px-2 py-1 rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20" title="Aktuelle Zeile löschen">
+                    Zeile löschen
+                </button>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteColumn')"
+                        class="px-2 py-1 rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20" title="Aktuelle Spalte löschen">
+                    Spalte löschen
+                </button>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteTable')"
+                        class="px-2 py-1 rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20" title="Ganze Tabelle löschen">
+                    Tabelle löschen
+                </button>
+            </div>
+
+            <!-- Suchen & Ersetzen Panel (Strg+F) -->
+            <div x-show="searchOpen" x-cloak
+                 class="border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex flex-wrap items-center gap-2 bg-gray-50 dark:bg-gray-800/60 flex-shrink-0"
+                 @keydown.escape.stop="closeSearch()">
+                <div class="flex items-center gap-1">
+                    <input type="text" x-model="searchTerm" x-ref="searchInput"
+                           @input.debounce.200ms="runSearch()"
+                           @keydown.enter.prevent="$event.shiftKey ? findPrev() : findNext()"
+                           placeholder="Suchen..."
+                           class="w-44 px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-primary-500">
+                    <button type="button" @click="searchMatchCase = !searchMatchCase; runSearch()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': searchMatchCase }"
+                            class="px-1.5 py-1 rounded text-xs font-semibold hover:bg-gray-200 dark:hover:bg-gray-700"
+                            title="Groß-/Kleinschreibung beachten">Aa</button>
+                    <span class="text-xs text-gray-500 dark:text-gray-400 min-w-[3rem] text-center"
+                          x-text="searchTotal ? (searchCurrent + '/' + searchTotal) : (searchTerm ? '0/0' : '')"></span>
+                    <button type="button" @click="findPrev()" :disabled="!searchTotal"
+                            class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40" title="Vorheriger Treffer (Umschalt+Enter)">
+                        <i data-lucide="chevron-up" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" @click="findNext()" :disabled="!searchTotal"
+                            class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40" title="Nächster Treffer (Enter)">
+                        <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <div class="flex items-center gap-1">
+                    <input type="text" x-model="replaceTerm"
+                           @keydown.enter.prevent="replaceCurrent()"
+                           placeholder="Ersetzen durch..."
+                           class="w-44 px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-primary-500">
+                    <button type="button" @click="replaceCurrent()" :disabled="!searchTotal"
+                            class="px-2 py-1 text-xs rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 border border-gray-300 dark:border-gray-600">
+                        Ersetzen
+                    </button>
+                    <button type="button" @click="replaceAll()" :disabled="!searchTotal"
+                            class="px-2 py-1 text-xs rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 border border-gray-300 dark:border-gray-600">
+                        Alle ersetzen
+                    </button>
+                </div>
+                <button type="button" @click="closeSearch()"
+                        class="ml-auto p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Suche schließen (Esc)">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
             </div>
             {% endif %}
 
@@ -1438,6 +1670,87 @@
                 </div>
                 {% endif %}
             </div>
+            {% if can_edit %}
+            <!-- Statusleiste: Wörter | Zeichen | Seite | Speicherstatus | Teilnehmer -->
+            <div id="editor-statusbar"
+                 class="border-t border-gray-200 dark:border-gray-700 px-4 py-1.5 flex items-center gap-3 bg-white dark:bg-gray-800 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                <span><span x-text="wordCount"></span> Wörter</span>
+                <span class="border-l border-gray-300 dark:border-gray-600 pl-3"><span x-text="charCount"></span> Zeichen</span>
+                <span class="border-l border-gray-300 dark:border-gray-600 pl-3">Seite <span x-text="currentPage"></span>/<span x-text="pageCount"></span></span>
+                <span class="border-l border-gray-300 dark:border-gray-600 pl-3 flex items-center gap-1">
+                    <span x-show="saving" x-cloak class="flex items-center gap-1">
+                        <svg class="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        Speichert…
+                    </span>
+                    <span x-show="!saving && saveError" x-cloak class="flex items-center gap-1 text-red-500">
+                        <i data-lucide="alert-circle" class="w-3 h-3"></i> Fehler beim Speichern
+                    </span>
+                    <span x-show="!saving && !saveError && lastSaved" x-cloak class="flex items-center gap-1">
+                        <i data-lucide="check-circle" class="w-3 h-3 text-green-500"></i>
+                        <span x-text="'Gespeichert ' + lastSaved"></span>
+                    </span>
+                    <span x-show="!saving && !saveError && !lastSaved">Nicht gespeichert</span>
+                </span>
+                <span class="ml-auto flex items-center gap-2">
+                    <span x-show="collabEnabled && collabUsers.length > 0" x-cloak class="flex items-center gap-1">
+                        <i data-lucide="users" class="w-3 h-3"></i>
+                        <span x-text="collabUsers.length + ' online'"></span>
+                    </span>
+                </span>
+            </div>
+
+            <!-- Link-Popover (bei Klick auf einen Link im Text) -->
+            <div x-show="linkPopupVisible" x-cloak
+                 class="comment-popup"
+                 :style="'top:' + linkPopupTop + 'px; left:' + linkPopupLeft + 'px;'"
+                 @click.away="linkPopupVisible = false">
+                <div class="flex items-center gap-1 px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg text-sm">
+                    <i data-lucide="link" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0"></i>
+                    <a :href="linkPopupHref" target="_blank" rel="noopener"
+                       class="text-primary-600 dark:text-primary-400 underline truncate max-w-[240px]"
+                       x-text="linkPopupHref"></a>
+                    <span class="border-l border-gray-200 dark:border-gray-600 h-4 mx-1"></span>
+                    <button type="button" @click="editLinkFromPopup()"
+                            class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Link bearbeiten">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button type="button" @click="removeLinkFromPopup()"
+                            class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-red-500" title="Link entfernen">
+                        <i data-lucide="unlink" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Link-Dialog (Einfügen/Bearbeiten) -->
+            <div x-show="showLinkModal" x-cloak class="image-modal-backdrop" @click.self="showLinkModal = false">
+                <div class="image-modal" @keydown.escape.stop="showLinkModal = false">
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-4">Link einfügen</h3>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">URL</label>
+                    <input type="url" x-model="linkUrl" x-ref="linkUrlInput"
+                           @keydown.enter.prevent="insertLink()"
+                           placeholder="https://beispiel.de"
+                           class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-primary-500 mb-4">
+                    <div class="flex justify-end gap-2">
+                        <button type="button" @click="showLinkModal = false"
+                                class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">
+                            Abbrechen
+                        </button>
+                        <button type="button" x-show="formats.link" @click="removeLink()"
+                                class="px-3 py-1.5 text-sm rounded-lg text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20">
+                            Entfernen
+                        </button>
+                        <button type="button" @click="insertLink()" :disabled="!linkUrl.trim()"
+                                class="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">
+                            Übernehmen
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Hidden: initial content for TipTap -->
             {% if can_edit %}
             <template id="editor-initial-content">{{ motion_content|default:''|safe }}</template>
@@ -1952,11 +2265,27 @@ function documentEditor() {
         updatedAt: Date.now(),
         title: '{{ motion.title|escapejs }}',
         wordCount: 0,
+        charCount: 0,
         pageCount: 1,
         currentPage: 1,
         lastSaved: null,
         saveError: false,
         saving: false,
+        // Suchen & Ersetzen
+        searchOpen: false,
+        searchTerm: '',
+        replaceTerm: '',
+        searchMatchCase: false,
+        searchCurrent: 0,
+        searchTotal: 0,
+        // Link-Dialog & -Popover
+        showLinkModal: false,
+        linkUrl: '',
+        linkPopupVisible: false,
+        linkPopupHref: '',
+        linkPopupTop: 0,
+        linkPopupLeft: 0,
+        _globalKeydownHandler: null,
         showMobileSidebar: false,
         showShareModal: false,
         shareMotionId: '{{ motion.id }}',
@@ -2066,15 +2395,25 @@ function documentEditor() {
                 this._bindToolbarCommands();
                 this._bindExtendedToolbar();
 
-                // Keyboard shortcut: Ctrl+S to save
-                if (editorEl) {
-                    editorEl.addEventListener('keydown', (e) => {
-                        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                // Globale Tastenkürzel: Strg+S = Speichern, Strg+F = Suchen & Ersetzen
+                this._globalKeydownHandler = (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                        e.preventDefault();
+                        this.save();
+                    } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'f') {
+                        e.preventDefault();
+                        this.openSearch();
+                    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                        // Strg+K = Link einfügen (nur wenn der Editor den Fokus hat)
+                        if (editor && editor.isFocused) {
                             e.preventDefault();
-                            this.save();
+                            this.openLinkDialog();
                         }
-                    });
-                }
+                    } else if (e.key === 'Escape' && this.searchOpen) {
+                        this.closeSearch();
+                    }
+                };
+                document.addEventListener('keydown', this._globalKeydownHandler);
 
                 this.updateWordCount();
 
@@ -2124,12 +2463,20 @@ function documentEditor() {
             if (editorClickEl) {
                 editorClickEl.addEventListener('click', (e) => {
                     const mark = e.target.closest('[data-comment-id]');
+                    const link = mark ? null : e.target.closest('.tiptap a[href]');
                     if (mark) {
                         e.stopPropagation();
                         this._handleMarkClick(mark);
+                    } else if (link) {
+                        // Link-Popover (öffnen/bearbeiten/entfernen)
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this._handleLinkClick(link);
+                        return;
                     } else if (!e.target.closest('.comment-popup')) {
                         this.hideMarkPopup();
                     }
+                    this.linkPopupVisible = false;
                 });
             }
 
@@ -2190,11 +2537,18 @@ function documentEditor() {
                 onPageCount: (count, currentPage) => {
                     _this.pageCount = count;
                     _this.currentPage = currentPage;
+                },
+                onSearchUpdate: (current, total) => {
+                    _this.searchCurrent = current;
+                    _this.searchTotal = total;
                 }
             });
         },
 
         destroy() {
+            // Hinweis: der globale Keydown-Handler bleibt bewusst registriert —
+            // destroy() wird auch von den Editor-Recovery-Pfaden aufgerufen und
+            // die Seite wird bei Navigation ohnehin komplett neu geladen.
             if (_autoSaveInterval) {
                 clearInterval(_autoSaveInterval);
                 _autoSaveInterval = null;
@@ -2609,6 +2963,140 @@ function documentEditor() {
             if (!editor) return;
             const text = editor.getText().trim();
             this.wordCount = text ? text.split(/\s+/).length : 0;
+            try {
+                this.charCount = editor.storage.characterCount ? editor.storage.characterCount.characters() : text.length;
+            } catch (e) {
+                this.charCount = text.length;
+            }
+        },
+
+        /* === Formatvorlagen-Label (folgt dem Cursor) === */
+        get styleLabel() {
+            if (this.formats.header) return 'Überschrift ' + this.formats.header;
+            if (this.formats.blockquote) return 'Zitat';
+            return 'Standard';
+        },
+
+        /* === Suchen & Ersetzen === */
+        toggleSearch() {
+            if (this.searchOpen) {
+                this.closeSearch();
+            } else {
+                this.openSearch();
+            }
+        },
+
+        openSearch() {
+            this.searchOpen = true;
+            this.$nextTick(() => {
+                if (this.$refs.searchInput) {
+                    this.$refs.searchInput.focus();
+                    this.$refs.searchInput.select();
+                }
+                lucide.createIcons();
+            });
+            if (this.searchTerm) this.runSearch();
+        },
+
+        closeSearch() {
+            this.searchOpen = false;
+            this.searchCurrent = 0;
+            this.searchTotal = 0;
+            if (editor && !editor.isDestroyed) {
+                editor.commands.clearSearch();
+            }
+        },
+
+        runSearch() {
+            if (!editor || editor.isDestroyed) return;
+            if (!this.searchTerm) {
+                editor.commands.clearSearch();
+                this.searchCurrent = 0;
+                this.searchTotal = 0;
+                return;
+            }
+            editor.commands.setSearchTerm(this.searchTerm, this.searchMatchCase);
+        },
+
+        findNext() {
+            if (!editor || editor.isDestroyed) return;
+            editor.commands.findNext();
+        },
+
+        findPrev() {
+            if (!editor || editor.isDestroyed) return;
+            editor.commands.findPrevious();
+        },
+
+        replaceCurrent() {
+            if (!editor || editor.isDestroyed || !this.searchTotal) return;
+            editor.commands.replaceCurrent(this.replaceTerm);
+        },
+
+        replaceAll() {
+            if (!editor || editor.isDestroyed || !this.searchTotal) return;
+            editor.commands.replaceAll(this.replaceTerm);
+        },
+
+        /* === Links: Dialog + Popover === */
+        openLinkDialog() {
+            if (!editor || editor.isDestroyed) return;
+            this.linkPopupVisible = false;
+            this.linkUrl = (editor.getAttributes('link').href) || '';
+            this.showLinkModal = true;
+            this.$nextTick(() => {
+                if (this.$refs.linkUrlInput) this.$refs.linkUrlInput.focus();
+            });
+        },
+
+        insertLink() {
+            if (!editor || editor.isDestroyed) return;
+            let url = this.linkUrl.trim();
+            if (!url) return;
+            if (!/^(https?:|mailto:|tel:)/i.test(url)) {
+                url = 'https://' + url;
+            }
+            try {
+                editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+            } catch (err) {
+                console.error('Link insert failed:', err);
+            }
+            this.showLinkModal = false;
+            this.linkUrl = '';
+        },
+
+        removeLink() {
+            if (!editor || editor.isDestroyed) return;
+            try {
+                editor.chain().focus().extendMarkRange('link').unsetLink().run();
+            } catch (err) {
+                console.error('Link remove failed:', err);
+            }
+            this.showLinkModal = false;
+            this.linkUrl = '';
+        },
+
+        _handleLinkClick(linkEl) {
+            this.linkPopupHref = linkEl.getAttribute('href') || '';
+            const rect = linkEl.getBoundingClientRect();
+            this.linkPopupTop = rect.bottom + 6;
+            this.linkPopupLeft = Math.max(8, rect.left);
+            this.linkPopupVisible = true;
+            this.$nextTick(() => lucide.createIcons());
+        },
+
+        editLinkFromPopup() {
+            this.linkPopupVisible = false;
+            this.linkUrl = this.linkPopupHref;
+            this.showLinkModal = true;
+            this.$nextTick(() => {
+                if (this.$refs.linkUrlInput) this.$refs.linkUrlInput.focus();
+            });
+        },
+
+        removeLinkFromPopup() {
+            this.linkPopupVisible = false;
+            this.removeLink();
         },
 
         runEditorCommand(commandFn) {
@@ -2636,17 +3124,26 @@ function documentEditor() {
 
                 const cmd = button.getAttribute('data-editor-cmd');
                 const level = parseInt(button.getAttribute('data-editor-level') || '0', 10);
-                this._executeToolbarCommand(cmd, level);
+                const value = button.getAttribute('data-editor-value') || '';
+                this._executeToolbarCommand(cmd, level, value);
             });
         },
 
-        _executeToolbarCommand(cmd, level = 0) {
+        _executeToolbarCommand(cmd, level = 0, value = '') {
             if (!editor || editor.isDestroyed) return;
             try {
                 switch (cmd) {
                     case 'bold': editor.chain().focus().toggleBold().run(); break;
                     case 'italic': editor.chain().focus().toggleItalic().run(); break;
                     case 'underline': editor.chain().focus().toggleUnderline().run(); break;
+                    case 'strike': editor.chain().focus().toggleStrike().run(); break;
+                    case 'highlight': editor.chain().focus().toggleHighlight().run(); break;
+                    case 'paragraph': editor.chain().focus().setParagraph().run(); break;
+                    case 'align':
+                        if (!value) break;
+                        editor.chain().focus().setTextAlign(value).run();
+                        break;
+                    case 'pageBreak': editor.chain().focus().setPageBreak().run(); break;
                     case 'heading':
                         if (!level) break;
                         editor.chain().focus().toggleHeading({ level }).run();
@@ -2813,10 +3310,12 @@ function documentEditor() {
             if (existingCanvas) existingCanvas.remove();
             this._removeGeneratedLetterhead(container);
 
-            // Reset editor padding to default
+            // Reset editor padding + font to defaults (WYSIWYG-Fallback)
             const tiptapEl = container.querySelector('.tiptap');
             if (tiptapEl) {
                 tiptapEl.style.padding = '30mm 25mm 25mm 25mm';
+                tiptapEl.style.fontFamily = 'Arial, Helvetica, sans-serif';
+                tiptapEl.style.fontSize = '11pt';
             }
 
             if (!id) return; // "Kein Briefpapier" selected
@@ -2824,6 +3323,18 @@ function documentEditor() {
             // Find letterhead data
             const lhData = this.letterheadsData.find(lh => lh.id === id);
             if (!lhData) return;
+
+            // Schrift aus dem Briefkopf anwenden (WYSIWYG = Export)
+            if (tiptapEl) {
+                if (lhData.font_family) {
+                    tiptapEl.style.fontFamily = `"${lhData.font_family}", Arial, Helvetica, sans-serif`;
+                }
+                if (lhData.font_size) {
+                    tiptapEl.style.fontSize = `${lhData.font_size}pt`;
+                }
+                // Ränder direkt setzen — auch wenn keine Vorschau geladen werden kann
+                tiptapEl.style.padding = `${lhData.margin_top}mm ${lhData.margin_right}mm ${lhData.margin_bottom}mm ${lhData.margin_left}mm`;
+            }
 
             if (lhData.kind === 'generated') {
                 // Generierter Briefkopf: HTML-Vorschau statt pdfjs-Overlay
