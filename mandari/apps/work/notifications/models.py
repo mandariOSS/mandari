@@ -33,6 +33,10 @@ class NotificationType(models.TextChoices):
     MOTION_SHARED = "motion_shared", "Antrag geteilt"
     MOTION_COMMENT = "motion_comment", "Kommentar zum Antrag"
     MOTION_STATUS = "motion_status", "Antragsstatus geändert"
+    MOTION_ASSIGNED = "motion_assigned", "Dokument zugewiesen"
+    MOTION_DUE_SOON = "motion_due_soon", "Dokument fällig"
+    MOTION_APPROVAL_REQUESTED = "motion_approval_req", "Freigabe angefragt"
+    MOTION_APPROVAL_DECIDED = "motion_approval_dec", "Freigabe entschieden"
 
     # Faction
     FACTION_MEETING_REMINDER = "faction_reminder", "Fraktionssitzung"
@@ -150,6 +154,10 @@ class Notification(models.Model):
             NotificationType.MOTION_SHARED: "share-2",
             NotificationType.MOTION_COMMENT: "message-circle",
             NotificationType.MOTION_STATUS: "git-branch",
+            NotificationType.MOTION_ASSIGNED: "user-check",
+            NotificationType.MOTION_DUE_SOON: "alarm-clock",
+            NotificationType.MOTION_APPROVAL_REQUESTED: "file-check",
+            NotificationType.MOTION_APPROVAL_DECIDED: "file-check-2",
             NotificationType.FACTION_MEETING_REMINDER: "users",
             NotificationType.FACTION_MEETING_UPDATED: "users-cog",
             NotificationType.MEMBER_JOINED: "user-plus",
@@ -181,6 +189,10 @@ class Notification(models.Model):
             NotificationType.MOTION_SHARED: "indigo",
             NotificationType.MOTION_COMMENT: "gray",
             NotificationType.MOTION_STATUS: "blue",
+            NotificationType.MOTION_ASSIGNED: "purple",
+            NotificationType.MOTION_DUE_SOON: "orange",
+            NotificationType.MOTION_APPROVAL_REQUESTED: "indigo",
+            NotificationType.MOTION_APPROVAL_DECIDED: "green",
             NotificationType.FACTION_MEETING_REMINDER: "purple",
             NotificationType.FACTION_MEETING_UPDATED: "purple",
             NotificationType.MEMBER_JOINED: "green",

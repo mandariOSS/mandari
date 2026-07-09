@@ -63,6 +63,15 @@ class MotionType(models.Model):
         default=True, verbose_name="Einreichbar", help_text="Kann offiziell eingereicht werden"
     )
 
+    # Standard-Checkliste: Liste von Strings, wird beim Anlegen eines
+    # Dokuments dieses Typs automatisch als Checklisten-Punkte erzeugt.
+    default_checklist = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Standard-Checkliste",
+        help_text="Ein Punkt je Zeile; wird bei neuen Dokumenten dieses Typs angelegt",
+    )
+
     # Status
     is_default = models.BooleanField(default=False, verbose_name="Standard-Typ")
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
@@ -248,6 +257,36 @@ class Motion(EncryptionMixin, models.Model):
         ("on_agenda", "Auf Tagesordnung"),
     ]
 
+    # Geführte Pipeline (Reihenfolge für den Status-Tracker in der Übersicht).
+    # external_review ist optional und kann übersprungen werden.
+    PIPELINE_ORDER = [
+        "draft",
+        "internal_review",
+        "external_review",
+        "approved",
+        "submitted",
+        "at_admin",
+        "on_agenda",
+        "completed",
+    ]
+
+    # Zentrale Übergangsmatrix: Status -> erlaubte Folgestatus.
+    # Rücksprünge (z. B. zurück zu draft) sind bewusst erlaubt.
+    VALID_TRANSITIONS = {
+        "draft": ["internal_review", "archived"],
+        "internal_review": ["external_review", "approved", "draft", "rejected"],
+        "external_review": ["approved", "internal_review", "draft", "rejected"],
+        "approved": ["submitted", "internal_review", "draft"],
+        "submitted": ["at_admin", "completed", "rejected", "approved"],
+        "at_admin": ["on_agenda", "completed", "rejected", "submitted"],
+        "on_agenda": ["completed", "rejected", "at_admin"],
+        "completed": ["archived", "on_agenda"],
+        "rejected": ["draft", "archived"],
+        "archived": ["draft"],
+        # Legacy-Status: Bestandsdokumente können in die neue Pipeline wechseln
+        "review": ["internal_review", "draft", "approved", "rejected"],
+    }
+
     EDIT_MODE_CHOICES = [
         ("edit", "Bearbeiten"),
         ("suggest", "Vorschlagen"),
@@ -384,7 +423,36 @@ class Motion(EncryptionMixin, models.Model):
         related_name="authored_motions",
         verbose_name="Autor",
     )
+    # Deprecated: JSON-Tags, ersetzt durch topics (M2M auf tenants.Topic).
+    # Wird nur noch für die Datenmigration behalten.
     tags = models.JSONField(default=list, blank=True, verbose_name="Tags")
+
+    # Zuständigkeiten
+    responsible = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="responsible_motions",
+        verbose_name="Federführung",
+    )
+    contributors = models.ManyToManyField(
+        "tenants.Membership",
+        blank=True,
+        related_name="contributing_motions",
+        verbose_name="Mitarbeit",
+    )
+
+    # Themenkatalog
+    topics = models.ManyToManyField(
+        "tenants.Topic",
+        blank=True,
+        related_name="motions",
+        verbose_name="Themen",
+    )
+
+    # Frist
+    due_date = models.DateField(blank=True, null=True, verbose_name="Frist")
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -534,6 +602,97 @@ class Motion(EncryptionMixin, models.Model):
 
         # Fall back to legacy type display
         return self.get_motion_type_display()
+
+    def allowed_next_statuses(self) -> list[tuple[str, str]]:
+        """Erlaubte Folgestatus als (value, label)-Liste für Dropdowns."""
+        status_labels = dict(self.STATUS_CHOICES)
+        return [(value, status_labels[value]) for value in self.VALID_TRANSITIONS.get(self.status, [])]
+
+    def get_pipeline_steps(self) -> list[dict]:
+        """
+        Status-Tracker für die Übersicht: Pipeline-Schritte mit Füllstand.
+
+        Jeder Schritt: {"key", "label", "reached", "current"}.
+        Bei abgelehnten/archivierten Dokumenten wird der Tracker
+        entsprechend markiert (state "rejected"/"off").
+        """
+        status_labels = dict(self.STATUS_CHOICES)
+        try:
+            current_index = self.PIPELINE_ORDER.index(self.status)
+        except ValueError:
+            # Nicht auf der Pipeline (rejected, archived, legacy review)
+            current_index = -1
+
+        steps = []
+        for index, key in enumerate(self.PIPELINE_ORDER):
+            steps.append(
+                {
+                    "key": key,
+                    "label": status_labels[key],
+                    "reached": current_index >= 0 and index <= current_index,
+                    "current": index == current_index,
+                }
+            )
+        return steps
+
+    @property
+    def pipeline_state(self) -> str:
+        """Zustand für den Tracker: 'on' (auf Pipeline), 'rejected' oder 'off'."""
+        if self.status == "rejected":
+            return "rejected"
+        if self.status in self.PIPELINE_ORDER:
+            return "on"
+        return "off"
+
+    @property
+    def is_overdue(self) -> bool:
+        """Frist überschritten und Dokument noch nicht abgeschlossen?"""
+        if not self.due_date:
+            return False
+        if self.status in ("completed", "rejected", "archived", "deleted"):
+            return False
+        return self.due_date < timezone.localdate()
+
+    @property
+    def checklist_progress(self) -> dict:
+        """Checklisten-Fortschritt {done, total, percent}. Nutzt Prefetch-Cache."""
+        items = self.checklist_items.all()
+        total = len(items)
+        done = sum(1 for item in items if item.is_completed)
+        percent = round(done / total * 100) if total else 0
+        return {"done": done, "total": total, "percent": percent}
+
+    def apply_default_checklist(self):
+        """
+        Legt die Standard-Checkliste des Dokumenttyps als Checklisten-Punkte an.
+
+        Wird beim Erstellen eines Dokuments aufgerufen; tut nichts, wenn der
+        Typ keine Standard-Checkliste hat oder bereits Punkte existieren.
+        """
+        if not self.document_type or not self.document_type.default_checklist:
+            return
+        if self.checklist_items.exists():
+            return
+        items = [
+            MotionChecklistItem(motion=self, title=str(title)[:300], position=index)
+            for index, title in enumerate(self.document_type.default_checklist)
+            if str(title).strip()
+        ]
+        MotionChecklistItem.objects.bulk_create(items)
+
+    @property
+    def approval_summary(self) -> dict:
+        """Freigabe-Zusammenfassung {approved, rejected, pending, total}. Nutzt Prefetch-Cache."""
+        approvals = self.approvals.all()
+        total = len(approvals)
+        approved = sum(1 for a in approvals if a.approved is True)
+        rejected = sum(1 for a in approvals if a.approved is False)
+        return {
+            "approved": approved,
+            "rejected": rejected,
+            "pending": total - approved - rejected,
+            "total": total,
+        }
 
 
 class MotionShare(models.Model):
@@ -857,6 +1016,37 @@ class MotionApproval(models.Model):
     def is_pending(self) -> bool:
         """Check if this approval is still pending."""
         return self.approved is None
+
+
+class MotionChecklistItem(models.Model):
+    """Checklisten-Punkt eines Dokuments (Muster: tasks.TaskChecklistItem)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    motion = models.ForeignKey(
+        Motion, on_delete=models.CASCADE, related_name="checklist_items", verbose_name="Dokument"
+    )
+    title = models.CharField(max_length=300, verbose_name="Titel")
+    is_completed = models.BooleanField(default=False, verbose_name="Erledigt")
+    completed_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="completed_motion_checklist_items",
+        verbose_name="Erledigt von",
+    )
+    completed_at = models.DateTimeField(blank=True, null=True, verbose_name="Erledigt am")
+    position = models.PositiveIntegerField(default=0, verbose_name="Position")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Dokument-Checklisten-Punkt"
+        verbose_name_plural = "Dokument-Checklisten-Punkte"
+        ordering = ["position", "created_at"]
+
+    def __str__(self):
+        check = "✓" if self.is_completed else "○"
+        return f"{check} {self.title}"
 
 
 class OrganizationAITokenUsage(models.Model):

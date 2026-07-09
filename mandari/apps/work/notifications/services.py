@@ -483,6 +483,86 @@ class NotificationHub:
         )
 
     @classmethod
+    def notify_motion_assigned(
+        cls,
+        motion,
+        assignee,  # Membership
+        assigner,  # Membership
+    ):
+        """Notify user when they are set as responsible for a document."""
+        return cls.send(
+            recipient=assignee,
+            notification_type=NotificationType.MOTION_ASSIGNED,
+            title="Federführung übertragen",
+            message=f'Dir wurde die Federführung für "{motion.title}" übertragen.',
+            link=f"/work/{motion.organization.slug}/documents/{motion.id}/",
+            actor=assigner,
+            metadata={"motion_id": str(motion.id)},
+        )
+
+    @classmethod
+    def notify_motion_due_soon(
+        cls,
+        motion,
+        recipient,  # Membership
+        days_left: int,
+    ):
+        """Remind responsible member about an upcoming or overdue document deadline."""
+        if days_left < 0:
+            message = f'Das Dokument "{motion.title}" ist seit {abs(days_left)} Tag(en) überfällig.'
+        elif days_left == 0:
+            message = f'Das Dokument "{motion.title}" ist heute fällig.'
+        else:
+            message = f'Das Dokument "{motion.title}" ist in {days_left} Tag(en) fällig.'
+
+        return cls.send(
+            recipient=recipient,
+            notification_type=NotificationType.MOTION_DUE_SOON,
+            title="Dokument bald fällig" if days_left >= 0 else "Dokument überfällig",
+            message=message,
+            link=f"/work/{motion.organization.slug}/documents/{motion.id}/",
+            metadata={"motion_id": str(motion.id), "days_left": days_left},
+        )
+
+    @classmethod
+    def notify_motion_approval_requested(
+        cls,
+        approval,  # MotionApproval
+        requester,  # Membership
+    ):
+        """Notify a member that their approval was requested for a document."""
+        motion = approval.motion
+        return cls.send(
+            recipient=approval.approver,
+            notification_type=NotificationType.MOTION_APPROVAL_REQUESTED,
+            title="Freigabe angefragt",
+            message=f'Deine Freigabe ({approval.get_approval_type_display()}) für "{motion.title}" wurde angefragt.',
+            link=f"/work/{motion.organization.slug}/documents/{motion.id}/",
+            actor=requester,
+            metadata={"motion_id": str(motion.id), "approval_id": str(approval.id)},
+        )
+
+    @classmethod
+    def notify_motion_approval_decided(
+        cls,
+        approval,  # MotionApproval
+        decider,  # Membership
+        recipient,  # Membership (z. B. Autor oder Federführung)
+    ):
+        """Notify document owner about an approval decision."""
+        motion = approval.motion
+        decision = "erteilt" if approval.approved else "abgelehnt"
+        return cls.send(
+            recipient=recipient,
+            notification_type=NotificationType.MOTION_APPROVAL_DECIDED,
+            title=f"Freigabe {decision}",
+            message=f'Die Freigabe ({approval.get_approval_type_display()}) für "{motion.title}" wurde {decision}.',
+            link=f"/work/{motion.organization.slug}/documents/{motion.id}/",
+            actor=decider,
+            metadata={"motion_id": str(motion.id), "approval_id": str(approval.id)},
+        )
+
+    @classmethod
     def notify_member_joined(
         cls,
         organization,

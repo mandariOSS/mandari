@@ -697,6 +697,55 @@ class Role(models.Model):
         return created_roles
 
 
+class Topic(models.Model):
+    """
+    Themenkatalog einer Organisation.
+
+    Themen werden Dokumenten (work.Motion.topics) zugeordnet und von
+    Mitgliedern als Fachgebiete (Membership.expertise_topics) gewählt.
+    Lebt in tenants, da sowohl Membership als auch die work-App darauf
+    zugreifen und work bereits von tenants abhängt (keine neue
+    App-Abhängigkeit in Gegenrichtung).
+    """
+
+    COLOR_CHOICES = [
+        ("red", "Rot"),
+        ("orange", "Orange"),
+        ("amber", "Gelb"),
+        ("green", "Grün"),
+        ("teal", "Türkis"),
+        ("blue", "Blau"),
+        ("indigo", "Indigo"),
+        ("purple", "Lila"),
+        ("pink", "Rosa"),
+        ("gray", "Grau"),
+    ]
+
+    # Rotations-Palette für automatisch angelegte Themen (Datenmigration, get_or_create)
+    COLOR_PALETTE = ["blue", "green", "amber", "purple", "teal", "pink", "orange", "indigo"]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="topics",
+        verbose_name="Organisation",
+    )
+    name = models.CharField(max_length=100, verbose_name="Name")
+    color = models.CharField(max_length=20, choices=COLOR_CHOICES, default="blue", verbose_name="Farbe")
+    sort_order = models.IntegerField(default=0, verbose_name="Sortierung")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Thema"
+        verbose_name_plural = "Themen"
+        unique_together = [["organization", "name"]]
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Membership(models.Model):
     """
     User membership in an organization.
@@ -771,6 +820,17 @@ class Membership(models.Model):
         related_name="following_memberships",
         verbose_name="Meine Gremien",
         help_text="Vom Mitglied selbst gewählte Gremien für personalisierte Ansichten",
+    )
+
+    # Fachgebiete: Themen, in denen das Mitglied Kompetenz hat.
+    # Vom Mitglied selbst im Profil wählbar, zusätzlich von Admins in der
+    # Mitgliederverwaltung pflegbar. Grundlage der "Kompetenz im Thema"-Kachel.
+    expertise_topics = models.ManyToManyField(
+        Topic,
+        blank=True,
+        related_name="experts",
+        verbose_name="Fachgebiete",
+        help_text="Themen, in denen dieses Mitglied Fachwissen hat",
     )
 
     # Status
