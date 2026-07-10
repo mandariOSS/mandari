@@ -976,8 +976,7 @@ class GuestInviteView(WorkViewMixin, TemplateView):
         if not self.organization.has_free_guest_slot():
             messages.error(
                 request,
-                f"Gast-Limit erreicht ({self.organization.guest_limit}). "
-                "Erweiterung als Addon im Kundenportal.",
+                f"Gast-Limit erreicht ({self.organization.guest_limit}). Erweiterung als Addon im Kundenportal.",
             )
             return redirect("work:members", org_slug=self.organization.slug)
 
