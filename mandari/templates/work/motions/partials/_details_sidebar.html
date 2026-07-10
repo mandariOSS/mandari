@@ -89,6 +89,32 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
         {% endif %}
     </div>
 
+    <!-- Ordner (reine Ablage-Struktur, keine Sichtbarkeit; für Gäste unsichtbar) -->
+    {% if not membership.is_guest %}
+    <div>
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <i data-lucide="folder" class="w-3.5 h-3.5"></i>
+            Ordner
+        </h4>
+        {% if can_edit %}
+        <form onsubmit="return mandariMotionMeta(event)" action="{% url 'work:document_meta' org_slug=organization.slug motion_id=motion.id %}">
+            <input type="hidden" name="action" value="set_folder">
+            <select name="folder" onchange="this.form.requestSubmit()"
+                    class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500">
+                <option value="">Alle Dokumente (Wurzel)</option>
+                {% for folder, depth in org_folders %}
+                <option value="{{ folder.id }}" {% if motion.folder_id == folder.id %}selected{% endif %}>{% for _ in ''|center:depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ folder.name }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        {% else %}
+        <p class="text-sm text-gray-700 dark:text-gray-300">
+            {% if motion.folder %}{{ motion.folder.name }}{% else %}Alle Dokumente{% endif %}
+        </p>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Kompetenz im Thema -->
     {% if competent_members %}
     <div class="bg-primary-50/50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30 rounded-xl p-3">

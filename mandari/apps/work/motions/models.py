@@ -268,6 +268,180 @@ class MotionTemplate(models.Model):
         return f"{self.name}{type_suffix}"
 
 
+class DocumentFolder(models.Model):
+    """
+    Ordner für die Dokument-Ablage (Baumstruktur, max. Tiefe 4).
+
+    Bewusst NATIV implementiert statt über ein Fremdsystem (z. B. Nextcloud):
+    Die Dokumente sind tenant-spezifisch verschlüsselt und ihre Sichtbarkeit
+    hängt am eigenen RBAC-/Share-System — beides würde bei einer externen
+    Datei-Ablage brechen. Ordner sind reine Organisations-Struktur: Sie
+    steuern KEINE Sichtbarkeit (die regeln weiterhin ausschließlich
+    Motion.visibility und MotionShare). Gäste sehen die Ordnerstruktur nicht.
+    """
+
+    MAX_DEPTH = 4
+
+    # Kleine Palette, identisch zu tenants.Topic.COLOR_CHOICES
+    COLOR_CHOICES = [
+        ("red", "Rot"),
+        ("orange", "Orange"),
+        ("amber", "Gelb"),
+        ("green", "Grün"),
+        ("teal", "Türkis"),
+        ("blue", "Blau"),
+        ("indigo", "Indigo"),
+        ("purple", "Lila"),
+        ("pink", "Rosa"),
+        ("gray", "Grau"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    organization = models.ForeignKey(
+        "tenants.Organization",
+        on_delete=models.CASCADE,
+        related_name="document_folders",
+        verbose_name="Organisation",
+    )
+
+    name = models.CharField(max_length=100, verbose_name="Name")
+
+    # Baum: parent=None ist die Wurzelebene ("Alle Dokumente").
+    # on_delete=SET_NULL nur als Fallback bei Queryset-Löschungen —
+    # DocumentFolder.delete() hängt Unterordner explizit an den Parent um.
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="children",
+        verbose_name="Übergeordneter Ordner",
+    )
+
+    color = models.CharField(max_length=20, choices=COLOR_CHOICES, blank=True, default="", verbose_name="Farbe")
+    position = models.IntegerField(default=0, verbose_name="Sortierung")
+
+    created_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_document_folders",
+        verbose_name="Erstellt von",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Dokumentordner"
+        verbose_name_plural = "Dokumentordner"
+        ordering = ["position", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "parent", "name"],
+                name="uniq_document_folder_name_per_parent",
+            ),
+            # unique_together greift bei parent=NULL nicht — Wurzelebene separat absichern
+            models.UniqueConstraint(
+                fields=["organization", "name"],
+                condition=models.Q(parent__isnull=True),
+                name="uniq_document_folder_name_root",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    def get_depth(self) -> int:
+        """Tiefe im Baum (Ordner auf Wurzelebene = 1)."""
+        depth = 1
+        node = self.parent
+        while node is not None:
+            depth += 1
+            node = node.parent
+        return depth
+
+    def get_ancestors(self) -> list["DocumentFolder"]:
+        """Vorfahren von der Wurzel bis zum direkten Parent (für Breadcrumbs)."""
+        ancestors = []
+        node = self.parent
+        while node is not None:
+            ancestors.append(node)
+            node = node.parent
+        ancestors.reverse()
+        return ancestors
+
+    def get_descendants(self) -> list["DocumentFolder"]:
+        """Alle Unterordner (rekursiv)."""
+        result = []
+        stack = list(self.children.all())
+        while stack:
+            node = stack.pop()
+            result.append(node)
+            stack.extend(node.children.all())
+        return result
+
+    def get_subtree_height(self) -> int:
+        """Höhe des eigenen Teilbaums (nur dieser Ordner = 1)."""
+        children = list(self.children.all())
+        if not children:
+            return 1
+        return 1 + max(child.get_subtree_height() for child in children)
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.parent is not None:
+            if self.parent_id == self.id:
+                raise ValidationError({"parent": "Ein Ordner kann nicht sein eigener Unterordner sein."})
+            if self.parent.organization_id != self.organization_id:
+                raise ValidationError({"parent": "Der übergeordnete Ordner gehört zu einer anderen Organisation."})
+            # Zyklen verhindern (Ordner in eigenen Unterordner verschieben)
+            node = self.parent
+            while node is not None:
+                if node.pk == self.pk:
+                    raise ValidationError(
+                        {"parent": "Ein Ordner kann nicht in einen eigenen Unterordner verschoben werden."}
+                    )
+                node = node.parent
+
+        # Maximale Verschachtelungstiefe (inkl. eigenem Teilbaum beim Verschieben)
+        parent_depth = self.parent.get_depth() if self.parent is not None else 0
+        subtree_height = self.get_subtree_height() if self.pk else 1
+        if parent_depth + subtree_height > self.MAX_DEPTH:
+            raise ValidationError(
+                {"parent": f"Maximale Verschachtelungstiefe von {self.MAX_DEPTH} Ebenen überschritten."}
+            )
+
+    def delete(self, *args, **kwargs):
+        """
+        Löschen ohne Datenverlust: Dokumente und Unterordner wandern zum
+        Parent (bzw. zur Wurzel "Alle Dokumente"). Bewusst KEIN Cascade
+        auf Motions.
+        """
+        self.motions.update(folder=self.parent)
+
+        # Unterordner einzeln umhängen; Namenskollisionen auf der
+        # Zielebene per Suffix auflösen (unique je Ebene)
+        sibling_names = set(
+            DocumentFolder.objects.filter(organization=self.organization, parent=self.parent)
+            .exclude(pk=self.pk)
+            .values_list("name", flat=True)
+        )
+        for child in self.children.all():
+            new_name = child.name
+            counter = 2
+            while new_name in sibling_names:
+                new_name = f"{child.name} ({counter})"
+                counter += 1
+            sibling_names.add(new_name)
+            child.name = new_name
+            child.parent = self.parent
+            child.save(update_fields=["name", "parent"])
+
+        return super().delete(*args, **kwargs)
+
+
 class Motion(EncryptionMixin, models.Model):
     """
     Motion/Antrag/Anfrage document.
@@ -368,6 +542,17 @@ class Motion(EncryptionMixin, models.Model):
         default="motion",
         verbose_name="Typ (legacy)",
         blank=True,
+    )
+
+    # Ordner-Ablage: reine Organisations-Struktur, steuert KEINE Sichtbarkeit.
+    # null = Wurzelebene "Alle Dokumente".
+    folder = models.ForeignKey(
+        DocumentFolder,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="motions",
+        verbose_name="Ordner",
     )
 
     title = models.CharField(max_length=500, verbose_name="Titel")
@@ -529,6 +714,24 @@ class Motion(EncryptionMixin, models.Model):
 
     def get_encryption_organization(self):
         return self.organization
+
+    @classmethod
+    def visible_to(cls, membership):
+        """
+        Queryset der Dokumente, die ein Mitglied sehen darf (analog can_access).
+
+        Wird u. a. für die sichtbarkeitsabhängigen Ordner-Zähler genutzt:
+        eigene Dokumente, organisationsweite sowie persönlich geteilte.
+        Gäste sehen ausschließlich persönlich freigegebene Dokumente.
+        """
+        qs = cls.objects.filter(organization=membership.organization).exclude(status="deleted")
+        if getattr(membership, "is_guest", False):
+            return qs.filter(shares__scope="user", shares__user=membership.user).distinct()
+        return qs.filter(
+            models.Q(author=membership)
+            | models.Q(visibility="organization")
+            | models.Q(visibility="shared", shares__user=membership.user)
+        ).distinct()
 
     def get_type_color(self):
         """Get the color for the document type."""

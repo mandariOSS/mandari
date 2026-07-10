@@ -11,6 +11,14 @@
 <div class="max-w-2xl mx-auto">
     <form method="post" class="space-y-6" x-data="createMotion()">
         {% csrf_token %}
+        {% if current_folder %}
+        <!-- Ordner-Ablage: Dokument landet im aktuell gewählten Ordner -->
+        <input type="hidden" name="folder" value="{{ current_folder.id }}">
+        <p class="fade-up flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 -mb-2">
+            <i data-lucide="folder" class="w-4 h-4 {% if current_folder.color %}text-{{ current_folder.color }}-500{% else %}text-gray-400{% endif %}"></i>
+            Wird abgelegt in: <span class="font-medium text-gray-700 dark:text-gray-300">{{ current_folder.name }}</span>
+        </p>
+        {% endif %}
 
         <!-- Progress Indicator -->
         <div class="flex items-center justify-center gap-4 mb-8">

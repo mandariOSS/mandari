@@ -18,7 +18,7 @@
     <i data-lucide="upload" class="w-4 h-4"></i>
     PDF importieren
 </a>
-<a href="{% url 'work:document_create' org_slug=organization.slug %}"
+<a href="{% url 'work:document_create' org_slug=organization.slug %}{% if current_folder %}?ordner={{ current_folder.id }}{% endif %}"
    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
     <i data-lucide="plus" class="w-4 h-4"></i>
     Neues Dokument
@@ -27,6 +27,9 @@
 
 {% block work_content %}
 <div x-data="documentManager()">
+    <!-- CSRF für Fetch-Aktionen (Dokumente verschieben) -->
+    <form id="document-csrf" class="hidden">{% csrf_token %}</form>
+
     <!-- Stats Tiles -->
     <div class="fade-up grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
@@ -55,340 +58,592 @@
         </div>
     </div>
 
-    <!-- Filters & View Toggle -->
-    <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
-        <form method="get" class="flex flex-wrap items-center gap-4">
-            <!-- Search -->
-            <div class="flex-1 min-w-[200px]">
-                <div class="relative">
-                    <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
-                    <input type="text" name="q" value="{{ search_query|default:'' }}"
-                           placeholder="Dokument suchen..."
-                           class="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
-                </div>
-            </div>
-
-            <!-- Type Filter -->
-            <select name="type" onchange="this.form.submit()"
-                    class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
-                <option value="">Alle Typen</option>
-                {% for doc_type in document_types %}
-                <option value="{{ doc_type.id }}" {% if selected_type == doc_type.id|stringformat:"s" %}selected{% endif %}>{{ doc_type.name }}</option>
-                {% endfor %}
-                <option disabled>---</option>
-                {% for value, label in type_choices %}
-                <option value="{{ value }}" {% if selected_type == value %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-
-            <!-- Status Filter -->
-            <select name="status" onchange="this.form.submit()"
-                    class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
-                <option value="">Alle Status</option>
-                {% for value, label in status_choices %}
-                <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-
-            <!-- Topic Filter -->
-            {% if org_topics %}
-            <select name="thema" onchange="this.form.submit()"
-                    class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
-                <option value="">Alle Themen</option>
-                {% for topic in org_topics %}
-                <option value="{{ topic.id }}" {% if selected_topic == topic.id|stringformat:"s" %}selected{% endif %}>{{ topic.name }}</option>
-                {% endfor %}
-            </select>
-            {% endif %}
-
-            <!-- Responsible Filter -->
-            <select name="verantwortlich" onchange="this.form.submit()"
-                    class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
-                <option value="">Alle Verantwortlichen</option>
-                <option value="me" {% if selected_responsible == "me" %}selected{% endif %}>Meine Federführung</option>
-                {% for member in org_members %}
-                <option value="{{ member.id }}" {% if selected_responsible == member.id|stringformat:"s" %}selected{% endif %}>{{ member.user.get_display_name }}</option>
-                {% endfor %}
-            </select>
-
-            <!-- My Motions -->
-            <label class="inline-flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" name="mine" value="1" {% if filter_mine %}checked{% endif %}
-                       onchange="this.form.submit()"
-                       class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
-                <span class="text-sm text-gray-600 dark:text-gray-400">Nur meine</span>
-            </label>
-
-            <!-- View Toggle -->
-            <div class="flex items-center gap-1 bg-gray-100 dark:bg-gray-900 rounded-lg p-1">
-                <button type="button"
-                        @click="setViewMode('grid')"
-                        :class="viewMode === 'grid' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'hover:bg-white/50 dark:hover:bg-gray-700/50'"
-                        class="p-2 rounded-md transition-colors">
-                    <i data-lucide="grid-3x3" class="w-4 h-4" :class="viewMode === 'grid' ? 'text-primary-600' : 'text-gray-500'"></i>
-                </button>
-                <button type="button"
-                        @click="setViewMode('list')"
-                        :class="viewMode === 'list' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'hover:bg-white/50 dark:hover:bg-gray-700/50'"
-                        class="p-2 rounded-md transition-colors">
-                    <i data-lucide="list" class="w-4 h-4" :class="viewMode === 'list' ? 'text-primary-600' : 'text-gray-500'"></i>
-                </button>
-            </div>
-        </form>
+    <!-- Mobil: Ordner als Dropdown oberhalb der Liste -->
+    <div class="lg:hidden mb-4">
+        <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Ordner</label>
+        <select onchange="if (this.value !== null) window.location.href = this.value"
+                class="w-full px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 outline-none">
+            <option value="{% url 'work:documents' org_slug=organization.slug %}{% if filter_query %}?{{ filter_query }}{% endif %}" {% if not current_folder %}selected{% endif %}>Alle Dokumente ({{ root_document_count }})</option>
+            {% for entry in folder_entries %}
+            <option value="?ordner={{ entry.folder.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}" {% if current_folder and current_folder.id == entry.folder.id %}selected{% endif %}>
+                {% for _ in ''|center:entry.depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ entry.folder.name }} ({{ entry.count }})
+            </option>
+            {% endfor %}
+        </select>
     </div>
 
-    <!-- Grid View (Karten) -->
-    <div x-show="viewMode === 'grid'" x-cloak class="fade-up d1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {% for row in motion_rows %}
-        {% with motion=row.motion %}
-        <div class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md transition-all cursor-pointer {% if row.is_amendment %}border-l-4 border-l-primary-300 dark:border-l-primary-700{% endif %}"
-             @click="window.location.href='{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}'">
-            <div class="flex items-start gap-2 mb-2">
-                <i data-lucide="{{ motion.get_type_icon }}" class="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5"></i>
-                <div class="flex-1 min-w-0">
-                    {% if row.is_amendment %}
-                    <p class="text-[10px] text-gray-400 flex items-center gap-1 mb-0.5">
-                        <i data-lucide="corner-down-right" class="w-3 h-3"></i>
-                        Änderungsantrag zu „{{ motion.parent_motion.title|truncatechars:40 }}“
-                    </p>
-                    {% endif %}
-                    <h3 class="font-medium text-gray-900 dark:text-white text-sm truncate group-hover:text-primary-600">{{ motion.title }}</h3>
-                    <p class="text-xs text-gray-500 mt-0.5">{{ motion.get_type_display }}</p>
+    <div class="flex items-start gap-5">
+        <!-- Ordner-Spalte (Desktop, einklappbar) -->
+        <aside class="hidden lg:block flex-shrink-0" :class="folderPanelOpen ? 'w-60' : 'w-auto'">
+            <!-- Eingeklappt: schmale Leiste -->
+            <button x-show="!folderPanelOpen" x-cloak type="button" @click="toggleFolderPanel()"
+                    title="Ordner einblenden"
+                    class="p-2.5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="folder-tree" class="w-4 h-4 text-gray-500"></i>
+            </button>
+
+            <div x-show="folderPanelOpen" class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
+                <div class="flex items-center justify-between mb-2 px-1">
+                    <h3 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ordner</h3>
+                    <div class="flex items-center gap-1">
+                        {% if can_create_folder %}
+                        <button type="button" title="Neuer Ordner{% if current_folder %} in „{{ current_folder.name }}“{% endif %}"
+                                @click="openFolderCreate()"
+                                class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500">
+                            <i data-lucide="folder-plus" class="w-4 h-4"></i>
+                        </button>
+                        {% endif %}
+                        <button type="button" title="Ordner ausblenden" @click="toggleFolderPanel()"
+                                class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500">
+                            <i data-lucide="panel-left-close" class="w-4 h-4"></i>
+                        </button>
+                    </div>
                 </div>
-                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full flex-shrink-0 {{ motion.get_visibility_badge_class }}">
-                    <i data-lucide="{{ motion.get_visibility_icon }}" class="w-3 h-3"></i>
-                </span>
-            </div>
 
-            <!-- Status-Tracker -->
-            {% include "work/motions/partials/_status_tracker.html" %}
+                <nav class="space-y-0.5">
+                    <!-- Wurzel: Alle Dokumente -->
+                    <a href="{% url 'work:documents' org_slug=organization.slug %}{% if filter_query %}?{{ filter_query }}{% endif %}"
+                       class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm {% if not current_folder %}bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 font-semibold{% else %}text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50{% endif %}">
+                        <i data-lucide="inbox" class="w-4 h-4 flex-shrink-0 {% if not current_folder %}text-primary-500{% else %}text-gray-400{% endif %}"></i>
+                        <span class="flex-1 truncate">Alle Dokumente</span>
+                        <span class="text-[11px] text-gray-400 flex-shrink-0">{{ root_document_count }}</span>
+                    </a>
 
-            <!-- Themen-Chips -->
-            {% if motion.topics.all %}
-            <div class="flex flex-wrap gap-1 mt-2">
-                {% for topic in motion.topics.all|slice:":3" %}
-                <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-{{ topic.color }}-100 dark:bg-{{ topic.color }}-900/30 text-{{ topic.color }}-700 dark:text-{{ topic.color }}-300">{{ topic.name }}</span>
-                {% endfor %}
-                {% if motion.topics.all|length > 3 %}
-                <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">+{{ motion.topics.all|length|add:"-3" }}</span>
-                {% endif %}
-            </div>
-            {% endif %}
-
-            <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
-                <span class="flex items-center gap-1.5 min-w-0">
-                    {% if motion.responsible %}
-                    <span class="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center flex-shrink-0">
-                        <span class="text-[9px] font-bold text-primary-700 dark:text-primary-300">{{ motion.responsible.user.get_initials }}</span>
-                    </span>
-                    <span class="truncate">{{ motion.responsible.user.get_display_name }}</span>
-                    {% else %}
-                    <span class="text-gray-400">–</span>
-                    {% endif %}
-                </span>
-                {% if motion.due_date %}
-                <span class="flex items-center gap-1 flex-shrink-0 {% if motion.is_overdue %}text-red-600 dark:text-red-400 font-semibold{% endif %}">
-                    <i data-lucide="calendar-clock" class="w-3 h-3"></i>
-                    {{ motion.due_date|date:"d.m.y" }}
-                </span>
-                {% endif %}
-            </div>
-
-            {% with progress=motion.checklist_progress %}
-            {% if progress.total %}
-            <div class="flex items-center gap-2 mt-2">
-                <div class="flex-1 h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                    <div class="h-full bg-primary-500 rounded-full" style="width: {{ progress.percent }}%"></div>
-                </div>
-                <span class="text-[10px] text-gray-400">{{ progress.done }}/{{ progress.total }}</span>
-            </div>
-            {% endif %}
-            {% endwith %}
-        </div>
-        {% endwith %}
-        {% empty %}
-        <div class="col-span-full">
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
-                <p class="text-sm text-gray-400 dark:text-gray-500">
-                    {% if search_query or selected_status or selected_type or filter_mine or selected_topic or selected_responsible %}
-                    Keine Dokumente mit diesen Filterkriterien gefunden.
-                    {% else %}
-                    Noch keine Dokumente vorhanden.
-                    {% endif %}
-                </p>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-
-    <!-- List View (Tracking-Tabelle) -->
-    <div x-show="viewMode === 'list'" class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-                <thead>
-                    <tr class="text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                        <th class="px-4 py-3 font-semibold">Titel</th>
-                        <th class="px-4 py-3 font-semibold">Typ</th>
-                        <th class="px-4 py-3 font-semibold">Status</th>
-                        <th class="px-4 py-3 font-semibold">Verantwortlich</th>
-                        <th class="px-4 py-3 font-semibold">Themen</th>
-                        <th class="px-4 py-3 font-semibold">Frist</th>
-                        <th class="px-4 py-3 font-semibold">Fortschritt</th>
-                        <th class="px-4 py-3 font-semibold">Aktualisiert</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-                    {% for row in motion_rows %}
-                    {% with motion=row.motion %}
-                    <tr class="group cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
-                        @click="window.location.href='{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}'">
-                        <!-- Titel (+ Einrückung für Änderungsanträge) -->
-                        <td class="px-4 py-3 max-w-xs">
-                            <div class="flex items-center gap-2 {% if row.is_amendment %}pl-6{% endif %}">
-                                {% if row.is_amendment %}
-                                <i data-lucide="corner-down-right" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0"></i>
-                                {% endif %}
-                                <span class="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600">{{ motion.title }}</span>
-                                <span class="inline-flex items-center px-1 py-0.5 rounded text-[10px] flex-shrink-0 {{ motion.get_visibility_badge_class }}">
-                                    <i data-lucide="{{ motion.get_visibility_icon }}" class="w-2.5 h-2.5"></i>
-                                </span>
-                                {% with approvals=motion.approval_summary %}
-                                {% if approvals.total %}
-                                <span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] flex-shrink-0 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300"
-                                      title="Freigaben: {{ approvals.approved }} von {{ approvals.total }} erteilt">
-                                    <i data-lucide="file-check" class="w-2.5 h-2.5"></i>
-                                    {{ approvals.approved }}/{{ approvals.total }}
-                                </span>
-                                {% endif %}
-                                {% endwith %}
-                            </div>
-                        </td>
-                        <!-- Typ -->
-                        <td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ motion.get_type_display }}</td>
-                        <!-- Status-Tracker -->
-                        <td class="px-4 py-3">
-                            {% include "work/motions/partials/_status_tracker.html" %}
-                        </td>
-                        <!-- Verantwortlich -->
-                        <td class="px-4 py-3 whitespace-nowrap">
-                            {% if motion.responsible %}
-                            <span class="flex items-center gap-1.5">
-                                <span class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center flex-shrink-0">
-                                    <span class="text-[10px] font-bold text-primary-700 dark:text-primary-300">{{ motion.responsible.user.get_initials }}</span>
-                                </span>
-                                <span class="text-gray-700 dark:text-gray-300">{{ motion.responsible.user.get_display_name }}</span>
-                            </span>
-                            {% else %}
-                            <span class="text-gray-400">–</span>
-                            {% endif %}
-                        </td>
-                        <!-- Themen -->
-                        <td class="px-4 py-3">
-                            <div class="flex flex-wrap gap-1 max-w-[180px]">
-                                {% for topic in motion.topics.all|slice:":3" %}
-                                <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-{{ topic.color }}-100 dark:bg-{{ topic.color }}-900/30 text-{{ topic.color }}-700 dark:text-{{ topic.color }}-300">{{ topic.name }}</span>
-                                {% endfor %}
-                                {% if motion.topics.all|length > 3 %}
-                                <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">+{{ motion.topics.all|length|add:"-3" }}</span>
-                                {% endif %}
-                            </div>
-                        </td>
-                        <!-- Frist -->
-                        <td class="px-4 py-3 whitespace-nowrap">
-                            {% if motion.due_date %}
-                            <span class="text-gray-700 dark:text-gray-300">{{ motion.due_date|date:"d.m.Y" }}</span>
-                            {% if motion.is_overdue %}
-                            <span class="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
-                                <i data-lucide="alert-triangle" class="w-2.5 h-2.5"></i>
-                                überfällig
-                            </span>
-                            {% endif %}
-                            {% else %}
-                            <span class="text-gray-400">–</span>
-                            {% endif %}
-                        </td>
-                        <!-- Fortschritt (Checkliste) -->
-                        <td class="px-4 py-3">
-                            {% with progress=motion.checklist_progress %}
-                            {% if progress.total %}
-                            <div class="flex items-center gap-2 min-w-[90px]">
-                                <div class="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                                    <div class="h-full bg-primary-500 rounded-full" style="width: {{ progress.percent }}%"></div>
-                                </div>
-                                <span class="text-[10px] text-gray-400 whitespace-nowrap">{{ progress.done }}/{{ progress.total }}</span>
-                            </div>
-                            {% else %}
-                            <span class="text-gray-400 text-xs">–</span>
-                            {% endif %}
-                            {% endwith %}
-                        </td>
-                        <!-- Aktualisiert -->
-                        <td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ motion.updated_at|timesince }}</td>
-                    </tr>
-                    {% endwith %}
+                    {% for entry in folder_entries %}
+                    <div class="group/folder flex items-center rounded-lg {% if current_folder and current_folder.id == entry.folder.id %}bg-primary-50 dark:bg-primary-900/20{% else %}hover:bg-gray-50 dark:hover:bg-gray-700/50{% endif %}"
+                         style="padding-left: {{ entry.indent }}px">
+                        <a href="?ordner={{ entry.folder.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}"
+                           class="flex-1 flex items-center gap-2 px-2 py-1.5 min-w-0 text-sm {% if current_folder and current_folder.id == entry.folder.id %}text-primary-700 dark:text-primary-300 font-semibold{% else %}text-gray-700 dark:text-gray-300{% endif %}">
+                            <i data-lucide="folder" class="w-4 h-4 flex-shrink-0 {% if entry.folder.color %}text-{{ entry.folder.color }}-500{% else %}text-gray-400{% endif %}"></i>
+                            <span class="flex-1 truncate">{{ entry.folder.name }}</span>
+                            <span class="text-[11px] text-gray-400 flex-shrink-0">{{ entry.count }}</span>
+                        </a>
+                        {% if entry.can_manage %}
+                        <button type="button" title="Ordner bearbeiten"
+                                @click.stop="openFolderEdit('{{ entry.folder.id }}', '{{ entry.folder.name|escapejs }}', '{{ entry.folder.color }}', '{{ entry.folder.parent_id|default_if_none:'' }}', '{% if entry.folder.parent %}{{ entry.folder.parent.name|escapejs }}{% else %}Alle Dokumente{% endif %}')"
+                                class="p-1 mr-1 rounded opacity-0 group-hover/folder:opacity-100 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-400 flex-shrink-0">
+                            <i data-lucide="more-horizontal" class="w-3.5 h-3.5"></i>
+                        </button>
+                        {% endif %}
+                    </div>
                     {% empty %}
-                    <tr>
-                        <td colspan="8" class="px-4 py-8 text-center">
-                            <p class="text-sm text-gray-400 dark:text-gray-500">
-                                {% if search_query or selected_status or selected_type or filter_mine or selected_topic or selected_responsible %}
-                                Keine Dokumente mit diesen Filterkriterien gefunden.
-                                {% else %}
-                                Noch keine Dokumente vorhanden.
-                                {% endif %}
-                            </p>
-                            {% if not search_query and not selected_status and not selected_type and not filter_mine and not selected_topic and not selected_responsible %}
-                            <div class="flex items-center justify-center gap-3 mt-3">
-                                <a href="{% url 'work:document_import' org_slug=organization.slug %}"
-                                   class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 hover:underline">
-                                    <i data-lucide="upload" class="w-3.5 h-3.5"></i> PDF importieren
-                                </a>
-                                <a href="{% url 'work:document_create' org_slug=organization.slug %}"
-                                   class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline">
-                                    <i data-lucide="plus" class="w-3.5 h-3.5"></i> Neues Dokument
-                                </a>
-                            </div>
-                            {% endif %}
-                        </td>
-                    </tr>
+                    <p class="px-2 py-1 text-xs text-gray-400">Noch keine Ordner.</p>
                     {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Pagination -->
-        {% if motions.has_other_pages %}
-        <div class="px-5 py-4 border-t border-gray-200 dark:border-gray-700">
-            <div class="flex items-center justify-between">
-                <p class="text-sm text-gray-500">
-                    Zeige {{ motions.start_index }}-{{ motions.end_index }} von {{ paginator.count }} Hauptanträgen
-                </p>
-                <nav class="flex items-center gap-1">
-                    {% if motions.has_previous %}
-                    <a href="?page={{ motions.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_topic %}&thema={{ selected_topic }}{% endif %}{% if selected_responsible %}&verantwortlich={{ selected_responsible }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
-                       class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                        <i data-lucide="chevron-left" class="w-5 h-5"></i>
-                    </a>
-                    {% endif %}
-
-                    {% for num in motions.paginator.page_range %}
-                    {% if motions.number == num %}
-                    <span class="px-3 py-2 bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400 rounded-lg font-medium text-sm">{{ num }}</span>
-                    {% elif num > motions.number|add:'-3' and num < motions.number|add:'3' %}
-                    <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_topic %}&thema={{ selected_topic }}{% endif %}{% if selected_responsible %}&verantwortlich={{ selected_responsible }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
-                       class="px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-sm">{{ num }}</a>
-                    {% endif %}
-                    {% endfor %}
-
-                    {% if motions.has_next %}
-                    <a href="?page={{ motions.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_topic %}&thema={{ selected_topic }}{% endif %}{% if selected_responsible %}&verantwortlich={{ selected_responsible }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
-                       class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                        <i data-lucide="chevron-right" class="w-5 h-5"></i>
-                    </a>
-                    {% endif %}
                 </nav>
             </div>
+        </aside>
+
+        <!-- Hauptbereich -->
+        <div class="flex-1 min-w-0">
+            <!-- Filters & View Toggle -->
+            <div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-4">
+                <form method="get" class="flex flex-wrap items-center gap-4">
+                    {% if current_folder %}
+                    <!-- Ordnerauswahl bei Filter/Suche beibehalten -->
+                    <input type="hidden" name="ordner" value="{{ current_folder.id }}">
+                    {% endif %}
+                    <!-- Search -->
+                    <div class="flex-1 min-w-[200px]">
+                        <div class="relative">
+                            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+                            <input type="text" name="q" value="{{ search_query|default:'' }}"
+                                   placeholder="Dokument suchen..."
+                                   class="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                        </div>
+                    </div>
+
+                    <!-- Type Filter -->
+                    <select name="type" onchange="this.form.submit()"
+                            class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                        <option value="">Alle Typen</option>
+                        {% for doc_type in document_types %}
+                        <option value="{{ doc_type.id }}" {% if selected_type == doc_type.id|stringformat:"s" %}selected{% endif %}>{{ doc_type.name }}</option>
+                        {% endfor %}
+                        <option disabled>---</option>
+                        {% for value, label in type_choices %}
+                        <option value="{{ value }}" {% if selected_type == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <!-- Status Filter -->
+                    <select name="status" onchange="this.form.submit()"
+                            class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                        <option value="">Alle Status</option>
+                        {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <!-- Topic Filter -->
+                    {% if org_topics %}
+                    <select name="thema" onchange="this.form.submit()"
+                            class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                        <option value="">Alle Themen</option>
+                        {% for topic in org_topics %}
+                        <option value="{{ topic.id }}" {% if selected_topic == topic.id|stringformat:"s" %}selected{% endif %}>{{ topic.name }}</option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
+
+                    <!-- Responsible Filter -->
+                    <select name="verantwortlich" onchange="this.form.submit()"
+                            class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                        <option value="">Alle Verantwortlichen</option>
+                        <option value="me" {% if selected_responsible == "me" %}selected{% endif %}>Meine Federführung</option>
+                        {% for member in org_members %}
+                        <option value="{{ member.id }}" {% if selected_responsible == member.id|stringformat:"s" %}selected{% endif %}>{{ member.user.get_display_name }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <!-- My Motions -->
+                    <label class="inline-flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" name="mine" value="1" {% if filter_mine %}checked{% endif %}
+                               onchange="this.form.submit()"
+                               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Nur meine</span>
+                    </label>
+
+                    <!-- View Toggle -->
+                    <div class="flex items-center gap-1 bg-gray-100 dark:bg-gray-900 rounded-lg p-1">
+                        <button type="button"
+                                @click="setViewMode('grid')"
+                                :class="viewMode === 'grid' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'hover:bg-white/50 dark:hover:bg-gray-700/50'"
+                                class="p-2 rounded-md transition-colors">
+                            <i data-lucide="grid-3x3" class="w-4 h-4" :class="viewMode === 'grid' ? 'text-primary-600' : 'text-gray-500'"></i>
+                        </button>
+                        <button type="button"
+                                @click="setViewMode('list')"
+                                :class="viewMode === 'list' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'hover:bg-white/50 dark:hover:bg-gray-700/50'"
+                                class="p-2 rounded-md transition-colors">
+                            <i data-lucide="list" class="w-4 h-4" :class="viewMode === 'list' ? 'text-primary-600' : 'text-gray-500'"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Breadcrumb (Ordner-Pfad) -->
+            <div class="fade-up flex items-center gap-1.5 mb-3 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
+                <a href="{% url 'work:documents' org_slug=organization.slug %}{% if filter_query %}?{{ filter_query }}{% endif %}"
+                   class="hover:text-primary-600 hover:underline {% if not current_folder %}font-semibold text-gray-900 dark:text-white{% endif %}">Alle Dokumente</a>
+                {% for crumb in folder_breadcrumbs %}
+                <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-gray-300"></i>
+                <a href="?ordner={{ crumb.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}" class="hover:text-primary-600 hover:underline">{{ crumb.name }}</a>
+                {% endfor %}
+                {% if current_folder %}
+                <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-gray-300"></i>
+                <span class="font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                    <i data-lucide="folder" class="w-4 h-4 {% if current_folder.color %}text-{{ current_folder.color }}-500{% else %}text-gray-400{% endif %}"></i>
+                    {{ current_folder.name }}
+                </span>
+                {% endif %}
+            </div>
+
+            <!-- Aktionsleiste bei Mehrfachauswahl -->
+            <div x-show="selectedIds.length > 0" x-cloak
+                 class="flex items-center gap-3 mb-3 px-4 py-2.5 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl">
+                <span class="text-sm font-semibold text-primary-700 dark:text-primary-300" x-text="selectedIds.length + ' ausgewählt'"></span>
+                <span class="text-sm text-gray-500">→ Verschieben nach…</span>
+                <select x-model="bulkTargetFolder"
+                        class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none">
+                    <option value="">Alle Dokumente (Wurzel)</option>
+                    {% for entry in folder_entries %}
+                    <option value="{{ entry.folder.id }}">{% for _ in ''|center:entry.depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ entry.folder.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="button" @click="moveDocuments(selectedIds, bulkTargetFolder)"
+                        class="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Verschieben</button>
+                <button type="button" @click="selectedIds = []"
+                        class="ml-auto text-sm text-gray-500 hover:underline">Auswahl aufheben</button>
+            </div>
+
+            <!-- Grid View (Karten) -->
+            <div x-show="viewMode === 'grid'" x-cloak class="fade-up d1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {% for row in motion_rows %}
+                {% with motion=row.motion %}
+                <div class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md transition-all cursor-pointer {% if row.is_amendment %}border-l-4 border-l-primary-300 dark:border-l-primary-700{% endif %}"
+                     @click="window.location.href='{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}'">
+                    <div class="flex items-start gap-2 mb-2">
+                        <input type="checkbox" value="{{ motion.id }}" x-model="selectedIds" @click.stop
+                               class="mt-1 rounded border-gray-300 text-primary-600 focus:ring-primary-500 flex-shrink-0"
+                               title="Für Verschieben auswählen">
+                        <i data-lucide="{{ motion.get_type_icon }}" class="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5"></i>
+                        <div class="flex-1 min-w-0">
+                            {% if row.is_amendment %}
+                            <p class="text-[10px] text-gray-400 flex items-center gap-1 mb-0.5">
+                                <i data-lucide="corner-down-right" class="w-3 h-3"></i>
+                                Änderungsantrag zu „{{ motion.parent_motion.title|truncatechars:40 }}“
+                            </p>
+                            {% endif %}
+                            <h3 class="font-medium text-gray-900 dark:text-white text-sm truncate group-hover:text-primary-600">{{ motion.title }}</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">{{ motion.get_type_display }}{% if motion.folder %} · <i data-lucide="folder" class="w-3 h-3 inline-block"></i> {{ motion.folder.name }}{% endif %}</p>
+                        </div>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <!-- Kontextmenü: In Ordner verschieben -->
+                            <div x-data="{ open: false }" class="relative" @click.stop>
+                                <button type="button" @click="open = !open" title="In Ordner verschieben"
+                                        class="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400">
+                                    <i data-lucide="folder-input" class="w-4 h-4"></i>
+                                </button>
+                                <div x-show="open" x-cloak @click.outside="open = false"
+                                     class="absolute right-0 z-20 mt-1 w-52 max-h-64 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg py-1">
+                                    <p class="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Verschieben nach</p>
+                                    <button type="button" @click="moveDocuments(['{{ motion.id }}'], ''); open = false"
+                                            class="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Alle Dokumente (Wurzel)</button>
+                                    {% for entry in folder_entries %}
+                                    <button type="button" @click="moveDocuments(['{{ motion.id }}'], '{{ entry.folder.id }}'); open = false"
+                                            class="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 truncate"
+                                            style="padding-left: calc(0.75rem + {{ entry.indent }}px)">{{ entry.folder.name }}</button>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <span class="inline-flex items-center justify-center w-6 h-6 rounded-full {{ motion.get_visibility_badge_class }}">
+                                <i data-lucide="{{ motion.get_visibility_icon }}" class="w-3 h-3"></i>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Status-Tracker -->
+                    {% include "work/motions/partials/_status_tracker.html" %}
+
+                    <!-- Themen-Chips -->
+                    {% if motion.topics.all %}
+                    <div class="flex flex-wrap gap-1 mt-2">
+                        {% for topic in motion.topics.all|slice:":3" %}
+                        <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-{{ topic.color }}-100 dark:bg-{{ topic.color }}-900/30 text-{{ topic.color }}-700 dark:text-{{ topic.color }}-300">{{ topic.name }}</span>
+                        {% endfor %}
+                        {% if motion.topics.all|length > 3 %}
+                        <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">+{{ motion.topics.all|length|add:"-3" }}</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
+                        <span class="flex items-center gap-1.5 min-w-0">
+                            {% if motion.responsible %}
+                            <span class="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center flex-shrink-0">
+                                <span class="text-[9px] font-bold text-primary-700 dark:text-primary-300">{{ motion.responsible.user.get_initials }}</span>
+                            </span>
+                            <span class="truncate">{{ motion.responsible.user.get_display_name }}</span>
+                            {% else %}
+                            <span class="text-gray-400">–</span>
+                            {% endif %}
+                        </span>
+                        {% if motion.due_date %}
+                        <span class="flex items-center gap-1 flex-shrink-0 {% if motion.is_overdue %}text-red-600 dark:text-red-400 font-semibold{% endif %}">
+                            <i data-lucide="calendar-clock" class="w-3 h-3"></i>
+                            {{ motion.due_date|date:"d.m.y" }}
+                        </span>
+                        {% endif %}
+                    </div>
+
+                    {% with progress=motion.checklist_progress %}
+                    {% if progress.total %}
+                    <div class="flex items-center gap-2 mt-2">
+                        <div class="flex-1 h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-primary-500 rounded-full" style="width: {{ progress.percent }}%"></div>
+                        </div>
+                        <span class="text-[10px] text-gray-400">{{ progress.done }}/{{ progress.total }}</span>
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+                </div>
+                {% endwith %}
+                {% empty %}
+                <div class="col-span-full">
+                    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
+                        <p class="text-sm text-gray-400 dark:text-gray-500">
+                            {% if search_query or selected_status or selected_type or filter_mine or selected_topic or selected_responsible or current_folder %}
+                            Keine Dokumente mit diesen Filterkriterien gefunden.
+                            {% else %}
+                            Noch keine Dokumente vorhanden.
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- List View (Tracking-Tabelle) -->
+            <div x-show="viewMode === 'list'" class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-left text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                                <th class="pl-4 pr-1 py-3 w-8"></th>
+                                <th class="px-4 py-3 font-semibold">Titel</th>
+                                <th class="px-4 py-3 font-semibold">Typ</th>
+                                <th class="px-4 py-3 font-semibold">Status</th>
+                                <th class="px-4 py-3 font-semibold">Verantwortlich</th>
+                                <th class="px-4 py-3 font-semibold">Themen</th>
+                                <th class="px-4 py-3 font-semibold">Frist</th>
+                                <th class="px-4 py-3 font-semibold">Fortschritt</th>
+                                <th class="px-4 py-3 font-semibold">Aktualisiert</th>
+                                <th class="px-2 py-3 w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                            {% for row in motion_rows %}
+                            {% with motion=row.motion %}
+                            <tr class="group cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                                @click="window.location.href='{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}'">
+                                <!-- Auswahl -->
+                                <td class="pl-4 pr-1 py-3" @click.stop>
+                                    <input type="checkbox" value="{{ motion.id }}" x-model="selectedIds"
+                                           class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                           title="Für Verschieben auswählen">
+                                </td>
+                                <!-- Titel (+ Einrückung für Änderungsanträge) -->
+                                <td class="px-4 py-3 max-w-xs">
+                                    <div class="flex items-center gap-2 {% if row.is_amendment %}pl-6{% endif %}">
+                                        {% if row.is_amendment %}
+                                        <i data-lucide="corner-down-right" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0"></i>
+                                        {% endif %}
+                                        <span class="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600">{{ motion.title }}</span>
+                                        <span class="inline-flex items-center px-1 py-0.5 rounded text-[10px] flex-shrink-0 {{ motion.get_visibility_badge_class }}">
+                                            <i data-lucide="{{ motion.get_visibility_icon }}" class="w-2.5 h-2.5"></i>
+                                        </span>
+                                        {% if motion.folder and not current_folder %}
+                                        <span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] flex-shrink-0 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400" title="Ordner: {{ motion.folder.name }}">
+                                            <i data-lucide="folder" class="w-2.5 h-2.5"></i>
+                                            {{ motion.folder.name|truncatechars:18 }}
+                                        </span>
+                                        {% endif %}
+                                        {% with approvals=motion.approval_summary %}
+                                        {% if approvals.total %}
+                                        <span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] flex-shrink-0 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300"
+                                              title="Freigaben: {{ approvals.approved }} von {{ approvals.total }} erteilt">
+                                            <i data-lucide="file-check" class="w-2.5 h-2.5"></i>
+                                            {{ approvals.approved }}/{{ approvals.total }}
+                                        </span>
+                                        {% endif %}
+                                        {% endwith %}
+                                    </div>
+                                </td>
+                                <!-- Typ -->
+                                <td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ motion.get_type_display }}</td>
+                                <!-- Status-Tracker -->
+                                <td class="px-4 py-3">
+                                    {% include "work/motions/partials/_status_tracker.html" %}
+                                </td>
+                                <!-- Verantwortlich -->
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    {% if motion.responsible %}
+                                    <span class="flex items-center gap-1.5">
+                                        <span class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center flex-shrink-0">
+                                            <span class="text-[10px] font-bold text-primary-700 dark:text-primary-300">{{ motion.responsible.user.get_initials }}</span>
+                                        </span>
+                                        <span class="text-gray-700 dark:text-gray-300">{{ motion.responsible.user.get_display_name }}</span>
+                                    </span>
+                                    {% else %}
+                                    <span class="text-gray-400">–</span>
+                                    {% endif %}
+                                </td>
+                                <!-- Themen -->
+                                <td class="px-4 py-3">
+                                    <div class="flex flex-wrap gap-1 max-w-[180px]">
+                                        {% for topic in motion.topics.all|slice:":3" %}
+                                        <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-{{ topic.color }}-100 dark:bg-{{ topic.color }}-900/30 text-{{ topic.color }}-700 dark:text-{{ topic.color }}-300">{{ topic.name }}</span>
+                                        {% endfor %}
+                                        {% if motion.topics.all|length > 3 %}
+                                        <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">+{{ motion.topics.all|length|add:"-3" }}</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <!-- Frist -->
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    {% if motion.due_date %}
+                                    <span class="text-gray-700 dark:text-gray-300">{{ motion.due_date|date:"d.m.Y" }}</span>
+                                    {% if motion.is_overdue %}
+                                    <span class="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+                                        <i data-lucide="alert-triangle" class="w-2.5 h-2.5"></i>
+                                        überfällig
+                                    </span>
+                                    {% endif %}
+                                    {% else %}
+                                    <span class="text-gray-400">–</span>
+                                    {% endif %}
+                                </td>
+                                <!-- Fortschritt (Checkliste) -->
+                                <td class="px-4 py-3">
+                                    {% with progress=motion.checklist_progress %}
+                                    {% if progress.total %}
+                                    <div class="flex items-center gap-2 min-w-[90px]">
+                                        <div class="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                                            <div class="h-full bg-primary-500 rounded-full" style="width: {{ progress.percent }}%"></div>
+                                        </div>
+                                        <span class="text-[10px] text-gray-400 whitespace-nowrap">{{ progress.done }}/{{ progress.total }}</span>
+                                    </div>
+                                    {% else %}
+                                    <span class="text-gray-400 text-xs">–</span>
+                                    {% endif %}
+                                    {% endwith %}
+                                </td>
+                                <!-- Aktualisiert -->
+                                <td class="px-4 py-3 text-gray-500 dark:text-gray-400 whitespace-nowrap text-xs">{{ motion.updated_at|timesince }}</td>
+                                <!-- Kontextmenü: In Ordner verschieben -->
+                                <td class="px-2 py-3" @click.stop>
+                                    <div x-data="{ open: false }" class="relative">
+                                        <button type="button" @click="open = !open" title="In Ordner verschieben"
+                                                class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400">
+                                            <i data-lucide="folder-input" class="w-4 h-4"></i>
+                                        </button>
+                                        <div x-show="open" x-cloak @click.outside="open = false"
+                                             class="absolute right-0 z-20 mt-1 w-52 max-h-64 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg py-1">
+                                            <p class="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Verschieben nach</p>
+                                            <button type="button" @click="moveDocuments(['{{ motion.id }}'], ''); open = false"
+                                                    class="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Alle Dokumente (Wurzel)</button>
+                                            {% for entry in folder_entries %}
+                                            <button type="button" @click="moveDocuments(['{{ motion.id }}'], '{{ entry.folder.id }}'); open = false"
+                                                    class="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 truncate"
+                                                    style="padding-left: calc(0.75rem + {{ entry.indent }}px)">{{ entry.folder.name }}</button>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endwith %}
+                            {% empty %}
+                            <tr>
+                                <td colspan="10" class="px-4 py-8 text-center">
+                                    <p class="text-sm text-gray-400 dark:text-gray-500">
+                                        {% if search_query or selected_status or selected_type or filter_mine or selected_topic or selected_responsible or current_folder %}
+                                        Keine Dokumente mit diesen Filterkriterien gefunden.
+                                        {% else %}
+                                        Noch keine Dokumente vorhanden.
+                                        {% endif %}
+                                    </p>
+                                    {% if not search_query and not selected_status and not selected_type and not filter_mine and not selected_topic and not selected_responsible and not current_folder %}
+                                    <div class="flex items-center justify-center gap-3 mt-3">
+                                        <a href="{% url 'work:document_import' org_slug=organization.slug %}"
+                                           class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 dark:text-gray-400 hover:underline">
+                                            <i data-lucide="upload" class="w-3.5 h-3.5"></i> PDF importieren
+                                        </a>
+                                        <a href="{% url 'work:document_create' org_slug=organization.slug %}"
+                                           class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+                                            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Neues Dokument
+                                        </a>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                {% if motions.has_other_pages %}
+                <div class="px-5 py-4 border-t border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <p class="text-sm text-gray-500">
+                            Zeige {{ motions.start_index }}-{{ motions.end_index }} von {{ paginator.count }} Hauptanträgen
+                        </p>
+                        <nav class="flex items-center gap-1">
+                            {% if motions.has_previous %}
+                            <a href="?page={{ motions.previous_page_number }}{% if current_folder %}&ordner={{ current_folder.id }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_topic %}&thema={{ selected_topic }}{% endif %}{% if selected_responsible %}&verantwortlich={{ selected_responsible }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
+                               class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                            </a>
+                            {% endif %}
+
+                            {% for num in motions.paginator.page_range %}
+                            {% if motions.number == num %}
+                            <span class="px-3 py-2 bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400 rounded-lg font-medium text-sm">{{ num }}</span>
+                            {% elif num > motions.number|add:'-3' and num < motions.number|add:'3' %}
+                            <a href="?page={{ num }}{% if current_folder %}&ordner={{ current_folder.id }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_topic %}&thema={{ selected_topic }}{% endif %}{% if selected_responsible %}&verantwortlich={{ selected_responsible }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
+                               class="px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-sm">{{ num }}</a>
+                            {% endif %}
+                            {% endfor %}
+
+                            {% if motions.has_next %}
+                            <a href="?page={{ motions.next_page_number }}{% if current_folder %}&ordner={{ current_folder.id }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_topic %}&thema={{ selected_topic }}{% endif %}{% if selected_responsible %}&verantwortlich={{ selected_responsible }}{% endif %}{% if filter_mine %}&mine=1{% endif %}"
+                               class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                            </a>
+                            {% endif %}
+                        </nav>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
         </div>
-        {% endif %}
+    </div>
+
+    <!-- Ordner-Modal (Neu / Bearbeiten) -->
+    <div x-show="folderModal.open" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4"
+         @keydown.escape.window="folderModal.open = false">
+        <div class="absolute inset-0 bg-black/40" @click="folderModal.open = false"></div>
+        <div class="relative bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-xl w-full max-w-md p-5">
+            <h3 class="text-base font-bold text-gray-900 dark:text-white mb-4"
+                x-text="folderModal.mode === 'create' ? 'Neuer Ordner' : 'Ordner bearbeiten'"></h3>
+
+            <form method="post" :action="folderModal.action">
+                {% csrf_token %}
+                <template x-if="folderModal.mode === 'create'">
+                    <input type="hidden" name="parent" :value="folderModal.parent">
+                </template>
+                <template x-if="folderModal.mode === 'edit'">
+                    <input type="hidden" name="parent" :value="folderModal.parent">
+                </template>
+
+                <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Name</label>
+                <input type="text" name="name" x-model="folderModal.name" required maxlength="100"
+                       class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 mb-4">
+
+                <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Farbe</label>
+                <input type="hidden" name="color" :value="folderModal.color">
+                <div class="flex flex-wrap items-center gap-2 mb-4">
+                    <button type="button" @click="folderModal.color = ''"
+                            :class="folderModal.color === '' ? 'ring-2 ring-offset-1 ring-primary-500' : ''"
+                            class="w-6 h-6 rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+                            title="Keine Farbe"></button>
+                    {% for value, label in folder_color_choices %}
+                    <button type="button" @click="folderModal.color = '{{ value }}'"
+                            :class="folderModal.color === '{{ value }}' ? 'ring-2 ring-offset-1 ring-primary-500' : ''"
+                            class="w-6 h-6 rounded-full bg-{{ value }}-500" title="{{ label }}"></button>
+                    {% endfor %}
+                </div>
+
+                <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1"
+                       x-text="folderModal.mode === 'create' ? 'Anlegen in' : 'Verschieben nach'"></label>
+                <select x-model="folderModal.parent"
+                        class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 mb-4">
+                    <option value="">Alle Dokumente (Wurzel)</option>
+                    {% for entry in folder_entries %}
+                    <option value="{{ entry.folder.id }}" x-show="folderModal.id !== '{{ entry.folder.id }}'">{% for _ in ''|center:entry.depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ entry.folder.name }}</option>
+                    {% endfor %}
+                </select>
+                <p class="text-[11px] text-gray-400 -mt-3 mb-4">Maximal 4 Ebenen. Namen müssen je Ebene eindeutig sein.</p>
+
+                <div class="flex items-center gap-2">
+                    <button type="submit"
+                            class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700"
+                            x-text="folderModal.mode === 'create' ? 'Ordner anlegen' : 'Speichern'"></button>
+                    <button type="button" @click="folderModal.open = false"
+                            class="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Abbrechen</button>
+                </div>
+            </form>
+
+            <!-- Löschen (nur im Bearbeiten-Modus) -->
+            <template x-if="folderModal.mode === 'edit'">
+                <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <form method="post" :action="folderModal.deleteAction"
+                          onsubmit="return confirm('Ordner wirklich löschen?')">
+                        {% csrf_token %}
+                        <p class="text-xs text-gray-500 mb-2">
+                            Beim Löschen wandern alle Inhalte (Dokumente und Unterordner) nach
+                            „<span x-text="folderModal.parentName"></span>“.
+                        </p>
+                        <button type="submit"
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            Ordner löschen
+                        </button>
+                    </form>
+                </div>
+            </template>
+        </div>
     </div>
 
     <!-- Share Modal -->
@@ -407,6 +662,22 @@ function documentManager() {
         shareVisibility: 'private',
         addUserEmail: '',
 
+        // Ordner-Ablage
+        folderPanelOpen: true,
+        selectedIds: [],
+        bulkTargetFolder: '',
+        folderModal: {
+            open: false,
+            mode: 'create',
+            id: '',
+            action: '',
+            deleteAction: '',
+            name: '',
+            color: '',
+            parent: '',
+            parentName: 'Alle Dokumente'
+        },
+
         init() {
             // Load viewMode from localStorage with validation
             const stored = localStorage.getItem('docViewMode');
@@ -417,11 +688,61 @@ function documentManager() {
                 this.viewMode = 'list';
                 localStorage.setItem('docViewMode', 'list');
             }
+            this.folderPanelOpen = localStorage.getItem('docFolderPanel') !== 'closed';
         },
 
         setViewMode(mode) {
             this.viewMode = mode;
             localStorage.setItem('docViewMode', mode);
+        },
+
+        toggleFolderPanel() {
+            this.folderPanelOpen = !this.folderPanelOpen;
+            localStorage.setItem('docFolderPanel', this.folderPanelOpen ? 'open' : 'closed');
+        },
+
+        openFolderCreate() {
+            this.folderModal = {
+                open: true,
+                mode: 'create',
+                id: '',
+                action: '{% url "work:document_folder_create" org_slug=organization.slug %}',
+                deleteAction: '',
+                name: '',
+                color: '',
+                parent: '{% if current_folder %}{{ current_folder.id }}{% endif %}',
+                parentName: 'Alle Dokumente'
+            };
+        },
+
+        openFolderEdit(id, name, color, parentId, parentName) {
+            this.folderModal = {
+                open: true,
+                mode: 'edit',
+                id: id,
+                action: '{% url "work:document_folder_update" org_slug=organization.slug folder_id="00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', id),
+                deleteAction: '{% url "work:document_folder_delete" org_slug=organization.slug folder_id="00000000-0000-0000-0000-000000000000" %}'.replace('00000000-0000-0000-0000-000000000000', id),
+                name: name,
+                color: color,
+                parent: parentId,
+                parentName: parentName
+            };
+        },
+
+        moveDocuments(ids, folderId) {
+            if (!ids.length) return;
+            const formData = new FormData();
+            ids.forEach(id => formData.append('motion_ids', id));
+            formData.append('folder', folderId || '');
+            const csrf = document.querySelector('#document-csrf input[name=csrfmiddlewaretoken]').value;
+            fetch('{% url "work:document_move_to_folder" org_slug=organization.slug %}', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf },
+                body: formData
+            })
+            .then(r => r.json())
+            .then(() => window.location.reload())
+            .catch(() => window.location.reload());
         },
 
         openShareModal(motionId, title, visibility) {

@@ -154,6 +154,27 @@ urlpatterns = [
         motions_views.MotionImportView.as_view(),
         name="document_import",
     ),
+    # Ordner-Ablage (Dokumentordner)
+    path(
+        "<slug:org_slug>/documents/folders/create/",
+        motions_views.DocumentFolderCreateView.as_view(),
+        name="document_folder_create",
+    ),
+    path(
+        "<slug:org_slug>/documents/folders/<uuid:folder_id>/update/",
+        motions_views.DocumentFolderUpdateView.as_view(),
+        name="document_folder_update",
+    ),
+    path(
+        "<slug:org_slug>/documents/folders/<uuid:folder_id>/delete/",
+        motions_views.DocumentFolderDeleteView.as_view(),
+        name="document_folder_delete",
+    ),
+    path(
+        "<slug:org_slug>/documents/move-to-folder/",
+        motions_views.MotionFolderMoveView.as_view(),
+        name="document_move_to_folder",
+    ),
     path(
         "<slug:org_slug>/documents/ai/",
         motions_views.MotionAIAssistantView.as_view(),
