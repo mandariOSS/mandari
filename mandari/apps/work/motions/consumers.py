@@ -229,9 +229,13 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         if not motion.can_access(membership):
             return None, None
 
-        if motion.author == membership or membership.has_permission("motions.edit_all"):
+        # Gleiche Stufenlogik wie die HTTP-Views: can_edit/can_comment
+        # berücksichtigen Autor, Berechtigungen UND Share-Level (inkl.
+        # Gast-Freigaben) - sonst könnten per Freigabe Bearbeitungs-
+        # berechtigte im Kollab-Modus schreiben, ohne dass gespeichert wird.
+        if motion.can_edit(membership):
             return "edit", membership.id
-        if membership.has_permission("motions.comment"):
+        if motion.can_comment(membership):
             return "comment", membership.id
         return "view", membership.id
 
