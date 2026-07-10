@@ -57,6 +57,8 @@ export interface CollaborativeEditorOptions extends EditorOptions {
   onStatusChange?: (status: 'connecting' | 'connected' | 'disconnected') => void
   /** Called when server sends initial state (hasState=true means server had saved Yjs state) */
   onInitialState?: (hasState: boolean) => void
+  /** Called when the server requests a document reload (e.g. after revision restore) */
+  onReloadRequired?: () => void
 }
 
 export interface FormatState {
@@ -223,10 +225,25 @@ export function createCollaborativeEditor(
     user: options.user,
     onPresenceChange: options.onPresenceChange,
     onStatusChange: options.onStatusChange,
+    getHtml: () => {
+      try {
+        return editor && !editor.isDestroyed ? editor.getHTML() : ''
+      } catch (e) {
+        return ''
+      }
+    },
+    onReloadRequired: options.onReloadRequired,
     onInitialState: (hasState: boolean) => {
       if (!hasState && options.content) {
-        // Server has no saved Yjs state — seed from HTML content
-        editor.commands.setContent(options.content)
+        // Server has no saved Yjs state — seed from HTML content.
+        // Kurz warten und nur seeden, wenn nicht inzwischen ein anderer
+        // Client seinen Zustand gesynct hat (verhindert doppelten Inhalt
+        // bei nahezu gleichzeitigem Öffnen eines frischen Dokuments).
+        setTimeout(() => {
+          if (editor && !editor.isDestroyed && editor.isEmpty) {
+            editor.commands.setContent(options.content)
+          }
+        }, 400)
       }
       // Forward to caller if they want to know
       options.onInitialState?.(hasState)

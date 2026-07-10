@@ -34,6 +34,17 @@ export interface CollabOptions {
    * The editor should only seed from HTML content when hasState is false.
    */
   onInitialState?: (hasState: boolean) => void
+  /**
+   * Returns the current editor HTML. When provided, the HTML is sent along
+   * with each yjs_save so the server can keep content_encrypted current and
+   * create throttled revisions.
+   */
+  getHtml?: () => string
+  /**
+   * Called when the server requests a document reload (e.g. after a revision
+   * restore). Default behavior: window.location.reload().
+   */
+  onReloadRequired?: () => void
 }
 
 export interface CollabUser {
@@ -79,6 +90,8 @@ class DjangoYjsProvider {
   private initialStateReceived = false
   private onStatusChange?: (status: string) => void
   private onInitialState?: (hasState: boolean) => void
+  private getHtml?: () => string
+  private onReloadRequired?: () => void
   private _beforeUnloadHandler: (() => void) | null = null
   private _visibilityHandler: (() => void) | null = null
 
@@ -87,13 +100,17 @@ class DjangoYjsProvider {
     ydoc: Y.Doc,
     awareness: awarenessProtocol.Awareness,
     onStatusChange?: (status: string) => void,
-    onInitialState?: (hasState: boolean) => void
+    onInitialState?: (hasState: boolean) => void,
+    getHtml?: () => string,
+    onReloadRequired?: () => void
   ) {
     this.wsUrl = wsUrl
     this.ydoc = ydoc
     this.awareness = awareness
     this.onStatusChange = onStatusChange
     this.onInitialState = onInitialState
+    this.getHtml = getHtml
+    this.onReloadRequired = onReloadRequired
 
     // Listen to Yjs document updates
     this.ydoc.on('update', this._onDocUpdate)
@@ -202,6 +219,13 @@ class DjangoYjsProvider {
           this.onInitialState?.(false)
         }
       }
+    } else if (msg.type === 'reload') {
+      // Server requests a full document reload (e.g. after revision restore).
+      if (this.onReloadRequired) {
+        this.onReloadRequired()
+      } else {
+        window.location.reload()
+      }
     }
   }
 
@@ -267,10 +291,21 @@ class DjangoYjsProvider {
     if (!this.ws || !this.connected || this.ws.readyState !== WebSocket.OPEN) return
     try {
       const state = Y.encodeStateAsUpdate(this.ydoc)
-      this.ws.send(JSON.stringify({
+      const message: { type: string; data: string; html?: string } = {
         type: 'yjs_save',
         data: this._uint8ToB64(state),
-      }))
+      }
+      // Aktuelles HTML mitsenden — der Server hält damit content_encrypted
+      // aktuell und legt gedrosselt Revisionen an.
+      if (this.getHtml) {
+        try {
+          const html = this.getHtml()
+          if (html) message.html = html
+        } catch (e) {
+          // HTML ist optional — Fehler hier dürfen das Yjs-Save nicht blockieren
+        }
+      }
+      this.ws.send(JSON.stringify(message))
     } catch (e) {
       console.warn('Failed to save Yjs state:', e)
     }
@@ -376,7 +411,9 @@ export function initCollaboration(options: CollabOptions): CollabResult {
     ydoc,
     awareness,
     options.onStatusChange,
-    options.onInitialState
+    options.onInitialState,
+    options.getHtml,
+    options.onReloadRequired
   )
 
   // Build TipTap extensions

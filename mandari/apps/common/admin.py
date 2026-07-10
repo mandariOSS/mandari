@@ -13,7 +13,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from unfold.admin import ModelAdmin
 from unfold.decorators import action
 
-from .models import SiteSettings
+from .models import AISettings, SiteSettings
 
 
 def get_safe_admin_redirect(request):
@@ -199,4 +199,85 @@ class SiteSettingsAdmin(ModelAdmin):
             from django.shortcuts import redirect
 
             return redirect(f"/admin/common/sitesettings/{settings.pk}/change/")
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
+
+class AISettingsAdminForm(forms.ModelForm):
+    """Custom form for AISettings with write-only API key field."""
+
+    api_key = forms.CharField(
+        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
+        required=False,
+        label="API Key",
+        help_text="Wird verschlüsselt gespeichert (AES-256-GCM, Master-Key).",
+    )
+
+    class Meta:
+        model = AISettings
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk and self.instance.api_key_encrypted:
+            self.fields[
+                "api_key"
+            ].help_text = "Ein Key ist gesetzt. Für Rotation neuen Key eintragen, sonst leer lassen."
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        api_key = self.cleaned_data.get("api_key", "").strip()
+        if api_key:
+            obj.set_api_key(api_key)
+        if commit:
+            obj.save()
+        return obj
+
+
+@admin.register(AISettings)
+class AISettingsAdmin(ModelAdmin):
+    """
+    Admin for global AI configuration (Work DMS editor).
+
+    Single-page singleton configuration: provider, model, key, output cap
+    and the default monthly token budget per organization.
+    """
+
+    form = AISettingsAdminForm
+
+    fieldsets = (
+        (
+            "Anbieter",
+            {
+                "fields": ("enabled", "provider", "base_url", "model_name", "api_key"),
+                "description": (
+                    "Globale Standard-Konfiguration für den KI-Assistenten im Dokumenten-Editor. "
+                    "Organisationen mit eigenem API Key (Organization → KI) überschreiben diese Einstellungen."
+                ),
+            },
+        ),
+        (
+            "Limits",
+            {
+                "fields": ("max_output_tokens", "default_org_monthly_token_limit"),
+                "description": (
+                    "Das Monatslimit gilt für Organisationen ohne eigenes Limit. Pro Organisation überschreibbar "
+                    "über Organization → 'Token-Limit pro Monat' (leer = Standard, 0 = KI deaktiviert)."
+                ),
+            },
+        ),
+    )
+
+    def has_add_permission(self, request):
+        return not AISettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
+        # Always edit the singleton instance
+        if object_id is None:
+            instance, _ = AISettings.objects.get_or_create(pk=1)
+            from django.shortcuts import redirect
+
+            return redirect(f"/admin/common/aisettings/{instance.pk}/change/")
         return super().changeform_view(request, object_id, form_url, extra_context)

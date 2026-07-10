@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import httpx
 from django.conf import settings
 
-from apps.common.models import SiteSettings
+from apps.common.models import AISettings, SiteSettings
 
 from .ai_security import AIInputSanitizer, AIOutputFilter, AIRateLimiter
 from .models import OrganizationAITokenUsage
@@ -96,19 +96,49 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
         self.user_id = user_id
 
     def _resolve_provider_config(self) -> dict:
+        """
+        Resolve provider/model/key with the following priority:
+
+        1. Organisation mit eigenem API Key (Organization → KI) — volle Org-Konfiguration.
+        2. Globale ``AISettings`` (Admin-Singleton, wenn aktiviert und Key gesetzt).
+        3. Legacy-Fallback: globaler Nebius-Key aus SiteSettings/ENV.
+        """
+        # 1) Organisations-spezifische Konfiguration hat Vorrang.
+        org_api_key = self.organization.get_ai_api_key() if self.organization else ""
+        if org_api_key:
+            provider = (getattr(self.organization, "ai_provider", "") or "nebius").lower()
+            defaults = self.PROVIDER_DEFAULTS.get(provider, self.PROVIDER_DEFAULTS["nebius"])
+            model = getattr(self.organization, "ai_model", "") or defaults["model"]
+            base_url = self.organization.get_effective_ai_base_url() or defaults["base_url"]
+            return {
+                "provider": provider,
+                "base_url": base_url,
+                "api_key": org_api_key,
+                "model": model,
+                "max_output_tokens": 0,
+            }
+
+        # 2) Globale KI-Einstellungen (Admin → KI-Einstellungen).
+        ai_settings = AISettings.get_settings()
+        if ai_settings.enabled:
+            global_key = ai_settings.get_api_key()
+            if global_key:
+                return {
+                    "provider": ai_settings.provider,
+                    "base_url": ai_settings.get_effective_base_url(),
+                    "api_key": global_key,
+                    "model": ai_settings.model_name,
+                    "max_output_tokens": ai_settings.max_output_tokens,
+                }
+
+        # 3) Legacy-Fallback: globaler Nebius-Key.
         provider = (getattr(self.organization, "ai_provider", "") or "nebius").lower()
         defaults = self.PROVIDER_DEFAULTS.get(provider, self.PROVIDER_DEFAULTS["nebius"])
-
         model = getattr(self.organization, "ai_model", "") or defaults["model"]
-        base_url = ""
+        base_url = self.organization.get_effective_ai_base_url() if self.organization else ""
+
         api_key = ""
-
-        if self.organization:
-            base_url = self.organization.get_effective_ai_base_url()
-            api_key = self.organization.get_ai_api_key()
-
-        # For Nebius we also support global fallback key.
-        if not api_key and provider == "nebius":
+        if provider == "nebius":
             api_key = SiteSettings.get_nebius_api_key() or getattr(settings, "NEBIUS_API_KEY", "")
 
         if not base_url:
@@ -119,6 +149,7 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
             "base_url": base_url,
             "api_key": api_key,
             "model": model,
+            "max_output_tokens": 0,
         }
 
     def _check_rate_limit(self) -> tuple[bool, str]:
@@ -132,9 +163,32 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
             organization_id = str(self.organization.id) if self.organization else None
             AIRateLimiter.increment(self.user_id, organization_id=organization_id)
 
+    QUOTA_EXCEEDED_MESSAGE = (
+        "KI-Kontingent aufgebraucht — im nächsten Monat wieder verfügbar. "
+        "Das Limit kann im Admin (KI-Einstellungen bzw. Organisation) erhöht werden."
+    )
+
+    def _effective_monthly_limit(self) -> int | None:
+        """
+        Effektives Monats-Token-Limit der Organisation.
+
+        Org-Override (``ai_token_limit_monthly``) gewinnt; ``None`` dort bedeutet
+        Default aus den globalen ``AISettings``. Rückgabe 0 = KI deaktiviert.
+        """
+        if not self.organization:
+            return None
+        org_limit = self.organization.ai_token_limit_monthly
+        if org_limit is not None:
+            return org_limit
+        return AISettings.get_settings().default_org_monthly_token_limit
+
     def _check_org_token_limits(self, estimated_tokens: int) -> tuple[bool, str]:
         if not self.organization:
             return True, ""
+
+        monthly_limit = self._effective_monthly_limit()
+        if monthly_limit == 0:
+            return False, "KI ist für diese Organisation deaktiviert."
 
         day_used = OrganizationAITokenUsage.get_tokens_used(self.organization, OrganizationAITokenUsage.PERIOD_DAY)
         week_used = OrganizationAITokenUsage.get_tokens_used(self.organization, OrganizationAITokenUsage.PERIOD_WEEK)
@@ -144,9 +198,23 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
             return False, "Tageslimit für KI-Tokens erreicht."
         if week_used + estimated_tokens > self.organization.ai_token_limit_weekly:
             return False, "Wochenlimit für KI-Tokens erreicht."
-        if month_used + estimated_tokens > self.organization.ai_token_limit_monthly:
-            return False, "Monatslimit für KI-Tokens erreicht."
+        if monthly_limit is not None and month_used + estimated_tokens > monthly_limit:
+            return False, self.QUOTA_EXCEEDED_MESSAGE
         return True, ""
+
+    def get_quota_status(self) -> dict:
+        """
+        Monats-Kontingent der Organisation für die Anzeige im KI-Panel.
+
+        Returns dict mit ``limit`` (None = unbegrenzt), ``used`` und
+        ``remaining`` (None = unbegrenzt).
+        """
+        if not self.organization:
+            return {"limit": None, "used": 0, "remaining": None}
+        limit = self._effective_monthly_limit()
+        used = OrganizationAITokenUsage.get_tokens_used(self.organization, OrganizationAITokenUsage.PERIOD_MONTH)
+        remaining = max(0, limit - used) if limit is not None else None
+        return {"limit": limit, "used": used, "remaining": remaining}
 
     def _record_token_usage(self, total_tokens: int) -> None:
         if self.organization and total_tokens > 0:
@@ -168,23 +236,48 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
         if not cfg["base_url"]:
             return AIResponse(success=False, error="Kein KI Endpoint (Base URL) konfiguriert.")
 
+        # Globale Obergrenze für Antwortlänge (AISettings.max_output_tokens).
+        output_cap = int(cfg.get("max_output_tokens") or 0)
+        if output_cap > 0:
+            max_tokens = min(max_tokens, output_cap)
+
         estimated_prompt_tokens = sum(_estimate_tokens(str(m.get("content", ""))) for m in messages)
         estimated_total = estimated_prompt_tokens + max_tokens
         allowed, budget_message = self._check_org_token_limits(estimated_total)
         if not allowed:
             return AIResponse(success=False, error=budget_message)
 
-        url = cfg["base_url"].rstrip("/") + "/chat/completions"
-        payload = {
-            "model": cfg["model"],
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        }
-        headers = {
-            "Authorization": f"Bearer {cfg['api_key']}",
-            "Content-Type": "application/json",
-        }
+        if cfg["provider"] == "anthropic":
+            # Anthropic Messages API: system-Prompts als Top-Level-Parameter.
+            url = cfg["base_url"].rstrip("/") + "/messages"
+            system_parts = [str(m.get("content", "")) for m in messages if m.get("role") == "system"]
+            chat_messages = [m for m in messages if m.get("role") != "system"]
+            payload = {
+                "model": cfg["model"],
+                "messages": chat_messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            }
+            if system_parts:
+                payload["system"] = "\n\n".join(system_parts)
+            headers = {
+                "x-api-key": cfg["api_key"],
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            }
+        else:
+            # OpenAI-kompatible Chat-Completions (OpenAI, Mistral, Nebius, OVH, IONOS).
+            url = cfg["base_url"].rstrip("/") + "/chat/completions"
+            payload = {
+                "model": cfg["model"],
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            }
+            headers = {
+                "Authorization": f"Bearer {cfg['api_key']}",
+                "Content-Type": "application/json",
+            }
 
         try:
             timeout = httpx.Timeout(90.0, connect=15.0)
@@ -193,9 +286,15 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
                 response.raise_for_status()
             data = response.json()
 
-            content = (((data.get("choices") or [{}])[0]).get("message") or {}).get("content", "")
-            usage = data.get("usage") or {}
-            total_tokens = int(usage.get("total_tokens") or 0)
+            if cfg["provider"] == "anthropic":
+                blocks = data.get("content") or []
+                content = "".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
+                usage = data.get("usage") or {}
+                total_tokens = int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
+            else:
+                content = (((data.get("choices") or [{}])[0]).get("message") or {}).get("content", "")
+                usage = data.get("usage") or {}
+                total_tokens = int(usage.get("total_tokens") or 0)
             if total_tokens <= 0:
                 total_tokens = _estimate_tokens(content) + estimated_prompt_tokens
 
@@ -393,6 +492,9 @@ Text:
 
     def is_available(self) -> bool:
         if self.organization and not self.organization.ai_enabled:
+            return False
+        # Effektives Monatslimit 0 = KI für diese Organisation deaktiviert.
+        if self.organization and self._effective_monthly_limit() == 0:
             return False
         cfg = self._resolve_provider_config()
         return bool(cfg["api_key"] and cfg["base_url"] and cfg["model"])

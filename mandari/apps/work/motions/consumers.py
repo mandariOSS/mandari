@@ -13,8 +13,13 @@ import logging
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+# Serverseitige Revisionen im Kollaborationsmodus: höchstens alle 10 Minuten
+# (zusätzlich beim Disconnect des letzten Teilnehmers).
+REVISION_MIN_INTERVAL_SECONDS = 600
 
 # Colors for collaborator cursors (deterministic from user ID)
 CURSOR_COLORS = [
@@ -36,11 +41,19 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
     Client ↔ Server protocol (JSON messages):
     - yjs_sync:  {"type": "yjs_sync", "data": "<base64>"}  — Yjs sync/update data
     - awareness: {"type": "awareness", "data": "<base64>"} — Cursor/selection state
-    - yjs_save:  {"type": "yjs_save", "data": "<base64>"}  — Explicit save request
+    - yjs_save:  {"type": "yjs_save", "data": "<base64>", "html": "<p>…</p>"} — Explicit save request
+                 (html optional: aktueller Editor-Inhalt für content_encrypted + Revisionen)
     - connected: {"type": "connected", "user": {...}}       — Server → Client on connect
     - yjs_state: {"type": "yjs_state", "data": "<base64>"} — Server → Client (initial state)
     - presence:  {"type": "presence", "users": [...]}       — Server → Client
+    - reload:    {"type": "reload"}                         — Server → Client (z.B. nach Revision-Restore)
     """
+
+    # Teilnehmer pro Dokument (prozesslokal). Bei mehreren Workern ist die
+    # Zählung pro Prozess — die Disconnect-Revision ist dann konservativ
+    # (wird ggf. öfter geprüft), aber niemals falsch, da inhaltsgleiche
+    # Revisionen übersprungen werden.
+    _participants: dict[str, int] = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -48,6 +61,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         self.group_name = None
         self.user = None
         self.user_info = None
+        self.membership_id = None
+        self._counted = False
         self._save_counter = 0
 
     async def connect(self):
@@ -61,10 +76,11 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             return
 
         # Check document access
-        access = await self._check_access()
+        access, membership_id = await self._check_access()
         if not access:
             await self.close(code=4403)
             return
+        self.membership_id = membership_id
 
         # Assign cursor color deterministically
         color_index = hash(str(self.user.id)) % len(CURSOR_COLORS)
@@ -79,6 +95,10 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         # Join the document group
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+
+        # Track participants (for last-disconnect revision snapshot)
+        self._participants[self.document_id] = self._participants.get(self.document_id, 0) + 1
+        self._counted = True
 
         # Send connection confirmation
         await self.send_json(
@@ -102,6 +122,21 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
     async def disconnect(self, close_code):
         if self.group_name:
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+        remaining = None
+        if self._counted and self.document_id in self._participants:
+            self._participants[self.document_id] = max(0, self._participants[self.document_id] - 1)
+            remaining = self._participants[self.document_id]
+            if remaining == 0:
+                self._participants.pop(self.document_id, None)
+
+        # Letzter Teilnehmer weg → Revision vom aktuellen Stand sichern
+        # (übersprungen, wenn sich seit der letzten Revision nichts geändert hat).
+        if remaining == 0 and self.membership_id:
+            try:
+                await self._create_disconnect_revision()
+            except Exception as e:
+                logger.warning(f"Failed to create disconnect revision for {self.document_id}: {e}")
 
         logger.info(
             f"User {getattr(self.user, 'id', '?')} disconnected from document {self.document_id} (code={close_code})"
@@ -133,8 +168,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             )
 
         elif msg_type == "yjs_save":
-            # Client sends full state for persistence
-            await self._persist_yjs_state(content.get("data", ""))
+            # Client sends full state (plus aktuelles HTML) for persistence
+            await self._persist_yjs_state(content.get("data", ""), content.get("html"))
 
     # --- Group message handlers ---
 
@@ -159,11 +194,20 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
                 }
             )
 
+    async def doc_reload(self, event):
+        """Ask all clients to reload the document (e.g. after revision restore)."""
+        await self.send_json(
+            {
+                "type": "reload",
+                "version": event.get("version"),
+            }
+        )
+
     # --- Database helpers ---
 
     @database_sync_to_async
     def _check_access(self):
-        """Check document access. Returns access level string or None."""
+        """Check document access. Returns (access_level, membership_id) or (None, None)."""
         from apps.tenants.models import Membership
 
         from .models import Motion
@@ -171,7 +215,7 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         try:
             motion = Motion.objects.get(id=self.document_id)
         except Motion.DoesNotExist:
-            return None
+            return None, None
 
         try:
             membership = Membership.objects.get(
@@ -180,16 +224,16 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
                 is_active=True,
             )
         except Membership.DoesNotExist:
-            return None
+            return None, None
 
         if not motion.can_access(membership):
-            return None
+            return None, None
 
         if motion.author == membership or membership.has_permission("motions.edit_all"):
-            return "edit"
+            return "edit", membership.id
         if membership.has_permission("motions.comment"):
-            return "comment"
-        return "view"
+            return "comment", membership.id
+        return "view", membership.id
 
     @database_sync_to_async
     def _get_display_name(self):
@@ -207,14 +251,101 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             return None
 
     @database_sync_to_async
-    def _persist_yjs_state(self, data_b64):
-        """Save Yjs state to database."""
+    def _persist_yjs_state(self, data_b64, html=None):
+        """
+        Save Yjs state (and optionally the rendered HTML) to the database.
+
+        Wenn der Client HTML mitliefert und der Nutzer Schreibrecht hat, wird
+        content_encrypted aktuell gehalten (wichtig für Export/Suche) und —
+        gedrosselt auf REVISION_MIN_INTERVAL_SECONDS — eine MotionRevision
+        angelegt.
+        """
         from .models import Motion
 
-        if not data_b64:
+        if not data_b64 and html is None:
             return
+
         try:
-            raw = base64.b64decode(data_b64)
-            Motion.objects.filter(id=self.document_id).update(yjs_document=raw)
+            motion = Motion.objects.get(id=self.document_id)
+        except Motion.DoesNotExist:
+            return
+
+        try:
+            update_fields = []
+            if data_b64:
+                motion.yjs_document = base64.b64decode(data_b64)
+                update_fields.append("yjs_document")
+
+            content_changed = False
+            can_write = bool(self.user_info and self.user_info.get("access_level") == "edit")
+            if html is not None and can_write:
+                try:
+                    old_content = motion.get_content_decrypted()
+                except Exception:
+                    old_content = ""
+                if html and html != old_content:
+                    motion.set_content_encrypted(html)
+                    update_fields.append("content_encrypted")
+                    content_changed = True
+
+            if update_fields:
+                motion.save(update_fields=update_fields + ["updated_at"])
+
+            if content_changed:
+                self._create_revision_if_due(motion, html)
         except Exception as e:
             logger.warning(f"Failed to persist Yjs state for {self.document_id}: {e}")
+
+    def _create_revision_if_due(self, motion, content, force=False):
+        """
+        Create a MotionRevision if the throttle window has passed (or force=True)
+        and the content actually differs from the latest revision.
+
+        Runs synchronously — call from within a database_sync_to_async context.
+        """
+        from .models import MotionRevision
+
+        if not content or not self.membership_id:
+            return
+
+        last_revision = motion.revisions.order_by("-created_at").first()
+
+        if not force and last_revision:
+            age = (timezone.now() - last_revision.created_at).total_seconds()
+            if age < REVISION_MIN_INTERVAL_SECONDS:
+                return
+
+        if last_revision:
+            try:
+                if last_revision.get_content_decrypted() == content:
+                    return
+            except Exception:
+                pass
+
+        try:
+            revision = MotionRevision(
+                motion=motion,
+                version=motion.revisions.count() + 1,
+                changed_by_id=self.membership_id,
+                change_summary="Automatische Sicherung (Kollaboration)",
+            )
+            revision.set_content_encrypted(content)
+            revision.save()
+        except Exception as e:
+            logger.warning(f"Failed to create collab revision for {self.document_id}: {e}")
+
+    @database_sync_to_async
+    def _create_disconnect_revision(self):
+        """Snapshot the current content when the last participant leaves."""
+        from .models import Motion
+
+        try:
+            motion = Motion.objects.get(id=self.document_id)
+        except Motion.DoesNotExist:
+            return
+
+        try:
+            content = motion.get_content_decrypted()
+        except Exception:
+            return
+        self._create_revision_if_due(motion, content, force=True)

@@ -1894,6 +1894,13 @@
                     </button>
                 </div>
 
+                <!-- Token-Kontingent (Monat) -->
+                <div class="px-4 pb-1 text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1"
+                     x-show="aiQuotaLimit !== null" x-cloak>
+                    <i data-lucide="gauge" class="w-3 h-3"></i>
+                    <span x-text="aiQuotaLimit === null ? '' : ('KI-Kontingent: ' + Math.max(0, aiQuotaLimit - aiQuotaUsed).toLocaleString('de-DE') + ' von ' + aiQuotaLimit.toLocaleString('de-DE') + ' Tokens übrig')"></span>
+                </div>
+
                 <!-- Chat Input -->
                 <div class="chat-input-wrapper">
                     <div class="relative">
@@ -2294,6 +2301,8 @@ function documentEditor() {
         addUserEmail: '',
         sidebarTab: 'comments',
         aiLoading: false,
+        aiQuotaLimit: {% if ai_quota and ai_quota.limit is not None %}{{ ai_quota.limit }}{% else %}null{% endif %},
+        aiQuotaUsed: {% if ai_quota and ai_quota.used is not None %}{{ ai_quota.used }}{% else %}0{% endif %},
         chatMessages: [],
         userMessage: '',
         aiPreviewActive: false,
@@ -2388,10 +2397,16 @@ function documentEditor() {
                 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const wsUrl = `${wsProtocol}//${window.location.host}/ws/documents/${this.motionId}/`;
 
-                // Temporary hard fallback for beta stability:
-                // force solo mode until collab state handling is rebuilt.
-                this.collabEnabled = false;
-                this._initSoloEditor(editorEl, initialContent);
+                // Kollaboration ist Standard für alle Bearbeiter (Google-Docs-Modus).
+                // Schlägt die erste WebSocket-Verbindung fehl, wechselt der Editor
+                // automatisch in den Solo-Modus (_switchToSoloMode).
+                if (typeof MandariEditor.createCollaborativeEditor === 'function') {
+                    this.collabEnabled = true;
+                    this._initCollabEditor(editorEl, initialContent, wsUrl);
+                } else {
+                    this.collabEnabled = false;
+                    this._initSoloEditor(editorEl, initialContent);
+                }
                 this._bindToolbarCommands();
                 this._bindExtendedToolbar();
 
@@ -2543,6 +2558,66 @@ function documentEditor() {
                     _this.searchTotal = total;
                 }
             });
+        },
+
+        _initCollabEditor(editorEl, initialContent, wsUrl) {
+            const _this = this;
+            this._everConnected = false;
+            try {
+                const result = MandariEditor.createCollaborativeEditor({
+                    element: editorEl,
+                    content: initialContent,
+                    editable: true,
+                    placeholder: 'Beginnen Sie hier mit dem Schreiben...',
+                    wsUrl: wsUrl,
+                    user: {
+                        name: this.collabUserName,
+                        color: this.collabUserColor,
+                    },
+                    onUpdate: (html) => {
+                        _this.updatedAt = Date.now();
+                        _this.updateWordCount();
+                    },
+                    onSelectionUpdate: (state) => {
+                        _this.updatedAt = Date.now();
+                        _this.formats = state;
+                        _this._checkTextSelection();
+                    },
+                    onPageCount: (count, currentPage) => {
+                        _this.pageCount = count;
+                        _this.currentPage = currentPage;
+                    },
+                    onSearchUpdate: (current, total) => {
+                        _this.searchCurrent = current;
+                        _this.searchTotal = total;
+                    },
+                    onPresenceChange: (users) => {
+                        _this.collabUsers = users;
+                        _this.$nextTick(() => lucide.createIcons());
+                    },
+                    onStatusChange: (status) => {
+                        _this.collabStatus = status;
+                        if (status === 'connected') {
+                            _this._everConnected = true;
+                        } else if (status === 'disconnected' && !_this._everConnected) {
+                            // Erste Verbindung fehlgeschlagen → stabiler Solo-Fallback
+                            _this._switchToSoloMode('Echtzeit-Kollaboration nicht verfügbar — Solo-Modus aktiv.');
+                        }
+                    },
+                    onReloadRequired: () => {
+                        // Server hat eine Version wiederhergestellt → frisch laden
+                        showToast('Eine Version wurde wiederhergestellt — das Dokument wird neu geladen.', 'info');
+                        setTimeout(() => window.location.reload(), 800);
+                    },
+                });
+                editor = result.editor;
+                this.collabDestroy = result.collab.destroy;
+            } catch (e) {
+                console.error('Kollaborations-Editor konnte nicht gestartet werden, Solo-Fallback:', e);
+                this.collabEnabled = false;
+                this.collabStatus = 'disconnected';
+                this._initSoloEditor(editorEl, initialContent);
+            }
         },
 
         destroy() {
@@ -3289,6 +3364,10 @@ function documentEditor() {
         },
 
         autoSave() {
+            // Im Kollab-Modus persistiert der Server (yjs_save inkl. HTML +
+            // gedrosselte Revisionen) — kein POST-Autosave nötig, solange
+            // die Verbindung steht.
+            if (this.collabEnabled && this.collabStatus === 'connected') return;
             if (!this.saving && editor) this.save();
         },
 
@@ -3491,6 +3570,11 @@ function documentEditor() {
 
                 const data = await response.json();
                 if (data.success) {
+                    // Kontingent-Anzeige aktualisieren
+                    if (data.quota) {
+                        this.aiQuotaLimit = (data.quota.limit === undefined) ? this.aiQuotaLimit : data.quota.limit;
+                        this.aiQuotaUsed = (data.quota.used === undefined) ? this.aiQuotaUsed : data.quota.used;
+                    }
                     let content = '';
                     let hasAction = false;
                     let actionContent = null;

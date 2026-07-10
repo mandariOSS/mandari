@@ -410,9 +410,9 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
             (a for a in approvals if a.approver_id == self.membership.id and a.approved is None), None
         )
         context["approval_type_choices"] = MotionApproval.APPROVAL_TYPE_CHOICES
-        context["ai_available"] = MotionAIService(
-            organization=self.organization, user_id=self.request.user.id
-        ).is_available()
+        ai_service = MotionAIService(organization=self.organization, user_id=self.request.user.id)
+        context["ai_available"] = ai_service.is_available()
+        context["ai_quota"] = ai_service.get_quota_status()
 
         # Document types for dropdown
         context["document_types"] = MotionType.objects.filter(organization=self.organization, is_active=True)
@@ -660,12 +660,14 @@ class MotionAIAssistantView(WorkViewMixin, View):
                 return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
 
             if result.success:
+                quota = motion_ai_service.get_quota_status()
                 return JsonResponse(
                     {
                         "success": True,
                         "content": result.content,
                         "suggestions": result.suggestions,
                         "tokens_used": result.total_tokens,
+                        "quota": quota,
                     }
                 )
             return JsonResponse({"error": result.error}, status=500)
@@ -2091,6 +2093,9 @@ class DocumentRevisionRestoreView(WorkViewMixin, View):
         # Restore the revision content
         restored_content = revision.get_content_decrypted()
         motion.set_content_encrypted(restored_content)
+        # Kollaboration: Yjs-Zustand verwerfen, damit alle Clients nach dem
+        # Reload frisch aus dem wiederhergestellten HTML seeden.
+        motion.yjs_document = None
         motion.save()
 
         # Create another revision marking the restore
@@ -2103,6 +2108,21 @@ class DocumentRevisionRestoreView(WorkViewMixin, View):
         )
         restore_revision.set_content_encrypted(restored_content)
         restore_revision.save()
+
+        # Alle verbundenen Kollaborations-Clients zum Neuladen auffordern.
+        try:
+            from asgiref.sync import async_to_sync
+            from channels.layers import get_channel_layer
+
+            channel_layer = get_channel_layer()
+            if channel_layer is not None:
+                async_to_sync(channel_layer.group_send)(
+                    f"doc_{motion.id}",
+                    {"type": "doc.reload", "version": restore_version},
+                )
+        except Exception as e:
+            # Reload-Broadcast ist Best-Effort — Restore selbst ist bereits erfolgt.
+            logger.warning(f"[DocumentEditor] Reload-Broadcast nach Restore fehlgeschlagen: {e}")
 
         return JsonResponse({"success": True, "version": restore_version})
 

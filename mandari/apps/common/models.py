@@ -171,3 +171,140 @@ class SiteSettings(models.Model):
             "EMAIL_TIMEOUT": site_settings.email_timeout if site_settings.email_host else django_settings.EMAIL_TIMEOUT,
             "DEFAULT_FROM_EMAIL": site_settings.default_from_email or django_settings.DEFAULT_FROM_EMAIL,
         }
+
+
+class AISettings(models.Model):
+    """
+    Singleton model for global AI configuration (Work DMS editor).
+
+    Configured via Admin (unfold). Serves as the platform-wide default for
+    the document AI assistant; organizations can override provider/model/key
+    via their own fields on ``tenants.Organization``.
+
+    The API key is encrypted at rest with the ENCRYPTION_MASTER_KEY
+    (AES-256-GCM) — use ``set_api_key()`` / ``get_api_key()``.
+    """
+
+    CACHE_KEY = "ai_settings"
+    CACHE_TIMEOUT = 300  # 5 minutes
+
+    PROVIDER_ANTHROPIC = "anthropic"
+    PROVIDER_OPENAI = "openai"
+    PROVIDER_MISTRAL = "mistral"
+    PROVIDER_NEBIUS = "nebius"
+    PROVIDER_OVH = "ovh"
+    PROVIDER_IONOS = "ionos"
+    PROVIDER_CHOICES = [
+        (PROVIDER_ANTHROPIC, "Anthropic (Claude)"),
+        (PROVIDER_OPENAI, "OpenAI"),
+        (PROVIDER_MISTRAL, "Mistral"),
+        (PROVIDER_NEBIUS, "Nebius TokenFactory"),
+        (PROVIDER_OVH, "OVHcloud AI Endpoints"),
+        (PROVIDER_IONOS, "IONOS AI Model Hub"),
+    ]
+
+    # Default base URLs per provider (OpenAI-kompatibel, außer Anthropic).
+    PROVIDER_BASE_URLS = {
+        PROVIDER_ANTHROPIC: "https://api.anthropic.com/v1/",
+        PROVIDER_OPENAI: "https://api.openai.com/v1/",
+        PROVIDER_MISTRAL: "https://api.mistral.ai/v1/",
+        PROVIDER_NEBIUS: "https://api.tokenfactory.nebius.com/v1/",
+        PROVIDER_OVH: "",
+        PROVIDER_IONOS: "",
+    }
+
+    enabled = models.BooleanField(
+        default=True,
+        verbose_name="KI aktiviert",
+        help_text="Globaler Schalter für den KI-Assistenten im Dokumenten-Editor.",
+    )
+    provider = models.CharField(
+        max_length=20,
+        choices=PROVIDER_CHOICES,
+        default=PROVIDER_NEBIUS,
+        verbose_name="KI-Anbieter",
+    )
+    base_url = models.URLField(
+        blank=True,
+        verbose_name="API Base URL",
+        help_text="Optional. Leer lassen für den Anbieter-Standard (OpenAI-kompatible Endpunkte bzw. Anthropic Messages API).",
+    )
+    model_name = models.CharField(
+        max_length=100,
+        default="openai/gpt-oss-120b",
+        verbose_name="Modell",
+        help_text="z.B. openai/gpt-oss-120b (Nebius), gpt-4o-mini (OpenAI), claude-sonnet-4-5 (Anthropic), mistral-small-latest (Mistral).",
+    )
+    api_key_encrypted = models.BinaryField(
+        blank=True,
+        null=True,
+        editable=False,
+        verbose_name="API Key (verschlüsselt)",
+        help_text="AES-256-GCM verschlüsselt mit dem ENCRYPTION_MASTER_KEY.",
+    )
+    max_output_tokens = models.PositiveIntegerField(
+        default=2000,
+        verbose_name="Max. Output-Tokens",
+        help_text="Obergrenze für die Antwortlänge pro KI-Aufruf.",
+    )
+    default_org_monthly_token_limit = models.PositiveIntegerField(
+        default=3000000,
+        verbose_name="Standard-Monatslimit pro Organisation (Tokens)",
+        help_text=(
+            "Gilt für Organisationen ohne eigenes Monatslimit. Pro Organisation überschreibbar über "
+            "Organization → 'Token-Limit pro Monat' (leer = dieser Standard, 0 = KI deaktiviert)."
+        ),
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "KI-Einstellungen"
+        verbose_name_plural = "KI-Einstellungen"
+
+    def __str__(self):
+        return "KI-Einstellungen"
+
+    def save(self, *args, **kwargs):
+        # Ensure only one instance exists (Singleton pattern)
+        self.pk = 1
+        super().save(*args, **kwargs)
+        cache.delete(self.CACHE_KEY)
+
+    def delete(self, *args, **kwargs):
+        # Prevent deletion
+        pass
+
+    @classmethod
+    def get_settings(cls) -> "AISettings":
+        """Get the AI settings instance (cached singleton)."""
+        instance = cache.get(cls.CACHE_KEY)
+        if instance is None:
+            instance, _ = cls.objects.get_or_create(pk=1)
+            cache.set(cls.CACHE_KEY, instance, cls.CACHE_TIMEOUT)
+        return instance
+
+    def set_api_key(self, api_key: str) -> None:
+        """Encrypt and store the global AI API key (master key, AES-256-GCM)."""
+        from apps.common.encryption import encrypt_key
+
+        if not api_key:
+            self.api_key_encrypted = None
+            return
+        self.api_key_encrypted = encrypt_key(api_key.encode("utf-8"))
+
+    def get_api_key(self) -> str:
+        """Decrypt and return the global AI API key."""
+        from apps.common.encryption import decrypt_key
+
+        if not self.api_key_encrypted:
+            return ""
+        try:
+            return decrypt_key(bytes(self.api_key_encrypted)).decode("utf-8")
+        except Exception:
+            return ""
+
+    def get_effective_base_url(self) -> str:
+        """Resolve the API endpoint (explicit override or provider default)."""
+        if self.base_url:
+            return self.base_url
+        return self.PROVIDER_BASE_URLS.get(self.provider, "")

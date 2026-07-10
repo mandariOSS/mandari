@@ -292,8 +292,14 @@ class Organization(models.Model):
         verbose_name="Token-Limit pro Woche",
     )
     ai_token_limit_monthly = models.PositiveIntegerField(
-        default=3000000,
+        blank=True,
+        null=True,
+        default=None,
         verbose_name="Token-Limit pro Monat",
+        help_text=(
+            "Leer = Standard aus den globalen KI-Einstellungen (Admin → KI-Einstellungen), "
+            "0 = KI für diese Organisation deaktiviert."
+        ),
     )
 
     # === ENCRYPTION ===
