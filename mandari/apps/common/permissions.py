@@ -1052,6 +1052,11 @@ class PermissionChecker:
         self._permissions = set()
         self._denied = set()
 
+        # Gäste haben grundsätzlich KEINE Berechtigungen — sie sehen nur
+        # explizit freigegebene Dokumente (MotionShare, scope=user).
+        if getattr(self.membership, "is_guest", False):
+            return
+
         # Get denied permissions first (highest priority)
         for perm in self.membership.denied_permissions.all():
             self._denied.add(perm.codename)

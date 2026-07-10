@@ -8,6 +8,13 @@
 {% endblock %}
 
 {% block header_actions %}
+{% if can_invite_guests %}
+<a href="{% url 'work:guest_invite' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+    <i data-lucide="user-round-plus" class="w-4 h-4"></i>
+    Gast einladen
+</a>
+{% endif %}
 <a href="{% url 'work:member_invite' org_slug=organization.slug %}"
    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
     <i data-lucide="user-plus" class="w-4 h-4"></i>
@@ -185,6 +192,64 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Gäste -->
+{% if guests or can_invite_guests %}
+<div class="mt-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
+    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="user-round" class="w-5 h-5 text-gray-400"></i>
+            Gäste
+        </h3>
+        <span class="text-sm text-gray-500">
+            {{ guest_count }} von {{ guest_limit }} Gastplätzen belegt
+        </span>
+    </div>
+
+    {% if guests %}
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for guest in guests %}
+        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=guest.id %}"
+           class="px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center text-teal-600 dark:text-teal-400 font-semibold">
+                    {{ guest.user.first_name|slice:":1"|upper|default:guest.user.email|slice:":1"|upper }}
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                        {{ guest.user.get_full_name|default:guest.user.email }}
+                        <span class="px-2 py-0.5 text-xs bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-full">
+                            Gast
+                        </span>
+                    </p>
+                    <p class="text-sm text-gray-500">{{ guest.user.email }}</p>
+                    <p class="text-xs text-gray-400 mt-1">Sieht nur explizit freigegebene Dokumente</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 text-gray-400">
+                <span class="text-sm">Eingeladen {{ guest.joined_at|date:"d.m.Y" }}</span>
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="px-6 py-8 text-center">
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+            Noch keine Gäste. Gäste sind externe Personen, die ausschließlich einzelne,
+            explizit freigegebene Dokumente sehen können.
+        </p>
+        {% if can_invite_guests %}
+        <a href="{% url 'work:guest_invite' org_slug=organization.slug %}"
+           class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-primary-600 hover:text-primary-700">
+            <i data-lucide="user-round-plus" class="w-4 h-4"></i>
+            Gast einladen
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
 
 <!-- Inactive Members -->
 {% if inactive_members %}

@@ -149,37 +149,40 @@ class Organization(models.Model):
 
     # === DUAL GROUPING ===
 
-    # Party hierarchy (optional)
+    # Partei (FK, Pflicht bei aktiven Organisationen).
+    # Jede Organisation gehört genau EINER Partei an; das M2M `parties`
+    # dient nur der Vernetzung (vertikaler/horizontaler Austausch).
     party_group = models.ForeignKey(
         PartyGroup,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="organizations",
-        verbose_name="Parteigruppe",
-        help_text="Übergeordnete Parteistruktur (z.B. Volt NRW)",
+        verbose_name="Partei",
+        help_text="Partei, der die Organisation angehört (Pflicht bei aktiven Organisationen)",
     )
 
-    # Regional grouping via OParl Body (optional)
-    # Primäre Kommune — bleibt als FK erhalten (Anzeige, Fallback).
+    # Heimat-Kommune (FK, Pflicht bei aktiven Organisationen).
+    # Jede Organisation gehört genau EINER Stadt/Kommune an; das M2M
+    # `bodies` gewährt zusätzlichen RIS-Zugriff auf weitere Kommunen.
     body = models.ForeignKey(
         "insight_core.OParlBody",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="work_organizations",
-        verbose_name="Primäre Kommune/Region",
-        help_text="Primärer OParl-Body für RIS-Daten (z.B. Stadt Münster)",
+        verbose_name="Stadt/Kommune",
+        help_text="Heimat-Kommune der Organisation (Pflicht bei aktiven Organisationen)",
     )
 
-    # Weitere Kommunen (M2M) — eine Organisation kann mit mehreren
-    # OParl-Bodies (und damit mehreren OParl-Schnittstellen) verknüpft sein.
+    # Weitere Kommunen (M2M) — nur für RIS-Zugriff: eine Organisation kann
+    # zusätzlich zur Heimat-Kommune weitere Ratsinformationssysteme einsehen.
     bodies = models.ManyToManyField(
         "insight_core.OParlBody",
         blank=True,
         related_name="linked_work_organizations",
-        verbose_name="Kommunen/Regionen",
-        help_text="Alle verknüpften OParl-Bodies (inkl. der primären Kommune)",
+        verbose_name="Weitere Kommunen (RIS-Zugriff)",
+        help_text="Weitere OParl-Bodies, deren Ratsinformationen die Organisation einsehen kann",
     )
 
     # Partei-Zugehörigkeit (M2M) — eine Organisation kann einer oder
@@ -383,7 +386,12 @@ class Organization(models.Model):
         null=True,
         blank=True,
         verbose_name="Mitglieder-Limit",
-        help_text="Maximale aktive Mitglieder laut Plan (leer = unbegrenzt)",
+        help_text="Maximale aktive Mitglieder laut Plan (leer = unbegrenzt). Gäste zählen nicht mit.",
+    )
+    guest_limit = models.PositiveIntegerField(
+        default=25,
+        verbose_name="Gast-Limit",
+        help_text="Maximale aktive Gast-Zugänge (Standard 25, per Addon erweiterbar)",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -401,6 +409,41 @@ class Organization(models.Model):
         if not self.slug:
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
+
+    def clean(self):
+        """
+        Validierung der Pflicht-Zuordnungen.
+
+        Jede aktive Organisation gehört genau EINER Stadt/Kommune (body)
+        und EINER Partei (party_group) an. Die M2M-Felder (bodies/parties)
+        sind nur Zusatz (RIS-Zugriff bzw. Vernetzung).
+        """
+        from django.core.exceptions import ValidationError
+
+        super().clean()
+
+        if self.is_active:
+            errors = {}
+            if not self.body_id:
+                errors["body"] = "Aktive Organisationen benötigen eine Stadt/Kommune (Heimat-Kommune)."
+            if not self.party_group_id:
+                errors["party_group"] = "Aktive Organisationen benötigen eine Partei."
+            if errors:
+                raise ValidationError(errors)
+
+    # === MITGLIEDER-/GAST-ZÄHLUNG ===
+
+    def get_active_member_count(self) -> int:
+        """Aktive reguläre Mitglieder (ohne Gäste) — zählen gegen member_limit."""
+        return self.memberships.filter(is_active=True, is_guest=False).count()
+
+    def get_active_guest_count(self) -> int:
+        """Aktive Gast-Zugänge — zählen gegen guest_limit (nicht gegen member_limit)."""
+        return self.memberships.filter(is_active=True, is_guest=True).count()
+
+    def has_free_guest_slot(self) -> bool:
+        """True, wenn noch ein Gast-Platz frei ist."""
+        return self.get_active_guest_count() < self.guest_limit
 
     # === MULTI-BODY / MULTI-PARTY HELPERS ===
 
@@ -702,6 +745,69 @@ class Role(models.Model):
 
         return created_roles
 
+    @classmethod
+    def get_default_definition(cls, name: str) -> dict | None:
+        """Standard-Rollen-Definition (aus DEFAULT_ROLES) zu einem Rollennamen."""
+        for role_config in DEFAULT_ROLES.values():
+            if role_config["name"] == name:
+                return role_config
+        return None
+
+    @property
+    def has_default_definition(self) -> bool:
+        """True, wenn der Rollenname einer Standard-Rolle entspricht (Template-freundlich)."""
+        return Role.get_default_definition(self.name) is not None
+
+    def reset_to_default(self) -> bool:
+        """
+        Setzt diese Rolle auf ihre Standard-Definition (setup_roles) zurück.
+
+        Nur möglich für Rollen, deren Name einer Standard-Rolle entspricht.
+        Returns False, wenn keine Standard-Definition existiert.
+        """
+        role_config = Role.get_default_definition(self.name)
+        if role_config is None:
+            return False
+
+        self.description = role_config.get("description", "")
+        self.is_system_role = role_config.get("is_system_role", False)
+        self.is_admin = role_config.get("is_admin", False)
+        self.priority = role_config.get("priority", 50)
+        self.color = role_config.get("color", "#6b7280")
+        self.save()
+
+        permission_codes = role_config.get("permissions", [])
+        permissions = Permission.objects.filter(codename__in=permission_codes)
+        self.permissions.set(permissions)
+        return True
+
+    @classmethod
+    def restore_missing_default_roles(cls, organization) -> list:
+        """
+        Legt fehlende Standard-Rollen für eine Organisation an.
+
+        Bestehende Rollen (auch angepasste) bleiben unverändert —
+        anders als create_default_roles(), das Bestand überschreibt.
+        """
+        created_roles = []
+        for role_config in DEFAULT_ROLES.values():
+            if cls.objects.filter(organization=organization, name=role_config["name"]).exists():
+                continue
+            role = cls.objects.create(
+                organization=organization,
+                name=role_config["name"],
+                description=role_config.get("description", ""),
+                is_system_role=role_config.get("is_system_role", False),
+                is_admin=role_config.get("is_admin", False),
+                priority=role_config.get("priority", 50),
+                color=role_config.get("color", "#6b7280"),
+            )
+            permission_codes = role_config.get("permissions", [])
+            permissions = Permission.objects.filter(codename__in=permission_codes)
+            role.permissions.set(permissions)
+            created_roles.append(role)
+        return created_roles
+
 
 class Topic(models.Model):
     """
@@ -841,6 +947,14 @@ class Membership(models.Model):
 
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+    is_guest = models.BooleanField(
+        default=False,
+        verbose_name="Gast",
+        help_text=(
+            "Gast-Zugang: sieht ausschließlich explizit freigegebene Dokumente, "
+            "hat keine Rollen und keine Berechtigungen. Zählt gegen das Gast-Limit."
+        ),
+    )
     is_sworn_in = models.BooleanField(
         default=False,
         verbose_name="Vereidigt",
@@ -880,6 +994,8 @@ class Membership(models.Model):
         from django.core.exceptions import ValidationError
 
         if self.pk:  # Only check for existing memberships
+            if self.is_guest and self.roles.exists():
+                raise ValidationError("Gast-Zugänge dürfen keine Rollen haben.")
             for role in self.roles.all():
                 if role.organization_id != self.organization_id:
                     raise ValidationError(

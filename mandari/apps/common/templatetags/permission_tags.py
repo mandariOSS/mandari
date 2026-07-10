@@ -44,6 +44,18 @@ def has_perm_filter(membership, permission):
     return membership.has_permission(permission)
 
 
+@register.filter("dict_get")
+def dict_get(d, key):
+    """
+    Dict-Zugriff mit dynamischem Schlüssel.
+
+    Usage: {{ role_permission_sources|dict_get:perm.code }}
+    """
+    if not d:
+        return None
+    return d.get(key)
+
+
 @register.simple_tag
 def has_any_perm(membership, *permissions):
     """

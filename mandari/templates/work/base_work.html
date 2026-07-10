@@ -452,6 +452,24 @@
 
             <!-- Navigation -->
             <nav class="flex-1 py-4 overflow-y-auto overflow-x-hidden">
+                {% if membership.is_guest %}
+                <!-- Gast-Navigation: nur freigegebene Dokumente + Konto -->
+                <a href="{% url 'work:guest_documents' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_nav == 'guest_documents' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Freigegebene Dokumente' : ''">
+                    <i data-lucide="file-lock" class="w-5 h-5"></i>
+                    <span class="nav-label">Freigegebene Dokumente</span>
+                </a>
+
+                <div class="work-nav-section"><span class="nav-label">Konto</span></div>
+
+                <a href="{% url 'work:profile' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_nav == 'profile' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Profil' : ''">
+                    <i data-lucide="user" class="w-5 h-5"></i>
+                    <span class="nav-label">Profil</span>
+                </a>
+                {% else %}
                 <!-- Hauptbereich -->
                 <a href="{% url 'work:dashboard' org_slug=organization.slug %}"
                    class="work-nav-item {% if active_nav == 'dashboard' %}active{% endif %}"
@@ -572,6 +590,7 @@
                     <i data-lucide="help-circle"></i>
                     <span class="nav-label">Support</span>
                 </a>
+                {% endif %}
             </nav>
 
             <!-- User Info (Bottom) -->
@@ -585,11 +604,15 @@
                             {% if request.user.display_name %}{{ request.user.display_name }}{% else %}{{ request.user.email }}{% endif %}
                         </div>
                         <div class="text-xs text-gray-500 truncate">
+                            {% if membership.is_guest %}
+                                Gast
+                            {% else %}
                             {% for role in membership.roles.all|slice:":2" %}
                                 {{ role.name }}{% if not forloop.last %}, {% endif %}
                             {% empty %}
                                 Mitglied
                             {% endfor %}
+                            {% endif %}
                         </div>
                     </div>
                 </div>

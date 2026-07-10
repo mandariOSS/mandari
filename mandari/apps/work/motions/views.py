@@ -277,11 +277,23 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
     template_name = "work/motions/editor.html"
     permission_required = "motions.view"
+    guest_allowed = True  # Zugriff wird share-basiert geprüft (can_access)
 
     def _get_access_level(self, motion):
         """Determine access level: 'view', 'comment', 'edit', or 'admin'."""
         if not motion.can_access(self.membership):
             return "none"
+
+        # Gäste: Level ergibt sich ausschließlich aus der persönlichen Freigabe
+        if getattr(self.membership, "is_guest", False):
+            level = motion.get_guest_share_level(self.membership)
+            if level is None:
+                return "none"
+            if level == "admin":
+                level = "edit"  # Gäste erhalten nie Verwaltungsrechte
+            if level == "edit" and motion.status not in ["draft", "review", "internal_review", "external_review"]:
+                level = "comment"
+            return level
 
         is_author = motion.author == self.membership
         has_edit_all = self.membership.has_permission("motions.edit_all")
@@ -578,6 +590,57 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         return self.render_to_response(context)
 
 
+class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
+    """
+    Gast-Übersicht: "Freigegebene Dokumente".
+
+    Landing-Page für Gast-Zugänge — listet alle Dokumente, die per
+    persönlicher Freigabe (MotionShare, scope=user) geteilt wurden.
+    Auch für reguläre Mitglieder aufrufbar (zeigt deren persönliche Freigaben).
+    """
+
+    template_name = "work/motions/guest_documents.html"
+    permission_required = None  # Gäste haben keine Berechtigungen
+    guest_allowed = True
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = "guest_documents"
+
+        level_rank = {"view": 0, "comment": 1, "edit": 2, "admin": 3}
+        level_labels = dict(MotionShare.LEVEL_CHOICES)
+
+        shares = (
+            MotionShare.objects.filter(
+                scope="user",
+                user=self.request.user,
+                motion__organization=self.organization,
+            )
+            .exclude(motion__status="deleted")
+            .select_related("motion", "motion__author__user", "created_by")
+            .order_by("-created_at")
+        )
+
+        # Ein Eintrag je Dokument mit dem höchsten Freigabe-Level
+        entries = {}
+        for share in shares:
+            entry = entries.get(share.motion_id)
+            if entry is None:
+                entries[share.motion_id] = {
+                    "motion": share.motion,
+                    "level": share.level,
+                    "level_label": level_labels.get(share.level, share.level),
+                    "shared_at": share.created_at,
+                    "shared_by": share.created_by,
+                }
+            elif level_rank.get(share.level, 0) > level_rank.get(entry["level"], 0):
+                entry["level"] = share.level
+                entry["level_label"] = level_labels.get(share.level, share.level)
+
+        context["shared_entries"] = list(entries.values())
+        return context
+
+
 class MotionShareView(WorkViewMixin, TemplateView):
     """Share settings for a motion (legacy - redirects to editor)."""
 
@@ -681,6 +744,7 @@ class MotionCommentView(WorkViewMixin, View):
     """API endpoint for motion comments."""
 
     permission_required = "motions.comment"
+    guest_allowed = True  # Zugriff wird share-basiert geprüft (can_comment)
 
     def post(self, request, *args, **kwargs):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
@@ -1000,6 +1064,7 @@ class MotionCommentResolveView(WorkViewMixin, View):
     """Mark a comment as resolved."""
 
     permission_required = "motions.comment"
+    guest_allowed = True  # Zugriff wird share-basiert geprüft (can_access)
 
     def post(self, request, *args, **kwargs):
         comment = get_object_or_404(
@@ -1038,6 +1103,7 @@ class MotionExportView(WorkViewMixin, View):
     """Export motion as PDF or DOCX."""
 
     permission_required = "motions.view"
+    guest_allowed = True  # Zugriff wird share-basiert geprüft (can_access)
 
     def get(self, request, *args, **kwargs):
         from django.http import HttpResponse
@@ -1045,6 +1111,9 @@ class MotionExportView(WorkViewMixin, View):
         from .export_service import motion_export_service
 
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
+
+        if not motion.can_access(self.membership):
+            return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         export_format = request.GET.get("format", "pdf")
 
@@ -2020,9 +2089,14 @@ class DocumentRevisionsAPIView(WorkViewMixin, View):
     """API endpoint listing all revisions for a document."""
 
     permission_required = "motions.view"
+    guest_allowed = True  # Zugriff wird share-basiert geprüft (can_access)
 
     def get(self, request, *args, **kwargs):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
+
+        if not motion.can_access(self.membership):
+            return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+
         revisions = motion.revisions.select_related("changed_by__user").order_by("-version")
 
         data = []
@@ -2044,9 +2118,14 @@ class DocumentRevisionDetailAPIView(WorkViewMixin, View):
     """API endpoint returning the content of a specific revision."""
 
     permission_required = "motions.view"
+    guest_allowed = True  # Zugriff wird share-basiert geprüft (can_access)
 
     def get(self, request, *args, **kwargs):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
+
+        if not motion.can_access(self.membership):
+            return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+
         revision = get_object_or_404(MotionRevision, id=kwargs.get("revision_id"), motion=motion)
 
         return JsonResponse(

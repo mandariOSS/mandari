@@ -33,6 +33,24 @@ class OrganizationMixin(LoginRequiredMixin):
     organization = None
     membership = None
 
+    # Gast-Zugänge (Membership.is_guest) dürfen nur explizit freigegebene
+    # Views nutzen (Gast-Übersicht, Dokument-Editor mit Share, Konto).
+    # Alle anderen Views leiten auf die Gast-Übersicht um.
+    guest_allowed = False
+
+    def handle_guest_restriction(self, request):
+        """
+        Zentrale Gate-Stelle für Gäste.
+
+        Returns None, wenn der Zugriff weiterlaufen darf, sonst eine
+        Redirect-Response auf die Gast-Übersicht ("Freigegebene Dokumente").
+        """
+        if not self.membership or not getattr(self.membership, "is_guest", False):
+            return None
+        if self.guest_allowed:
+            return None
+        return redirect("work:guest_documents", org_slug=self.organization.slug)
+
     def setup_organization_context(self, request, **kwargs):
         """
         Set up organization and membership context.
@@ -79,6 +97,11 @@ class OrganizationMixin(LoginRequiredMixin):
 
         # Set up organization context
         self.setup_organization_context(request, **kwargs)
+
+        # Gäste: nur explizit freigegebene Views
+        guest_response = self.handle_guest_restriction(request)
+        if guest_response is not None:
+            return guest_response
 
         return super().dispatch(request, *args, **kwargs)
 
@@ -127,8 +150,16 @@ class PermissionRequiredMixin(OrganizationMixin):
         # Set up organization context (reuses parent's method)
         self.setup_organization_context(request, **kwargs)
 
-        # SECURITY: Check permissions BEFORE processing the view
-        if self.permission_required:
+        # Gäste: nur explizit freigegebene Views (zentrale Gate-Stelle).
+        # Auf freigegebenen Views wird die reguläre Berechtigungsprüfung
+        # übersprungen — Gäste haben KEINE Berechtigungen; der Zugriff wird
+        # dort ausschließlich share-basiert in der View/im Modell geprüft.
+        if self.membership and getattr(self.membership, "is_guest", False):
+            guest_response = self.handle_guest_restriction(request)
+            if guest_response is not None:
+                return guest_response
+        elif self.permission_required:
+            # SECURITY: Check permissions BEFORE processing the view
             self.check_permissions()
 
         # Now process the actual view via parent's dispatch chain

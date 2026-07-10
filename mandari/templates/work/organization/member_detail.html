@@ -1,4 +1,5 @@
 {% extends "work/base_work.html" %}
+{% load permission_tags %}
 
 {% block page_title %}{{ member.user.get_full_name|default:member.user.email }}{% endblock %}
 
@@ -40,6 +41,11 @@
                             Eigentümer
                         </span>
                         {% endif %}
+                        {% if member.is_guest %}
+                        <span class="px-2 py-0.5 text-xs bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-full">
+                            Gast
+                        </span>
+                        {% endif %}
                         {% if not member.is_active %}
                         <span class="px-2 py-0.5 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-full">
                             Deaktiviert
@@ -65,8 +71,24 @@
         </div>
     </div>
 
+    {% if member.is_guest %}
+    <!-- Gast: keine Rollen, keine Berechtigungen -->
+    <div class="bg-teal-50 dark:bg-teal-900/20 rounded-xl border border-teal-200 dark:border-teal-800 mb-6 p-6">
+        <h3 class="font-semibold text-teal-800 dark:text-teal-200 flex items-center gap-2 mb-2">
+            <i data-lucide="user-round" class="w-5 h-5"></i>
+            Gast-Zugang
+        </h3>
+        <p class="text-sm text-teal-700 dark:text-teal-300">
+            Diese Person ist Gast: Sie hat keine Rollen und keine Berechtigungen und sieht im
+            Work-Portal ausschließlich die Dokumente, die explizit für sie freigegeben wurden
+            (Teilen-Dialog am Dokument). Der Zugang zählt gegen das Gast-Limit der Organisation.
+        </p>
+    </div>
+    {% endif %}
+
     <!-- Role Management -->
-    {% if can_edit %}
+    {% if member.is_guest %}
+    {% elif can_edit %}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h3 class="font-semibold text-gray-900 dark:text-white">Rollen verwalten</h3>
@@ -117,6 +139,112 @@
             <p class="text-gray-500">Keine Rollen zugewiesen</p>
             {% endif %}
         </div>
+    </div>
+    {% endif %}
+
+    <!-- Effektive Berechtigungen (Matrix mit Herkunft) -->
+    {% if not member.is_guest %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6"
+         x-data="{ open: false }">
+        <button type="button" @click="open = !open"
+                class="w-full px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between text-left">
+            <div>
+                <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="key-round" class="w-5 h-5 text-gray-400"></i>
+                    Effektive Berechtigungen
+                </h3>
+                <p class="text-sm text-gray-500 mt-1">
+                    {{ effective_permission_codes|length }} Berechtigungen aktiv —
+                    aus Rollen, individuell erweitert oder explizit verweigert
+                </p>
+            </div>
+            <i data-lucide="chevron-down" class="w-5 h-5 text-gray-400 transition-transform" :class="open && 'rotate-180'"></i>
+        </button>
+
+        <form method="post" x-show="open" x-cloak>
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_permissions">
+
+            <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 text-xs text-gray-500 flex flex-wrap gap-x-6 gap-y-1">
+                <span class="flex items-center gap-1.5">
+                    <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-green-500"></i>
+                    Aus Rolle (read-only, Herkunft angezeigt)
+                </span>
+                <span class="flex items-center gap-1.5">
+                    <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-blue-500"></i>
+                    Individuell = zusätzlich gewährt
+                </span>
+                <span class="flex items-center gap-1.5">
+                    <i data-lucide="minus-circle" class="w-3.5 h-3.5 text-red-500"></i>
+                    Verweigert = überschreibt Rollen (höchste Priorität)
+                </span>
+            </div>
+
+            <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-[32rem] overflow-y-auto">
+                {% for cat_code, cat in permission_categories.items %}
+                <div class="px-6 py-4">
+                    <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{{ cat.name }}</h4>
+                    <div class="space-y-1">
+                        <div class="grid grid-cols-12 gap-2 text-xs text-gray-400 pb-1">
+                            <span class="col-span-6"></span>
+                            <span class="col-span-3 text-center">Individuell</span>
+                            <span class="col-span-3 text-center">Verweigert</span>
+                        </div>
+                        {% for perm in cat.permissions %}
+                        {% with sources=role_permission_sources|dict_get:perm.code %}
+                        <div class="grid grid-cols-12 gap-2 items-center py-1 rounded {% if perm.code in denied_permission_codes %}bg-red-50 dark:bg-red-900/10{% elif perm.code in effective_permission_codes %}bg-green-50/50 dark:bg-green-900/5{% endif %}">
+                            <div class="col-span-6 flex items-center gap-2 min-w-0">
+                                {% if perm.code in denied_permission_codes %}
+                                <i data-lucide="minus-circle" class="w-4 h-4 text-red-500 shrink-0"></i>
+                                {% elif perm.code in effective_permission_codes %}
+                                <i data-lucide="check-circle-2" class="w-4 h-4 text-green-500 shrink-0"></i>
+                                {% else %}
+                                <span class="w-4 h-4 shrink-0"></span>
+                                {% endif %}
+                                <div class="min-w-0">
+                                    <span class="text-sm text-gray-900 dark:text-white block truncate">{{ perm.name }}</span>
+                                    {% if sources %}
+                                    <span class="text-xs text-gray-400 block truncate" title="{{ sources|join:", " }}">
+                                        aus Rolle: {{ sources|join:", " }}
+                                    </span>
+                                    {% elif perm.code in individual_permission_codes %}
+                                    <span class="text-xs text-blue-500 block">individuell gewährt</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-span-3 text-center">
+                                <input type="checkbox" name="individual_permissions" value="{{ perm.code }}"
+                                       {% if perm.code in individual_permission_codes %}checked{% endif %}
+                                       {% if not can_edit %}disabled{% endif %}
+                                       class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500">
+                            </div>
+                            <div class="col-span-3 text-center">
+                                <input type="checkbox" name="denied_permissions" value="{{ perm.code }}"
+                                       {% if perm.code in denied_permission_codes %}checked{% endif %}
+                                       {% if not can_edit %}disabled{% endif %}
+                                       class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-red-600 focus:ring-red-500">
+                            </div>
+                        </div>
+                        {% endwith %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {% if can_edit %}
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Berechtigungen speichern
+                </button>
+                <span class="ml-3 text-xs text-gray-400">
+                    Rollen-Berechtigungen ändern Sie über die Rollen selbst — hier nur individuelle Abweichungen.
+                </span>
+            </div>
+            {% endif %}
+        </form>
     </div>
     {% endif %}
 

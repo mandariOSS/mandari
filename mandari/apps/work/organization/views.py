@@ -155,8 +155,13 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
         context["can_manage_faction"] = checker.has_permission("faction.manage")
         context["can_edit"] = checker.has_permission("organization.edit")
 
-        # Kommunen (read-only: weitere Kommunen nur über Support/Admin)
-        context["linked_bodies"] = self.organization.get_all_bodies().order_by("name")
+        # Heimat-Kommune + Partei (Pflicht-Zuordnungen, prominent angezeigt)
+        context["home_body"] = self.organization.body
+        context["primary_party"] = self.organization.party_group
+
+        # Weitere Kommunen (read-only: Änderungen nur über Support/Admin)
+        home_body_id = self.organization.body_id
+        context["linked_bodies"] = self.organization.get_all_bodies().exclude(pk=home_body_id).order_by("name")
 
         # Parteien (durch Org-Admins editierbar)
         from apps.tenants.models import PartyGroup
@@ -404,13 +409,24 @@ class MemberListView(WorkViewMixin, TemplateView):
 
         from apps.tenants.models import Membership, UserInvitation
 
-        # Get all active members
+        # Get all active members (ohne Gäste — die haben eine eigene Sektion)
         members = (
-            Membership.objects.filter(organization=self.organization, is_active=True)
+            Membership.objects.filter(organization=self.organization, is_active=True, is_guest=False)
             .select_related("user")
             .prefetch_related("roles")
             .order_by("user__first_name", "user__last_name")
         )
+
+        # Gäste: eigener Abschnitt mit Zähler gegen das Gast-Limit
+        guests = (
+            Membership.objects.filter(organization=self.organization, is_active=True, is_guest=True)
+            .select_related("user")
+            .order_by("user__first_name", "user__last_name")
+        )
+        context["guests"] = guests
+        context["guest_count"] = guests.count()
+        context["guest_limit"] = self.organization.guest_limit
+        context["can_invite_guests"] = checker.has_permission("guests.invite")
 
         # Get inactive members
         inactive_members = (
@@ -508,6 +524,30 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         checker = PermissionChecker(self.membership)
         context["can_edit"] = checker.has_permission("members.edit") or checker.is_admin()
 
+        # === Effektive Berechtigungen (Matrix mit Herkunft) ===
+        # Drei Zustände je Berechtigung: aus Rollen (read-only, mit Herkunft),
+        # individuell hinzugefügt, explizit verweigert (schlägt Rollen).
+        from apps.common.permissions import PERMISSIONS, get_permissions_by_category
+
+        context["permission_categories"] = get_permissions_by_category()
+
+        role_permission_sources = {}  # codename -> Liste der Rollennamen
+        for role in member.roles.all():
+            if role.is_admin:
+                for code in PERMISSIONS:
+                    role_permission_sources.setdefault(code, []).append(f"{role.name} (Administrator)")
+            else:
+                for perm in role.permissions.all():
+                    role_permission_sources.setdefault(perm.codename, []).append(role.name)
+
+        individual_codes = set(member.individual_permissions.values_list("codename", flat=True))
+        denied_codes = set(member.denied_permissions.values_list("codename", flat=True))
+
+        context["role_permission_sources"] = role_permission_sources
+        context["individual_permission_codes"] = individual_codes
+        context["denied_permission_codes"] = denied_codes
+        context["effective_permission_codes"] = (set(role_permission_sources) | individual_codes) - denied_codes
+
         # Committee assignment (OParl committees from all linked bodies)
         bodies = self.organization.get_all_bodies()
         has_body = bodies.exists()
@@ -603,12 +643,32 @@ class MemberDetailView(WorkViewMixin, TemplateView):
 
         elif action == "update_roles":
             # Update member roles
+            if member.is_guest:
+                messages.error(request, "Gast-Zugänge können keine Rollen erhalten.")
+                return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
             role_ids = request.POST.getlist("roles")
             roles = Role.objects.filter(id__in=role_ids, organization=self.organization)
             member.roles.set(roles)
             messages.success(
                 request,
                 f"Rollen für {member.user.get_full_name() or member.user.email} aktualisiert.",
+            )
+
+        elif action == "update_permissions":
+            # Individuelle/verweigerte Berechtigungen (Matrix im Mitglieder-Detail)
+            if member.is_guest:
+                messages.error(request, "Gast-Zugänge haben keine Berechtigungen.")
+                return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
+
+            from apps.tenants.models import Permission
+
+            individual_codes = request.POST.getlist("individual_permissions")
+            denied_codes = request.POST.getlist("denied_permissions")
+            member.individual_permissions.set(Permission.objects.filter(codename__in=individual_codes))
+            member.denied_permissions.set(Permission.objects.filter(codename__in=denied_codes))
+            messages.success(
+                request,
+                f"Individuelle Berechtigungen für {member.user.get_full_name() or member.user.email} aktualisiert.",
             )
 
         elif action == "deactivate":
@@ -855,6 +915,163 @@ Falls Sie diese Einladung nicht erwartet haben, können Sie diese E-Mail ignorie
 
         if not success:
             logger.error(f"Failed to send invitation email to {invitation.email}")
+
+
+class GuestInviteView(WorkViewMixin, TemplateView):
+    """
+    Gast einladen.
+
+    Erzeugt sofort einen User-Account (falls nötig) und eine
+    Membership(is_guest=True, keine Rollen). Der Gast erhält eine
+    Passwort-Setz-Mail über den bestehenden Reset-Mechanismus.
+    Optional können direkt Dokumente freigegeben werden
+    (MotionShare, scope=user) — oder später am Dokument selbst.
+    """
+
+    template_name = "work/organization/guest_invite.html"
+    permission_required = "guests.invite"
+
+    GUEST_SHARE_LEVELS = [("view", "Lesen"), ("comment", "Kommentieren"), ("edit", "Bearbeiten")]
+
+    def _shareable_documents(self):
+        """Dokumente, die der Einladende freigeben darf (eigene + org-sichtbare)."""
+        from django.db.models import Q
+
+        from apps.work.motions.models import Motion
+
+        return (
+            Motion.objects.filter(organization=self.organization)
+            .filter(Q(visibility="organization") | Q(author=self.membership))
+            .exclude(status="deleted")
+            .order_by("-updated_at")
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = "organization"
+        context["guest_count"] = self.organization.get_active_guest_count()
+        context["guest_limit"] = self.organization.guest_limit
+        context["guest_limit_reached"] = not self.organization.has_free_guest_slot()
+        context["share_levels"] = self.GUEST_SHARE_LEVELS
+        context["shareable_documents"] = self._shareable_documents()[:200]
+        return context
+
+    def post(self, request, *args, **kwargs):
+        from apps.accounts.models import User
+        from apps.tenants.models import Membership
+        from apps.work.motions.models import MotionShare
+
+        email = request.POST.get("email", "").strip().lower()
+        note = request.POST.get("message", "").strip()
+        share_level = request.POST.get("share_level", "view")
+        if share_level not in dict(self.GUEST_SHARE_LEVELS):
+            share_level = "view"
+        document_ids = request.POST.getlist("documents")
+
+        if not email or "@" not in email:
+            messages.error(request, "Bitte geben Sie eine gültige E-Mail-Adresse ein.")
+            return redirect("work:guest_invite", org_slug=self.organization.slug)
+
+        # Gast-Limit prüfen (Standard 25, per Addon erweiterbar)
+        if not self.organization.has_free_guest_slot():
+            messages.error(
+                request,
+                f"Gast-Limit erreicht ({self.organization.guest_limit}). "
+                "Erweiterung als Addon im Kundenportal.",
+            )
+            return redirect("work:members", org_slug=self.organization.slug)
+
+        user = User.objects.filter(email=email).first()
+        user_created = False
+        if user is None:
+            # Neuer Account ohne Passwort — Passwort-Setz-Mail folgt
+            user = User.objects.create_user(email=email, password=None)
+            user_created = True
+        else:
+            existing = Membership.objects.filter(user=user, organization=self.organization).first()
+            if existing:
+                if existing.is_active:
+                    messages.warning(request, f"{email} ist bereits Mitglied dieser Organisation.")
+                else:
+                    messages.warning(
+                        request,
+                        f"{email} hat bereits eine deaktivierte Mitgliedschaft. "
+                        "Reaktivieren Sie diese in der Mitgliederliste.",
+                    )
+                return redirect("work:members", org_slug=self.organization.slug)
+
+        Membership.objects.create(
+            user=user,
+            organization=self.organization,
+            is_guest=True,
+            invited_by=request.user,
+        )
+
+        # Ausgewählte Dokumente sofort freigeben
+        shared_count = 0
+        if document_ids:
+            motions = self._shareable_documents().filter(id__in=document_ids)
+            for motion in motions:
+                MotionShare.objects.get_or_create(
+                    motion=motion,
+                    scope="user",
+                    user=user,
+                    defaults={"level": share_level, "created_by": request.user, "message": note},
+                )
+                shared_count += 1
+
+        self._send_guest_invitation_email(user, note, user_created)
+
+        success_text = f"Gastzugang für {email} wurde eingerichtet."
+        if shared_count:
+            success_text += f" {shared_count} Dokument(e) freigegeben."
+        messages.success(request, success_text)
+        logger.info(
+            f"[Guests] Gastzugang {email} in '{self.organization.slug}' angelegt "
+            f"(von {request.user.email}, {shared_count} Freigaben)"
+        )
+        return redirect("work:members", org_slug=self.organization.slug)
+
+    def _send_guest_invitation_email(self, user, note: str, user_created: bool):
+        """Gast-Mail: Passwort-Setz-Link (bestehender Reset-Mechanismus) bzw. Direktlink."""
+        from django.conf import settings as django_settings
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+
+        base_url = getattr(django_settings, "SITE_URL", "https://mandari.de").rstrip("/")
+
+        if user_created or not user.has_usable_password():
+            uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            target_url = base_url + reverse(
+                "accounts:password_reset_confirm", kwargs={"uidb64": uidb64, "token": token}
+            )
+            action_hint = "Über den folgenden Link legen Sie Ihr Passwort fest und aktivieren Ihren Zugang:"
+        else:
+            target_url = base_url + reverse("work:guest_documents", kwargs={"org_slug": self.organization.slug})
+            action_hint = "Ihre freigegebenen Dokumente finden Sie hier:"
+
+        inviter = self.request.user.get_full_name() or self.request.user.email
+        subject = f"Gastzugang für {self.organization.name}"
+        plain_message = (
+            f"Hallo,\n\n"
+            f"{inviter} hat Ihnen einen Gastzugang zur Organisation "
+            f"{self.organization.name} auf Mandari Work eingerichtet.\n\n"
+            f"Als Gast sehen Sie ausschließlich die Dokumente, die für Sie freigegeben wurden.\n\n"
+            f"{f'Nachricht: {note}' + chr(10) + chr(10) if note else ''}"
+            f"{action_hint}\n{target_url}\n\n"
+            f"Falls Sie diese E-Mail nicht erwartet haben, können Sie sie ignorieren.\n"
+        )
+
+        success = send_email(
+            subject=subject,
+            body=plain_message,
+            to=[user.email],
+            fail_silently=True,
+        )
+        if not success:
+            logger.error(f"Failed to send guest invitation email to {user.email}")
 
 
 class InvitationResendView(WorkViewMixin, View):
@@ -1228,6 +1445,50 @@ class RoleDeleteView(WorkViewMixin, View):
         return redirect("work:roles", org_slug=self.organization.slug)
 
 
+class RoleResetView(WorkViewMixin, View):
+    """
+    Setzt eine Standard-Rolle auf ihre Definition aus setup_roles zurück.
+
+    Nur für Rollen, deren Name einer Standard-Rolle entspricht (POST only).
+    """
+
+    permission_required = "organization.manage_roles"
+
+    def post(self, request, *args, **kwargs):
+        from apps.tenants.models import Role
+
+        role = get_object_or_404(Role, id=kwargs["role_id"], organization=self.organization)
+
+        if role.reset_to_default():
+            messages.success(request, f"Rolle '{role.name}' wurde auf den Standard zurückgesetzt.")
+        else:
+            messages.error(request, f"Für '{role.name}' existiert keine Standard-Definition.")
+        return redirect("work:roles", org_slug=self.organization.slug)
+
+
+class RoleRestoreDefaultsView(WorkViewMixin, View):
+    """
+    Legt fehlende Standard-Rollen an (POST only).
+
+    Bestehende Rollen — auch angepasste — bleiben unverändert.
+    """
+
+    permission_required = "organization.manage_roles"
+
+    def post(self, request, *args, **kwargs):
+        from apps.tenants.models import Permission, Role
+
+        # Sicherstellen, dass der Berechtigungskatalog aktuell ist
+        Permission.sync_permissions()
+        created = Role.restore_missing_default_roles(self.organization)
+        if created:
+            names = ", ".join(r.name for r in created)
+            messages.success(request, f"{len(created)} Standard-Rolle(n) angelegt: {names}.")
+        else:
+            messages.info(request, "Alle Standard-Rollen sind bereits vorhanden.")
+        return redirect("work:roles", org_slug=self.organization.slug)
+
+
 # =============================================================================
 # USER PROFILE
 # =============================================================================
@@ -1238,6 +1499,7 @@ class ProfileView(WorkViewMixin, TemplateView):
 
     template_name = "work/profile/index.html"
     permission_required = "dashboard.view"
+    guest_allowed = True  # Konto-Verwaltung auch für Gäste
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1308,6 +1570,7 @@ class SecurityView(WorkViewMixin, TemplateView):
 
     template_name = "work/profile/security.html"
     permission_required = "dashboard.view"
+    guest_allowed = True  # Konto-Sicherheit auch für Gäste
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

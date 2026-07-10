@@ -8,6 +8,15 @@
 {% endblock %}
 
 {% block header_actions %}
+<form method="post" action="{% url 'work:roles_restore_defaults' org_slug=organization.slug %}" class="inline">
+    {% csrf_token %}
+    <button type="submit"
+            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm"
+            title="Legt fehlende Standard-Rollen an. Bestehende Rollen bleiben unverändert.">
+        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+        Standard-Rollen wiederherstellen
+    </button>
+</form>
 <a href="{% url 'work:role_create' org_slug=organization.slug %}"
    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
     <i data-lucide="plus" class="w-4 h-4"></i>
@@ -18,13 +27,24 @@
 {% block work_content %}
 {% include "work/organization/_tabs.html" %}
 
+<!-- Hinweis: modulares Rechtesystem -->
+<div class="mb-6 fade-up bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-200 dark:border-indigo-800 p-4 flex items-start gap-3">
+    <i data-lucide="info" class="w-5 h-5 text-indigo-500 shrink-0 mt-0.5"></i>
+    <p class="text-sm text-indigo-800 dark:text-indigo-200">
+        Alle Berechtigungen sind frei kombinierbar: Die Standard-Rollen sind nur Ausgangspunkte —
+        Sie können jede Rolle beliebig anpassen, eigene Rollen erstellen und einzelnen Mitgliedern
+        zusätzlich individuelle Berechtigungen gewähren oder explizit verweigern (im Mitglieder-Detail).
+        Standard-Rollen lassen sich jederzeit auf ihre ursprüngliche Definition zurücksetzen.
+    </p>
+</div>
+
 <!-- Roles List -->
 <div class="space-y-4 fade-up">
     {% for role in roles %}
-    <a href="{% url 'work:role_edit' org_slug=organization.slug role_id=role.id %}"
-       class="block bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors">
         <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
+            <a href="{% url 'work:role_edit' org_slug=organization.slug role_id=role.id %}"
+               class="flex items-center gap-3 flex-1 min-w-0">
                 <div class="w-4 h-4 rounded-full flex-shrink-0" style="background: {{ role.color|default:'#6b7280' }};"></div>
                 <div>
                     <h3 class="font-medium text-gray-900 dark:text-white flex items-center gap-2">
@@ -45,10 +65,26 @@
                         &middot; {{ role.member_count }} Mitglied{{ role.member_count|pluralize:"er" }}
                     </p>
                 </div>
+            </a>
+            <div class="flex items-center gap-2 shrink-0">
+                {% if role.has_default_definition %}
+                <form method="post" action="{% url 'work:role_reset' org_slug=organization.slug role_id=role.id %}"
+                      x-data @submit.prevent="confirmAction({title: 'Auf Standard zurücksetzen', message: 'Die Berechtigungen der Rolle \'{{ role.name|escapejs }}\' werden auf die Standard-Definition zurückgesetzt. Eigene Anpassungen gehen verloren.', confirmText: 'Zurücksetzen', variant: 'warning'}).then(ok => ok && $el.submit())">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="p-2 text-gray-400 hover:text-primary-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                            title="Auf Standard zurücksetzen">
+                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                    </button>
+                </form>
+                {% endif %}
+                <a href="{% url 'work:role_edit' org_slug=organization.slug role_id=role.id %}"
+                   class="p-2 text-gray-400 hover:text-primary-600 rounded-lg">
+                    <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                </a>
             </div>
-            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400"></i>
         </div>
-    </a>
+    </div>
     {% empty %}
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
         <div class="w-16 h-16 mx-auto mb-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center">

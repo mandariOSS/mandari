@@ -1,0 +1,125 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Gast einladen{% endblock %}
+
+{% block header_title %}Gast einladen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Einen Gastzugang für {{ organization.name }} einrichten</p>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'work:members' org_slug=organization.slug %}"
+   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600">
+    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+    Zurück
+</a>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-2xl">
+    <!-- Gast-Kontingent -->
+    <div class="mb-6 fade-up rounded-xl border p-4 flex items-center gap-3
+                {% if guest_limit_reached %}bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800{% else %}bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800{% endif %}">
+        <i data-lucide="user-round" class="w-5 h-5 {% if guest_limit_reached %}text-red-500{% else %}text-teal-500{% endif %}"></i>
+        <div class="text-sm {% if guest_limit_reached %}text-red-800 dark:text-red-200{% else %}text-teal-800 dark:text-teal-200{% endif %}">
+            <strong>{{ guest_count }} von {{ guest_limit }} Gastplätzen belegt.</strong>
+            {% if guest_limit_reached %}
+            Gast-Limit erreicht ({{ guest_limit }}). Erweiterung als Addon im Kundenportal.
+            {% else %}
+            Gäste sehen ausschließlich die Dokumente, die für sie freigegeben wurden — keine weiteren Bereiche.
+            {% endif %}
+        </div>
+    </div>
+
+    <form method="post" class="space-y-6 fade-up">
+        {% csrf_token %}
+
+        <!-- Email -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">E-Mail-Adresse</h3>
+            <div>
+                <input type="email" name="email" required autofocus
+                       class="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                       placeholder="gast@beispiel.de">
+                <p class="mt-2 text-sm text-gray-500">
+                    Der Gast erhält eine E-Mail mit einem Link zum Festlegen des Passworts.
+                    Gäste haben keine Rollen und keine Berechtigungen.
+                </p>
+            </div>
+        </div>
+
+        <!-- Dokumente freigeben -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Dokumente freigeben</h3>
+            <p class="text-sm text-gray-500 mb-4">
+                Optional: Wählen Sie Dokumente, die sofort freigegeben werden.
+                Sie können Dokumente auch später direkt am Dokument (Teilen-Dialog) freigeben.
+            </p>
+
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Freigabe-Level</label>
+                <select name="share_level"
+                        class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    {% for value, label in share_levels %}
+                    <option value="{{ value }}" {% if value == "view" %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            {% if shareable_documents %}
+            <div class="max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-700">
+                {% for doc in shareable_documents %}
+                <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
+                    <input type="checkbox" name="documents" value="{{ doc.id }}"
+                           class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                    <div class="flex-1 min-w-0">
+                        <span class="text-sm font-medium text-gray-900 dark:text-white truncate block">{{ doc.title }}</span>
+                        <span class="text-xs text-gray-400">Zuletzt geändert {{ doc.updated_at|date:"d.m.Y" }}</span>
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-400">Keine freigebbaren Dokumente vorhanden.</p>
+            {% endif %}
+        </div>
+
+        <!-- Notiz -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Notiz</h3>
+            <textarea name="message" rows="3"
+                      class="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                      placeholder="Optionale Nachricht, die in der E-Mail an den Gast erscheint..."></textarea>
+        </div>
+
+        <!-- Hinweis & Submit -->
+        <div class="bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-start gap-4">
+                <div class="w-10 h-10 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center text-teal-600">
+                    <i data-lucide="shield" class="w-5 h-5"></i>
+                </div>
+                <div class="flex-1">
+                    <h4 class="font-medium text-gray-900 dark:text-white">Was Gäste sehen</h4>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Gäste sehen im Work-Portal nur die Übersicht "Freigegebene Dokumente" und ihr Konto.
+                        Dashboard, Aufgaben, Sitzungen, RIS und alle anderen Bereiche bleiben verborgen.
+                        Freigaben können jederzeit am Dokument entzogen werden.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-3">
+            <a href="{% url 'work:members' org_slug=organization.slug %}"
+               class="px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                Abbrechen
+            </a>
+            <button type="submit" {% if guest_limit_reached %}disabled{% endif %}
+                    class="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm {% if guest_limit_reached %}opacity-50 cursor-not-allowed{% endif %}">
+                <i data-lucide="user-round-plus" class="w-4 h-4"></i>
+                Gastzugang einrichten
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

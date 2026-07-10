@@ -103,7 +103,11 @@ def _org_payload(org: Organization) -> dict:
         "plan": org.plan,
         "member_limit": org.member_limit,
         "billing_reference": org.billing_reference,
-        "member_count": org.memberships.filter(is_active=True).count(),
+        # member_count zählt nur reguläre Mitglieder (Gäste separat)
+        "member_count": org.get_active_member_count(),
+        # Gast-Zugänge: Limit (Standard 25, Addon-erweiterbar) + Belegung
+        "guest_limit": org.guest_limit,
+        "guest_count": org.get_active_guest_count(),
         "work_url": f"/work/{org.slug}/",
         # Alle verknüpften Kommunen (primärer FK + M2M)
         "bodies": [
@@ -148,6 +152,7 @@ class OrganizationCollectionView(ProvisioningView):
         plan = (data.get("plan") or "hosted").strip()
         billing_reference = (data.get("billing_reference") or "").strip()
         member_limit = data.get("member_limit")
+        guest_limit = data.get("guest_limit")
 
         errors = {}
         if not name:
@@ -158,6 +163,8 @@ class OrganizationCollectionView(ProvisioningView):
             errors["admin_email"] = "gültige E-Mail erforderlich"
         if member_limit is not None and (not isinstance(member_limit, int) or member_limit < 1):
             errors["member_limit"] = "positive Zahl oder null"
+        if guest_limit is not None and (not isinstance(guest_limit, int) or guest_limit < 0):
+            errors["guest_limit"] = "Zahl >= 0 oder weglassen (Standard 25)"
         if errors:
             return JsonResponse({"error": "validation", "fields": errors}, status=400)
 
@@ -171,14 +178,17 @@ class OrganizationCollectionView(ProvisioningView):
             return JsonResponse({"error": "no_system_user"}, status=500)
 
         with transaction.atomic():
-            org = Organization.objects.create(
-                name=name,
-                slug=slug,
-                plan=plan,
-                billing_reference=billing_reference,
-                member_limit=member_limit,
-                is_active=True,
-            )
+            org_kwargs = {
+                "name": name,
+                "slug": slug,
+                "plan": plan,
+                "billing_reference": billing_reference,
+                "member_limit": member_limit,
+                "is_active": True,
+            }
+            if guest_limit is not None:
+                org_kwargs["guest_limit"] = guest_limit
+            org = Organization.objects.create(**org_kwargs)
             # Standard-Rollen entstehen automatisch per post_save-Signal
             # (tenants/signals.py) — hier nur die Admin-Rolle heraussuchen.
             admin_role = Role.objects.filter(organization=org, is_admin=True).order_by("priority").first()
@@ -229,6 +239,10 @@ class OrganizationDetailView(ProvisioningView):
         if "member_limit" in data and (data["member_limit"] is None or isinstance(data["member_limit"], int)):
             org.member_limit = data["member_limit"]
             fields.append("member_limit")
+        # guest_limit: Integer >= 0 (Portal-Addon setzt den Wert; Standard 25)
+        if "guest_limit" in data and isinstance(data["guest_limit"], int) and data["guest_limit"] >= 0:
+            org.guest_limit = data["guest_limit"]
+            fields.append("guest_limit")
         if "billing_reference" in data and isinstance(data["billing_reference"], str):
             org.billing_reference = data["billing_reference"].strip()
             fields.append("billing_reference")

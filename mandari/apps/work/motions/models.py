@@ -561,6 +561,20 @@ class Motion(EncryptionMixin, models.Model):
             return self.document_type.is_submittable
         return True
 
+    def get_guest_share_level(self, membership) -> str | None:
+        """
+        Freigabe-Level eines Gast-Zugangs für dieses Dokument.
+
+        Gäste erhalten Zugriff ausschließlich über persönliche Freigaben
+        (MotionShare, scope=user). Returns 'view'/'comment'/'edit'/'admin'
+        oder None, wenn keine Freigabe existiert.
+        """
+        levels = set(self.shares.filter(scope="user", user=membership.user).values_list("level", flat=True))
+        for level in ("admin", "edit", "comment", "view"):
+            if level in levels:
+                return level
+        return None
+
     def can_access(self, membership) -> bool:
         """
         Check if a membership has access to this document.
@@ -569,7 +583,14 @@ class Motion(EncryptionMixin, models.Model):
         - private: Only the author
         - shared: Author + users with MotionShare entries
         - organization: Anyone in the same organization
+
+        Gäste (Membership.is_guest) sehen unabhängig von der Sichtbarkeit
+        NUR Dokumente mit persönlicher Freigabe (scope=user).
         """
+        # Gäste: ausschließlich explizit freigegebene Dokumente
+        if getattr(membership, "is_guest", False):
+            return self.get_guest_share_level(membership) is not None
+
         # Author always has access
         if self.author == membership:
             return True
@@ -592,7 +613,11 @@ class Motion(EncryptionMixin, models.Model):
 
         With simplified permissions, anyone with access can edit
         (except in private mode, only author can edit).
+        Gäste: nur mit Freigabe-Level edit/admin.
         """
+        if getattr(membership, "is_guest", False):
+            return self.get_guest_share_level(membership) in ("edit", "admin")
+
         if self.author == membership:
             return True
 
@@ -607,7 +632,11 @@ class Motion(EncryptionMixin, models.Model):
         Check if a membership can comment on this document.
 
         With simplified permissions, anyone with access can comment.
+        Gäste: nur mit Freigabe-Level comment/edit/admin.
         """
+        if getattr(membership, "is_guest", False):
+            return self.get_guest_share_level(membership) in ("comment", "edit", "admin")
+
         return self.can_access(membership)
 
     def get_visibility_icon(self) -> str:

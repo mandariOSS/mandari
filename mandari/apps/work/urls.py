@@ -136,6 +136,12 @@ urlpatterns = [
         meetings_views.PaperCommentAPIView.as_view(),
         name="paper_comment_delete",
     ),
+    # Gast-Übersicht: persönlich freigegebene Dokumente
+    path(
+        "<slug:org_slug>/freigaben/",
+        motions_views.GuestSharedDocumentsView.as_view(),
+        name="guest_documents",
+    ),
     # Documents (formerly Motions)
     path("<slug:org_slug>/documents/", motions_views.MotionListView.as_view(), name="documents"),
     path(
@@ -494,6 +500,11 @@ urlpatterns = [
         name="member_invite",
     ),
     path(
+        "<slug:org_slug>/organization/members/invite-guest/",
+        organization_views.GuestInviteView.as_view(),
+        name="guest_invite",
+    ),
+    path(
         "<slug:org_slug>/organization/members/<uuid:member_id>/",
         organization_views.MemberDetailView.as_view(),
         name="member_detail",
@@ -527,6 +538,16 @@ urlpatterns = [
         "<slug:org_slug>/organization/roles/<uuid:role_id>/delete/",
         organization_views.RoleDeleteView.as_view(),
         name="role_delete",
+    ),
+    path(
+        "<slug:org_slug>/organization/roles/<uuid:role_id>/reset/",
+        organization_views.RoleResetView.as_view(),
+        name="role_reset",
+    ),
+    path(
+        "<slug:org_slug>/organization/roles/restore-defaults/",
+        organization_views.RoleRestoreDefaultsView.as_view(),
+        name="roles_restore_defaults",
     ),
     # Registration Settings
     path(

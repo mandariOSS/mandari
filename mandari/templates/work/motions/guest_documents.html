@@ -1,0 +1,55 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Freigegebene Dokumente{% endblock %}
+
+{% block header_title %}Freigegebene Dokumente{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Dokumente, die für Sie in {{ organization.name }} freigegeben wurden</p>
+{% endblock %}
+
+{% block work_content %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
+    {% if shared_entries %}
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for entry in shared_entries %}
+        <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=entry.motion.id %}"
+           class="px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            <div class="flex items-center gap-4 min-w-0">
+                <div class="w-10 h-10 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 shrink-0">
+                    <i data-lucide="file-text" class="w-5 h-5"></i>
+                </div>
+                <div class="min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white truncate">{{ entry.motion.title }}</p>
+                    <p class="text-sm text-gray-500">
+                        Freigegeben am {{ entry.shared_at|date:"d.m.Y" }}
+                        {% if entry.shared_by %}von {{ entry.shared_by.get_full_name|default:entry.shared_by.email }}{% endif %}
+                    </p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+                <span class="px-2.5 py-1 text-xs font-medium rounded-full
+                             {% if entry.level == 'edit' or entry.level == 'admin' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
+                             {% elif entry.level == 'comment' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
+                             {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300{% endif %}">
+                    {{ entry.level_label }}
+                </span>
+                <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400"></i>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="p-12 text-center">
+        <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+            <i data-lucide="file-lock" class="w-8 h-8 text-gray-400"></i>
+        </div>
+        <p class="text-gray-500 dark:text-gray-400">
+            Für Sie wurden noch keine Dokumente freigegeben.
+        </p>
+        <p class="text-sm text-gray-400 mt-2">
+            Sobald ein Mitglied der Organisation ein Dokument mit Ihnen teilt, erscheint es hier.
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

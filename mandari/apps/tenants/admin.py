@@ -136,14 +136,26 @@ class OrganizationAdmin(ModelAdmin):
             },
         ),
         (
-            "Gruppierung",
+            "Zuordnung: Stadt/Kommune und Partei",
             {
-                "fields": ("party_group", "parties", "body", "bodies", "oparl_organizations"),
+                "fields": ("body", "party_group", "bodies", "parties", "oparl_organizations"),
                 "description": (
-                    "Organisation kann einer Partei-Hierarchie UND einer regionalen Gruppe angehören. "
-                    "'Primäre Kommune' und 'Primäre Parteigruppe' dienen als Standard; über 'Kommunen' "
-                    "und 'Parteien' können mehrere verknüpft werden."
+                    "Jede aktive Organisation gehört genau EINER Stadt/Kommune ('Stadt/Kommune') "
+                    "und EINER Partei ('Partei') an — beide Felder sind Pflicht bei aktiven "
+                    "Organisationen. 'Weitere Kommunen (RIS-Zugriff)' gewährt zusätzlichen Zugriff "
+                    "auf andere Ratsinformationssysteme; 'Parteien' dient nur der Vernetzung."
                 ),
+            },
+        ),
+        (
+            "Plan & Limits",
+            {
+                "fields": ("plan", "billing_reference", "member_limit", "guest_limit"),
+                "description": (
+                    "Gäste zählen nicht gegen das Mitglieder-Limit, reguläre Mitglieder "
+                    "nicht gegen das Gast-Limit (Standard 25, per Addon erweiterbar)."
+                ),
+                "classes": ("collapse",),
             },
         ),
         (
@@ -278,10 +290,11 @@ class MembershipAdmin(ModelAdmin):
         "user_display",
         "organization",
         "roles_display",
+        "is_guest",
         "is_active",
         "joined_at",
     ]
-    list_filter = ["is_active", "organization", "roles"]
+    list_filter = ["is_active", "is_guest", "organization", "roles"]
     search_fields = ["user__email", "user__first_name", "user__last_name", "organization__name"]
     autocomplete_fields = ["user", "organization", "oparl_person", "invited_by"]
     filter_horizontal = [
@@ -297,7 +310,7 @@ class MembershipAdmin(ModelAdmin):
         (
             "Mitgliedschaft",
             {
-                "fields": ("user", "organization", "is_active"),
+                "fields": ("user", "organization", "is_active", "is_guest"),
             },
         ),
         (
