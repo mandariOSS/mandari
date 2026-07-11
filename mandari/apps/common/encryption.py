@@ -114,6 +114,13 @@ class TenantEncryption:
         Generates a new key if none exists.
         """
         if self._key is None:
+            if not self.organization.encryption_key and self.organization.pk:
+                # Schutz vor Datenverlust: Eine veraltete (stale) Instanz mit
+                # leerem encryption_key darf NIEMALS den DB-Key überschreiben,
+                # sonst werden alle bestehenden Ciphertexte des Tenants
+                # unlesbar. Vor der Generierung deshalb den aktuellen
+                # DB-Stand nachladen.
+                self.organization.refresh_from_db(fields=["encryption_key"])
             if not self.organization.encryption_key:
                 # Generate new key for this tenant
                 self.logger.info(f"[Encryption] Generating new key for org {self.organization.slug}")
