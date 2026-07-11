@@ -137,6 +137,17 @@ urlpatterns = [
         meetings_views.SupplementaryDocumentAPIView.as_view(),
         name="meeting_document_delete",
     ),
+    # Datei-Anmerkungen (seitenbezogen, an OParl-Dateien oder eigenen Anlagen)
+    path(
+        "<slug:org_slug>/meetings/annotations/<str:anchor_type>/<uuid:file_id>/",
+        meetings_views.FileAnnotationAPIView.as_view(),
+        name="meeting_file_annotations",
+    ),
+    path(
+        "<slug:org_slug>/meetings/annotations/<uuid:annotation_id>/delete/",
+        meetings_views.FileAnnotationAPIView.as_view(),
+        name="meeting_file_annotation_delete",
+    ),
     # Paper comments (cross-committee collaboration)
     path(
         "<slug:org_slug>/paper/<uuid:paper_id>/comments/",

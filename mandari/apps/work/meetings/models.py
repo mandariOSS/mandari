@@ -769,6 +769,80 @@ class AgendaSupplementaryDocument(models.Model):
 AgendaDocumentLink = AgendaSupplementaryDocument
 
 
+class FileAnnotation(EncryptionMixin, models.Model):
+    """
+    Anmerkung direkt an einer PDF-Datei (seitenbezogen).
+
+    Hängt entweder an einer OParl-Datei aus dem Ratsinformationssystem
+    (oparl_file) ODER an einer eigenen hochgeladenen Anlage
+    (supplementary_document) — genau einer der beiden Anker ist gesetzt
+    (CheckConstraint). Anmerkungen sind org-weit sichtbar (wie
+    Fraktionskommentare), löschen darf nur der Autor. Der Inhalt ist
+    verschlüsselt (Muster PaperComment).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    organization = models.ForeignKey(
+        "tenants.Organization",
+        on_delete=models.CASCADE,
+        related_name="file_annotations",
+        verbose_name="Organisation",
+    )
+    oparl_file = models.ForeignKey(
+        "insight_core.OParlFile",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="work_annotations",
+        verbose_name="OParl-Datei",
+    )
+    supplementary_document = models.ForeignKey(
+        AgendaSupplementaryDocument,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="annotations",
+        verbose_name="Eigene Anlage",
+    )
+
+    page = models.PositiveIntegerField(default=1, verbose_name="Seite")
+    author = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.CASCADE,
+        related_name="file_annotations",
+        verbose_name="Autor",
+    )
+    content_encrypted = EncryptedTextField(verbose_name="Anmerkung")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Datei-Anmerkung"
+        verbose_name_plural = "Datei-Anmerkungen"
+        ordering = ["page", "created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(oparl_file__isnull=False, supplementary_document__isnull=True)
+                    | models.Q(oparl_file__isnull=True, supplementary_document__isnull=False)
+                ),
+                name="fileannotation_exactly_one_anchor",
+            ),
+        ]
+
+    def __str__(self):
+        target = self.oparl_file_id or self.supplementary_document_id
+        return f"Anmerkung S.{self.page} an {target}"
+
+    @property
+    def content(self):
+        return self.get_content_decrypted()
+
+    def get_encryption_organization(self):
+        return self.organization
+
+
 class PaperComment(EncryptionMixin, models.Model):
     """
     Kommentar zu einem OParl-Vorgang (Paper).

@@ -206,7 +206,7 @@
                             <span class="relative shrink-0 mt-0.5">
                                 <span class="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
                                       x-text="item.number"></span>
-                                <span class="absolute -right-0.5 -bottom-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-gray-800"
+                                <span class="absolute -right-1 -bottom-1 w-3 h-3 rounded-full ring-2 ring-white dark:ring-gray-800"
                                       :class="posDot(item.position)"
                                       :title="posLabel(item.position)"></span>
                             </span>
@@ -249,8 +249,104 @@
         <!-- ============ Spalte 2: Hauptbereich ============ -->
         <main :class="mobileTab === 'main' ? 'block' : 'hidden xl:block'"
               class="mt-4 xl:mt-0 xl:h-full xl:overflow-y-auto xl:pr-1">
+
+            <!-- ===== PDF-Inline-Vorschau (Muster RIS-Dokumentvorschau) mit Kommentarspur ===== -->
+            <div x-show="preview.open" x-cloak id="pdf-preview-panel"
+                 class="flex flex-col h-[78vh] xl:h-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                <!-- Kopf: Titel · Im neuen Tab öffnen · Schließen -->
+                <div class="flex items-center gap-2.5 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/60 shrink-0">
+                    <i data-lucide="file-text" class="w-4 h-4 text-red-500 shrink-0"></i>
+                    <h3 class="flex-1 min-w-0 text-sm font-semibold text-gray-900 dark:text-white truncate"
+                        :title="preview.title" x-text="preview.title"></h3>
+                    <a :href="preview.externalUrl" target="_blank" rel="noopener noreferrer"
+                       class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                        Im neuen Tab öffnen
+                    </a>
+                    <button type="button" @click="closePreview()" title="Vorschau schließen"
+                            class="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <!-- Körper: PDF-iframe + Kommentarspur -->
+                <div class="flex flex-col sm:flex-row flex-1 min-h-0">
+                    <div class="flex-1 min-h-0 min-w-0 bg-gray-100 dark:bg-gray-900 relative">
+                        <div x-show="previewLoading" class="absolute inset-0 flex items-center justify-center">
+                            <i data-lucide="loader-2" class="w-6 h-6 animate-spin text-gray-400"></i>
+                        </div>
+                        <template x-if="preview.frameSrc">
+                            <iframe :src="preview.frameSrc" @load="previewLoading = false"
+                                    class="w-full h-full border-0 transition-opacity"
+                                    :class="previewLoading ? 'opacity-0' : 'opacity-100'"
+                                    loading="eager"></iframe>
+                        </template>
+                    </div>
+                    <!-- Kommentarspur -->
+                    <aside id="annotation-rail"
+                           class="sm:w-72 shrink-0 flex flex-col max-h-64 sm:max-h-none border-t sm:border-t-0 sm:border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                        <div class="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700 shrink-0 flex items-center gap-2">
+                            <i data-lucide="message-square-text" class="w-4 h-4 text-sky-500"></i>
+                            <span class="text-sm font-semibold text-gray-900 dark:text-white">Anmerkungen</span>
+                            <span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                                  x-text="annotations.length"></span>
+                            <div class="flex-1"></div>
+                            <span class="text-[10px] text-gray-400" title="Anmerkungen sind für die gesamte Organisation sichtbar">Org-weit</span>
+                        </div>
+                        <div class="flex-1 min-h-0 overflow-y-auto px-3 py-2.5 space-y-3">
+                            <template x-for="group in annotationGroups" :key="group.page">
+                                <div>
+                                    <button type="button" @click="previewGotoPage(group.page)" title="Zur Seite springen"
+                                            class="mb-1.5 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-sky-600 dark:text-sky-400 hover:underline">
+                                        <i data-lucide="corner-down-right" class="w-3 h-3"></i>
+                                        Seite <span x-text="group.page"></span>
+                                    </button>
+                                    <div class="space-y-1.5">
+                                        <template x-for="a in group.entries" :key="a.id">
+                                            <div class="px-2.5 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-700">
+                                                <div class="flex items-center gap-1.5 mb-0.5">
+                                                    <span class="text-[11px] font-semibold text-gray-700 dark:text-gray-200" x-text="a.author"></span>
+                                                    <span class="text-[10px] text-gray-400" x-text="fmtDateTime(a.created_at)"></span>
+                                                    <div class="flex-1"></div>
+                                                    <button type="button" x-show="a.is_own" @click="deleteAnnotation(a)"
+                                                            class="p-0.5 text-gray-300 hover:text-red-500 transition-colors" title="Anmerkung löschen">
+                                                        <i data-lucide="x" class="w-3 h-3"></i>
+                                                    </button>
+                                                </div>
+                                                <p class="text-xs text-gray-700 dark:text-gray-200 whitespace-pre-line break-words" x-text="a.content"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                            <p x-show="annotations.length === 0 && !annotationsLoading" class="py-6 text-xs text-center text-gray-400">
+                                Noch keine Anmerkungen zu dieser Datei.
+                            </p>
+                            <p x-show="annotationsLoading" class="py-6 text-xs text-center text-gray-400">
+                                <i data-lucide="loader-2" class="w-3.5 h-3.5 inline animate-spin mr-1"></i> Anmerkungen laden...
+                            </p>
+                        </div>
+                        <div class="px-3 py-2.5 border-t border-gray-100 dark:border-gray-700 shrink-0">
+                            <label class="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400 mb-1.5">
+                                Anmerkung zu Seite
+                                <input type="number" min="1" x-model.number="newAnnotationPage"
+                                       class="w-14 px-1.5 py-0.5 text-xs text-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded focus:border-sky-500 outline-none dark:text-gray-100">
+                            </label>
+                            <textarea rows="2" x-model="newAnnotationText"
+                                      @keydown.enter="if (!$event.shiftKey) { $event.preventDefault(); addAnnotation(); }"
+                                      class="w-full px-2.5 py-1.5 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 outline-none dark:text-gray-100 resize-none"
+                                      placeholder="Anmerkung schreiben... (Enter speichert)"></textarea>
+                            <button type="button" @click="addAnnotation()" :disabled="!newAnnotationText.trim()"
+                                    class="mt-1.5 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-sky-600 rounded-lg hover:bg-sky-700 disabled:opacity-40 shadow-sm transition-colors">
+                                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                                Anmerkung speichern
+                            </button>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+
             <template x-if="selectedItem">
-                <div class="space-y-4 pb-4">
+                <div class="space-y-4 pb-4" x-show="!preview.open">
 
                     <!-- TOP-Kopf -->
                     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-5 py-4">
@@ -297,9 +393,9 @@
                     </div>
 
                     <!-- ===== Abschnitt A: Position & Ergebnis ===== -->
-                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-5 py-4" aria-labelledby="section-position">
+                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-indigo-400 dark:border-l-indigo-600 rounded-xl px-5 py-4" aria-labelledby="section-position">
                         <h3 id="section-position" class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-3">
-                            <i data-lucide="vote" class="w-4 h-4 text-primary-500"></i>
+                            <i data-lucide="vote" class="w-4 h-4 text-indigo-500"></i>
                             Position &amp; Ergebnis
                         </h3>
 
@@ -372,11 +468,56 @@
                         </div>
                     </section>
 
-                    <!-- ===== Abschnitt B: Redebeitrag ===== -->
-                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden" aria-labelledby="section-speech">
+                    <!-- ===== Abschnitt B: Dokumente aus dem Ratsinformationssystem ===== -->
+                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-sky-400 dark:border-l-sky-600 rounded-xl px-5 py-4" aria-labelledby="section-ris">
+                        <h3 id="section-ris" class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-3">
+                            <i data-lucide="landmark" class="w-4 h-4 text-sky-500"></i>
+                            Aus dem Ratsinformationssystem
+                        </h3>
+                        <div class="grid gap-2 sm:grid-cols-2" x-show="selectedItem.files && selectedItem.files.length > 0">
+                            <template x-for="(file, fi) in selectedItem.files" :key="file.id || fi">
+                                <div class="ris-file-card flex flex-col px-3 py-2.5 rounded-lg border bg-sky-50/50 dark:bg-sky-900/10 border-sky-100 dark:border-sky-900/50 hover:border-sky-300 dark:hover:border-sky-700 transition-colors">
+                                    <div class="flex items-start gap-2.5 min-w-0">
+                                        <i :data-lucide="file.isPdf ? 'file-text' : 'file'" class="w-5 h-5 mt-0.5 shrink-0"
+                                           :class="file.isPdf ? 'text-red-500' : 'text-sky-500'"></i>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm font-medium text-gray-800 dark:text-gray-100 line-clamp-1" :title="file.name" x-text="file.name"></p>
+                                            <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                                                <span x-show="file.size" x-text="file.size"></span>
+                                                <span x-show="file.annotations > 0"
+                                                      class="annotation-badge inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 font-medium">
+                                                    <i data-lucide="message-square-text" class="w-3 h-3"></i>
+                                                    <span x-text="file.annotations + (file.annotations === 1 ? ' Anmerkung' : ' Anmerkungen')"></span>
+                                                </span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2 flex items-center gap-1.5">
+                                        <button type="button" x-show="file.isPdf"
+                                                @click="openPreview('oparl', file.id, file.name, file.previewUrl, file.url, file)"
+                                                class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-sky-600 rounded-lg hover:bg-sky-700 shadow-sm transition-colors">
+                                            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                                            Vorschau
+                                        </button>
+                                        <a :href="file.url" target="_blank" rel="noopener"
+                                           class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-100/60 dark:hover:bg-sky-900/30 transition-colors">
+                                            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                                            Neuer Tab
+                                        </a>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <p class="text-xs text-gray-400 italic" x-show="!selectedItem.files || selectedItem.files.length === 0">
+                            Keine Dokumente aus dem Ratsinformationssystem.
+                        </p>
+                    </section>
+
+                    <!-- ===== Abschnitt C: Redebeitrag ===== -->
+                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-violet-400 dark:border-l-violet-600 rounded-xl overflow-hidden" aria-labelledby="section-speech">
                         <div class="px-5 py-4 flex items-center gap-2" :class="speechOpen && 'border-b border-gray-100 dark:border-gray-700'">
                             <h3 id="section-speech" class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-                                <i data-lucide="mic" class="w-4 h-4 text-primary-500"></i>
+                                <i data-lucide="mic" class="w-4 h-4 text-violet-500"></i>
                                 Redebeitrag
                             </h3>
                             <span x-show="selectedItem.speechShared" class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
@@ -516,36 +657,15 @@
                         </div>
                     </section>
 
-                    <!-- ===== Abschnitt C: Anhänge ===== -->
-                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-5 py-4" aria-labelledby="section-attachments">
+                    <!-- ===== Abschnitt D: Anhänge (eigene Anlagen) ===== -->
+                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-amber-400 dark:border-l-amber-600 rounded-xl px-5 py-4" aria-labelledby="section-attachments">
                         <h3 id="section-attachments" class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-3">
-                            <i data-lucide="paperclip" class="w-4 h-4 text-primary-500"></i>
+                            <i data-lucide="paperclip" class="w-4 h-4 text-amber-500"></i>
                             Anhänge
                         </h3>
 
-                        <!-- OParl-Dokumente -->
-                        <div>
-                            <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
-                                <i data-lucide="landmark" class="w-3.5 h-3.5"></i>
-                                Aus dem Ratsinformationssystem
-                            </p>
-                            <div class="space-y-1.5" x-show="selectedItem.files && selectedItem.files.length > 0">
-                                <template x-for="(file, fi) in selectedItem.files" :key="fi">
-                                    <a :href="file.url" target="_blank" rel="noopener"
-                                       class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group">
-                                        <i data-lucide="file-text" class="w-4 h-4 text-red-500 shrink-0"></i>
-                                        <span class="flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200 truncate" :title="file.name" x-text="file.name"></span>
-                                        <i data-lucide="external-link" class="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-500"></i>
-                                    </a>
-                                </template>
-                            </div>
-                            <p class="text-xs text-gray-400 italic" x-show="!selectedItem.files || selectedItem.files.length === 0">
-                                Keine Dokumente aus dem Ratsinformationssystem.
-                            </p>
-                        </div>
-
                         <!-- Eigene Anlagen -->
-                        <div class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                        <div>
                             <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
                                 <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
                                 Eigene Anlagen
@@ -553,10 +673,21 @@
                             <div class="space-y-1.5" x-show="docs.length > 0">
                                 <template x-for="doc in docs" :key="doc.id">
                                     <div class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-700 group">
-                                        <i :data-lucide="doc.document_type === 'file' ? 'file' : 'link'" class="w-4 h-4 text-primary-500 shrink-0"></i>
+                                        <i :data-lucide="doc.document_type === 'file' ? 'file' : 'link'" class="w-4 h-4 text-amber-500 shrink-0"></i>
                                         <a :href="doc.url" target="_blank" rel="noopener"
+                                           @click="if (doc.is_pdf) { $event.preventDefault(); previewDoc(doc); }"
                                            class="flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200 truncate hover:underline"
                                            :title="doc.title" x-text="doc.title"></a>
+                                        <span x-show="doc.annotations > 0"
+                                              class="annotation-badge shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300"
+                                              :title="doc.annotations + ' Anmerkungen'">
+                                            <i data-lucide="message-square-text" class="w-3 h-3"></i>
+                                            <span x-text="doc.annotations"></span>
+                                        </span>
+                                        <button type="button" x-show="doc.is_pdf" @click="previewDoc(doc)"
+                                                class="shrink-0 p-1 text-gray-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors" title="Vorschau öffnen">
+                                            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                                        </button>
                                         <span x-show="doc.is_from_other_item"
                                               class="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300"
                                               title="Über die Vorlage aus einem anderen Gremium geteilt">
@@ -635,10 +766,10 @@
                     </div>
 
                     <!-- Diskussion -->
-                    <div class="flex flex-col flex-1 min-h-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                    <div class="flex flex-col flex-1 min-h-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-emerald-400 dark:border-l-emerald-600 rounded-xl overflow-hidden">
                         <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2 shrink-0">
                             <h3 class="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
-                                <i data-lucide="messages-square" class="w-4 h-4 text-primary-500"></i>
+                                <i data-lucide="messages-square" class="w-4 h-4 text-emerald-500"></i>
                                 Diskussion
                             </h3>
                             <div class="flex-1"></div>
@@ -739,7 +870,7 @@
          class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
          x-transition.opacity
          @click.self="showLegend = false"
-         @keydown.escape.window="showLegend = false; showSummary = false; docModalOpen = false">
+         @keydown.escape.window="showLegend = false; showSummary = false; docModalOpen = false; closePreview()">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-sm w-full max-h-[85vh] overflow-y-auto">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="font-semibold text-gray-900 dark:text-white">Legende</h3>
@@ -752,10 +883,35 @@
                 {% for code, label in position_choices %}
                 <div class="flex items-center gap-3">
                     <span class="w-3.5 h-3.5 rounded-full shrink-0
-                        {% if code == 'for' %}bg-green-500{% elif code == 'against' %}bg-red-500{% elif code == 'abstain' %}bg-gray-400{% elif code == 'defer' %}bg-purple-500{% elif code == 'refer' %}bg-indigo-500{% elif code == 'amended' %}bg-amber-500{% elif code == 'info' %}bg-blue-500{% else %}bg-gray-300 dark:bg-gray-600{% endif %}"></span>
+                        {% if code == 'for' %}bg-green-500{% elif code == 'against' %}bg-red-500{% elif code == 'abstain' %}bg-gray-400{% elif code == 'defer' %}bg-purple-500{% elif code == 'refer' %}bg-indigo-500{% elif code == 'amended' %}bg-amber-500{% elif code == 'info' %}bg-blue-500{% else %}bg-gray-400 dark:bg-gray-500{% endif %}"></span>
                     <span class="text-gray-700 dark:text-gray-300">{{ label }}</span>
                 </div>
                 {% endfor %}
+            </div>
+            <div class="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <p class="text-xs font-medium text-gray-500 uppercase mb-2">Abschnitte</p>
+                <div class="space-y-2.5 text-sm">
+                    <div class="flex items-center gap-3">
+                        <span class="w-3.5 h-3.5 rounded shrink-0 bg-indigo-400 dark:bg-indigo-600"></span>
+                        <span class="text-gray-700 dark:text-gray-300">Position &amp; Ergebnis</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="w-3.5 h-3.5 rounded shrink-0 bg-sky-400 dark:bg-sky-600"></span>
+                        <span class="text-gray-700 dark:text-gray-300">Dokumente aus dem Ratsinformationssystem</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="w-3.5 h-3.5 rounded shrink-0 bg-violet-400 dark:bg-violet-600"></span>
+                        <span class="text-gray-700 dark:text-gray-300">Redebeitrag</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="w-3.5 h-3.5 rounded shrink-0 bg-amber-400 dark:bg-amber-600"></span>
+                        <span class="text-gray-700 dark:text-gray-300">Eigene Anlagen</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="w-3.5 h-3.5 rounded shrink-0 bg-emerald-400 dark:bg-emerald-600"></span>
+                        <span class="text-gray-700 dark:text-gray-300">Diskussion</span>
+                    </div>
+                </div>
             </div>
             <div class="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <p class="text-xs font-medium text-gray-500 uppercase mb-2">Symbole</p>
@@ -775,6 +931,10 @@
                     <div class="flex items-center gap-3">
                         <i data-lucide="message-circle" class="w-4 h-4 text-gray-400"></i>
                         <span class="text-gray-700 dark:text-gray-300">Beiträge in der Diskussion</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="message-square-text" class="w-4 h-4 text-sky-500"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Anmerkungen an einer PDF-Datei</span>
                     </div>
                     <div class="flex items-center gap-3">
                         <i data-lucide="git-branch" class="w-4 h-4 text-indigo-500"></i>
@@ -907,6 +1067,14 @@ function preparationApp() {
         attachToPaper: false,
         uploading: false,
 
+        // PDF-Vorschau (Muster RIS-Dokumentvorschau) + Anmerkungen
+        preview: { open: false, kind: null, id: null, title: '', baseSrc: '', frameSrc: '', externalUrl: '', source: null },
+        previewLoading: false,
+        annotations: [],
+        annotationsLoading: false,
+        newAnnotationText: '',
+        newAnnotationPage: 1,
+
         // Modals
         showLegend: false,
         showSummary: false,
@@ -934,6 +1102,16 @@ function preparationApp() {
             if (this.lastSavedAt) return 'Gespeichert ' + this.lastSavedAt;
             return 'Änderungen werden automatisch gespeichert';
         },
+        get annotationGroups() {
+            const byPage = {};
+            for (const a of this.annotations) {
+                (byPage[a.page] = byPage[a.page] || []).push(a);
+            }
+            return Object.keys(byPage)
+                .map(Number)
+                .sort((x, y) => x - y)
+                .map(page => ({ page, entries: byPage[page] }));
+        },
 
         // ---------- Init ----------
         init() {
@@ -952,6 +1130,7 @@ function preparationApp() {
         selectItem(itemId) {
             if (this.selectedItemId === itemId) return;
             this.flushTimers();
+            this.closePreview();
             this.selectedItemId = itemId;
             this.selectedItem = this.items.find(i => i.id === itemId) || null;
             if (!this.selectedItem) return;
@@ -1042,8 +1221,8 @@ function preparationApp() {
             return {
                 for: 'bg-green-500', against: 'bg-red-500', abstain: 'bg-gray-400',
                 defer: 'bg-purple-500', refer: 'bg-indigo-500', amended: 'bg-amber-500',
-                info: 'bg-blue-500', open: 'bg-gray-300 dark:bg-gray-600',
-            }[code] || 'bg-gray-300';
+                info: 'bg-blue-500', open: 'bg-gray-400 dark:bg-gray-500',
+            }[code] || 'bg-gray-400';
         },
         posChip(code) {
             return {
@@ -1382,6 +1561,96 @@ function preparationApp() {
             if (data && data.cross_positions && this.selectedItemId === item.id) {
                 item.crossPositions = data.cross_positions;
                 this.refreshIcons();
+            }
+        },
+
+        // ---------- PDF-Vorschau + Anmerkungen ----------
+        openPreview(kind, id, title, src, externalUrl, source) {
+            if (!kind || !id || !src) return;
+            this.preview = {
+                open: true,
+                kind,
+                id,
+                title: title || 'Dokument',
+                baseSrc: src,
+                frameSrc: src,
+                externalUrl: externalUrl || src,
+                source: source || null,
+            };
+            this.previewLoading = true;
+            this.annotations = [];
+            this.newAnnotationText = '';
+            this.newAnnotationPage = 1;
+            this.loadAnnotations();
+            this.refreshIcons();
+        },
+
+        previewDoc(doc) {
+            this.openPreview(doc.preview_kind, doc.preview_id, doc.title, doc.preview_url, doc.url, doc);
+        },
+
+        closePreview() {
+            this.preview.open = false;
+            this.preview.frameSrc = '';
+            this.previewLoading = false;
+        },
+
+        // Seitensprung über den PDF-Anker #page=N (funktioniert in den
+        // eingebetteten Viewern von Chrome/Firefox; das PDF kommt aus dem Cache)
+        previewGotoPage(page) {
+            const p = Math.max(1, parseInt(page, 10) || 1);
+            this.newAnnotationPage = p;
+            this.previewLoading = true;
+            this.preview.frameSrc = this.preview.baseSrc.split('#')[0] + '#page=' + p;
+        },
+
+        annotationsUrl() {
+            return `/work/${this.orgSlug}/meetings/annotations/${this.preview.kind}/${this.preview.id}/`;
+        },
+
+        async loadAnnotations() {
+            const kind = this.preview.kind;
+            const id = this.preview.id;
+            this.annotationsLoading = true;
+            try {
+                const data = await this.fetchJson(this.annotationsUrl());
+                if (data && this.preview.kind === kind && this.preview.id === id) {
+                    this.annotations = data.annotations || [];
+                    this.syncAnnotationCount(data.count);
+                    this.refreshIcons();
+                }
+            } finally {
+                this.annotationsLoading = false;
+            }
+        },
+
+        // Zähler-Badge an der Datei (RIS-Karte bzw. eigene Anlage) aktuell halten
+        syncAnnotationCount(count) {
+            if (typeof count !== 'number' || !this.preview.source) return;
+            this.preview.source.annotations = count;
+        },
+
+        async addAnnotation() {
+            if (!this.preview.open || !this.newAnnotationText.trim()) return;
+            const data = await this.apiSave(this.annotationsUrl(), {
+                page: Math.max(1, parseInt(this.newAnnotationPage, 10) || 1),
+                content: this.newAnnotationText.trim(),
+            });
+            if (data && data.success) {
+                this.newAnnotationText = '';
+                this.annotations.push(data.annotation);
+                this.annotations.sort((a, b) => a.page - b.page || (a.created_at < b.created_at ? -1 : 1));
+                this.syncAnnotationCount(data.count);
+                this.refreshIcons();
+            }
+        },
+
+        async deleteAnnotation(a) {
+            if (!await confirmAction({ title: 'Anmerkung löschen', message: 'Möchten Sie diese Anmerkung wirklich löschen?', confirmText: 'Löschen', variant: 'danger' })) return;
+            const data = await this.apiSave(`/work/${this.orgSlug}/meetings/annotations/${a.id}/delete/`, undefined, 'DELETE');
+            if (data && data.success) {
+                this.annotations = this.annotations.filter(x => x.id !== a.id);
+                this.syncAnnotationCount(this.annotations.length);
             }
         },
 

@@ -14,8 +14,9 @@ import json
 import re
 from datetime import datetime, timedelta
 
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
@@ -30,6 +31,7 @@ from .models import (
     AgendaPrivateNote,
     AgendaSpeechNote,
     AgendaSupplementaryDocument,
+    FileAnnotation,
     MeetingPreparation,
     PaperComment,
 )
@@ -46,6 +48,13 @@ def get_primary_paper_for_item(agenda_item):
         .first()
     )
     return consultation.paper if consultation else None
+
+
+def is_pdf_file(mime_type, *names):
+    """PDF-Erkennung wie im RIS-Bereich: mime_type, ersatzweise Dateiendung."""
+    if (mime_type or "").split(";")[0].strip().lower() == "application/pdf":
+        return True
+    return any(str(n or "").lower().endswith(".pdf") for n in names)
 
 
 def natural_sort_key(item):
@@ -454,7 +463,7 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
 
         # Ergänzende Dokumente: direkte TOP-Anhänge + über Gremien geteilte
         # Vorlagen-Anhänge der eigenen Organisation
-        from django.db.models import Q
+        from django.db.models import Count, Q
 
         all_paper_ids = {p.id for papers in papers_by_item.values() for p in papers}
         docs_by_item = {}
@@ -480,6 +489,17 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
                 if doc.id not in seen:
                     seen.add(doc.id)
                     docs_by_item.setdefault(target_id, []).append(doc)
+
+        # Anmerkungs-Zähler für RIS-Dateien (org-weit, wie Fraktionskommentare)
+        all_file_ids = {f.id for papers in papers_by_item.values() for p in papers for f in p.files.all()}
+        file_annotation_counts = {}
+        if all_file_ids:
+            file_annotation_counts = {
+                row["oparl_file"]: row["c"]
+                for row in FileAnnotation.objects.filter(organization=organization, oparl_file_id__in=all_file_ids)
+                .values("oparl_file")
+                .annotate(c=Count("id"))
+            }
 
         # Build prepared items
         prepared_items = []
@@ -573,7 +593,17 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
                     else None,
                     "hasFiles": item["has_files"],
                     "files": [
-                        {"name": f.name or f.file_name or "Dokument", "url": f.access_url or f.download_url}
+                        {
+                            "id": str(f.id),
+                            "name": f.name or f.file_name or "Dokument",
+                            "url": f.access_url or f.download_url,
+                            "previewUrl": reverse("insight_core:insight:file_proxy", args=[f.id]),
+                            "mimeType": f.mime_type or "",
+                            "isPdf": is_pdf_file(f.mime_type, f.file_name, f.name),
+                            "size": f.size_human,
+                            "pageCount": f.page_count or 0,
+                            "annotations": file_annotation_counts.get(f.id, 0),
+                        }
                         for p in item["papers"]
                         for f in p.files.all()
                         if f.access_url or f.download_url
@@ -1261,13 +1291,68 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
 
     permission_required = "meetings.prepare"
 
+    @staticmethod
+    def _preview_info(doc):
+        """
+        Vorschau-Informationen einer Anlage (Muster RIS-Inline-Vorschau).
+
+        PDF-Uploads werden über ihre Media-URL im iframe angezeigt
+        (Anmerkungs-Anker "doc"), OParl-Referenzen über den file_proxy
+        (Anmerkungs-Anker "oparl").
+        """
+        if doc.document_type == "file" and doc.file and is_pdf_file(doc.mime_type, doc.filename, doc.title):
+            return {
+                "is_pdf": True,
+                "preview_kind": "doc",
+                "preview_id": str(doc.id),
+                "preview_url": doc.display_url,
+            }
+        if doc.document_type == "oparl" and doc.oparl_file_id:
+            f = doc.oparl_file
+            if is_pdf_file(f.mime_type, f.file_name, f.name):
+                return {
+                    "is_pdf": True,
+                    "preview_kind": "oparl",
+                    "preview_id": str(f.id),
+                    "preview_url": reverse("insight_core:insight:file_proxy", args=[f.id]),
+                }
+        return {"is_pdf": False, "preview_kind": None, "preview_id": None, "preview_url": ""}
+
     def get(self, request, *args, **kwargs):
+        from django.db.models import Count
+
         item_id = self.kwargs.get("item_id")
         organization = self.organization
 
         agenda_item = get_object_or_404(OParlAgendaItem, id=item_id)
         # TOP-Anhänge + über Gremien geteilte Vorlagen-Anhänge der eigenen Org
-        docs = AgendaSupplementaryDocument.visible_for_item(organization, agenda_item)
+        docs = list(AgendaSupplementaryDocument.visible_for_item(organization, agenda_item))
+
+        # Anmerkungs-Zähler (beide Anker-Typen)
+        doc_counts = {}
+        oparl_counts = {}
+        if docs:
+            doc_counts = {
+                row["supplementary_document"]: row["c"]
+                for row in FileAnnotation.objects.filter(
+                    organization=organization, supplementary_document_id__in=[d.id for d in docs]
+                )
+                .values("supplementary_document")
+                .annotate(c=Count("id"))
+            }
+            oparl_ids = [d.oparl_file_id for d in docs if d.oparl_file_id]
+            if oparl_ids:
+                oparl_counts = {
+                    row["oparl_file"]: row["c"]
+                    for row in FileAnnotation.objects.filter(organization=organization, oparl_file_id__in=oparl_ids)
+                    .values("oparl_file")
+                    .annotate(c=Count("id"))
+                }
+
+        def annotation_count(d):
+            if d.document_type == "oparl" and d.oparl_file_id:
+                return oparl_counts.get(d.oparl_file_id, 0)
+            return doc_counts.get(d.id, 0)
 
         return JsonResponse(
             {
@@ -1283,6 +1368,8 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
                         "paper_id": str(d.paper_id) if d.paper_id else None,
                         "share_across_committees": d.share_across_committees,
                         "is_from_other_item": d.agenda_item_id != agenda_item.id,
+                        "annotations": annotation_count(d),
+                        **self._preview_info(d),
                     }
                     for d in docs
                 ]
@@ -1358,6 +1445,8 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
                     "document_type": doc.document_type,
                     "paper_id": str(doc.paper_id) if doc.paper_id else None,
                     "share_across_committees": doc.share_across_committees,
+                    "annotations": 0,
+                    **self._preview_info(doc),
                 },
             }
         )
@@ -1409,6 +1498,8 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
                     "document_type": "file",
                     "paper_id": str(doc.paper_id) if doc.paper_id else None,
                     "share_across_committees": doc.share_across_committees,
+                    "annotations": 0,
+                    **self._preview_info(doc),
                 },
             }
         )
@@ -1424,6 +1515,128 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
         if doc.file:
             doc.file.delete(save=False)
         doc.delete()
+        return JsonResponse({"success": True})
+
+
+def serialize_file_annotation(annotation, membership):
+    """FileAnnotation für die Kommentarspur der PDF-Vorschau serialisieren."""
+    return {
+        "id": str(annotation.id),
+        "page": annotation.page,
+        "content": annotation.get_content_decrypted(),
+        "author": annotation.author.user.get_display_name(),
+        "is_own": annotation.author_id == membership.id,
+        "created_at": annotation.created_at.isoformat(),
+    }
+
+
+class FileAnnotationAPIView(WorkViewMixin, View):
+    """
+    API: Seitenbezogene Anmerkungen direkt an PDF-Dateien.
+
+    Anker-Typen (anchor_type in der URL):
+    - "oparl": OParlFile aus dem Ratsinformationssystem — Org-Grenze über die
+      Körperschaften der Organisation (Datei muss zu einem verknüpften Body
+      gehören, sonst 404)
+    - "doc": eigene Anlage (AgendaSupplementaryDocument, organization=eigene
+      Org, sonst 404)
+
+    Anmerkungen sind org-weit sichtbar (wie Fraktionskommentare);
+    DELETE darf nur der Autor (sonst 403).
+    """
+
+    permission_required = "meetings.prepare"
+
+    def _resolve_anchor(self):
+        """Anker auflösen; außerhalb der Org-Grenze wird 404 geworfen."""
+        from django.db.models import Q
+
+        from insight_core.models import OParlFile
+
+        anchor_type = self.kwargs.get("anchor_type")
+        file_id = self.kwargs.get("file_id")
+        organization = self.organization
+
+        if anchor_type == "oparl":
+            bodies = organization.get_all_bodies() if organization else None
+            if bodies is None or not bodies.exists():
+                raise Http404
+            file_obj = get_object_or_404(
+                OParlFile.objects.filter(
+                    Q(body__in=bodies) | Q(paper__body__in=bodies) | Q(meeting__body__in=bodies)
+                ).distinct(),
+                id=file_id,
+            )
+            return {"oparl_file": file_obj}
+        if anchor_type == "doc":
+            doc = get_object_or_404(AgendaSupplementaryDocument, id=file_id, organization=organization)
+            return {"supplementary_document": doc}
+        raise Http404
+
+    def get(self, request, *args, **kwargs):
+        membership = self.membership
+        if not membership:
+            return JsonResponse({"error": "Unauthorized"}, status=403)
+
+        anchor = self._resolve_anchor()
+        annotations = list(
+            FileAnnotation.objects.filter(organization=self.organization, **anchor).select_related(
+                "author", "author__user"
+            )
+        )
+        return JsonResponse(
+            {
+                "annotations": [serialize_file_annotation(a, membership) for a in annotations],
+                "count": len(annotations),
+            }
+        )
+
+    def post(self, request, *args, **kwargs):
+        membership = self.membership
+        if not membership:
+            return JsonResponse({"error": "Unauthorized"}, status=403)
+
+        anchor = self._resolve_anchor()
+        data = json.loads(request.body) if request.content_type == "application/json" else request.POST
+
+        content = (data.get("content") or "").strip()
+        if not content:
+            return JsonResponse({"error": "Inhalt erforderlich"}, status=400)
+
+        try:
+            page = max(1, int(data.get("page") or 1))
+        except (TypeError, ValueError):
+            page = 1
+
+        annotation = FileAnnotation(
+            organization=self.organization,
+            author=membership,
+            page=page,
+            **anchor,
+        )
+        annotation.set_content_encrypted(content)
+        annotation.save()
+
+        count = FileAnnotation.objects.filter(organization=self.organization, **anchor).count()
+        return JsonResponse(
+            {
+                "success": True,
+                "annotation": serialize_file_annotation(annotation, membership),
+                "count": count,
+            }
+        )
+
+    def delete(self, request, *args, **kwargs):
+        membership = self.membership
+        if not membership:
+            return JsonResponse({"error": "Unauthorized"}, status=403)
+
+        annotation_id = self.kwargs.get("annotation_id")
+        # Org-Grenze strikt: fremde Organisationen sehen die Anmerkung nicht (404)
+        annotation = get_object_or_404(FileAnnotation, id=annotation_id, organization=self.organization)
+        if annotation.author_id != membership.id:
+            return JsonResponse({"error": "Nur der Autor darf löschen"}, status=403)
+        annotation.delete()
         return JsonResponse({"success": True})
 
 
