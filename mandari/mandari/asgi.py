@@ -19,7 +19,10 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mandari.settings")
 django_asgi_app = get_asgi_application()
 
 # Import WebSocket routing after Django is initialized
-from apps.work.motions.routing import websocket_urlpatterns  # noqa: E402
+from apps.work.meetings.routing import websocket_urlpatterns as meetings_websocket_urlpatterns  # noqa: E402
+from apps.work.motions.routing import websocket_urlpatterns as motions_websocket_urlpatterns  # noqa: E402
+
+websocket_urlpatterns = motions_websocket_urlpatterns + meetings_websocket_urlpatterns
 
 application = ProtocolTypeRouter(
     {

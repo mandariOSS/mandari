@@ -56,7 +56,12 @@ class MeetingPreparation(EncryptionMixin, models.Model):
         help_text="Org-weite Notizen zur Sitzung",
     )
 
-    # Status
+    # Status: seit dem Auto-Save-Umbau ABGELEITET statt manuell gesetzt.
+    # Sobald zu mindestens einem TOP inhaltlich gearbeitet wurde (Position,
+    # Notiz, Redebeitrag, Dokument), gilt die Sitzung als "in Vorbereitung".
+    # prepared_at/prepared_by werden beim ersten inhaltlichen Save automatisch
+    # gesetzt (siehe record_activity). Der alte "Als vorbereitet markieren"-
+    # Button ist deprecated, der Endpoint funktioniert aber weiterhin.
     is_prepared = models.BooleanField(default=False, verbose_name="Vorbereitet")
     prepared_at = models.DateTimeField(blank=True, null=True, verbose_name="Vorbereitet am")
     prepared_by = models.ForeignKey(
@@ -83,13 +88,38 @@ class MeetingPreparation(EncryptionMixin, models.Model):
     def get_encryption_organization(self):
         return self.organization
 
+    @classmethod
+    def record_activity(cls, organization, meeting, membership):
+        """
+        Markiert die Vorbereitung als "in Vorbereitung" (abgeleiteter Status).
+
+        Wird von allen Schreib-APIs nach einem inhaltlichen Save aufgerufen.
+        Idempotent: prepared_at/prepared_by werden nur beim ERSTEN
+        inhaltlichen Save gesetzt.
+        """
+        preparation = cls.objects.filter(organization=organization, meeting=meeting).first()
+        if preparation is None:
+            preparation = cls.objects.create(
+                organization=organization,
+                meeting=meeting,
+                membership=membership,
+            )
+        if not preparation.is_prepared:
+            from django.utils import timezone
+
+            preparation.is_prepared = True
+            preparation.prepared_at = timezone.now()
+            preparation.prepared_by = membership
+            preparation.save(update_fields=["is_prepared", "prepared_at", "prepared_by", "updated_at"])
+        return preparation
+
 
 # =============================================================================
 # Sektion 1: Beschluss / Position (org-weit)
 # =============================================================================
 
 
-class AgendaItemPosition(models.Model):
+class AgendaItemPosition(EncryptionMixin, models.Model):
     """
     Org-weite Position zu einem Tagesordnungspunkt.
 
@@ -103,9 +133,19 @@ class AgendaItemPosition(models.Model):
         ("against", "Ablehnung"),
         ("abstain", "Enthaltung"),
         ("defer", "Vertagen"),
-        ("refer", "Überweisen"),
-        ("amended", "Mit Änderungen"),
-        ("info", "Zur Kenntnis"),
+        ("refer", "Verweisen"),
+        ("amended", "Mit Änderungsantrag"),
+        ("info", "Kenntnisnahme"),
+    ]
+
+    OUTCOME_CHOICES = [
+        ("", "— noch kein Ergebnis —"),
+        ("as_position", "Wie unsere Position"),
+        ("accepted", "Angenommen"),
+        ("rejected", "Abgelehnt"),
+        ("referred", "Verwiesen"),
+        ("deferred", "Vertagt"),
+        ("noted", "Kenntnisnahme"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -140,6 +180,21 @@ class AgendaItemPosition(models.Model):
     is_final = models.BooleanField(
         default=False, verbose_name="Endgültig", help_text="Position als endgültig markieren"
     )
+
+    # Kurze Begründung der Position (org-sichtbar, verschlüsselt)
+    reasoning_encrypted = EncryptedTextField(
+        verbose_name="Begründung",
+        help_text="Kurze Begründung der Position (für die Organisation sichtbar)",
+    )
+
+    # Ergebnis der Beratung im Gremium (nachträglich erfasst)
+    outcome = models.CharField(
+        max_length=20,
+        choices=OUTCOME_CHOICES,
+        default="",
+        blank=True,
+        verbose_name="Ergebnis der Beratung",
+    )
     set_by = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.SET_NULL,
@@ -161,6 +216,101 @@ class AgendaItemPosition(models.Model):
     def __str__(self):
         org = self.organization.name if self.organization_id else "?"
         return f"{org} - {self.agenda_item} ({self.position})"
+
+    @property
+    def reasoning(self):
+        """Entschlüsselte Begründung für Templates."""
+        return self.get_reasoning_decrypted()
+
+    @classmethod
+    def get_cross_positions_for_items(cls, organization, agenda_items):
+        """
+        Positionen derselben Organisation aus ANDEREN Gremien/Sitzungen zur
+        selben Vorlage ("Entscheidungen übergreifend").
+
+        Für die übergebenen TOPs werden über OParlConsultation die beratenen
+        Vorlagen aufgelöst und alle Positionen der Organisation an TOPs
+        anderer Sitzungen zur selben Vorlage geliefert. Die Organisation
+        bleibt strikt die Grenze.
+
+        Returns:
+            dict: {agenda_item_id des aktuellen TOPs: [{gremium, sitzung,
+                   datum, meeting_id, position, position_display, outcome,
+                   outcome_display, reasoning, is_final}, ...]}
+        """
+        from django.db.models import Q
+
+        from insight_core.models import OParlConsultation
+
+        item_ids_by_ext = {item.external_id: item.id for item in agenda_items if item.external_id}
+        if not item_ids_by_ext:
+            return {}
+
+        # Vorlagen, die von den aktuellen TOPs beraten werden
+        paper_items = {}  # paper_id -> {aktuelle agenda_item ids}
+        for cons in OParlConsultation.objects.filter(
+            agenda_item_external_id__in=item_ids_by_ext.keys(),
+            paper__isnull=False,
+        ):
+            paper_items.setdefault(cons.paper_id, set()).add(item_ids_by_ext[cons.agenda_item_external_id])
+
+        if not paper_items:
+            return {}
+
+        # TOPs anderer Sitzungen, die dieselben Vorlagen beraten
+        sibling_papers = {}  # sibling external_id -> {paper ids}
+        sibling_consultations = (
+            OParlConsultation.objects.filter(paper_id__in=paper_items.keys())
+            .exclude(agenda_item_external_id__isnull=True)
+            .exclude(agenda_item_external_id="")
+            .exclude(agenda_item_external_id__in=item_ids_by_ext.keys())
+        )
+        for cons in sibling_consultations:
+            sibling_papers.setdefault(cons.agenda_item_external_id, set()).add(cons.paper_id)
+
+        if not sibling_papers:
+            return {}
+
+        # Eine Query: alle inhaltlich gefüllten Positionen der Org an den Geschwister-TOPs
+        positions = (
+            cls.objects.filter(
+                organization=organization,  # Organisation bleibt immer Grenze
+                agenda_item__external_id__in=sibling_papers.keys(),
+            )
+            .filter(~Q(position="open") | ~Q(outcome="") | Q(reasoning_encrypted__isnull=False))
+            .select_related("agenda_item", "agenda_item__meeting")
+            .prefetch_related("agenda_item__meeting__organizations")
+        )
+
+        result = {}
+        for pos in positions:
+            meeting = pos.agenda_item.meeting
+            committee = ""
+            if meeting:
+                orgs = meeting.organizations.all()
+                committee = ", ".join(o.short_name or o.name or "" for o in orgs) or (meeting.name or "")
+            entry = {
+                "gremium": committee,
+                "sitzung": meeting.get_display_name() if meeting else "",
+                "datum": meeting.start.isoformat() if meeting and meeting.start else "",
+                "meeting_id": str(meeting.id) if meeting else None,
+                "position": pos.position,
+                "position_display": pos.get_position_display(),
+                "outcome": pos.outcome,
+                "outcome_display": pos.get_outcome_display() if pos.outcome else "",
+                "reasoning": pos.get_reasoning_decrypted(),
+                "is_final": pos.is_final,
+            }
+            for paper_id in sibling_papers.get(pos.agenda_item.external_id, ()):
+                for current_item_id in paper_items.get(paper_id, ()):
+                    bucket = result.setdefault(current_item_id, [])
+                    if entry not in bucket:
+                        bucket.append(entry)
+
+        for entries in result.values():
+            entries.sort(key=lambda e: e["datum"] or "")
+
+        return result
 
 
 # =============================================================================
@@ -261,8 +411,23 @@ class AgendaSpeechNote(EncryptionMixin, models.Model):
     content = models.TextField(blank=True, verbose_name="Redetext (alt)")
     estimated_duration = models.PositiveIntegerField(default=0, verbose_name="Geschätzte Dauer (Sekunden)")
 
-    # Neues verschlüsseltes Feld
+    # Neues verschlüsseltes Feld. Enthält seit dem Sitzungsvorbereitungs-Umbau
+    # HTML (WYSIWYG-Editor). Beim Lesen/Schreiben wird nichts gestrippt;
+    # Ausgabe-Views (z.B. Teleprompter) rendern über die strikte Whitelist in
+    # apps.work.meetings.sanitize.
     content_encrypted = EncryptedTextField(verbose_name="Redebeitrag")
+
+    # "Dokument als Redebeitrag": Wenn gesetzt, liefert die API den Inhalt
+    # des verknüpften Dokuments (read-only, mit can_access-Prüfung) als
+    # Redetext statt content_encrypted.
+    linked_document = models.ForeignKey(
+        "work.Motion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="linked_speech_notes",
+        verbose_name="Verknüpftes Dokument",
+    )
 
     # Share-Toggle
     is_shared = models.BooleanField(default=False, verbose_name="Mit Fraktion teilen")
@@ -292,6 +457,16 @@ class AgendaSpeechNote(EncryptionMixin, models.Model):
 class AgendaItemNote(EncryptionMixin, models.Model):
     """
     Org-weite Diskussionsnotiz zu einem TOP.
+
+    ARCHITEKTUR-ENTSCHEIDUNG (Sitzungsvorbereitungs-Umbau):
+    PaperComment ist DER Diskussions-Thread für TOPs mit Vorlage - Kommentare
+    hängen an der Vorlage (OParlPaper) und sind damit automatisch im gesamten
+    Beratungsverlauf (allen Gremien) der Organisation sichtbar.
+    AgendaItemNote bleibt NUR für TOPs ohne Vorlage (org-lokal) bestehen.
+    Bestehende Notizen an TOPs mit Vorlage wurden per Datenmigration nach
+    PaperComment überführt; die Originale bleiben erhalten und sind über
+    ``migrated_to_paper_comment`` markiert (Queries schließen sie aus, um
+    Doppelanzeige zu vermeiden).
 
     Alle Mitglieder der Organisation sehen und können beitragen.
     Kann als Beschluss oder wichtig markiert werden.
@@ -348,6 +523,18 @@ class AgendaItemNote(EncryptionMixin, models.Model):
         help_text="Markiert diese Notiz als offiziellen Fraktionsbeschluss",
     )
     is_pinned = models.BooleanField(default=False, verbose_name="Angeheftet")
+
+    # Datenmigration: Notizen an TOPs mit Vorlage wurden nach PaperComment
+    # überführt. Das Original bleibt erhalten (nichts löschen!), wird aber
+    # markiert, damit UI-Queries es ausschließen (keine Doppelanzeige).
+    migrated_to_paper_comment = models.ForeignKey(
+        "work.PaperComment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="migrated_from_notes",
+        verbose_name="Migriert nach Vorgang-Kommentar",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -418,6 +605,7 @@ class AgendaItemNote(EncryptionMixin, models.Model):
             organization=organization,  # Organisation bleibt immer Grenze
             visibility="consulting",
             agenda_item__external_id__in=sibling_papers.keys(),
+            migrated_to_paper_comment__isnull=True,  # migrierte laufen über PaperComment
         ).select_related("author", "author__user", "agenda_item", "agenda_item__meeting")
 
         for note in notes:
@@ -473,6 +661,24 @@ class AgendaSupplementaryDocument(models.Model):
         verbose_name="Tagesordnungspunkt",
     )
 
+    # Anker an der VORLAGE (statt nur am TOP): Dokumente mit paper-Anker
+    # können über den gesamten Beratungsverlauf geteilt werden.
+    # agenda_item bleibt als Ursprungs-TOP gesetzt.
+    paper = models.ForeignKey(
+        "insight_core.OParlPaper",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="work_supplementary_documents",
+        verbose_name="Vorlage",
+    )
+    share_across_committees = models.BooleanField(
+        default=False,
+        verbose_name="In allen beratenden Gremien sichtbar",
+        help_text="Dokument in den Vorbereitungen aller Gremien anzeigen, die diese Vorlage beraten "
+        "(nur innerhalb der eigenen Organisation)",
+    )
+
     # Typ
     document_type = models.CharField(
         max_length=10,
@@ -524,6 +730,34 @@ class AgendaSupplementaryDocument(models.Model):
         elif self.document_type == "oparl" and self.oparl_file:
             return self.oparl_file.access_url
         return ""
+
+    @classmethod
+    def visible_for_item(cls, organization, agenda_item, paper_ids=None):
+        """
+        Sichtbare Dokumente einer Vorbereitung zu einem TOP.
+
+        Liefert: direkte TOP-Anhänge der Organisation PLUS Vorlagen-Anhänge
+        derselben Organisation mit share_across_committees=True zu den vom
+        TOP beratenen Vorlagen (auch wenn sie in der Vorbereitung eines
+        anderen Gremiums hochgeladen wurden). Ohne Flag bleibt ein
+        Vorlagen-Anhang auf seinen Ursprungs-TOP beschränkt.
+        Die ORG-GRENZE ist strikt: fremde Organisationen sehen nie etwas.
+        """
+        from django.db.models import Q
+
+        if paper_ids is None:
+            paper_ids = [p.id for p in agenda_item.get_papers()]
+
+        q = Q(agenda_item=agenda_item)
+        if paper_ids:
+            q |= Q(paper_id__in=paper_ids, share_across_committees=True)
+
+        return (
+            cls.objects.filter(organization=organization)
+            .filter(q)
+            .select_related("added_by__user", "oparl_file")
+            .distinct()
+        )
 
 
 # =============================================================================

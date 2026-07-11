@@ -85,10 +85,10 @@
          @mouseenter="showControls = true" @mouseleave="showControls = false"
          @click="togglePlay()">
         <div class="max-w-4xl mx-auto overflow-hidden" :style="{ height: containerHeight + 'px' }">
-            <div class="teleprompter-text text-center whitespace-pre-wrap leading-relaxed"
+            {# speech_content ist server-seitig über die strikte HTML-Whitelist bereinigt (sanitize_speech_html) #}
+            <div class="teleprompter-text text-center leading-relaxed"
                  :style="{ fontSize: fontSize + '%', transform: 'translateY(' + scrollPosition + 'px)' }"
-                 x-ref="content">{% if speech_note %}{{ speech_note.content }}{% else %}Keine Redenotizen vorhanden.
-
+                 x-ref="content">{% if speech_content %}{{ speech_content|safe }}{% else %}Keine Redenotizen vorhanden.
 Gehen Sie zurück zur Sitzungsvorbereitung und erstellen Sie Redenotizen für diesen Tagesordnungspunkt.{% endif %}</div>
         </div>
     </div>

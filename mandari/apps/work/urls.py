@@ -103,6 +103,18 @@ urlpatterns = [
         meetings_views.SpeechNoteAPIView.as_view(),
         name="meeting_speech_api",
     ),
+    # Verknüpfbare Dokumente für "Dokument als Redebeitrag"
+    path(
+        "<slug:org_slug>/meetings/speech-documents/",
+        meetings_views.SpeechLinkableDocumentsAPIView.as_view(),
+        name="meeting_speech_documents_api",
+    ),
+    # Teleprompter (eigener Redebeitrag, HTML-sanitized)
+    path(
+        "<slug:org_slug>/meetings/<uuid:meeting_id>/teleprompter/<uuid:item_id>/",
+        meetings_views.TeleprompterView.as_view(),
+        name="meeting_teleprompter",
+    ),
     # Supplementary documents (links + uploads + OParl refs)
     path(
         "<slug:org_slug>/meetings/<uuid:meeting_id>/supplementary/<uuid:item_id>/",

@@ -23,6 +23,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting, OParlOrganization
 
+from .consumers import broadcast_preparation_event
 from .models import (
     AgendaItemNote,
     AgendaItemPosition,
@@ -30,7 +31,21 @@ from .models import (
     AgendaSpeechNote,
     AgendaSupplementaryDocument,
     MeetingPreparation,
+    PaperComment,
 )
+from .sanitize import sanitize_speech_html
+
+
+def get_primary_paper_for_item(agenda_item):
+    """Erste Vorlage eines TOPs (über OParlConsultation) oder None."""
+    if not agenda_item.external_id:
+        return None
+    consultation = (
+        OParlConsultation.objects.filter(agenda_item_external_id=agenda_item.external_id, paper__isnull=False)
+        .select_related("paper")
+        .first()
+    )
+    return consultation.paper if consultation else None
 
 
 def natural_sort_key(item):
@@ -410,17 +425,19 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         for sn in AgendaSpeechNote.objects.filter(
             organization=organization,
             agenda_item__in=agenda_items,
-        ).select_related("author", "author__user"):
+        ).select_related("author", "author__user", "linked_document"):
             if sn.author == membership:
                 own_speeches_by_item[sn.agenda_item_id] = sn
             elif sn.is_shared:
                 shared_speeches_by_item.setdefault(sn.agenda_item_id, []).append(sn)
 
-        # Org-weite Diskussionsnotizen
+        # Org-weite Diskussionsnotizen (nach PaperComment migrierte ausschließen,
+        # sonst Doppelanzeige mit dem Vorlagen-Thread)
         notes_by_item = {}
         for note in AgendaItemNote.objects.filter(
             organization=organization,
             agenda_item__in=agenda_items,
+            migrated_to_paper_comment__isnull=True,
         ).select_related("author", "author__user"):
             notes_by_item.setdefault(note.agenda_item_id, []).append(note)
 
@@ -431,13 +448,38 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         ).items():
             notes_by_item.setdefault(item_id, []).extend(consulting_notes)
 
-        # Ergänzende Dokumente
+        # Positionen derselben Org aus anderen Gremien zur selben Vorlage
+        # ("Entscheidungen übergreifend")
+        cross_positions_by_item = AgendaItemPosition.get_cross_positions_for_items(organization, agenda_items)
+
+        # Ergänzende Dokumente: direkte TOP-Anhänge + über Gremien geteilte
+        # Vorlagen-Anhänge der eigenen Organisation
+        from django.db.models import Q
+
+        all_paper_ids = {p.id for papers in papers_by_item.values() for p in papers}
         docs_by_item = {}
-        for doc in AgendaSupplementaryDocument.objects.filter(
-            organization=organization,
-            agenda_item__in=agenda_items,
-        ).select_related("added_by__user", "oparl_file"):
-            docs_by_item.setdefault(doc.agenda_item_id, []).append(doc)
+        seen_doc_ids_by_item = {}
+        docs_qs = (
+            AgendaSupplementaryDocument.objects.filter(organization=organization)
+            .filter(Q(agenda_item__in=agenda_items) | Q(paper_id__in=all_paper_ids, share_across_committees=True))
+            .select_related("added_by__user", "oparl_file")
+        )
+        item_ids = {item.id for item in agenda_items}
+        items_by_paper = {}
+        for item in agenda_items:
+            for p in papers_by_item.get(item.id, []):
+                items_by_paper.setdefault(p.id, []).append(item.id)
+        for doc in docs_qs:
+            targets = set()
+            if doc.agenda_item_id in item_ids:
+                targets.add(doc.agenda_item_id)
+            if doc.paper_id and doc.share_across_committees:
+                targets.update(items_by_paper.get(doc.paper_id, []))
+            for target_id in targets:
+                seen = seen_doc_ids_by_item.setdefault(target_id, set())
+                if doc.id not in seen:
+                    seen.add(doc.id)
+                    docs_by_item.setdefault(target_id, []).append(doc)
 
         # Build prepared items
         prepared_items = []
@@ -479,6 +521,7 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         context["preparation"] = preparation
         context["prepared_items"] = prepared_items
         context["position_choices"] = AgendaItemPosition.POSITION_CHOICES
+        context["outcome_choices"] = AgendaItemPosition.OUTCOME_CHOICES
         context["visibility_choices"] = AgendaItemNote.VISIBILITY_CHOICES
         context["stats"] = stats
 
@@ -492,14 +535,27 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
                     # Position (org-weit)
                     "position": item["position"].position if item["position"] else "open",
                     "isFinal": item["position"].is_final if item["position"] else False,
+                    "reasoning": item["position"].get_reasoning_decrypted() if item["position"] else "",
+                    "outcome": item["position"].outcome if item["position"] else "",
                     "setBy": item["position"].set_by.user.get_display_name()
                     if item["position"] and item["position"].set_by
                     else None,
+                    # Positionen derselben Org aus anderen Gremien zur selben Vorlage
+                    "crossPositions": cross_positions_by_item.get(item["item"].id, []),
                     # Private Notiz (pro User)
                     "privateNote": item["private_note"].get_content_decrypted() if item["private_note"] else "",
                     # Redebeitrag (pro User)
+                    "hasSpeechNote": bool(item["own_speech"]),
+                    "speechTitle": item["own_speech"].title if item["own_speech"] else "",
                     "speechContent": item["own_speech"].get_content_decrypted() if item["own_speech"] else "",
+                    "speechDuration": item["own_speech"].estimated_duration if item["own_speech"] else 0,
                     "speechShared": item["own_speech"].is_shared if item["own_speech"] else False,
+                    "speechLinkedDocument": {
+                        "id": str(item["own_speech"].linked_document_id),
+                        "title": item["own_speech"].linked_document.title,
+                    }
+                    if item["own_speech"] and item["own_speech"].linked_document_id
+                    else None,
                     "sharedSpeeches": [
                         {"author": s.author.user.get_display_name(), "content": s.get_content_decrypted()}
                         for s in item["shared_speeches"]
@@ -522,7 +578,7 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
                         for f in p.files.all()
                         if f.access_url or f.download_url
                     ],
-                    # Dokumente
+                    # Dokumente (TOP-Anhänge + geteilte Vorlagen-Anhänge)
                     "documents": [
                         {
                             "id": str(d.id),
@@ -530,8 +586,16 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
                             "url": d.display_url,
                             "type": d.document_type,
                             "addedBy": d.added_by.user.get_display_name(),
+                            "paperId": str(d.paper_id) if d.paper_id else None,
+                            "sharedAcrossCommittees": d.share_across_committees,
                         }
                         for d in item["documents"]
+                    ],
+                    # Alias für Altbestand im Template (documentLinks)
+                    "documentLinks": [
+                        {"id": str(d.id), "title": d.title, "url": d.display_url}
+                        for d in item["documents"]
+                        if d.document_type == "link"
                     ],
                     "notesCount": len(item["notes"]),
                 }
@@ -580,7 +644,19 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         return consultations_by_paper
 
     def post(self, request, *args, **kwargs):
-        """Handle form submissions (mark as prepared, save general notes)."""
+        """
+        Form-/JSON-Submissions verarbeiten.
+
+        JSON (Auto-Save der UI): {"notes": "..."} speichert die org-weiten
+        Sitzungsnotizen idempotent und liefert JSON zurück.
+
+        Form-Actions:
+        - save_notes: org-weite Notizen speichern
+        - mark_prepared / unmark_prepared: DEPRECATED — is_prepared wird
+          inzwischen aus der inhaltlichen Arbeit abgeleitet (record_activity).
+          Die Actions bleiben funktionsfähig, bis die UI (Etappe 2) den
+          Button entfernt.
+        """
         meeting_id = self.kwargs.get("meeting_id")
         organization = self.organization
         membership = self.membership
@@ -591,6 +667,17 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
 
         meeting = get_object_or_404(OParlMeeting, id=meeting_id, body__in=bodies)
 
+        # JSON-Auto-Save der org-weiten Sitzungsnotizen
+        if request.content_type == "application/json":
+            if not membership:
+                return JsonResponse({"error": "Unauthorized"}, status=403)
+            data = json.loads(request.body)
+            if "notes" in data:
+                preparation = MeetingPreparation.record_activity(organization, meeting, membership)
+                preparation.set_notes_encrypted(data.get("notes") or "")
+                preparation.save(update_fields=["notes_encrypted", "updated_at"])
+            return JsonResponse({"success": True})
+
         if membership:
             preparation = MeetingPreparation.objects.filter(
                 organization=organization,
@@ -600,11 +687,13 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
             if preparation:
                 action = request.POST.get("action")
                 if action == "mark_prepared":
+                    # DEPRECATED: bleibt für Alt-UI funktionsfähig
                     preparation.is_prepared = True
                     preparation.prepared_at = timezone.now()
                     preparation.prepared_by = membership
                     preparation.save()
                 elif action == "unmark_prepared":
+                    # DEPRECATED: bleibt für Alt-UI funktionsfähig
                     preparation.is_prepared = False
                     preparation.prepared_at = None
                     preparation.prepared_by = None
@@ -613,6 +702,8 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
                     notes = request.POST.get("notes", "")
                     preparation.set_notes_encrypted(notes)
                     preparation.save()
+                    if notes.strip():
+                        MeetingPreparation.record_activity(organization, meeting, membership)
 
         return redirect("work:meeting_prepare", org_slug=organization.slug, meeting_id=meeting_id)
 
@@ -623,22 +714,65 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
 
 
 class AgendaPositionAPIView(WorkViewMixin, View):
-    """API: Org-weite Position zu einem TOP setzen."""
+    """
+    API: Org-weite Position zu einem TOP (Position, Begründung, Ergebnis).
+
+    POST unterstützt partielle, idempotente Saves (Debounce-Auto-Save):
+    nur die übergebenen Felder position / is_final / reasoning / outcome
+    werden geändert.
+
+    GET liefert die eigene Position plus die Positionen derselben
+    Organisation aus anderen Gremien/Sitzungen zur selben Vorlage
+    ("Entscheidungen übergreifend").
+    """
 
     permission_required = "meetings.prepare"
 
-    def post(self, request, *args, **kwargs):
+    def _get_item(self):
         meeting_id = self.kwargs.get("meeting_id")
         item_id = self.kwargs.get("item_id")
         organization = self.organization
-        membership = self.membership
 
         bodies = organization.get_all_bodies() if organization else None
-        if bodies is None or not bodies.exists() or not membership:
-            return JsonResponse({"error": "Unauthorized"}, status=403)
+        if bodies is None or not bodies.exists():
+            return None, None
 
         meeting = get_object_or_404(OParlMeeting, id=meeting_id, body__in=bodies)
         agenda_item = get_object_or_404(OParlAgendaItem, id=item_id, meeting=meeting)
+        return meeting, agenda_item
+
+    def get(self, request, *args, **kwargs):
+        organization = self.organization
+        membership = self.membership
+
+        meeting, agenda_item = self._get_item()
+        if agenda_item is None or not membership:
+            return JsonResponse({"error": "Unauthorized"}, status=403)
+
+        position = AgendaItemPosition.objects.filter(organization=organization, agenda_item=agenda_item).first()
+        cross = AgendaItemPosition.get_cross_positions_for_items(organization, [agenda_item])
+
+        return JsonResponse(
+            {
+                "position": {
+                    "position": position.position if position else "open",
+                    "position_display": position.get_position_display() if position else "Noch offen",
+                    "is_final": position.is_final if position else False,
+                    "reasoning": position.get_reasoning_decrypted() if position else "",
+                    "outcome": position.outcome if position else "",
+                    "outcome_display": position.get_outcome_display() if position and position.outcome else "",
+                },
+                "cross_positions": cross.get(agenda_item.id, []),
+            }
+        )
+
+    def post(self, request, *args, **kwargs):
+        organization = self.organization
+        membership = self.membership
+
+        meeting, agenda_item = self._get_item()
+        if agenda_item is None or not membership:
+            return JsonResponse({"error": "Unauthorized"}, status=403)
 
         # Org-weite Position (eine pro Org+TOP)
         position, _ = AgendaItemPosition.objects.get_or_create(
@@ -649,27 +783,66 @@ class AgendaPositionAPIView(WorkViewMixin, View):
         data = json.loads(request.body) if request.content_type == "application/json" else request.POST
 
         if "position" in data:
+            if data["position"] not in dict(AgendaItemPosition.POSITION_CHOICES):
+                return JsonResponse({"error": "Ungültige Position"}, status=400)
             position.position = data["position"]
         if "is_final" in data:
             position.is_final = data["is_final"] in [True, "true", "1", "on"]
+        if "reasoning" in data:
+            position.set_reasoning_encrypted(data.get("reasoning") or "")
+        if "outcome" in data:
+            if data["outcome"] not in dict(AgendaItemPosition.OUTCOME_CHOICES):
+                return JsonResponse({"error": "Ungültiges Ergebnis"}, status=400)
+            position.outcome = data["outcome"]
         position.set_by = membership
         position.save()
 
-        return JsonResponse(
+        # Abgeleiteter Vorbereitungsstatus: erster inhaltlicher Save
+        if position.position != "open" or position.outcome or position.reasoning_encrypted:
+            MeetingPreparation.record_activity(organization, meeting, membership)
+
+        payload = {
+            "success": True,
+            "position": position.position,
+            "position_display": position.get_position_display(),
+            "is_final": position.is_final,
+            "reasoning": position.get_reasoning_decrypted(),
+            "outcome": position.outcome,
+            "outcome_display": position.get_outcome_display() if position.outcome else "",
+            "set_by": membership.user.get_display_name(),
+        }
+
+        # Echtzeit-Broadcast (Polling bleibt Fallback)
+        paper = get_primary_paper_for_item(agenda_item)
+        broadcast_preparation_event(
+            organization.id,
             {
-                "success": True,
-                "position": position.position,
-                "position_display": position.get_position_display(),
-                "is_final": position.is_final,
-                "set_by": membership.user.get_display_name(),
-            }
+                "type": "position",
+                "event": "updated",
+                "agenda_item_id": str(agenda_item.id),
+                "position": {k: v for k, v in payload.items() if k != "success"},
+            },
+            agenda_item_id=agenda_item.id,
+            paper_id=paper.id if paper else None,
         )
+
+        return JsonResponse(payload)
 
 
 class PrivateNoteAPIView(WorkViewMixin, View):
-    """API: Private Notiz pro User pro TOP."""
+    """API: Private Notiz pro User pro TOP (idempotenter Auto-Save)."""
 
     permission_required = "meetings.prepare"
+
+    def get(self, request, *args, **kwargs):
+        item_id = self.kwargs.get("item_id")
+        membership = self.membership
+
+        if not membership:
+            return JsonResponse({"error": "Unauthorized"}, status=403)
+
+        note = AgendaPrivateNote.objects.filter(author=membership, agenda_item_id=item_id).first()
+        return JsonResponse({"content": note.get_content_decrypted() if note else ""})
 
     def post(self, request, *args, **kwargs):
         item_id = self.kwargs.get("item_id")
@@ -691,13 +864,62 @@ class PrivateNoteAPIView(WorkViewMixin, View):
         note.set_content_encrypted(content)
         note.save()
 
+        if content.strip():
+            MeetingPreparation.record_activity(organization, agenda_item.meeting, membership)
+
         return JsonResponse({"success": True})
 
 
 class SpeechNoteAPIView(WorkViewMixin, View):
-    """API: Redebeitrag (pro User, mit Share-Toggle)."""
+    """
+    API: Redebeitrag (pro User, mit Share-Toggle).
+
+    POST unterstützt partielle, idempotente Saves: title / content /
+    estimated_duration / is_shared / linked_document sind einzeln patchbar.
+    content enthält HTML (WYSIWYG); beim Lesen/Schreiben wird nichts
+    gestrippt — nur Ausgabe-Views (Teleprompter) sanitizen.
+
+    "Dokument als Redebeitrag": linked_document verknüpft ein work.Motion-
+    Dokument; die API liefert dessen Inhalt read-only als Redetext
+    (can_access-Prüfung, sonst 403).
+    """
 
     permission_required = "meetings.prepare"
+
+    @staticmethod
+    def _serialize(note, membership):
+        """Redebeitrag inkl. aufgelöstem linked_document-Inhalt serialisieren."""
+        if note is None:
+            return {
+                "content": "",
+                "title": "",
+                "estimated_duration": 0,
+                "is_shared": False,
+                "linked_document": None,
+                "content_readonly": False,
+            }
+        linked = None
+        content = note.get_content_decrypted()
+        readonly = False
+        if note.linked_document_id:
+            doc = note.linked_document
+            if doc.can_access(membership):
+                linked = {"id": str(doc.id), "title": doc.title}
+                content = doc.get_content_decrypted()
+                readonly = True
+            else:
+                # Verknüpfung existiert, aber kein Zugriff (z.B. entzogene Freigabe)
+                linked = {"id": str(doc.id), "title": None, "access": False}
+                content = ""
+                readonly = True
+        return {
+            "content": content,
+            "title": note.title,
+            "estimated_duration": note.estimated_duration,
+            "is_shared": note.is_shared,
+            "linked_document": linked,
+            "content_readonly": readonly,
+        }
 
     def get(self, request, *args, **kwargs):
         item_id = self.kwargs.get("item_id")
@@ -710,7 +932,11 @@ class SpeechNoteAPIView(WorkViewMixin, View):
         agenda_item = get_object_or_404(OParlAgendaItem, id=item_id)
 
         # Eigener Redebeitrag
-        own = AgendaSpeechNote.objects.filter(author=membership, agenda_item=agenda_item).first()
+        own = (
+            AgendaSpeechNote.objects.filter(author=membership, agenda_item=agenda_item)
+            .select_related("linked_document")
+            .first()
+        )
         # Geteilte Redebeiträge anderer
         shared = (
             AgendaSpeechNote.objects.filter(
@@ -724,10 +950,7 @@ class SpeechNoteAPIView(WorkViewMixin, View):
 
         return JsonResponse(
             {
-                "own": {
-                    "content": own.get_content_decrypted() if own else "",
-                    "is_shared": own.is_shared if own else False,
-                },
+                "own": self._serialize(own, membership),
                 "shared": [
                     {"author": s.author.user.get_display_name(), "content": s.get_content_decrypted()} for s in shared
                 ],
@@ -735,6 +958,8 @@ class SpeechNoteAPIView(WorkViewMixin, View):
         )
 
     def post(self, request, *args, **kwargs):
+        from apps.work.motions.models import Motion
+
         item_id = self.kwargs.get("item_id")
         organization = self.organization
         membership = self.membership
@@ -745,20 +970,146 @@ class SpeechNoteAPIView(WorkViewMixin, View):
         agenda_item = get_object_or_404(OParlAgendaItem, id=item_id)
         data = json.loads(request.body) if request.content_type == "application/json" else request.POST
 
+        # Verknüpftes Dokument VOR dem Anlegen prüfen (403 ohne Seiteneffekt)
+        linked_document = None
+        if "linked_document" in data and data.get("linked_document"):
+            linked_document = Motion.objects.filter(id=data["linked_document"], organization=organization).first()
+            if linked_document is None or not linked_document.can_access(membership):
+                return JsonResponse({"error": "Kein Zugriff auf dieses Dokument"}, status=403)
+
         note, _ = AgendaSpeechNote.objects.get_or_create(
             author=membership,
             agenda_item=agenda_item,
             defaults={"organization": organization},
         )
-        note.set_content_encrypted(data.get("content", ""))
-        note.is_shared = data.get("is_shared", False) in [True, "true", "1", "on"]
+
+        # Partielle Saves: nur übergebene Felder ändern
+        if "content" in data:
+            note.set_content_encrypted(data.get("content") or "")
+        if "title" in data:
+            note.title = data.get("title") or ""
+        if "estimated_duration" in data:
+            try:
+                note.estimated_duration = max(0, int(data.get("estimated_duration") or 0))
+            except (TypeError, ValueError):
+                pass
+        if "is_shared" in data:
+            note.is_shared = data.get("is_shared") in [True, "true", "1", "on"]
+        if "linked_document" in data:
+            note.linked_document = linked_document
         note.save()
 
-        return JsonResponse({"success": True, "is_shared": note.is_shared})
+        MeetingPreparation.record_activity(organization, agenda_item.meeting, membership)
+
+        return JsonResponse(
+            {
+                "success": True,
+                "is_shared": note.is_shared,
+                "speech": self._serialize(note, membership),
+            }
+        )
+
+    def delete(self, request, *args, **kwargs):
+        item_id = self.kwargs.get("item_id")
+        membership = self.membership
+
+        if not membership:
+            return JsonResponse({"error": "Unauthorized"}, status=403)
+
+        AgendaSpeechNote.objects.filter(author=membership, agenda_item_id=item_id).delete()
+        return JsonResponse({"success": True})
+
+
+class SpeechLinkableDocumentsAPIView(WorkViewMixin, View):
+    """API: Dokumente der Organisation, die als Redebeitrag verknüpfbar sind."""
+
+    permission_required = "meetings.prepare"
+
+    def get(self, request, *args, **kwargs):
+        from apps.work.motions.models import Motion
+
+        membership = self.membership
+        if not membership:
+            return JsonResponse({"error": "Unauthorized"}, status=403)
+
+        q = request.GET.get("q", "").strip()
+        docs = Motion.visible_to(membership).order_by("-updated_at")
+        if q:
+            docs = docs.filter(title__icontains=q)
+
+        return JsonResponse(
+            {
+                "documents": [
+                    {"id": str(d.id), "title": d.title, "updated_at": d.updated_at.isoformat()} for d in docs[:50]
+                ]
+            }
+        )
+
+
+def serialize_paper_comment_as_note(comment, membership):
+    """
+    PaperComment im Format des TOP-Diskussions-Threads serialisieren.
+
+    ARCHITEKTUR: PaperComment ist DER Thread für TOPs mit Vorlage.
+    is_recommendation und is_decision heißen im UI (Etappe 2) einheitlich
+    "Position der Fraktion" — beide Flags bleiben im Backend erhalten.
+    """
+    return {
+        "id": str(comment.id),
+        "content": comment.get_content_decrypted(),
+        "is_decision": comment.is_recommendation,
+        "is_recommendation": comment.is_recommendation,
+        "is_pinned": False,
+        "author": comment.author.user.get_display_name(),
+        "organization": comment.organization.name,
+        "is_own": comment.author == membership,
+        "is_own_org": comment.organization_id == membership.organization_id,
+        "created_at": comment.created_at.isoformat(),
+        "visibility": comment.visibility,
+        "visibility_display": comment.get_visibility_display(),
+        "origin": None,
+        "source": "paper_comment",
+    }
+
+
+def serialize_agenda_note(note, membership, origin_meeting=None):
+    """AgendaItemNote für den Diskussions-Thread serialisieren."""
+    origin = None
+    if origin_meeting is not None:
+        label = origin_meeting.get_display_name()
+        if origin_meeting.start:
+            label = f"{label}, {timezone.localtime(origin_meeting.start).strftime('%d.%m.%Y')}"
+        origin = {"meeting_id": str(origin_meeting.id), "label": label}
+    return {
+        "id": str(note.id),
+        "content": note.get_content_decrypted(),
+        "is_decision": note.is_decision,
+        "is_recommendation": note.is_decision,
+        "is_pinned": note.is_pinned,
+        "author": note.author.user.get_display_name(),
+        "is_own": note.author == membership,
+        "created_at": note.created_at.isoformat(),
+        "visibility": note.visibility,
+        "visibility_display": note.get_visibility_display(),
+        "origin": origin,
+        "source": "agenda_note",
+    }
 
 
 class AgendaNotesAPIView(WorkViewMixin, View):
-    """API: Org-weite Fraktionsdiskussion pro TOP."""
+    """
+    API: Einheitlicher Diskussions-Thread pro TOP.
+
+    ARCHITEKTUR-ENTSCHEIDUNG:
+    - TOP MIT Vorlage: Der Thread ist PaperComment (hängt am OParlPaper und
+      ist damit automatisch im gesamten Beratungsverlauf sichtbar). POST
+      legt hier einen PaperComment an, GET liefert die sichtbaren
+      PaperComments plus (noch nicht migrierte) Alt-Notizen.
+    - TOP OHNE Vorlage: AgendaItemNote (org-lokal) wie bisher.
+
+    Nach jedem Speichern wird in die Channels-Gruppen gebroadcastet
+    (Echtzeit); das 5-Sekunden-Polling der UI bleibt Fallback.
+    """
 
     permission_required = "meetings.prepare"
 
@@ -770,15 +1121,21 @@ class AgendaNotesAPIView(WorkViewMixin, View):
         if not membership:
             return JsonResponse({"error": "Unauthorized"}, status=403)
 
+        agenda_item = OParlAgendaItem.objects.filter(id=item_id).first()
+
+        # Alt-Notizen (migrierte ausschließen — deren Inhalt kommt als PaperComment)
         notes = list(
-            AgendaItemNote.objects.filter(organization=organization, agenda_item_id=item_id)
+            AgendaItemNote.objects.filter(
+                organization=organization,
+                agenda_item_id=item_id,
+                migrated_to_paper_comment__isnull=True,
+            )
             .select_related("author", "author__user")
             .order_by("-is_pinned", "-is_decision", "-created_at")
         )
 
         # Consulting-Notizen aus Vorbereitungen anderer Gremien zur selben
         # Vorlage (gleiche Organisation)
-        agenda_item = OParlAgendaItem.objects.filter(id=item_id).first()
         foreign_notes = []
         if agenda_item:
             consulting_by_item = AgendaItemNote.get_consulting_notes_for_items(organization, [agenda_item])
@@ -788,32 +1145,19 @@ class AgendaNotesAPIView(WorkViewMixin, View):
                 reverse=True,
             )
 
-        def serialize(note, origin_meeting=None):
-            origin = None
-            if origin_meeting is not None:
-                label = origin_meeting.get_display_name()
-                if origin_meeting.start:
-                    label = f"{label}, {timezone.localtime(origin_meeting.start).strftime('%d.%m.%Y')}"
-                origin = {"meeting_id": str(origin_meeting.id), "label": label}
-            return {
-                "id": str(note.id),
-                "content": note.get_content_decrypted(),
-                "is_decision": note.is_decision,
-                "is_pinned": note.is_pinned,
-                "author": note.author.user.get_display_name(),
-                "is_own": note.author == membership,
-                "created_at": note.created_at.isoformat(),
-                "visibility": note.visibility,
-                "visibility_display": note.get_visibility_display(),
-                "origin": origin,
-            }
+        result = [serialize_agenda_note(n, membership) for n in notes] + [
+            serialize_agenda_note(n, membership, origin_meeting=n.origin_meeting) for n in foreign_notes
+        ]
 
-        return JsonResponse(
-            {
-                "notes": [serialize(n) for n in notes]
-                + [serialize(n, origin_meeting=n.origin_meeting) for n in foreign_notes]
-            }
-        )
+        # TOP mit Vorlage: PaperComments sind der eigentliche Thread
+        paper = get_primary_paper_for_item(agenda_item) if agenda_item else None
+        if paper:
+            visible_comments = PaperComment.get_visible_comments_for_paper(paper, membership)
+            result = [serialize_paper_comment_as_note(c, membership) for c in visible_comments] + result
+
+        result.sort(key=lambda n: n["created_at"], reverse=True)
+
+        return JsonResponse({"notes": result})
 
     def post(self, request, *args, **kwargs):
         meeting_id = self.kwargs.get("meeting_id")
@@ -841,27 +1185,44 @@ class AgendaNotesAPIView(WorkViewMixin, View):
         if visibility not in dict(AgendaItemNote.VISIBILITY_CHOICES):
             visibility = "organization"
 
-        note = AgendaItemNote(
-            organization=organization,
-            agenda_item=agenda_item,
-            author=membership,
-            visibility=visibility,
-            is_decision=is_decision,
-        )
-        note.set_content_encrypted(content)
-        note.save()
+        paper = get_primary_paper_for_item(agenda_item)
 
-        return JsonResponse(
-            {
-                "success": True,
-                "note": {
-                    "id": str(note.id),
-                    "content": content,
-                    "is_decision": note.is_decision,
-                    "author": membership.user.get_display_name(),
-                },
-            }
+        if paper:
+            # TOP mit Vorlage: Thread läuft über PaperComment
+            comment = PaperComment(
+                paper=paper,
+                organization=organization,
+                author=membership,
+                visibility=visibility,
+                is_recommendation=is_decision,
+            )
+            comment.set_content_encrypted(content)
+            comment.save()
+            serialized = serialize_paper_comment_as_note(comment, membership)
+        else:
+            # TOP ohne Vorlage: org-lokale Notiz
+            note = AgendaItemNote(
+                organization=organization,
+                agenda_item=agenda_item,
+                author=membership,
+                visibility=visibility,
+                is_decision=is_decision,
+            )
+            note.set_content_encrypted(content)
+            note.save()
+            serialized = serialize_agenda_note(note, membership)
+
+        MeetingPreparation.record_activity(organization, meeting, membership)
+
+        # Echtzeit-Broadcast an (org, item) und ggf. (org, paper)
+        broadcast_preparation_event(
+            organization.id,
+            {"type": "comment", "event": "created", "agenda_item_id": str(agenda_item.id), "comment": serialized},
+            agenda_item_id=agenda_item.id,
+            paper_id=paper.id if paper else None,
         )
+
+        return JsonResponse({"success": True, "note": serialized})
 
     def delete(self, request, *args, **kwargs):
         note_id = self.kwargs.get("note_id")
@@ -870,8 +1231,28 @@ class AgendaNotesAPIView(WorkViewMixin, View):
         if not membership:
             return JsonResponse({"error": "Unauthorized"}, status=403)
 
-        note = get_object_or_404(AgendaItemNote, id=note_id, author=membership)
-        note.delete()
+        # Einheitlicher Thread: ID kann Alt-Notiz ODER PaperComment sein
+        note = AgendaItemNote.objects.filter(id=note_id, author=membership).first()
+        if note is not None:
+            agenda_item_id = note.agenda_item_id
+            organization_id = note.organization_id
+            note.delete()
+            broadcast_preparation_event(
+                organization_id,
+                {"type": "comment", "event": "deleted", "comment_id": str(note_id)},
+                agenda_item_id=agenda_item_id,
+            )
+            return JsonResponse({"success": True})
+
+        comment = get_object_or_404(PaperComment, id=note_id, author=membership)
+        paper_id = comment.paper_id
+        organization_id = comment.organization_id
+        comment.delete()
+        broadcast_preparation_event(
+            organization_id,
+            {"type": "comment", "event": "deleted", "comment_id": str(note_id)},
+            paper_id=paper_id,
+        )
         return JsonResponse({"success": True})
 
 
@@ -884,10 +1265,9 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
         item_id = self.kwargs.get("item_id")
         organization = self.organization
 
-        docs = AgendaSupplementaryDocument.objects.filter(
-            organization=organization,
-            agenda_item_id=item_id,
-        ).select_related("added_by__user", "oparl_file")
+        agenda_item = get_object_or_404(OParlAgendaItem, id=item_id)
+        # TOP-Anhänge + über Gremien geteilte Vorlagen-Anhänge der eigenen Org
+        docs = AgendaSupplementaryDocument.visible_for_item(organization, agenda_item)
 
         return JsonResponse(
             {
@@ -900,11 +1280,30 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
                         "description": d.description,
                         "added_by": d.added_by.user.get_display_name(),
                         "created_at": d.created_at.isoformat(),
+                        "paper_id": str(d.paper_id) if d.paper_id else None,
+                        "share_across_committees": d.share_across_committees,
+                        "is_from_other_item": d.agenda_item_id != agenda_item.id,
                     }
                     for d in docs
                 ]
             }
         )
+
+    @staticmethod
+    def _resolve_paper_anchor(agenda_item, paper_id, share_flag):
+        """
+        Vorlagen-Anker validieren: Die Vorlage muss tatsächlich von diesem
+        TOP beraten werden (sonst könnte man beliebige Papers verknüpfen).
+
+        Returns (paper, share_across_committees) oder (None, False).
+        """
+        if not paper_id:
+            return None, False
+        papers = {str(p.id): p for p in agenda_item.get_papers()}
+        paper = papers.get(str(paper_id))
+        if paper is None:
+            return None, False
+        return paper, share_flag in [True, "true", "1", "on"]
 
     def post(self, request, *args, **kwargs):
         meeting_id = self.kwargs.get("meeting_id")
@@ -930,15 +1329,24 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
         if not title:
             return JsonResponse({"error": "Titel erforderlich"}, status=400)
 
+        # Optionaler Anker an der VORLAGE (statt nur am TOP)
+        paper, share_across = self._resolve_paper_anchor(
+            agenda_item, data.get("paper_id"), data.get("share_across_committees", False)
+        )
+
         doc = AgendaSupplementaryDocument.objects.create(
             organization=organization,
             added_by=membership,
             agenda_item=agenda_item,
+            paper=paper,
+            share_across_committees=share_across,
             document_type=doc_type,
             title=title,
             url=data.get("url", ""),
             description=data.get("description", ""),
         )
+
+        MeetingPreparation.record_activity(organization, meeting, membership)
 
         return JsonResponse(
             {
@@ -948,6 +1356,8 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
                     "title": doc.title,
                     "url": doc.display_url,
                     "document_type": doc.document_type,
+                    "paper_id": str(doc.paper_id) if doc.paper_id else None,
+                    "share_across_committees": doc.share_across_committees,
                 },
             }
         )
@@ -967,10 +1377,17 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
         if uploaded_file.size > 50 * 1024 * 1024:
             return JsonResponse({"error": "Datei zu groß (max. 50 MB)"}, status=400)
 
+        # Optionaler Anker an der VORLAGE (statt nur am TOP)
+        paper, share_across = self._resolve_paper_anchor(
+            agenda_item, request.POST.get("paper_id"), request.POST.get("share_across_committees", False)
+        )
+
         doc = AgendaSupplementaryDocument.objects.create(
             organization=organization,
             added_by=membership,
             agenda_item=agenda_item,
+            paper=paper,
+            share_across_committees=share_across,
             document_type="file",
             title=title,
             file=uploaded_file,
@@ -980,10 +1397,19 @@ class SupplementaryDocumentAPIView(WorkViewMixin, View):
             description=request.POST.get("description", ""),
         )
 
+        MeetingPreparation.record_activity(organization, membership=membership, meeting=agenda_item.meeting)
+
         return JsonResponse(
             {
                 "success": True,
-                "document": {"id": str(doc.id), "title": doc.title, "url": doc.display_url, "document_type": "file"},
+                "document": {
+                    "id": str(doc.id),
+                    "title": doc.title,
+                    "url": doc.display_url,
+                    "document_type": "file",
+                    "paper_id": str(doc.paper_id) if doc.paper_id else None,
+                    "share_across_committees": doc.share_across_committees,
+                },
             }
         )
 
@@ -1028,24 +1454,22 @@ class PreparationSummaryView(WorkViewMixin, TemplateView):
 
         preparation = MeetingPreparation.objects.filter(organization=organization, meeting=meeting).first()
 
-        positions = (
-            AgendaItemPosition.objects.filter(organization=organization, agenda_item__meeting=meeting)
-            .exclude(position="open")
-            .select_related("agenda_item", "set_by", "set_by__user")
-        )
+        positions = AgendaItemPosition.objects.filter(
+            organization=organization, agenda_item__meeting=meeting
+        ).select_related("agenda_item", "set_by", "set_by__user")
 
-        positions_by_type = {
-            "for": [],
-            "against": [],
-            "abstain": [],
-            "defer": [],
-            "refer": [],
-            "amended": [],
-            "info": [],
-        }
+        # Alle 8 Positionsarten (inkl. "open" für Vollständigkeit)
+        positions_by_type = {code: [] for code, _label in AgendaItemPosition.POSITION_CHOICES}
         for pos in positions:
             if pos.position in positions_by_type:
                 positions_by_type[pos.position].append(pos)
+
+        position_sections = [
+            {"code": code, "label": label, "positions": positions_by_type[code]}
+            for code, label in AgendaItemPosition.POSITION_CHOICES
+            if code != "open"
+        ]
+        has_positions = any(section["positions"] for section in position_sections)
 
         speeches = (
             AgendaSpeechNote.objects.filter(organization=organization, agenda_item__meeting=meeting, is_shared=True)
@@ -1054,6 +1478,8 @@ class PreparationSummaryView(WorkViewMixin, TemplateView):
         )
 
         context["positions_by_type"] = positions_by_type
+        context["position_sections"] = position_sections
+        context["has_positions"] = has_positions
         context["speeches"] = speeches
         context["preparation"] = preparation
 
@@ -1136,6 +1562,17 @@ class PaperCommentAPIView(WorkViewMixin, View):
         comment.set_content_encrypted(content)
         comment.save()
 
+        # Echtzeit-Broadcast in die (org, paper)-Gruppe; Polling bleibt Fallback
+        broadcast_preparation_event(
+            organization.id,
+            {
+                "type": "comment",
+                "event": "created",
+                "comment": serialize_paper_comment_as_note(comment, membership),
+            },
+            paper_id=paper.id,
+        )
+
         return JsonResponse(
             {
                 "success": True,
@@ -1160,5 +1597,67 @@ class PaperCommentAPIView(WorkViewMixin, View):
             return JsonResponse({"error": "Unauthorized"}, status=403)
 
         comment = get_object_or_404(PaperComment, id=comment_id, author=membership)
+        paper_id = comment.paper_id
+        organization_id = comment.organization_id
         comment.delete()
+        broadcast_preparation_event(
+            organization_id,
+            {"type": "comment", "event": "deleted", "comment_id": str(comment_id)},
+            paper_id=paper_id,
+        )
         return JsonResponse({"success": True})
+
+
+# =============================================================================
+# TELEPROMPTER
+# =============================================================================
+
+
+class TeleprompterView(WorkViewMixin, TemplateView):
+    """
+    Teleprompter-Ansicht für den eigenen Redebeitrag zu einem TOP.
+
+    Redebeiträge enthalten HTML (WYSIWYG). Vor dem Rendern wird der Inhalt
+    über die strikte Whitelist (sanitize_speech_html) bereinigt. Bei einem
+    verknüpften Dokument ("Dokument als Redebeitrag") wird dessen Inhalt
+    read-only geliefert — mit can_access-Prüfung.
+    """
+
+    template_name = "work/meetings/teleprompter.html"
+    permission_required = "meetings.prepare"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        meeting_id = self.kwargs.get("meeting_id")
+        item_id = self.kwargs.get("item_id")
+        organization = self.organization
+        membership = self.membership
+
+        bodies = organization.get_all_bodies() if organization else None
+        if bodies is None or not bodies.exists() or not membership:
+            context["error"] = "Keine OParl-Körperschaft verknüpft"
+            return context
+
+        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body__in=bodies)
+        agenda_item = get_object_or_404(OParlAgendaItem, id=item_id, meeting=meeting)
+
+        speech_note = (
+            AgendaSpeechNote.objects.filter(author=membership, agenda_item=agenda_item)
+            .select_related("linked_document")
+            .first()
+        )
+
+        speech_content = ""
+        if speech_note:
+            if speech_note.linked_document_id and speech_note.linked_document.can_access(membership):
+                speech_content = speech_note.linked_document.get_content_decrypted()
+            elif not speech_note.linked_document_id:
+                speech_content = speech_note.get_content_decrypted()
+
+        context["meeting"] = meeting
+        context["agenda_item"] = agenda_item
+        context["speech_note"] = speech_note
+        # HTML sicher rendern: strikte Whitelist (b/i/u/strong/em/ul/ol/li/p/br/h2/h3)
+        context["speech_content"] = sanitize_speech_html(speech_content)
+        return context
