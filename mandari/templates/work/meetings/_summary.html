@@ -14,7 +14,7 @@
             {% for pos in section.positions %}
             <li class="text-sm text-gray-700 dark:text-gray-300 pl-5">
                 <span class="font-medium">{{ pos.agenda_item.number }}.</span>
-                {{ pos.agenda_item.name|truncatechars:60 }}
+                <span title="{{ pos.agenda_item.name }}">{{ pos.agenda_item.name|truncatechars:60 }}</span>
                 {% if pos.outcome %}
                 <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">Ergebnis: {{ pos.get_outcome_display }}</span>
                 {% endif %}
@@ -47,7 +47,7 @@
         <div class="space-y-3">
             {% for speech in speeches %}
             <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-3">
-                <p class="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                <p class="text-sm font-medium text-gray-900 dark:text-white mb-1" title="{{ speech.agenda_item.name }}">
                     {{ speech.agenda_item.number }}. {{ speech.agenda_item.name|truncatechars:50 }}
                     <span class="text-xs font-normal text-gray-500">({{ speech.author.user.get_display_name }})</span>
                 </p>

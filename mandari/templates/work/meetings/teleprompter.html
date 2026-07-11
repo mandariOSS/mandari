@@ -16,7 +16,14 @@
             font-size: 2.5rem;
             line-height: 1.8;
             letter-spacing: 0.02em;
+            text-align: left;
         }
+        /* Redetext kommt als sanitisiertes HTML (b/i/u/strong/em/ul/ol/li/p/br/h2/h3) */
+        .teleprompter-text p { margin: 0 0 0.6em; }
+        .teleprompter-text ul { list-style: disc; padding-left: 1.2em; margin: 0 0 0.6em; }
+        .teleprompter-text ol { list-style: decimal; padding-left: 1.2em; margin: 0 0 0.6em; }
+        .teleprompter-text h2 { font-size: 1.2em; font-weight: 700; margin: 0.6em 0 0.4em; color: rgba(255,255,255,0.95); }
+        .teleprompter-text h3 { font-size: 1.1em; font-weight: 600; margin: 0.6em 0 0.4em; color: rgba(255,255,255,0.9); }
         @media (min-width: 768px) {
             .teleprompter-text {
                 font-size: 3.5rem;
@@ -86,7 +93,7 @@
          @click="togglePlay()">
         <div class="max-w-4xl mx-auto overflow-hidden" :style="{ height: containerHeight + 'px' }">
             {# speech_content ist server-seitig über die strikte HTML-Whitelist bereinigt (sanitize_speech_html) #}
-            <div class="teleprompter-text text-center leading-relaxed"
+            <div class="teleprompter-text leading-relaxed"
                  :style="{ fontSize: fontSize + '%', transform: 'translateY(' + scrollPosition + 'px)' }"
                  x-ref="content">{% if speech_content %}{{ speech_content|safe }}{% else %}Keine Redenotizen vorhanden.
 Gehen Sie zurück zur Sitzungsvorbereitung und erstellen Sie Redenotizen für diesen Tagesordnungspunkt.{% endif %}</div>
@@ -97,9 +104,9 @@ Gehen Sie zurück zur Sitzungsvorbereitung und erstellen Sie Redenotizen für di
     {% if speech_note.estimated_duration %}
     <div class="fixed bottom-4 right-4 bg-white/10 rounded-lg px-4 py-2 z-50">
         <div class="text-white/60 text-sm">Geschätzte Dauer</div>
-        <div class="text-white text-xl font-mono">
-            {{ speech_note.estimated_duration|floatformat:0 }} Sek.
-        </div>
+        <div class="text-white text-xl font-mono"
+             x-data="{ s: {{ speech_note.estimated_duration|default:0 }} }"
+             x-text="Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ' min'"></div>
     </div>
     {% endif %}
 
