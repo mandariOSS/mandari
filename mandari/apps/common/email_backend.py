@@ -31,14 +31,14 @@ class SiteSettingsEmailBackend(SMTPBackend):
         # Get configuration from SiteSettings
         config = self._get_config()
 
-        # Override any kwargs with SiteSettings values (if set)
-        kwargs.setdefault("host", config.get("host"))
-        kwargs.setdefault("port", config.get("port"))
-        kwargs.setdefault("username", config.get("username"))
-        kwargs.setdefault("password", config.get("password"))
-        kwargs.setdefault("use_tls", config.get("use_tls"))
-        kwargs.setdefault("use_ssl", config.get("use_ssl"))
-        kwargs.setdefault("timeout", config.get("timeout"))
+        # WICHTIG: setdefault() reicht NICHT. Django ruft aus send_mail()
+        # get_connection(username=None, password=None) auf – der Schlüssel
+        # EXISTIERT dann mit Wert None, setdefault() greift nicht und die
+        # Verbindung liefe ohne SMTP-Login (Server verweigert das Relay).
+        # Deshalb: explizite None-Werte durch die SiteSettings ersetzen.
+        for key in ("host", "port", "username", "password", "use_tls", "use_ssl", "timeout"):
+            if kwargs.get(key) is None:
+                kwargs[key] = config.get(key)
 
         super().__init__(**kwargs)
 
