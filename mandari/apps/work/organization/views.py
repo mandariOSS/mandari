@@ -648,6 +648,18 @@ class MemberDetailView(WorkViewMixin, TemplateView):
                 return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
             role_ids = request.POST.getlist("roles")
             roles = Role.objects.filter(id__in=role_ids, organization=self.organization)
+            # Rechte-Eskalation verhindern: Nicht-Admins dürfen weder ihre
+            # eigenen Rollen ändern noch die Administrator-Rolle vergeben oder
+            # entziehen. Admins bleiben uneingeschränkt.
+            if not checker.is_admin():
+                if member.user == request.user:
+                    messages.error(request, "Eigene Rollen können nur Administratoren ändern.")
+                    return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
+                if member.roles.filter(is_admin=True).exists() or roles.filter(is_admin=True).exists():
+                    messages.error(
+                        request, "Nur Administratoren können die Administrator-Rolle vergeben oder entziehen."
+                    )
+                    return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
             member.roles.set(roles)
             messages.success(
                 request,
@@ -658,6 +670,14 @@ class MemberDetailView(WorkViewMixin, TemplateView):
             # Individuelle/verweigerte Berechtigungen (Matrix im Mitglieder-Detail)
             if member.is_guest:
                 messages.error(request, "Gast-Zugänge haben keine Berechtigungen.")
+                return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
+
+            # Das direkte Setzen einzelner/verweigerter Rechte ist eine
+            # administrative Operation (kann bis organization.admin gewähren)
+            # und bleibt Administratoren vorbehalten — sonst könnte ein
+            # members.edit-Mitglied sich selbst oder andere hochstufen.
+            if not checker.is_admin():
+                messages.error(request, "Individuelle Berechtigungen können nur Administratoren ändern.")
                 return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
 
             from apps.tenants.models import Permission
@@ -745,6 +765,12 @@ class MemberDetailView(WorkViewMixin, TemplateView):
 
         elif action == "update_sworn_in":
             # Update sworn-in status (Vereidigung)
+            # Selbst-Vereidigung verhindern: der Vereidigungsstatus schaltet
+            # den Zugriff auf nicht-öffentliche Inhalte frei (can_access_non_public)
+            # und darf von Nicht-Admins nicht am eigenen Konto gesetzt werden.
+            if member.user == request.user and not checker.is_admin():
+                messages.error(request, "Den eigenen Vereidigungsstatus können nur Administratoren setzen.")
+                return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
             is_sworn_in = request.POST.get("is_sworn_in") == "1"
             member.is_sworn_in = is_sworn_in
             member.save()
@@ -2417,6 +2443,18 @@ class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
             status="pending",
         )
 
+        # Rechte-Eskalation über den Antragsweg verhindern (gleiche Invariante
+        # wie im Mitglieder-Detail): Nicht-Admins dürfen weder eigene Anträge
+        # genehmigen noch Anträge, die Administrator-Rollen oder direkte
+        # Berechtigungen gewähren.
+        if not checker.is_admin() and not self._approver_may_apply(change_request):
+            messages.error(
+                request,
+                "Diese Genehmigung ist Administratoren vorbehalten "
+                "(eigener Antrag oder Vergabe administrativer Rechte).",
+            )
+            return redirect("work:profile_requests", org_slug=self.organization.slug)
+
         # Apply the change
         self._apply_change(change_request)
 
@@ -2441,6 +2479,26 @@ class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
 
         messages.success(request, "Antrag genehmigt und Änderung angewendet.")
         return redirect("work:profile_requests", org_slug=self.organization.slug)
+
+    def _approver_may_apply(self, change_request) -> bool:
+        """Darf ein Nicht-Admin diesen Antrag genehmigen?
+
+        Nein bei eigenem Antrag, bei Vergabe direkter Berechtigungen und bei
+        role_change, der eine Administrator-Rolle enthält.
+        """
+        if change_request.requester == self.membership:
+            return False
+        if change_request.request_type == "permission_request":
+            return False
+        if change_request.request_type == "role_change":
+            from apps.tenants.models import Role
+
+            role_ids = change_request.request_data.get("requested_roles", [])
+            if Role.objects.filter(
+                id__in=role_ids, organization=self.organization, is_admin=True
+            ).exists():
+                return False
+        return True
 
     def _apply_change(self, change_request):
         """Apply the actual change when a request is approved."""
