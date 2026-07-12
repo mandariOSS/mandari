@@ -1244,13 +1244,17 @@ class AgendaNotesAPIView(WorkViewMixin, View):
 
         MeetingPreparation.record_activity(organization, meeting, membership)
 
-        # Echtzeit-Broadcast an (org, item) und ggf. (org, paper)
-        broadcast_preparation_event(
-            organization.id,
-            {"type": "comment", "event": "created", "agenda_item_id": str(agenda_item.id), "comment": serialized},
-            agenda_item_id=agenda_item.id,
-            paper_id=paper.id if paper else None,
-        )
+        # Echtzeit-Broadcast an (org, item) und ggf. (org, paper).
+        # Private Kommentare NICHT broadcasten — sie sind nur für den Autor
+        # sichtbar (is_visible_to), der Broadcast würde sie an die ganze
+        # Organisation ausliefern. Der Autor erhält das Objekt via Response.
+        if visibility != "private":
+            broadcast_preparation_event(
+                organization.id,
+                {"type": "comment", "event": "created", "agenda_item_id": str(agenda_item.id), "comment": serialized},
+                agenda_item_id=agenda_item.id,
+                paper_id=paper.id if paper else None,
+            )
 
         return JsonResponse({"success": True, "note": serialized})
 
@@ -1763,6 +1767,8 @@ class PaperCommentAPIView(WorkViewMixin, View):
             return JsonResponse({"error": "Content required"}, status=400)
 
         visibility = data.get("visibility", "organization")
+        if visibility not in dict(PaperComment.VISIBILITY_CHOICES):
+            visibility = "organization"
         is_recommendation = data.get("is_recommendation", False) in [True, "true", "1", "on"]
 
         comment = PaperComment(
@@ -1775,16 +1781,18 @@ class PaperCommentAPIView(WorkViewMixin, View):
         comment.set_content_encrypted(content)
         comment.save()
 
-        # Echtzeit-Broadcast in die (org, paper)-Gruppe; Polling bleibt Fallback
-        broadcast_preparation_event(
-            organization.id,
-            {
-                "type": "comment",
-                "event": "created",
-                "comment": serialize_paper_comment_as_note(comment, membership),
-            },
-            paper_id=paper.id,
-        )
+        # Echtzeit-Broadcast in die (org, paper)-Gruppe; Polling bleibt Fallback.
+        # Private Kommentare NICHT broadcasten (nur für den Autor sichtbar).
+        if visibility != "private":
+            broadcast_preparation_event(
+                organization.id,
+                {
+                    "type": "comment",
+                    "event": "created",
+                    "comment": serialize_paper_comment_as_note(comment, membership),
+                },
+                paper_id=paper.id,
+            )
 
         return JsonResponse(
             {

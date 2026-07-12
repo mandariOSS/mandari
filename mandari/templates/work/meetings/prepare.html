@@ -1034,6 +1034,7 @@ function preparationApp() {
         lastSavedAt: null,
         saveError: false,
         _timers: {},
+        _pending: {},
 
         // Org-Sitzungsnotizen
         orgNotesOpen: false,
@@ -1175,7 +1176,12 @@ function preparationApp() {
         // ---------- Auto-Save-Infrastruktur ----------
         queue(key, fn, delay = 800) {
             clearTimeout(this._timers[key]);
-            this._timers[key] = setTimeout(() => { delete this._timers[key]; fn(); }, delay);
+            this._pending[key] = fn;
+            this._timers[key] = setTimeout(() => {
+                delete this._timers[key];
+                delete this._pending[key];
+                fn();
+            }, delay);
         },
 
         // Debounce pro TOP: die Item-Referenz wird beim Tippen eingefangen,
@@ -1184,10 +1190,18 @@ function preparationApp() {
             this.queue(prefix + '-' + item.id, () => fn(item), delay);
         },
 
+        // Anstehende Debounce-Saves beim TOP-Wechsel NICHT verwerfen, sondern
+        // sofort ausfuehren — die Callbacks halten ihre TOP-Referenz, sodass die
+        // Eingabe am korrekten (alten) TOP gespeichert wird.
         flushTimers() {
             for (const key of Object.keys(this._timers)) {
                 clearTimeout(this._timers[key]);
                 delete this._timers[key];
+            }
+            const pending = this._pending;
+            this._pending = {};
+            for (const key of Object.keys(pending)) {
+                try { pending[key](); } catch (e) { console.error('Flush-Save fehlgeschlagen:', key, e); }
             }
         },
 
@@ -1311,6 +1325,9 @@ function preparationApp() {
             let content = item.speechContent || '';
             if (item.speechLinkedDocument) {
                 const data = await this.fetchJson(this.speechUrl(item));
+                // Stale-Response-Schutz: wurde inzwischen der TOP gewechselt,
+                // darf diese Antwort den Editor des neuen TOP nicht ueberschreiben.
+                if (this.selectedItemId !== item.id) return;
                 if (data && data.own) content = data.own.content || '';
             }
             this._suppressEditorSave = true;

@@ -111,7 +111,13 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def _check_access(self, user):
-        """Aktive Membership in der Organisation + Existenz des Zielobjekts prüfen."""
+        """Zugriff wie die HTTP-Prepare-Views prüfen.
+
+        Aktive Membership der Organisation + Berechtigung ``meetings.prepare``;
+        Gäste sind wie in den REST-Endpoints ausgeschlossen. Zusätzlich die
+        Existenz des Zielobjekts prüfen.
+        """
+        from apps.common.permissions import PermissionChecker
         from apps.tenants.models import Membership
 
         membership = (
@@ -120,6 +126,13 @@ class PreparationConsumer(AsyncJsonWebsocketConsumer):
             .first()
         )
         if membership is None:
+            return None
+
+        # Divergenz zu den HTTP-Views vermeiden: Gäste haben keinen Zugriff,
+        # reguläre Mitglieder benötigen die meetings.prepare-Berechtigung.
+        if getattr(membership, "is_guest", False):
+            return None
+        if not PermissionChecker(membership).has_permission("meetings.prepare"):
             return None
 
         if self.scope_type == "paper":
