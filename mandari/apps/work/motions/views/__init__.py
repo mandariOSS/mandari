@@ -1,0 +1,142 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""
+Motion/Antrag views for the Work module.
+
+Thematisch aufgeteiltes Paket; alle Namen werden hier re-exportiert,
+damit bestehende Imports (``from apps.work.motions import views``)
+unverändert funktionieren.
+"""
+
+from ._helpers import (
+    _can_manage_folder,
+    _flatten_folder_tree,
+    _get_org_folder_or_404,
+)
+from .actions import (
+    MotionAIAssistantView,
+    MotionApprovalDecideView,
+    MotionApprovalRequestView,
+    MotionChecklistActionView,
+    MotionCommentResolveView,
+    MotionCommentView,
+    MotionDocumentUploadView,
+    MotionExportView,
+    MotionImportView,
+    MotionMetaUpdateView,
+    MotionShareRemoveView,
+    MotionShareUpdateView,
+    MotionShareView,
+    MotionStatusView,
+)
+from .editor import (
+    DocumentEditorView,
+    GuestSharedDocumentsView,
+    MotionCreateView,
+)
+from .list import (
+    DocumentFolderCreateView,
+    DocumentFolderDeleteView,
+    DocumentFolderUpdateView,
+    MotionFolderMoveView,
+    MotionListView,
+)
+from .redirects import (
+    MotionDetailRedirectView,
+    MotionRedirectCreateView,
+    MotionRedirectImportView,
+    MotionRedirectTrashView,
+    MotionRedirectView,
+)
+from .revisions import (
+    DocumentRevisionDetailAPIView,
+    DocumentRevisionRestoreView,
+    DocumentRevisionsAPIView,
+)
+from .settings import (
+    LetterheadCreateView,
+    LetterheadDeleteView,
+    LetterheadEditorPreviewView,
+    LetterheadEditView,
+    LetterheadListView,
+    LetterheadPreviewView,
+    MotionSettingsView,
+    MotionTemplateCreateView,
+    MotionTemplateDeleteView,
+    MotionTemplateEditView,
+    MotionTemplateListView,
+    MotionTemplatePreviewView,
+    MotionTypeCreateView,
+    MotionTypeDeleteView,
+    MotionTypeEditView,
+    MotionTypeListView,
+    TopicDeleteView,
+    TopicListView,
+    TopicUpdateView,
+    _generated_letterhead_defaults,
+)
+from .trash import (
+    MotionEmptyTrashView,
+    MotionPermanentDeleteView,
+    MotionRestoreView,
+    MotionTrashView,
+)
+
+__all__ = [
+    "DocumentEditorView",
+    "DocumentFolderCreateView",
+    "DocumentFolderDeleteView",
+    "DocumentFolderUpdateView",
+    "DocumentRevisionDetailAPIView",
+    "DocumentRevisionRestoreView",
+    "DocumentRevisionsAPIView",
+    "GuestSharedDocumentsView",
+    "LetterheadCreateView",
+    "LetterheadDeleteView",
+    "LetterheadEditView",
+    "LetterheadEditorPreviewView",
+    "LetterheadListView",
+    "LetterheadPreviewView",
+    "MotionAIAssistantView",
+    "MotionApprovalDecideView",
+    "MotionApprovalRequestView",
+    "MotionChecklistActionView",
+    "MotionCommentResolveView",
+    "MotionCommentView",
+    "MotionCreateView",
+    "MotionDetailRedirectView",
+    "MotionDocumentUploadView",
+    "MotionEmptyTrashView",
+    "MotionExportView",
+    "MotionFolderMoveView",
+    "MotionImportView",
+    "MotionListView",
+    "MotionMetaUpdateView",
+    "MotionPermanentDeleteView",
+    "MotionRedirectCreateView",
+    "MotionRedirectImportView",
+    "MotionRedirectTrashView",
+    "MotionRedirectView",
+    "MotionRestoreView",
+    "MotionSettingsView",
+    "MotionShareRemoveView",
+    "MotionShareUpdateView",
+    "MotionShareView",
+    "MotionStatusView",
+    "MotionTemplateCreateView",
+    "MotionTemplateDeleteView",
+    "MotionTemplateEditView",
+    "MotionTemplateListView",
+    "MotionTemplatePreviewView",
+    "MotionTrashView",
+    "MotionTypeCreateView",
+    "MotionTypeDeleteView",
+    "MotionTypeEditView",
+    "MotionTypeListView",
+    "TopicDeleteView",
+    "TopicListView",
+    "TopicUpdateView",
+    "_can_manage_folder",
+    "_flatten_folder_tree",
+    "_generated_letterhead_defaults",
+    "_get_org_folder_or_404",
+]
