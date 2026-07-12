@@ -2494,9 +2494,7 @@ class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
             from apps.tenants.models import Role
 
             role_ids = change_request.request_data.get("requested_roles", [])
-            if Role.objects.filter(
-                id__in=role_ids, organization=self.organization, is_admin=True
-            ).exists():
+            if Role.objects.filter(id__in=role_ids, organization=self.organization, is_admin=True).exists():
                 return False
         return True
 
