@@ -95,6 +95,7 @@ INSTALLED_APPS = [
     "insight_sync",
     "insight_search",
     "insight_ai",
+    "oparl_api",
     # Mandari Work apps (OSS - AGPL 3.0)
     "apps.common",
     "apps.accounts",
@@ -331,6 +332,14 @@ ENCRYPTION_MASTER_KEY = os.environ.get("ENCRYPTION_MASTER_KEY", "")
 # OParl
 OPARL_REQUEST_TIMEOUT = int(os.environ.get("OPARL_REQUEST_TIMEOUT", "300"))
 OPARL_MAX_RETRIES = int(os.environ.get("OPARL_MAX_RETRIES", "5"))
+
+# OParl-Aggregations-API (Issue #17): mandari als eigene OParl-1.1-Datenquelle.
+# Basis-URL für alle Objekt-IDs — host-unabhängig konfigurierbar, damit die
+# API auch unter einer eigenen (Sub-)Domain (z. B. oparl.mandari.de) laufen kann.
+OPARL_BASE_URL = os.environ.get("OPARL_BASE_URL", f"{SITE_URL}/oparl").rstrip("/")
+OPARL_API_PAGE_SIZE = int(os.environ.get("OPARL_API_PAGE_SIZE", "100"))  # Objekte pro Listen-Seite
+OPARL_API_RATE_LIMIT = int(os.environ.get("OPARL_API_RATE_LIMIT", "120"))  # Requests pro Minute je IP (0 = aus)
+OPARL_API_CACHE_SECONDS = int(os.environ.get("OPARL_API_CACHE_SECONDS", "60"))  # Cache ungefilterter Listen
 
 # Sync-Einstellungen (alle 10 Minuten inkrementell, Full-Sync um 3 Uhr)
 SYNC_INTERVAL_MINUTES = int(os.environ.get("SYNC_INTERVAL_MINUTES", "10"))
