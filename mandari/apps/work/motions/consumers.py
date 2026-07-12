@@ -276,12 +276,16 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
 
         try:
             update_fields = []
-            if data_b64:
+            can_write = bool(self.user_info and self.user_info.get("access_level") == "edit")
+            # Auch der Yjs-Binärzustand darf nur von Schreibberechtigten
+            # persistiert werden - sonst könnte ein Nutzer mit view/comment den
+            # gemeinsamen Dokumentzustand überschreiben (wird beim naechsten
+            # Verbindungsaufbau an alle Clients ausgeliefert).
+            if data_b64 and can_write:
                 motion.yjs_document = base64.b64decode(data_b64)
                 update_fields.append("yjs_document")
 
             content_changed = False
-            can_write = bool(self.user_info and self.user_info.get("access_level") == "edit")
             if html is not None and can_write:
                 try:
                     old_content = motion.get_content_decrypted()

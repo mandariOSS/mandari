@@ -1216,6 +1216,13 @@ class MotionApprovalRequestView(WorkViewMixin, View):
 
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
+        # Nur wer das Dokument selbst sehen darf, kann Freigaben anfragen.
+        # Sonst könnte ein motions.edit-Mitglied über den Freigabe-Weg einer
+        # beliebigen Person (auch sich selbst) Zugriff auf ein PRIVATES Dokument
+        # verschaffen und dessen Sichtbarkeit auf "shared" heben (IDOR/Leak).
+        if not motion.can_access(self.membership):
+            return JsonResponse({"error": "Kein Zugriff auf dieses Dokument."}, status=403)
+
         approver = get_object_or_404(
             Membership, id=request.POST.get("approver", ""), organization=self.organization, is_active=True
         )
