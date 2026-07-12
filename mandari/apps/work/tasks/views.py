@@ -14,6 +14,7 @@ import logging
 import mimetypes
 
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
 from django.db.models import Prefetch, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -514,6 +515,11 @@ class TaskPanelView(WorkViewMixin, TemplateView):
             id=kwargs.get("task_id"),
             organization=self.organization,
         )
+        # Sichtbarkeit prüfen: private/geteilte Aufgaben dürfen nur von
+        # Zugriffsberechtigten geöffnet werden (die Listenansicht blendet sie
+        # aus - das Panel muss dieselbe Grenze ziehen).
+        if not task.can_access(self.membership):
+            raise PermissionDenied("Kein Zugriff auf diese Aufgabe.")
         context["task"] = task
         can_edit = (
             task.created_by == self.membership
@@ -634,6 +640,11 @@ class TaskPanelActionView(WorkViewMixin, View):
             id=task_id,
             organization=self.organization,
         )
+
+        # Zugriffsgrenze wie in der Listenansicht: ohne can_access keine Aktion
+        # (schützt insb. add_comment auf privaten/fremden Aufgaben).
+        if not task.can_access(self.membership):
+            return HttpResponse(status=403)
 
         can_edit = (
             task.created_by == self.membership

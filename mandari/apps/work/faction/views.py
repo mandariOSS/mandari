@@ -741,8 +741,15 @@ class FactionActionView(WorkViewMixin, View):
             order=meeting.protocol_entries.count() + 1,
         )
 
+        # TOP nur akzeptieren, wenn er zu DIESER Sitzung gehört - sonst könnte
+        # ein Protokollant per fremder agenda_item_id einen Eintrag an einen TOP
+        # einer anderen (auch org-fremden) Sitzung hängen bzw. dessen
+        # Abstimmungsdaten überschreiben (IDOR).
+        agenda_item = None
         if agenda_item_id:
-            entry.agenda_item_id = agenda_item_id
+            agenda_item = FactionAgendaItem.objects.filter(id=agenda_item_id, meeting=meeting).first()
+            if agenda_item is not None:
+                entry.agenda_item = agenda_item
 
         if entry_type == "speech":
             speaker_id = request.POST.get("speaker")
@@ -761,20 +768,19 @@ class FactionActionView(WorkViewMixin, View):
         entry.set_content_encrypted(content)
         entry.save()
 
-        # If decision, update agenda item
-        if entry_type == "decision" and agenda_item_id:
+        # If decision, update agenda item (nur der zu dieser Sitzung gehörende TOP)
+        if entry_type == "decision" and agenda_item is not None:
             try:
                 votes_yes = int(request.POST.get("votes_yes", 0))
                 votes_no = int(request.POST.get("votes_no", 0))
                 votes_abstain = int(request.POST.get("votes_abstain", 0))
 
-                agenda_item = FactionAgendaItem.objects.get(id=agenda_item_id)
                 agenda_item.has_decision = True
                 agenda_item.votes_for = votes_yes
                 agenda_item.votes_against = votes_no
                 agenda_item.votes_abstain = votes_abstain
                 agenda_item.save()
-            except (ValueError, FactionAgendaItem.DoesNotExist):
+            except ValueError:
                 pass
 
         if request.headers.get("HX-Request"):

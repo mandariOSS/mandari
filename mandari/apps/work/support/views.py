@@ -186,6 +186,13 @@ class SupportDetailView(WorkViewMixin, TemplateView):
         ticket_id = self.kwargs.get("ticket_id")
         ticket = get_object_or_404(SupportTicket, id=ticket_id, organization=self.organization)
 
+        # Gleiche Zugriffsprüfung wie im GET: nur Ersteller:in oder support.manage
+        # dürfen antworten/schließen/wieder öffnen - sonst könnte ein Mitglied
+        # mit reinem support.view fremde Tickets manipulieren.
+        if ticket.created_by != self.membership and not self.has_permission("support.manage"):
+            messages.error(request, "Sie haben keinen Zugriff auf dieses Ticket.")
+            return redirect("work:support", org_slug=self.organization.slug)
+
         action = request.POST.get("action", "reply")
 
         if action == "reply":
