@@ -1,0 +1,343 @@
+            {% if can_edit %}
+            <!-- Toolbar (only shown when editable) -->
+            <div id="editor-toolbar" class="border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex flex-wrap items-center gap-1 bg-white dark:bg-gray-800 flex-shrink-0">
+                <!-- Formatvorlagen (Standard / H1–H3 / Zitat) — folgt dem Cursor -->
+                <div x-data="{ styleMenu: false }" class="flex items-center pr-2 border-r border-gray-200 dark:border-gray-700 relative">
+                    <button type="button" @mousedown.prevent="styleMenu = !styleMenu"
+                            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-sm min-w-[7.5rem] justify-between"
+                            title="Formatvorlage">
+                        <span class="truncate" x-text="styleLabel"></span>
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 opacity-50 flex-shrink-0"></i>
+                    </button>
+                    <div x-show="styleMenu" @click.away="styleMenu = false" x-cloak class="table-actions-dropdown">
+                        <button type="button" data-editor-cmd="paragraph" @mousedown="styleMenu = false"
+                                :class="{ 'bg-gray-100 dark:bg-gray-700': !formats.header && !formats.blockquote }">
+                            <i data-lucide="pilcrow" class="w-3.5 h-3.5"></i> Standard
+                        </button>
+                        <button type="button" data-editor-cmd="heading" data-editor-level="1" @mousedown="styleMenu = false"
+                                :class="{ 'bg-gray-100 dark:bg-gray-700': formats.header === 1 }">
+                            <i data-lucide="heading-1" class="w-3.5 h-3.5"></i> <span class="font-bold">Überschrift 1</span>
+                        </button>
+                        <button type="button" data-editor-cmd="heading" data-editor-level="2" @mousedown="styleMenu = false"
+                                :class="{ 'bg-gray-100 dark:bg-gray-700': formats.header === 2 }">
+                            <i data-lucide="heading-2" class="w-3.5 h-3.5"></i> <span class="font-semibold">Überschrift 2</span>
+                        </button>
+                        <button type="button" data-editor-cmd="heading" data-editor-level="3" @mousedown="styleMenu = false"
+                                :class="{ 'bg-gray-100 dark:bg-gray-700': formats.header === 3 }">
+                            <i data-lucide="heading-3" class="w-3.5 h-3.5"></i> <span class="font-medium">Überschrift 3</span>
+                        </button>
+                        <button type="button" data-editor-cmd="blockquote" @mousedown="styleMenu = false"
+                                :class="{ 'bg-gray-100 dark:bg-gray-700': formats.blockquote }">
+                            <i data-lucide="quote" class="w-3.5 h-3.5"></i> <span class="italic">Zitat</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Zeichenformat: B I U S, Textfarbe, Hervorhebung -->
+                <div class="flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" data-editor-cmd="bold"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.bold }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Fett (Strg+B)">
+                        <i data-lucide="bold" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="italic"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.italic }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Kursiv (Strg+I)">
+                        <i data-lucide="italic" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="underline"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.underline }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Unterstrichen (Strg+U)">
+                        <i data-lucide="underline" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="strike"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.strike }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Durchgestrichen (Strg+Umschalt+S)">
+                        <i data-lucide="strikethrough" class="w-4 h-4"></i>
+                    </button>
+                    <!-- Textfarbe -->
+                    <div x-data="{ colorMenu: false }" class="relative">
+                        <button type="button" @mousedown.prevent="colorMenu = !colorMenu"
+                                class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 relative" title="Textfarbe">
+                            <i data-lucide="palette" class="w-4 h-4"></i>
+                            <span class="absolute bottom-1 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded"
+                                  :style="formats.textColor ? 'background:' + formats.textColor : 'background:#374151'"></span>
+                        </button>
+                        <div x-show="colorMenu" @click.away="colorMenu = false" x-cloak class="color-picker-dropdown">
+                            <div class="grid grid-cols-6 gap-1.5">
+                                <button type="button" @mousedown.prevent="$dispatch('editor-color-cmd', ''); colorMenu = false"
+                                        class="color-swatch border-gray-300" :class="{ 'active': !formats.textColor }"
+                                        style="background: #374151" title="Standard">
+                                </button>
+                                <template x-for="c in ['#dc2626','#ea580c','#d97706','#16a34a','#0891b2','#2563eb','#7c3aed','#db2777','#059669','#0d9488','#4f46e5']" :key="c">
+                                    <button type="button" @mousedown.prevent="$dispatch('editor-color-cmd', c); colorMenu = false"
+                                            class="color-swatch" :class="{ 'active': formats.textColor === c }"
+                                            :style="'background:' + c">
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" data-editor-cmd="highlight"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.highlight }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Hervorheben (Strg+Umschalt+H)">
+                        <i data-lucide="highlighter" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Ausrichtung -->
+                <div class="hidden lg:flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" data-editor-cmd="align" data-editor-value="left"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'left' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Linksbündig (Strg+Umschalt+L)">
+                        <i data-lucide="align-left" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="align" data-editor-value="center"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'center' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Zentriert (Strg+Umschalt+E)">
+                        <i data-lucide="align-center" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="align" data-editor-value="right"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'right' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Rechtsbündig (Strg+Umschalt+R)">
+                        <i data-lucide="align-right" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="align" data-editor-value="justify"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.textAlign === 'justify' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Blocksatz (Strg+Umschalt+J)">
+                        <i data-lucide="align-justify" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Listen, Checkliste, Einzug -->
+                <div class="hidden md:flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" data-editor-cmd="bulletList"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'bullet' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufzählung (Strg+Umschalt+8)">
+                        <i data-lucide="list" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="orderedList"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'ordered' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Nummerierung (Strg+Umschalt+7)">
+                        <i data-lucide="list-ordered" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="taskList"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.list === 'task' }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Aufgabenliste (Strg+Umschalt+9)">
+                        <i data-lucide="list-checks" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="outdent"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Weniger einrücken (Umschalt+Tab)">
+                        <i data-lucide="indent-decrease" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="indent"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Einrücken (Tab)">
+                        <i data-lucide="indent-increase" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Einfügen: Link, Tabelle, Bild, Seitenumbruch, Trennlinie -->
+                <div class="hidden lg:flex items-center gap-0.5 px-2 border-r border-gray-200 dark:border-gray-700">
+                    <button type="button" @mousedown.prevent="openLinkDialog()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': formats.link }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Link einfügen (Strg+K)">
+                        <i data-lucide="link" class="w-4 h-4"></i>
+                    </button>
+                    <div x-data="{ tableMenu: false }" class="relative">
+                        <button type="button" @mousedown.prevent="tableMenu = !tableMenu"
+                                :class="{ 'bg-gray-200 dark:bg-gray-600': formats.table }"
+                                class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Tabelle">
+                            <i data-lucide="table" class="w-4 h-4"></i>
+                        </button>
+                        <div x-show="tableMenu" @click.away="tableMenu = false" x-cloak class="table-actions-dropdown">
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'insertTable'); tableMenu = false">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Tabelle einfügen
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnAfter'); tableMenu = false">
+                                <i data-lucide="columns-3" class="w-3.5 h-3.5"></i> Spalte rechts
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnBefore'); tableMenu = false">
+                                <i data-lucide="columns-3" class="w-3.5 h-3.5"></i> Spalte links
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowAfter'); tableMenu = false">
+                                <i data-lucide="rows-3" class="w-3.5 h-3.5"></i> Zeile darunter
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowBefore'); tableMenu = false">
+                                <i data-lucide="rows-3" class="w-3.5 h-3.5"></i> Zeile darüber
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteColumn'); tableMenu = false" class="text-red-600 dark:text-red-400">
+                                <i data-lucide="x" class="w-3.5 h-3.5"></i> Spalte löschen
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteRow'); tableMenu = false" class="text-red-600 dark:text-red-400">
+                                <i data-lucide="x" class="w-3.5 h-3.5"></i> Zeile löschen
+                            </button>
+                            <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteTable'); tableMenu = false" class="text-red-600 dark:text-red-400">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Tabelle löschen
+                            </button>
+                        </div>
+                    </div>
+                    <button type="button" @mousedown.prevent="showImageModal = true"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Bild einfügen">
+                        <i data-lucide="image" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="pageBreak"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Seitenumbruch (Strg+Enter)">
+                        <i data-lucide="file-output" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="horizontalRule"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Trennlinie">
+                        <i data-lucide="minus" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Verlauf & Suche -->
+                <div class="flex items-center gap-0.5 px-2">
+                    <button type="button" data-editor-cmd="undo"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Rückgängig (Strg+Z)">
+                        <i data-lucide="undo" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-editor-cmd="redo"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Wiederholen (Strg+Y)">
+                        <i data-lucide="redo" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" @mousedown.prevent="toggleSearch()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': searchOpen }"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Suchen und Ersetzen (Strg+F)">
+                        <i data-lucide="search" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Überlauf-Menü für schmale Screens -->
+                <div x-data="{ moreMenu: false }" class="lg:hidden relative flex items-center px-1">
+                    <button type="button" @mousedown.prevent="moreMenu = !moreMenu"
+                            class="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Weitere Werkzeuge">
+                        <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                    </button>
+                    <div x-show="moreMenu" @click.away="moreMenu = false" x-cloak class="table-actions-dropdown">
+                        <button type="button" data-editor-cmd="align" data-editor-value="left" @mousedown="moreMenu = false">
+                            <i data-lucide="align-left" class="w-3.5 h-3.5"></i> Linksbündig
+                        </button>
+                        <button type="button" data-editor-cmd="align" data-editor-value="center" @mousedown="moreMenu = false">
+                            <i data-lucide="align-center" class="w-3.5 h-3.5"></i> Zentriert
+                        </button>
+                        <button type="button" data-editor-cmd="align" data-editor-value="right" @mousedown="moreMenu = false">
+                            <i data-lucide="align-right" class="w-3.5 h-3.5"></i> Rechtsbündig
+                        </button>
+                        <button type="button" data-editor-cmd="align" data-editor-value="justify" @mousedown="moreMenu = false">
+                            <i data-lucide="align-justify" class="w-3.5 h-3.5"></i> Blocksatz
+                        </button>
+                        <button type="button" class="md:hidden" data-editor-cmd="bulletList" @mousedown="moreMenu = false">
+                            <i data-lucide="list" class="w-3.5 h-3.5"></i> Aufzählung
+                        </button>
+                        <button type="button" class="md:hidden" data-editor-cmd="orderedList" @mousedown="moreMenu = false">
+                            <i data-lucide="list-ordered" class="w-3.5 h-3.5"></i> Nummerierung
+                        </button>
+                        <button type="button" class="md:hidden" data-editor-cmd="taskList" @mousedown="moreMenu = false">
+                            <i data-lucide="list-checks" class="w-3.5 h-3.5"></i> Aufgabenliste
+                        </button>
+                        <button type="button" @mousedown.prevent="openLinkDialog(); moreMenu = false">
+                            <i data-lucide="link" class="w-3.5 h-3.5"></i> Link einfügen
+                        </button>
+                        <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'insertTable'); moreMenu = false">
+                            <i data-lucide="table" class="w-3.5 h-3.5"></i> Tabelle einfügen
+                        </button>
+                        <button type="button" @mousedown.prevent="showImageModal = true; moreMenu = false">
+                            <i data-lucide="image" class="w-3.5 h-3.5"></i> Bild einfügen
+                        </button>
+                        <button type="button" data-editor-cmd="pageBreak" @mousedown="moreMenu = false">
+                            <i data-lucide="file-output" class="w-3.5 h-3.5"></i> Seitenumbruch
+                        </button>
+                        <button type="button" data-editor-cmd="horizontalRule" @mousedown="moreMenu = false">
+                            <i data-lucide="minus" class="w-3.5 h-3.5"></i> Trennlinie
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Wortzähler -->
+                <div class="ml-auto hidden sm:flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+                    <span><span x-text="wordCount"></span> Wörter</span>
+                </div>
+            </div>
+
+            <!-- Tabellen-Kontextleiste (erscheint, wenn der Cursor in einer Tabelle steht) -->
+            <div x-show="formats.table" x-cloak
+                 class="border-b border-gray-200 dark:border-gray-700 px-4 py-1 flex flex-wrap items-center gap-1 bg-gray-50 dark:bg-gray-800/60 flex-shrink-0 text-xs text-gray-600 dark:text-gray-300">
+                <span class="font-medium mr-2 flex items-center gap-1">
+                    <i data-lucide="table" class="w-3.5 h-3.5"></i> Tabelle:
+                </span>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowBefore')"
+                        class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Zeile oberhalb einfügen">
+                    Zeile davor
+                </button>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowAfter')"
+                        class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Zeile unterhalb einfügen">
+                    Zeile danach
+                </button>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnBefore')"
+                        class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Spalte links einfügen">
+                    Spalte davor
+                </button>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnAfter')"
+                        class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Spalte rechts einfügen">
+                    Spalte danach
+                </button>
+                <span class="border-l border-gray-300 dark:border-gray-600 h-4 mx-1"></span>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteRow')"
+                        class="px-2 py-1 rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20" title="Aktuelle Zeile löschen">
+                    Zeile löschen
+                </button>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteColumn')"
+                        class="px-2 py-1 rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20" title="Aktuelle Spalte löschen">
+                    Spalte löschen
+                </button>
+                <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteTable')"
+                        class="px-2 py-1 rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20" title="Ganze Tabelle löschen">
+                    Tabelle löschen
+                </button>
+            </div>
+
+            <!-- Suchen & Ersetzen Panel (Strg+F) -->
+            <div x-show="searchOpen" x-cloak
+                 class="border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex flex-wrap items-center gap-2 bg-gray-50 dark:bg-gray-800/60 flex-shrink-0"
+                 @keydown.escape.stop="closeSearch()">
+                <div class="flex items-center gap-1">
+                    <input type="text" x-model="searchTerm" x-ref="searchInput"
+                           @input.debounce.200ms="runSearch()"
+                           @keydown.enter.prevent="$event.shiftKey ? findPrev() : findNext()"
+                           placeholder="Suchen..."
+                           class="w-44 px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-primary-500">
+                    <button type="button" @click="searchMatchCase = !searchMatchCase; runSearch()"
+                            :class="{ 'bg-gray-200 dark:bg-gray-600': searchMatchCase }"
+                            class="px-1.5 py-1 rounded text-xs font-semibold hover:bg-gray-200 dark:hover:bg-gray-700"
+                            title="Groß-/Kleinschreibung beachten">Aa</button>
+                    <span class="text-xs text-gray-500 dark:text-gray-400 min-w-[3rem] text-center"
+                          x-text="searchTotal ? (searchCurrent + '/' + searchTotal) : (searchTerm ? '0/0' : '')"></span>
+                    <button type="button" @click="findPrev()" :disabled="!searchTotal"
+                            class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40" title="Vorheriger Treffer (Umschalt+Enter)">
+                        <i data-lucide="chevron-up" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" @click="findNext()" :disabled="!searchTotal"
+                            class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40" title="Nächster Treffer (Enter)">
+                        <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <div class="flex items-center gap-1">
+                    <input type="text" x-model="replaceTerm"
+                           @keydown.enter.prevent="replaceCurrent()"
+                           placeholder="Ersetzen durch..."
+                           class="w-44 px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-primary-500">
+                    <button type="button" @click="replaceCurrent()" :disabled="!searchTotal"
+                            class="px-2 py-1 text-xs rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 border border-gray-300 dark:border-gray-600">
+                        Ersetzen
+                    </button>
+                    <button type="button" @click="replaceAll()" :disabled="!searchTotal"
+                            class="px-2 py-1 text-xs rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 border border-gray-300 dark:border-gray-600">
+                        Alle ersetzen
+                    </button>
+                </div>
+                <button type="button" @click="closeSearch()"
+                        class="ml-auto p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Suche schließen (Esc)">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            {% endif %}

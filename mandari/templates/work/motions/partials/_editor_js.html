@@ -1,0 +1,1602 @@
+<script>
+function documentEditor() {
+    // CRITICAL: Store TipTap editor outside Alpine's reactive properties.
+    // Alpine wraps component properties in Proxy objects, which breaks
+    // ProseMirror's internal state identity checks and causes
+    // "RangeError: Applying a mismatched transaction".
+    let editor = null;
+    let _autoSaveInterval = null;
+
+    return {
+        updatedAt: Date.now(),
+        title: '{{ motion.title|escapejs }}',
+        wordCount: 0,
+        charCount: 0,
+        pageCount: 1,
+        currentPage: 1,
+        lastSaved: null,
+        saveError: false,
+        saving: false,
+        // Suchen & Ersetzen
+        searchOpen: false,
+        searchTerm: '',
+        replaceTerm: '',
+        searchMatchCase: false,
+        searchCurrent: 0,
+        searchTotal: 0,
+        // Link-Dialog & -Popover
+        showLinkModal: false,
+        linkUrl: '',
+        linkPopupVisible: false,
+        linkPopupHref: '',
+        linkPopupTop: 0,
+        linkPopupLeft: 0,
+        _globalKeydownHandler: null,
+        showMobileSidebar: false,
+        showShareModal: false,
+        shareMotionId: '{{ motion.id }}',
+        shareMotionTitle: '{{ motion.title|escapejs }}',
+        shareVisibility: '{{ motion.visibility }}',
+        addUserEmail: '',
+        sidebarTab: 'comments',
+        aiLoading: false,
+        aiQuotaLimit: {% if ai_quota and ai_quota.limit is not None %}{{ ai_quota.limit }}{% else %}null{% endif %},
+        aiQuotaUsed: {% if ai_quota and ai_quota.used is not None %}{{ ai_quota.used }}{% else %}0{% endif %},
+        chatMessages: [],
+        userMessage: '',
+        aiPreviewActive: false,
+        aiPreviewContent: '',
+        aiOriginalContent: '',
+        previewMode: 'suggested',
+        // Comment sidebar state
+        showResolvedComments: false,
+        replyingToComment: null,
+        newCommentContent: '',
+        commentSubmitting: false,
+        selectedText: '',
+        selectionStart: 0,
+        selectionEnd: 0,
+        // Active comment linking (bidirectional sidebar ↔ editor mark)
+        activeCommentId: null,
+        // Inline comment creation popup (on text selection)
+        commentPopupVisible: false,
+        commentPopupExpanded: false,
+        commentPopupTop: 0,
+        commentPopupLeft: 0,
+        inlineCommentText: '',
+        inlineSelectedText: '',
+        _selectionFrom: 0,
+        _selectionTo: 0,
+        // Mark comment detail popup (on clicking existing highlight)
+        markCommentPopup: false,
+        markCommentData: null,
+        markCommentTop: 0,
+        markCommentLeft: 0,
+        markReplyText: '',
+        markReplySubmitting: false,
+        inlineCommentsData: [],
+        // Collaboration state
+        collabEnabled: false,
+        collabStatus: 'disconnected',
+        collabUsers: [],
+        collabUserName: '{{ request.user.get_full_name|default:request.user.email|escapejs }}',
+        collabUserColor: '{{ collab_color|default:"#3b82f6" }}',
+        collabDestroy: null,
+        // Revision history state
+        historyMode: false,
+        revisions: [],
+        revisionsLoading: false,
+        selectedRevision: null,
+        revisionContent: '',
+        revisionDiff: '',
+        revisionLoading: false,
+        revisionViewMode: 'diff',
+        // Image insert modal
+        showImageModal: false,
+        imageUrl: '',
+        imageAlt: '',
+        formats: {
+            bold: false,
+            italic: false,
+            underline: false,
+            strike: false,
+            header: false,
+            list: false,
+            blockquote: false,
+            link: false,
+            textAlign: 'left',
+            textColor: false,
+            table: false
+        },
+        csrfToken: '{{ csrf_token }}',
+        motionId: '{{ motion.id }}',
+        motionType: '{{ motion.motion_type }}',
+        documentTypeId: '{{ motion.document_type_id|default:"" }}',
+        documentTypeName: '{{ motion.get_type_display|escapejs }}',
+        letterheadId: '{{ motion.letterhead_id|default:"" }}',
+        letterheadName: '{{ motion.letterhead.name|default:"Kein Briefpapier"|escapejs }}',
+        letterheadsData: JSON.parse(document.getElementById('letterheads-json')?.textContent || '[]'),
+        accessLevel: '{{ access_level }}',
+        _editorInitialized: false,
+        _collabFailed: false,
+        _recoveringEditor: false,
+
+        init() {
+            if (this._editorInitialized) return;
+            this._editorInitialized = true;
+            const canEdit = this.accessLevel === 'edit' || this.accessLevel === 'admin';
+
+            if (canEdit && typeof MandariEditor !== 'undefined') {
+                // Get initial content from hidden template
+                const tpl = document.getElementById('editor-initial-content');
+                const initialContent = tpl ? tpl.innerHTML : '';
+                const editorEl = document.getElementById('editor-container');
+
+                // Build WebSocket URL for collaboration
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${wsProtocol}//${window.location.host}/ws/documents/${this.motionId}/`;
+
+                // Kollaboration ist Standard für alle Bearbeiter (Google-Docs-Modus).
+                // Schlägt die erste WebSocket-Verbindung fehl, wechselt der Editor
+                // automatisch in den Solo-Modus (_switchToSoloMode).
+                if (typeof MandariEditor.createCollaborativeEditor === 'function') {
+                    this.collabEnabled = true;
+                    this._initCollabEditor(editorEl, initialContent, wsUrl);
+                } else {
+                    this.collabEnabled = false;
+                    this._initSoloEditor(editorEl, initialContent);
+                }
+                this._bindToolbarCommands();
+                this._bindExtendedToolbar();
+
+                // Globale Tastenkürzel: Strg+S = Speichern, Strg+F = Suchen & Ersetzen
+                this._globalKeydownHandler = (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                        e.preventDefault();
+                        this.save();
+                    } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'f') {
+                        e.preventDefault();
+                        this.openSearch();
+                    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                        // Strg+K = Link einfügen (nur wenn der Editor den Fokus hat)
+                        if (editor && editor.isFocused) {
+                            e.preventDefault();
+                            this.openLinkDialog();
+                        }
+                    } else if (e.key === 'Escape' && this.searchOpen) {
+                        this.closeSearch();
+                    }
+                };
+                document.addEventListener('keydown', this._globalKeydownHandler);
+
+                this.updateWordCount();
+
+                // Auto-save every 60 seconds
+                _autoSaveInterval = setInterval(() => this.autoSave(), 60000);
+            }
+
+            // Render letterhead background if available
+            {% if letterhead %}
+            {% if letterhead.is_generated %}
+            // Generierter Briefkopf: HTML-Vorschau über dem Inhalt (statt pdfjs-Overlay)
+            this._renderGeneratedLetterhead(
+                '{% url "work:document_letterhead_editor_preview" org_slug=organization.slug letterhead_id=letterhead.id %}',
+                {
+                    top: {{ letterhead.content_margin_top|default:"25" }},
+                    right: {{ letterhead.content_margin_right|default:"20" }},
+                    bottom: {{ letterhead.content_margin_bottom|default:"25" }},
+                    left: {{ letterhead.content_margin_left|default:"20" }},
+                }
+            );
+            {% else %}
+            if (typeof MandariEditor !== 'undefined' && MandariEditor.renderLetterhead) {
+                MandariEditor.renderLetterhead({
+                    pdfUrl: '{{ letterhead.pdf_file.url }}',
+                    container: document.getElementById('editor-container'),
+                    opacity: 0.25,
+                    margins: {
+                        top: {{ letterhead.content_margin_top|default:"25" }},
+                        right: {{ letterhead.content_margin_right|default:"20" }},
+                        bottom: {{ letterhead.content_margin_bottom|default:"25" }},
+                        left: {{ letterhead.content_margin_left|default:"20" }},
+                    }
+                });
+            }
+            {% endif %}
+            {% endif %}
+
+            // Load inline comments data for click-on-mark popup
+            const inlineDataEl = document.getElementById('inline-comments-data');
+            if (inlineDataEl) {
+                try { this.inlineCommentsData = JSON.parse(inlineDataEl.textContent); }
+                catch (e) { this.inlineCommentsData = []; }
+            }
+
+            // Click handler for existing inline comment marks
+            const editorClickEl = document.getElementById('editor-container');
+            if (editorClickEl) {
+                editorClickEl.addEventListener('click', (e) => {
+                    const mark = e.target.closest('[data-comment-id]');
+                    const link = mark ? null : e.target.closest('.tiptap a[href]');
+                    if (mark) {
+                        e.stopPropagation();
+                        this._handleMarkClick(mark);
+                    } else if (link) {
+                        // Link-Popover (öffnen/bearbeiten/entfernen)
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this._handleLinkClick(link);
+                        return;
+                    } else if (!e.target.closest('.comment-popup')) {
+                        this.hideMarkPopup();
+                    }
+                    this.linkPopupVisible = false;
+                });
+            }
+
+            // Hide inline comment popup on editor scroll
+            const scrollContainer = document.querySelector('.editor-container');
+            if (scrollContainer) {
+                scrollContainer.addEventListener('scroll', () => {
+                    if (!this.commentPopupExpanded) {
+                        this.commentPopupVisible = false;
+                    }
+                }, { passive: true });
+            }
+
+            // Load revisions when history tab is opened
+            this.$watch('sidebarTab', (val) => {
+                if (val === 'history' && this.revisions.length === 0) {
+                    this.loadRevisions();
+                }
+            });
+
+            // Bidirectional comment highlight — toggle CSS class on editor marks
+            this.$watch('activeCommentId', (newId, oldId) => {
+                const editorEl = document.getElementById('editor-container');
+                if (!editorEl) return;
+                // Remove old highlight
+                if (oldId) {
+                    const oldMark = editorEl.querySelector(`[data-comment-id="${oldId}"]`);
+                    if (oldMark) oldMark.classList.remove('comment-mark--active');
+                }
+                // Add new highlight
+                if (newId) {
+                    const newMark = editorEl.querySelector(`[data-comment-id="${newId}"]`);
+                    if (newMark) newMark.classList.add('comment-mark--active');
+                }
+            });
+
+            this.$nextTick(() => {
+                lucide.createIcons();
+            });
+        },
+
+        _initSoloEditor(editorEl, initialContent) {
+            const _this = this;
+            editor = MandariEditor.createEditor({
+                element: editorEl,
+                content: initialContent,
+                editable: true,
+                placeholder: 'Beginnen Sie hier mit dem Schreiben...',
+                onUpdate: (html) => {
+                    _this.updatedAt = Date.now();
+                    _this.updateWordCount();
+                },
+                onSelectionUpdate: (state) => {
+                    _this.updatedAt = Date.now();
+                    _this.formats = state;
+                    _this._checkTextSelection();
+                },
+                onPageCount: (count, currentPage) => {
+                    _this.pageCount = count;
+                    _this.currentPage = currentPage;
+                },
+                onSearchUpdate: (current, total) => {
+                    _this.searchCurrent = current;
+                    _this.searchTotal = total;
+                }
+            });
+        },
+
+        _initCollabEditor(editorEl, initialContent, wsUrl) {
+            const _this = this;
+            this._everConnected = false;
+            try {
+                const result = MandariEditor.createCollaborativeEditor({
+                    element: editorEl,
+                    content: initialContent,
+                    editable: true,
+                    placeholder: 'Beginnen Sie hier mit dem Schreiben...',
+                    wsUrl: wsUrl,
+                    user: {
+                        name: this.collabUserName,
+                        color: this.collabUserColor,
+                    },
+                    onUpdate: (html) => {
+                        _this.updatedAt = Date.now();
+                        _this.updateWordCount();
+                    },
+                    onSelectionUpdate: (state) => {
+                        _this.updatedAt = Date.now();
+                        _this.formats = state;
+                        _this._checkTextSelection();
+                    },
+                    onPageCount: (count, currentPage) => {
+                        _this.pageCount = count;
+                        _this.currentPage = currentPage;
+                    },
+                    onSearchUpdate: (current, total) => {
+                        _this.searchCurrent = current;
+                        _this.searchTotal = total;
+                    },
+                    onPresenceChange: (users) => {
+                        _this.collabUsers = users;
+                        _this.$nextTick(() => lucide.createIcons());
+                    },
+                    onStatusChange: (status) => {
+                        _this.collabStatus = status;
+                        if (status === 'connected') {
+                            _this._everConnected = true;
+                        } else if (status === 'disconnected' && !_this._everConnected) {
+                            // Erste Verbindung fehlgeschlagen → stabiler Solo-Fallback
+                            _this._switchToSoloMode('Echtzeit-Kollaboration nicht verfügbar — Solo-Modus aktiv.');
+                        }
+                    },
+                    onReloadRequired: () => {
+                        // Server hat eine Version wiederhergestellt → frisch laden
+                        showToast('Eine Version wurde wiederhergestellt — das Dokument wird neu geladen.', 'info');
+                        setTimeout(() => window.location.reload(), 800);
+                    },
+                });
+                editor = result.editor;
+                this.collabDestroy = result.collab.destroy;
+            } catch (e) {
+                console.error('Kollaborations-Editor konnte nicht gestartet werden, Solo-Fallback:', e);
+                this.collabEnabled = false;
+                this.collabStatus = 'disconnected';
+                this._initSoloEditor(editorEl, initialContent);
+            }
+        },
+
+        destroy() {
+            // Hinweis: der globale Keydown-Handler bleibt bewusst registriert —
+            // destroy() wird auch von den Editor-Recovery-Pfaden aufgerufen und
+            // die Seite wird bei Navigation ohnehin komplett neu geladen.
+            if (_autoSaveInterval) {
+                clearInterval(_autoSaveInterval);
+                _autoSaveInterval = null;
+            }
+            if (this.collabDestroy) {
+                this.collabDestroy();
+                this.collabDestroy = null;
+            }
+            if (editor) {
+                editor.destroy();
+                editor = null;
+            }
+        },
+
+        _switchToSoloMode(reason = 'Kollaboration vorübergehend deaktiviert') {
+            if (this._collabFailed) return;
+            this._collabFailed = true;
+
+            let currentText = '';
+            if (editor && !editor.isDestroyed) {
+                try {
+                    currentText = editor.getText() || '';
+                } catch (e) {
+                    currentText = '';
+                }
+            }
+
+            this.destroy();
+            this.collabEnabled = false;
+            this.collabStatus = 'disconnected';
+            this.collabUsers = [];
+
+            const editorEl = document.getElementById('editor-container');
+            if (!editorEl) return;
+            editorEl.innerHTML = '';
+
+            const escaped = (currentText || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const fallbackContent = escaped ? `<p>${escaped.replace(/\n/g, '<br>')}</p>` : (document.getElementById('editor-initial-content')?.innerHTML || '<p></p>');
+            this._initSoloEditor(editorEl, fallbackContent);
+            showToast(reason, 'warning');
+        },
+
+        _rebuildSoloEditorFromText() {
+            if (this._recoveringEditor) return;
+            this._recoveringEditor = true;
+            try {
+                let text = '';
+                if (editor && !editor.isDestroyed) {
+                    try { text = editor.getText() || ''; } catch (e) { text = ''; }
+                }
+                this.destroy();
+                this.collabEnabled = false;
+                this.collabStatus = 'disconnected';
+                this.collabUsers = [];
+
+                const editorEl = document.getElementById('editor-container');
+                if (!editorEl) return;
+                editorEl.innerHTML = '';
+
+                const escaped = (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const safeHtml = escaped ? `<p>${escaped.replace(/\n/g, '<br>')}</p>` : '<p></p>';
+                this._initSoloEditor(editorEl, safeHtml);
+            } finally {
+                this._recoveringEditor = false;
+            }
+        },
+
+        closeShareModal() {
+            this.showShareModal = false;
+            this.addUserEmail = '';
+        },
+
+        scrollToCommentInContent(commentId) {
+            // Find the comment mark in the editor and scroll to it
+            if (!editor) return;
+            // Set active comment for bidirectional highlighting
+            this.activeCommentId = commentId;
+            this.sidebarTab = 'comments';
+
+            const editorEl = document.getElementById('editor-container');
+            if (!editorEl) return;
+            const mark = editorEl.querySelector(`[data-comment-id="${commentId}"]`);
+            if (mark) {
+                mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        },
+
+        replyToComment(commentId) {
+            this.replyingToComment = this.replyingToComment === commentId ? null : commentId;
+        },
+
+        clearSelection() {
+            this.selectedText = '';
+            this.selectionStart = 0;
+            this.selectionEnd = 0;
+        },
+
+        // === Inline Comment Popup ===
+
+        _checkTextSelection() {
+            if (!editor) return;
+            // Don't update while user is typing a comment or viewing a mark comment
+            if (this.commentPopupExpanded) return;
+            if (this.markCommentPopup) return;
+
+            const { from, to, empty } = editor.state.selection;
+
+            if (empty || from === to) {
+                this.commentPopupVisible = false;
+                return;
+            }
+
+            const selectedText = editor.state.doc.textBetween(from, to, ' ');
+            if (!selectedText.trim()) {
+                this.commentPopupVisible = false;
+                return;
+            }
+
+            // Calculate popup position (viewport-relative for position: fixed)
+            try {
+                const endCoords = editor.view.coordsAtPos(to);
+                this.commentPopupTop = endCoords.bottom + 8;
+                // Prevent overflow on the right side
+                this.commentPopupLeft = Math.min(endCoords.left, window.innerWidth - 350);
+                // Prevent overflow at the bottom — flip above selection
+                if (this.commentPopupTop + 200 > window.innerHeight) {
+                    const startCoords = editor.view.coordsAtPos(from);
+                    this.commentPopupTop = startCoords.top - 48;
+                }
+            } catch (e) {
+                return;
+            }
+
+            this.inlineSelectedText = selectedText;
+            this._selectionFrom = from;
+            this._selectionTo = to;
+            this.commentPopupVisible = true;
+
+            this.$nextTick(() => lucide.createIcons());
+        },
+
+        expandCommentPopup() {
+            this.commentPopupExpanded = true;
+            this.$nextTick(() => {
+                const input = this.$refs.inlineCommentInput;
+                if (input) input.focus();
+                lucide.createIcons();
+            });
+        },
+
+        hideCommentPopup() {
+            this.commentPopupVisible = false;
+            this.commentPopupExpanded = false;
+            this.inlineCommentText = '';
+            this.inlineSelectedText = '';
+        },
+
+        // === Mark Comment Detail Popup (click on existing highlight) ===
+
+        _handleMarkClick(markEl) {
+            const markId = markEl.getAttribute('data-comment-id');
+            if (!markId) return;
+
+            // Find comment data
+            const comment = this.inlineCommentsData.find(c => c.mark_id === markId);
+            if (!comment) return;
+
+            // Toggle off if same mark clicked
+            if (this.activeCommentId === markId) {
+                this.activeCommentId = null;
+                this.hideMarkPopup();
+                return;
+            }
+
+            // Set active comment for bidirectional highlighting
+            this.activeCommentId = markId;
+
+            // Hide creation popup if visible
+            this.commentPopupVisible = false;
+
+            // Position popup near the mark element
+            const rect = markEl.getBoundingClientRect();
+            this.markCommentTop = rect.bottom + 8;
+            this.markCommentLeft = Math.min(rect.left, window.innerWidth - 340);
+            if (this.markCommentTop + 300 > window.innerHeight) {
+                this.markCommentTop = rect.top - 280;
+            }
+
+            this.markCommentData = comment;
+            this.markCommentPopup = true;
+            this.markReplyText = '';
+
+            // Switch to comments tab and scroll sidebar to this comment
+            this.sidebarTab = 'comments';
+            this.$nextTick(() => {
+                lucide.createIcons();
+                const sidebarComment = document.getElementById(`comment-sidebar-${comment.id}`);
+                if (sidebarComment) {
+                    sidebarComment.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            });
+        },
+
+        hideMarkPopup() {
+            this.markCommentPopup = false;
+            this.markCommentData = null;
+            this.markReplyText = '';
+            this.activeCommentId = null;
+        },
+
+        async submitMarkReply() {
+            if (!this.markReplyText.trim() || this.markReplySubmitting || !this.markCommentData) return;
+            this.markReplySubmitting = true;
+
+            const formData = new URLSearchParams();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('content', this.markReplyText.trim());
+            formData.append('parent', this.markCommentData.id);
+
+            try {
+                const response = await fetch('{% url "work:document_comment" org_slug=organization.slug motion_id=motion.id %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.success && data.comment) {
+                    // Add reply to local data so popup updates immediately
+                    this.markCommentData.replies.push({
+                        id: data.comment.id,
+                        content: data.comment.content,
+                        author_name: data.comment.author,
+                        author_initials: data.comment.author.substring(0, 2).toUpperCase(),
+                        created_at: data.comment.created_at,
+                    });
+                    this.markReplyText = '';
+                    this.$nextTick(() => lucide.createIcons());
+                } else {
+                    showToast('Fehler beim Speichern der Antwort.', 'error');
+                }
+            } catch (error) {
+                console.error('Reply error:', error);
+                showToast('Fehler beim Speichern der Antwort.', 'error');
+            }
+
+            this.markReplySubmitting = false;
+        },
+
+        async resolveMarkComment() {
+            if (!this.markCommentData) return;
+            const commentId = this.markCommentData.id;
+
+            try {
+                const response = await fetch(`/work/{{ organization.slug }}/documents/{{ motion.id }}/comment/${commentId}/resolve/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                });
+                const data = await response.json();
+                if (data.success) {
+                    // Update local state
+                    this.markCommentData.is_resolved = true;
+                    // Update the mark in the editor to show resolved style
+                    if (editor) {
+                        editor.commands.unsetCommentMark(this.markCommentData.mark_id);
+                    }
+                    this.hideMarkPopup();
+                    await this.reloadCommentsSidebar();
+                } else {
+                    showToast('Fehler beim Erledigen.', 'error');
+                }
+            } catch (error) {
+                showToast('Fehler beim Erledigen.', 'error');
+            }
+        },
+
+        async submitInlineComment() {
+            if (!this.inlineCommentText.trim() || this.commentSubmitting) return;
+            this.commentSubmitting = true;
+
+            // Generate mark_id client-side and apply mark SYNCHRONOUSLY
+            // to avoid "mismatched transaction" error from stale positions after await
+            const markId = crypto.randomUUID();
+            let markApplied = false;
+
+            if (editor) {
+                try {
+                    editor.chain()
+                        .focus()
+                        .setTextSelection({ from: this._selectionFrom, to: this._selectionTo })
+                        .setCommentMark({ commentId: markId })
+                        .run();
+                    markApplied = true;
+                } catch (e) {
+                    console.warn('Failed to apply comment mark:', e);
+                }
+            }
+
+            const formData = new URLSearchParams();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('content', this.inlineCommentText.trim());
+            formData.append('selected_text', this.inlineSelectedText);
+            formData.append('selection_start', this._selectionFrom);
+            formData.append('selection_end', this._selectionTo);
+            formData.append('mark_id', markId);
+
+            try {
+                const response = await fetch('{% url "work:document_comment" org_slug=organization.slug motion_id=motion.id %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.success && data.comment) {
+                    this.hideCommentPopup();
+                    this.sidebarTab = 'comments';
+                    await this.reloadCommentsSidebar();
+                } else {
+                    // Revert the mark on failure
+                    if (markApplied && editor) {
+                        try { editor.commands.unsetCommentMark(markId); } catch (e) { /* ignore */ }
+                    }
+                    showToast('Fehler beim Speichern des Kommentars.', 'error');
+                }
+            } catch (error) {
+                console.error('Inline comment error:', error);
+                // Revert the mark on failure
+                if (markApplied && editor) {
+                    try { editor.commands.unsetCommentMark(markId); } catch (e) { /* ignore */ }
+                }
+                showToast('Fehler beim Speichern des Kommentars.', 'error');
+            }
+
+            this.commentSubmitting = false;
+        },
+
+        async submitComment() {
+            if (!this.newCommentContent.trim() || this.commentSubmitting) return;
+            this.commentSubmitting = true;
+
+            const formData = new URLSearchParams();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('content', this.newCommentContent.trim());
+            if (this.selectedText) {
+                formData.append('selected_text', this.selectedText);
+                formData.append('selection_start', this.selectionStart);
+                formData.append('selection_end', this.selectionEnd);
+            }
+
+            try {
+                const response = await fetch('{% url "work:document_comment" org_slug=organization.slug motion_id=motion.id %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.success && data.comment) {
+                    // If this was an inline comment with a mark_id, apply the mark in the editor
+                    if (data.comment.mark_id && editor && this.selectedText) {
+                        editor.chain().focus().setCommentMark({ commentId: data.comment.mark_id }).run();
+                    }
+                    this.newCommentContent = '';
+                    this.clearSelection();
+                    await this.reloadCommentsSidebar();
+                } else {
+                    showToast('Fehler beim Speichern des Kommentars.', 'error');
+                }
+            } catch (error) {
+                console.error('Comment error:', error);
+                showToast('Fehler beim Speichern des Kommentars.', 'error');
+            }
+
+            this.commentSubmitting = false;
+        },
+
+        async reloadCommentsSidebar() {
+            try {
+                const response = await fetch(window.location.href, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                if (!response.ok) return;
+                const html = await response.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const selector = `.editor-sidebar [x-show="sidebarTab === 'comments'"]`;
+                const nextSidebar = doc.querySelector(selector);
+                const currentSidebar = document.querySelector(selector);
+                if (nextSidebar && currentSidebar) {
+                    currentSidebar.innerHTML = nextSidebar.innerHTML;
+                    this.$nextTick(() => lucide.createIcons());
+                }
+            } catch (error) {
+                console.warn('Could not refresh comments sidebar:', error);
+            }
+        },
+
+        updateWordCount() {
+            if (!editor) return;
+            const text = editor.getText().trim();
+            this.wordCount = text ? text.split(/\s+/).length : 0;
+            try {
+                this.charCount = editor.storage.characterCount ? editor.storage.characterCount.characters() : text.length;
+            } catch (e) {
+                this.charCount = text.length;
+            }
+        },
+
+        /* === Formatvorlagen-Label (folgt dem Cursor) === */
+        get styleLabel() {
+            if (this.formats.header) return 'Überschrift ' + this.formats.header;
+            if (this.formats.blockquote) return 'Zitat';
+            return 'Standard';
+        },
+
+        /* === Suchen & Ersetzen === */
+        toggleSearch() {
+            if (this.searchOpen) {
+                this.closeSearch();
+            } else {
+                this.openSearch();
+            }
+        },
+
+        openSearch() {
+            this.searchOpen = true;
+            this.$nextTick(() => {
+                if (this.$refs.searchInput) {
+                    this.$refs.searchInput.focus();
+                    this.$refs.searchInput.select();
+                }
+                lucide.createIcons();
+            });
+            if (this.searchTerm) this.runSearch();
+        },
+
+        closeSearch() {
+            this.searchOpen = false;
+            this.searchCurrent = 0;
+            this.searchTotal = 0;
+            if (editor && !editor.isDestroyed) {
+                editor.commands.clearSearch();
+            }
+        },
+
+        runSearch() {
+            if (!editor || editor.isDestroyed) return;
+            if (!this.searchTerm) {
+                editor.commands.clearSearch();
+                this.searchCurrent = 0;
+                this.searchTotal = 0;
+                return;
+            }
+            editor.commands.setSearchTerm(this.searchTerm, this.searchMatchCase);
+        },
+
+        findNext() {
+            if (!editor || editor.isDestroyed) return;
+            editor.commands.findNext();
+        },
+
+        findPrev() {
+            if (!editor || editor.isDestroyed) return;
+            editor.commands.findPrevious();
+        },
+
+        replaceCurrent() {
+            if (!editor || editor.isDestroyed || !this.searchTotal) return;
+            editor.commands.replaceCurrent(this.replaceTerm);
+        },
+
+        replaceAll() {
+            if (!editor || editor.isDestroyed || !this.searchTotal) return;
+            editor.commands.replaceAll(this.replaceTerm);
+        },
+
+        /* === Links: Dialog + Popover === */
+        openLinkDialog() {
+            if (!editor || editor.isDestroyed) return;
+            this.linkPopupVisible = false;
+            this.linkUrl = (editor.getAttributes('link').href) || '';
+            this.showLinkModal = true;
+            this.$nextTick(() => {
+                if (this.$refs.linkUrlInput) this.$refs.linkUrlInput.focus();
+            });
+        },
+
+        insertLink() {
+            if (!editor || editor.isDestroyed) return;
+            let url = this.linkUrl.trim();
+            if (!url) return;
+            if (!/^(https?:|mailto:|tel:)/i.test(url)) {
+                url = 'https://' + url;
+            }
+            try {
+                editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+            } catch (err) {
+                console.error('Link insert failed:', err);
+            }
+            this.showLinkModal = false;
+            this.linkUrl = '';
+        },
+
+        removeLink() {
+            if (!editor || editor.isDestroyed) return;
+            try {
+                editor.chain().focus().extendMarkRange('link').unsetLink().run();
+            } catch (err) {
+                console.error('Link remove failed:', err);
+            }
+            this.showLinkModal = false;
+            this.linkUrl = '';
+        },
+
+        _handleLinkClick(linkEl) {
+            this.linkPopupHref = linkEl.getAttribute('href') || '';
+            const rect = linkEl.getBoundingClientRect();
+            this.linkPopupTop = rect.bottom + 6;
+            this.linkPopupLeft = Math.max(8, rect.left);
+            this.linkPopupVisible = true;
+            this.$nextTick(() => lucide.createIcons());
+        },
+
+        editLinkFromPopup() {
+            this.linkPopupVisible = false;
+            this.linkUrl = this.linkPopupHref;
+            this.showLinkModal = true;
+            this.$nextTick(() => {
+                if (this.$refs.linkUrlInput) this.$refs.linkUrlInput.focus();
+            });
+        },
+
+        removeLinkFromPopup() {
+            this.linkPopupVisible = false;
+            this.removeLink();
+        },
+
+        runEditorCommand(commandFn) {
+            if (!editor || editor.isDestroyed) return;
+            try {
+                commandFn(editor);
+            } catch (error) {
+                console.error('Editor command failed:', error);
+            }
+        },
+
+        isEditorReady() {
+            return editor && !editor.isDestroyed;
+        },
+
+        _bindToolbarCommands() {
+            const toolbar = document.getElementById('editor-toolbar');
+            if (!toolbar) return;
+
+            toolbar.addEventListener('mousedown', (event) => {
+                const button = event.target.closest('[data-editor-cmd]');
+                if (!button) return;
+                event.preventDefault();
+                if (!editor || editor.isDestroyed) return;
+
+                const cmd = button.getAttribute('data-editor-cmd');
+                const level = parseInt(button.getAttribute('data-editor-level') || '0', 10);
+                const value = button.getAttribute('data-editor-value') || '';
+                this._executeToolbarCommand(cmd, level, value);
+            });
+        },
+
+        _executeToolbarCommand(cmd, level = 0, value = '') {
+            if (!editor || editor.isDestroyed) return;
+            try {
+                switch (cmd) {
+                    case 'bold': editor.chain().focus().toggleBold().run(); break;
+                    case 'italic': editor.chain().focus().toggleItalic().run(); break;
+                    case 'underline': editor.chain().focus().toggleUnderline().run(); break;
+                    case 'strike': editor.chain().focus().toggleStrike().run(); break;
+                    case 'highlight': editor.chain().focus().toggleHighlight().run(); break;
+                    case 'paragraph': editor.chain().focus().setParagraph().run(); break;
+                    case 'align':
+                        if (!value) break;
+                        editor.chain().focus().setTextAlign(value).run();
+                        break;
+                    case 'pageBreak': editor.chain().focus().setPageBreak().run(); break;
+                    case 'heading':
+                        if (!level) break;
+                        editor.chain().focus().toggleHeading({ level }).run();
+                        break;
+                    case 'bulletList': editor.chain().focus().toggleBulletList().run(); break;
+                    case 'orderedList': editor.chain().focus().toggleOrderedList().run(); break;
+                    case 'taskList': editor.chain().focus().toggleTaskList().run(); break;
+                    case 'blockquote': editor.chain().focus().toggleBlockquote().run(); break;
+                    case 'horizontalRule': editor.chain().focus().setHorizontalRule().run(); break;
+                    case 'indent':
+                        // Lists: sink list item; otherwise: paragraph indent
+                        if (editor.isActive('listItem') && editor.can().sinkListItem('listItem')) {
+                            editor.chain().focus().sinkListItem('listItem').run();
+                        } else {
+                            editor.chain().focus().indent().run();
+                        }
+                        break;
+                    case 'outdent':
+                        if (editor.isActive('listItem') && editor.can().liftListItem('listItem')) {
+                            editor.chain().focus().liftListItem('listItem').run();
+                        } else {
+                            editor.chain().focus().outdent().run();
+                        }
+                        break;
+                    case 'undo': editor.commands.undo(); break;
+                    case 'redo': editor.commands.redo(); break;
+                }
+            } catch (error) {
+                console.error('Editor command failed:', error);
+            }
+        },
+
+        _bindExtendedToolbar() {
+            const _this = this;
+            const wrapper = this.$el;
+
+            // Table commands via custom events ($dispatch bubbles to wrapper)
+            wrapper.addEventListener('editor-table-cmd', (e) => {
+                if (!editor || editor.isDestroyed) return;
+                const cmd = e.detail;
+                try {
+                    switch (cmd) {
+                        case 'insertTable':
+                            editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+                            break;
+                        case 'addColumnBefore': editor.chain().focus().addColumnBefore().run(); break;
+                        case 'addColumnAfter': editor.chain().focus().addColumnAfter().run(); break;
+                        case 'addRowBefore': editor.chain().focus().addRowBefore().run(); break;
+                        case 'addRowAfter': editor.chain().focus().addRowAfter().run(); break;
+                        case 'deleteColumn': editor.chain().focus().deleteColumn().run(); break;
+                        case 'deleteRow': editor.chain().focus().deleteRow().run(); break;
+                        case 'deleteTable': editor.chain().focus().deleteTable().run(); break;
+                    }
+                } catch (err) {
+                    console.error('Table command failed:', err);
+                }
+            });
+
+            // Color command via custom event
+            wrapper.addEventListener('editor-color-cmd', (e) => {
+                if (!editor || editor.isDestroyed) return;
+                const color = e.detail;
+                try {
+                    if (color) {
+                        editor.chain().focus().setColor(color).run();
+                    } else {
+                        editor.chain().focus().unsetColor().run();
+                    }
+                } catch (err) {
+                    console.error('Color command failed:', err);
+                }
+            });
+
+            // Slash command image insertion (dispatched on window from editor bundle)
+            window.addEventListener('slash-insert-image', () => {
+                _this.showImageModal = true;
+            });
+        },
+
+        insertImage() {
+            if (!editor || !this.imageUrl.trim()) return;
+            try {
+                editor.chain().focus().setImage({
+                    src: this.imageUrl.trim(),
+                    alt: this.imageAlt.trim() || undefined,
+                }).run();
+            } catch (err) {
+                console.error('Image insert failed:', err);
+            }
+            this.showImageModal = false;
+            this.imageUrl = '';
+            this.imageAlt = '';
+        },
+
+        getContent() {
+            if (!editor) return '';
+            return editor.getHTML();
+        },
+
+        setContent(html) {
+            if (!editor) return;
+            editor.commands.setContent(html);
+        },
+
+        async save() {
+            if (this.saving || !editor) return;
+            this.saving = true;
+            this.saveError = false;
+
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('action', 'save');
+            formData.append('title', this.title);
+            formData.append('content', this.getContent());
+            formData.append('motion_type', this.motionType);
+            formData.append('document_type_id', this.documentTypeId);
+            formData.append('letterhead_id', this.letterheadId);
+
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        this.lastSaved = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                        this.saveError = false;
+                    } else {
+                        this.saveError = true;
+                    }
+                } else {
+                    this.saveError = true;
+                }
+            } catch (error) {
+                this.saveError = true;
+                console.error('Save error:', error);
+            }
+
+            this.saving = false;
+        },
+
+        autoSave() {
+            // Im Kollab-Modus persistiert der Server (yjs_save inkl. HTML +
+            // gedrosselte Revisionen) — kein POST-Autosave nötig, solange
+            // die Verbindung steht.
+            if (this.collabEnabled && this.collabStatus === 'connected') return;
+            if (!this.saving && editor) this.save();
+        },
+
+        setDocumentType(id, name) {
+            this.documentTypeId = id;
+            this.documentTypeName = name;
+        },
+
+        setLetterhead(id, name) {
+            this.letterheadId = id;
+            this.letterheadName = name;
+
+            // Re-render letterhead background
+            const container = document.getElementById('editor-container');
+            if (!container) return;
+
+            // Remove existing letterhead canvas and HTML preview
+            const existingCanvas = container.querySelector('.letterhead-canvas');
+            if (existingCanvas) existingCanvas.remove();
+            this._removeGeneratedLetterhead(container);
+
+            // Reset editor padding + font to defaults (WYSIWYG-Fallback)
+            const tiptapEl = container.querySelector('.tiptap');
+            if (tiptapEl) {
+                tiptapEl.style.padding = '30mm 25mm 25mm 25mm';
+                tiptapEl.style.fontFamily = 'Arial, Helvetica, sans-serif';
+                tiptapEl.style.fontSize = '11pt';
+            }
+
+            if (!id) return; // "Kein Briefpapier" selected
+
+            // Find letterhead data
+            const lhData = this.letterheadsData.find(lh => lh.id === id);
+            if (!lhData) return;
+
+            // Schrift aus dem Briefkopf anwenden (WYSIWYG = Export)
+            if (tiptapEl) {
+                if (lhData.font_family) {
+                    tiptapEl.style.fontFamily = `"${lhData.font_family}", Arial, Helvetica, sans-serif`;
+                }
+                if (lhData.font_size) {
+                    tiptapEl.style.fontSize = `${lhData.font_size}pt`;
+                }
+                // Ränder direkt setzen — auch wenn keine Vorschau geladen werden kann
+                tiptapEl.style.padding = `${lhData.margin_top}mm ${lhData.margin_right}mm ${lhData.margin_bottom}mm ${lhData.margin_left}mm`;
+            }
+
+            if (lhData.kind === 'generated') {
+                // Generierter Briefkopf: HTML-Vorschau statt pdfjs-Overlay
+                this._renderGeneratedLetterhead(lhData.preview_url, {
+                    top: lhData.margin_top,
+                    right: lhData.margin_right,
+                    bottom: lhData.margin_bottom,
+                    left: lhData.margin_left,
+                });
+                return;
+            }
+
+            if (typeof MandariEditor === 'undefined' || !MandariEditor.renderLetterhead) return;
+
+            MandariEditor.renderLetterhead({
+                pdfUrl: lhData.pdf_url,
+                container: container,
+                opacity: 0.25,
+                margins: {
+                    top: lhData.margin_top,
+                    right: lhData.margin_right,
+                    bottom: lhData.margin_bottom,
+                    left: lhData.margin_left,
+                }
+            });
+        },
+
+        async _renderGeneratedLetterhead(previewUrl, margins) {
+            const container = document.getElementById('editor-container');
+            if (!container || !previewUrl) return;
+
+            this._removeGeneratedLetterhead(container);
+
+            try {
+                const response = await fetch(previewUrl);
+                if (!response.ok) return;
+                const html = await response.text();
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'letterhead-html-preview';
+                wrapper.style.padding = `12mm ${margins.right}mm 0 ${margins.left}mm`;
+                wrapper.innerHTML = html;
+                container.insertBefore(wrapper, container.firstChild);
+
+                // Inhalt rückt unter den Briefkopf: oberes Padding reduzieren
+                const tiptapEl = container.querySelector('.tiptap');
+                if (tiptapEl) {
+                    tiptapEl.style.padding = `6mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm`;
+                }
+            } catch (e) {
+                // Vorschau ist optional — Fehler still ignorieren
+            }
+        },
+
+        _removeGeneratedLetterhead(container) {
+            const existing = container.querySelector('.letterhead-html-preview');
+            if (existing) existing.remove();
+        },
+
+        async changeStatus(newStatus) {
+            try {
+                const response = await fetch(`{% url 'work:document_status' org_slug=organization.slug motion_id=motion.id %}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: new URLSearchParams({ status: newStatus })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    location.reload();
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            } catch (error) {
+                showToast('Fehler beim Statuswechsel', 'error');
+            }
+        },
+
+        async confirmDelete() {
+            const ok = await confirmAction({
+                title: 'Dokument löschen',
+                message: 'Möchten Sie dieses Dokument wirklich löschen? Es wird für 30 Tage im Papierkorb aufbewahrt.',
+                confirmText: 'Löschen',
+                variant: 'danger'
+            });
+            if (!ok) return;
+
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', this.csrfToken);
+            formData.append('action', 'delete');
+
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.success) {
+                    window.location.href = '{% url "work:documents" org_slug=organization.slug %}';
+                } else {
+                    showToast('Fehler beim Loeschen: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            } catch (error) {
+                showToast('Fehler beim Loeschen des Dokuments.', 'error');
+            }
+        },
+
+        sendMessage() {
+            if (!this.userMessage.trim() || this.aiLoading) return;
+            const msg = this.userMessage.trim();
+            this.chatMessages.push({ role: 'user', content: msg });
+            this.userMessage = '';
+            this.aiAction('chat', msg);
+        },
+
+        async aiAction(action, instruction = '') {
+            this.aiLoading = true;
+            this.$nextTick(() => {
+                const container = this.$refs.chatMessages;
+                if (container) container.scrollTop = container.scrollHeight;
+            });
+
+            const text = editor ? this.getContent() : '';
+            const selectedText = this.selectedText || '';
+            const historyPayload = this.chatMessages
+                .filter(m => m.role === 'user' || m.role === 'ai')
+                .slice(-8)
+                .map(m => ({
+                    role: m.role === 'ai' ? 'assistant' : 'user',
+                    content: String(m.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+                }));
+
+            try {
+                const response = await fetch('{% url "work:document_ai" org_slug=organization.slug %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    },
+                    body: new URLSearchParams({
+                        action: action,
+                        text: text,
+                        instruction: instruction,
+                        motion_type: this.motionType,
+                        selected_text: selectedText,
+                        history: JSON.stringify(historyPayload),
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    // Kontingent-Anzeige aktualisieren
+                    if (data.quota) {
+                        this.aiQuotaLimit = (data.quota.limit === undefined) ? this.aiQuotaLimit : data.quota.limit;
+                        this.aiQuotaUsed = (data.quota.used === undefined) ? this.aiQuotaUsed : data.quota.used;
+                    }
+                    let content = '';
+                    let hasAction = false;
+                    let actionContent = null;
+
+                    if (data.content) {
+                        content = data.content.replace(/\n/g, '<br>');
+                        hasAction = action !== 'chat';
+                        actionContent = data.content;
+                    }
+                    if (data.suggestions && data.suggestions.length > 0) {
+                        content += '<ul class="mt-2 space-y-1">';
+                        data.suggestions.forEach(s => { content += `<li class="text-sm">${s}</li>`; });
+                        content += '</ul>';
+                    }
+                    if (!content) content = 'Keine Vorschlaege verfuegbar.';
+
+                    this.chatMessages.push({ role: 'ai', content, hasAction, actionContent });
+                } else {
+                    this.chatMessages.push({
+                        role: 'ai',
+                        content: 'Entschuldigung, es ist ein Fehler aufgetreten: ' + (data.error || 'Unbekannter Fehler')
+                    });
+                }
+            } catch (error) {
+                this.chatMessages.push({
+                    role: 'ai',
+                    content: 'Entschuldigung, die Verbindung zum KI-Service ist fehlgeschlagen.'
+                });
+            }
+
+            this.aiLoading = false;
+            this.$nextTick(() => {
+                const container = this.$refs.chatMessages;
+                if (container) container.scrollTop = container.scrollHeight;
+                lucide.createIcons();
+            });
+        },
+
+        applyAiContent(content) {
+            if (content && editor) {
+                this.aiOriginalContent = this.getContent();
+                this.aiPreviewContent = content;
+                this.previewMode = 'suggested';
+                this.aiPreviewActive = true;
+                this.$nextTick(() => lucide.createIcons());
+            }
+        },
+
+        closeAiPreview() {
+            this.aiPreviewActive = false;
+            this.aiPreviewContent = '';
+            this.aiOriginalContent = '';
+            this.previewMode = 'suggested';
+        },
+
+        applyAiPreview() {
+            if (this.aiPreviewContent && editor) {
+                this.setContent(this.aiPreviewContent);
+                this.chatMessages.push({ role: 'ai', content: 'Änderungen wurden in den Editor übernommen.' });
+                this.closeAiPreview();
+                this.$nextTick(() => lucide.createIcons());
+            }
+        },
+
+        // === Version History ===
+
+        async loadRevisions() {
+            if (this.revisionsLoading) return;
+            this.revisionsLoading = true;
+
+            try {
+                const response = await fetch(`/work/{{ organization.slug }}/documents/${this.motionId}/revisions/`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.revisions = data.revisions;
+                }
+            } catch (error) {
+                console.error('Error loading revisions:', error);
+            }
+
+            this.revisionsLoading = false;
+            this.$nextTick(() => lucide.createIcons());
+        },
+
+        async viewRevision(rev) {
+            this.selectedRevision = rev;
+            this.historyMode = true;
+            this.revisionLoading = true;
+            this.revisionViewMode = 'diff';
+
+            try {
+                const response = await fetch(`/work/{{ organization.slug }}/documents/${this.motionId}/revisions/${rev.id}/`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    this.revisionContent = data.revision.content;
+                    // Generate diff between revision and current content
+                    const currentContent = editor ? this.getContent() : '';
+                    if (typeof MandariEditor !== 'undefined' && MandariEditor.renderDiff) {
+                        this.revisionDiff = MandariEditor.renderDiff(data.revision.content, currentContent);
+                    } else {
+                        this.revisionDiff = data.revision.content;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading revision:', error);
+            }
+
+            this.revisionLoading = false;
+            this.$nextTick(() => lucide.createIcons());
+        },
+
+        exitHistoryMode() {
+            this.historyMode = false;
+            this.selectedRevision = null;
+            this.revisionDiff = '';
+            this.revisionContent = '';
+        },
+
+        async restoreRevision(rev) {
+            const ok = await confirmAction({
+                title: 'Version wiederherstellen',
+                message: `Moechten Sie Version ${rev.version} wiederherstellen? Der aktuelle Inhalt wird als neue Version gesichert.`,
+                confirmText: 'Wiederherstellen',
+                variant: 'info'
+            });
+            if (!ok) return;
+
+            try {
+                const response = await fetch(`/work/{{ organization.slug }}/documents/${this.motionId}/revisions/${rev.id}/restore/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRFToken': this.csrfToken,
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    // Reload to get the restored content
+                    location.reload();
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            } catch (error) {
+                showToast('Fehler beim Wiederherstellen', 'error');
+            }
+        },
+
+        formatTimeAgo(isoDate) {
+            const date = new Date(isoDate);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMin = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            if (diffMin < 1) return 'gerade eben';
+            if (diffMin < 60) return `vor ${diffMin} Min.`;
+            if (diffHours < 24) return `vor ${diffHours} Std.`;
+            if (diffDays < 7) return `vor ${diffDays} Tagen`;
+            return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+    }
+}
+</script>
+
+<script>
+// =====================================================================
+// Tracking-Sidebar (Details / Aufgaben): Zuständigkeit, Themen, Frist,
+// Freigaben und Checkliste. Bewusst Vanilla-JS (unabhängig von Alpine),
+// da das Checklisten-Panel per innerHTML-Swap ersetzt wird.
+// =====================================================================
+(function () {
+    const csrfToken = '{{ csrf_token }}';
+    const checklistUrl = '{% url "work:document_checklist" org_slug=organization.slug motion_id=motion.id %}';
+
+    async function postForm(url, formData) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrfToken },
+            body: formData,
+        });
+        return response.json();
+    }
+
+    // Details-Formulare (set_responsible, set_contributors, set_topics, set_due_date)
+    window.mandariMotionMeta = function (event) {
+        event.preventDefault();
+        const form = event.target;
+        postForm(form.action, new FormData(form))
+            .then((data) => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            })
+            .catch(() => showToast('Fehler beim Speichern', 'error'));
+        return false;
+    };
+
+    // Freigabe anfordern
+    window.mandariApprovalRequest = function (event) {
+        event.preventDefault();
+        const form = event.target;
+        postForm(form.action, new FormData(form))
+            .then((data) => {
+                if (data.success) {
+                    showToast(data.created ? 'Freigabe angefragt.' : 'Freigabe war bereits angefragt.', 'success');
+                    location.reload();
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            })
+            .catch(() => showToast('Fehler beim Anfragen der Freigabe', 'error'));
+        return false;
+    };
+
+    // Freigabe entscheiden (Freigeben/Ablehnen + Kommentar)
+    window.mandariApprovalDecide = function (url, decision) {
+        const formData = new FormData();
+        formData.append('decision', decision);
+        const commentEl = document.getElementById('approval-decide-comment');
+        formData.append('comment', commentEl ? commentEl.value : '');
+        postForm(url, formData)
+            .then((data) => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            })
+            .catch(() => showToast('Fehler beim Entscheiden', 'error'));
+    };
+
+    // Checkliste: Event-Delegation auf dem stabilen Wrapper, Panel-Swap per innerHTML
+    function checklistAction(formData) {
+        postForm(checklistUrl, formData)
+            .then((data) => {
+                if (data.success) {
+                    const wrapper = document.getElementById('checklist-panel-wrapper');
+                    if (wrapper) {
+                        wrapper.innerHTML = data.html;
+                        if (window.lucide) window.lucide.createIcons();
+                    }
+                } else {
+                    showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
+                }
+            })
+            .catch(() => showToast('Fehler bei der Checkliste', 'error'));
+    }
+
+    function handleChecklistAdd() {
+        const input = document.getElementById('checklist-new-title');
+        if (!input || !input.value.trim()) return;
+        const formData = new FormData();
+        formData.append('action', 'add');
+        formData.append('title', input.value.trim());
+        checklistAction(formData);
+    }
+
+    document.addEventListener('click', function (event) {
+        const button = event.target.closest('[data-checklist-action]');
+        if (!button) return;
+        const action = button.dataset.checklistAction;
+        if (action === 'add') {
+            handleChecklistAdd();
+            return;
+        }
+        const formData = new FormData();
+        formData.append('action', action);
+        formData.append('item_id', button.dataset.itemId || '');
+        checklistAction(formData);
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && event.target && event.target.id === 'checklist-new-title') {
+            event.preventDefault();
+            handleChecklistAdd();
+        }
+    });
+})();
+</script>
