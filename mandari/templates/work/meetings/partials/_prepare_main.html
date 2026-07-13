@@ -1,0 +1,496 @@
+        <!-- ============ Spalte 2: Hauptbereich ============ -->
+        <main :class="mobileTab === 'main' ? 'block' : 'hidden xl:block'"
+              class="mt-4 xl:mt-0 xl:h-full xl:overflow-y-auto xl:pr-1">
+
+            <!-- ===== PDF-Inline-Vorschau (Muster RIS-Dokumentvorschau) mit Kommentarspur ===== -->
+            <div x-show="preview.open" x-cloak id="pdf-preview-panel"
+                 class="flex flex-col h-[78vh] xl:h-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                <!-- Kopf: Titel · Im neuen Tab öffnen · Schließen -->
+                <div class="flex items-center gap-2.5 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/60 shrink-0">
+                    <i data-lucide="file-text" class="w-4 h-4 text-red-500 shrink-0"></i>
+                    <h3 class="flex-1 min-w-0 text-sm font-semibold text-gray-900 dark:text-white truncate"
+                        :title="preview.title" x-text="preview.title"></h3>
+                    <a :href="preview.externalUrl" target="_blank" rel="noopener noreferrer"
+                       class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                        Im neuen Tab öffnen
+                    </a>
+                    <button type="button" @click="closePreview()" title="Vorschau schließen"
+                            class="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <!-- Körper: PDF-iframe + Kommentarspur -->
+                <div class="flex flex-col sm:flex-row flex-1 min-h-0">
+                    <div class="flex-1 min-h-0 min-w-0 bg-gray-100 dark:bg-gray-900 relative">
+                        <div x-show="previewLoading" class="absolute inset-0 flex items-center justify-center">
+                            <i data-lucide="loader-2" class="w-6 h-6 animate-spin text-gray-400"></i>
+                        </div>
+                        <template x-if="preview.frameSrc">
+                            <iframe :src="preview.frameSrc" @load="previewLoading = false"
+                                    class="w-full h-full border-0 transition-opacity"
+                                    :class="previewLoading ? 'opacity-0' : 'opacity-100'"
+                                    loading="eager"></iframe>
+                        </template>
+                    </div>
+                    <!-- Kommentarspur -->
+                    <aside id="annotation-rail"
+                           class="sm:w-72 shrink-0 flex flex-col max-h-64 sm:max-h-none border-t sm:border-t-0 sm:border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                        <div class="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700 shrink-0 flex items-center gap-2">
+                            <i data-lucide="message-square-text" class="w-4 h-4 text-sky-500"></i>
+                            <span class="text-sm font-semibold text-gray-900 dark:text-white">Anmerkungen</span>
+                            <span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                                  x-text="annotations.length"></span>
+                            <div class="flex-1"></div>
+                            <span class="text-[10px] text-gray-400" title="Anmerkungen sind für die gesamte Organisation sichtbar">Org-weit</span>
+                        </div>
+                        <div class="flex-1 min-h-0 overflow-y-auto px-3 py-2.5 space-y-3">
+                            <template x-for="group in annotationGroups" :key="group.page">
+                                <div>
+                                    <button type="button" @click="previewGotoPage(group.page)" title="Zur Seite springen"
+                                            class="mb-1.5 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-sky-600 dark:text-sky-400 hover:underline">
+                                        <i data-lucide="corner-down-right" class="w-3 h-3"></i>
+                                        Seite <span x-text="group.page"></span>
+                                    </button>
+                                    <div class="space-y-1.5">
+                                        <template x-for="a in group.entries" :key="a.id">
+                                            <div class="px-2.5 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-700">
+                                                <div class="flex items-center gap-1.5 mb-0.5">
+                                                    <span class="text-[11px] font-semibold text-gray-700 dark:text-gray-200" x-text="a.author"></span>
+                                                    <span class="text-[10px] text-gray-400" x-text="fmtDateTime(a.created_at)"></span>
+                                                    <div class="flex-1"></div>
+                                                    <button type="button" x-show="a.is_own" @click="deleteAnnotation(a)"
+                                                            class="p-0.5 text-gray-300 hover:text-red-500 transition-colors" title="Anmerkung löschen">
+                                                        <i data-lucide="x" class="w-3 h-3"></i>
+                                                    </button>
+                                                </div>
+                                                <p class="text-xs text-gray-700 dark:text-gray-200 whitespace-pre-line break-words" x-text="a.content"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                            <p x-show="annotations.length === 0 && !annotationsLoading" class="py-6 text-xs text-center text-gray-400">
+                                Noch keine Anmerkungen zu dieser Datei.
+                            </p>
+                            <p x-show="annotationsLoading" class="py-6 text-xs text-center text-gray-400">
+                                <i data-lucide="loader-2" class="w-3.5 h-3.5 inline animate-spin mr-1"></i> Anmerkungen laden...
+                            </p>
+                        </div>
+                        <div class="px-3 py-2.5 border-t border-gray-100 dark:border-gray-700 shrink-0">
+                            <label class="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400 mb-1.5">
+                                Anmerkung zu Seite
+                                <input type="number" min="1" x-model.number="newAnnotationPage"
+                                       class="w-14 px-1.5 py-0.5 text-xs text-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded focus:border-sky-500 outline-none dark:text-gray-100">
+                            </label>
+                            <textarea rows="2" x-model="newAnnotationText"
+                                      @keydown.enter="if (!$event.shiftKey) { $event.preventDefault(); addAnnotation(); }"
+                                      class="w-full px-2.5 py-1.5 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 outline-none dark:text-gray-100 resize-none"
+                                      placeholder="Anmerkung schreiben... (Enter speichert)"></textarea>
+                            <button type="button" @click="addAnnotation()" :disabled="!newAnnotationText.trim()"
+                                    class="mt-1.5 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-sky-600 rounded-lg hover:bg-sky-700 disabled:opacity-40 shadow-sm transition-colors">
+                                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                                Anmerkung speichern
+                            </button>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+
+            <template x-if="selectedItem">
+                <div class="space-y-4 pb-4" x-show="!preview.open">
+
+                    <!-- TOP-Kopf -->
+                    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-5 py-4">
+                        <div class="flex items-start gap-3">
+                            <span class="px-2.5 py-1 text-sm font-bold rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 shrink-0"
+                                  x-text="'TOP ' + selectedItem.number"></span>
+                            <h2 class="flex-1 text-lg font-semibold leading-snug text-gray-900 dark:text-white" x-text="selectedItem.name"></h2>
+                        </div>
+                        <!-- Vorlage -->
+                        <template x-if="selectedItem.paper">
+                            <div class="mt-3 flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-700">
+                                <i data-lucide="file-text" class="w-4 h-4 mt-0.5 text-gray-400 shrink-0"></i>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-sm font-medium text-gray-800 dark:text-gray-100" x-text="selectedItem.paper.name" :title="selectedItem.paper.name"></p>
+                                    <p class="text-xs text-gray-500 mt-0.5">
+                                        <span x-show="selectedItem.paper.reference" x-text="selectedItem.paper.reference"></span>
+                                        <span x-show="selectedItem.paper.reference && selectedItem.paper.paperType"> &middot; </span>
+                                        <span x-show="selectedItem.paper.paperType" x-text="selectedItem.paper.paperType"></span>
+                                    </p>
+                                    <!-- Beratungsfolge -->
+                                    <template x-if="selectedItem.paper.consultations && selectedItem.paper.consultations.length > 1">
+                                        <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                                            <span class="text-[11px] text-gray-400 uppercase tracking-wide">Beratungsfolge:</span>
+                                            <template x-for="(c, ci) in selectedItem.paper.consultations" :key="ci">
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-full border"
+                                                      :class="c.isCurrent
+                                                        ? 'bg-primary-50 dark:bg-primary-900/30 border-primary-200 dark:border-primary-800 text-primary-700 dark:text-primary-300 font-medium'
+                                                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300'">
+                                                    <template x-if="c.meetingId && !c.isCurrent">
+                                                        <a :href="`/work/${orgSlug}/meetings/${c.meetingId}/prepare/`" class="hover:underline"
+                                                           x-text="(c.organization || c.meetingName || 'Sitzung') + (c.meetingStart ? ' · ' + c.meetingStart : '')"></a>
+                                                    </template>
+                                                    <template x-if="!c.meetingId || c.isCurrent">
+                                                        <span x-text="(c.organization || c.meetingName || 'Gremium') + (c.meetingStart ? ' · ' + c.meetingStart : '')"></span>
+                                                    </template>
+                                                    <span x-show="c.authoritative" class="font-semibold text-indigo-600 dark:text-indigo-400" title="Entscheidende Beratung">&#9679;</span>
+                                                </span>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- ===== Abschnitt A: Position & Ergebnis ===== -->
+                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-indigo-400 dark:border-l-indigo-600 rounded-xl px-5 py-4" aria-labelledby="section-position">
+                        <h3 id="section-position" class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-3">
+                            <i data-lucide="vote" class="w-4 h-4 text-indigo-500"></i>
+                            Position &amp; Ergebnis
+                        </h3>
+
+                        <!-- Positions-Buttons -->
+                        <div class="flex flex-wrap gap-1.5" role="group" aria-label="Position der Organisation">
+                            {% for code, label in position_choices %}
+                            <button type="button"
+                                    @click="setPosition('{{ code }}')"
+                                    :aria-pressed="selectedItem.position === '{{ code }}' ? 'true' : 'false'"
+                                    class="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+                                    :class="selectedItem.position === '{{ code }}' ?
+                                        '{% if code == 'for' %}bg-green-100 dark:bg-green-900/30 border-green-400 dark:border-green-700 text-green-700 dark:text-green-300{% elif code == 'against' %}bg-red-100 dark:bg-red-900/30 border-red-400 dark:border-red-700 text-red-700 dark:text-red-300{% elif code == 'abstain' %}bg-gray-200 dark:bg-gray-700 border-gray-400 dark:border-gray-500 text-gray-700 dark:text-gray-200{% elif code == 'defer' %}bg-purple-100 dark:bg-purple-900/30 border-purple-400 dark:border-purple-700 text-purple-700 dark:text-purple-300{% elif code == 'refer' %}bg-indigo-100 dark:bg-indigo-900/30 border-indigo-400 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300{% elif code == 'amended' %}bg-amber-100 dark:bg-amber-900/30 border-amber-400 dark:border-amber-700 text-amber-700 dark:text-amber-300{% elif code == 'info' %}bg-blue-100 dark:bg-blue-900/30 border-blue-400 dark:border-blue-700 text-blue-700 dark:text-blue-300{% else %}bg-gray-100 dark:bg-gray-700/60 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300{% endif %}' :
+                                        'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                                {{ label }}
+                            </button>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Ergebnis + Begründung + endgültig -->
+                        <div class="mt-4 grid gap-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+                            <div>
+                                <label for="outcome-select" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Ergebnis der Beratung</label>
+                                <select id="outcome-select" x-model="selectedItem.outcome" @change="saveOutcome()"
+                                        class="w-full px-2.5 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none dark:text-gray-100">
+                                    {% for code, label in outcome_choices %}
+                                    <option value="{{ code }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div>
+                                <label for="reasoning-input" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Begründung</label>
+                                <textarea id="reasoning-input" rows="1" x-model="selectedItem.reasoning"
+                                          @input="autoGrow($event.target, 4.6); queueItemSave('reasoning', selectedItem, item => savePositionFields(item, { reasoning: item.reasoning }))"
+                                          class="prep-autogrow w-full px-2.5 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none dark:text-gray-100"
+                                          placeholder="Kurze Begründung der Position (für die Organisation sichtbar)"></textarea>
+                            </div>
+                        </div>
+                        <label class="mt-2 inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
+                            <input type="checkbox" x-model="selectedItem.isFinal" @change="savePositionFields(selectedItem, { is_final: selectedItem.isFinal })"
+                                   class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                            Position ist endgültig
+                        </label>
+
+                        <!-- Im Beratungsverlauf: Positionen aus anderen Gremien -->
+                        <div class="cross-positions mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+                            <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1.5">
+                                <i data-lucide="git-branch" class="w-3.5 h-3.5"></i>
+                                Im Beratungsverlauf
+                            </p>
+                            <div class="flex flex-wrap gap-1.5" x-show="selectedItem.crossPositions && selectedItem.crossPositions.length > 0">
+                                <template x-for="(cp, cpi) in selectedItem.crossPositions" :key="cpi">
+                                    <a :href="cp.meeting_id ? `/work/${orgSlug}/meetings/${cp.meeting_id}/prepare/` : '#'"
+                                       class="inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs rounded-full border bg-gray-50 dark:bg-gray-900/60 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-primary-300 dark:hover:border-primary-700 transition-colors"
+                                       :title="cp.reasoning ? 'Begründung: ' + cp.reasoning : ''">
+                                        <span class="font-medium text-gray-800 dark:text-gray-100" x-text="cp.gremium || cp.sitzung"></span>
+                                        <span x-show="cp.datum" x-text="cp.datum"></span>
+                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium" :class="posChip(cp.position)">
+                                            <span class="w-1.5 h-1.5 rounded-full" :class="posDot(cp.position)"></span>
+                                            <span x-text="cp.position_display"></span>
+                                        </span>
+                                        <span x-show="cp.outcome_display" class="text-gray-400" x-text="'→ ' + cp.outcome_display"></span>
+                                        <i x-show="cp.is_final" data-lucide="lock" class="w-3 h-3 text-green-500"></i>
+                                    </a>
+                                </template>
+                            </div>
+                            <p class="text-xs text-gray-400 dark:text-gray-500 italic"
+                               x-show="!selectedItem.crossPositions || selectedItem.crossPositions.length === 0">
+                                Keine Positionen aus anderen Gremien zu dieser Vorlage.
+                            </p>
+                        </div>
+                    </section>
+
+                    <!-- ===== Abschnitt B: Dokumente aus dem Ratsinformationssystem ===== -->
+                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-sky-400 dark:border-l-sky-600 rounded-xl px-5 py-4" aria-labelledby="section-ris">
+                        <h3 id="section-ris" class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-3">
+                            <i data-lucide="landmark" class="w-4 h-4 text-sky-500"></i>
+                            Aus dem Ratsinformationssystem
+                        </h3>
+                        <div class="grid gap-2 sm:grid-cols-2" x-show="selectedItem.files && selectedItem.files.length > 0">
+                            <template x-for="(file, fi) in selectedItem.files" :key="file.id || fi">
+                                <div class="ris-file-card flex flex-col px-3 py-2.5 rounded-lg border bg-sky-50/50 dark:bg-sky-900/10 border-sky-100 dark:border-sky-900/50 hover:border-sky-300 dark:hover:border-sky-700 transition-colors">
+                                    <div class="flex items-start gap-2.5 min-w-0">
+                                        <i :data-lucide="file.isPdf ? 'file-text' : 'file'" class="w-5 h-5 mt-0.5 shrink-0"
+                                           :class="file.isPdf ? 'text-red-500' : 'text-sky-500'"></i>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm font-medium text-gray-800 dark:text-gray-100 line-clamp-1" :title="file.name" x-text="file.name"></p>
+                                            <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                                                <span x-show="file.size" x-text="file.size"></span>
+                                                <span x-show="file.annotations > 0"
+                                                      class="annotation-badge inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 font-medium">
+                                                    <i data-lucide="message-square-text" class="w-3 h-3"></i>
+                                                    <span x-text="file.annotations + (file.annotations === 1 ? ' Anmerkung' : ' Anmerkungen')"></span>
+                                                </span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2 flex items-center gap-1.5">
+                                        <button type="button" x-show="file.isPdf"
+                                                @click="openPreview('oparl', file.id, file.name, file.previewUrl, file.url, file)"
+                                                class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-sky-600 rounded-lg hover:bg-sky-700 shadow-sm transition-colors">
+                                            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                                            Vorschau
+                                        </button>
+                                        <a :href="file.url" target="_blank" rel="noopener"
+                                           class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-100/60 dark:hover:bg-sky-900/30 transition-colors">
+                                            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                                            Neuer Tab
+                                        </a>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <p class="text-xs text-gray-400 italic" x-show="!selectedItem.files || selectedItem.files.length === 0">
+                            Keine Dokumente aus dem Ratsinformationssystem.
+                        </p>
+                    </section>
+
+                    <!-- ===== Abschnitt C: Redebeitrag ===== -->
+                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-violet-400 dark:border-l-violet-600 rounded-xl overflow-hidden" aria-labelledby="section-speech">
+                        <div class="px-5 py-4 flex items-center gap-2" :class="speechOpen && 'border-b border-gray-100 dark:border-gray-700'">
+                            <h3 id="section-speech" class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+                                <i data-lucide="mic" class="w-4 h-4 text-violet-500"></i>
+                                Redebeitrag
+                            </h3>
+                            <span x-show="selectedItem.speechShared" class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                                <i data-lucide="users" class="w-3 h-3"></i> Geteilt
+                            </span>
+                            <div class="flex-1"></div>
+                            <a id="teleprompter-link" :href="teleprompterUrl()" target="_blank" rel="noopener"
+                               x-show="speechOpen && (selectedItem.hasSpeechNote || selectedItem.speechLinkedDocument)"
+                               class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-primary-700 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/20 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors">
+                                <i data-lucide="presentation" class="w-3.5 h-3.5"></i>
+                                Teleprompter
+                            </a>
+                            <button type="button" @click="speechOpen ? speechOpen = false : openSpeech()"
+                                    class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                <span x-show="!speechOpen" x-text="(selectedItem.hasSpeechNote || selectedItem.speechLinkedDocument) ? 'Öffnen' : 'Verfassen'"></span>
+                                <span x-show="speechOpen">Einklappen</span>
+                                <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform" :class="speechOpen && 'rotate-180'"></i>
+                            </button>
+                        </div>
+
+                        <div x-show="speechOpen" x-collapse>
+                            <div class="px-5 py-4 space-y-3">
+                                <!-- Verknüpftes Dokument -->
+                                <template x-if="selectedItem.speechLinkedDocument">
+                                    <div class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-primary-50/70 dark:bg-primary-900/20 border border-primary-100 dark:border-primary-800 text-sm">
+                                        <i data-lucide="link" class="w-4 h-4 text-primary-500 shrink-0"></i>
+                                        <span class="text-gray-700 dark:text-gray-200 min-w-0 flex-1">
+                                            Als Redebeitrag verknüpft:
+                                            <template x-if="selectedItem.speechLinkedDocument.title">
+                                                <a :href="`/work/${orgSlug}/motions/${selectedItem.speechLinkedDocument.id}/`" target="_blank" rel="noopener"
+                                                   class="font-medium text-primary-700 dark:text-primary-300 hover:underline"
+                                                   x-text="selectedItem.speechLinkedDocument.title"></a>
+                                            </template>
+                                            <template x-if="!selectedItem.speechLinkedDocument.title">
+                                                <span class="italic text-gray-500">Dokument ohne Zugriff</span>
+                                            </template>
+                                            — der Inhalt wird schreibgeschützt übernommen.
+                                        </span>
+                                        <button type="button" @click="unlinkDocument()"
+                                                class="shrink-0 text-xs font-medium text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                                            Verknüpfung lösen
+                                        </button>
+                                    </div>
+                                </template>
+
+                                <!-- Titel -->
+                                <input type="text" x-model="selectedItem.speechTitle"
+                                       @input="queueItemSave('speech-title', selectedItem, item => saveSpeechFields(item, { title: item.speechTitle }))"
+                                       class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none dark:text-gray-100"
+                                       placeholder="Titel des Redebeitrags (optional)">
+
+                                <!-- Editor mit Mini-Toolbar -->
+                                <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
+                                     :class="speechReadonly && 'opacity-90'">
+                                    <div class="flex items-center gap-0.5 px-2 py-1.5 bg-gray-50 dark:bg-gray-900/60 border-b border-gray-200 dark:border-gray-700"
+                                         x-show="!speechReadonly">
+                                        <button type="button" title="Fett (Strg+B)" @click="speechEditor && speechEditor.chain().focus().toggleBold().run()"
+                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                :class="speechFormats.bold && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
+                                            <i data-lucide="bold" class="w-4 h-4"></i>
+                                        </button>
+                                        <button type="button" title="Kursiv (Strg+I)" @click="speechEditor && speechEditor.chain().focus().toggleItalic().run()"
+                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                :class="speechFormats.italic && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
+                                            <i data-lucide="italic" class="w-4 h-4"></i>
+                                        </button>
+                                        <button type="button" title="Unterstrichen (Strg+U)" @click="speechEditor && speechEditor.chain().focus().toggleUnderline().run()"
+                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                :class="speechFormats.underline && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
+                                            <i data-lucide="underline" class="w-4 h-4"></i>
+                                        </button>
+                                        <span class="w-px h-4 mx-1 bg-gray-200 dark:bg-gray-700"></span>
+                                        <button type="button" title="Aufzählung" @click="speechEditor && speechEditor.chain().focus().toggleBulletList().run()"
+                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                :class="speechFormats.list === 'bullet' && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
+                                            <i data-lucide="list" class="w-4 h-4"></i>
+                                        </button>
+                                        <button type="button" title="Nummerierte Liste" @click="speechEditor && speechEditor.chain().focus().toggleOrderedList().run()"
+                                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                                :class="speechFormats.list === 'ordered' && 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'">
+                                            <i data-lucide="list-ordered" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+                                    <div x-show="speechReadonly" class="px-3 py-1.5 bg-gray-50 dark:bg-gray-900/60 border-b border-gray-200 dark:border-gray-700 text-xs text-gray-500 flex items-center gap-1.5">
+                                        <i data-lucide="lock" class="w-3.5 h-3.5"></i>
+                                        Schreibgeschützt — Inhalt kommt aus dem verknüpften Dokument.
+                                    </div>
+                                    <div class="speech-editor min-h-[40vh] px-4 py-3 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 cursor-text"
+                                         @click="!speechReadonly && speechEditor && speechEditor.commands.focus()"
+                                         x-ref="speechEditorEl"></div>
+                                </div>
+
+                                <!-- Dauer, Teilen, Aktionen -->
+                                <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+                                    <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                                        <i data-lucide="timer" class="w-4 h-4 text-gray-400"></i>
+                                        <input type="text" x-model="speechDurationText" @change="saveSpeechDuration()"
+                                               inputmode="numeric" pattern="[0-9]{1,2}:[0-9]{2}"
+                                               class="w-20 px-2 py-1 text-sm text-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 outline-none dark:text-gray-100"
+                                               placeholder="mm:ss">
+                                        Dauer
+                                    </label>
+                                    <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
+                                        <input type="checkbox" x-model="selectedItem.speechShared" @change="saveSpeechFields(selectedItem, { is_shared: selectedItem.speechShared })"
+                                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                                        Mit Organisation teilen
+                                    </label>
+                                    <div class="flex-1"></div>
+                                    <button type="button" @click="docModalOpen = true; docQuery = ''; docResults = []; searchDocs()"
+                                            x-show="!selectedItem.speechLinkedDocument"
+                                            class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                        <i data-lucide="link" class="w-3.5 h-3.5"></i>
+                                        Dokument als Redebeitrag verknüpfen
+                                    </button>
+                                    <button type="button" @click="deleteSpeech()"
+                                            x-show="selectedItem.hasSpeechNote || selectedItem.speechLinkedDocument"
+                                            class="text-xs font-medium text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                                        Redebeitrag löschen
+                                    </button>
+                                </div>
+
+                                <!-- Geteilte Redebeiträge anderer -->
+                                <template x-if="selectedItem.sharedSpeeches && selectedItem.sharedSpeeches.length > 0">
+                                    <div class="pt-3 border-t border-gray-100 dark:border-gray-700">
+                                        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Geteilte Redebeiträge aus der Organisation</p>
+                                        <div class="space-y-2">
+                                            <template x-for="(s, si) in selectedItem.sharedSpeeches" :key="si">
+                                                <div class="px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-700">
+                                                    <p class="text-xs font-medium text-gray-700 dark:text-gray-200 mb-1" x-text="s.author"></p>
+                                                    <p class="text-sm text-gray-600 dark:text-gray-300 line-clamp-3" x-text="stripHtml(s.content)"></p>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- ===== Abschnitt D: Anhänge (eigene Anlagen) ===== -->
+                    <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-amber-400 dark:border-l-amber-600 rounded-xl px-5 py-4" aria-labelledby="section-attachments">
+                        <h3 id="section-attachments" class="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-3">
+                            <i data-lucide="paperclip" class="w-4 h-4 text-amber-500"></i>
+                            Anhänge
+                        </h3>
+
+                        <!-- Eigene Anlagen -->
+                        <div>
+                            <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
+                                <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
+                                Eigene Anlagen
+                            </p>
+                            <div class="space-y-1.5" x-show="docs.length > 0">
+                                <template x-for="doc in docs" :key="doc.id">
+                                    <div class="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-700 group">
+                                        <i :data-lucide="doc.document_type === 'file' ? 'file' : 'link'" class="w-4 h-4 text-amber-500 shrink-0"></i>
+                                        <a :href="doc.url" target="_blank" rel="noopener"
+                                           @click="if (doc.is_pdf) { $event.preventDefault(); previewDoc(doc); }"
+                                           class="flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200 truncate hover:underline"
+                                           :title="doc.title" x-text="doc.title"></a>
+                                        <span x-show="doc.annotations > 0"
+                                              class="annotation-badge shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300"
+                                              :title="doc.annotations + ' Anmerkungen'">
+                                            <i data-lucide="message-square-text" class="w-3 h-3"></i>
+                                            <span x-text="doc.annotations"></span>
+                                        </span>
+                                        <button type="button" x-show="doc.is_pdf" @click="previewDoc(doc)"
+                                                class="shrink-0 p-1 text-gray-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors" title="Vorschau öffnen">
+                                            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                                        </button>
+                                        <span x-show="doc.is_from_other_item"
+                                              class="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300"
+                                              title="Über die Vorlage aus einem anderen Gremium geteilt">
+                                            <i data-lucide="git-branch" class="w-3 h-3"></i>
+                                            Anderes Gremium
+                                        </span>
+                                        <span x-show="doc.share_across_committees && !doc.is_from_other_item"
+                                              class="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300"
+                                              title="An der Vorlage gespeichert, in allen beratenden Gremien sichtbar">
+                                            <i data-lucide="share-2" class="w-3 h-3"></i>
+                                            Vorlage
+                                        </span>
+                                        <span class="shrink-0 text-[11px] text-gray-400" x-text="doc.added_by"></span>
+                                        <button type="button" @click="deleteDoc(doc)"
+                                                x-show="doc.added_by === currentUser && !doc.is_from_other_item"
+                                                class="shrink-0 p-1 text-gray-300 hover:text-red-500 transition-colors" title="Anlage entfernen">
+                                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+                            <p class="text-xs text-gray-400 italic" x-show="docs.length === 0 && !docsLoading">
+                                Noch keine eigenen Anlagen.
+                            </p>
+
+                            <!-- Hinzufügen -->
+                            <div class="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                                <input type="text" x-model="newLinkTitle" placeholder="Titel der Anlage"
+                                       class="px-2.5 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 outline-none dark:text-gray-100">
+                                <input type="url" x-model="newLinkUrl" placeholder="https://..." @keydown.enter.prevent="addLink()"
+                                       class="px-2.5 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 outline-none dark:text-gray-100">
+                                <div class="flex items-center gap-1.5">
+                                    <button type="button" @click="addLink()" :disabled="!newLinkTitle.trim() || !newLinkUrl.trim()"
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 transition-colors">
+                                        <i data-lucide="link" class="w-3.5 h-3.5"></i>
+                                        Link
+                                    </button>
+                                    <label class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
+                                        <i data-lucide="upload" class="w-3.5 h-3.5" :class="uploading && 'animate-pulse'"></i>
+                                        Datei
+                                        <input type="file" class="hidden" @change="uploadFile($event)">
+                                    </label>
+                                </div>
+                            </div>
+                            <label x-show="selectedItem.paper" class="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
+                                <input type="checkbox" x-model="attachToPaper"
+                                       class="w-3.5 h-3.5 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                                An der Vorlage speichern — in allen beratenden Gremien sichtbar
+                            </label>
+                        </div>
+                    </section>
+                </div>
+            </template>
+        </main>

@@ -1,0 +1,814 @@
+<script>
+function preparationApp() {
+    return {
+        // ---------- Daten ----------
+        items: {{ prepared_items_json|safe }},
+        search: '',
+        selectedItemId: null,
+        selectedItem: null,
+        mobileTab: 'tops',
+
+        // Konstanten
+        orgSlug: '{{ organization.slug }}',
+        meetingId: '{{ meeting.id }}',
+        csrfToken: '{{ csrf_token }}',
+        currentUser: '{{ request.user.get_display_name|escapejs }}',
+        positionLabels: {
+            {% for code, label in position_choices %}'{{ code }}': '{{ label|escapejs }}'{% if not forloop.last %},{% endif %}
+            {% endfor %}
+        },
+
+        // Auto-Save-Status
+        pendingSaves: 0,
+        lastSavedAt: null,
+        saveError: false,
+        _timers: {},
+        _pending: {},
+
+        // Org-Sitzungsnotizen
+        orgNotesOpen: false,
+        orgNotes: '{{ preparation.get_notes_decrypted|escapejs }}',
+
+        // Diskussions-Thread
+        thread: [],
+        threadLoading: false,
+        newComment: '',
+        commentVisibility: 'organization',
+        commentIsPosition: false,
+        realtime: 'off',      // 'ws' | 'poll' | 'off'
+        _sockets: [],
+        _pollTimer: null,
+        _wsWatchdog: null,
+
+        // Redebeitrag
+        speechOpen: false,
+        speechEditor: null,
+        speechFormats: {},
+        speechDurationText: '',
+        speechReadonly: false,
+        _suppressEditorSave: false,
+        _editorItem: null,
+
+        // Anhänge
+        docs: [],
+        docsLoading: false,
+        newLinkTitle: '',
+        newLinkUrl: '',
+        attachToPaper: false,
+        uploading: false,
+
+        // PDF-Vorschau (Muster RIS-Dokumentvorschau) + Anmerkungen
+        preview: { open: false, kind: null, id: null, title: '', baseSrc: '', frameSrc: '', externalUrl: '', source: null },
+        previewLoading: false,
+        annotations: [],
+        annotationsLoading: false,
+        newAnnotationText: '',
+        newAnnotationPage: 1,
+
+        // Modals
+        showLegend: false,
+        showSummary: false,
+        summaryHtml: '',
+        summaryLoading: false,
+        docModalOpen: false,
+        docQuery: '',
+        docResults: [],
+        docSearching: false,
+
+        // ---------- Computed ----------
+        get filteredItems() {
+            const q = this.search.trim().toLowerCase();
+            if (!q) return this.items;
+            return this.items.filter(i =>
+                (i.name || '').toLowerCase().includes(q) || String(i.number).toLowerCase().includes(q)
+            );
+        },
+        get positionedCount() {
+            return this.items.filter(i => i.position && i.position !== 'open').length;
+        },
+        get saveStatusText() {
+            if (this.pendingSaves > 0) return 'Speichert…';
+            if (this.saveError) return 'Speichern fehlgeschlagen — Änderungen erneut vornehmen';
+            if (this.lastSavedAt) return 'Gespeichert ' + this.lastSavedAt;
+            return 'Änderungen werden automatisch gespeichert';
+        },
+        get annotationGroups() {
+            const byPage = {};
+            for (const a of this.annotations) {
+                (byPage[a.page] = byPage[a.page] || []).push(a);
+            }
+            return Object.keys(byPage)
+                .map(Number)
+                .sort((x, y) => x - y)
+                .map(page => ({ page, entries: byPage[page] }));
+        },
+
+        // ---------- Init ----------
+        init() {
+            if (this.items.length > 0) {
+                this.selectItem(this.items[0].id);
+                if (window.innerWidth >= 1280) this.mobileTab = 'main';
+            }
+            window.addEventListener('beforeunload', () => this.teardownRealtime());
+        },
+
+        refreshIcons() {
+            this.$nextTick(() => { if (window.lucide) lucide.createIcons(); });
+        },
+
+        // ---------- TOP-Auswahl & Navigation ----------
+        selectItem(itemId) {
+            if (this.selectedItemId === itemId) return;
+            this.flushTimers();
+            this.closePreview();
+            this.selectedItemId = itemId;
+            this.selectedItem = this.items.find(i => i.id === itemId) || null;
+            if (!this.selectedItem) return;
+
+            const item = this.selectedItem;
+            this.speechOpen = !!(item.hasSpeechNote || item.speechLinkedDocument);
+            this.speechDurationText = this.formatDuration(item.speechDuration || 0);
+            this.speechReadonly = !!item.speechLinkedDocument;
+            this.attachToPaper = false;
+            this.thread = [];
+            this.docs = [];
+
+            this.loadThread();
+            this.loadDocs();
+            this.connectRealtime();
+            this.syncSpeechEditor();
+            this.refreshIcons();
+            this.$nextTick(() => {
+                const el = document.getElementById('nav-item-' + itemId);
+                if (el) el.scrollIntoView({ block: 'nearest' });
+            });
+        },
+
+        selectByOffset(offset) {
+            const list = this.filteredItems;
+            if (!list.length) return;
+            const idx = list.findIndex(i => i.id === this.selectedItemId);
+            const next = list[Math.min(list.length - 1, Math.max(0, idx + offset))];
+            if (next && next.id !== this.selectedItemId) this.selectItem(next.id);
+        },
+
+        handleKeydown(e) {
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            if (this.showLegend || this.showSummary || this.docModalOpen) return;
+            const t = e.target;
+            const tag = (t.tagName || '').toLowerCase();
+            if (['input', 'textarea', 'select'].includes(tag) || t.isContentEditable) return;
+            e.preventDefault();
+            this.selectByOffset(e.key === 'ArrowDown' ? 1 : -1);
+        },
+
+        // ---------- Auto-Save-Infrastruktur ----------
+        queue(key, fn, delay = 800) {
+            clearTimeout(this._timers[key]);
+            this._pending[key] = fn;
+            this._timers[key] = setTimeout(() => {
+                delete this._timers[key];
+                delete this._pending[key];
+                fn();
+            }, delay);
+        },
+
+        // Debounce pro TOP: die Item-Referenz wird beim Tippen eingefangen,
+        // damit ein TOP-Wechsel während der Wartezeit nichts Falsches speichert.
+        queueItemSave(prefix, item, fn, delay = 800) {
+            this.queue(prefix + '-' + item.id, () => fn(item), delay);
+        },
+
+        // Anstehende Debounce-Saves beim TOP-Wechsel NICHT verwerfen, sondern
+        // sofort ausfuehren — die Callbacks halten ihre TOP-Referenz, sodass die
+        // Eingabe am korrekten (alten) TOP gespeichert wird.
+        flushTimers() {
+            for (const key of Object.keys(this._timers)) {
+                clearTimeout(this._timers[key]);
+                delete this._timers[key];
+            }
+            const pending = this._pending;
+            this._pending = {};
+            for (const key of Object.keys(pending)) {
+                try { pending[key](); } catch (e) { console.error('Flush-Save fehlgeschlagen:', key, e); }
+            }
+        },
+
+        async apiSave(url, body, method = 'POST') {
+            this.pendingSaves++;
+            try {
+                const opts = { method, headers: { 'X-CSRFToken': this.csrfToken } };
+                if (body instanceof FormData) {
+                    opts.body = body;
+                } else if (body !== undefined) {
+                    opts.headers['Content-Type'] = 'application/json';
+                    opts.body = JSON.stringify(body);
+                }
+                const resp = await fetch(url, opts);
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                this.saveError = false;
+                this.lastSavedAt = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                return await resp.json();
+            } catch (err) {
+                console.error('Speichern fehlgeschlagen:', url, err);
+                this.saveError = true;
+                return null;
+            } finally {
+                this.pendingSaves--;
+            }
+        },
+
+        // ---------- Position & Ergebnis ----------
+        posLabel(code) { return this.positionLabels[code] || code; },
+        posDot(code) {
+            return {
+                for: 'bg-green-500', against: 'bg-red-500', abstain: 'bg-gray-400',
+                defer: 'bg-purple-500', refer: 'bg-indigo-500', amended: 'bg-amber-500',
+                info: 'bg-blue-500', open: 'bg-gray-400 dark:bg-gray-500',
+            }[code] || 'bg-gray-400';
+        },
+        posChip(code) {
+            return {
+                for: 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300',
+                against: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300',
+                abstain: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300',
+                defer: 'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
+                refer: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300',
+                amended: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
+                info: 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+            }[code] || 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300';
+        },
+
+        setPosition(code) {
+            if (!this.selectedItem) return;
+            this.selectedItem.position = code;
+            this.savePositionFields(this.selectedItem, { position: code });
+        },
+        saveOutcome() {
+            if (!this.selectedItem) return;
+            this.savePositionFields(this.selectedItem, { outcome: this.selectedItem.outcome });
+        },
+        async savePositionFields(item, fields) {
+            await this.apiSave(`/work/${this.orgSlug}/meetings/${this.meetingId}/position/${item.id}/`, fields);
+        },
+
+        // ---------- Private Notiz ----------
+        async savePrivateNote(item) {
+            await this.apiSave(`/work/${this.orgSlug}/meetings/${this.meetingId}/private-note/${item.id}/`, {
+                content: item.privateNote || '',
+            });
+        },
+
+        // ---------- Org-Sitzungsnotizen ----------
+        async saveOrgNotes() {
+            await this.apiSave(`/work/${this.orgSlug}/meetings/${this.meetingId}/prepare/`, { notes: this.orgNotes || '' });
+        },
+
+        // ---------- Redebeitrag ----------
+        speechUrl(item) {
+            return `/work/${this.orgSlug}/meetings/${this.meetingId}/speech/${item.id}/`;
+        },
+        teleprompterUrl() {
+            return `/work/${this.orgSlug}/meetings/${this.meetingId}/teleprompter/${this.selectedItemId}/`;
+        },
+
+        openSpeech() {
+            this.speechOpen = true;
+            this.syncSpeechEditor(true);
+            this.refreshIcons();
+        },
+
+        ensureSpeechEditor() {
+            if (this.speechEditor || typeof MandariEditor === 'undefined') return;
+            const el = this.$refs.speechEditorEl;
+            if (!el) return;
+            const self = this;
+            this.speechEditor = MandariEditor.createEditor({
+                element: el,
+                content: '',
+                editable: true,
+                placeholder: 'Redetext verfassen — mit / öffnen Sie das Einfüge-Menü...',
+                onUpdate(html) {
+                    if (self._suppressEditorSave) return;
+                    const item = self._editorItem;
+                    if (!item || self.speechReadonly) return;
+                    item.speechContent = html;
+                    item.hasSpeechNote = true;
+                    self.queueItemSave('speech-content', item, it => self.saveSpeechFields(it, { content: it.speechContent }));
+                },
+                onSelectionUpdate(state) {
+                    self.speechFormats = state;
+                },
+            });
+        },
+
+        // Editorinhalt auf den aktuellen TOP setzen (bei verknüpftem Dokument
+        // wird der Inhalt frisch von der API geholt, da er read-only aus dem
+        // Dokument kommt).
+        async syncSpeechEditor(focus = false) {
+            await this.$nextTick();
+            this.ensureSpeechEditor();
+            if (!this.speechEditor) return;
+            const item = this.selectedItem;
+            this._editorItem = item;
+            let content = item.speechContent || '';
+            if (item.speechLinkedDocument) {
+                const data = await this.fetchJson(this.speechUrl(item));
+                // Stale-Response-Schutz: wurde inzwischen der TOP gewechselt,
+                // darf diese Antwort den Editor des neuen TOP nicht ueberschreiben.
+                if (this.selectedItemId !== item.id) return;
+                if (data && data.own) content = data.own.content || '';
+            }
+            this._suppressEditorSave = true;
+            this.speechEditor.commands.setContent(content);
+            this._suppressEditorSave = false;
+            this.speechEditor.setEditable(!this.speechReadonly);
+            if (focus && !this.speechReadonly) this.speechEditor.commands.focus();
+        },
+
+        async saveSpeechFields(item, fields) {
+            const data = await this.apiSave(this.speechUrl(item), fields);
+            if (data && data.success) {
+                item.hasSpeechNote = true;
+                if (data.speech) {
+                    item.speechShared = data.speech.is_shared;
+                    item.speechLinkedDocument = data.speech.linked_document;
+                }
+            }
+        },
+
+        saveSpeechDuration() {
+            const item = this.selectedItem;
+            if (!item) return;
+            const seconds = this.parseDuration(this.speechDurationText);
+            item.speechDuration = seconds;
+            this.speechDurationText = this.formatDuration(seconds);
+            this.saveSpeechFields(item, { estimated_duration: seconds });
+        },
+
+        async deleteSpeech() {
+            if (!await confirmAction({ title: 'Redebeitrag löschen', message: 'Möchten Sie den Redebeitrag zu diesem TOP wirklich löschen?', confirmText: 'Löschen', variant: 'danger' })) return;
+            const item = this.selectedItem;
+            const data = await this.apiSave(this.speechUrl(item), undefined, 'DELETE');
+            if (data && data.success) {
+                item.speechTitle = '';
+                item.speechContent = '';
+                item.speechDuration = 0;
+                item.speechShared = false;
+                item.hasSpeechNote = false;
+                item.speechLinkedDocument = null;
+                this.speechReadonly = false;
+                this.speechDurationText = this.formatDuration(0);
+                if (this.speechEditor) {
+                    this._suppressEditorSave = true;
+                    this.speechEditor.commands.setContent('');
+                    this._suppressEditorSave = false;
+                    this.speechEditor.setEditable(true);
+                }
+                this.refreshIcons();
+            }
+        },
+
+        // Dokument-Verknüpfung
+        async searchDocs() {
+            this.docSearching = true;
+            try {
+                const data = await this.fetchJson(`/work/${this.orgSlug}/meetings/speech-documents/?q=${encodeURIComponent(this.docQuery)}`);
+                this.docResults = (data && data.documents) || [];
+            } finally {
+                this.docSearching = false;
+                this.refreshIcons();
+            }
+        },
+
+        async linkDocument(doc) {
+            const item = this.selectedItem;
+            const data = await this.apiSave(this.speechUrl(item), { linked_document: doc.id });
+            if (data && data.success) {
+                this.docModalOpen = false;
+                item.speechLinkedDocument = data.speech.linked_document;
+                item.hasSpeechNote = true;
+                this.speechReadonly = true;
+                this.applyEditorContent(data.speech.content || '');
+                this.refreshIcons();
+            }
+        },
+
+        async unlinkDocument() {
+            const item = this.selectedItem;
+            const data = await this.apiSave(this.speechUrl(item), { linked_document: null });
+            if (data && data.success) {
+                item.speechLinkedDocument = null;
+                this.speechReadonly = false;
+                this.applyEditorContent(data.speech.content || '');
+                this.refreshIcons();
+            }
+        },
+
+        applyEditorContent(html) {
+            this.ensureSpeechEditor();
+            if (!this.speechEditor) return;
+            this._suppressEditorSave = true;
+            this.speechEditor.commands.setContent(html);
+            this._suppressEditorSave = false;
+            this.speechEditor.setEditable(!this.speechReadonly);
+            if (this._editorItem) this._editorItem.speechContent = this.speechReadonly ? this._editorItem.speechContent : html;
+        },
+
+        // ---------- Diskussion (einheitlicher Thread) ----------
+        notesUrl(item) {
+            return `/work/${this.orgSlug}/meetings/${this.meetingId}/notes/${item.id}/`;
+        },
+
+        async loadThread(silent = false) {
+            const item = this.selectedItem;
+            if (!item) return;
+            if (!silent) this.threadLoading = true;
+            try {
+                const data = await this.fetchJson(this.notesUrl(item));
+                if (data && this.selectedItemId === item.id) {
+                    this.thread = data.notes || [];
+                    item.notesCount = this.thread.length;
+                    this.refreshIcons();
+                }
+            } finally {
+                this.threadLoading = false;
+            }
+        },
+
+        async postComment() {
+            const item = this.selectedItem;
+            if (!item || !this.newComment.trim()) return;
+            const data = await this.apiSave(this.notesUrl(item), {
+                content: this.newComment.trim(),
+                visibility: this.commentVisibility,
+                is_decision: this.commentIsPosition,
+            });
+            if (data && data.success) {
+                this.newComment = '';
+                this.commentIsPosition = false;
+                this.addThreadEntry(data.note, item);
+            }
+        },
+
+        async deleteComment(noteId) {
+            if (!await confirmAction({ title: 'Beitrag löschen', message: 'Möchten Sie diesen Beitrag wirklich löschen?', confirmText: 'Löschen', variant: 'danger' })) return;
+            const item = this.selectedItem;
+            const data = await this.apiSave(`/work/${this.orgSlug}/meetings/notes/${noteId}/delete/`, undefined, 'DELETE');
+            if (data && data.success) {
+                this.thread = this.thread.filter(n => n.id !== noteId);
+                if (item) item.notesCount = this.thread.length;
+            }
+        },
+
+        addThreadEntry(note, item) {
+            if (!note || this.thread.some(n => n.id === note.id)) return;
+            this.thread.unshift(note);
+            if (item) item.notesCount = this.thread.length;
+            this.refreshIcons();
+        },
+
+        // ---------- Echtzeit: WebSocket + Polling-Fallback ----------
+        connectRealtime() {
+            this.teardownRealtime();
+            const item = this.selectedItem;
+            if (!item || typeof WebSocket === 'undefined') { this.startPolling(); return; }
+
+            const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            const base = `${proto}://${window.location.host}/ws/preparation/${this.orgSlug}`;
+            const urls = [`${base}/item/${item.id}/`];
+            if (item.paper) urls.push(`${base}/paper/${item.paper.id}/`);
+
+            let openCount = 0;
+            for (const url of urls) {
+                try {
+                    const ws = new WebSocket(url);
+                    ws.onopen = () => {
+                        openCount++;
+                        this.realtime = 'ws';
+                        this.stopPolling();
+                    };
+                    ws.onmessage = (ev) => {
+                        try { this.handleRealtimeEvent(JSON.parse(ev.data), item); } catch (e) { /* ignore */ }
+                    };
+                    ws.onclose = () => {
+                        openCount = Math.max(0, openCount - 1);
+                        if (openCount === 0 && this.selectedItemId === item.id) {
+                            this.realtime = 'off';
+                            this.startPolling();
+                        }
+                    };
+                    this._sockets.push(ws);
+                } catch (e) {
+                    console.warn('WebSocket nicht verfügbar:', e);
+                }
+            }
+            // Wächter: wenn nach 4s keine Verbindung steht, aufs Polling ausweichen
+            this._wsWatchdog = setTimeout(() => {
+                if (this.realtime !== 'ws' && this.selectedItemId === item.id) this.startPolling();
+            }, 4000);
+        },
+
+        teardownRealtime() {
+            if (this._wsWatchdog) { clearTimeout(this._wsWatchdog); this._wsWatchdog = null; }
+            for (const ws of this._sockets) {
+                ws.onclose = null;
+                try { ws.close(); } catch (e) { /* ignore */ }
+            }
+            this._sockets = [];
+            this.realtime = 'off';
+            this.stopPolling();
+        },
+
+        startPolling() {
+            if (this._pollTimer) return;
+            this.realtime = 'poll';
+            this._pollTimer = setInterval(() => {
+                if (this.selectedItemId) this.loadThread(true);
+            }, 5000);
+        },
+
+        stopPolling() {
+            if (this._pollTimer) {
+                clearInterval(this._pollTimer);
+                this._pollTimer = null;
+            }
+        },
+
+        handleRealtimeEvent(msg, item) {
+            if (!msg || this.selectedItemId !== item.id) return;
+
+            if (msg.type === 'comment' && msg.event === 'created' && msg.comment) {
+                this.addThreadEntry(msg.comment, item);
+            } else if (msg.type === 'comment' && msg.event === 'deleted' && msg.comment_id) {
+                this.thread = this.thread.filter(n => n.id !== msg.comment_id);
+                item.notesCount = this.thread.length;
+            } else if (msg.type === 'position' && msg.event === 'updated') {
+                if (msg.agenda_item_id === item.id && msg.position) {
+                    // Eigene TOP-Position von anderem Org-Mitglied aktualisiert
+                    const p = msg.position;
+                    if (p.position) item.position = p.position;
+                    if ('is_final' in p) item.isFinal = p.is_final;
+                    if ('outcome' in p) item.outcome = p.outcome;
+                    // Begründung nicht überschreiben, während hier getippt wird
+                    const active = document.activeElement;
+                    if ('reasoning' in p && (!active || active.id !== 'reasoning-input')) {
+                        item.reasoning = p.reasoning;
+                    }
+                } else {
+                    // Position aus anderem Gremium zur selben Vorlage: Verlauf auffrischen
+                    this.refreshCrossPositions(item);
+                }
+            }
+        },
+
+        async refreshCrossPositions(item) {
+            const data = await this.fetchJson(`/work/${this.orgSlug}/meetings/${this.meetingId}/position/${item.id}/`);
+            if (data && data.cross_positions && this.selectedItemId === item.id) {
+                item.crossPositions = data.cross_positions;
+                this.refreshIcons();
+            }
+        },
+
+        // ---------- PDF-Vorschau + Anmerkungen ----------
+        openPreview(kind, id, title, src, externalUrl, source) {
+            if (!kind || !id || !src) return;
+            this.preview = {
+                open: true,
+                kind,
+                id,
+                title: title || 'Dokument',
+                baseSrc: src,
+                frameSrc: src,
+                externalUrl: externalUrl || src,
+                source: source || null,
+            };
+            this.previewLoading = true;
+            this.annotations = [];
+            this.newAnnotationText = '';
+            this.newAnnotationPage = 1;
+            this.loadAnnotations();
+            this.refreshIcons();
+        },
+
+        previewDoc(doc) {
+            this.openPreview(doc.preview_kind, doc.preview_id, doc.title, doc.preview_url, doc.url, doc);
+        },
+
+        closePreview() {
+            this.preview.open = false;
+            this.preview.frameSrc = '';
+            this.previewLoading = false;
+        },
+
+        // Seitensprung über den PDF-Anker #page=N (funktioniert in den
+        // eingebetteten Viewern von Chrome/Firefox; das PDF kommt aus dem Cache)
+        previewGotoPage(page) {
+            const p = Math.max(1, parseInt(page, 10) || 1);
+            this.newAnnotationPage = p;
+            this.previewLoading = true;
+            this.preview.frameSrc = this.preview.baseSrc.split('#')[0] + '#page=' + p;
+        },
+
+        annotationsUrl() {
+            return `/work/${this.orgSlug}/meetings/annotations/${this.preview.kind}/${this.preview.id}/`;
+        },
+
+        async loadAnnotations() {
+            const kind = this.preview.kind;
+            const id = this.preview.id;
+            this.annotationsLoading = true;
+            try {
+                const data = await this.fetchJson(this.annotationsUrl());
+                if (data && this.preview.kind === kind && this.preview.id === id) {
+                    this.annotations = data.annotations || [];
+                    this.syncAnnotationCount(data.count);
+                    this.refreshIcons();
+                }
+            } finally {
+                this.annotationsLoading = false;
+            }
+        },
+
+        // Zähler-Badge an der Datei (RIS-Karte bzw. eigene Anlage) aktuell halten
+        syncAnnotationCount(count) {
+            if (typeof count !== 'number' || !this.preview.source) return;
+            this.preview.source.annotations = count;
+        },
+
+        async addAnnotation() {
+            if (!this.preview.open || !this.newAnnotationText.trim()) return;
+            const data = await this.apiSave(this.annotationsUrl(), {
+                page: Math.max(1, parseInt(this.newAnnotationPage, 10) || 1),
+                content: this.newAnnotationText.trim(),
+            });
+            if (data && data.success) {
+                this.newAnnotationText = '';
+                this.annotations.push(data.annotation);
+                this.annotations.sort((a, b) => a.page - b.page || (a.created_at < b.created_at ? -1 : 1));
+                this.syncAnnotationCount(data.count);
+                this.refreshIcons();
+            }
+        },
+
+        async deleteAnnotation(a) {
+            if (!await confirmAction({ title: 'Anmerkung löschen', message: 'Möchten Sie diese Anmerkung wirklich löschen?', confirmText: 'Löschen', variant: 'danger' })) return;
+            const data = await this.apiSave(`/work/${this.orgSlug}/meetings/annotations/${a.id}/delete/`, undefined, 'DELETE');
+            if (data && data.success) {
+                this.annotations = this.annotations.filter(x => x.id !== a.id);
+                this.syncAnnotationCount(this.annotations.length);
+            }
+        },
+
+        // ---------- Anhänge ----------
+        supplementaryUrl(item) {
+            return `/work/${this.orgSlug}/meetings/${this.meetingId}/supplementary/${item.id}/`;
+        },
+
+        async loadDocs() {
+            const item = this.selectedItem;
+            if (!item) return;
+            this.docsLoading = true;
+            try {
+                const data = await this.fetchJson(this.supplementaryUrl(item));
+                if (data && this.selectedItemId === item.id) {
+                    this.docs = data.documents || [];
+                    this.refreshIcons();
+                }
+            } finally {
+                this.docsLoading = false;
+            }
+        },
+
+        _paperAnchorPayload() {
+            const item = this.selectedItem;
+            if (this.attachToPaper && item && item.paper) {
+                return { paper_id: item.paper.id, share_across_committees: true };
+            }
+            return {};
+        },
+
+        async addLink() {
+            const item = this.selectedItem;
+            if (!item || !this.newLinkTitle.trim() || !this.newLinkUrl.trim()) return;
+            const data = await this.apiSave(this.supplementaryUrl(item), {
+                document_type: 'link',
+                title: this.newLinkTitle.trim(),
+                url: this.newLinkUrl.trim(),
+                ...this._paperAnchorPayload(),
+            });
+            if (data && data.success) {
+                this.newLinkTitle = '';
+                this.newLinkUrl = '';
+                this.docs.push({
+                    ...data.document,
+                    document_type: data.document.document_type || 'link',
+                    added_by: this.currentUser,
+                    is_from_other_item: false,
+                });
+                this.refreshIcons();
+            }
+        },
+
+        async uploadFile(event) {
+            const item = this.selectedItem;
+            const file = event.target.files && event.target.files[0];
+            event.target.value = '';
+            if (!item || !file) return;
+            this.uploading = true;
+            try {
+                const form = new FormData();
+                form.append('file', file);
+                form.append('title', file.name);
+                const anchor = this._paperAnchorPayload();
+                if (anchor.paper_id) {
+                    form.append('paper_id', anchor.paper_id);
+                    form.append('share_across_committees', 'true');
+                }
+                const data = await this.apiSave(this.supplementaryUrl(item), form);
+                if (data && data.success) {
+                    this.docs.push({
+                        ...data.document,
+                        added_by: this.currentUser,
+                        is_from_other_item: false,
+                    });
+                    this.refreshIcons();
+                }
+            } finally {
+                this.uploading = false;
+            }
+        },
+
+        async deleteDoc(doc) {
+            if (!await confirmAction({ title: 'Anlage entfernen', message: `„${doc.title}" wirklich entfernen?`, confirmText: 'Entfernen', variant: 'danger' })) return;
+            const data = await this.apiSave(`/work/${this.orgSlug}/meetings/supplementary/${doc.id}/delete/`, undefined, 'DELETE');
+            if (data && data.success) {
+                this.docs = this.docs.filter(d => d.id !== doc.id);
+            }
+        },
+
+        // ---------- Zusammenfassung ----------
+        async openSummary() {
+            this.showSummary = true;
+            this.summaryLoading = true;
+            try {
+                const resp = await fetch(`{% url 'work:meeting_summary' org_slug=organization.slug meeting_id=meeting.id %}`);
+                this.summaryHtml = resp.ok ? await resp.text() : '<p class="text-sm text-red-600">Zusammenfassung konnte nicht geladen werden.</p>';
+            } catch (e) {
+                this.summaryHtml = '<p class="text-sm text-red-600">Zusammenfassung konnte nicht geladen werden.</p>';
+            } finally {
+                this.summaryLoading = false;
+                this.refreshIcons();
+            }
+        },
+
+        // ---------- Hilfsfunktionen ----------
+        async fetchJson(url) {
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) return null;
+                return await resp.json();
+            } catch (e) {
+                return null;
+            }
+        },
+
+        autoGrow(el, maxRem = 20) {
+            el.style.height = 'auto';
+            const max = maxRem * 16;
+            el.style.height = Math.min(max, el.scrollHeight) + 'px';
+            el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
+        },
+
+        stripHtml(html) {
+            const div = document.createElement('div');
+            div.innerHTML = html || '';
+            return div.textContent || '';
+        },
+
+        fmtDateTime(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            if (isNaN(d)) return '';
+            return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })
+                + ' ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+        },
+
+        formatDuration(seconds) {
+            const s = Math.max(0, parseInt(seconds || 0, 10));
+            const m = Math.floor(s / 60);
+            return m + ':' + String(s % 60).padStart(2, '0');
+        },
+
+        parseDuration(text) {
+            const t = String(text || '').trim();
+            if (!t) return 0;
+            if (t.includes(':')) {
+                const [m, s] = t.split(':');
+                return Math.max(0, (parseInt(m, 10) || 0) * 60 + (parseInt(s, 10) || 0));
+            }
+            return Math.max(0, parseInt(t, 10) || 0);
+        },
+    };
+}
+</script>

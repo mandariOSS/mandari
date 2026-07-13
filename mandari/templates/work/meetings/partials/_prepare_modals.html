@@ -1,0 +1,142 @@
+    <!-- ================= Modal: Legende ================= -->
+    <div x-show="showLegend" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+         x-transition.opacity
+         @click.self="showLegend = false"
+         @keydown.escape.window="showLegend = false; showSummary = false; docModalOpen = false; closePreview()">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-sm w-full max-h-[85vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold text-gray-900 dark:text-white">Legende</h3>
+                <button @click="showLegend = false" class="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-400"></i>
+                </button>
+            </div>
+            <p class="text-xs font-medium text-gray-500 uppercase mb-2">Positionen</p>
+            <div class="space-y-2.5 text-sm">
+                {% for code, label in position_choices %}
+                <div class="flex items-center gap-3">
+                    <span class="w-3.5 h-3.5 rounded-full shrink-0
+                        {% if code == 'for' %}bg-green-500{% elif code == 'against' %}bg-red-500{% elif code == 'abstain' %}bg-gray-400{% elif code == 'defer' %}bg-purple-500{% elif code == 'refer' %}bg-indigo-500{% elif code == 'amended' %}bg-amber-500{% elif code == 'info' %}bg-blue-500{% else %}bg-gray-400 dark:bg-gray-500{% endif %}"></span>
+                    <span class="text-gray-700 dark:text-gray-300">{{ label }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <p class="text-xs font-medium text-gray-500 uppercase mb-2">Abschnitte</p>
+                <div class="space-y-2.5 text-sm">
+                    <div class="flex items-center gap-3">
+                        <span class="w-3.5 h-3.5 rounded shrink-0 bg-indigo-400 dark:bg-indigo-600"></span>
+                        <span class="text-gray-700 dark:text-gray-300">Position &amp; Ergebnis</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="w-3.5 h-3.5 rounded shrink-0 bg-sky-400 dark:bg-sky-600"></span>
+                        <span class="text-gray-700 dark:text-gray-300">Dokumente aus dem Ratsinformationssystem</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="w-3.5 h-3.5 rounded shrink-0 bg-violet-400 dark:bg-violet-600"></span>
+                        <span class="text-gray-700 dark:text-gray-300">Redebeitrag</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="w-3.5 h-3.5 rounded shrink-0 bg-amber-400 dark:bg-amber-600"></span>
+                        <span class="text-gray-700 dark:text-gray-300">Eigene Anlagen</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="w-3.5 h-3.5 rounded shrink-0 bg-emerald-400 dark:bg-emerald-600"></span>
+                        <span class="text-gray-700 dark:text-gray-300">Diskussion</span>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <p class="text-xs font-medium text-gray-500 uppercase mb-2">Symbole</p>
+                <div class="space-y-2.5 text-sm">
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="lock" class="w-4 h-4 text-green-500"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Position endgültig</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="mic" class="w-4 h-4 text-primary-500"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Redebeitrag vorhanden</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="sticky-note" class="w-4 h-4 text-amber-500"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Private Notiz vorhanden</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="message-circle" class="w-4 h-4 text-gray-400"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Beiträge in der Diskussion</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="message-square-text" class="w-4 h-4 text-sky-500"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Anmerkungen an einer PDF-Datei</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="git-branch" class="w-4 h-4 text-indigo-500"></i>
+                        <span class="text-gray-700 dark:text-gray-300">Gremienübergreifend (über die Vorlage)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= Modal: Zusammenfassung ================= -->
+    <div x-show="showSummary" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+         x-transition.opacity
+         @click.self="showSummary = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Zusammenfassung der Vorbereitung</h2>
+                <button type="button" @click="showSummary = false" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-5">
+                <div x-show="summaryLoading" class="text-center py-8 text-gray-500">
+                    <i data-lucide="loader-2" class="w-6 h-6 mx-auto mb-2 animate-spin"></i>
+                    Zusammenfassung wird geladen...
+                </div>
+                <div x-show="!summaryLoading" x-html="summaryHtml"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= Modal: Dokument verknüpfen ================= -->
+    <div x-show="docModalOpen" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+         x-transition.opacity
+         @click.self="docModalOpen = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h3 class="font-semibold text-gray-900 dark:text-white">Dokument als Redebeitrag verknüpfen</h3>
+                <button @click="docModalOpen = false" class="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-400"></i>
+                </button>
+            </div>
+            <div class="p-4">
+                <div class="relative mb-3">
+                    <i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                    <input type="search" x-model="docQuery" @input="queue('doc-search', () => searchDocs(), 300)"
+                           class="w-full pl-8 pr-2.5 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 outline-none dark:text-gray-100"
+                           placeholder="Dokument suchen...">
+                </div>
+                <div class="max-h-72 overflow-y-auto space-y-1">
+                    <template x-for="doc in docResults" :key="doc.id">
+                        <button type="button" @click="linkDocument(doc)"
+                                class="w-full text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 border border-transparent hover:border-gray-200 dark:hover:border-gray-600 transition-colors">
+                            <p class="text-sm font-medium text-gray-800 dark:text-gray-100 line-clamp-2" :title="doc.title" x-text="doc.title"></p>
+                            <p class="text-[11px] text-gray-400 mt-0.5" x-text="'Zuletzt geändert ' + fmtDateTime(doc.updated_at)"></p>
+                        </button>
+                    </template>
+                    <p x-show="docResults.length === 0 && !docSearching" class="py-6 text-sm text-center text-gray-400">
+                        Keine Dokumente gefunden.
+                    </p>
+                    <p x-show="docSearching" class="py-6 text-sm text-center text-gray-400">
+                        <i data-lucide="loader-2" class="w-4 h-4 inline animate-spin mr-1"></i> Suche...
+                    </p>
+                </div>
+                <p class="mt-3 text-[11px] text-gray-400">
+                    Der Inhalt des verknüpften Dokuments wird schreibgeschützt als Redetext übernommen und bleibt mit dem Dokument synchron.
+                </p>
+            </div>
+        </div>
+    </div>
