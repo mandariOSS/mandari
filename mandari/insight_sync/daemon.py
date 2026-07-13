@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Sync Watchdog — prüft ob der Ingestor-Container lebt und bereinigt hängende Logs.
 

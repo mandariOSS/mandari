@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Management command to link meetings with their organizations based on raw_json data."""
 
 from django.core.management.base import BaseCommand

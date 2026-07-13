@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Management Command: Geodaten von OpenStreetMap für eine Kommune abrufen.
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Management Command: Ortsreferenzen aus Papers extrahieren und geocodieren.
 
