@@ -49,7 +49,7 @@ call_command("migrate", verbosity=0, interactive=False)
 from apps.accounts.models import User  # noqa: E402
 from apps.common.encryption import TenantEncryption  # noqa: E402
 from apps.tenants.models import Membership, Organization, Role  # noqa: E402
-from apps.work.meetings import views as meetings_views  # noqa: E402
+from apps.work.meetings import consumers as meetings_consumers  # noqa: E402
 from apps.work.meetings.consumers import PreparationConsumer  # noqa: E402
 from insight_core.models import (  # noqa: E402
     OParlAgendaItem,
@@ -149,14 +149,14 @@ check("Gast wird abgewiesen (auch ohne fehlende Rolle)", check_access(guest_user
 
 print("=== 2. Broadcast-Leak privater Kommentare ===")
 calls = []
-_orig = meetings_views.broadcast_preparation_event
+_orig = meetings_consumers.broadcast_preparation_event
 
 
 def _spy(organization_id, payload, **kwargs):
     calls.append((organization_id, payload, kwargs))
 
 
-meetings_views.broadcast_preparation_event = _spy
+meetings_consumers.broadcast_preparation_event = _spy
 try:
     client = Client()
     client.force_login(admin_user)
@@ -176,7 +176,7 @@ try:
     check("Org-Kommentar gespeichert (200)", r2.status_code == 200, f"status={r2.status_code}")
     check("Org-Kommentar wird broadcastet", len(calls) == 1, f"calls={len(calls)}")
 finally:
-    meetings_views.broadcast_preparation_event = _orig
+    meetings_consumers.broadcast_preparation_event = _orig
 
 print(f"\n=== Ergebnis: {PASS} OK, {FAIL} FAIL ===")
 sys.exit(1 if FAIL else 0)
