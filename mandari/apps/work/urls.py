@@ -522,12 +522,6 @@ urlpatterns = [
         organization_views.OrganizationFactionSettingsView.as_view(),
         name="organization_faction_settings",
     ),
-    # Schedules feature disabled
-    # path(
-    #     "<slug:org_slug>/organization/faction-schedules/",
-    #     faction_views.FactionScheduleListView.as_view(),
-    #     name="organization_faction_schedules"
-    # ),
     path(
         "<slug:org_slug>/organization/documents-settings/",
         organization_views.OrganizationDocumentsView.as_view(),
