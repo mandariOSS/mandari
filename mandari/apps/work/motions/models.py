@@ -276,8 +276,10 @@ class DocumentFolder(models.Model):
     Die Dokumente sind tenant-spezifisch verschlüsselt und ihre Sichtbarkeit
     hängt am eigenen RBAC-/Share-System — beides würde bei einer externen
     Datei-Ablage brechen. Ordner sind reine Organisations-Struktur: Sie
-    steuern KEINE Sichtbarkeit (die regeln weiterhin ausschließlich
-    Motion.visibility und MotionShare). Gäste sehen die Ordnerstruktur nicht.
+    steuern für Mitglieder KEINE Sichtbarkeit (die regeln weiterhin
+    ausschließlich Motion.visibility und MotionShare). Einzige Ausnahme:
+    Gäste können per FolderGuestShare für einen Ordner (rekursiv inkl.
+    aller Unterordner und enthaltenen Dokumente) freigegeben werden.
     """
 
     MAX_DEPTH = 4
@@ -440,6 +442,104 @@ class DocumentFolder(models.Model):
             child.save(update_fields=["name", "parent"])
 
         return super().delete(*args, **kwargs)
+
+
+class FolderGuestShare(models.Model):
+    """
+    Ordner-Freigabe an einzelne Nutzer (insbesondere Gäste).
+
+    Die Freigabe gilt für den Ordner UND rekursiv für alle Unterordner
+    sowie alle enthaltenen Dokumente — auch künftig hinzukommende.
+    Zugriffs-Checks laufen zentral über Motion.get_guest_share_level()
+    bzw. shared_folder_levels(); Views/Consumer prüfen NICHT einzeln.
+    """
+
+    LEVEL_CHOICES = [
+        ("view", "Lesen"),
+        ("comment", "Kommentieren"),
+        ("edit", "Bearbeiten"),
+    ]
+
+    # Rangfolge für "höchstes Level gewinnt" (direkt vs. geerbt)
+    LEVEL_RANK = {"view": 0, "comment": 1, "edit": 2}
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    folder = models.ForeignKey(
+        DocumentFolder,
+        on_delete=models.CASCADE,
+        related_name="guest_shares",
+        verbose_name="Ordner",
+    )
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="folder_shares",
+        verbose_name="Benutzer",
+    )
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES, default="view", verbose_name="Berechtigung")
+
+    created_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_folder_shares",
+        verbose_name="Erstellt von",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Ordner-Freigabe"
+        verbose_name_plural = "Ordner-Freigaben"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["folder", "user"], name="uniq_folder_guest_share_per_user"),
+        ]
+
+    def __str__(self):
+        return f"{self.folder.name} → {self.user} ({self.level})"
+
+    @classmethod
+    def shared_folder_levels(cls, user, organization) -> dict:
+        """
+        Effektive Ordner-Freigaben eines Nutzers in einer Organisation.
+
+        Returns {folder_id: level} für alle direkt freigegebenen Ordner
+        UND (rekursiv geerbt) alle deren Unterordner. Bei mehreren
+        Freigaben auf einem Pfad gewinnt das höchste Level.
+        """
+        direct: dict = {}
+        qs = cls.objects.filter(user=user, folder__organization=organization)
+        for folder_id, level in qs.values_list("folder_id", "level"):
+            current = direct.get(folder_id)
+            if current is None or cls.LEVEL_RANK.get(level, 0) > cls.LEVEL_RANK.get(current, 0):
+                direct[folder_id] = level
+        if not direct:
+            return {}
+
+        # Baum einmal laden und Level top-down vererben
+        children: dict = {}
+        for folder_id, parent_id in DocumentFolder.objects.filter(organization=organization).values_list(
+            "id", "parent_id"
+        ):
+            children.setdefault(parent_id, []).append(folder_id)
+
+        levels: dict = {}
+
+        def walk(folder_id, inherited):
+            own = direct.get(folder_id)
+            effective = inherited
+            if own is not None and (effective is None or cls.LEVEL_RANK.get(own, 0) > cls.LEVEL_RANK.get(effective, 0)):
+                effective = own
+            if effective is not None:
+                levels[folder_id] = effective
+            for child_id in children.get(folder_id, []):
+                walk(child_id, effective)
+
+        for root_id in children.get(None, []):
+            walk(root_id, None)
+        return levels
 
 
 class Motion(EncryptionMixin, models.Model):
@@ -722,11 +822,15 @@ class Motion(EncryptionMixin, models.Model):
 
         Wird u. a. für die sichtbarkeitsabhängigen Ordner-Zähler genutzt:
         eigene Dokumente, organisationsweite sowie persönlich geteilte.
-        Gäste sehen ausschließlich persönlich freigegebene Dokumente.
+        Gäste sehen ausschließlich persönlich freigegebene Dokumente
+        sowie Dokumente in für sie freigegebenen Ordnern (rekursiv).
         """
         qs = cls.objects.filter(organization=membership.organization).exclude(status="deleted")
         if getattr(membership, "is_guest", False):
-            return qs.filter(shares__scope="user", shares__user=membership.user).distinct()
+            shared_folder_ids = list(FolderGuestShare.shared_folder_levels(membership.user, membership.organization))
+            return qs.filter(
+                models.Q(shares__scope="user", shares__user=membership.user) | models.Q(folder_id__in=shared_folder_ids)
+            ).distinct()
         return qs.filter(
             models.Q(author=membership)
             | models.Q(visibility="organization")
@@ -768,11 +872,18 @@ class Motion(EncryptionMixin, models.Model):
         """
         Freigabe-Level eines Gast-Zugangs für dieses Dokument.
 
-        Gäste erhalten Zugriff ausschließlich über persönliche Freigaben
-        (MotionShare, scope=user). Returns 'view'/'comment'/'edit'/'admin'
+        Gäste erhalten Zugriff ausschließlich über persönliche Freigaben:
+        Dokument-Freigaben (MotionShare, scope=user) ODER Ordner-Freigaben
+        (FolderGuestShare) auf den Ordner des Dokuments bzw. einen seiner
+        übergeordneten Ordner. Returns 'view'/'comment'/'edit'/'admin'
         oder None, wenn keine Freigabe existiert.
         """
         levels = set(self.shares.filter(scope="user", user=membership.user).values_list("level", flat=True))
+        # Ordner-Freigaben gelten rekursiv: Ordner des Dokuments + Vorfahren
+        node = self.folder
+        while node is not None:
+            levels.update(node.guest_shares.filter(user=membership.user).values_list("level", flat=True))
+            node = node.parent
         for level in ("admin", "edit", "comment", "view"):
             if level in levels:
                 return level

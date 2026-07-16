@@ -8,6 +8,72 @@
 {% endblock %}
 
 {% block work_content %}
+{% if current_folder or shared_folders %}
+<!-- Freigegebene Ordner (navigierbarer Baum) -->
+<div class="mb-6 fade-up">
+    {% if current_folder %}
+    <nav class="flex items-center gap-1 text-sm text-gray-500 mb-3 flex-wrap">
+        <a href="{% url 'work:guest_documents' org_slug=organization.slug %}" class="hover:text-primary-600">Freigaben</a>
+        {% for crumb in folder_breadcrumbs %}
+        <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+        <a href="{% url 'work:guest_documents' org_slug=organization.slug %}?ordner={{ crumb.id }}" class="hover:text-primary-600">{{ crumb.name }}</a>
+        {% endfor %}
+        <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+        <span class="font-medium text-gray-900 dark:text-white">{{ current_folder.name }}</span>
+        {% if folder_level_label %}
+        <span class="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">{{ folder_level_label }}</span>
+        {% endif %}
+    </nav>
+    {% else %}
+    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Freigegebene Ordner</h2>
+    {% endif %}
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
+        {% for entry in shared_folders %}
+        <a href="{% url 'work:guest_documents' org_slug=organization.slug %}?ordner={{ entry.folder.id }}"
+           class="px-6 py-3.5 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            <div class="flex items-center gap-3 min-w-0">
+                <i data-lucide="folder" class="w-5 h-5 text-amber-500 shrink-0"></i>
+                <span class="font-medium text-gray-900 dark:text-white truncate">{{ entry.folder.name }}</span>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+                {% if entry.level_label %}
+                <span class="px-2.5 py-1 text-xs font-medium rounded-full
+                             {% if entry.level == 'edit' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
+                             {% elif entry.level == 'comment' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300
+                             {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300{% endif %}">
+                    {{ entry.level_label }}
+                </span>
+                {% endif %}
+                <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400"></i>
+            </div>
+        </a>
+        {% endfor %}
+
+        {% for doc in folder_documents %}
+        <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=doc.id %}"
+           class="px-6 py-3.5 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            <div class="flex items-center gap-3 min-w-0">
+                <i data-lucide="file-text" class="w-5 h-5 text-primary-500 shrink-0"></i>
+                <div class="min-w-0">
+                    <span class="font-medium text-gray-900 dark:text-white truncate block">{{ doc.title }}</span>
+                    <span class="text-sm text-gray-500">Zuletzt geändert {{ doc.updated_at|date:"d.m.Y" }}</span>
+                </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-5 h-5 text-gray-400 shrink-0"></i>
+        </a>
+        {% endfor %}
+
+        {% if current_folder and not shared_folders and not folder_documents %}
+        <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400 text-sm">
+            Dieser Ordner ist leer.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if not current_folder %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 fade-up">
     {% if shared_entries %}
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -38,7 +104,7 @@
         </a>
         {% endfor %}
     </div>
-    {% else %}
+    {% elif not shared_folders %}
     <div class="p-12 text-center">
         <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
             <i data-lucide="file-lock" class="w-8 h-8 text-gray-400"></i>
@@ -47,9 +113,10 @@
             Für Sie wurden noch keine Dokumente freigegeben.
         </p>
         <p class="text-sm text-gray-400 mt-2">
-            Sobald ein Mitglied der Organisation ein Dokument mit Ihnen teilt, erscheint es hier.
+            Sobald ein Mitglied der Organisation ein Dokument oder einen Ordner mit Ihnen teilt, erscheint es hier.
         </p>
     </div>
     {% endif %}
 </div>
+{% endif %}
 {% endblock %}

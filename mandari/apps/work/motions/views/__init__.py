@@ -37,6 +37,8 @@ from .list import (
     DocumentFolderCreateView,
     DocumentFolderDeleteView,
     DocumentFolderUpdateView,
+    FolderGuestShareRemoveView,
+    FolderGuestShareUpdateView,
     MotionFolderMoveView,
     MotionListView,
 )
@@ -89,6 +91,8 @@ __all__ = [
     "DocumentRevisionDetailAPIView",
     "DocumentRevisionRestoreView",
     "DocumentRevisionsAPIView",
+    "FolderGuestShareRemoveView",
+    "FolderGuestShareUpdateView",
     "GuestSharedDocumentsView",
     "LetterheadCreateView",
     "LetterheadDeleteView",

@@ -180,8 +180,9 @@ class GuestInviteView(WorkViewMixin, TemplateView):
     Erzeugt sofort einen User-Account (falls nötig) und eine
     Membership(is_guest=True, keine Rollen). Der Gast erhält eine
     Passwort-Setz-Mail über den bestehenden Reset-Mechanismus.
-    Optional können direkt Dokumente freigegeben werden
-    (MotionShare, scope=user) — oder später am Dokument selbst.
+    Optional können direkt Dokumente (MotionShare, scope=user) und/oder
+    ganze Ordner (FolderGuestShare, rekursiv inkl. Unterordner und
+    enthaltener Dokumente) freigegeben werden — oder später.
     """
 
     template_name = "work/organization/guest_invite.html"
@@ -202,6 +203,22 @@ class GuestInviteView(WorkViewMixin, TemplateView):
             .order_by("-updated_at")
         )
 
+    def _shareable_folders(self):
+        """
+        Ordner, die der Einladende freigeben darf, als [(folder, depth)].
+
+        Eine Ordner-Freigabe öffnet ALLE enthaltenen Dokumente (rekursiv,
+        auch künftige) — daher nur Ordner, die der Einladende auch
+        verwalten darf (_can_manage_folder).
+        """
+        from apps.work.motions.views import _can_manage_folder, _flatten_folder_tree
+
+        return [
+            (folder, depth)
+            for folder, depth in _flatten_folder_tree(self.organization)
+            if _can_manage_folder(self.membership, folder)
+        ]
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
@@ -210,12 +227,13 @@ class GuestInviteView(WorkViewMixin, TemplateView):
         context["guest_limit_reached"] = not self.organization.has_free_guest_slot()
         context["share_levels"] = self.GUEST_SHARE_LEVELS
         context["shareable_documents"] = self._shareable_documents()[:200]
+        context["shareable_folders"] = self._shareable_folders()
         return context
 
     def post(self, request, *args, **kwargs):
         from apps.accounts.models import User
         from apps.tenants.models import Membership
-        from apps.work.motions.models import MotionShare
+        from apps.work.motions.models import FolderGuestShare, MotionShare
 
         email = request.POST.get("email", "").strip().lower()
         note = request.POST.get("message", "").strip()
@@ -223,6 +241,7 @@ class GuestInviteView(WorkViewMixin, TemplateView):
         if share_level not in dict(self.GUEST_SHARE_LEVELS):
             share_level = "view"
         document_ids = request.POST.getlist("documents")
+        folder_ids = request.POST.getlist("folders")
 
         if not email or "@" not in email:
             messages.error(request, "Bitte geben Sie eine gültige E-Mail-Adresse ein.")
@@ -275,15 +294,32 @@ class GuestInviteView(WorkViewMixin, TemplateView):
                 )
                 shared_count += 1
 
+        # Ausgewählte Ordner sofort freigeben (rekursiv inkl. Unterordner)
+        shared_folder_count = 0
+        if folder_ids:
+            shareable_folders = {str(folder.id): folder for folder, _depth in self._shareable_folders()}
+            for folder_id in folder_ids:
+                folder = shareable_folders.get(str(folder_id))
+                if folder is None:
+                    continue
+                FolderGuestShare.objects.update_or_create(
+                    folder=folder,
+                    user=user,
+                    defaults={"level": share_level, "created_by": request.user},
+                )
+                shared_folder_count += 1
+
         self._send_guest_invitation_email(user, note, user_created)
 
         success_text = f"Gastzugang für {email} wurde eingerichtet."
         if shared_count:
             success_text += f" {shared_count} Dokument(e) freigegeben."
+        if shared_folder_count:
+            success_text += f" {shared_folder_count} Ordner freigegeben."
         messages.success(request, success_text)
         logger.info(
             f"[Guests] Gastzugang {email} in '{self.organization.slug}' angelegt "
-            f"(von {request.user.email}, {shared_count} Freigaben)"
+            f"(von {request.user.email}, {shared_count} Dokument- und {shared_folder_count} Ordner-Freigaben)"
         )
         return redirect("work:members", org_slug=self.organization.slug)
 

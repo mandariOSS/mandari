@@ -11,7 +11,7 @@ from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import JsonResponse
-from django.shortcuts import redirect
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView, View
@@ -22,6 +22,7 @@ from apps.common.mixins import WorkViewMixin
 
 from ..models import (
     DocumentFolder,
+    FolderGuestShare,
     Motion,
     MotionType,
 )
@@ -312,6 +313,77 @@ class DocumentFolderDeleteView(WorkViewMixin, View):
 
         list_url = reverse("work:documents", kwargs={"org_slug": self.organization.slug})
         return redirect(f"{list_url}?ordner={parent.id}" if parent else list_url)
+
+
+class FolderGuestShareUpdateView(WorkViewMixin, View):
+    """
+    Ordner für einen Nutzer (insbesondere Gast) freigeben.
+
+    Die Freigabe gilt rekursiv für alle Unterordner und enthaltenen
+    Dokumente — auch künftig hinzukommende (FolderGuestShare).
+    """
+
+    permission_required = ["guests.manage", "motions.share"]
+    permission_require_all = False
+
+    def post(self, request, *args, **kwargs):
+        from apps.accounts.models import User
+        from apps.tenants.models import Membership
+
+        folder = _get_org_folder_or_404(self.organization, kwargs.get("folder_id"))
+        if not _can_manage_folder(self.membership, folder):
+            return JsonResponse({"error": "Keine Berechtigung für diesen Ordner."}, status=403)
+
+        email = request.POST.get("email", "").strip().lower()
+        level = request.POST.get("level", "view")
+        if level not in dict(FolderGuestShare.LEVEL_CHOICES):
+            level = "view"
+
+        user = User.objects.filter(email=email).first() if email else None
+        if user is None:
+            return JsonResponse({"error": f"Benutzer '{email}' nicht gefunden."}, status=400)
+
+        # Nur Nutzer mit aktivem Zugang zu DIESER Organisation — sonst wäre
+        # die Freigabe wirkungslos bzw. liefe an der Org-Grenze vorbei.
+        if not Membership.objects.filter(user=user, organization=self.organization, is_active=True).exists():
+            return JsonResponse({"error": "Der Nutzer hat keinen Zugang zu dieser Organisation."}, status=400)
+
+        FolderGuestShare.objects.update_or_create(
+            folder=folder,
+            user=user,
+            defaults={"level": level, "created_by": request.user},
+        )
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"success": True})
+        messages.success(request, f"Ordner '{folder.name}' für {email} freigegeben.")
+        list_url = reverse("work:documents", kwargs={"org_slug": self.organization.slug})
+        return redirect(f"{list_url}?ordner={folder.id}")
+
+
+class FolderGuestShareRemoveView(WorkViewMixin, View):
+    """Ordner-Freigabe entziehen."""
+
+    permission_required = ["guests.manage", "motions.share"]
+    permission_require_all = False
+
+    def post(self, request, *args, **kwargs):
+        share = get_object_or_404(
+            FolderGuestShare,
+            id=kwargs.get("share_id"),
+            folder__organization=self.organization,
+        )
+        if not _can_manage_folder(self.membership, share.folder):
+            return JsonResponse({"error": "Keine Berechtigung für diesen Ordner."}, status=403)
+
+        folder = share.folder
+        share.delete()
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"success": True})
+        messages.success(request, f"Ordner-Freigabe für '{folder.name}' entfernt.")
+        list_url = reverse("work:documents", kwargs={"org_slug": self.organization.slug})
+        return redirect(f"{list_url}?ordner={folder.id}")
 
 
 class MotionFolderMoveView(WorkViewMixin, View):

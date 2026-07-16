@@ -84,6 +84,31 @@
             {% endif %}
         </div>
 
+        <!-- Ordner freigeben -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Ordner freigeben</h3>
+            <p class="text-sm text-gray-500 mb-4">
+                Optional: Eine Ordner-Freigabe gilt für den Ordner und rekursiv für alle Unterordner
+                und enthaltenen Dokumente — auch für Dokumente, die später hinzukommen.
+            </p>
+            {% if shareable_folders %}
+            <div class="max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-700">
+                {% for folder, depth in shareable_folders %}
+                <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
+                    <input type="checkbox" name="folders" value="{{ folder.id }}"
+                           class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                    <div class="flex items-center gap-2 flex-1 min-w-0" style="padding-left: calc({{ depth|add:'-1' }} * 0.9rem);">
+                        <i data-lucide="folder" class="w-4 h-4 text-gray-400 shrink-0"></i>
+                        <span class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ folder.name }}</span>
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-400">Keine freigebbaren Ordner vorhanden.</p>
+            {% endif %}
+        </div>
+
         <!-- Notiz -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Notiz</h3>

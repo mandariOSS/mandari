@@ -23,6 +23,7 @@ from ..forms import (
     MotionStatusForm,
 )
 from ..models import (
+    DocumentFolder,
     Motion,
     MotionApproval,
     MotionRevision,
@@ -471,7 +472,8 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
     Gast-Übersicht: "Freigegebene Dokumente".
 
     Landing-Page für Gast-Zugänge — listet alle Dokumente, die per
-    persönlicher Freigabe (MotionShare, scope=user) geteilt wurden.
+    persönlicher Freigabe (MotionShare, scope=user) geteilt wurden, sowie
+    freigegebene Ordner (FolderGuestShare) als navigierbaren Baum.
     Auch für reguläre Mitglieder aufrufbar (zeigt deren persönliche Freigaben).
     """
 
@@ -480,38 +482,92 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
     guest_allowed = True
 
     def get_context_data(self, **kwargs):
+        from django.http import Http404
+
+        from ..models import FolderGuestShare
+
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "guest_documents"
 
         level_rank = {"view": 0, "comment": 1, "edit": 2, "admin": 3}
         level_labels = dict(MotionShare.LEVEL_CHOICES)
 
-        shares = (
-            MotionShare.objects.filter(
-                scope="user",
-                user=self.request.user,
-                motion__organization=self.organization,
-            )
-            .exclude(motion__status="deleted")
-            .select_related("motion", "motion__author__user", "created_by")
-            .order_by("-created_at")
+        # === Ordner-Freigaben (rekursiv inkl. Unterordner) ===
+        folder_levels = FolderGuestShare.shared_folder_levels(self.request.user, self.organization)
+
+        current_folder = None
+        folder_param = self.request.GET.get("ordner")
+        if folder_param:
+            current_folder = _get_org_folder_or_404(self.organization, folder_param)
+            # Nur innerhalb des freigegebenen Teilbaums navigierbar
+            if current_folder.id not in folder_levels:
+                raise Http404("Ordner nicht freigegeben")
+
+        context["current_folder"] = current_folder
+        context["folder_level_label"] = (
+            level_labels.get(folder_levels.get(current_folder.id)) if current_folder else None
+        )
+        context["folder_breadcrumbs"] = (
+            [a for a in current_folder.get_ancestors() if a.id in folder_levels] if current_folder else []
         )
 
-        # Ein Eintrag je Dokument mit dem höchsten Freigabe-Level
+        if current_folder is not None:
+            # Innerhalb eines Ordners: Unterordner + enthaltene Dokumente
+            subfolders = current_folder.children.all()
+            folder_documents = (
+                Motion.objects.filter(organization=self.organization, folder=current_folder)
+                .exclude(status="deleted")
+                .select_related("author__user")
+                .order_by("-updated_at")
+            )
+        else:
+            # Übersicht: nur direkt freigegebene Wurzeln des Teilbaums
+            # (Ordner, deren Parent nicht ebenfalls freigegeben ist)
+            subfolders = [
+                folder
+                for folder in DocumentFolder.objects.filter(organization=self.organization, id__in=folder_levels)
+                if folder.parent_id not in folder_levels
+            ]
+            folder_documents = Motion.objects.none()
+
+        context["shared_folders"] = [
+            {
+                "folder": folder,
+                "level": folder_levels.get(folder.id),
+                "level_label": level_labels.get(folder_levels.get(folder.id), ""),
+            }
+            for folder in subfolders
+        ]
+        context["folder_documents"] = folder_documents
+
+        # === Dokument-Freigaben (nur auf der Übersichtsseite) ===
         entries = {}
-        for share in shares:
-            entry = entries.get(share.motion_id)
-            if entry is None:
-                entries[share.motion_id] = {
-                    "motion": share.motion,
-                    "level": share.level,
-                    "level_label": level_labels.get(share.level, share.level),
-                    "shared_at": share.created_at,
-                    "shared_by": share.created_by,
-                }
-            elif level_rank.get(share.level, 0) > level_rank.get(entry["level"], 0):
-                entry["level"] = share.level
-                entry["level_label"] = level_labels.get(share.level, share.level)
+        if current_folder is None:
+            shares = (
+                MotionShare.objects.filter(
+                    scope="user",
+                    user=self.request.user,
+                    motion__organization=self.organization,
+                )
+                .exclude(motion__status="deleted")
+                .select_related("motion", "motion__author__user", "created_by")
+                .order_by("-created_at")
+            )
+
+            # Ein Eintrag je Dokument mit dem höchsten Freigabe-Level
+            for share in shares:
+                entry = entries.get(share.motion_id)
+                if entry is None:
+                    entries[share.motion_id] = {
+                        "motion": share.motion,
+                        "level": share.level,
+                        "level_label": level_labels.get(share.level, share.level),
+                        "shared_at": share.created_at,
+                        "shared_by": share.created_by,
+                    }
+                elif level_rank.get(share.level, 0) > level_rank.get(entry["level"], 0):
+                    entry["level"] = share.level
+                    entry["level_label"] = level_labels.get(share.level, share.level)
 
         context["shared_entries"] = list(entries.values())
         return context

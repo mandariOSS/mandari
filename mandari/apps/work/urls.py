@@ -194,6 +194,16 @@ urlpatterns = [
         name="document_folder_delete",
     ),
     path(
+        "<slug:org_slug>/documents/folders/<uuid:folder_id>/share/",
+        motions_views.FolderGuestShareUpdateView.as_view(),
+        name="document_folder_share",
+    ),
+    path(
+        "<slug:org_slug>/documents/folders/shares/<uuid:share_id>/remove/",
+        motions_views.FolderGuestShareRemoveView.as_view(),
+        name="document_folder_share_remove",
+    ),
+    path(
         "<slug:org_slug>/documents/move-to-folder/",
         motions_views.MotionFolderMoveView.as_view(),
         name="document_move_to_folder",
