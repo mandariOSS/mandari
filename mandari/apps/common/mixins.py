@@ -111,6 +111,14 @@ class OrganizationMixin(LoginRequiredMixin):
         context["organization"] = self.organization
         context["membership"] = self.membership
         context["org_slug"] = self.organization.slug
+        # Org-Switcher: alle aktiven Mitgliedschaften/Gastzugänge des Nutzers.
+        # Ein Nutzer kann gleichzeitig Mitglied und/oder Gast in mehreren
+        # Organisationen sein (Membership ist (user, organization)-spezifisch).
+        context["user_organizations"] = (
+            self.request.user.memberships.filter(is_active=True, organization__is_active=True)
+            .select_related("organization")
+            .order_by("organization__name")
+        )
         return context
 
     def get_queryset(self):
