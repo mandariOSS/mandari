@@ -480,6 +480,54 @@ resp = c_author.post(
 doc_type.refresh_from_db()
 check("Typ: default_checklist aus Textarea", doc_type.default_checklist == ["Punkt 1", "Punkt 2", "Punkt 3"])
 
+# --- 11. Per-Objekt-Rechte: Tracking-Endpunkte ---------------------------------
+# Org-weites motions.edit reicht NICHT: Mitglieder ohne Zugriff auf ein
+# PRIVATES Dokument dürfen dessen Status/Metadaten/Checkliste/Anhänge
+# nicht manipulieren (IDOR-Fix: can_edit-Check in den Endpunkten).
+print("=== 11. Per-Objekt-Rechte: Tracking-Endpunkte ===")
+private_doc = Motion.objects.create(organization=org_a, author=m_author, title="Privates Dokument")
+check("Ausgangslage: Dokument privat", private_doc.visibility == "private")
+check("Ausgangslage: m_expert hat org-weites motions.edit", m_expert.has_permission("motions.edit"))
+
+p_status = f"{BASE}/{private_doc.id}/status/"
+p_meta = f"{BASE}/{private_doc.id}/meta/"
+p_checklist = f"{BASE}/{private_doc.id}/checklist/"
+p_upload = f"{BASE}/{private_doc.id}/upload/"
+
+resp = ajax_post(c_expert, p_status, {"status": "internal_review"})
+private_doc.refresh_from_db()
+check(
+    "Status: ohne Dokumentzugriff -> 403, Status unverändert",
+    resp.status_code == 403 and private_doc.status == "draft",
+    f"got {resp.status_code}, status={private_doc.status}",
+)
+resp = ajax_post(c_expert, p_meta, {"action": "set_due_date", "due_date": "2030-01-01"})
+private_doc.refresh_from_db()
+check(
+    "Meta: ohne Dokumentzugriff -> 403, Frist unverändert",
+    resp.status_code == 403 and private_doc.due_date is None,
+    f"got {resp.status_code}",
+)
+resp = ajax_post(c_expert, p_checklist, {"action": "add", "title": "Hack"})
+check(
+    "Checkliste: ohne Dokumentzugriff -> 403, kein Punkt angelegt",
+    resp.status_code == 403 and private_doc.checklist_items.count() == 0,
+    f"got {resp.status_code}",
+)
+resp = c_expert.post(p_upload, {}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+check("Upload: ohne Dokumentzugriff -> 403", resp.status_code == 403, f"got {resp.status_code}")
+
+# Autor darf weiterhin alles
+resp = ajax_post(c_author, p_status, {"status": "internal_review"})
+check("Autor: Statuswechsel weiterhin möglich", resp.status_code == 200, f"got {resp.status_code}")
+resp = ajax_post(c_author, p_checklist, {"action": "add", "title": "Eigener Punkt"})
+check("Autor: Checkliste weiterhin möglich", resp.status_code == 200)
+
+# Org-sichtbare Dokumente bleiben für Mitglieder mit Zugriff bearbeitbar
+org_doc = Motion.objects.create(organization=org_a, author=m_author, title="Org-Dokument", visibility="organization")
+resp = ajax_post(c_expert, f"{BASE}/{org_doc.id}/status/", {"status": "internal_review"})
+check("Org-sichtbares Dokument: anderes Mitglied -> 200", resp.status_code == 200, f"got {resp.status_code}")
+
 # --- Ergebnis ------------------------------------------------------------------
 print()
 print(f"=== Ergebnis: {PASS} OK, {FAIL} FAIL ===")

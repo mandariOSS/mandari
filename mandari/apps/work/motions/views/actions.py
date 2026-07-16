@@ -48,6 +48,12 @@ class MotionShareView(WorkViewMixin, TemplateView):
     def post(self, request, *args, **kwargs):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
+        # Per-Objekt-Recht: Freigeben nur durch Autor oder motions.edit_all
+        # (konsistent zu MotionShareUpdateView/MotionShareRemoveView).
+        if motion.author != self.membership and not self.membership.has_permission("motions.edit_all"):
+            messages.error(request, "Keine Berechtigung für dieses Dokument.")
+            return redirect("work:documents", org_slug=self.organization.slug)
+
         form = MotionShareForm(request.POST)
         if form.is_valid():
             share = form.save(commit=False)
@@ -191,6 +197,12 @@ class MotionStatusView(WorkViewMixin, View):
     def post(self, request, *args, **kwargs):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
 
+        # Per-Objekt-Recht: org-weites motions.edit reicht NICHT — sonst
+        # könnten Mitglieder ohne Dokumentzugriff den Status fremder
+        # privater Dokumente manipulieren (IDOR).
+        if not motion.can_edit(self.membership):
+            return JsonResponse({"error": "Kein Zugriff auf dieses Dokument."}, status=403)
+
         new_status = request.POST.get("status")
         if new_status not in dict(Motion.STATUS_CHOICES):
             return JsonResponse({"error": "Ungültiger Status"}, status=400)
@@ -232,6 +244,12 @@ class MotionMetaUpdateView(WorkViewMixin, View):
         from apps.work.notifications.services import NotificationHub
 
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
+
+        # Per-Objekt-Recht (siehe MotionStatusView): kein Meta-Update ohne
+        # Zugriff auf das konkrete Dokument.
+        if not motion.can_edit(self.membership):
+            return JsonResponse({"error": "Kein Zugriff auf dieses Dokument."}, status=403)
+
         action = request.POST.get("action")
 
         if action == "set_responsible":
@@ -296,6 +314,11 @@ class MotionChecklistActionView(WorkViewMixin, View):
 
     def post(self, request, *args, **kwargs):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
+
+        # Per-Objekt-Recht (siehe MotionStatusView)
+        if not motion.can_edit(self.membership):
+            return JsonResponse({"error": "Kein Zugriff auf dieses Dokument."}, status=403)
+
         action = request.POST.get("action")
 
         if action == "add":
@@ -441,6 +464,10 @@ class MotionDocumentUploadView(WorkViewMixin, View):
 
     def post(self, request, *args, **kwargs):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
+
+        # Per-Objekt-Recht (siehe MotionStatusView)
+        if not motion.can_edit(self.membership):
+            return JsonResponse({"error": "Kein Zugriff auf dieses Dokument."}, status=403)
 
         form = MotionDocumentForm(request.POST, request.FILES)
         if form.is_valid():
