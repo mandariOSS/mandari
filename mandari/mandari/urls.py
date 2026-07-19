@@ -6,12 +6,25 @@ Mandari Insight - Kommunalpolitische Transparenz
 """
 
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.db import connection
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve as static_serve
+
+
+def serve_media(request, path):
+    """Serve uploaded media files (logos, uploads) via Django.
+
+    In Produktion proxied Caddy /media/* an Django. Der frühere
+    ``static()``-Helper ist bei DEBUG=False ein No-Op und lieferte
+    dort für alle Uploads 404. ``django.views.static.serve`` kümmert
+    sich um Last-Modified/304; wir ergänzen einen moderaten Cache-Header.
+    """
+    response = static_serve(request, path, document_root=settings.MEDIA_ROOT)
+    response["Cache-Control"] = "public, max-age=3600"
+    return response
 
 
 def health_check(request):
@@ -57,8 +70,11 @@ urlpatterns = [
     path("", include("insight_core.urls")),
 ]
 
-# Serve media files (logos, uploads) — in production via Caddy → Django
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Serve media files (logos, uploads) — in production via Caddy → Django.
+# Bewusst unabhängig von DEBUG registriert (siehe serve_media-Docstring).
+urlpatterns += [
+    re_path(r"^media/(?P<path>.*)$", serve_media, name="media"),
+]
 
 
 # =============================================================================

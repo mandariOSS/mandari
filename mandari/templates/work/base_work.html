@@ -433,13 +433,15 @@
         <aside class="work-sidebar" :class="{ 'open': sidebarOpen, 'collapsed': sidebarCollapsed }">
             <!-- Organization Header -->
             <div class="work-org-header">
-                <a href="/" class="work-org-logo {% if not organization.logo %}has-fallback{% endif %}" {% if not organization.logo and organization.primary_color %}style="background: {{ organization.primary_color }}20; color: {{ organization.primary_color }};"{% endif %}>
-                    {% if organization.logo %}
-                        <img src="{{ organization.logo.url }}" alt="{{ organization.name }}">
+                {% with org_logo=organization.effective_logo %}
+                <a href="/" class="work-org-logo {% if not org_logo %}has-fallback{% endif %}" {% if not org_logo and organization.primary_color %}style="background: {{ organization.primary_color }}20; color: {{ organization.primary_color }};"{% endif %}>
+                    {% if org_logo %}
+                        <img src="{{ org_logo.url }}" alt="{{ organization.name }}">
                     {% else %}
                         {{ organization.name|slice:":2"|upper }}
                     {% endif %}
                 </a>
+                {% endwith %}
                 <div class="work-org-info">
                     <div class="work-org-name">{{ organization.name }}</div>
                     {% if organization.party_group %}
