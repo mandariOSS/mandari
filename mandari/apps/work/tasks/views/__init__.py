@@ -15,6 +15,10 @@ from .create import (
     TaskCreateView,
     TaskShareView,
 )
+from .export_import import (
+    TaskExportView,
+    TaskFileImportView,
+)
 from .list import (
     TaskBoardAPIView,
     TaskListView,
@@ -31,6 +35,8 @@ from .panel import (
 __all__ = [
     "TaskBoardAPIView",
     "TaskCreateView",
+    "TaskExportView",
+    "TaskFileImportView",
     "TaskImportView",
     "TaskLabelManageView",
     "TaskListView",

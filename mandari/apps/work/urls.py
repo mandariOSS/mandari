@@ -458,6 +458,12 @@ urlpatterns = [
     path("<slug:org_slug>/tasks/", tasks_views.TaskListView.as_view(), name="tasks"),
     path("<slug:org_slug>/tasks/api/", tasks_views.TaskBoardAPIView.as_view(), name="tasks_api"),
     path("<slug:org_slug>/tasks/import/", tasks_views.TaskImportView.as_view(), name="tasks_import"),
+    path("<slug:org_slug>/tasks/export/", tasks_views.TaskExportView.as_view(), name="tasks_export"),
+    path(
+        "<slug:org_slug>/tasks/import-file/",
+        tasks_views.TaskFileImportView.as_view(),
+        name="tasks_import_file",
+    ),
     path("<slug:org_slug>/tasks/create/", tasks_views.TaskCreateView.as_view(), name="task_create"),
     path("<slug:org_slug>/tasks/labels/", tasks_views.TaskLabelManageView.as_view(), name="task_labels"),
     path(

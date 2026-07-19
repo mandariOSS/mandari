@@ -133,6 +133,9 @@ class TaskListView(WorkViewMixin, TemplateView):
         # Auto-open panel via URL param
         context["auto_open_task_id"] = self.request.GET.get("open", "")
 
+        # Import (Datei/Protokolle) nur mit Erstell-Berechtigung anbieten
+        context["can_import"] = self.has_permission("tasks.create")
+
         return context
 
 

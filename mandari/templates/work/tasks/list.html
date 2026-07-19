@@ -15,11 +15,41 @@
 
 {% block header_actions %}
 <div class="flex items-center gap-2">
-    <button type="button" onclick="document.getElementById('import-modal').showModal()"
-            class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-        <i data-lucide="download" class="w-4 h-4 inline mr-1"></i>
-        Importieren
-    </button>
+    <div x-data="{ open: false }" class="relative" @click.outside="open = false">
+        <button type="button" @click="open = !open"
+                class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+            <i data-lucide="arrow-down-up" class="w-4 h-4 inline mr-1"></i>
+            Import / Export
+        </button>
+        <div x-show="open" x-cloak x-transition.opacity
+             class="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg py-1 z-40">
+            <p class="px-4 pt-2 pb-1 text-xs font-medium uppercase tracking-wide text-gray-400">Export</p>
+            <a href="{% url 'work:tasks_export' org_slug=organization.slug %}?format=csv"
+               class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="table" class="w-4 h-4 inline mr-2 text-gray-400"></i>Als CSV herunterladen
+            </a>
+            <a href="{% url 'work:tasks_export' org_slug=organization.slug %}?format=json"
+               class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="braces" class="w-4 h-4 inline mr-2 text-gray-400"></i>Als JSON herunterladen
+            </a>
+            <a href="{% url 'work:tasks_export' org_slug=organization.slug %}?format=xml"
+               class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="code" class="w-4 h-4 inline mr-2 text-gray-400"></i>Als XML herunterladen
+            </a>
+            {% if can_import %}
+            <div class="my-1 border-t border-gray-100 dark:border-gray-700"></div>
+            <p class="px-4 pt-2 pb-1 text-xs font-medium uppercase tracking-wide text-gray-400">Import</p>
+            <button type="button" @click="open = false; document.getElementById('file-import-modal').showModal()"
+                    class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="file-up" class="w-4 h-4 inline mr-2 text-gray-400"></i>Aus Datei (CSV, JSON, XML)
+            </button>
+            <button type="button" @click="open = false; document.getElementById('import-modal').showModal()"
+                    class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="clipboard-list" class="w-4 h-4 inline mr-2 text-gray-400"></i>Aus Protokollen
+            </button>
+            {% endif %}
+        </div>
+    </div>
     <a href="{% url 'work:task_create' org_slug=organization.slug %}"
        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
         <i data-lucide="plus" class="w-4 h-4"></i>
@@ -270,6 +300,73 @@
                         Importieren
                     </button>
                 </div>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Datei-Import Modal (CSV, JSON, XML) -->
+    <dialog id="file-import-modal" class="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-2xl w-full shadow-xl backdrop:bg-black/50">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white">Aufgaben aus Datei importieren</h3>
+            <button onclick="this.closest('dialog').close()" class="text-gray-400 hover:text-gray-600">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div x-data="fileImportManager()">
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Unterstützte Formate: CSV (Spalten wie im Export, z.&nbsp;B. Titel, Status, Priorität, Fällig am),
+                JSON (Mandari-Export oder Trello-Board-Export) und XML (Mandari-Export).
+                Bereits vorhandene Aufgaben (gleiche ID oder gleicher Titel) werden nicht doppelt angelegt.
+            </p>
+
+            <input type="file" x-ref="fileInput" accept=".csv,.json,.xml,text/csv,application/json,application/xml,text/xml"
+                   @change="report = null; error = ''"
+                   class="block w-full text-sm text-gray-700 dark:text-gray-200 file:mr-3 file:px-4 file:py-2 file:text-sm file:font-medium file:text-gray-700 dark:file:text-gray-200 file:bg-gray-100 dark:file:bg-gray-700 file:border-0 file:rounded-lg file:cursor-pointer">
+
+            <div x-show="error" x-cloak class="mt-4 p-3 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 rounded-lg" x-text="error"></div>
+
+            <template x-if="report">
+                <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg text-sm">
+                    <p class="font-medium text-gray-900 dark:text-white mb-2" x-text="reportHeadline()"></p>
+                    <ul class="space-y-1 text-gray-600 dark:text-gray-300">
+                        <li><span x-text="report.created"></span> neu<span x-show="report.dry_run_flag"> (Vorschau)</span></li>
+                        <li x-show="report.updated > 0"><span x-text="report.updated"></span> aktualisiert</li>
+                        <li x-show="report.skipped > 0"><span x-text="report.skipped"></span> übersprungen (Duplikate/ohne Berechtigung)</li>
+                        <li x-show="report.failed > 0" class="text-red-600 dark:text-red-400"><span x-text="report.failed"></span> fehlerhaft</li>
+                    </ul>
+                    <template x-if="report.errors.length > 0">
+                        <div class="mt-2">
+                            <p class="font-medium text-red-600 dark:text-red-400">Fehler:</p>
+                            <ul class="list-disc ml-5 text-red-600 dark:text-red-400">
+                                <template x-for="err in report.errors"><li x-text="err"></li></template>
+                            </ul>
+                        </div>
+                    </template>
+                    <template x-if="report.warnings.length > 0">
+                        <div class="mt-2">
+                            <p class="font-medium text-amber-600 dark:text-amber-400">Hinweise:</p>
+                            <ul class="list-disc ml-5 text-amber-600 dark:text-amber-400">
+                                <template x-for="warn in report.warnings"><li x-text="warn"></li></template>
+                            </ul>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <div class="mt-4 flex justify-end items-center gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button type="button" onclick="this.closest('dialog').close()"
+                        class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900">
+                    Abbrechen
+                </button>
+                <button type="button" @click="upload(true)" :disabled="busy"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">
+                    Vorschau prüfen
+                </button>
+                <button type="button" @click="upload(false)" :disabled="busy"
+                        class="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">
+                    Importieren
+                </button>
             </div>
         </div>
     </dialog>
@@ -525,6 +622,58 @@ function importManager() {
             } catch (err) {
                 console.error('[Import] Import error:', err);
             }
+        }
+    }
+}
+
+function fileImportManager() {
+    return {
+        busy: false,
+        error: '',
+        report: null,
+
+        reportHeadline() {
+            if (!this.report) return '';
+            return this.report.dry_run_flag
+                ? `Vorschau: ${this.report.total} Zeilen geprüft`
+                : `Import abgeschlossen: ${this.report.total} Zeilen verarbeitet`;
+        },
+
+        async upload(dryRun) {
+            const input = this.$refs.fileInput;
+            if (!input.files || input.files.length === 0) {
+                this.error = 'Bitte zuerst eine Datei auswählen.';
+                return;
+            }
+            this.busy = true;
+            this.error = '';
+
+            const formData = new FormData();
+            formData.append('file', input.files[0]);
+            if (dryRun) formData.append('dry_run', '1');
+
+            try {
+                const response = await fetch('{% url "work:tasks_import_file" org_slug=organization.slug %}', {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+                });
+                const data = await response.json();
+
+                if (!response.ok || data.error) {
+                    this.report = null;
+                    this.error = data.error || `Fehler beim Import (HTTP ${response.status}).`;
+                } else {
+                    this.report = Object.assign({}, data.report, { dry_run_flag: data.dry_run });
+                    if (!data.dry_run) {
+                        setTimeout(() => location.reload(), 1500);
+                    }
+                }
+            } catch (err) {
+                console.error('[FileImport] error:', err);
+                this.error = 'Unerwarteter Fehler beim Hochladen.';
+            }
+            this.busy = false;
         }
     }
 }
