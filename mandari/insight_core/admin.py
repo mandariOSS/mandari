@@ -202,7 +202,7 @@ class OParlBodyAdmin(ModelAdmin):
         "has_geo_data",
         "source",
     ]
-    list_filter = ["source", "classification"]
+    list_filter = ["source", "classification", "deleted"]
     search_fields = ["name", "short_name", "display_name"]
     readonly_fields = [
         "id",
@@ -302,7 +302,7 @@ class OParlOrganizationAdmin(ModelAdmin):
         "end_date",
         "is_active",
     ]
-    list_filter = ["body", "organization_type"]
+    list_filter = ["body", "organization_type", "deleted"]
     search_fields = ["name", "short_name"]
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
 
@@ -310,7 +310,7 @@ class OParlOrganizationAdmin(ModelAdmin):
 @admin.register(OParlPerson)
 class OParlPersonAdmin(ModelAdmin):
     list_display = ["display_name", "email", "body", "created_at"]
-    list_filter = ["body"]
+    list_filter = ["body", "deleted"]
     search_fields = ["name", "family_name", "given_name", "email"]
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
 
@@ -318,7 +318,7 @@ class OParlPersonAdmin(ModelAdmin):
 @admin.register(OParlMeeting)
 class OParlMeetingAdmin(ModelAdmin):
     list_display = ["name", "start", "location_name", "cancelled", "body"]
-    list_filter = ["body", "cancelled", "meeting_state"]
+    list_filter = ["body", "cancelled", "meeting_state", "deleted"]
     search_fields = ["name", "location_name"]
     date_hierarchy = "start"
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
@@ -327,7 +327,7 @@ class OParlMeetingAdmin(ModelAdmin):
 @admin.register(OParlPaper)
 class OParlPaperAdmin(ModelAdmin):
     list_display = ["reference", "name", "paper_type", "date", "georef_status_display", "body"]
-    list_filter = ["body", "paper_type", "georef_status"]
+    list_filter = ["body", "paper_type", "georef_status", "deleted"]
     search_fields = ["name", "reference"]
     date_hierarchy = "date"
     readonly_fields = [
@@ -399,7 +399,7 @@ class OParlPaperAdmin(ModelAdmin):
 @admin.register(OParlAgendaItem)
 class OParlAgendaItemAdmin(ModelAdmin):
     list_display = ["number", "name", "meeting", "public"]
-    list_filter = ["public", "meeting__body"]
+    list_filter = ["public", "meeting__body", "deleted"]
     search_fields = ["name", "number"]
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
 
@@ -407,7 +407,7 @@ class OParlAgendaItemAdmin(ModelAdmin):
 @admin.register(OParlFile)
 class OParlFileAdmin(ModelAdmin):
     list_display = ["name", "file_name", "mime_type", "size_human", "paper"]
-    list_filter = ["mime_type"]
+    list_filter = ["mime_type", "deleted"]
     search_fields = ["name", "file_name"]
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
 
@@ -415,7 +415,7 @@ class OParlFileAdmin(ModelAdmin):
 @admin.register(OParlMembership)
 class OParlMembershipAdmin(ModelAdmin):
     list_display = ["person", "organization", "role", "start_date", "end_date", "is_active"]
-    list_filter = ["organization__body", "role", "voting_right"]
+    list_filter = ["organization__body", "role", "voting_right", "deleted"]
     search_fields = ["person__name", "organization__name", "role"]
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
 
@@ -423,7 +423,7 @@ class OParlMembershipAdmin(ModelAdmin):
 @admin.register(OParlLocation)
 class OParlLocationAdmin(ModelAdmin):
     list_display = ["description", "room", "street_address", "locality", "body"]
-    list_filter = ["body", "locality"]
+    list_filter = ["body", "locality", "deleted"]
     search_fields = ["description", "room", "street_address", "locality"]
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
 
@@ -431,7 +431,7 @@ class OParlLocationAdmin(ModelAdmin):
 @admin.register(OParlConsultation)
 class OParlConsultationAdmin(ModelAdmin):
     list_display = ["paper", "role", "authoritative", "meeting_external_id", "body"]
-    list_filter = ["body", "authoritative"]
+    list_filter = ["body", "authoritative", "deleted"]
     search_fields = ["role", "paper__name", "paper__reference"]
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
 
@@ -439,7 +439,7 @@ class OParlConsultationAdmin(ModelAdmin):
 @admin.register(OParlLegislativeTerm)
 class OParlLegislativeTermAdmin(ModelAdmin):
     list_display = ["name", "start_date", "end_date", "is_current", "body"]
-    list_filter = ["body"]
+    list_filter = ["body", "deleted"]
     search_fields = ["name"]
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
 

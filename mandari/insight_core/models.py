@@ -11,6 +11,52 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 
 
+class SourceDeletionModel(models.Model):
+    """Abstrakte Basis: Lösch-Markierung für OParl-Entitäten (Tombstones).
+
+    Objekte, die im Quellsystem gelöscht wurden (OParl ``deleted: true``)
+    oder aus der Quelle verschwinden, werden bei uns NIE physisch gelöscht,
+    sondern nur markiert. Physische Löschung erfolgt ausschließlich manuell
+    per ``manage.py purge_deleted`` auf explizite Aufforderung der Kommune.
+    """
+
+    deleted = models.BooleanField(
+        default=False,
+        # DB-seitiger Default: Der Python-Ingestor schreibt per Raw-SQL/SQLAlchemy
+        # und kennt die Spalte nicht zwingend — Inserts ohne die Spalte müssen
+        # weiterhin funktionieren.
+        db_default=False,
+        db_index=True,
+        verbose_name="In Quelle gelöscht",
+        help_text="Wurde vom Quellsystem als gelöscht markiert (OParl-Tombstone).",
+    )
+    deleted_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Gelöscht am",
+        help_text="Zeitpunkt, zu dem die Löschung in der Quelle erkannt wurde.",
+    )
+
+    class Meta:
+        abstract = True
+
+    def mark_deleted(self, when=None):
+        """Markiert das Objekt als in der Quelle gelöscht (idempotent).
+
+        ``oparl_modified`` wird auf den Löschzeitpunkt gesetzt, damit der
+        Tombstone in inkrementellen ``modified_since``-Abfragen unserer
+        OParl-API auftaucht (Spec: ``modified`` = Zeitpunkt der Löschung).
+        """
+        from django.utils import timezone
+
+        if self.deleted:
+            return
+        self.deleted = True
+        self.deleted_at = when or timezone.now()
+        self.oparl_modified = self.deleted_at
+        self.save(update_fields=["deleted", "deleted_at", "oparl_modified", "updated_at"])
+
+
 class OParlSource(models.Model):
     """Eine registrierte OParl-Datenquelle (z.B. RIS-API einer Stadt)."""
 
@@ -43,7 +89,7 @@ class OParlSource(models.Model):
         return self.name
 
 
-class OParlBody(models.Model):
+class OParlBody(SourceDeletionModel):
     """Eine Körperschaft/Kommune."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -194,7 +240,7 @@ class OParlBody(models.Model):
         return name[:2].upper() if name else "??"
 
 
-class OParlOrganization(models.Model):
+class OParlOrganization(SourceDeletionModel):
     """Ein Gremium/eine Fraktion."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -242,7 +288,7 @@ class OParlOrganization(models.Model):
         return end >= timezone.now().date()
 
 
-class OParlPerson(models.Model):
+class OParlPerson(SourceDeletionModel):
     """Eine Person (Ratsmitglied)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -324,7 +370,7 @@ class OParlPerson(models.Model):
         return "".join(parts).upper() if parts else "?"
 
 
-class OParlMeeting(models.Model):
+class OParlMeeting(SourceDeletionModel):
     """Eine Sitzung."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -402,7 +448,7 @@ class OParlMeeting(models.Model):
         return []
 
 
-class OParlPaper(models.Model):
+class OParlPaper(SourceDeletionModel):
     """Ein Vorgang/eine Vorlage."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -487,7 +533,7 @@ class OParlPaper(models.Model):
         return self.name or f"Vorgang {self.id}"
 
 
-class OParlAgendaItem(models.Model):
+class OParlAgendaItem(SourceDeletionModel):
     """Ein Tagesordnungspunkt."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -535,7 +581,7 @@ class OParlAgendaItem(models.Model):
         return OParlConsultation.objects.filter(agenda_item_external_id=self.external_id).select_related("paper")
 
 
-class OParlFile(models.Model):
+class OParlFile(SourceDeletionModel):
     """Eine Datei/Anlage."""
 
     # Text extraction status choices
@@ -641,7 +687,7 @@ class OParlFile(models.Model):
         return f"{self.size:.1f} TB"
 
 
-class OParlMembership(models.Model):
+class OParlMembership(SourceDeletionModel):
     """Eine Mitgliedschaft (Person in Gremium)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -688,7 +734,7 @@ class OParlMembership(models.Model):
         return end >= timezone.now().date()
 
 
-class OParlLocation(models.Model):
+class OParlLocation(SourceDeletionModel):
     """Ein Ort/Standort."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -724,7 +770,7 @@ class OParlLocation(models.Model):
         return self.description or self.street_address or f"Ort {self.id}"
 
 
-class OParlConsultation(models.Model):
+class OParlConsultation(SourceDeletionModel):
     """Eine Beratung (Verknüpfung Paper-Meeting-AgendaItem)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -758,7 +804,7 @@ class OParlConsultation(models.Model):
         return f"Beratung {self.role or ''} - {self.paper or self.external_id}"
 
 
-class OParlLegislativeTerm(models.Model):
+class OParlLegislativeTerm(SourceDeletionModel):
     """Eine Wahlperiode."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
