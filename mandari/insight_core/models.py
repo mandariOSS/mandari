@@ -134,6 +134,14 @@ class OParlBody(models.Model):
     osm_relation_id = models.BigIntegerField(
         blank=True, null=True, help_text="OpenStreetMap Relation ID (z.B. 62591 für Münster)"
     )
+    # Amtlicher Gemeindeschlüssel (AGS), z.B. "05515000" für Münster
+    ags = models.CharField(
+        max_length=8,
+        blank=True,
+        null=True,
+        verbose_name="AGS",
+        help_text="Amtlicher Gemeindeschlüssel (8-stellig, z.B. 05515000 für Münster)",
+    )
 
     # Personenfoto-Konfiguration
     person_photo_url_template = models.CharField(
@@ -417,6 +425,15 @@ class OParlPaper(models.Model):
     # KI-generierte Felder
     summary = models.TextField(blank=True, null=True)
     locations = models.JSONField(blank=True, null=True)
+
+    # Offizielle OParl-Locations (Feld `paper.location`, vom Ingestor verknüpft)
+    oparl_locations = models.ManyToManyField(
+        "OParlLocation",
+        related_name="papers",
+        blank=True,
+        db_table="oparl_papers_locations",
+        verbose_name="OParl-Orte",
+    )
 
     # Georeferenzierung
     GEOREF_STATUS_CHOICES = [
@@ -881,6 +898,50 @@ class LocationMapping(models.Model):
                 return {"lat": float(m.latitude), "lng": float(m.longitude)}
 
         return None
+
+
+class Street(models.Model):
+    """Straßenverzeichnis (Gazetteer) pro Kommune, importiert aus OpenStreetMap.
+
+    Dient als Wahrheitsquelle für die Georeferenzierung: Nur Kandidaten,
+    die im Straßenverzeichnis der Kommune vorkommen, werden als Ortsbezug
+    gewertet. Die Geometrie stammt direkt aus OSM (kein API-Geocoding nötig).
+    """
+
+    body = models.ForeignKey(
+        OParlBody,
+        on_delete=models.CASCADE,
+        related_name="streets",
+        verbose_name="Kommune",
+    )
+    osm_id = models.BigIntegerField(help_text="OpenStreetMap Way-ID")
+    name = models.CharField(max_length=255, verbose_name="Straßenname")
+    # Kanonisch normalisierter Name (lowercase, ß→ss, str.→strasse, Bindestriche→Leerzeichen)
+    normalized_name = models.CharField(max_length=255, db_index=True)
+
+    # Zentroid des Ways (aus Overpass `out center`)
+    latitude = models.DecimalField(max_digits=10, decimal_places=7)
+    longitude = models.DecimalField(max_digits=10, decimal_places=7)
+
+    # Optionale GeoJSON-Geometrie (LineString), falls beim Import angefordert
+    geometry = models.JSONField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "insight_streets"
+        verbose_name = "Straße"
+        verbose_name_plural = "Straßen"
+        constraints = [
+            models.UniqueConstraint(fields=["body", "osm_id"], name="uniq_street_body_osm"),
+        ]
+        indexes = [
+            models.Index(fields=["body", "normalized_name"], name="idx_street_body_norm"),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.body.get_display_name()})"
 
 
 # =============================================================================

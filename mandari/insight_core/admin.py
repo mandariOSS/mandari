@@ -249,6 +249,7 @@ class OParlBodyAdmin(ModelAdmin):
                     ("bbox_north", "bbox_south"),
                     ("bbox_east", "bbox_west"),
                     "osm_relation_id",
+                    "ags",
                 ),
                 "description": (
                     "Zentrum und Bounding Box der Kommune für die Kartenanzeige. "
@@ -476,6 +477,20 @@ class TileCacheAdmin(ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+
+from .models import Street
+
+
+@admin.register(Street)
+class StreetAdmin(ModelAdmin):
+    """Straßenverzeichnis (Gazetteer) — importiert via import_streets."""
+
+    list_display = ["name", "body", "osm_id", "latitude", "longitude"]
+    list_filter = ["body"]
+    search_fields = ["name", "normalized_name"]
+    readonly_fields = ["created_at", "updated_at"]
+    autocomplete_fields = ["body"]
 
 
 @admin.register(LocationMapping)
