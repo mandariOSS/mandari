@@ -99,6 +99,13 @@ class OParlBody(Base):
     # Sync tracking
     last_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
+    # wir loeschen nie physisch, sondern markieren nur (Issue #17)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -161,6 +168,13 @@ class OParlMeeting(Base):
     location_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     location_address: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
+    # wir loeschen nie physisch, sondern markieren nur (Issue #17)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -206,6 +220,13 @@ class OParlPaper(Base):
     paper_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
+    # wir loeschen nie physisch, sondern markieren nur (Issue #17)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
@@ -264,6 +285,13 @@ class OParlPerson(Base):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
+    # wir loeschen nie physisch, sondern markieren nur (Issue #17)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -309,6 +337,13 @@ class OParlOrganization(Base):
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     website: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
+    # wir loeschen nie physisch, sondern markieren nur (Issue #17)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -352,6 +387,13 @@ class OParlAgendaItem(Base):
     public: Mapped[bool] = mapped_column(Boolean, default=True)
     result: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolution_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
+    # wir loeschen nie physisch, sondern markieren nur (Issue #17)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
@@ -419,6 +461,13 @@ class OParlFile(Base):
     )
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
+    # wir loeschen nie physisch, sondern markieren nur (Issue #17)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -462,6 +511,13 @@ class OParlLocation(Base):
     postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     locality: Mapped[str | None] = mapped_column(String(255), nullable=True)
     geojson: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
+    # wir loeschen nie physisch, sondern markieren nur (Issue #17)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
@@ -508,6 +564,13 @@ class OParlConsultation(Base):
     role: Mapped[str | None] = mapped_column(String(255), nullable=True)
     authoritative: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
+    # wir loeschen nie physisch, sondern markieren nur (Issue #17)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -552,6 +615,13 @@ class OParlMembership(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
+    # wir loeschen nie physisch, sondern markieren nur (Issue #17)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -592,6 +662,13 @@ class OParlLegislativeTerm(Base):
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
+    # wir loeschen nie physisch, sondern markieren nur (Issue #17)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # OParl timestamps
     oparl_created: Mapped[datetime | None] = mapped_column(

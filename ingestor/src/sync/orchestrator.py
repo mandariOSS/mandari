@@ -611,6 +611,11 @@ class SyncOrchestrator:
         else:
             console.print(f"[dim]Full sync: fetching ALL pages[/dim]")
 
+        # Collects ES documents of entities that were tombstoned during this
+        # body sync (index name -> doc ids). Flushed in Phase 3 so the search
+        # index does not keep documents for source-deleted objects.
+        es_deletions: dict[str, list[str]] = {}
+
         # Helper to build common kwargs for _sync_entity_type
         def sync_kwargs(list_url: str | None, entity_type: str) -> dict:
             return dict(
@@ -622,6 +627,7 @@ class SyncOrchestrator:
                 body_name=body_name,
                 modified_since=modified_since,
                 full=full,
+                es_deletions=es_deletions,
             )
 
         # Phase 2 (parallel): Start text extraction as background task
@@ -768,7 +774,10 @@ class SyncOrchestrator:
             ("organizations", "persons", "memberships", "meetings", "papers",
              "files", "agenda_items", "consultations", "locations")
         )
-        if settings.elasticsearch_indexing_enabled and (full or total_synced > 0):
+        total_tombstoned = sum(len(ids) for ids in es_deletions.values())
+        if settings.elasticsearch_indexing_enabled and (
+            full or total_synced > 0 or total_tombstoned > 0
+        ):
             try:
                 from src.indexing.document_builders import (
                     file_to_doc,
@@ -795,6 +804,17 @@ class SyncOrchestrator:
                         await indexer.ensure_index_settings()
                         batch_size = settings.elasticsearch_batch_size
                         indexed_total = 0
+
+                        # Remove documents of tombstoned entities from the
+                        # search index (DB rows are kept, only flagged).
+                        if total_tombstoned:
+                            for index_name, doc_ids in es_deletions.items():
+                                await indexer.delete_documents(index_name, doc_ids)
+                            stats["es_deleted"] = total_tombstoned
+                            console.print(
+                                f"[yellow]  Removed {total_tombstoned} tombstoned "
+                                f"documents from Elasticsearch[/yellow]"
+                            )
 
                         # Index papers (with file contents for paper-boosting)
                         papers = await self.storage.get_all_for_body(body_id, PaperModel)
@@ -865,6 +885,41 @@ class SyncOrchestrator:
 
         return stats
 
+    # Entity types that have their own Elasticsearch index (see indexing/)
+    _ES_INDEX_BY_ENTITY_TYPE = {
+        "paper": "papers",
+        "meeting": "meetings",
+        "person": "persons",
+        "organization": "organizations",
+        "file": "files",
+    }
+
+    async def _mark_deleted(
+        self,
+        item: dict[str, Any],
+        entity_type: str,
+        es_deletions: dict[str, list[str]] | None,
+    ) -> bool:
+        """
+        Handle an OParl tombstone (deleted: true): mark the row as deleted
+        (never physically delete) and queue its search document for removal.
+
+        Returns True if the entity was newly marked.
+        """
+        external_id = item.get("id", "")
+        if not external_id:
+            return False
+        modified = self.processor.parse_datetime(item.get("modified"))
+        entity_id = await self.storage.mark_entity_deleted(
+            entity_type, external_id, modified=modified
+        )
+        if entity_id is None:
+            return False
+        index_name = self._ES_INDEX_BY_ENTITY_TYPE.get(entity_type)
+        if index_name is not None and es_deletions is not None:
+            es_deletions.setdefault(index_name, []).append(str(entity_id))
+        return True
+
     async def _sync_entity_type(
         self,
         client: OParlClient,
@@ -875,6 +930,7 @@ class SyncOrchestrator:
         body_name: str | None = None,
         modified_since: datetime | None = None,
         full: bool = False,
+        es_deletions: dict[str, list[str]] | None = None,
     ) -> int:
         """
         Sync all entities of a specific type.
@@ -885,8 +941,14 @@ class SyncOrchestrator:
         For incremental sync (hybrid approach):
         - Sends ?modified_since= to server (pre-filter, reduces traffic)
         - Compares returned items against DB (batch_check for exact detection)
-        - New items: Save, Modified items: Update, Deleted: Delete
+        - New items: Save, Modified items: Update
         - Stops after 5 consecutive pages with no changes (safety net)
+
+        Items with deleted:true (OParl tombstones) are NEVER upserted or
+        physically deleted -- the existing row is only marked
+        (deleted=true/deleted_at) and its search-index document is queued
+        for removal via es_deletions. Physical deletion happens exclusively
+        via Django's purge_deleted command.
 
         Returns the number of entities actually synced (new + updated).
         """
@@ -934,6 +996,13 @@ class SyncOrchestrator:
                 # Full sync: upsert everything
                 for item in page:
                     try:
+                        # Tombstones (deleted:true) also im Full-Sync erkennen:
+                        # markieren statt upserten (sonst wuerde ein geloeschtes
+                        # Objekt wieder als aktiv eingespielt).
+                        if item.get("deleted") is True:
+                            if await self._mark_deleted(item, entity_type, es_deletions):
+                                deleted_count += 1
+                            continue
                         processed = self.processor.process(item, body_external_id)
                         if processed:
                             stored = await self._store_entity(processed, body_id, entity_type, body_name)
@@ -955,9 +1024,10 @@ class SyncOrchestrator:
                         if not external_id:
                             continue
 
-                        # Handle deleted items (Bonn/Aachen/Köln/ITK send deleted flag)
+                        # Handle deleted items (Bonn/Aachen/Köln/ITK send deleted
+                        # flag): mark as tombstone instead of physically deleting
                         if item.get("deleted") is True:
-                            if await self.storage.delete_entity(entity_type, external_id):
+                            if await self._mark_deleted(item, entity_type, es_deletions):
                                 deleted_on_page += 1
                                 deleted_count += 1
                             continue

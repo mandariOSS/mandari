@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, delete, or_, select, func, text, update
+from sqlalchemy import and_, or_, select, func, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from rich.console import Console
@@ -361,6 +361,9 @@ class DatabaseStorage:
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
+                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
+                "deleted": False,
+                "deleted_at": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -497,23 +500,36 @@ class DatabaseStorage:
 
             return result_dict
 
-    async def delete_entity(
+    async def mark_entity_deleted(
         self,
         entity_type: str,
         external_id: str,
-    ) -> bool:
+        modified: datetime | None = None,
+    ) -> UUID | None:
         """
-        Delete an entity by external ID.
+        Mark an entity as deleted by the source (OParl tombstone).
 
         Used when OParl servers return items with deleted=true
         (Bonn, Aachen, Köln, ITK Rheinland support this).
 
+        We NEVER physically delete synced objects — they are only flagged
+        (deleted=true, deleted_at=now) so the public portals can hide them
+        and our own OParl API can serve spec-compliant tombstones. Physical
+        deletion happens exclusively via Django's ``purge_deleted`` command
+        after an explicit request from the municipality.
+
+        ``oparl_modified`` is advanced to the tombstone's ``modified`` (or
+        the detection time) so incremental clients of our OParl API pick up
+        the deletion via ``modified_since``.
+
         Args:
             entity_type: Type of entity
             external_id: The OParl external ID
+            modified: ``modified`` timestamp of the source tombstone, if any
 
         Returns:
-            True if entity was deleted, False if not found
+            The internal UUID if the entity was newly marked, else None
+            (not found or already marked).
         """
         model_map = {
             "meeting": OParlMeeting,
@@ -530,13 +546,25 @@ class DatabaseStorage:
 
         model = model_map.get(entity_type)
         if not model:
-            return False
+            return None
 
+        now = datetime.now(timezone.utc)
         async with self.get_session() as session:
-            stmt = delete(model).where(model.external_id == external_id)
+            stmt = (
+                update(model)
+                .where(model.external_id == external_id, model.deleted == False)  # noqa: E712
+                .values(
+                    deleted=True,
+                    deleted_at=now,
+                    oparl_modified=modified or now,
+                    updated_at=func.now(),
+                )
+                .returning(model.id)
+            )
             result = await session.execute(stmt)
+            entity_id = result.scalar_one_or_none()
             await session.commit()
-            return result.rowcount > 0
+            return entity_id
 
     # ========== Meeting Operations ==========
 
@@ -575,6 +603,9 @@ class DatabaseStorage:
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
+                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
+                "deleted": False,
+                "deleted_at": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -670,6 +701,9 @@ class DatabaseStorage:
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
+                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
+                "deleted": False,
+                "deleted_at": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -788,6 +822,9 @@ class DatabaseStorage:
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
+                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
+                "deleted": False,
+                "deleted_at": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -840,6 +877,9 @@ class DatabaseStorage:
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
+                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
+                "deleted": False,
+                "deleted_at": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -959,6 +999,9 @@ class DatabaseStorage:
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
+                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
+                "deleted": False,
+                "deleted_at": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1017,6 +1060,9 @@ class DatabaseStorage:
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
+                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
+                "deleted": False,
+                "deleted_at": None,
                 "updated_at": func.now(),
             }
 
@@ -1073,6 +1119,9 @@ class DatabaseStorage:
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
+                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
+                "deleted": False,
+                "deleted_at": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1122,6 +1171,9 @@ class DatabaseStorage:
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
+                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
+                "deleted": False,
+                "deleted_at": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1190,6 +1242,9 @@ class DatabaseStorage:
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
+                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
+                "deleted": False,
+                "deleted_at": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1232,6 +1287,9 @@ class DatabaseStorage:
                 "oparl_created": stmt.excluded.oparl_created,
                 "oparl_modified": stmt.excluded.oparl_modified,
                 "raw_json": stmt.excluded.raw_json,
+                # Quelle liefert das Objekt wieder regulaer -> Tombstone aufheben
+                "deleted": False,
+                "deleted_at": None,
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
@@ -1385,6 +1443,8 @@ class DatabaseStorage:
                 select(OParlFile.id)
                 .where(
                     OParlFile.body_id == body_id,
+                    # Keine Textextraktion fuer von der Quelle geloeschte Dateien
+                    OParlFile.deleted == False,  # noqa: E712
                     or_(
                         OParlFile.text_extraction_status == "pending",
                         and_(
@@ -1471,11 +1531,14 @@ class DatabaseStorage:
         model_class: type,
         limit: int = 10000,
     ) -> list:
-        """Generic query: all entities of a type for a body."""
+        """Generic query: all non-deleted entities of a type for a body."""
         async with self.get_session() as session:
             stmt = (
                 select(model_class)
-                .where(model_class.body_id == body_id)
+                .where(
+                    model_class.body_id == body_id,
+                    model_class.deleted == False,  # noqa: E712
+                )
                 .limit(limit)
             )
             result = await session.execute(stmt)
@@ -1488,6 +1551,7 @@ class DatabaseStorage:
                 select(OParlFile)
                 .where(
                     OParlFile.body_id == body_id,
+                    OParlFile.deleted == False,  # noqa: E712
                     OParlFile.text_content.isnot(None),
                     OParlFile.text_extraction_status == "completed",
                 )
