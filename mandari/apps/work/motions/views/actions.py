@@ -32,7 +32,7 @@ from ..models import (
     MotionType,
 )
 from ..services import MotionAIService
-from ._helpers import _get_org_folder_or_404
+from ._helpers import _broadcast_doc_reload, _get_org_folder_or_404
 
 
 class MotionShareView(WorkViewMixin, TemplateView):
@@ -216,10 +216,17 @@ class MotionStatusView(WorkViewMixin, View):
                 status=400,
             )
 
+        was_locked = motion.is_status_locked
         motion.status = new_status
         if new_status == "submitted":
             motion.submitted_at = timezone.now()
         motion.save()
+
+        # Statuswechsel über die Sperrgrenze (Motion.EDITABLE_STATUSES):
+        # offene Kollab-Editoren neu laden lassen, damit die herabgestufte
+        # (bzw. wiedererlangte) Zugriffsstufe sofort greift.
+        if motion.is_status_locked != was_locked:
+            _broadcast_doc_reload(motion)
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse(

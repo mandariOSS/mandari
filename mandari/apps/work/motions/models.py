@@ -610,6 +610,12 @@ class Motion(EncryptionMixin, models.Model):
         "review": ["internal_review", "draft", "approved", "rejected"],
     }
 
+    # Status, in denen der Inhalt bearbeitet werden darf (Status-Sperre).
+    # Alle anderen Status frieren die Bearbeitung ein — im HTTP-Editor UND
+    # im Live-Kollaborationsmodus. Ausnahme: motions.edit_all (siehe
+    # apply_status_lock).
+    EDITABLE_STATUSES = ("draft", "review", "internal_review", "external_review")
+
     EDIT_MODE_CHOICES = [
         ("edit", "Bearbeiten"),
         ("suggest", "Vorschlagen"),
@@ -940,6 +946,51 @@ class Motion(EncryptionMixin, models.Model):
 
         # For shared/organization, anyone with access can edit
         return self.can_access(membership)
+
+    @property
+    def is_status_locked(self) -> bool:
+        """Status-Sperre: In diesem Status ist der Inhalt eingefroren."""
+        return self.status not in self.EDITABLE_STATUSES
+
+    def apply_status_lock(self, level: str, membership) -> str:
+        """
+        Status-Sperre zentral auf eine Zugriffsstufe anwenden.
+
+        Einzige Stelle für die Sperr-Semantik — genutzt vom HTTP-Editor
+        (DocumentEditorView._get_access_level) UND vom WebSocket-Consumer
+        (über get_collab_access_level). In gesperrten Status werden
+        Schreibstufen ('edit'/'admin') herabgestuft:
+        - Gäste: auf 'comment' (wie bisher im HTTP-Editor)
+        - Mitglieder: auf 'comment' (mit motions.comment) bzw. 'view'
+        - Ausnahme: motions.edit_all ("alle Anträge bearbeiten") behält 'edit'
+        Lesestufen ('comment'/'view') bleiben unverändert.
+        """
+        if level not in ("edit", "admin") or not self.is_status_locked:
+            return level
+        if getattr(membership, "is_guest", False):
+            return "comment"
+        if membership.has_permission("motions.edit_all"):
+            return "edit"
+        return "comment" if membership.has_permission("motions.comment") else "view"
+
+    def get_collab_access_level(self, membership) -> str | None:
+        """
+        Zugriffsstufe im Live-Kollaborationsmodus (WebSocket-Consumer).
+
+        Freigabe-Level (inkl. Gast-/Ordner-Freigaben) bleiben über
+        can_edit/can_comment die Obergrenze; darauf wird die zentrale
+        Status-Sperre (apply_status_lock) angewendet. Returns
+        'edit'/'comment'/'view' oder None ohne Zugriff.
+        """
+        if not self.can_access(membership):
+            return None
+        if self.can_edit(membership):
+            level = "edit"
+        elif self.can_comment(membership):
+            level = "comment"
+        else:
+            level = "view"
+        return self.apply_status_lock(level, membership)
 
     def can_comment(self, membership) -> bool:
         """

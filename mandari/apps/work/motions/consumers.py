@@ -226,18 +226,17 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         except Membership.DoesNotExist:
             return None, None
 
-        if not motion.can_access(membership):
+        # Zentrale Stufenlogik (Motion.get_collab_access_level):
+        # can_edit/can_comment berücksichtigen Autor, Berechtigungen UND
+        # Share-Level (inkl. Gast-/Ordner-Freigaben) als Obergrenze - sonst
+        # könnten per Freigabe Bearbeitungsberechtigte im Kollab-Modus
+        # schreiben, ohne dass gespeichert wird. Zusätzlich greift die
+        # Status-Sperre (gesperrte Status frieren die Bearbeitung ein,
+        # motions.edit_all darf trotzdem) - dieselbe Logik wie im HTTP-Editor.
+        level = motion.get_collab_access_level(membership)
+        if level is None:
             return None, None
-
-        # Gleiche Stufenlogik wie die HTTP-Views: can_edit/can_comment
-        # berücksichtigen Autor, Berechtigungen UND Share-Level (inkl.
-        # Gast-Freigaben) - sonst könnten per Freigabe Bearbeitungs-
-        # berechtigte im Kollab-Modus schreiben, ohne dass gespeichert wird.
-        if motion.can_edit(membership):
-            return "edit", membership.id
-        if motion.can_comment(membership):
-            return "comment", membership.id
-        return "view", membership.id
+        return level, membership.id
 
     @database_sync_to_async
     def _get_display_name(self):
@@ -277,6 +276,16 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         try:
             update_fields = []
             can_write = bool(self.user_info and self.user_info.get("access_level") == "edit")
+            # Die Stufe stammt vom Verbindungsaufbau — wechselt das Dokument
+            # währenddessen in einen gesperrten Status (Statuswechsel-View
+            # broadcastet reload), darf ein noch offener Client nicht weiter
+            # persistieren. Serverseitig nachprüfen statt dem Client vertrauen;
+            # motions.edit_all behält über get_collab_access_level 'edit'.
+            if can_write and motion.is_status_locked:
+                from apps.tenants.models import Membership
+
+                membership = Membership.objects.filter(id=self.membership_id, is_active=True).first()
+                can_write = membership is not None and motion.get_collab_access_level(membership) == "edit"
             # Auch der Yjs-Binärzustand darf nur von Schreibberechtigten
             # persistiert werden - sonst könnte ein Nutzer mit view/comment den
             # gemeinsamen Dokumentzustand überschreiben (wird beim naechsten

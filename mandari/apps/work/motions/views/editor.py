@@ -154,7 +154,14 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
     guest_allowed = True  # Zugriff wird share-basiert geprüft (can_access)
 
     def _get_access_level(self, motion):
-        """Determine access level: 'view', 'comment', 'edit', or 'admin'."""
+        """
+        Determine access level: 'view', 'comment', 'edit', or 'admin'.
+
+        Die Status-Sperre (gesperrte Status frieren die Bearbeitung ein,
+        motions.edit_all darf trotzdem) liegt zentral in
+        Motion.apply_status_lock — dieselbe Logik nutzt auch der
+        WebSocket-Consumer (Live-Kollaboration).
+        """
         if not motion.can_access(self.membership):
             return "none"
 
@@ -165,25 +172,17 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                 return "none"
             if level == "admin":
                 level = "edit"  # Gäste erhalten nie Verwaltungsrechte
-            if level == "edit" and motion.status not in ["draft", "review", "internal_review", "external_review"]:
-                level = "comment"
-            return level
+            return motion.apply_status_lock(level, self.membership)
 
-        is_author = motion.author == self.membership
-        has_edit_all = self.membership.has_permission("motions.edit_all")
-        has_edit = self.membership.has_permission("motions.edit")
-        has_comment = self.membership.has_permission("motions.comment")
-        editable_status = motion.status in ["draft", "review", "internal_review", "external_review"]
-
-        if is_author and editable_status:
-            return "admin"
-        if has_edit_all and editable_status:
-            return "edit"
-        if has_edit and is_author and editable_status:
-            return "edit"
-        if has_comment:
-            return "comment"
-        return "view"
+        if motion.author == self.membership:
+            level = "admin"
+        elif self.membership.has_permission("motions.edit_all"):
+            level = "edit"
+        elif self.membership.has_permission("motions.comment"):
+            level = "comment"
+        else:
+            level = "view"
+        return motion.apply_status_lock(level, self.membership)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

@@ -17,6 +17,7 @@ from ..models import (
     Motion,
     MotionRevision,
 )
+from ._helpers import _broadcast_doc_reload
 
 # =============================================================================
 # Revision API Views (Version History)
@@ -126,19 +127,8 @@ class DocumentRevisionRestoreView(WorkViewMixin, View):
         restore_revision.set_content_encrypted(restored_content)
         restore_revision.save()
 
-        # Alle verbundenen Kollaborations-Clients zum Neuladen auffordern.
-        try:
-            from asgiref.sync import async_to_sync
-            from channels.layers import get_channel_layer
-
-            channel_layer = get_channel_layer()
-            if channel_layer is not None:
-                async_to_sync(channel_layer.group_send)(
-                    f"doc_{motion.id}",
-                    {"type": "doc.reload", "version": restore_version},
-                )
-        except Exception as e:
-            # Reload-Broadcast ist Best-Effort — Restore selbst ist bereits erfolgt.
-            logger.warning(f"[DocumentEditor] Reload-Broadcast nach Restore fehlgeschlagen: {e}")
+        # Alle verbundenen Kollaborations-Clients zum Neuladen auffordern
+        # (Best-Effort — Restore selbst ist bereits erfolgt).
+        _broadcast_doc_reload(motion, version=restore_version)
 
         return JsonResponse({"success": True, "version": restore_version})
