@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     # each in-flight body sync holds pages, caches and extraction buffers.
     # Env-overridable (SYNC_BODY_CONCURRENCY).
     sync_body_concurrency: int = 2
+    # Max sources synced concurrently in sync_all. Together with
+    # sync_body_concurrency and sync_entity_concurrency this bounds the
+    # peak parallelism (sources x bodies x entity types) and therefore
+    # the memory budget of a sync cycle (Issue #22).
+    # Env-overridable (SYNC_SOURCE_CONCURRENCY).
+    sync_source_concurrency: int = 2
+    # Max entity-type syncs running concurrently within one body
+    # (organizations/persons, meetings/papers, locations/agenda items/
+    # files/consultations). Env-overridable (SYNC_ENTITY_CONCURRENCY).
+    sync_entity_concurrency: int = 2
 
     # File Storage
     file_storage_path: str = "./data/files"

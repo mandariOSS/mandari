@@ -310,6 +310,63 @@ class DatabaseStorage:
                     source.last_full_sync = now
                 await session.commit()
 
+    # Schlüssel in OParlSource.sync_config für den persistierten
+    # Capability-Cache (Hosts, die modified_since ablehnen, Issue #22).
+    SYNC_CONFIG_MODIFIED_SINCE_KEY = "modified_since_unsupported_hosts"
+
+    async def get_modified_since_unsupported_hosts(self) -> set[str]:
+        """Union der persistierten Hosts ohne modified_since-Support (alle Quellen)."""
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlSource.sync_config))
+            hosts: set[str] = set()
+            for (sync_config,) in result.all():
+                if isinstance(sync_config, dict):
+                    stored = sync_config.get(self.SYNC_CONFIG_MODIFIED_SINCE_KEY) or []
+                    hosts.update(h for h in stored if isinstance(h, str) and h)
+            return hosts
+
+    async def add_modified_since_unsupported_hosts(
+        self,
+        source_url: str,
+        hosts: set[str],
+    ) -> None:
+        """
+        Persistiert Hosts ohne modified_since-Support in der sync_config
+        der Quelle, damit der Fallback-Befund Daemon-Neustarts überlebt.
+        """
+        if not hosts:
+            return
+        async with self.get_session() as session:
+            result = await session.execute(
+                select(OParlSource).where(OParlSource.url == source_url)
+            )
+            source = result.scalar_one_or_none()
+            if source is None:
+                return
+            sync_config = dict(source.sync_config or {})
+            stored = set(sync_config.get(self.SYNC_CONFIG_MODIFIED_SINCE_KEY) or [])
+            merged = stored | {h for h in hosts if h}
+            if merged == stored:
+                return
+            sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_KEY] = sorted(merged)
+            source.sync_config = sync_config
+            await session.commit()
+
+    def clear_uuid_caches(self) -> None:
+        """
+        Leert die FK-UUID-Caches (external_id -> UUID).
+
+        Die Caches beschleunigen FK-Lookups innerhalb eines Sync-Zyklus,
+        wachsen im Daemon aber sonst monoton über Zyklen hinweg (Issue #22).
+        Der Orchestrator ruft dies am Ende jedes Zyklus auf; Cache-Misses
+        danach fallen auf die DB-Lookups zurück.
+        """
+        self._body_uuid_cache.clear()
+        self._meeting_uuid_cache.clear()
+        self._paper_uuid_cache.clear()
+        self._person_uuid_cache.clear()
+        self._organization_uuid_cache.clear()
+
     # ========== Body Operations ==========
 
     async def upsert_body(

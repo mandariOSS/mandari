@@ -87,7 +87,19 @@ class OParlClient:
     # NOTE: Class-level and therefore process-lifetime by design — keyed by
     # host, shared across all OParlClient instances, never expires until
     # the daemon restarts. Bounded by the number of distinct OParl hosts.
+    # Der Orchestrator persistiert den Befund zusätzlich je Quelle in
+    # OParlSource.sync_config, damit er Daemon-Neustarts überlebt (Issue #22).
     _modified_since_unsupported: set[str] = set()
+
+    @classmethod
+    def get_modified_since_unsupported(cls) -> set[str]:
+        """Snapshot des Capability-Caches (Hosts ohne modified_since-Support)."""
+        return set(cls._modified_since_unsupported)
+
+    @classmethod
+    def add_modified_since_unsupported(cls, hosts) -> None:
+        """Capability-Cache seeden, z. B. aus persistierter sync_config."""
+        cls._modified_since_unsupported.update(h for h in hosts if h)
 
     def __init__(
         self,

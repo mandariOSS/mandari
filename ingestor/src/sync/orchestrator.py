@@ -246,6 +246,11 @@ class SyncOrchestrator:
         result = SyncResult(source_url=url, source_name="", success=False)
         sync_type = "full" if full else "incremental"
 
+        # Persistierten Capability-Cache laden (Issue #22): der Befund
+        # "modified_since nicht unterstützt" überlebt so Daemon-Neustarts.
+        await self._seed_modified_since_cache()
+        capability_snapshot = OParlClient.get_modified_since_unsupported()
+
         try:
             concurrent = max_concurrent or self.max_concurrent
             async with OParlClient(
@@ -360,10 +365,44 @@ class SyncOrchestrator:
                     duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
                 )
 
+        # Neu erkannte Hosts ohne modified_since-Support persistieren (Issue #22)
+        await self._persist_modified_since_cache(url, capability_snapshot)
+
         result.duration_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
         return result
 
     # ========== Sync Operations ==========
+
+    async def _seed_modified_since_cache(self) -> None:
+        """
+        Lädt persistierte Hosts ohne modified_since-Support aus der DB in den
+        prozessweiten Capability-Cache des Clients (Issue #22). Ohne diese
+        Persistenz würde der erste Zyklus nach einem Daemon-Neustart bei
+        Quellen ohne Support erneut die vollständigen Objektlisten ziehen.
+        """
+        try:
+            hosts = await self.storage.get_modified_since_unsupported_hosts()
+        except Exception as e:
+            console.print(f"[yellow]Capability-Cache konnte nicht geladen werden: {e}[/yellow]")
+            return
+        if hosts:
+            OParlClient.add_modified_since_unsupported(hosts)
+
+    async def _persist_modified_since_cache(self, source_url: str, snapshot: set[str]) -> None:
+        """
+        Persistiert während dieses Syncs neu erkannte Hosts ohne
+        modified_since-Support in OParlSource.sync_config der Quelle.
+        Bei parallel laufenden Quellen kann ein Host der "falschen" Quelle
+        zugeordnet werden — unkritisch, da beim Seeden die Union über alle
+        Quellen geladen wird.
+        """
+        new_hosts = OParlClient.get_modified_since_unsupported() - snapshot
+        if not new_hosts:
+            return
+        try:
+            await self.storage.add_modified_since_unsupported_hosts(source_url, new_hosts)
+        except Exception as e:
+            console.print(f"[yellow]Capability-Cache konnte nicht gespeichert werden: {e}[/yellow]")
 
     async def sync_source(
         self,
@@ -385,6 +424,11 @@ class SyncOrchestrator:
         start_time = datetime.now(timezone.utc)
         result = SyncResult(source_url=url, source_name="", success=False)
         sync_type = "full" if full else "incremental"
+
+        # Persistierten Capability-Cache laden (Issue #22): der Befund
+        # "modified_since nicht unterstützt" überlebt so Daemon-Neustarts.
+        await self._seed_modified_since_cache()
+        capability_snapshot = OParlClient.get_modified_since_unsupported()
 
         try:
             async with OParlClient(
@@ -557,6 +601,9 @@ class SyncOrchestrator:
                     duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
                 )
 
+        # Neu erkannte Hosts ohne modified_since-Support persistieren (Issue #22)
+        await self._persist_modified_since_cache(url, capability_snapshot)
+
         result.duration_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
         return result
 
@@ -647,6 +694,17 @@ class SyncOrchestrator:
             extraction_task = asyncio.create_task(_run_extraction())
             console.print(f"[dim]  Text extraction started in background[/dim]")
 
+        # Drossel für Entity-Typ-Parallelität innerhalb eines Bodies
+        # (Issue #22): begrenzt zusammen mit sync_body_concurrency und
+        # sync_source_concurrency die Peak-Parallelität und damit das
+        # Speicherbudget eines Zyklus. Die gather-Struktur (Abhängigkeits-
+        # Reihenfolge) bleibt unverändert.
+        entity_semaphore = asyncio.Semaphore(max(1, settings.sync_entity_concurrency))
+
+        async def throttled(**kwargs):
+            async with entity_semaphore:
+                return await self._sync_entity_type(**kwargs)
+
         # Create progress display (disabled when not running in terminal or in parallel mode)
         with Progress(
             SpinnerColumn(),
@@ -663,8 +721,8 @@ class SyncOrchestrator:
             task2 = progress.add_task("[cyan]Persons...", total=None)
 
             org_result, person_result = await asyncio.gather(
-                self._sync_entity_type(**sync_kwargs(processed_body.organization_list_url, "organization")),
-                self._sync_entity_type(**sync_kwargs(processed_body.person_list_url, "person")),
+                throttled(**sync_kwargs(processed_body.organization_list_url, "organization")),
+                throttled(**sync_kwargs(processed_body.person_list_url, "person")),
                 return_exceptions=True,
             )
 
@@ -697,8 +755,8 @@ class SyncOrchestrator:
             task5 = progress.add_task("[cyan]Papers...", total=None)
 
             meeting_result, paper_result = await asyncio.gather(
-                self._sync_entity_type(**sync_kwargs(processed_body.meeting_list_url, "meeting")),
-                self._sync_entity_type(**sync_kwargs(processed_body.paper_list_url, "paper")),
+                throttled(**sync_kwargs(processed_body.meeting_list_url, "meeting")),
+                throttled(**sync_kwargs(processed_body.paper_list_url, "paper")),
                 return_exceptions=True,
             )
 
@@ -721,10 +779,10 @@ class SyncOrchestrator:
             task9 = progress.add_task("[cyan]Consultations...", total=None)
 
             location_result, agenda_item_result, file_result, consultation_result = await asyncio.gather(
-                self._sync_entity_type(**sync_kwargs(processed_body.location_list_url, "location")),
-                self._sync_entity_type(**sync_kwargs(processed_body.agenda_item_list_url, "agendaitem")),
-                self._sync_entity_type(**sync_kwargs(processed_body.file_list_url, "file")),
-                self._sync_entity_type(**sync_kwargs(processed_body.consultation_list_url, "consultation")),
+                throttled(**sync_kwargs(processed_body.location_list_url, "location")),
+                throttled(**sync_kwargs(processed_body.agenda_item_list_url, "agendaitem")),
+                throttled(**sync_kwargs(processed_body.file_list_url, "file")),
+                throttled(**sync_kwargs(processed_body.consultation_list_url, "consultation")),
                 return_exceptions=True,
             )
 
@@ -1234,18 +1292,25 @@ class SyncOrchestrator:
             # Disable Rich Progress bars to avoid "Only one live display" error
             self._parallel_mode = True
 
+            # Drossel für Quellen-Parallelität (Issue #22): begrenzt zusammen
+            # mit sync_body_concurrency und sync_entity_concurrency die
+            # Peak-Parallelität (Quellen x Bodies x Entity-Typen) und damit
+            # das Speicherbudget eines Zyklus.
+            source_semaphore = asyncio.Semaphore(max(1, settings.sync_source_concurrency))
+
             async def sync_source_wrapper(source):
                 """Wrapper to catch exceptions per source."""
-                try:
-                    return await self.sync_body_url(source.url, full=full)
-                except Exception as e:
-                    console.print(f"[red]Error syncing {source.name}: {e}[/red]")
-                    return SyncResult(
-                        source_url=source.url,
-                        source_name=source.name,
-                        success=False,
-                        errors=[str(e)],
-                    )
+                async with source_semaphore:
+                    try:
+                        return await self.sync_body_url(source.url, full=full)
+                    except Exception as e:
+                        console.print(f"[red]Error syncing {source.name}: {e}[/red]")
+                        return SyncResult(
+                            source_url=source.url,
+                            source_name=source.name,
+                            success=False,
+                            errors=[str(e)],
+                        )
 
             try:
                 results = await asyncio.gather(
@@ -1255,12 +1320,18 @@ class SyncOrchestrator:
                 return list(results)
             finally:
                 self._parallel_mode = False
+                # FK-UUID-Caches nach jedem Zyklus leeren (Issue #22):
+                # verhindert monotones Wachstum über die Daemon-Laufzeit.
+                self.storage.clear_uuid_caches()
         else:
             # Sequential sync (fallback)
             results = []
-            for source in sources:
-                result = await self.sync_body_url(source.url, full=full)
-                results.append(result)
+            try:
+                for source in sources:
+                    result = await self.sync_body_url(source.url, full=full)
+                    results.append(result)
+            finally:
+                self.storage.clear_uuid_caches()
             return results
 
     # ========== Status & Statistics ==========
