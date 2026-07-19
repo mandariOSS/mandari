@@ -31,11 +31,11 @@ def stats(request):
     """
     return JsonResponse(
         {
-            "bodies": OParlBody.objects.count(),
-            "organizations": OParlOrganization.objects.count(),
-            "persons": OParlPerson.objects.count(),
-            "meetings": OParlMeeting.objects.count(),
-            "papers": OParlPaper.objects.count(),
+            "bodies": OParlBody.objects.filter(deleted=False).count(),
+            "organizations": OParlOrganization.objects.filter(deleted=False).count(),
+            "persons": OParlPerson.objects.filter(deleted=False).count(),
+            "meetings": OParlMeeting.objects.filter(deleted=False).count(),
+            "papers": OParlPaper.objects.filter(deleted=False).count(),
         }
     )
 
@@ -49,7 +49,7 @@ def stats_bodies(request):
     GET /api/stats/bodies/
     Returns list of all bodies with basic info.
     """
-    bodies = OParlBody.objects.all().order_by("name")
+    bodies = OParlBody.objects.filter(deleted=False).order_by("name")
     data = []
     for body in bodies:
         data.append(
@@ -62,10 +62,10 @@ def stats_bodies(request):
                 "website": body.website or "",
                 "latitude": float(body.latitude) if body.latitude else None,
                 "longitude": float(body.longitude) if body.longitude else None,
-                "organizations_count": OParlOrganization.objects.filter(body=body).count(),
-                "persons_count": OParlPerson.objects.filter(body=body).count(),
-                "meetings_count": OParlMeeting.objects.filter(body=body).count(),
-                "papers_count": OParlPaper.objects.filter(body=body).count(),
+                "organizations_count": OParlOrganization.objects.filter(body=body, deleted=False).count(),
+                "persons_count": OParlPerson.objects.filter(body=body, deleted=False).count(),
+                "meetings_count": OParlMeeting.objects.filter(body=body, deleted=False).count(),
+                "papers_count": OParlPaper.objects.filter(body=body, deleted=False).count(),
             }
         )
     return JsonResponse({"bodies": data})

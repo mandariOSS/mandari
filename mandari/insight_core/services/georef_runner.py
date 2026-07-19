@@ -103,7 +103,7 @@ def _run_pass(limit: int) -> dict:
     ).exclude(text_content="")
     queryset = (
         OParlPaper.objects.select_related("body")
-        .filter(georef_status="pending", body_id__in=bodies_with_streets)
+        .filter(georef_status="pending", deleted=False, body_id__in=bodies_with_streets)
         .filter(Exists(has_text))
         .order_by("-date", "-oparl_created")[:limit]
     )

@@ -50,7 +50,7 @@ class PersonListView(ListView):
 
         today = timezone.now().date()
 
-        qs = OParlPerson.objects.filter(body=body).select_related("body")
+        qs = OParlPerson.objects.filter(body=body, deleted=False).select_related("body")
 
         # Ratsrolle als Annotation (falls vorhanden)
         rat = OParlOrganization.objects.filter(body=body, name="Rat").first()

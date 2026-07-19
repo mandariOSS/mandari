@@ -65,7 +65,9 @@ MAP_MARKERS_MAX_FEATURES = 2000
 
 def _build_marker_features(body, show_all: bool, weeks: int) -> list[dict]:
     """Baut die GeoJSON-Features für eine Kommune (ungefiltert, cachebar)."""
-    papers = OParlPaper.objects.filter(body=body, locations__isnull=False).only("id", "name", "reference", "locations")
+    papers = OParlPaper.objects.filter(body=body, deleted=False, locations__isnull=False).only(
+        "id", "name", "reference", "locations"
+    )
 
     if not show_all:
         cutoff = timezone.now() - timedelta(weeks=weeks)

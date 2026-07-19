@@ -178,6 +178,7 @@ def neighborhood_results(request):
                  ) AS dist
              ) d
         WHERE p.body_id = %s
+          AND p.deleted = FALSE
           AND p.locations IS NOT NULL
           AND jsonb_array_length(p.locations) > 0
           AND d.dist <= %s

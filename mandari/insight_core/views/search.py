@@ -132,7 +132,7 @@ def search_results(request):
 
         if body:
             # Vorgänge
-            papers = OParlPaper.objects.filter(body=body).filter(
+            papers = OParlPaper.objects.filter(body=body, deleted=False).filter(
                 Q(name__icontains=query) | Q(reference__icontains=query)
             )[:10]
             for paper in papers:
@@ -146,7 +146,7 @@ def search_results(request):
                 )
 
             # Personen
-            persons = OParlPerson.objects.filter(body=body).filter(
+            persons = OParlPerson.objects.filter(body=body, deleted=False).filter(
                 Q(name__icontains=query) | Q(family_name__icontains=query) | Q(given_name__icontains=query)
             )[:10]
             for person in persons:
@@ -160,7 +160,7 @@ def search_results(request):
                 )
 
             # Gremien
-            orgs = OParlOrganization.objects.filter(body=body).filter(
+            orgs = OParlOrganization.objects.filter(body=body, deleted=False).filter(
                 Q(name__icontains=query) | Q(short_name__icontains=query)
             )[:10]
             for org in orgs:
@@ -174,7 +174,7 @@ def search_results(request):
                 )
 
             # Sitzungen
-            meetings = OParlMeeting.objects.filter(body=body).filter(
+            meetings = OParlMeeting.objects.filter(body=body, deleted=False).filter(
                 Q(name__icontains=query) | Q(location_name__icontains=query)
             )[:10]
             for meeting in meetings:

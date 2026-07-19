@@ -65,7 +65,7 @@ class OrganizationListView(ListView):
         )
         has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
 
-        base_qs = OParlOrganization.objects.filter(body=body).annotate(
+        base_qs = OParlOrganization.objects.filter(body=body, deleted=False).annotate(
             next_meeting=next_meeting_sq,
             last_meeting=last_meeting_sq,
             has_meetings=has_any_meeting,
@@ -94,7 +94,7 @@ class OrganizationListView(ListView):
             has_any_meeting = Exists(OParlMeeting.objects.filter(organizations=OuterRef("pk")))
 
             # Counts ohne Suchfilter
-            all_orgs = OParlOrganization.objects.filter(body=body).annotate(
+            all_orgs = OParlOrganization.objects.filter(body=body, deleted=False).annotate(
                 has_meetings=has_any_meeting,
             )
             context["active_count"] = all_orgs.filter(
@@ -149,10 +149,12 @@ class OrganizationDetailView(DetailView):
             organizations=org,
             start__gte=now,
             cancelled=False,
+            deleted=False,
         ).order_by("start")[:10]
         context["past_meetings"] = OParlMeeting.objects.filter(
             organizations=org,
             start__lt=now,
+            deleted=False,
         ).order_by("-start")[:10]
 
         # SEO-Kontext
@@ -178,7 +180,7 @@ class OrganizationListPartial(ListView):
 
         tab = self.request.GET.get("tab", "active")
         today = timezone.now().date()
-        base_qs = OParlOrganization.objects.filter(body=body)
+        base_qs = OParlOrganization.objects.filter(body=body, deleted=False)
 
         if tab == "active":
             qs = base_qs.filter(Q(end_date__isnull=True) | Q(end_date__gte=today))

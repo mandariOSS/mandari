@@ -51,7 +51,7 @@ def body_sitemap(request, body_slug):
         xml_parts.append("  </url>")
 
     # Vorgänge (max 10000 pro Sitemap für Performance)
-    for paper in OParlPaper.objects.filter(body=body).order_by("-date")[:10000]:
+    for paper in OParlPaper.objects.filter(body=body, deleted=False).order_by("-date")[:10000]:
         add_url(
             f"/insight/vorgaenge/{paper.id}/",
             paper.oparl_modified or paper.updated_at,
@@ -60,7 +60,7 @@ def body_sitemap(request, body_slug):
         )
 
     # Sitzungen
-    for meeting in OParlMeeting.objects.filter(body=body).order_by("-start")[:10000]:
+    for meeting in OParlMeeting.objects.filter(body=body, deleted=False).order_by("-start")[:10000]:
         add_url(
             f"/insight/termine/{meeting.id}/",
             meeting.oparl_modified or meeting.updated_at,
@@ -69,11 +69,11 @@ def body_sitemap(request, body_slug):
         )
 
     # Gremien
-    for org in OParlOrganization.objects.filter(body=body).order_by("name")[:5000]:
+    for org in OParlOrganization.objects.filter(body=body, deleted=False).order_by("name")[:5000]:
         add_url(f"/insight/gremien/{org.id}/", org.oparl_modified or org.updated_at, "monthly", 0.5)
 
     # Personen
-    for person in OParlPerson.objects.filter(body=body).order_by("family_name")[:5000]:
+    for person in OParlPerson.objects.filter(body=body, deleted=False).order_by("family_name")[:5000]:
         add_url(
             f"/insight/personen/{person.id}/",
             person.oparl_modified or person.updated_at,

@@ -88,8 +88,8 @@ class Command(BaseCommand):
         dry_run = options["dry_run"]
         pdf_only = options["pdf_only"]
 
-        # Query aufbauen
-        queryset = OParlFile.objects.select_related("paper", "paper__body")
+        # Query aufbauen (Tombstones: keine Extraktion für gelöschte Dateien)
+        queryset = OParlFile.objects.filter(deleted=False).select_related("paper", "paper__body")
 
         # Filter: Nur Dateien mit Download-URL
         queryset = queryset.filter(Q(download_url__isnull=False) | Q(access_url__isnull=False))

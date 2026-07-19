@@ -42,7 +42,7 @@ class PaperListView(ListView):
         if not body:
             return OParlPaper.objects.none()
 
-        qs = OParlPaper.objects.filter(body=body)
+        qs = OParlPaper.objects.filter(body=body, deleted=False)
 
         # Suche
         q = self.request.GET.get("q", "").strip()
@@ -63,7 +63,7 @@ class PaperListView(ListView):
         if body:
             # Verfügbare Typen für Filter
             context["paper_types"] = (
-                OParlPaper.objects.filter(body=body)
+                OParlPaper.objects.filter(body=body, deleted=False)
                 .exclude(paper_type__isnull=True)
                 .values_list("paper_type", flat=True)
                 .distinct()

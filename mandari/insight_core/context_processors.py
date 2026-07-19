@@ -41,7 +41,7 @@ def active_body(request):
     show_all_bodies = False
 
     try:
-        bodies = list(OParlBody.objects.all().order_by("name"))
+        bodies = list(OParlBody.objects.filter(deleted=False).order_by("name"))
 
         # "all" bedeutet: Alle Kommunen anzeigen (keine spezifische ausgewählt)
         if body_id == "all":
@@ -68,7 +68,9 @@ def active_body(request):
     if body:
         from django.utils import timezone
 
-        upcoming_count = OParlMeeting.objects.filter(body=body, start__gte=timezone.now(), cancelled=False).count()
+        upcoming_count = OParlMeeting.objects.filter(
+            body=body, start__gte=timezone.now(), cancelled=False, deleted=False
+        ).count()
 
     return {
         "active_body": body,

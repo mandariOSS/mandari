@@ -1,0 +1,23 @@
+{% comment %}
+Hinweis auf Detailseiten für Objekte, die vom Quellsystem (RIS der Kommune)
+zurückgezogen/gelöscht wurden. Wird eingeblendet, wenn object.deleted=True.
+Verwendung: {% include "partials/tombstone_notice.html" with object=paper %}
+{% endcomment %}
+{% if object.deleted %}
+<div class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/40">
+    <div class="flex items-start gap-3">
+        <i data-lucide="archive-x" class="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-400"></i>
+        <div>
+            <p class="font-medium text-amber-800 dark:text-amber-200">
+                Dieses Objekt wurde von der Quelle zurückgezogen
+            </p>
+            <p class="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                Das Ratsinformationssystem der Kommune hat diesen Eintrag
+                {% if object.deleted_at %}am {{ object.deleted_at|date:"d.m.Y" }}{% endif %}
+                als gelöscht markiert. Wir zeigen ihn aus Transparenzgründen weiterhin an;
+                er erscheint jedoch nicht mehr in Listen und Suchergebnissen.
+            </p>
+        </div>
+    </div>
+</div>
+{% endif %}

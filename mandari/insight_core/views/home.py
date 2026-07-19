@@ -43,12 +43,12 @@ class PortalHomeView(TemplateView):
         if all_bodies_mode:
             # Alle Kommunen Übersicht
             context["stats"] = {
-                "bodies": OParlBody.objects.count(),
-                "organizations": OParlOrganization.objects.count(),
-                "persons": OParlPerson.objects.count(),
-                "meetings": OParlMeeting.objects.count(),
-                "papers": OParlPaper.objects.count(),
-                "files": OParlFile.objects.count(),
+                "bodies": OParlBody.objects.filter(deleted=False).count(),
+                "organizations": OParlOrganization.objects.filter(deleted=False).count(),
+                "persons": OParlPerson.objects.filter(deleted=False).count(),
+                "meetings": OParlMeeting.objects.filter(deleted=False).count(),
+                "papers": OParlPaper.objects.filter(deleted=False).count(),
+                "files": OParlFile.objects.filter(deleted=False).count(),
             }
             context["upcoming_meetings"] = None
             context["recent_papers"] = None
@@ -56,23 +56,25 @@ class PortalHomeView(TemplateView):
         elif body:
             # Statistiken für die aktive Kommune
             context["stats"] = {
-                "organizations": OParlOrganization.objects.filter(body=body).count(),
-                "persons": OParlPerson.objects.filter(body=body).count(),
-                "meetings": OParlMeeting.objects.filter(body=body).count(),
-                "papers": OParlPaper.objects.filter(body=body).count(),
-                "files": OParlFile.objects.filter(paper__body=body).count(),
+                "organizations": OParlOrganization.objects.filter(body=body, deleted=False).count(),
+                "persons": OParlPerson.objects.filter(body=body, deleted=False).count(),
+                "meetings": OParlMeeting.objects.filter(body=body, deleted=False).count(),
+                "papers": OParlPaper.objects.filter(body=body, deleted=False).count(),
+                "files": OParlFile.objects.filter(paper__body=body, deleted=False).count(),
                 "public_questions": PublicQuestion.objects.filter(body=body, status="published").count(),
             }
 
             # Nächste Sitzungen (5 für einheitliche Listen)
             context["upcoming_meetings"] = (
-                OParlMeeting.objects.filter(body=body, start__gte=timezone.now(), cancelled=False)
+                OParlMeeting.objects.filter(body=body, start__gte=timezone.now(), cancelled=False, deleted=False)
                 .prefetch_related("organizations")
                 .order_by("start")[:5]
             )
 
             # Neueste Vorgänge
-            context["recent_papers"] = OParlPaper.objects.filter(body=body).order_by("-date", "-oparl_created")[:5]
+            context["recent_papers"] = OParlPaper.objects.filter(body=body, deleted=False).order_by(
+                "-date", "-oparl_created"
+            )[:5]
 
             # Stadtteile für Nachbarschafts-Schnellwahl
             import os

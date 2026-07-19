@@ -23,6 +23,7 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
     if files is None:
         try:
             files = paper.files.filter(
+                deleted=False,
                 text_content__isnull=False,
                 text_extraction_status="completed",
             )

@@ -89,7 +89,10 @@ def _delete_document(index_name: str, doc_id: str):
 
 @receiver(post_save, sender=OParlPaper)
 def index_paper(sender, instance, **kwargs):
-    """Indexiert einen Vorgang nach dem Speichern."""
+    """Indexiert einen Vorgang nach dem Speichern (Tombstones werden entfernt)."""
+    if instance.deleted:
+        _delete_document("papers", str(instance.id))
+        return
     doc = _paper_to_doc(instance)
     _index_document("papers", str(instance.id), doc)
 
@@ -102,7 +105,10 @@ def delete_paper(sender, instance, **kwargs):
 
 @receiver(post_save, sender=OParlMeeting)
 def index_meeting(sender, instance, **kwargs):
-    """Indexiert eine Sitzung nach dem Speichern."""
+    """Indexiert eine Sitzung nach dem Speichern (Tombstones werden entfernt)."""
+    if instance.deleted:
+        _delete_document("meetings", str(instance.id))
+        return
     doc = _meeting_to_doc(instance)
     _index_document("meetings", str(instance.id), doc)
 
@@ -115,7 +121,10 @@ def delete_meeting(sender, instance, **kwargs):
 
 @receiver(post_save, sender=OParlPerson)
 def index_person(sender, instance, **kwargs):
-    """Indexiert eine Person nach dem Speichern."""
+    """Indexiert eine Person nach dem Speichern (Tombstones werden entfernt)."""
+    if instance.deleted:
+        _delete_document("persons", str(instance.id))
+        return
     doc = _person_to_doc(instance)
     _index_document("persons", str(instance.id), doc)
 
@@ -128,7 +137,10 @@ def delete_person(sender, instance, **kwargs):
 
 @receiver(post_save, sender=OParlOrganization)
 def index_organization(sender, instance, **kwargs):
-    """Indexiert ein Gremium nach dem Speichern."""
+    """Indexiert ein Gremium nach dem Speichern (Tombstones werden entfernt)."""
+    if instance.deleted:
+        _delete_document("organizations", str(instance.id))
+        return
     doc = _organization_to_doc(instance)
     _index_document("organizations", str(instance.id), doc)
 
@@ -147,6 +159,11 @@ def index_file(sender, instance, **kwargs):
     Nur wenn text_content vorhanden ist.
     Aktualisiert auch das Parent-Paper (file_contents_preview).
     """
+    # Tombstone: aus dem Index entfernen statt indexieren
+    if instance.deleted:
+        _delete_document("files", str(instance.id))
+        return
+
     # Nur indexieren wenn Text vorhanden
     if not instance.text_content:
         return
@@ -158,7 +175,10 @@ def index_file(sender, instance, **kwargs):
     if instance.paper_id:
         try:
             paper = OParlPaper.objects.get(id=instance.paper_id)
+            if paper.deleted:
+                return
             files = paper.files.filter(
+                deleted=False,
                 text_content__isnull=False,
                 text_extraction_status="completed",
             )

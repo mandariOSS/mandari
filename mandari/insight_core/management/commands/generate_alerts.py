@@ -89,6 +89,7 @@ class Command(BaseCommand):
                      ) AS dist
                  ) d
             WHERE p.body_id = %s
+              AND p.deleted = FALSE
               AND p.locations IS NOT NULL
               AND jsonb_array_length(p.locations) > 0
               AND p.created_at >= %s
@@ -174,6 +175,7 @@ class Command(BaseCommand):
             papers = OParlPaper.objects.filter(
                 body=subscriber.body,
                 created_at__gte=cutoff,
+                deleted=False,
             ).filter(Q(name__icontains=keyword) | Q(reference__icontains=keyword))[:20]
 
             for paper in papers:

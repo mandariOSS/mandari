@@ -5,6 +5,8 @@
 
 {% block content %}
 <div x-data="{ tab: 'memberships' }">
+    {% include "partials/tombstone_notice.html" with object=person %}
+
     {# Breadcrumb #}
     <nav class="mb-6">
         <ol class="flex items-center gap-2 text-sm">

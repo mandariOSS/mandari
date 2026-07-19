@@ -42,7 +42,7 @@ class MeetingListView(ListView):
         if not body:
             return OParlMeeting.objects.none()
 
-        qs = OParlMeeting.objects.filter(body=body).prefetch_related("organizations")
+        qs = OParlMeeting.objects.filter(body=body, deleted=False).prefetch_related("organizations")
 
         # Suche
         q = self.request.GET.get("q", "").strip()
@@ -151,7 +151,7 @@ def calendar_events(request):
     start_str = request.GET.get("start")
     end_str = request.GET.get("end")
 
-    qs = OParlMeeting.objects.filter(body=body, cancelled=False).prefetch_related("organizations")
+    qs = OParlMeeting.objects.filter(body=body, cancelled=False, deleted=False).prefetch_related("organizations")
 
     if start_str:
         from datetime import datetime

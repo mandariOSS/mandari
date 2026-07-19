@@ -160,7 +160,11 @@ class FileListView(TemplateView):
         page_num = int(self.request.GET.get("page", 1))
 
         if body:
-            qs = OParlFile.objects.filter(body=body).select_related("paper").order_by("-file_date", "-created_at")
+            qs = (
+                OParlFile.objects.filter(body=body, deleted=False)
+                .select_related("paper")
+                .order_by("-file_date", "-created_at")
+            )
 
             if q:
                 qs = qs.filter(Q(name__icontains=q) | Q(file_name__icontains=q) | Q(paper__name__icontains=q))

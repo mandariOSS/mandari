@@ -143,8 +143,9 @@ class Command(BaseCommand):
                 except Exception as e:
                     self.stdout.write(self.style.WARNING(f"  Could not clear '{index_name}': {e}"))
 
-            # Build queryset
-            qs = model.objects.all()
+            # Build queryset (Tombstones bleiben draußen — von der Quelle
+            # gelöschte Objekte gehören nicht in den Suchindex)
+            qs = model.objects.filter(deleted=False)
             if body_uuid:
                 qs = qs.filter(body_id=body_uuid)
             if qs_filter:
@@ -163,6 +164,7 @@ class Command(BaseCommand):
                     try:
                         if index_name == "papers":
                             files = obj.files.filter(
+                                deleted=False,
                                 text_content__isnull=False,
                                 text_extraction_status="completed",
                             )
