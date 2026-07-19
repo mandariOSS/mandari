@@ -3,7 +3,6 @@ module.exports = {
   content: [
     "./templates/**/*.html",
     "./insight_core/templates/**/*.html",
-    "./insight_content/templates/**/*.html",
     "./static/js/**/*.js",
     "./frontend/**/*.ts",
   ],
