@@ -197,6 +197,8 @@ function mapApp() {
         _map: null,
         _markers: null,
         _markerIcon: null,
+        _bboxMode: false,
+        _refetchTimer: null,
 
         timeOptions: [
             { value: '4', label: '4 Wo.' },
@@ -251,23 +253,36 @@ function mapApp() {
             this._map.on('popupopen', () => {
                 if (window.lucide) lucide.createIcons();
             });
+
+            // BBox-Modus: Wenn der Server die Marker-Liste kappt (truncated),
+            // werden Marker beim Verschieben für den Ausschnitt nachgeladen.
+            this._map.on('moveend', () => {
+                if (!this._bboxMode || this.loading) return;
+                clearTimeout(this._refetchTimer);
+                this._refetchTimer = setTimeout(() => this.loadMarkers(true), 300);
+            });
         },
 
         setTimeRange(value) {
             if (this.timeRange === value) return;
             this.timeRange = value;
+            this._bboxMode = false;
             this.loadMarkers();
         },
 
-        loadMarkers() {
+        loadMarkers(useBbox = false) {
             this.loading = true;
             const baseUrl = '{% url "insight_core:insight:map_markers" %}';
-            const params = this.timeRange === 'all' ? '?all=1' : `?weeks=${this.timeRange}`;
+            let params = this.timeRange === 'all' ? '?all=1' : `?weeks=${this.timeRange}`;
+            if (useBbox && this._map) {
+                params += `&bbox=${this._map.getBounds().toBBoxString()}`;
+            }
 
             fetch(baseUrl + params)
                 .then(r => r.json())
                 .then(data => {
                     const features = data.features || [];
+                    if (data.truncated) this._bboxMode = true;
                     this._markers.clearLayers();
                     this.markerCount = features.length;
                     this.loading = false;
@@ -292,8 +307,8 @@ function mapApp() {
                         this._markers.addLayer(marker);
                     });
 
-                    // Zoom to markers
-                    if (this._markers.getLayers().length > 0) {
+                    // Zoom to markers (nicht beim BBox-Nachladen — sonst Endlosschleife)
+                    if (!useBbox && this._markers.getLayers().length > 0) {
                         this._map.fitBounds(this._markers.getBounds(), { padding: [40, 40], maxZoom: 14 });
                     }
                 })

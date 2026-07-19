@@ -3,6 +3,23 @@
 
 {% block title %}{{ paper.reference|default:paper.name }}{% endblock %}
 
+{% block extra_head %}
+{% if paper_locations %}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}" />
+<style>
+    #paper-map { height: 220px; border-radius: 0.5rem; z-index: 0; }
+    .paper-marker-dot {
+        width: 18px; height: 18px;
+        background: #6366f1;
+        border: 3px solid white;
+        border-radius: 50%;
+        box-shadow: 0 2px 6px rgba(99,102,241,0.4);
+    }
+    .custom-marker { background: transparent !important; border: none !important; }
+</style>
+{% endif %}
+{% endblock %}
+
 {% block content %}
 <div>
     {# Breadcrumb #}
@@ -325,6 +342,33 @@
 
         <!-- Sidebar -->
         <div class="space-y-6">
+            {% if paper_locations %}
+            <!-- Orte (Georeferenzierung) -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                    <i data-lucide="map-pin" class="w-4 h-4 text-primary-500"></i>
+                    Orte ({{ paper_locations|length }})
+                </h3>
+                <div id="paper-map" class="mb-4"></div>
+                <ul class="space-y-2">
+                    {% for loc in paper_locations %}
+                    <li class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <i data-lucide="map-pin" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-400"></i>
+                        <span class="min-w-0">
+                            {{ loc.name }}
+                            {% if loc.source == "oparl" %}
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 align-middle ml-1">offiziell</span>
+                            {% endif %}
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                <p class="mt-3 text-xs text-gray-400 dark:text-gray-500">
+                    Ortsbezüge werden automatisch aus den Dokumenten ermittelt und können unvollständig sein.
+                </p>
+            </div>
+            {% endif %}
+
             <!-- Info Card -->
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
                 <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Details</h3>
@@ -358,4 +402,50 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+{% if paper_locations %}
+{{ paper_locations|json_script:"paper-locations-data" }}
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<script>
+(function () {
+    const locations = JSON.parse(document.getElementById('paper-locations-data').textContent);
+    if (!locations.length) return;
+
+    const map = L.map('paper-map', {
+        zoomControl: false,
+        attributionControl: true,
+        scrollWheelZoom: false,
+        dragging: locations.length > 1
+    });
+
+    L.tileLayer('{% url "insight_core:insight:tile_proxy" z=0 x=0 y=0 %}'.replace('/0/0/0', '/{z}/{x}/{y}'), {
+        attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 18
+    }).addTo(map);
+
+    const icon = L.divIcon({
+        className: 'custom-marker',
+        html: '<div class="paper-marker-dot"></div>',
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+        popupAnchor: [0, -9]
+    });
+
+    const bounds = [];
+    locations.forEach(loc => {
+        const marker = L.marker([loc.lat, loc.lon], { icon: icon }).addTo(map);
+        if (loc.name) marker.bindPopup(loc.name);
+        bounds.push([loc.lat, loc.lon]);
+    });
+
+    if (bounds.length === 1) {
+        map.setView(bounds[0], 15);
+    } else {
+        map.fitBounds(bounds, { padding: [24, 24], maxZoom: 15 });
+    }
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -109,6 +109,14 @@ class PaperDetailView(DetailView):
                     best = max(with_meeting, key=lambda x: x["date"])
                 context["file_context_summary"] = best
 
+        # Ortsbezüge (offizielle OParl-Locations + extrahierte) für Karte/Liste
+        locations = paper.locations if isinstance(paper.locations, list) else []
+        context["paper_locations"] = [
+            loc
+            for loc in locations
+            if isinstance(loc, dict) and loc.get("lat") is not None and loc.get("lon") is not None
+        ]
+
         # SEO-Kontext
         from ..seo import get_paper_seo
 

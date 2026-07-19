@@ -9,6 +9,8 @@ import logging
 from datetime import timedelta
 
 import httpx
+from django.conf import settings
+from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.cache import cache_page
@@ -57,24 +59,15 @@ class MapView(TemplateView):
         return context
 
 
-@require_GET
-def map_markers(request):
-    """GeoJSON-Endpoint für Karten-Marker.
+# Obergrenze ausgelieferter Features pro Request (keine Vollauslieferungen)
+MAP_MARKERS_MAX_FEATURES = 2000
 
-    Query-Parameter:
-        weeks: Anzahl Wochen zurück (Standard: 4, Max: 52)
-        all: Wenn "1", alle Papers mit Locations (kein Zeitfilter)
-    """
-    body = get_active_body(request)
-    if not body:
-        return JsonResponse({"type": "FeatureCollection", "features": []})
 
-    papers = OParlPaper.objects.filter(body=body, locations__isnull=False)
+def _build_marker_features(body, show_all: bool, weeks: int) -> list[dict]:
+    """Baut die GeoJSON-Features für eine Kommune (ungefiltert, cachebar)."""
+    papers = OParlPaper.objects.filter(body=body, locations__isnull=False).only("id", "name", "reference", "locations")
 
-    # Zeitfilter: ?all=1 deaktiviert den Filter
-    show_all = request.GET.get("all") == "1"
     if not show_all:
-        weeks = min(int(request.GET.get("weeks", "4") or "4"), 52)
         cutoff = timezone.now() - timedelta(weeks=weeks)
         papers = papers.filter(date__gte=cutoff)
 
@@ -96,8 +89,77 @@ def map_markers(request):
                             },
                         }
                     )
+    return features
 
-    return JsonResponse({"type": "FeatureCollection", "features": features})
+
+def _parse_bbox(raw: str | None) -> tuple[float, float, float, float] | None:
+    """Parst ?bbox=west,south,east,north (Leaflet: toBBoxString())."""
+    if not raw:
+        return None
+    try:
+        parts = [float(p) for p in raw.split(",")]
+    except (TypeError, ValueError):
+        return None
+    if len(parts) != 4:
+        return None
+    west, south, east, north = parts
+    if south > north or west > east:
+        return None
+    return west, south, east, north
+
+
+@require_GET
+def map_markers(request):
+    """GeoJSON-Endpoint für Karten-Marker.
+
+    Query-Parameter:
+        weeks: Anzahl Wochen zurück (Standard: 4, Max: 52)
+        all: Wenn "1", alle Papers mit Locations (kein Zeitfilter)
+        bbox: "west,south,east,north" — nur Marker im Kartenausschnitt
+
+    Die Feature-Liste wird serverseitig gecacht (MAP_MARKERS_CACHE_SECONDS,
+    Standard 10 Min) und pro Antwort auf MAP_MARKERS_MAX_FEATURES begrenzt
+    (Antwort enthält dann "truncated": true).
+    """
+    body = get_active_body(request)
+    if not body:
+        return JsonResponse({"type": "FeatureCollection", "features": []})
+
+    show_all = request.GET.get("all") == "1"
+    try:
+        weeks = min(int(request.GET.get("weeks", "4") or "4"), 52)
+    except (TypeError, ValueError):
+        weeks = 4
+    weeks = max(weeks, 1)
+
+    cache_key = f"map_markers:{body.id}:{'all' if show_all else weeks}"
+    features = cache.get(cache_key)
+    if features is None:
+        features = _build_marker_features(body, show_all, weeks)
+        cache_seconds = getattr(settings, "MAP_MARKERS_CACHE_SECONDS", 600)
+        cache.set(cache_key, features, cache_seconds)
+
+    # BBox-Filter (nach dem Cache: der Cache hält die Gesamtliste pro Zeitraum)
+    bbox = _parse_bbox(request.GET.get("bbox"))
+    if bbox:
+        west, south, east, north = bbox
+        features = [
+            f
+            for f in features
+            if west <= f["geometry"]["coordinates"][0] <= east and south <= f["geometry"]["coordinates"][1] <= north
+        ]
+
+    truncated = len(features) > MAP_MARKERS_MAX_FEATURES
+    if truncated:
+        features = features[:MAP_MARKERS_MAX_FEATURES]
+
+    return JsonResponse(
+        {
+            "type": "FeatureCollection",
+            "features": features,
+            "truncated": truncated,
+        }
+    )
 
 
 # =============================================================================
