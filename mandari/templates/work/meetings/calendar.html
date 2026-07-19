@@ -82,6 +82,11 @@ document.addEventListener('DOMContentLoaded', function() {
     .fc {
         --fc-today-bg-color: rgba(99, 102, 241, 0.1);
     }
+    /* Toolbar darf auf schmalen Screens umbrechen statt zu überlaufen */
+    .fc .fc-header-toolbar {
+        flex-wrap: wrap;
+        row-gap: 8px;
+    }
     .fc .fc-button-primary {
         background-color: #6366f1;
         border-color: #6366f1;

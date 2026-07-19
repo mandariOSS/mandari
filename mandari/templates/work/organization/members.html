@@ -36,9 +36,9 @@
     </div>
     <div class="divide-y divide-amber-200 dark:divide-amber-800">
         {% for invitation in pending_invitations %}
-        <div class="px-6 py-4 flex items-center justify-between">
-            <div>
-                <p class="font-medium text-gray-900 dark:text-white">{{ invitation.email }}</p>
+        <div class="px-6 py-4 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white break-all">{{ invitation.email }}</p>
                 <p class="text-sm text-gray-500">
                     Eingeladen von {{ invitation.invited_by.get_full_name|default:invitation.invited_by.email }}
                     am {{ invitation.created_at|date:"d.m.Y" }}
@@ -86,17 +86,17 @@
     </div>
     <div class="divide-y divide-blue-200 dark:divide-blue-800">
         {% for membership in pending_registrations %}
-        <div class="px-6 py-4 flex items-center justify-between">
-            <div>
-                <p class="font-medium text-gray-900 dark:text-white">
+        <div class="px-6 py-4 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white break-words">
                     {{ membership.user.get_full_name|default:membership.user.email }}
                 </p>
-                <p class="text-sm text-gray-500">
+                <p class="text-sm text-gray-500 break-all">
                     {{ membership.user.email }}
                     · Registriert am {{ membership.created_at|date:"d.m.Y H:i" }}
                 </p>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 shrink-0">
                 <form method="post" action="{% url 'work:member_approve' org_slug=organization.slug membership_id=membership.id %}">
                     {% csrf_token %}
                     <button type="submit"
@@ -131,8 +131,8 @@
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
         {% for member in members %}
         <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}"
-           class="px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-            <div class="flex items-center gap-4">
+           class="px-6 py-4 flex items-center justify-between gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            <div class="flex items-center gap-4 min-w-0">
                 <!-- Avatar -->
                 <div class="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold">
                     {% if member.user.avatar %}
@@ -142,8 +142,8 @@
                     {% endif %}
                 </div>
 
-                <div>
-                    <p class="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                <div class="min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white flex flex-wrap items-center gap-2 break-words">
                         {{ member.user.get_full_name|default:member.user.email }}
                         {% if organization.owner == member.user %}
                         <span class="px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">
@@ -154,7 +154,7 @@
                         <i data-lucide="shield-check" class="w-4 h-4 text-green-500" title="Vereidigt"></i>
                         {% endif %}
                     </p>
-                    <p class="text-sm text-gray-500">{{ member.user.email }}</p>
+                    <p class="text-sm text-gray-500 truncate">{{ member.user.email }}</p>
 
                     <!-- Roles -->
                     {% if member.roles.exists %}
@@ -210,19 +210,19 @@
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
         {% for guest in guests %}
         <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=guest.id %}"
-           class="px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-            <div class="flex items-center gap-4">
+           class="px-6 py-4 flex items-center justify-between gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            <div class="flex items-center gap-4 min-w-0">
                 <div class="w-10 h-10 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center text-teal-600 dark:text-teal-400 font-semibold">
                     {{ guest.user.first_name|slice:":1"|upper|default:guest.user.email|slice:":1"|upper }}
                 </div>
-                <div>
-                    <p class="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                <div class="min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white flex flex-wrap items-center gap-2 break-words">
                         {{ guest.user.get_full_name|default:guest.user.email }}
                         <span class="px-2 py-0.5 text-xs bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-full">
                             Gast
                         </span>
                     </p>
-                    <p class="text-sm text-gray-500">{{ guest.user.email }}</p>
+                    <p class="text-sm text-gray-500 truncate">{{ guest.user.email }}</p>
                     <p class="text-xs text-gray-400 mt-1">Sieht nur explizit freigegebene Dokumente</p>
                 </div>
             </div>

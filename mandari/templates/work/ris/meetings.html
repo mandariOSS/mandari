@@ -46,17 +46,17 @@
     </div>
     <div class="flex-1"></div>
     <!-- Filters -->
-    <form method="get" class="flex items-center gap-3 pb-2">
+    <form method="get" class="flex flex-wrap items-center gap-3 pb-2">
         <input type="hidden" name="view" value="{{ view_mode }}">
         <select name="org" onchange="this.form.submit()"
-                class="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
+                class="max-w-[240px] px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
             <option value="">Alle Gremien</option>
             {% for org in organizations %}
             <option value="{{ org.id }}" {% if selected_org == org.id|slugify %}selected{% endif %}>{{ org.short_name|default:org.name }}</option>
             {% endfor %}
         </select>
         <select name="year" onchange="this.form.submit()"
-                class="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
+                class="max-w-[240px] px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
             <option value="">Alle Jahre</option>
             {% for year in years %}
             <option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>
@@ -68,6 +68,7 @@
 <!-- Meetings Table -->
 {% if meetings %}
 <div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="overflow-x-auto">
     <table class="w-full">
         <thead>
             <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
@@ -130,6 +131,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 
 {% if meetings.has_other_pages %}

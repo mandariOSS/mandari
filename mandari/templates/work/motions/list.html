@@ -154,7 +154,7 @@
 
                     <!-- Type Filter -->
                     <select name="type" onchange="this.form.submit()"
-                            class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                            class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                         <option value="">Alle Typen</option>
                         {% for doc_type in document_types %}
                         <option value="{{ doc_type.id }}" {% if selected_type == doc_type.id|stringformat:"s" %}selected{% endif %}>{{ doc_type.name }}</option>
@@ -167,7 +167,7 @@
 
                     <!-- Status Filter -->
                     <select name="status" onchange="this.form.submit()"
-                            class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                            class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                         <option value="">Alle Status</option>
                         {% for value, label in status_choices %}
                         <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
@@ -177,7 +177,7 @@
                     <!-- Topic Filter -->
                     {% if org_topics %}
                     <select name="thema" onchange="this.form.submit()"
-                            class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                            class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                         <option value="">Alle Themen</option>
                         {% for topic in org_topics %}
                         <option value="{{ topic.id }}" {% if selected_topic == topic.id|stringformat:"s" %}selected{% endif %}>{{ topic.name }}</option>
@@ -187,7 +187,7 @@
 
                     <!-- Responsible Filter -->
                     <select name="verantwortlich" onchange="this.form.submit()"
-                            class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                            class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                         <option value="">Alle Verantwortlichen</option>
                         <option value="me" {% if selected_responsible == "me" %}selected{% endif %}>Meine Federführung</option>
                         {% for member in org_members %}
