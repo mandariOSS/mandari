@@ -5,7 +5,7 @@
 {% block header_title %}{% if is_new %}Neuer Dokumenttyp{% else %}{{ motion_type.name }} bearbeiten{% endif %}{% endblock %}
 
 {% block work_content %}
-<div class="max-w-2xl">
+<div class="max-w-2xl mx-auto">
     <form method="post" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
         {% csrf_token %}
 

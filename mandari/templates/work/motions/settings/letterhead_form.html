@@ -5,7 +5,7 @@
 {% block header_title %}{% if is_new %}Neuer Briefkopf{% else %}{{ letterhead.name }} bearbeiten{% endif %}{% endblock %}
 
 {% block work_content %}
-<div class="max-w-2xl" x-data="letterheadForm()">
+<div class="max-w-2xl mx-auto" x-data="letterheadForm()">
     <form method="post" enctype="multipart/form-data" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 fade-up">
         {% csrf_token %}
 
