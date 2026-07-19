@@ -83,6 +83,7 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset({
     "bbox_east",
     "bbox_west",
     "osm_relation_id",
+    "ags",
     # OParlBody: person photo scraping configuration (Django-managed)
     "person_photo_url_template",
     "person_photo_id_pattern",
@@ -689,8 +690,53 @@ class DatabaseStorage:
                     await self.upsert_file(nested, body_id, paper_id=paper_id)
                 elif isinstance(nested, ProcessedConsultation):
                     await self.upsert_consultation(nested, body_id, paper_id)
+                elif isinstance(nested, ProcessedLocation):
+                    await self.upsert_location(nested, body_id)
+
+            # Link official OParl locations (M2M table managed by Django)
+            if paper.location_external_ids:
+                await self._link_paper_locations(paper_id, paper.location_external_ids)
 
             return paper_id
+
+    async def _link_paper_locations(
+        self,
+        paper_id: UUID,
+        location_external_ids: list[str],
+    ) -> None:
+        """
+        Link a paper to its official OParl locations via oparl_papers_locations.
+
+        Only links locations that already exist in the database (embedded
+        objects are upserted beforehand; unresolved string refs are skipped
+        and picked up on a later sync once the location list is fetched).
+        Defensive: if the M2M table does not exist yet (Django migration
+        not applied), the link step is skipped with a warning.
+        """
+        async with self.get_session() as session:
+            stmt = select(OParlLocation.id, OParlLocation.external_id).where(
+                OParlLocation.external_id.in_(location_external_ids)
+            )
+            result = await session.execute(stmt)
+            location_ids = [row[0] for row in result.fetchall()]
+            if not location_ids:
+                return
+
+            try:
+                for loc_id in location_ids:
+                    await session.execute(
+                        text(
+                            "INSERT INTO oparl_papers_locations (oparlpaper_id, oparllocation_id) "
+                            "VALUES (:pid, :lid) ON CONFLICT DO NOTHING"
+                        ),
+                        {"pid": paper_id, "lid": loc_id},
+                    )
+                await session.commit()
+            except Exception as e:  # noqa: BLE001 - table may not exist yet
+                await session.rollback()
+                console.print(
+                    f"[yellow]Paper-Location-Link übersprungen (Tabelle fehlt?): {e}[/yellow]"
+                )
 
     async def get_paper_uuid(self, external_id: str) -> UUID | None:
         """Get a paper's UUID by external ID (cached)."""

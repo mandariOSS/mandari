@@ -59,6 +59,10 @@ class ProcessedPaper(ProcessedEntity):
     paper_type: str | None = None
     date: dt.date | None = None
 
+    # OParl `location` references (external IDs). Embedded location objects
+    # are additionally appended to nested_entities for upserting.
+    location_external_ids: list[str] = Field(default_factory=list)
+
 
 class ProcessedPerson(ProcessedEntity):
     """Processed OParl Person."""

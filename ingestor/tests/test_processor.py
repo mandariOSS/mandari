@@ -249,6 +249,66 @@ class TestPaperProcessing:
                 break
 
 
+class TestPaperLocationProcessing:
+    """Tests for OParl `location` references on papers (self-contained)."""
+
+    def test_paper_with_embedded_and_ref_locations(self, processor: OParlProcessor) -> None:
+        """Embedded location objects become nested entities, refs are kept."""
+        data = {
+            "id": "https://example.org/paper/loc-1",
+            "type": "https://schema.oparl.org/1.1/Paper",
+            "name": "Sanierung Hauptstraße",
+            "location": [
+                {
+                    "id": "https://example.org/location/1",
+                    "type": "https://schema.oparl.org/1.1/Location",
+                    "streetAddress": "Hauptstraße 1",
+                    "geojson": {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [7.6, 51.9]},
+                    },
+                },
+                "https://example.org/location/2",
+            ],
+        }
+        paper = processor.process_paper(data, "https://example.org/body")
+
+        assert paper.location_external_ids == [
+            "https://example.org/location/1",
+            "https://example.org/location/2",
+        ]
+        locations = [e for e in paper.nested_entities if isinstance(e, ProcessedLocation)]
+        assert len(locations) == 1
+        assert locations[0].street_address == "Hauptstraße 1"
+        assert locations[0].geojson is not None
+
+    def test_paper_with_single_location_object(self, processor: OParlProcessor) -> None:
+        """A single (non-list) location dict is normalized to a list."""
+        data = {
+            "id": "https://example.org/paper/loc-2",
+            "type": "https://schema.oparl.org/1.1/Paper",
+            "location": {
+                "id": "https://example.org/location/3",
+                "type": "https://schema.oparl.org/1.1/Location",
+                "streetAddress": "Domplatz 5",
+            },
+        }
+        paper = processor.process_paper(data, "https://example.org/body")
+
+        assert paper.location_external_ids == ["https://example.org/location/3"]
+        locations = [e for e in paper.nested_entities if isinstance(e, ProcessedLocation)]
+        assert len(locations) == 1
+
+    def test_paper_without_location(self, processor: OParlProcessor) -> None:
+        """Papers without location field keep empty references."""
+        data = {
+            "id": "https://example.org/paper/loc-3",
+            "type": "https://schema.oparl.org/1.1/Paper",
+        }
+        paper = processor.process_paper(data, "https://example.org/body")
+        assert paper.location_external_ids == []
+
+
 class TestGenericProcessing:
     """Tests for generic process() method."""
 

@@ -248,6 +248,19 @@ class OParlProcessor:
         # Process nested files
         self._extract_files(paper, data, body_external_id)
 
+        # Extract official OParl locations (list of refs or embedded objects)
+        locations = data.get("location", [])
+        if isinstance(locations, (dict, str)):
+            locations = [locations]
+        if isinstance(locations, list):
+            for loc_data in locations:
+                if isinstance(loc_data, dict) and loc_data.get("id"):
+                    loc = self.process_location(loc_data, body_external_id)
+                    paper.nested_entities.append(loc)
+                    paper.location_external_ids.append(loc_data["id"])
+                elif isinstance(loc_data, str) and loc_data:
+                    paper.location_external_ids.append(loc_data)
+
         # Process nested consultations
         for cons_data in data.get("consultation", []):
             if isinstance(cons_data, dict):
