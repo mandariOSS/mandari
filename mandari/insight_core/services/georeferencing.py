@@ -3,10 +3,18 @@
 Georeferenzierungs-Pipeline: Ortsextraktion + Geocoding für Papers.
 
 2-Pass-Pipeline:
-  Pass 1 (Regex): Straßennamen, PLZ, Hausnummern aus Text extrahieren
-  Pass 2 (KI): LLM-basierte Extraktion für schwierige Fälle
+  Pass 1 (Regex + Gazetteer): Straßennamen/Hausnummern aus dem Volltext,
+    validiert gegen das OSM-Straßenverzeichnis der Kommune (Street-Modell).
+    Geometrie kommt lokal aus dem Gazetteer — kein API-Geocoding nötig.
+  Pass 2 (KI): LLM-basierte Extraktion für schwierige Fälle (POIs, Gebäude);
+    Geocoding via Photon (komoot.io) mit Nominatim-Fallback.
 
-Geocoding via Photon (komoot.io) mit Nominatim-Fallback.
+Ist kein Straßenverzeichnis importiert (import_streets), fällt Pass 1 auf
+das alte Verhalten (Photon-Geocoding + Blocklist) zurück.
+
+`locations`-Einträge tragen `source` (oparl|address_match|street_match|ai|manual)
+und `confidence`. Einträge mit source oparl/manual werden bei Re-Runs nie
+überschrieben (siehe update_paper_georef).
 """
 
 import json
@@ -27,7 +35,20 @@ logger = logging.getLogger(__name__)
 
 PHOTON_API_URL = getattr(settings, "PHOTON_API_URL", "https://photon.komoot.io/api/")
 GEOCODING_RATE_LIMIT = getattr(settings, "GEOCODING_RATE_LIMIT", 5)
+# Kappung gilt nur noch für den LLM-Pass (Kosten) und den Legacy-Photon-Pfad
+# (externe API-Calls); der Gazetteer-Pass arbeitet auf dem Volltext.
 GEOREF_TEXT_MAX_CHARS = getattr(settings, "GEOREF_TEXT_MAX_CHARS", 8000)
+
+# Obergrenze externer Geocoding-Calls pro Paper im Legacy-Pfad (ohne Gazetteer)
+MAX_LEGACY_GEOCODES = 40
+
+# Quellen-Konfidenzwerte für locations-Einträge
+CONFIDENCE = {
+    "oparl": 1.0,
+    "address_match": 0.9,
+    "street_match": 0.8,
+    "ai": 0.6,
+}
 
 # Rate limiter state
 _last_geocode_time = 0.0
@@ -564,7 +585,7 @@ def _geocode_photon(address: str, body) -> dict | None:
             # Validation 2: Result must be related to the search query.
             # Check if either the result name/street contains part of the
             # search, or the search contains part of the result name.
-            if not _result_matches_query(address, result_name, result_street):
+            if not _result_matches_query(address, result_name, result_street, body_name=body.name):
                 continue
 
             # Prefer the street name for display, fall back to name
@@ -581,11 +602,16 @@ def _geocode_photon(address: str, body) -> dict | None:
         return None
 
 
-def _result_matches_query(query: str, result_name: str, result_street: str) -> bool:
+def _result_matches_query(
+    query: str,
+    result_name: str,
+    result_street: str,
+    body_name: str = "",
+) -> bool:
     """
     Check if a geocoding result is actually related to the search query.
 
-    Prevents Photon from returning "Landgericht Münster" when we searched
+    Prevents Photon from returning e.g. a courthouse when we searched
     for "Infrastr" or other garbage.
     """
     q_lower = query.lower().strip()
@@ -629,13 +655,17 @@ def _result_matches_query(query: str, result_name: str, result_street: str) -> b
         "steig",
         "stieg",
         "stadt",
-        "münster",
     }
-    q_words = {w for w in re.split(r"[-\s]+", q_core) if len(w) >= 4} - _GENERIC_WORDS
+    # Name der Kommune generisch ausschließen (statt Hardcoding einzelner Städte)
+    generic_words = set(_GENERIC_WORDS)
+    if body_name:
+        generic_words.update(w for w in re.split(r"[-\s,]+", _norm(body_name.lower())) if w)
+
+    q_words = {w for w in re.split(r"[-\s]+", q_core) if len(w) >= 4} - generic_words
     result_words = set()
     for s in (name_norm, street_norm):
         result_words.update(w for w in re.split(r"[-\s]+", s) if len(w) >= 4)
-    result_words -= _GENERIC_WORDS
+    result_words -= generic_words
 
     if q_words and result_words and (q_words & result_words):
         return True
@@ -755,7 +785,7 @@ def _haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> f
 
 # Common boilerplate patterns in municipal PDFs (footers, headers, stamps)
 _BOILERPLATE_RE = re.compile(
-    r"(?:Sparkasse\s+Münsterland|"
+    r"(?:Sparkasse\s+\w+|"
     r"IBAN\s*[:\s]*DE\d{2}|"
     r"BIC\s*[:\s]*[A-Z]{8,11}|"
     r"(?:Tel|Fax|Telefon|Telefax)[.:\s]+[\d\s/\-+]+|"
@@ -793,6 +823,76 @@ def collect_paper_text(paper) -> str:
 
 
 # =============================================================================
+# Gazetteer-Matching (Pass 1, bevorzugt)
+# =============================================================================
+
+
+def _street_hit_to_location(hit: dict) -> dict:
+    """Wandelt einen Gazetteer-Treffer in einen locations-Eintrag um."""
+    source = "address_match" if hit.get("house_number") else "street_match"
+    name = hit["name"]
+    if hit.get("house_number"):
+        name = f"{name} {hit['house_number']}"
+    return {
+        "lat": round(float(hit["lat"]), 7),
+        "lon": round(float(hit["lon"]), 7),
+        "name": name,
+        "source": source,
+        "confidence": CONFIDENCE[source],
+    }
+
+
+def _collect_street_hit(street_hits: dict, hit: dict) -> None:
+    """Sammelt Treffer pro Straße; Vorkommen mit Hausnummer haben Vorrang."""
+    key = hit["normalized"]
+    existing = street_hits.get(key)
+    if existing is None or (hit.get("house_number") and not existing.get("house_number")):
+        street_hits[key] = hit
+
+
+def _is_person_false_positive(hit: dict, person_names: set[str]) -> bool:
+    """
+    MST-Trick: Ein Straßenname, der auch der Name einer Person des Bodys ist,
+    zählt nur mit Hausnummer oder eindeutigem Straßen-Suffix (z.B. "-straße").
+    """
+    from insight_core.services.gazetteer import has_street_suffix
+
+    if hit.get("house_number"):
+        return False
+    if has_street_suffix(hit["normalized"]):
+        return False
+    return hit["normalized"] in person_names
+
+
+def extract_with_gazetteer(text: str, gazetteer, person_names: set[str]) -> list[dict]:
+    """
+    Pass 1 mit Straßenverzeichnis: Regex-Kandidaten + direkte Volltextsuche,
+    beides validiert gegen den Gazetteer. Geometrie kommt lokal aus OSM.
+
+    Returns:
+        Liste von locations-Einträgen (lat, lon, name, source, confidence).
+    """
+    street_hits: dict[str, dict] = {}
+
+    # a) Regex-Kandidaten gegen das Straßenverzeichnis validieren
+    for candidate in extract_with_regex(text):
+        raw = candidate.get("normalized") or candidate.get("raw", "")
+        hit = gazetteer.lookup(raw)
+        if hit:
+            _collect_street_hit(street_hits, hit)
+
+    # b) Direkte Gazetteer-Suche im Volltext (findet auch Schreibvarianten,
+    #    die das Regex nicht abdeckt)
+    for hit in gazetteer.find_in_text(text):
+        _collect_street_hit(street_hits, hit)
+
+    # c) Personen-False-Positives ausschließen
+    return [
+        _street_hit_to_location(hit) for hit in street_hits.values() if not _is_person_false_positive(hit, person_names)
+    ]
+
+
+# =============================================================================
 # Haupt-Pipeline
 # =============================================================================
 
@@ -808,49 +908,72 @@ def process_paper_georef(paper, mode: str = "all") -> dict:
     Returns:
         Dict with status, locations, method, error
     """
+    from insight_core.services.gazetteer import StreetGazetteer, get_person_name_set
+
     # 1. Collect text from all files
     text = collect_paper_text(paper)
     if not text:
         return {"status": "skipped", "reason": "Kein Text verfügbar"}
 
-    # Truncate for processing
-    max_chars = GEOREF_TEXT_MAX_CHARS
-    text_for_processing = text[:max_chars] if len(text) > max_chars else text
+    body = paper.body
+    gazetteer = StreetGazetteer(body) if body else None
 
-    # 2. Regex extraction (Pass 1)
-    raw_locations = []
+    geocoded: list[dict] = []
     method = "none"
 
+    # 2. Pass 1: Regex + Gazetteer (Volltext, lokal) bzw. Legacy-Photon-Pfad
     if mode in ("regex", "all"):
-        raw_locations = extract_with_regex(text_for_processing)
-        if raw_locations:
-            method = "regex"
+        if gazetteer:
+            person_names = get_person_name_set(body)
+            geocoded = extract_with_gazetteer(text, gazetteer, person_names)
+            if geocoded:
+                method = "gazetteer"
+        else:
+            # Legacy-Fallback ohne Straßenverzeichnis: externes Geocoding,
+            # gekappt (Text + Anzahl Calls), Ergebnis per BBox validiert.
+            text_capped = text[:GEOREF_TEXT_MAX_CHARS]
+            candidates = extract_with_regex(text_capped)
+            for loc in candidates[:MAX_LEGACY_GEOCODES]:
+                address = loc.get("normalized") or loc.get("raw", "")
+                if not address:
+                    continue
+                result = geocode_address(address, body)
+                if result and is_within_body(result["lat"], result["lon"], body):
+                    _, house_number = _split_house_number(address)
+                    source = "address_match" if house_number else "street_match"
+                    result["source"] = source
+                    result["confidence"] = CONFIDENCE[source]
+                    geocoded.append(result)
+            if geocoded:
+                method = "regex"
 
-    # 3. AI extraction (Pass 2) — only if regex found nothing
-    if not raw_locations and mode in ("ai", "all"):
-        body_name = paper.body.name if paper.body else ""
-        raw_locations = extract_locations_with_ai(text_for_processing, body_name)
-        if raw_locations:
-            method = "ai" if method == "none" else "regex+ai"
+    # 3. Pass 2 (KI) — nur wenn Pass 1 nichts gefunden hat (gekappter Text)
+    if not geocoded and mode in ("ai", "all"):
+        body_name = body.name if body else ""
+        text_capped = text[:GEOREF_TEXT_MAX_CHARS]
+        ai_candidates = extract_locations_with_ai(text_capped, body_name)
+        for loc in ai_candidates:
+            address = loc.get("normalized") or loc.get("raw", "")
+            if not address:
+                continue
 
-    if not raw_locations:
-        if mode == "regex":
-            return {"status": "ai_needed", "locations": [], "method": method}
-        return {"status": "no_locations", "locations": [], "method": method}
+            # Straßen-Kandidaten zuerst lokal im Gazetteer auflösen
+            if gazetteer:
+                hit = gazetteer.lookup(address)
+                if hit:
+                    geocoded.append(_street_hit_to_location(hit))
+                    continue
 
-    # 4. Geocoding with validation
-    body = paper.body
-    geocoded = []
-    for loc in raw_locations:
-        address = loc.get("normalized") or loc.get("raw", "")
-        if not address:
-            continue
+            # POIs/sonstige Orte: Photon/Nominatim-Fallback mit BBox-Check
+            result = geocode_address(address, body)
+            if result and is_within_body(result["lat"], result["lon"], body):
+                result["source"] = "ai"
+                result["confidence"] = CONFIDENCE["ai"]
+                geocoded.append(result)
+        if geocoded:
+            method = "ai" if method == "none" else f"{method}+ai"
 
-        result = geocode_address(address, body)
-        if result and is_within_body(result["lat"], result["lon"], body):
-            geocoded.append(result)
-
-    # 5. Deduplicate
+    # 4. Deduplicate
     locations = deduplicate_locations(geocoded)
 
     if locations:
@@ -865,9 +988,18 @@ def process_paper_georef(paper, mode: str = "all") -> dict:
         return {"status": "no_locations", "locations": [], "method": method}
 
 
+def _split_house_number(address: str) -> tuple[str, str | None]:
+    from insight_core.services.gazetteer import strip_house_number
+
+    return strip_house_number(address)
+
+
 def update_paper_georef(paper, result: dict) -> None:
     """
     Update a paper's georef fields based on pipeline result.
+
+    Einträge mit source "oparl" (offizielle OParl-Locations) oder "manual"
+    bleiben bei Re-Runs erhalten und haben Vorrang bei der Deduplizierung.
 
     Args:
         paper: OParlPaper instance
@@ -886,13 +1018,21 @@ def update_paper_georef(paper, result: dict) -> None:
         "updated_at",
     ]
 
-    locations = result.get("locations", [])
-    if locations:
-        paper.locations = locations
-        update_fields.append("locations")
-    else:
-        # Clear old bad locations when re-processing
-        paper.locations = None
-        update_fields.append("locations")
+    existing = paper.locations if isinstance(paper.locations, list) else []
+    preserved = [
+        loc
+        for loc in existing
+        if isinstance(loc, dict)
+        and loc.get("source") in ("oparl", "manual")
+        and loc.get("lat") is not None
+        and loc.get("lon") is not None
+    ]
+
+    extracted = result.get("locations", [])
+    # Höchste Priorität zuerst: oparl/manual gewinnen bei Dedup (<50m)
+    merged = deduplicate_locations(preserved + extracted)
+
+    paper.locations = merged or None
+    update_fields.append("locations")
 
     paper.save(update_fields=update_fields)
