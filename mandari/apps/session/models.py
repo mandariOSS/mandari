@@ -454,11 +454,16 @@ class SessionOrganization(models.Model):
         return self.name
 
 
-class SessionPerson(models.Model):
+class SessionPerson(EncryptionMixin, models.Model):
     """
     Person within Session (council members, etc.).
 
     Extends OParlPerson with Session-specific fields.
+
+    Security: Kontaktdaten (Telefon, Adresse) und Bankdaten (Kontoinhaber,
+    IBAN, BIC) werden AES-256-GCM-verschlüsselt gespeichert (Tenant-Key).
+    Zugriff über die generierten Accessoren, z. B.
+    person.set_bank_iban_encrypted("DE...") / person.get_bank_iban_decrypted().
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -485,15 +490,18 @@ class SessionPerson(models.Model):
     family_name = models.CharField(max_length=100, verbose_name="Nachname")
     form_of_address = models.CharField(max_length=50, blank=True, verbose_name="Anrede")
 
-    # Contact (encrypted for privacy)
+    # Contact
+    # E-Mail bleibt bewusst Klartext: Sie wird in der Personensuche gefiltert
+    # (PersonListView, email__icontains) und über die öffentliche OParl-API
+    # veröffentlicht — verschlüsselte Felder sind nicht filterbar.
     email = models.EmailField(blank=True, verbose_name="E-Mail")
-    phone = models.CharField(max_length=50, blank=True, verbose_name="Telefon")
-    address = models.TextField(blank=True, verbose_name="Adresse")
+    phone_encrypted = EncryptedTextField(verbose_name="Telefon (verschlüsselt)")
+    address_encrypted = EncryptedTextField(verbose_name="Adresse (verschlüsselt)")
 
-    # Bank details for allowances (encrypted)
-    bank_account_holder = models.CharField(max_length=255, blank=True, verbose_name="Kontoinhaber")
-    bank_iban = models.CharField(max_length=34, blank=True, verbose_name="IBAN")
-    bank_bic = models.CharField(max_length=11, blank=True, verbose_name="BIC")
+    # Bank details for allowances (AES-256-GCM, Tenant-Key)
+    bank_account_holder_encrypted = EncryptedTextField(verbose_name="Kontoinhaber (verschlüsselt)")
+    bank_iban_encrypted = EncryptedTextField(verbose_name="IBAN (verschlüsselt)")
+    bank_bic_encrypted = EncryptedTextField(verbose_name="BIC (verschlüsselt)")
 
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")

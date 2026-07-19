@@ -159,18 +159,22 @@
                     </dd>
                 </div>
                 {% endif %}
-                {% if person.phone %}
+                {% with person_phone=person.get_phone_decrypted %}
+                {% if person_phone %}
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400">Telefon</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ person.phone }}</dd>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ person_phone }}</dd>
                 </div>
                 {% endif %}
-                {% if person.address %}
+                {% endwith %}
+                {% with person_address=person.get_address_decrypted %}
+                {% if person_address %}
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400">Adresse</dt>
-                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ person.address }}</dd>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ person_address }}</dd>
                 </div>
                 {% endif %}
+                {% endwith %}
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400">Status</dt>
                     <dd class="font-medium text-gray-900 dark:text-white mt-1">
