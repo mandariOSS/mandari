@@ -108,6 +108,10 @@
         /* Main Content */
         .work-main {
             flex: 1;
+            /* Verhindert, dass breite Inhalte (Tabellen, lange Wörter) das
+               Flex-Item über die Viewport-Breite hinaus aufblähen —
+               innere overflow-x-auto-Container übernehmen das Scrollen. */
+            min-width: 0;
             margin-left: var(--sidebar-w);
             background: #faf9f7;
             min-height: 100vh;
@@ -811,12 +815,12 @@
             <!-- Page Header -->
             {% block work_header %}
             <header class="work-page-header">
-                <div class="flex items-center justify-between">
-                    <div>
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="min-w-0">
                         <h1 class="work-page-title">{% block header_title %}{% endblock %}</h1>
                         {% block header_subtitle %}{% endblock %}
                     </div>
-                    <div class="flex items-center gap-3">
+                    <div class="flex flex-wrap items-center gap-3">
                         {% block header_actions %}{% endblock %}
                     </div>
                 </div>
