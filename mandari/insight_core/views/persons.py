@@ -137,6 +137,6 @@ class PersonListPartial(ListView):
     """HTMX Partial für Personen-Liste."""
 
     model = OParlPerson
-    template_name = "partials/person_list.html"
+    template_name = "partials/person_list_items.html"
     context_object_name = "persons"
     paginate_by = 20

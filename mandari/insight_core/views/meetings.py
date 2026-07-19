@@ -135,7 +135,7 @@ class MeetingListPartial(ListView):
     """HTMX Partial für Sitzungen-Liste."""
 
     model = OParlMeeting
-    template_name = "partials/meeting_list.html"
+    template_name = "partials/meeting_list_items.html"
     context_object_name = "meetings"
     paginate_by = 20
 

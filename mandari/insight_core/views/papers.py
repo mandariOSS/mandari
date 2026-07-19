@@ -176,7 +176,7 @@ class PaperListPartial(ListView):
     """HTMX Partial für Vorgänge-Liste."""
 
     model = OParlPaper
-    template_name = "partials/paper_list.html"
+    template_name = "partials/paper_list_items.html"
     context_object_name = "papers"
     paginate_by = 20
 

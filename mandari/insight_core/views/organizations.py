@@ -167,7 +167,7 @@ class OrganizationListPartial(ListView):
     """HTMX Partial für Gremien-Liste."""
 
     model = OParlOrganization
-    template_name = "partials/organization_list.html"
+    template_name = "partials/organization_list_items.html"
     context_object_name = "organizations"
     paginate_by = 20
 
