@@ -680,11 +680,12 @@ class OParlFile(SourceDeletionModel):
         """Menschenlesbare Dateigröße."""
         if not self.size:
             return ""
+        size = self.size
         for unit in ["B", "KB", "MB", "GB"]:
-            if self.size < 1024:
-                return f"{self.size:.1f} {unit}"
-            self.size /= 1024
-        return f"{self.size:.1f} TB"
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} TB"
 
 
 class OParlMembership(SourceDeletionModel):
