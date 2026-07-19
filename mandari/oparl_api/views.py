@@ -69,40 +69,60 @@ FILTER_LOOKUPS = {
 }
 
 
+# Eingebettete Relationen blenden in der Quelle gelöschte Objekte aus
+# (Tombstones erscheinen nur als Top-Level-Objekte, nie eingebettet).
+
+
 def _prepare_meetings(qs):
     return qs.prefetch_related(
-        Prefetch("organizations", queryset=OParlOrganization.objects.only("id")),
-        "agenda_items",
-        "files",
+        Prefetch("organizations", queryset=OParlOrganization.objects.filter(deleted=False).only("id")),
+        Prefetch("agenda_items", queryset=OParlAgendaItem.objects.filter(deleted=False)),
+        Prefetch("files", queryset=OParlFile.objects.filter(deleted=False)),
     )
 
 
 def _prepare_papers(qs):
-    return qs.prefetch_related("files", "consultations")
+    return qs.prefetch_related(
+        Prefetch("files", queryset=OParlFile.objects.filter(deleted=False)),
+        Prefetch("consultations", queryset=OParlConsultation.objects.filter(deleted=False)),
+    )
 
 
 def _prepare_organizations(qs):
     return qs.prefetch_related(
-        Prefetch("memberships", queryset=OParlMembership.objects.only("id", "organization_id")),
+        Prefetch(
+            "memberships",
+            queryset=OParlMembership.objects.filter(deleted=False).only("id", "organization_id"),
+        ),
     )
 
 
 def _prepare_persons(qs):
-    return qs.prefetch_related("memberships")
+    return qs.prefetch_related(
+        Prefetch("memberships", queryset=OParlMembership.objects.filter(deleted=False)),
+    )
 
 
 def _prepare_bodies(qs):
-    return qs.prefetch_related("legislative_terms")
+    return qs.prefetch_related(
+        Prefetch("legislative_terms", queryset=OParlLegislativeTerm.objects.filter(deleted=False)),
+    )
 
 
 # Externe Listen je Kommune: Segment -> (Modell, Serializer, prepare, RefContext-Factory)
 BODY_LISTS = {
-    "organizations": (OParlOrganization, s.serialize_organization, _prepare_organizations, s.RefContext.empty),
-    "people": (OParlPerson, s.serialize_person, _prepare_persons, s.RefContext.empty),
-    "meetings": (OParlMeeting, s.serialize_meeting, _prepare_meetings, s.RefContext.for_meetings),
-    "papers": (OParlPaper, s.serialize_paper, _prepare_papers, s.RefContext.for_papers),
+    "organizations": (
+        OParlOrganization,
+        s.serialize_organization,
+        _prepare_organizations,
+        s.RefContext.empty,
+        "organization",
+    ),
+    "people": (OParlPerson, s.serialize_person, _prepare_persons, s.RefContext.empty, "person"),
+    "meetings": (OParlMeeting, s.serialize_meeting, _prepare_meetings, s.RefContext.for_meetings, "meeting"),
+    "papers": (OParlPaper, s.serialize_paper, _prepare_papers, s.RefContext.for_papers, "paper"),
     # Vendor-Erweiterung (nicht Teil der Spec-Pflichtlisten, aber trivial und nützlich)
-    "locations": (OParlLocation, s.serialize_location, None, s.RefContext.empty),
+    "locations": (OParlLocation, s.serialize_location, None, s.RefContext.empty, "location"),
 }
 
 # Objekt-Endpunkte: Typ-Segment -> (Modell, Serializer, prepare, RefContext-Factory)
@@ -142,11 +162,19 @@ def _page_number(request):
     return number
 
 
-def _paginated_response(request, base_url, queryset, serializer, ctx_factory):
-    """Baut den OParl-Listen-Envelope (data/pagination/links) mit Link-Header."""
+def _paginated_response(request, base_url, queryset, serializer, ctx_factory, kind):
+    """Baut den OParl-Listen-Envelope (data/pagination/links) mit Link-Header.
+
+    Tombstones (OParl 1.1 §2.8): In der Quelle gelöschte Objekte erscheinen
+    NUR in Listen mit ``modified_since``-Filter (als gekürzte Objekte mit
+    ``"deleted": true``), damit inkrementelle Clients Löschungen mitbekommen.
+    In allen anderen Listen werden sie ausgeblendet.
+    """
     filters = {name: request.GET[name] for name in FILTER_LOOKUPS if name in request.GET}
     for name, value in filters.items():
         queryset = queryset.filter(**{FILTER_LOOKUPS[name]: parse_client_datetime(value, name)})
+    if "modified_since" not in filters:
+        queryset = queryset.filter(deleted=False)
     page_number = _page_number(request)
 
     # Ungefilterte Listen-Seiten 60 s cachen (inkl. Link-Header)
@@ -163,8 +191,8 @@ def _paginated_response(request, base_url, queryset, serializer, ctx_factory):
         return error_response(404, f"Seite {page_number} existiert nicht (letzte Seite: {paginator.num_pages}).")
     page = paginator.page(page_number)
     objects = list(page.object_list)
-    ctx = ctx_factory(objects)
-    data = [serializer(obj, ctx) for obj in objects]
+    ctx = ctx_factory([obj for obj in objects if not obj.deleted])
+    data = [s.serialize_tombstone(obj, kind) if obj.deleted else serializer(obj, ctx) for obj in objects]
 
     def page_link(number):
         params = dict(filters)
@@ -238,7 +266,7 @@ def system_view(request):
 @oparl_endpoint
 def bodies_view(request):
     queryset = _annotated(_prepare_bodies(OParlBody.objects.all()))
-    return _paginated_response(request, body_list_url(), queryset, s.serialize_body, s.RefContext.empty)
+    return _paginated_response(request, body_list_url(), queryset, s.serialize_body, s.RefContext.empty, "body")
 
 
 @oparl_endpoint
@@ -246,7 +274,7 @@ def body_sub_list(request, pk, segment):
     spec = BODY_LISTS.get(segment)
     if spec is None:
         return error_response(404, f"Unbekannte Liste '{segment}'. Verfügbar: {', '.join(sorted(BODY_LISTS))}.")
-    model, serializer, prepare, ctx_factory = spec
+    model, serializer, prepare, ctx_factory, kind = spec
     base_url = sub_list_url(pk, segment)
 
     # Filter validieren, bevor der Cache greift (400 auch bei Cache-Hit korrekt)
@@ -262,7 +290,7 @@ def body_sub_list(request, pk, segment):
     if not cached_path and not OParlBody.objects.filter(pk=pk).exists():
         return error_response(404, "Kommune (Body) nicht gefunden.")
 
-    return _paginated_response(request, base_url, queryset, serializer, ctx_factory)
+    return _paginated_response(request, base_url, queryset, serializer, ctx_factory, kind)
 
 
 @oparl_endpoint
@@ -279,5 +307,9 @@ def object_view(request, kind, pk):
         obj = queryset.get(pk=pk)
     except model.DoesNotExist:
         return error_response(404, f"{obj_url(kind, pk)} nicht gefunden.")
+    if obj.deleted:
+        # OParl 1.1 §2.8: gelöschte Objekte bleiben unter ihrer URL abrufbar —
+        # als gekürztes Objekt mit "deleted": true und HTTP 200.
+        return json_response(s.serialize_tombstone(obj, kind))
     ctx = ctx_factory([obj])
     return json_response(serializer(obj, ctx))

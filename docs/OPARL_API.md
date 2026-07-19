@@ -94,6 +94,38 @@ Die Filter arbeiten auf denselben Werten, die als `created`/`modified`
 ausgeliefert werden (OParl-Zeitstempel der Quelle, Fallback: Zeitpunkt der
 Spiegelung in mandari).
 
+## Gelöschte Objekte (Tombstones)
+
+Objekte, die im Quellsystem gelöscht wurden (OParl `deleted: true`), werden in
+mandari **nie physisch gelöscht**, sondern nur markiert. Die API verhält sich
+dabei spec-konform (OParl 1.1, „Umgang mit gelöschten Objekten"):
+
+- **Objekt-Endpunkte** liefern gelöschte Objekte weiterhin mit **HTTP 200** aus —
+  als gekürztes Objekt mit ausschließlich den Pflichtfeldern:
+
+  ```json
+  {
+    "id": "https://mandari.de/oparl/v1/paper/<uuid>",
+    "type": "https://schema.oparl.org/1.1/Paper",
+    "created": "2024-01-01T00:00:00+00:00",
+    "modified": "2026-07-01T12:00:00+00:00",
+    "deleted": true
+  }
+  ```
+
+  `modified` entspricht dem Löschzeitpunkt; alle weiteren Attribute entfallen.
+- **Externe Listen ohne Filter** (und mit rein `created_*`-/`modified_until`-Filtern)
+  enthalten gelöschte Objekte **nicht**.
+- **Externe Listen mit `modified_since`** enthalten die passenden gelöschten
+  Objekte als Tombstones — inkrementelle Clients bekommen Löschungen so
+  zuverlässig mit, ohne Voll-Sync.
+- **Eingebettete Referenzen** (z. B. `Meeting.agendaItem`, `Paper.consultation`,
+  `Person.membership`) lassen gelöschte Objekte aus; Tombstones erscheinen nur
+  als Top-Level-Objekte.
+
+Physische Löschung erfolgt ausschließlich manuell auf explizite Aufforderung
+einer Kommune (`manage.py purge_deleted`, siehe Betrieb).
+
 ## Dateien (File)
 
 `accessUrl` und `downloadUrl` zeigen auf den mandari-Datei-Proxy
@@ -120,10 +152,6 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 
 ## Einschränkungen (v1)
 
-- **Keine Tombstones**: Die mandari-Datenmodelle führen kein Lösch-Flag; gelöschte
-  Objekte können daher nicht als `{"id": …, "type": …, "deleted": true}` in Listen
-  erscheinen, sondern verschwinden einfach. Für einen vollständigen Abgleich ist
-  periodisch ein Voll-Sync nötig.
 - **Nicht abgebildete Referenzen**: Felder ohne Fremdschlüssel im Datenmodell
   (`Meeting.participant`, `Paper.originatorPerson`/`originatorOrganization`/
   `underDirectionOf`/`relatedPaper`, `Organization.subOrganizationOf`,
@@ -145,5 +173,21 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `OPARL_API_RATE_LIMIT` | `120` | Anfragen/Minute je IP (`0` = deaktiviert) |
 | `OPARL_API_CACHE_SECONDS` | `60` | Cache-Dauer ungefilterter Listen-Seiten |
 
-Smoke-Test: `python scripts/smoke_oparl_api.py` (SQLite, synthetische Daten aller
-zwölf Objekttypen, 95 Checks).
+**Physische Löschung auf Aufforderung einer Kommune** (`purge_deleted`):
+
+```bash
+# Dry-Run: zeigt markierte Objekte einer Kommune
+python manage.py purge_deleted --body <slug>
+
+# Nur Markierungen älter als 30 Tage / nur bestimmte Objekte
+python manage.py purge_deleted --body <slug> --older-than 30
+python manage.py purge_deleted --ids <uuid> <uuid>
+
+# Endgültig löschen (inkl. Elasticsearch-Dokumente + lokale Dateikopien)
+python manage.py purge_deleted --body <slug> --yes
+```
+
+Smoke-Tests: `python scripts/smoke_oparl_api.py` (SQLite, synthetische Daten aller
+zwölf Objekttypen, 95 Checks) und `python scripts/smoke_tombstones.py`
+(Tombstone-Verhalten: Sync-Markierung, Portal-Ausblendung, API-Tombstones,
+purge_deleted).

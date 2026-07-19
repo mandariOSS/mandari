@@ -16,9 +16,14 @@ Grundsätze:
 - Datei-URLs (accessUrl/downloadUrl) zeigen auf unseren File-Proxy —
   Clients laden Dokumente über mandari, nicht direkt vom Quellserver.
 
+Tombstones (OParl 1.1 §2.8, "Umgang mit gelöschten Objekten"):
+- In der Quelle gelöschte Objekte werden bei uns nur markiert
+  (``deleted=True``) und als gekürzte Tombstones ausgeliefert:
+  ``{"id", "type", "created", "modified", "deleted": true}`` — ``modified``
+  ist der Löschzeitpunkt. Eingebettete Referenzen auf gelöschte Objekte
+  werden ausgelassen (Prefetch-/Resolver-Filter in views.py/RefContext).
+
 Bekannte Einschränkungen (v1, siehe docs/OPARL_API.md):
-- Die Modelle führen kein Lösch-Flag, daher können gelöschte Objekte nicht
-  als Tombstones (``{"id", "type", "deleted": true}``) ausgeliefert werden.
 - Reine Personen-/Organisations-Querverweise ohne Fremdschlüssel im Modell
   (participant, originatorPerson, subOrganizationOf, …) werden ausgelassen,
   statt Original-URLs durchzureichen.
@@ -110,7 +115,8 @@ class RefContext:
                 agenda_exts.add(item.external_id)
         if location_exts:
             ctx.location_by_ext = {
-                loc.external_id: loc for loc in OParlLocation.objects.filter(external_id__in=location_exts)
+                loc.external_id: loc
+                for loc in OParlLocation.objects.filter(external_id__in=location_exts, deleted=False)
             }
         ctx._load_consultations(agenda_exts)
         return ctx
@@ -129,11 +135,15 @@ class RefContext:
         agenda_exts = {c.agenda_item_external_id for c in consultations if c.agenda_item_external_id}
         if meeting_exts:
             ctx.meeting_by_ext = dict(
-                OParlMeeting.objects.filter(external_id__in=meeting_exts).values_list("external_id", "id")
+                OParlMeeting.objects.filter(external_id__in=meeting_exts, deleted=False).values_list(
+                    "external_id", "id"
+                )
             )
         if agenda_exts:
             ctx.agenda_item_by_ext = dict(
-                OParlAgendaItem.objects.filter(external_id__in=agenda_exts).values_list("external_id", "id")
+                OParlAgendaItem.objects.filter(external_id__in=agenda_exts, deleted=False).values_list(
+                    "external_id", "id"
+                )
             )
         return ctx
 
@@ -146,7 +156,7 @@ class RefContext:
     def _load_consultations(self, agenda_exts):
         if not agenda_exts:
             return
-        pairs = OParlConsultation.objects.filter(agenda_item_external_id__in=agenda_exts).values_list(
+        pairs = OParlConsultation.objects.filter(agenda_item_external_id__in=agenda_exts, deleted=False).values_list(
             "agenda_item_external_id", "id"
         )
         for agenda_ext, consultation_id in pairs:
@@ -156,6 +166,21 @@ class RefContext:
 # =============================================================================
 # Serializer je Objekttyp
 # =============================================================================
+
+
+def serialize_tombstone(obj, kind):
+    """Gekürztes Objekt für in der Quelle gelöschte Einträge (OParl 1.1 §2.8).
+
+    Pflichtfelder: id, type, created, modified, deleted — alle weiteren
+    Attribute entfallen. ``modified`` entspricht dem Löschzeitpunkt.
+    """
+    return {
+        "id": obj_url(kind, obj.id),
+        "type": schema_type(kind),
+        "created": iso(obj.oparl_created or obj.created_at),
+        "modified": iso(obj.oparl_modified or obj.deleted_at or obj.updated_at),
+        "deleted": True,
+    }
 
 
 def serialize_system():
