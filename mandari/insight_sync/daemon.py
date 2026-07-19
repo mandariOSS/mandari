@@ -105,16 +105,39 @@ def _cleanup_stale_syncs():
         pass
 
 
+def _run_periodic_georef():
+    """Periodischer Georef-Lauf (Regex/Gazetteer, begrenzt, cache-gelockt)."""
+    try:
+        from insight_core.services.georef_runner import run_auto_georef_pass
+
+        run_auto_georef_pass()
+    except Exception:
+        logger.exception("Periodischer Georef-Lauf fehlgeschlagen")
+
+
 def _watchdog_loop():
     """Watchdog-Loop: Bereinigt hängende Logs, prüft Ingestor-Status."""
+    from django.conf import settings
+
     _wait(10)
 
     _cleanup_stale_syncs()
     logger.info("Sync-Watchdog aktiv. Ingestor-Container übernimmt die Synchronisation.")
 
+    georef_interval = max(1, int(getattr(settings, "GEOREF_AUTO_INTERVAL_MINUTES", 15)))
+    minutes_since_georef = georef_interval  # erster Lauf direkt nach dem Start
+
     while not _stop_event.is_set():
         try:
             _cleanup_stale_syncs()
+
+            # Periodischer Georef-Lauf (der Ingestor-Container synct nur,
+            # die Georeferenzierung läuft Django-seitig)
+            minutes_since_georef += 1
+            if minutes_since_georef >= georef_interval:
+                minutes_since_georef = 0
+                _run_periodic_georef()
+
             _wait(60)
         except Exception:
             logger.exception("Fehler im Watchdog-Loop")

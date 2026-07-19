@@ -241,6 +241,25 @@ class Command(BaseCommand):
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Sync fehlgeschlagen: {e}"))
 
+        # Nach jedem Zyklus: begrenzter Georef-Lauf (Regex/Gazetteer, kein LLM).
+        # Steuerung über GEOREF_AUTO_ENABLED / GEOREF_AUTO_LIMIT.
+        self._run_georef_pass()
+
+    def _run_georef_pass(self):
+        """Automatischer Georef-Lauf nach einem Sync-Zyklus (best effort)."""
+        try:
+            from insight_core.services.georef_runner import run_auto_georef_pass
+
+            stats = run_auto_georef_pass()
+            if stats.get("processed") or stats.get("oparl_backfilled"):
+                self.stdout.write(
+                    f"Georef: {stats.get('processed', 0)} Papers verarbeitet "
+                    f"({stats.get('completed', 0)} mit Orten), "
+                    f"{stats.get('oparl_backfilled', 0)} OParl-Backfills"
+                )
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f"Georef-Lauf fehlgeschlagen: {e}"))
+
     async def _sync_all(self, full: bool, concurrent: int):
         """Führt den Sync aller Quellen aus."""
         if self._is_syncing:

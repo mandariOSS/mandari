@@ -324,7 +324,15 @@ INSIGHT_DIGEST_FROM_EMAIL = os.environ.get("INSIGHT_DIGEST_FROM_EMAIL", "")  # F
 GEOREF_ENABLED = os.environ.get("GEOREF_ENABLED", "True").lower() in ("true", "1", "yes")
 PHOTON_API_URL = os.environ.get("PHOTON_API_URL", "https://photon.komoot.io/api/")
 GEOCODING_RATE_LIMIT = int(os.environ.get("GEOCODING_RATE_LIMIT", "5"))  # Requests pro Sekunde
+# Kappung nur für LLM-Pass und Legacy-Photon-Pfad (Gazetteer-Pass nutzt Volltext)
 GEOREF_TEXT_MAX_CHARS = int(os.environ.get("GEOREF_TEXT_MAX_CHARS", "8000"))
+# Automatischer Georef-Lauf (Regex/Gazetteer-Pass, KEIN LLM): periodisch nach
+# Sync-Zyklen bzw. über den Sync-Watchdog, begrenzt pro Lauf
+GEOREF_AUTO_ENABLED = os.environ.get("GEOREF_AUTO_ENABLED", "True").lower() in ("true", "1", "yes")
+GEOREF_AUTO_LIMIT = int(os.environ.get("GEOREF_AUTO_LIMIT", "50"))  # Papers pro Lauf
+GEOREF_AUTO_INTERVAL_MINUTES = int(os.environ.get("GEOREF_AUTO_INTERVAL_MINUTES", "15"))
+# Kartenmarker-Cache (map_markers-Endpoint)
+MAP_MARKERS_CACHE_SECONDS = int(os.environ.get("MAP_MARKERS_CACHE_SECONDS", "600"))
 
 # Encryption Master Key (für Work-Module Datenverschlüsselung)
 # Generate with: python -c "import secrets; import base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
