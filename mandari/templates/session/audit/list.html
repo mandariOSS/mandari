@@ -1,0 +1,178 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Audit-Log{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Audit-Log</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Audit-Log</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Revisionssichere Änderungshistorie — Einträge können weder bearbeitet noch gelöscht werden.
+            </p>
+        </div>
+    </div>
+
+    <!-- Filter -->
+    <form method="get" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div class="grid grid-cols-2 lg:grid-cols-6 gap-3">
+            <div>
+                <label for="filter_model" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Objekt-Typ</label>
+                <select name="model" id="filter_model"
+                        class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Alle</option>
+                    {% for name in model_names %}
+                    <option value="{{ name }}" {% if request.GET.model == name %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="filter_action" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Aktion</label>
+                <select name="action" id="filter_action"
+                        class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Alle</option>
+                    {% for value, label in actions %}
+                    <option value="{{ value }}" {% if request.GET.action == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="filter_user" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Benutzer</label>
+                <select name="user" id="filter_user"
+                        class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Alle</option>
+                    {% for su in tenant_users %}
+                    <option value="{{ su.id }}" {% if request.GET.user == su.id|stringformat:"s" %}selected{% endif %}>{{ su.user.email }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="filter_from" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Von</label>
+                <input type="date" name="from" id="filter_from" value="{{ request.GET.from }}"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label for="filter_to" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bis</label>
+                <input type="date" name="to" id="filter_to" value="{{ request.GET.to }}"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div class="flex items-end gap-2">
+                <button type="submit"
+                        class="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors">
+                    Filtern
+                </button>
+                <a href="{% url 'session:audit_log' tenant_slug=tenant_slug %}"
+                   class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
+                    Zurücksetzen
+                </a>
+            </div>
+        </div>
+    </form>
+
+    <!-- Einträge -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        {% if entries %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 dark:bg-gray-900/50 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <tr>
+                        <th class="px-4 py-3">Zeitpunkt</th>
+                        <th class="px-4 py-3">Benutzer</th>
+                        <th class="px-4 py-3">Aktion</th>
+                        <th class="px-4 py-3">Objekt</th>
+                        <th class="px-4 py-3">Änderungen</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    {% for entry in entries %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 align-top">
+                        <td class="px-4 py-3 whitespace-nowrap text-gray-500 dark:text-gray-400">
+                            {{ entry.created_at|date:"d.m.Y H:i:s" }}
+                        </td>
+                        <td class="px-4 py-3 text-gray-900 dark:text-white">
+                            {% if entry.user %}{{ entry.user.user.email }}{% else %}<span class="text-gray-400">System/API</span>{% endif %}
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-full
+                                {% if entry.action == 'create' %}bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300
+                                {% elif entry.action == 'delete' %}bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300
+                                {% elif entry.action == 'approve' or entry.action == 'publish' %}bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300
+                                {% elif entry.action == 'withdraw' %}bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300
+                                {% else %}bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300{% endif %}">
+                                {{ entry.get_action_display }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3">
+                            <div class="font-medium text-gray-900 dark:text-white">{{ entry.object_repr|truncatechars:60 }}</div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">{{ entry.model_name }}</div>
+                        </td>
+                        <td class="px-4 py-3 text-gray-600 dark:text-gray-300">
+                            {% if entry.changes %}
+                            <details>
+                                <summary class="cursor-pointer text-primary-600 dark:text-primary-400 text-xs">
+                                    {{ entry.changes|length }} Feld{{ entry.changes|length|pluralize:"er" }}
+                                </summary>
+                                <dl class="mt-2 space-y-1 text-xs">
+                                    {% for field, diff in entry.changes.items %}
+                                    <div>
+                                        <dt class="font-semibold inline">{{ field }}:</dt>
+                                        <dd class="inline">
+                                            <span class="line-through text-gray-400">{{ diff.alt|default:"—" }}</span>
+                                            &rarr; {{ diff.neu|default:"—" }}
+                                        </dd>
+                                    </div>
+                                    {% endfor %}
+                                </dl>
+                            </details>
+                            {% else %}
+                            <span class="text-gray-400">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if is_paginated %}
+        <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-sm">
+            <span class="text-gray-500 dark:text-gray-400">
+                Seite {{ page_obj.number }} von {{ page_obj.paginator.num_pages }}
+                ({{ page_obj.paginator.count }} Einträge)
+            </span>
+            <div class="flex gap-2">
+                {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value|urlencode }}{% endif %}{% endfor %}"
+                   class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                    Zurück
+                </a>
+                {% endif %}
+                {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value|urlencode }}{% endif %}{% endfor %}"
+                   class="px-3 py-1 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                    Weiter
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="p-12 text-center">
+            <i data-lucide="shield-check" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-4"></i>
+            <p class="text-gray-500 dark:text-gray-400">Noch keine Audit-Einträge vorhanden.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

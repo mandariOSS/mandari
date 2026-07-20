@@ -129,6 +129,8 @@ MIDDLEWARE = [
     "django_htmx.middleware.HtmxMiddleware",
     # Work module organization context
     "apps.tenants.middleware.OrganizationMiddleware",
+    # Session RIS tenant context + Audit-Log-Attribution (nur /session/-Pfade)
+    "apps.session.middleware.SessionTenantMiddleware",
 ]
 
 ROOT_URLCONF = "mandari.urls"

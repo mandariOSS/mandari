@@ -125,6 +125,12 @@ urlpatterns = [
         views.UserListView.as_view(),
         name="users",
     ),
+    # Audit-Log
+    path(
+        "<slug:tenant_slug>/audit/",
+        views.AuditLogListView.as_view(),
+        name="audit_log",
+    ),
     # HTMX endpoints
     path(
         "<slug:tenant_slug>/attendance/<uuid:attendance_id>/update/",

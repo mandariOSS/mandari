@@ -1503,6 +1503,9 @@ class SessionAuditLog(models.Model):
             ("download", "Heruntergeladen"),
             ("approve", "Freigegeben"),
             ("publish", "Veröffentlicht"),
+            ("invitation_sent", "Einladung versandt"),
+            ("withdraw", "Abgesetzt"),
+            ("replace", "Ersetzt"),
             ("login", "Anmeldung"),
             ("logout", "Abmeldung"),
         ],
@@ -1532,6 +1535,16 @@ class SessionAuditLog(models.Model):
 
     def __str__(self):
         return f"{self.user}: {self.action} {self.model_name} {self.object_repr}"
+
+    def save(self, *args, **kwargs):
+        """Revisionssicherheit: Einträge sind nach dem Anlegen unveränderbar."""
+        if not self._state.adding:
+            raise ValueError("Audit-Einträge sind unveränderbar und können nicht aktualisiert werden.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Revisionssicherheit: Einträge können nicht gelöscht werden."""
+        raise ValueError("Audit-Einträge sind unveränderbar und können nicht gelöscht werden.")
 
 
 # =============================================================================

@@ -10,6 +10,8 @@ Provides:
 from django.http import Http404
 from django.utils.deprecation import MiddlewareMixin
 
+from apps.session.audit import clear_current_request, set_current_request
+
 
 class SessionTenantMiddleware(MiddlewareMixin):
     """
@@ -80,6 +82,19 @@ class SessionTenantMiddleware(MiddlewareMixin):
                 # User is authenticated but not a member of this tenant
                 pass
 
+        # Request für das Audit-Logging bereitstellen (Thread-Local)
+        set_current_request(request)
+
+        return None
+
+    def process_response(self, request, response):
+        """Thread-Local-Request nach der Verarbeitung aufräumen."""
+        clear_current_request()
+        return response
+
+    def process_exception(self, request, exception):
+        """Thread-Local-Request auch bei Fehlern aufräumen."""
+        clear_current_request()
         return None
 
 

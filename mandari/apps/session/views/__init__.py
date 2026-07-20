@@ -18,6 +18,9 @@ from .applications import (
     ApplicationListView,
     ApplicationProcessView,
 )
+from .audit import (
+    AuditLogListView,
+)
 from .dashboard import (
     DashboardView,
 )
@@ -53,6 +56,7 @@ __all__ = [
     "ApplicationListView",
     "ApplicationProcessView",
     "AttendanceUpdateView",
+    "AuditLogListView",
     "DashboardView",
     "MeetingCreateView",
     "MeetingDetailView",
