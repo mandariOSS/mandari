@@ -131,6 +131,32 @@ urlpatterns = [
         views.AuditLogListView.as_view(),
         name="audit_log",
     ),
+    # Files / Anlagen
+    path(
+        "<slug:tenant_slug>/files/upload/",
+        views.FileUploadView.as_view(),
+        name="file_upload",
+    ),
+    path(
+        "<slug:tenant_slug>/files/<uuid:file_id>/download/",
+        views.FileDownloadView.as_view(),
+        name="file_download",
+    ),
+    path(
+        "<slug:tenant_slug>/files/<uuid:file_id>/update/",
+        views.FileUpdateView.as_view(),
+        name="file_update",
+    ),
+    path(
+        "<slug:tenant_slug>/files/<uuid:file_id>/replace/",
+        views.FileReplaceView.as_view(),
+        name="file_replace",
+    ),
+    path(
+        "<slug:tenant_slug>/files/<uuid:file_id>/delete/",
+        views.FileDeleteView.as_view(),
+        name="file_delete",
+    ),
     # HTMX endpoints
     path(
         "<slug:tenant_slug>/attendance/<uuid:attendance_id>/update/",

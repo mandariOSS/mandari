@@ -98,8 +98,12 @@ class PaperDetailView(SessionViewMixin, DetailView):
         context = super().get_context_data(**kwargs)
         paper = self.object
 
-        # Files
-        context["files"] = paper.files.order_by("name")
+        # Files — NÖ-Anlagen nur für Berechtigte sichtbar
+        files = paper.files.order_by("name")
+        if not self.has_permission("view_non_public_papers"):
+            files = files.filter(is_public=True)
+        context["files"] = list(files)
+        context["file_can_edit"] = self.has_permission("edit_papers")
 
         # Agenda items (where this paper was discussed)
         context["agenda_items"] = paper.agenda_items.select_related("meeting__organization").order_by("-meeting__start")

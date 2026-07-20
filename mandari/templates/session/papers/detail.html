@@ -88,32 +88,8 @@
         </div>
         {% endif %}
 
-        <!-- Dateien -->
-        {% if files %}
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <i data-lucide="paperclip" class="w-5 h-5 text-gray-500"></i>
-                    Dateien ({{ files|length }})
-                </h2>
-            </div>
-            <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                {% for file in files %}
-                <div class="px-6 py-3 flex items-center gap-3">
-                    <i data-lucide="file" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ file.name }}</p>
-                        <p class="text-xs text-gray-500">{{ file.size_human }}</p>
-                    </div>
-                    <a href="{{ file.file.url }}" target="_blank"
-                       class="text-primary-600 dark:text-primary-400 hover:underline text-sm">
-                        <i data-lucide="download" class="w-4 h-4"></i>
-                    </a>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
+        <!-- Anlagen -->
+        {% include "session/partials/file_section.html" with file_target_type="paper" file_target_id=paper.id %}
 
         <!-- Beratungshistorie -->
         {% if agenda_items %}

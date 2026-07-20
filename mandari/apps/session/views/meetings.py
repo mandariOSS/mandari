@@ -96,8 +96,12 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         # Attendances
         context["attendances"] = meeting.attendances.select_related("person").order_by("person__family_name")
 
-        # Files
-        context["files"] = meeting.files.order_by("name")
+        # Files — NÖ-Anlagen nur für Berechtigte sichtbar
+        files = meeting.files.order_by("name")
+        if not self.has_permission("view_non_public_meetings"):
+            files = files.filter(is_public=True)
+        context["files"] = list(files)
+        context["file_can_edit"] = self.has_permission("edit_meetings")
 
         # Protocol
         context["protocol"] = getattr(meeting, "protocol", None)

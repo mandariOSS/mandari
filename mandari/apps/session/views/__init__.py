@@ -24,6 +24,13 @@ from .audit import (
 from .dashboard import (
     DashboardView,
 )
+from .files import (
+    FileDeleteView,
+    FileDownloadView,
+    FileReplaceView,
+    FileUpdateView,
+    FileUploadView,
+)
 from .meetings import (
     MeetingCreateView,
     MeetingDetailView,
@@ -58,6 +65,11 @@ __all__ = [
     "AttendanceUpdateView",
     "AuditLogListView",
     "DashboardView",
+    "FileDeleteView",
+    "FileDownloadView",
+    "FileReplaceView",
+    "FileUpdateView",
+    "FileUploadView",
     "MeetingCreateView",
     "MeetingDetailView",
     "MeetingListView",

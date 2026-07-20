@@ -1,0 +1,131 @@
+{% comment %}
+Anlagen-Sektion für Vorlagen, Sitzungen und TOPs (Issue #25).
+
+Erwarteter Kontext:
+- files: Liste der (bereits nach Ö/NÖ-Berechtigung gefilterten) SessionFiles
+- file_target_type: "paper" | "meeting" | "agenda_item"
+- file_target_id: UUID des Elternobjekts
+- file_can_edit: bool — Upload/Ersetzen/Löschen erlaubt
+- tenant_slug
+{% endcomment %}
+
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="paperclip" class="w-5 h-5 text-gray-500"></i>
+            Anlagen ({{ files|length }})
+        </h2>
+    </div>
+
+    {% if files %}
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for file in files %}
+        <div class="px-6 py-3 flex items-center gap-3" x-data="{ editing: false }">
+            <i data-lucide="file" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ file.name }}</p>
+                <p class="text-xs text-gray-500 flex items-center gap-2">
+                    {{ file.size_human }}
+                    {% if file.version > 1 %}<span>· Version {{ file.version }}</span>{% endif %}
+                    {% if file.is_public %}
+                    <span class="inline-flex px-1.5 py-0.5 rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">Öffentlich</span>
+                    {% else %}
+                    <span class="inline-flex px-1.5 py-0.5 rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">Nichtöffentlich</span>
+                    {% endif %}
+                </p>
+            </div>
+            <a href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=file.id %}"
+               class="p-1.5 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg"
+               title="Herunterladen">
+                <i data-lucide="download" class="w-4 h-4"></i>
+            </a>
+            {% if file_can_edit %}
+            <!-- Ö/NÖ umschalten -->
+            <form method="post" action="{% url 'session:file_update' tenant_slug=tenant_slug file_id=file.id %}" class="inline">
+                {% csrf_token %}
+                {% if not file.is_public %}<input type="hidden" name="is_public" value="on">{% endif %}
+                <button type="submit"
+                        class="p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                        title="{% if file.is_public %}Auf nichtöffentlich setzen{% else %}Auf öffentlich setzen{% endif %}">
+                    <i data-lucide="{% if file.is_public %}eye-off{% else %}eye{% endif %}" class="w-4 h-4"></i>
+                </button>
+            </form>
+            <!-- Ersetzen -->
+            <button type="button" @click="editing = !editing"
+                    class="p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                    title="Ersetzen">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            </button>
+            <!-- Löschen -->
+            <form method="post" action="{% url 'session:file_delete' tenant_slug=tenant_slug file_id=file.id %}" class="inline"
+                  onsubmit="return confirm('Anlage {{ file.name|escapejs }} wirklich löschen?');">
+                {% csrf_token %}
+                <button type="submit" class="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg" title="Löschen">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+            </form>
+            <!-- Ersetzen-Formular (aufklappbar) -->
+            <div x-show="editing" x-cloak class="absolute z-10 mt-24 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3">
+                <form method="post" action="{% url 'session:file_replace' tenant_slug=tenant_slug file_id=file.id %}"
+                      enctype="multipart/form-data" class="flex items-center gap-2">
+                    {% csrf_token %}
+                    <input type="file" name="file" required class="text-xs text-gray-700 dark:text-gray-300">
+                    <button type="submit" class="px-2 py-1 text-xs bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
+                        Ersetzen
+                    </button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="px-6 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+        Noch keine Anlagen vorhanden.
+    </div>
+    {% endif %}
+
+    {% if file_can_edit %}
+    <!-- Upload (Mehrfach + Drag-and-drop) -->
+    <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700"
+         x-data="{ dragging: false, fileCount: 0 }">
+        <form method="post" action="{% url 'session:file_upload' tenant_slug=tenant_slug %}"
+              enctype="multipart/form-data" class="space-y-3">
+            {% csrf_token %}
+            <input type="hidden" name="target_type" value="{{ file_target_type }}">
+            <input type="hidden" name="target_id" value="{{ file_target_id }}">
+
+            <label for="file_upload_input_{{ file_target_id }}"
+                   class="block border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors"
+                   :class="dragging ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 dark:border-gray-600 hover:border-primary-400'"
+                   @dragover.prevent="dragging = true"
+                   @dragleave.prevent="dragging = false"
+                   @drop.prevent="dragging = false; $refs.fileInput.files = $event.dataTransfer.files; fileCount = $refs.fileInput.files.length">
+                <i data-lucide="upload-cloud" class="w-8 h-8 mx-auto text-gray-400 mb-2"></i>
+                <p class="text-sm text-gray-600 dark:text-gray-300">
+                    Dateien hierher ziehen oder <span class="text-primary-600 dark:text-primary-400 font-medium">auswählen</span>
+                </p>
+                <p class="text-xs text-gray-400 mt-1" x-show="fileCount > 0" x-text="fileCount + ' Datei(en) ausgewählt'"></p>
+                <input type="file" name="files" id="file_upload_input_{{ file_target_id }}" multiple x-ref="fileInput"
+                       class="hidden" @change="fileCount = $refs.fileInput.files.length">
+            </label>
+
+            <div class="flex items-center justify-between">
+                <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input type="checkbox" name="is_public" checked
+                           class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                    Öffentliche Anlage(n)
+                </label>
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors">
+                    <i data-lucide="upload" class="w-4 h-4"></i>
+                    Hochladen
+                </button>
+            </div>
+            <p class="text-xs text-gray-400">
+                Nichtöffentliche Anlagen sind nur für Berechtigte sichtbar und werden nie im Bürgerportal veröffentlicht.
+            </p>
+        </form>
+    </div>
+    {% endif %}
+</div>

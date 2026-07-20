@@ -1390,6 +1390,9 @@ class SessionFile(models.Model):
     # Extracted text (for search)
     text_content = models.TextField(blank=True, verbose_name="Textinhalt")
 
+    # Versioning (Ersetzen erhöht die Version, Audit-Log hält Historie)
+    version = models.PositiveIntegerField(default=1, verbose_name="Version")
+
     # Visibility
     is_public = models.BooleanField(default=True, verbose_name="Öffentlich")
 
