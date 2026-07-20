@@ -66,6 +66,7 @@ from apps.accounts.models import User  # noqa: E402
 from apps.session.models import (  # noqa: E402
     SessionAgendaItem,
     SessionApplication,
+    SessionAttendance,
     SessionFile,
     SessionInvitationDispatch,
     SessionMeeting,
@@ -299,6 +300,8 @@ mutations = [
     (f"{base}/meetings/{meeting_pub.id}/invitation/", {"dispatch_type": "invitation"}),
     (f"{base}/papers/create/", {"reference": "V/X", "name": "P", "paper_type": "proposal"}),
     (f"{base}/meetings/{meeting_pub.id}/agenda/add/", {"name": "T"}),
+    (f"{base}/meetings/{meeting_pub.id}/attendance/generate/", {}),
+    (f"{base}/meetings/{meeting_pub.id}/attendance/add/", {"person": str(person_a.id)}),
     (f"{base}/meetings/{meeting_pub.id}/agenda/reorder/", {"order": ""}),
     (f"{base}/agenda/{top_pub.id}/withdraw/", {"reason": "x"}),
     (f"{base}/agenda/{top_pub.id}/delete/", {}),
@@ -323,6 +326,7 @@ before_counts = (
     SessionPerson.objects.count(),
     SessionOrganizationMembership.objects.count(),
     SessionInvitationDispatch.objects.count(),
+    SessionAttendance.objects.count(),
 )
 
 bad = [url for url, data in mutations if no_perm.post(url, data).status_code != 403]
@@ -337,6 +341,7 @@ after_counts = (
     SessionPerson.objects.count(),
     SessionOrganizationMembership.objects.count(),
     SessionInvitationDispatch.objects.count(),
+    SessionAttendance.objects.count(),
 )
 check("Keine Mutation ohne Berechtigung ausgeführt", before_counts == after_counts, f"{before_counts} -> {after_counts}")
 check("TOP nicht abgesetzt", not SessionAgendaItem.objects.get(pk=top_pub.pk).is_withdrawn)
@@ -404,6 +409,7 @@ for url, data in [
     (f"{base}/files/{file_b.id}/delete/", {}),
     (f"{base}/memberships/{membership_b.id}/end/", {}),
     (f"{base}/organizations/{org_b.id}/deactivate/", {}),
+    (f"{base}/meetings/{meeting_b.id}/attendance/generate/", {}),
 ]:
     status = admin.post(url, data).status_code
     if status != 404:

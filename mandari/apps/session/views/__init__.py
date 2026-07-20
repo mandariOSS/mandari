@@ -23,6 +23,11 @@ from .applications import (
     ApplicationListView,
     ApplicationProcessView,
 )
+from .attendance import (
+    AttendanceAddView,
+    AttendanceDeleteView,
+    AttendanceGenerateView,
+)
 from .audit import (
     AuditLogListView,
 )
@@ -94,6 +99,9 @@ __all__ = [
     "ApplicationDetailView",
     "ApplicationListView",
     "ApplicationProcessView",
+    "AttendanceAddView",
+    "AttendanceDeleteView",
+    "AttendanceGenerateView",
     "AttendanceUpdateView",
     "AuditLogListView",
     "DashboardView",

@@ -173,15 +173,57 @@
         </script>
         {% endif %}
 
-        <!-- Attendance -->
-        {% if attendances %}
+        <!-- Attendance (Issue #30) -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-4">
                 <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                     <i data-lucide="users" class="w-5 h-5 text-green-500"></i>
                     Anwesenheit
                 </h2>
+                {% if quorum.has_list %}
+                <!-- Beschlussfähigkeits-Anzeige (Quorum) -->
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full
+                    {% if quorum.met %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                    {% else %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400{% endif %}">
+                    <i data-lucide="{% if quorum.met %}check-circle{% else %}alert-triangle{% endif %}" class="w-3.5 h-3.5"></i>
+                    {% if quorum.met %}Beschlussfähig{% else %}Nicht beschlussfähig{% endif %}
+                    ({{ quorum.voting_present }}/{{ quorum.voting_total }} stimmberechtigt anwesend, nötig: {{ quorum.required }})
+                </span>
+                {% endif %}
+                {% if attendance_can_manage %}
+                <form method="post" action="{% url 'session:attendance_generate' tenant_slug=tenant_slug meeting_id=meeting.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="text-sm text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1">
+                        <i data-lucide="user-plus" class="w-4 h-4"></i>
+                        {% if attendances %}Besetzung nachziehen{% else %}Liste aus Besetzung erzeugen{% endif %}
+                    </button>
+                </form>
+                {% endif %}
             </div>
+
+            {% if attendances %}
+            {% if attendance_can_manage %}
+            <!-- Schnellerfassung -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="text-xs text-gray-500 dark:text-gray-400 uppercase bg-gray-50 dark:bg-gray-700/50">
+                        <tr>
+                            <th class="px-4 py-2 font-medium">Person</th>
+                            <th class="px-4 py-2 font-medium">Status</th>
+                            <th class="px-4 py-2 font-medium">Ankunft</th>
+                            <th class="px-4 py-2 font-medium">Abgang</th>
+                            <th class="px-4 py-2 font-medium">Notiz</th>
+                            <th class="px-4 py-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for attendance in attendances %}
+                        {% include "session/partials/attendance_row.html" %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
             <div class="divide-y divide-gray-200 dark:divide-gray-700">
                 {% for attendance in attendances %}
                 <div class="px-6 py-3 flex items-center gap-4">
@@ -193,7 +235,7 @@
                             {{ attendance.person.display_name }}
                         </p>
                         <p class="text-xs text-gray-500 dark:text-gray-400">
-                            {{ attendance.get_role_display }}
+                            {{ attendance.get_role_display }}{% if attendance.notes %} · {{ attendance.notes }}{% endif %}
                         </p>
                     </div>
                     <span class="px-2 py-1 text-xs font-medium rounded-full
@@ -206,8 +248,39 @@
                 </div>
                 {% endfor %}
             </div>
+            {% endif %}
+            {% else %}
+            <div class="px-6 py-8 text-center text-gray-500 dark:text-gray-400 text-sm">
+                Noch keine Anwesenheitsliste.
+                {% if attendance_can_manage %}Mit „Liste aus Besetzung erzeugen“ wird sie aus der aktuellen Gremienbesetzung vorbefüllt.{% endif %}
+            </div>
+            {% endif %}
+
+            {% if attendance_can_manage and addable_persons %}
+            <!-- Gast/Verwaltung manuell ergänzen -->
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30">
+                <form method="post" action="{% url 'session:attendance_add' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                      class="flex flex-wrap items-center gap-3">
+                    {% csrf_token %}
+                    <span class="text-sm text-gray-600 dark:text-gray-400">Gast/Verwaltung ergänzen:</span>
+                    <select name="person" class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% for person in addable_persons %}
+                        <option value="{{ person.id }}">{{ person.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                    <select name="role" class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% for value, label in attendance_roles %}
+                        <option value="{{ value }}" {% if value == "guest" %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="inline-flex items-center gap-1 px-3 py-1 text-xs bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                        <i data-lucide="plus" class="w-3 h-3"></i>
+                        Hinzufügen
+                    </button>
+                </form>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
 
     <!-- Sidebar -->

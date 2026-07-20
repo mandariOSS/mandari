@@ -274,6 +274,22 @@ urlpatterns = [
         views.FileDeleteView.as_view(),
         name="file_delete",
     ),
+    # Anwesenheit (Issue #30)
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/attendance/generate/",
+        views.AttendanceGenerateView.as_view(),
+        name="attendance_generate",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/attendance/add/",
+        views.AttendanceAddView.as_view(),
+        name="attendance_add",
+    ),
+    path(
+        "<slug:tenant_slug>/attendance/<uuid:attendance_id>/delete/",
+        views.AttendanceDeleteView.as_view(),
+        name="attendance_delete",
+    ),
     # HTMX endpoints
     path(
         "<slug:tenant_slug>/attendance/<uuid:attendance_id>/update/",

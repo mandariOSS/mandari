@@ -16,8 +16,10 @@ from django.views.generic import (
 )
 
 from ..models import (
+    SessionAttendance,
     SessionMeeting,
     SessionOrganization,
+    SessionPerson,
 )
 from ..permissions import SessionViewMixin
 
@@ -106,8 +108,20 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         context["agenda_non_public"] = agenda["non_public"]
         context["agenda_can_edit"] = self.has_permission("edit_meetings")
 
-        # Attendances
+        # Attendances (Issue #30): Schnellerfassung, Quorum, Gäste-Ergänzung
+        from ..services import attendance_service
+
         context["attendances"] = meeting.attendances.select_related("person").order_by("person__family_name")
+        context["attendance_can_manage"] = self.has_permission("manage_attendance")
+        context["quorum"] = attendance_service.quorum_status(meeting)
+        if context["attendance_can_manage"]:
+            present_ids = meeting.attendances.values_list("person_id", flat=True)
+            context["addable_persons"] = (
+                SessionPerson.objects.filter(tenant=self.session_tenant, is_active=True)
+                .exclude(pk__in=present_ids)
+                .order_by("family_name", "given_name")
+            )
+            context["attendance_roles"] = SessionAttendance._meta.get_field("role").choices
 
         # Files — NÖ-Anlagen nur für Berechtigte sichtbar
         files = meeting.files.order_by("name")

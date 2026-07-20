@@ -12,6 +12,7 @@ from apps.session import audit
 from apps.session.models import (
     SessionAgendaItem,
     SessionApplication,
+    SessionAttendance,
     SessionFile,
     SessionMeeting,
     SessionOrganization,
@@ -33,6 +34,7 @@ AUDITED_MODELS = [
     SessionPerson,
     SessionOrganization,
     SessionOrganizationMembership,
+    SessionAttendance,
     SessionFile,
     SessionUser,
 ]
