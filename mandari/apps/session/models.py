@@ -725,8 +725,29 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
     name = models.CharField(max_length=500, verbose_name="Betreff")
     order = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
 
+    # Hierarchie: Unterpunkte (z. B. 5.1, 5.2)
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="sub_items",
+        verbose_name="Übergeordneter TOP",
+    )
+
     # Visibility
     is_public = models.BooleanField(default=True, verbose_name="Öffentlich")
+
+    # Absetzung (dokumentiert statt gelöscht)
+    is_withdrawn = models.BooleanField(default=False, verbose_name="Abgesetzt")
+    withdrawn_reason = models.TextField(blank=True, verbose_name="Absetzungsgrund")
+
+    # Nachtrag (nach Versand der Ladung hinzugefügt)
+    is_supplementary = models.BooleanField(
+        default=False,
+        verbose_name="Nachtrag",
+        help_text="Nach Versand der Einladung hinzugefügt (Nachtragstagesordnung)",
+    )
 
     # Paper reference
     paper = models.ForeignKey(

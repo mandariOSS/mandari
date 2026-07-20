@@ -10,6 +10,11 @@ unverändert funktionieren.
 
 from .agenda import (
     AgendaItemCreateView,
+    AgendaItemDeleteView,
+    AgendaItemMoveView,
+    AgendaItemUpdateView,
+    AgendaItemWithdrawView,
+    AgendaReorderView,
     AttendanceUpdateView,
 )
 from .applications import (
@@ -58,6 +63,11 @@ from .settings import (
 
 __all__ = [
     "AgendaItemCreateView",
+    "AgendaItemDeleteView",
+    "AgendaItemMoveView",
+    "AgendaItemUpdateView",
+    "AgendaItemWithdrawView",
+    "AgendaReorderView",
     "ApplicationConvertView",
     "ApplicationDetailView",
     "ApplicationListView",

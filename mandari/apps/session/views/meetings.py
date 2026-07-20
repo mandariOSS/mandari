@@ -87,11 +87,17 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         return qs.select_related("organization", "created_by__user")
 
     def get_context_data(self, **kwargs):
+        from ..services import agenda_service
+
         context = super().get_context_data(**kwargs)
         meeting = self.object
 
-        # Agenda items
-        context["agenda_items"] = meeting.agenda_items.select_related("paper").order_by("order", "number")
+        # Agenda items — Ö/NÖ-gruppiert, NÖ-Teil nur für Berechtigte
+        can_view_np = self.has_permission("view_non_public_meetings")
+        agenda = agenda_service.grouped_agenda(meeting, include_non_public=can_view_np)
+        context["agenda_public"] = agenda["public"]
+        context["agenda_non_public"] = agenda["non_public"]
+        context["agenda_can_edit"] = self.has_permission("edit_meetings")
 
         # Attendances
         context["attendances"] = meeting.attendances.select_related("person").order_by("person__family_name")

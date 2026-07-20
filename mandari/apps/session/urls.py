@@ -50,6 +50,31 @@ urlpatterns = [
         views.AgendaItemCreateView.as_view(),
         name="agenda_item_create",
     ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/agenda/reorder/",
+        views.AgendaReorderView.as_view(),
+        name="agenda_reorder",
+    ),
+    path(
+        "<slug:tenant_slug>/agenda/<uuid:item_id>/edit/",
+        views.AgendaItemUpdateView.as_view(),
+        name="agenda_item_edit",
+    ),
+    path(
+        "<slug:tenant_slug>/agenda/<uuid:item_id>/withdraw/",
+        views.AgendaItemWithdrawView.as_view(),
+        name="agenda_item_withdraw",
+    ),
+    path(
+        "<slug:tenant_slug>/agenda/<uuid:item_id>/delete/",
+        views.AgendaItemDeleteView.as_view(),
+        name="agenda_item_delete",
+    ),
+    path(
+        "<slug:tenant_slug>/agenda/<uuid:item_id>/move/",
+        views.AgendaItemMoveView.as_view(),
+        name="agenda_item_move",
+    ),
     # Papers
     path(
         "<slug:tenant_slug>/papers/",

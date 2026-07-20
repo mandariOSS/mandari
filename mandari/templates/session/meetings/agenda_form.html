@@ -1,0 +1,117 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}TOP bearbeiten{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Sitzungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=object.meeting_id %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        {{ object.meeting.name|truncatechars:30 }}
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">TOP {{ object.number }}</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-2xl mx-auto">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h1 class="text-xl font-bold text-gray-900 dark:text-white">TOP {{ object.number }} bearbeiten</h1>
+            {% if object.is_supplementary %}
+            <p class="text-sm text-blue-600 dark:text-blue-400 mt-1">Nachtrags-TOP (nach Ladungsversand hinzugefügt)</p>
+            {% endif %}
+        </div>
+
+        <form method="post" class="p-6 space-y-6">
+            {% csrf_token %}
+
+            <!-- Betreff -->
+            <div>
+                <label for="id_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Betreff *
+                </label>
+                <input type="text" name="name" id="id_name"
+                       value="{{ form.name.value|default:'' }}"
+                       required
+                       class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                {% if form.name.errors %}
+                <p class="mt-1 text-sm text-red-600">{{ form.name.errors.0 }}</p>
+                {% endif %}
+            </div>
+
+            <div class="grid sm:grid-cols-2 gap-4">
+                <!-- Vorlage -->
+                <div>
+                    <label for="id_paper" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Vorlage
+                    </label>
+                    <select name="paper" id="id_paper"
+                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        <option value="">Keine Vorlage</option>
+                        {% for paper in form.paper.field.queryset %}
+                        <option value="{{ paper.id }}" {% if form.paper.value|stringformat:"s" == paper.id|stringformat:"s" %}selected{% endif %}>
+                            {{ paper.reference }} — {{ paper.name|truncatechars:40 }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Übergeordneter TOP -->
+                <div>
+                    <label for="id_parent" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Unterpunkt von
+                    </label>
+                    <select name="parent" id="id_parent"
+                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        <option value="">— (Haupt-TOP)</option>
+                        {% for parent in form.parent.field.queryset %}
+                        <option value="{{ parent.id }}" {% if form.parent.value|stringformat:"s" == parent.id|stringformat:"s" %}selected{% endif %}>
+                            TOP {{ parent.number }} — {{ parent.name|truncatechars:40 }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% if form.parent.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.parent.errors.0 }}</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Ö/NÖ -->
+            <div>
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" name="is_public" id="id_is_public"
+                           {% if form.is_public.value %}checked{% endif %}
+                           class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                    <label for="id_is_public" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Öffentlicher Tagesordnungspunkt
+                    </label>
+                </div>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 ml-7">
+                    Beim Wechsel in den nichtöffentlichen Teil wird die Tagesordnung automatisch neu nummeriert (Ö 1..n, NÖ getrennt).
+                </p>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=object.meeting_id %}"
+                   class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
+                    Abbrechen
+                </a>
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                    <i data-lucide="save" class="w-5 h-5"></i>
+                    Speichern
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

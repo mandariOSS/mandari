@@ -43,6 +43,12 @@ import django  # noqa: E402
 
 django.setup()
 
+# SQLite-Robustheit unter Windows: laengere Busy-Timeouts gegen
+# transiente "database is locked"-Fehler (Virenscanner/Indexer).
+from django.conf import settings as _dj_settings  # noqa: E402
+
+_dj_settings.DATABASES["default"].setdefault("OPTIONS", {})["timeout"] = 30
+
 from django.core.management import call_command  # noqa: E402
 from django.db import IntegrityError, connection, transaction  # noqa: E402
 from django.db.migrations.executor import MigrationExecutor  # noqa: E402

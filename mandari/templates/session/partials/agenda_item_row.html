@@ -1,0 +1,109 @@
+{% comment %}
+Eine TOP-Zeile der Tagesordnung (Issue #26).
+Kontext: item, tenant_slug, agenda_can_edit, is_sub (optional)
+{% endcomment %}
+<div class="px-6 py-4 {% if is_sub %}pl-14 bg-gray-50/50 dark:bg-gray-900/20{% endif %}"
+     {% if agenda_can_edit and not is_sub %}draggable="true" data-agenda-item="{{ item.id }}"{% endif %}>
+    <div class="flex items-start gap-4">
+        {% if agenda_can_edit and not is_sub %}
+        <span class="agenda-drag-handle flex-shrink-0 cursor-grab text-gray-300 dark:text-gray-600 pt-2" title="Ziehen zum Umsortieren">
+            <i data-lucide="grip-vertical" class="w-5 h-5"></i>
+        </span>
+        {% endif %}
+        <span class="flex-shrink-0 {% if is_sub %}w-12 h-8 text-xs{% else %}w-10 h-10 text-sm{% endif %} rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center font-bold text-gray-600 dark:text-gray-400">
+            {{ item.number }}
+        </span>
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+                <p class="font-medium text-gray-900 dark:text-white {% if item.is_withdrawn %}line-through text-gray-400 dark:text-gray-500{% endif %}">
+                    {{ item.name }}
+                </p>
+                {% if not item.is_public %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400" title="Nichtöffentlich">
+                    <i data-lucide="lock" class="w-3 h-3"></i>
+                </span>
+                {% endif %}
+                {% if item.is_withdrawn %}
+                <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300">
+                    Abgesetzt
+                </span>
+                {% endif %}
+                {% if item.is_supplementary %}
+                <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
+                      title="Nach Versand der Einladung hinzugefügt">
+                    Nachtrag
+                </span>
+                {% endif %}
+            </div>
+            {% if item.is_withdrawn and item.withdrawn_reason %}
+            <p class="text-xs text-amber-700 dark:text-amber-400 mb-1">Grund: {{ item.withdrawn_reason }}</p>
+            {% endif %}
+            {% if item.paper %}
+            <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=item.paper.id %}"
+               class="inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                <i data-lucide="file-text" class="w-4 h-4"></i>
+                {{ item.paper.reference }}
+            </a>
+            {% endif %}
+        </div>
+        {% if item.vote_result != 'pending' %}
+        <span class="flex-shrink-0 px-2 py-1 text-xs font-medium rounded-full
+            {% if item.vote_result == 'approved' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+            {% elif item.vote_result == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+            {% elif item.vote_result == 'deferred' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400
+            {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+            {{ item.get_vote_result_display }}
+        </span>
+        {% endif %}
+        {% if agenda_can_edit %}
+        <div class="flex items-center gap-1 flex-shrink-0">
+            <form method="post" action="{% url 'session:agenda_item_move' tenant_slug=tenant_slug item_id=item.id %}" class="inline">
+                {% csrf_token %}
+                <input type="hidden" name="direction" value="up">
+                <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded" title="Nach oben">
+                    <i data-lucide="chevron-up" class="w-4 h-4"></i>
+                </button>
+            </form>
+            <form method="post" action="{% url 'session:agenda_item_move' tenant_slug=tenant_slug item_id=item.id %}" class="inline">
+                {% csrf_token %}
+                <input type="hidden" name="direction" value="down">
+                <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded" title="Nach unten">
+                    <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                </button>
+            </form>
+            <a href="{% url 'session:agenda_item_edit' tenant_slug=tenant_slug item_id=item.id %}"
+               class="p-1 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 rounded" title="Bearbeiten">
+                <i data-lucide="pencil" class="w-4 h-4"></i>
+            </a>
+            {% if item.is_withdrawn %}
+            <form method="post" action="{% url 'session:agenda_item_withdraw' tenant_slug=tenant_slug item_id=item.id %}" class="inline">
+                {% csrf_token %}
+                <input type="hidden" name="restore" value="1">
+                <button type="submit" class="p-1 text-gray-400 hover:text-green-600 rounded" title="Absetzung aufheben">
+                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                </button>
+            </form>
+            {% else %}
+            <form method="post" action="{% url 'session:agenda_item_withdraw' tenant_slug=tenant_slug item_id=item.id %}" class="inline"
+                  onsubmit="var r = prompt('Grund der Absetzung (optional):'); if (r === null) return false; this.reason.value = r; return true;">
+                {% csrf_token %}
+                <input type="hidden" name="reason" value="">
+                <button type="submit" class="p-1 text-gray-400 hover:text-amber-600 rounded" title="Absetzen (dokumentiert)">
+                    <i data-lucide="circle-off" class="w-4 h-4"></i>
+                </button>
+            </form>
+            {% endif %}
+            <form method="post" action="{% url 'session:agenda_item_delete' tenant_slug=tenant_slug item_id=item.id %}" class="inline"
+                  onsubmit="return confirm('TOP wirklich löschen? Für reguläre Änderungen bitte absetzen statt löschen.');">
+                {% csrf_token %}
+                <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded" title="Löschen">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% for sub in item.children_list %}
+{% include "session/partials/agenda_item_row.html" with item=sub is_sub=True %}
+{% endfor %}
