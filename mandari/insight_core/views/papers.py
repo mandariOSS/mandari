@@ -16,14 +16,14 @@ from ..models import (
     OParlMeeting,
     OParlPaper,
 )
-from ._helpers import get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 # =============================================================================
 # Vorgänge (Papers)
 # =============================================================================
 
 
-class PaperListView(ListView):
+class PaperListView(ActiveBodyRequiredMixin, ListView):
     """Liste aller Vorgänge."""
 
     model = OParlPaper
@@ -70,6 +70,15 @@ class PaperListView(ListView):
                 .order_by("paper_type")
             )
 
+        from ..seo import get_page_seo
+
+        _body = get_active_body(self.request)
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Vorgänge & Beschlüsse",
+            description="Anträge, Vorlagen und Beschlüsse der Kommunalpolitik durchsuchen und nachvollziehen.",
+            body=_body,
+        ).to_dict()
         return context
 
 

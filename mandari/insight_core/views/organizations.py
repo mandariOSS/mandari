@@ -14,14 +14,14 @@ from ..models import (
     OParlOrganization,
 )
 from ..ranking import sort_organizations_by_ranking
-from ._helpers import get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 # =============================================================================
 # Gremien (Organizations)
 # =============================================================================
 
 
-class OrganizationListView(ListView):
+class OrganizationListView(ActiveBodyRequiredMixin, ListView):
     """Liste aller Gremien mit Aktiv/Alle-Tabs."""
 
     model = OParlOrganization
@@ -104,6 +104,15 @@ class OrganizationListView(ListView):
             context["all_count"] = all_orgs.count()
 
         context["tab"] = tab
+        from ..seo import get_page_seo
+
+        _body = get_active_body(self.request)
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Gremien & Ausschüsse",
+            description="Alle Gremien, Ausschüsse und Fraktionen mit Mitgliedern und Sitzungen im Überblick.",
+            body=_body,
+        ).to_dict()
         return context
 
 

@@ -63,6 +63,14 @@ class MerklisteView(TemplateView):
             )
             context["has_bookmarks"] = bookmarks.exists()
 
+        from ..seo import get_page_seo
+
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Merkliste",
+            description="Deine gespeicherten Vorgänge, Sitzungen, Gremien und Personen auf einen Blick.",
+            robots="noindex, follow",
+        ).to_dict()
         return context
 
 

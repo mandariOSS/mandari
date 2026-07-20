@@ -12,14 +12,14 @@ from django.shortcuts import render
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
-from ._helpers import get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 # =============================================================================
 # Nachbarschaft (Neighborhood)
 # =============================================================================
 
 
-class NeighborhoodView(TemplateView):
+class NeighborhoodView(ActiveBodyRequiredMixin, TemplateView):
     """Nachbarschaft-Seite: Vorgänge in der Nähe finden."""
 
     template_name = "pages/neighborhood.html"
@@ -54,6 +54,15 @@ class NeighborhoodView(TemplateView):
                     all_districts = json_mod.load(f)
                 slug = body.slug or ""
                 context["districts"] = all_districts.get(slug, [])
+
+        from ..seo import get_page_seo
+
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Nachbarschaft",
+            description="Was passiert vor deiner Haustür? Vorgänge und Beschlüsse im Umkreis deiner Straße oder deines Stadtteils.",
+            body=body,
+        ).to_dict()
 
         return context
 

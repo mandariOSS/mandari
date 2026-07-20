@@ -21,14 +21,14 @@ from ..models import (
     OParlPaper,
     TileCache,
 )
-from ._helpers import get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 # =============================================================================
 # Karte
 # =============================================================================
 
 
-class MapView(TemplateView):
+class MapView(ActiveBodyRequiredMixin, TemplateView):
     """Kartenansicht mit Vorgängen der letzten 4 Wochen."""
 
     template_name = "pages/map.html"
@@ -56,6 +56,14 @@ class MapView(TemplateView):
                     "west": float(body.bbox_west),
                 }
 
+        from ..seo import get_page_seo
+
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Karte",
+            description="Kommunalpolitik auf der Karte: Vorgänge und Sitzungsorte mit Ortsbezug entdecken.",
+            body=body,
+        ).to_dict()
         return context
 
 

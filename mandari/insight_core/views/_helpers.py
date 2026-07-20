@@ -39,3 +39,25 @@ def is_all_bodies_mode(request):
     """Prüft ob der 'Alle Kommunen' Modus aktiv ist."""
     body_id = request.session.get("active_body_id")
     return body_id is None or body_id == "all"
+
+
+class ActiveBodyRequiredMixin:
+    """Leitet Seiten mit Kommune-Bezug ohne gewählte Kommune zur Auswahl um.
+
+    Vorher zeigten diese Seiten im "Alle Kommunen"-Modus stillschweigend die
+    Daten der ersten Kommune. Jetzt gilt konsistent: erst Kommune wählen
+    (Auswahlseite auf /insight/), kommunenübergreifend bleibt die Suche.
+    Existiert genau eine Kommune (Self-Hosting), wird sie automatisch gewählt.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        if is_all_bodies_mode(request):
+            bodies = list(OParlBody.objects.filter(deleted=False)[:2])
+            if len(bodies) == 1:
+                request.session["active_body_id"] = str(bodies[0].id)
+                request.session.modified = True
+            else:
+                from django.shortcuts import redirect
+
+                return redirect("insight_core:insight:portal_home")
+        return super().dispatch(request, *args, **kwargs)

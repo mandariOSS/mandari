@@ -19,7 +19,7 @@ from ..models import (
     OParlFile,
     OParlMeeting,
 )
-from ._helpers import get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 # =============================================================================
 # Dokumente (Files)
@@ -143,7 +143,7 @@ def _annotate_files_with_context(files):
         f.context_info = ctx
 
 
-class FileListView(TemplateView):
+class FileListView(ActiveBodyRequiredMixin, TemplateView):
     """Liste aller Dokumente/Dateien."""
 
     template_name = "pages/files/list.html"
@@ -180,6 +180,15 @@ class FileListView(TemplateView):
             context["total_count"] = paginator.count
 
         context["query"] = q
+
+        from ..seo import get_page_seo
+
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Dokumente",
+            description="Beschlüsse, Anträge, Berichte und Anlagen der Kommunalpolitik mit Volltextsuche durchsuchen.",
+            body=body,
+        ).to_dict()
         return context
 
 

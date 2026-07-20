@@ -17,14 +17,14 @@ from django.views.generic import TemplateView
 from ..models import (
     ChatUsage,
 )
-from ._helpers import get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 # =============================================================================
 # Chat (KI-Assistent)
 # =============================================================================
 
 
-class ChatView(TemplateView):
+class ChatView(ActiveBodyRequiredMixin, TemplateView):
     """KI-Chat-Interface."""
 
     template_name = "pages/chat.html"
@@ -32,6 +32,15 @@ class ChatView(TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["has_chat_consent"] = self.request.session.get("chat_consent", False)
+
+        from ..seo import get_page_seo
+
+        ctx["seo"] = get_page_seo(
+            self.request,
+            title="KI-Assistent",
+            description="Fragen zur Kommunalpolitik stellen: Der KI-Assistent durchsucht Ratsinformationen und antwortet mit Quellenangaben.",
+            body=get_active_body(self.request),
+        ).to_dict()
         return ctx
 
 

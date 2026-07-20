@@ -16,7 +16,7 @@ from ..models import (
     OParlPaper,
     OParlPerson,
 )
-from ._helpers import get_active_body
+from ._helpers import get_active_body, is_all_bodies_mode
 
 # =============================================================================
 # Suche
@@ -40,6 +40,16 @@ class SearchView(TemplateView):
             ("organization", "Gremien"),
             ("file", "Dokumente"),
         ]
+
+        from ..seo import get_page_seo
+
+        body = None if is_all_bodies_mode(self.request) else get_active_body(self.request)
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Suche",
+            description="Volltextsuche über Vorgänge, Sitzungen, Personen, Gremien und Dokumente der Ratsinformationen.",
+            body=body,
+        ).to_dict()
         return context
 
 
@@ -54,7 +64,8 @@ def search_results(request):
     search_type = request.GET.get("type", "all")
     page = int(request.GET.get("page", 1))
     is_dropdown = request.GET.get("dropdown") == "1"
-    body = get_active_body(request)
+    # Im "Alle Kommunen"-Modus wird kommunenübergreifend gesucht (kein Body-Filter)
+    body = None if is_all_bodies_mode(request) else get_active_body(request)
 
     if not query or len(query) < 2:
         return render(
@@ -130,62 +141,64 @@ def search_results(request):
 
         results = []
 
-        if body:
-            # Vorgänge
-            papers = OParlPaper.objects.filter(body=body, deleted=False).filter(
-                Q(name__icontains=query) | Q(reference__icontains=query)
-            )[:10]
-            for paper in papers:
-                results.append(
-                    {
-                        "type": "paper",
-                        "title": paper.name or paper.reference,
-                        "subtitle": paper.paper_type,
-                        "url": f"/insight/vorgaenge/{paper.id}/",
-                    }
-                )
+        # Optionaler Body-Filter: body=None bedeutet kommunenübergreifende Suche
+        body_filter = {"body": body} if body else {}
 
-            # Personen
-            persons = OParlPerson.objects.filter(body=body, deleted=False).filter(
-                Q(name__icontains=query) | Q(family_name__icontains=query) | Q(given_name__icontains=query)
-            )[:10]
-            for person in persons:
-                results.append(
-                    {
-                        "type": "person",
-                        "title": person.display_name,
-                        "subtitle": "Person",
-                        "url": f"/insight/personen/{person.id}/",
-                    }
-                )
+        # Vorgänge
+        papers = OParlPaper.objects.filter(deleted=False, **body_filter).filter(
+            Q(name__icontains=query) | Q(reference__icontains=query)
+        )[:10]
+        for paper in papers:
+            results.append(
+                {
+                    "type": "paper",
+                    "title": paper.name or paper.reference,
+                    "subtitle": paper.paper_type,
+                    "url": f"/insight/vorgaenge/{paper.id}/",
+                }
+            )
 
-            # Gremien
-            orgs = OParlOrganization.objects.filter(body=body, deleted=False).filter(
-                Q(name__icontains=query) | Q(short_name__icontains=query)
-            )[:10]
-            for org in orgs:
-                results.append(
-                    {
-                        "type": "organization",
-                        "title": org.name,
-                        "subtitle": org.organization_type,
-                        "url": f"/insight/gremien/{org.id}/",
-                    }
-                )
+        # Personen
+        persons = OParlPerson.objects.filter(deleted=False, **body_filter).filter(
+            Q(name__icontains=query) | Q(family_name__icontains=query) | Q(given_name__icontains=query)
+        )[:10]
+        for person in persons:
+            results.append(
+                {
+                    "type": "person",
+                    "title": person.display_name,
+                    "subtitle": "Person",
+                    "url": f"/insight/personen/{person.id}/",
+                }
+            )
 
-            # Sitzungen
-            meetings = OParlMeeting.objects.filter(body=body, deleted=False).filter(
-                Q(name__icontains=query) | Q(location_name__icontains=query)
-            )[:10]
-            for meeting in meetings:
-                results.append(
-                    {
-                        "type": "meeting",
-                        "title": meeting.name or "Sitzung",
-                        "subtitle": meeting.start.strftime("%d.%m.%Y") if meeting.start else None,
-                        "url": f"/insight/termine/{meeting.id}/",
-                    }
-                )
+        # Gremien
+        orgs = OParlOrganization.objects.filter(deleted=False, **body_filter).filter(
+            Q(name__icontains=query) | Q(short_name__icontains=query)
+        )[:10]
+        for org in orgs:
+            results.append(
+                {
+                    "type": "organization",
+                    "title": org.name,
+                    "subtitle": org.organization_type,
+                    "url": f"/insight/gremien/{org.id}/",
+                }
+            )
+
+        # Sitzungen
+        meetings = OParlMeeting.objects.filter(deleted=False, **body_filter).filter(
+            Q(name__icontains=query) | Q(location_name__icontains=query)
+        )[:10]
+        for meeting in meetings:
+            results.append(
+                {
+                    "type": "meeting",
+                    "title": meeting.name or "Sitzung",
+                    "subtitle": meeting.start.strftime("%d.%m.%Y") if meeting.start else None,
+                    "url": f"/insight/termine/{meeting.id}/",
+                }
+            )
 
         if is_dropdown:
             results = results[:3]

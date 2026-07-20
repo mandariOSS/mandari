@@ -16,14 +16,14 @@ from django.views.generic import TemplateView
 from ..models import (
     InsightSubscriber,
 )
-from ._helpers import get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 # =============================================================================
 # Benachrichtigungen (Subscriptions)
 # =============================================================================
 
 
-class SubscribeView(TemplateView):
+class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
     """Abo-Formular für E-Mail-Benachrichtigungen."""
 
     template_name = "pages/subscribe.html"
@@ -40,6 +40,14 @@ class SubscribeView(TemplateView):
         context["prefill_lon"] = self.request.GET.get("lon", "")
         context["prefill_name"] = self.request.GET.get("name", "")
 
+        from ..seo import get_page_seo
+
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Benachrichtigungen",
+            description="Per E-Mail informiert bleiben: Benachrichtigungen zu Themen, Gremien und Orten deiner Kommune abonnieren.",
+            body=body,
+        ).to_dict()
         return context
 
     def post(self, request, *args, **kwargs):

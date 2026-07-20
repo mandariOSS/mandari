@@ -16,14 +16,14 @@ from ..models import (
     OParlConsultation,
     OParlMeeting,
 )
-from ._helpers import get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 # =============================================================================
 # Termine (Meetings)
 # =============================================================================
 
 
-class MeetingListView(ListView):
+class MeetingListView(ActiveBodyRequiredMixin, ListView):
     """Liste aller Sitzungen."""
 
     model = OParlMeeting
@@ -36,6 +36,18 @@ class MeetingListView(ListView):
         if self.request.headers.get("HX-Request"):
             return ["partials/meeting_list_items.html"]
         return [self.template_name]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from ..seo import get_page_seo
+
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Sitzungen & Termine",
+            description="Aktuelle und vergangene Sitzungen der kommunalen Gremien mit Tagesordnungen und Dokumenten.",
+            body=get_active_body(self.request),
+        ).to_dict()
+        return context
 
     def get_queryset(self):
         body = get_active_body(self.request)
@@ -63,10 +75,22 @@ class MeetingListView(ListView):
         return qs.order_by("-start")
 
 
-class MeetingCalendarView(TemplateView):
+class MeetingCalendarView(ActiveBodyRequiredMixin, TemplateView):
     """Kalenderansicht der Sitzungen."""
 
     template_name = "pages/meetings/calendar.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from ..seo import get_page_seo
+
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Sitzungskalender",
+            description="Alle Sitzungen der kommunalen Gremien im Kalender: Monats- und Wochenansicht mit Details.",
+            body=get_active_body(self.request),
+        ).to_dict()
+        return context
 
 
 class MeetingDetailView(DetailView):
@@ -120,12 +144,15 @@ class MeetingDetailView(DetailView):
             coords = LocationMapping.get_coordinates_for_location(meeting_body, meeting.location_name)
             context["location_coordinates"] = coords
 
-        # SEO-Kontext
+        # SEO-Kontext (verwaiste Meetings ohne Body dürfen die Seite nicht crashen)
         try:
             from ..seo import get_meeting_seo
 
             context["seo"] = get_meeting_seo(meeting, self.request).to_dict()
-        except (OParlBody.DoesNotExist, Exception):
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).warning("SEO-Kontext für Meeting %s fehlgeschlagen", meeting.pk, exc_info=True)
             context["seo"] = {}
 
         return context
@@ -138,6 +165,14 @@ class MeetingListPartial(ListView):
     template_name = "partials/meeting_list_items.html"
     context_object_name = "meetings"
     paginate_by = 20
+
+    def get_queryset(self):
+        body = get_active_body(self.request)
+        if not body:
+            return OParlMeeting.objects.none()
+        return (
+            OParlMeeting.objects.filter(body=body, deleted=False).prefetch_related("organizations").order_by("-start")
+        )
 
 
 @require_GET

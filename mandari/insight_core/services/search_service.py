@@ -82,6 +82,7 @@ class ElasticsearchService:
 
         all_results: list[dict[str, Any]] = []
         total_hits = 0
+        error_count = 0
 
         for index_name in index_names:
             try:
@@ -140,7 +141,14 @@ class ElasticsearchService:
             except NotFoundError:
                 pass
             except Exception as e:
+                error_count += 1
                 logger.error(f"Unerwarteter Fehler bei Index '{index_name}': {e}")
+
+        # Elasticsearch komplett nicht erreichbar → Fehler signalisieren, damit
+        # Aufrufer (views/search.py) auf die Django-Datenbanksuche zurückfallen
+        # können statt still leere Ergebnisse zu zeigen.
+        if index_names and error_count == len(index_names):
+            raise RuntimeError("Elasticsearch nicht erreichbar (alle Indexe fehlgeschlagen)")
 
         # Nach Relevanz sortieren
         all_results.sort(key=lambda x: x.get("_rankingScore", 0), reverse=True)

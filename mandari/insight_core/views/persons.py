@@ -15,7 +15,7 @@ from ..models import (
     OParlPerson,
     PublicQuestion,
 )
-from ._helpers import get_active_body
+from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 # =============================================================================
 # Personen
@@ -30,7 +30,7 @@ COUNCIL_ROLES = [
 ]
 
 
-class PersonListView(ListView):
+class PersonListView(ActiveBodyRequiredMixin, ListView):
     """Liste aller Personen mit Ratsrolle-Annotation."""
 
     model = OParlPerson
@@ -42,6 +42,18 @@ class PersonListView(ListView):
         if self.request.headers.get("HX-Request"):
             return ["partials/person_list_items.html"]
         return [self.template_name]
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from ..seo import get_page_seo
+
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Personen & Ratsmitglieder",
+            description="Ratsmitglieder und Beteiligte der Kommunalpolitik: Wer sitzt in welchem Gremium und trifft Entscheidungen?",
+            body=get_active_body(self.request),
+        ).to_dict()
+        return context
 
     def get_queryset(self):
         body = get_active_body(self.request)
