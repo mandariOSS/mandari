@@ -1,0 +1,163 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}{% if object %}Gremium bearbeiten{% else %}Neues Gremium{% endif %}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:organizations' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Gremien
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">
+        {% if object %}{{ object.name|truncatechars:30 }}{% else %}Neues Gremium{% endif %}
+    </span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-3xl mx-auto">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h1 class="text-xl font-bold text-gray-900 dark:text-white">
+                {% if object %}Gremium bearbeiten{% else %}Neues Gremium anlegen{% endif %}
+            </h1>
+        </div>
+
+        <form method="post" class="p-6 space-y-6">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+            <div class="p-3 rounded-lg bg-red-50 dark:bg-red-900/30 text-sm text-red-700 dark:text-red-300">
+                {{ form.non_field_errors.0 }}
+            </div>
+            {% endif %}
+
+            <!-- Grunddaten -->
+            <div>
+                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Grunddaten</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="id_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
+                        <input type="text" name="name" id="id_name" value="{{ form.name.value|default:'' }}" required
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                               placeholder="z. B. Hauptausschuss">
+                        {% if form.name.errors %}<p class="mt-1 text-sm text-red-600">{{ form.name.errors.0 }}</p>{% endif %}
+                    </div>
+                    <div class="grid sm:grid-cols-3 gap-4">
+                        <div>
+                            <label for="id_short_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kurzname</label>
+                            <input type="text" name="short_name" id="id_short_name" value="{{ form.short_name.value|default:'' }}"
+                                   class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        </div>
+                        <div>
+                            <label for="id_organization_type" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Typ *</label>
+                            <select name="organization_type" id="id_organization_type"
+                                    class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                {% for value, label in form.organization_type.field.choices %}
+                                <option value="{{ value }}" {% if form.organization_type.value == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label for="id_parent" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Übergeordnet</label>
+                            <select name="parent" id="id_parent"
+                                    class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                <option value="">Keins</option>
+                                {% for org in form.parent.field.queryset %}
+                                <option value="{{ org.id }}" {% if form.parent.value|stringformat:"s" == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sitzungsdienst -->
+            <div>
+                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Sitzungsdienst</h2>
+                <div class="grid sm:grid-cols-3 gap-4">
+                    <div>
+                        <label for="id_meeting_frequency" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sitzungsturnus</label>
+                        <input type="text" name="meeting_frequency" id="id_meeting_frequency" value="{{ form.meeting_frequency.value|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                               placeholder="z. B. monatlich">
+                    </div>
+                    <div>
+                        <label for="id_invitation_period_days" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ladungsfrist (Tage)</label>
+                        <input type="number" name="invitation_period_days" id="id_invitation_period_days" min="0"
+                               value="{{ form.invitation_period_days.value|default:7 }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% if form.invitation_period_days.errors %}<p class="mt-1 text-sm text-red-600">{{ form.invitation_period_days.errors.0 }}</p>{% endif %}
+                    </div>
+                    <div>
+                        <label for="id_target_member_count" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mitgliederzahl (Soll)</label>
+                        <input type="number" name="target_member_count" id="id_target_member_count" min="0"
+                               value="{{ form.target_member_count.value|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                </div>
+                <div class="grid sm:grid-cols-3 gap-4 mt-4">
+                    <div class="sm:col-span-2">
+                        <label for="id_default_meeting_location" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Standard-Sitzungsort</label>
+                        <input type="text" name="default_meeting_location" id="id_default_meeting_location"
+                               value="{{ form.default_meeting_location.value|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    <div>
+                        <label for="id_default_meeting_start_time" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Standard-Beginn</label>
+                        <input type="time" name="default_meeting_start_time" id="id_default_meeting_start_time"
+                               value="{{ form.default_meeting_start_time.value|time:'H:i'|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <label for="id_allowance_amount" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sitzungsgeld (EUR)</label>
+                    <input type="number" step="0.01" min="0" name="allowance_amount" id="id_allowance_amount"
+                           value="{{ form.allowance_amount.value|default:'0.00' }}"
+                           class="w-full sm:w-48 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+            </div>
+
+            <!-- Zeitraum / Status -->
+            <div>
+                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Zeitraum &amp; Status</h2>
+                <div class="grid sm:grid-cols-3 gap-4 items-end">
+                    <div>
+                        <label for="id_start_date" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beginn</label>
+                        <input type="date" name="start_date" id="id_start_date" value="{{ form.start_date.value|date:'Y-m-d'|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    <div>
+                        <label for="id_end_date" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ende</label>
+                        <input type="date" name="end_date" id="id_end_date" value="{{ form.end_date.value|date:'Y-m-d'|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    <div class="flex items-center gap-3 pb-2">
+                        <input type="checkbox" name="is_active" id="id_is_active"
+                               {% if form.is_active.value|default_if_none:True %}checked{% endif %}
+                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                        <label for="id_is_active" class="text-sm font-medium text-gray-700 dark:text-gray-300">Aktiv</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <a href="{% if object %}{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=object.id %}{% else %}{% url 'session:organizations' tenant_slug=tenant_slug %}{% endif %}"
+                   class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
+                    Abbrechen
+                </a>
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                    <i data-lucide="save" class="w-5 h-5"></i>
+                    {% if object %}Speichern{% else %}Anlegen{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

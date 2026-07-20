@@ -42,9 +42,18 @@ from .meetings import (
     MeetingListView,
     MeetingUpdateView,
 )
+from .memberships import (
+    MembershipCreateView,
+    MembershipEndView,
+    MembershipSuccessionView,
+    MembershipUpdateView,
+)
 from .organizations import (
+    OrganizationCreateView,
+    OrganizationDeactivateView,
     OrganizationDetailView,
     OrganizationListView,
+    OrganizationUpdateView,
 )
 from .papers import (
     PaperCreateView,
@@ -53,12 +62,20 @@ from .papers import (
     PaperUpdateView,
 )
 from .persons import (
+    PersonCreateView,
+    PersonDeactivateView,
     PersonDetailView,
     PersonListView,
+    PersonUpdateView,
 )
 from .settings import (
+    InvitationAcceptView,
+    InvitationCancelView,
     SettingsView,
+    UserDeactivateView,
+    UserInviteView,
     UserListView,
+    UserRolesUpdateView,
 )
 
 __all__ = [
@@ -80,18 +97,33 @@ __all__ = [
     "FileReplaceView",
     "FileUpdateView",
     "FileUploadView",
+    "InvitationAcceptView",
+    "InvitationCancelView",
+    "MembershipCreateView",
+    "MembershipEndView",
+    "MembershipSuccessionView",
+    "MembershipUpdateView",
     "MeetingCreateView",
     "MeetingDetailView",
     "MeetingListView",
     "MeetingUpdateView",
+    "OrganizationCreateView",
+    "OrganizationDeactivateView",
     "OrganizationDetailView",
     "OrganizationListView",
+    "OrganizationUpdateView",
     "PaperCreateView",
     "PaperDetailView",
     "PaperListView",
     "PaperUpdateView",
+    "PersonCreateView",
+    "PersonDeactivateView",
     "PersonDetailView",
     "PersonListView",
+    "PersonUpdateView",
     "SettingsView",
+    "UserDeactivateView",
+    "UserInviteView",
     "UserListView",
+    "UserRolesUpdateView",
 ]

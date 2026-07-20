@@ -1,0 +1,156 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}{% if object %}Person bearbeiten{% else %}Neue Person{% endif %}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:persons' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Personen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">
+        {% if object %}{{ object.display_name|truncatechars:30 }}{% else %}Neue Person{% endif %}
+    </span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-3xl mx-auto">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h1 class="text-xl font-bold text-gray-900 dark:text-white">
+                {% if object %}Person bearbeiten{% else %}Neue Person anlegen{% endif %}
+            </h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Kontakt- und Bankdaten werden verschlüsselt gespeichert (AES-256-GCM, Mandanten-Schlüssel).
+            </p>
+        </div>
+
+        <form method="post" class="p-6 space-y-6">
+            {% csrf_token %}
+
+            <!-- Stammdaten -->
+            <div>
+                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Stammdaten</h2>
+                <div class="grid sm:grid-cols-4 gap-4">
+                    <div>
+                        <label for="id_form_of_address" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Anrede</label>
+                        <input type="text" name="form_of_address" id="id_form_of_address" value="{{ form.form_of_address.value|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="Frau/Herr">
+                    </div>
+                    <div>
+                        <label for="id_title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel</label>
+                        <input type="text" name="title" id="id_title" value="{{ form.title.value|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="Dr.">
+                    </div>
+                    <div>
+                        <label for="id_given_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Vorname *</label>
+                        <input type="text" name="given_name" id="id_given_name" value="{{ form.given_name.value|default:'' }}" required
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% if form.given_name.errors %}<p class="mt-1 text-sm text-red-600">{{ form.given_name.errors.0 }}</p>{% endif %}
+                    </div>
+                    <div>
+                        <label for="id_family_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nachname *</label>
+                        <input type="text" name="family_name" id="id_family_name" value="{{ form.family_name.value|default:'' }}" required
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% if form.family_name.errors %}<p class="mt-1 text-sm text-red-600">{{ form.family_name.errors.0 }}</p>{% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kontakt -->
+            <div>
+                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Kontakt</h2>
+                <div class="grid sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="id_email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">E-Mail</label>
+                        <input type="email" name="email" id="id_email" value="{{ form.email.value|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% if form.email.errors %}<p class="mt-1 text-sm text-red-600">{{ form.email.errors.0 }}</p>{% endif %}
+                    </div>
+                    <div>
+                        <label for="id_phone" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Telefon (verschlüsselt)</label>
+                        <input type="text" name="phone" id="id_phone" value="{{ form.phone.value|default:form.phone.initial|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <label for="id_address" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Adresse (verschlüsselt)</label>
+                    <textarea name="address" id="id_address" rows="2"
+                              class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{ form.address.value|default:form.address.initial|default:'' }}</textarea>
+                </div>
+            </div>
+
+            {% if form.show_bank_fields %}
+            <!-- Bankdaten (nur für Berechtigte) -->
+            <div>
+                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <i data-lucide="lock" class="w-4 h-4"></i>
+                    Bankdaten für Sitzungsgelder (verschlüsselt)
+                </h2>
+                <div class="grid sm:grid-cols-3 gap-4">
+                    <div>
+                        <label for="id_bank_account_holder" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kontoinhaber/in</label>
+                        <input type="text" name="bank_account_holder" id="id_bank_account_holder"
+                               value="{{ form.bank_account_holder.value|default:form.bank_account_holder.initial|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    <div>
+                        <label for="id_bank_iban" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">IBAN</label>
+                        <input type="text" name="bank_iban" id="id_bank_iban"
+                               value="{{ form.bank_iban.value|default:form.bank_iban.initial|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm">
+                    </div>
+                    <div>
+                        <label for="id_bank_bic" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">BIC</label>
+                        <input type="text" name="bank_bic" id="id_bank_bic"
+                               value="{{ form.bank_bic.value|default:form.bank_bic.initial|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm">
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Mandat / Status -->
+            <div>
+                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Mandat &amp; Status</h2>
+                <div class="grid sm:grid-cols-3 gap-4 items-end">
+                    <div>
+                        <label for="id_start_date" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mandatsbeginn</label>
+                        <input type="date" name="start_date" id="id_start_date" value="{{ form.start_date.value|date:'Y-m-d'|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    <div>
+                        <label for="id_end_date" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mandatsende</label>
+                        <input type="date" name="end_date" id="id_end_date" value="{{ form.end_date.value|date:'Y-m-d'|default:'' }}"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    <div class="flex items-center gap-3 pb-2">
+                        <input type="checkbox" name="is_active" id="id_is_active"
+                               {% if form.is_active.value|default_if_none:True %}checked{% endif %}
+                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                        <label for="id_is_active" class="text-sm font-medium text-gray-700 dark:text-gray-300">Aktiv</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <a href="{% if object %}{% url 'session:person_detail' tenant_slug=tenant_slug person_id=object.id %}{% else %}{% url 'session:persons' tenant_slug=tenant_slug %}{% endif %}"
+                   class="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
+                    Abbrechen
+                </a>
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                    <i data-lucide="save" class="w-5 h-5"></i>
+                    {% if object %}Speichern{% else %}Anlegen{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

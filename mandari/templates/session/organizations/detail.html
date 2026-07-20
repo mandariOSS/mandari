@@ -32,6 +32,24 @@
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ organization.short_name }}</p>
                     {% endif %}
                 </div>
+                {% if can_manage %}
+                <div class="flex items-center gap-2">
+                    <a href="{% url 'session:organization_edit' tenant_slug=tenant_slug organization_id=organization.id %}"
+                       class="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
+                        <i data-lucide="pencil" class="w-4 h-4"></i>
+                        Bearbeiten
+                    </a>
+                    <form method="post" action="{% url 'session:organization_deactivate' tenant_slug=tenant_slug organization_id=organization.id %}"
+                          onsubmit="return confirm('Gremium wirklich {% if organization.is_active %}deaktivieren{% else %}reaktivieren{% endif %}?');">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
+                            <i data-lucide="{% if organization.is_active %}archive{% else %}archive-restore{% endif %}" class="w-4 h-4"></i>
+                            {% if organization.is_active %}Deaktivieren{% else %}Reaktivieren{% endif %}
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -52,6 +70,7 @@
                             <th class="px-6 py-3">Rolle</th>
                             <th class="px-6 py-3">Stimmrecht</th>
                             <th class="px-6 py-3">Seit</th>
+                            {% if can_manage %}<th class="px-6 py-3">Aktionen</th>{% endif %}
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -82,7 +101,72 @@
                             </td>
                             <td class="px-6 py-3 text-sm text-gray-500 dark:text-gray-400">
                                 {% if membership.start_date %}{{ membership.start_date|date:"d.m.Y" }}{% else %}&ndash;{% endif %}
+                                {% if membership.substitute_for %}
+                                <div class="text-xs text-blue-600 dark:text-blue-400">Vertritt {{ membership.substitute_for.display_name }}</div>
+                                {% endif %}
                             </td>
+                            {% if can_manage %}
+                            <td class="px-6 py-3">
+                                <div x-data="{ open: false }" class="text-sm">
+                                    <button type="button" @click="open = !open"
+                                            class="text-primary-600 dark:text-primary-400 hover:underline text-xs font-medium">
+                                        Verwalten
+                                    </button>
+                                    <div x-show="open" x-cloak class="mt-2 space-y-3 p-3 bg-gray-50 dark:bg-gray-900/40 rounded-lg w-72">
+                                        <!-- Rolle/Stimmrecht/Vertretung ändern -->
+                                        <form method="post" action="{% url 'session:membership_update' tenant_slug=tenant_slug membership_id=membership.id %}" class="space-y-2">
+                                            {% csrf_token %}
+                                            <select name="role" class="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                                {% for value, label in membership_roles %}
+                                                <option value="{{ value }}" {% if membership.role == value %}selected{% endif %}>{{ label }}</option>
+                                                {% endfor %}
+                                            </select>
+                                            <select name="substitute_for" class="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                                <option value="">Keine Vertretung</option>
+                                                {% for p in available_persons %}
+                                                {% if p.id != membership.person_id %}
+                                                <option value="{{ p.id }}" {% if membership.substitute_for_id == p.id %}selected{% endif %}>Vertritt {{ p.display_name }}</option>
+                                                {% endif %}
+                                                {% endfor %}
+                                            </select>
+                                            <label class="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+                                                <input type="checkbox" name="has_voting_rights" {% if membership.has_voting_rights %}checked{% endif %}
+                                                       class="w-3.5 h-3.5 text-primary-600 border-gray-300 rounded">
+                                                Stimmberechtigt
+                                            </label>
+                                            <button type="submit" class="w-full px-2 py-1 text-xs bg-primary-600 hover:bg-primary-700 text-white rounded">
+                                                Speichern
+                                            </button>
+                                        </form>
+                                        <!-- Beenden -->
+                                        <form method="post" action="{% url 'session:membership_end' tenant_slug=tenant_slug membership_id=membership.id %}" class="flex items-center gap-2">
+                                            {% csrf_token %}
+                                            <input type="date" name="end_date" class="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                            <button type="submit" class="px-2 py-1 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded">
+                                                Beenden
+                                            </button>
+                                        </form>
+                                        <!-- Nachrücker -->
+                                        <form method="post" action="{% url 'session:membership_succession' tenant_slug=tenant_slug membership_id=membership.id %}" class="space-y-2 border-t border-gray-200 dark:border-gray-700 pt-2">
+                                            {% csrf_token %}
+                                            <p class="text-xs font-medium text-gray-600 dark:text-gray-400">Ausscheiden + Nachrücker/in</p>
+                                            <select name="successor" required class="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                                <option value="">Nachrücker/in wählen…</option>
+                                                {% for p in available_persons %}
+                                                {% if p.id != membership.person_id %}
+                                                <option value="{{ p.id }}">{{ p.display_name }}</option>
+                                                {% endif %}
+                                                {% endfor %}
+                                            </select>
+                                            <input type="date" name="change_date" class="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                            <button type="submit" class="w-full px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded">
+                                                Nachrücken lassen
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </td>
+                            {% endif %}
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -94,7 +178,73 @@
                 <p>Keine aktiven Mitglieder</p>
             </div>
             {% endif %}
+
+            {% if can_manage %}
+            <!-- Mitglied aufnehmen -->
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
+                <form method="post" action="{% url 'session:membership_create' tenant_slug=tenant_slug organization_id=organization.id %}"
+                      class="grid sm:grid-cols-5 gap-2 items-end">
+                    {% csrf_token %}
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Person</label>
+                        <select name="person" required
+                                class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                            <option value="">Person wählen…</option>
+                            {% for p in available_persons %}
+                            <option value="{{ p.id }}">{{ p.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Funktion</label>
+                        <select name="role"
+                                class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                            {% for value, label in membership_roles %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 pb-2">
+                            <input type="checkbox" name="has_voting_rights" checked
+                                   class="w-4 h-4 text-primary-600 border-gray-300 rounded">
+                            Stimmrecht
+                        </label>
+                    </div>
+                    <div>
+                        <button type="submit"
+                                class="w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 text-sm bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                            <i data-lucide="user-plus" class="w-4 h-4"></i>
+                            Aufnehmen
+                        </button>
+                    </div>
+                </form>
+            </div>
+            {% endif %}
         </div>
+
+        {% if ended_memberships %}
+        <!-- Beendete Mitgliedschaften -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="user-minus" class="w-5 h-5 text-gray-400"></i>
+                    Ausgeschiedene Mitglieder
+                </h2>
+            </div>
+            <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for membership in ended_memberships %}
+                <div class="px-6 py-3 flex items-center gap-3 text-sm">
+                    <span class="text-gray-900 dark:text-white">{{ membership.person.display_name }}</span>
+                    <span class="text-gray-500 dark:text-gray-400">{{ membership.get_role_display }}</span>
+                    <span class="ml-auto text-xs text-gray-400">
+                        bis {{ membership.end_date|date:"d.m.Y" }}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
 
         <!-- Letzte Sitzungen -->
         {% if recent_meetings %}
@@ -208,6 +358,22 @@
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400">Standard-Sitzungsort</dt>
                     <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ organization.default_meeting_location }}</dd>
+                </div>
+                {% endif %}
+                {% if organization.meeting_frequency %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Sitzungsturnus</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ organization.meeting_frequency }}</dd>
+                </div>
+                {% endif %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Ladungsfrist</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ organization.invitation_period_days }} Tage</dd>
+                </div>
+                {% if organization.target_member_count %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Mitgliederzahl (Soll)</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ organization.target_member_count }}</dd>
                 </div>
                 {% endif %}
             </dl>

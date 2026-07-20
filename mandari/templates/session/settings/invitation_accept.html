@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Einladung zum Sitzungsdienst{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center px-4 py-12">
+    <div class="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        {% if invalid %}
+        <div class="p-8 text-center">
+            <i data-lucide="link-2-off" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-4"></i>
+            <h1 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Einladung ungültig</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+                Diese Einladung ist abgelaufen, wurde bereits angenommen oder existiert nicht.
+                Bitte wenden Sie sich an Ihre Verwaltung.
+            </p>
+        </div>
+        {% else %}
+        <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 text-center">
+            <h1 class="text-xl font-bold text-gray-900 dark:text-white">Einladung zum Sitzungsdienst</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ invitation.tenant.name }}</p>
+        </div>
+
+        <form method="post" class="p-6 space-y-4">
+            {% csrf_token %}
+            <p class="text-sm text-gray-600 dark:text-gray-300">
+                Eingeladen: <span class="font-medium">{{ invitation.email }}</span>
+            </p>
+
+            {% if needs_account %}
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label for="id_first_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Vorname</label>
+                    <input type="text" name="first_name" id="id_first_name"
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <div>
+                    <label for="id_last_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nachname</label>
+                    <input type="text" name="last_name" id="id_last_name"
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+            </div>
+            <div>
+                <label for="id_password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Passwort *</label>
+                <input type="password" name="password" id="id_password" required
+                       class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label for="id_password_confirm" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Passwort bestätigen *</label>
+                <input type="password" name="password_confirm" id="id_password_confirm" required
+                       class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            {% elif not email_matches %}
+            <div class="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-sm text-amber-800 dark:text-amber-300">
+                Sie sind mit einer anderen E-Mail-Adresse angemeldet.
+                Bitte melden Sie sich mit {{ invitation.email }} an, um die Einladung anzunehmen.
+            </div>
+            {% endif %}
+
+            {% if needs_account or email_matches %}
+            <button type="submit"
+                    class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                <i data-lucide="check" class="w-5 h-5"></i>
+                Einladung annehmen
+            </button>
+            {% endif %}
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

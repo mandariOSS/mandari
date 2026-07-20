@@ -25,7 +25,36 @@
             Benutzer und ihre Rollen im Session-RIS
         </p>
     </div>
+    <a href="{% url 'session:user_invite' tenant_slug=tenant_slug %}"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+        <i data-lucide="user-plus" class="w-5 h-5"></i>
+        Benutzer einladen
+    </a>
 </div>
+
+{% if pending_invitations %}
+<!-- Offene Einladungen -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+    <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700">
+        <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+            <i data-lucide="mail" class="w-4 h-4 text-amber-500"></i>
+            Offene Einladungen ({{ pending_invitations|length }})
+        </h2>
+    </div>
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for invitation in pending_invitations %}
+        <div class="px-6 py-3 flex items-center gap-3 text-sm">
+            <span class="text-gray-900 dark:text-white">{{ invitation.email }}</span>
+            <span class="text-xs text-gray-400">gültig bis {{ invitation.expires_at|date:"d.m.Y" }}</span>
+            <form method="post" action="{% url 'session:invitation_cancel' tenant_slug=tenant_slug invitation_id=invitation.id %}" class="ml-auto">
+                {% csrf_token %}
+                <button type="submit" class="text-xs text-red-600 dark:text-red-400 hover:underline">Zurückziehen</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 
 <!-- User List -->
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -38,6 +67,7 @@
                     <th class="px-6 py-3">Status</th>
                     <th class="px-6 py-3">Beigetreten</th>
                     <th class="px-6 py-3">Letzter Zugriff</th>
+                    <th class="px-6 py-3">Aktionen</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -96,10 +126,44 @@
                     <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                         {% if su.last_access %}{{ su.last_access|date:"d.m.Y H:i" }}{% else %}&ndash;{% endif %}
                     </td>
+
+                    <!-- Aktionen -->
+                    <td class="px-6 py-4">
+                        <div x-data="{ open: false }" class="text-sm">
+                            <div class="flex items-center gap-3">
+                                <button type="button" @click="open = !open"
+                                        class="text-primary-600 dark:text-primary-400 hover:underline text-xs font-medium">
+                                    Rollen
+                                </button>
+                                <form method="post" action="{% url 'session:user_deactivate' tenant_slug=tenant_slug session_user_id=su.id %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-xs {% if su.is_active %}text-red-600 dark:text-red-400{% else %}text-green-600 dark:text-green-400{% endif %} hover:underline">
+                                        {% if su.is_active %}Deaktivieren{% else %}Reaktivieren{% endif %}
+                                    </button>
+                                </form>
+                            </div>
+                            <div x-show="open" x-cloak class="mt-2 p-3 bg-gray-50 dark:bg-gray-900/40 rounded-lg w-56">
+                                <form method="post" action="{% url 'session:user_roles_update' tenant_slug=tenant_slug session_user_id=su.id %}" class="space-y-2">
+                                    {% csrf_token %}
+                                    {% for role in available_roles %}
+                                    <label class="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+                                        <input type="checkbox" name="roles" value="{{ role.id }}"
+                                               {% if role in su.roles.all %}checked{% endif %}
+                                               class="w-3.5 h-3.5 text-primary-600 border-gray-300 rounded">
+                                        {{ role.name }}
+                                    </label>
+                                    {% endfor %}
+                                    <button type="submit" class="w-full px-2 py-1 text-xs bg-primary-600 hover:bg-primary-700 text-white rounded">
+                                        Rollen speichern
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="5" class="px-6 py-12 text-center">
+                    <td colspan="6" class="px-6 py-12 text-center">
                         <i data-lucide="users" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
                         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Benutzer</h3>
                         <p class="text-gray-500 dark:text-gray-400">Es sind noch keine Benutzer vorhanden.</p>

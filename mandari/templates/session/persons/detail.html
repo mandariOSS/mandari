@@ -39,8 +39,53 @@
                     Inaktiv
                 </span>
                 {% endif %}
+                {% if can_manage_persons %}
+                <div class="flex items-center gap-2">
+                    <a href="{% url 'session:person_edit' tenant_slug=tenant_slug person_id=person.id %}"
+                       class="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
+                        <i data-lucide="pencil" class="w-4 h-4"></i>
+                        Bearbeiten
+                    </a>
+                    <form method="post" action="{% url 'session:person_deactivate' tenant_slug=tenant_slug person_id=person.id %}"
+                          onsubmit="return confirm('Person wirklich {% if person.is_active %}deaktivieren{% else %}reaktivieren{% endif %}?');">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
+                            <i data-lucide="{% if person.is_active %}archive{% else %}archive-restore{% endif %}" class="w-4 h-4"></i>
+                            {% if person.is_active %}Deaktivieren{% else %}Reaktivieren{% endif %}
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
             </div>
         </div>
+
+        {% if can_view_bank_data %}
+        <!-- Bankdaten (nur für Berechtigte, entschlüsselt) -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="lock" class="w-5 h-5 text-red-500"></i>
+                    Bankdaten für Sitzungsgelder
+                </h2>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Verschlüsselt gespeichert — nur für Berechtigte sichtbar.</p>
+            </div>
+            <dl class="px-6 py-4 grid sm:grid-cols-3 gap-4 text-sm">
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Kontoinhaber/in</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ bank_account_holder|default:"—" }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">IBAN</dt>
+                    <dd class="font-mono text-gray-900 dark:text-white mt-1">{{ bank_iban|default:"—" }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">BIC</dt>
+                    <dd class="font-mono text-gray-900 dark:text-white mt-1">{{ bank_bic|default:"—" }}</dd>
+                </div>
+            </dl>
+        </div>
+        {% endif %}
 
         <!-- Mitgliedschaften -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">

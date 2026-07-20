@@ -45,8 +45,9 @@ class SessionTenantMiddleware(MiddlewareMixin):
 
         tenant_slug = parts[1]
 
-        # Skip for static paths like /session/static/
-        if tenant_slug in ("static", "api", "health"):
+        # Skip for static paths like /session/static/ und die
+        # tenant-unabhängige Einladungs-Annahme (/session/invite/<token>/)
+        if tenant_slug in ("static", "api", "health", "invite"):
             request.session_tenant = None
             request.session_user = None
             return None

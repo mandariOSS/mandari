@@ -13,6 +13,12 @@ from .api import views as api_views
 app_name = "session"
 
 urlpatterns = [
+    # Einladung annehmen (tenant-unabhängig, token-basiert)
+    path(
+        "invite/<str:token>/",
+        views.InvitationAcceptView.as_view(),
+        name="invitation_accept",
+    ),
     # Dashboard
     path(
         "<slug:tenant_slug>/",
@@ -124,9 +130,45 @@ urlpatterns = [
         name="organizations",
     ),
     path(
+        "<slug:tenant_slug>/organizations/create/",
+        views.OrganizationCreateView.as_view(),
+        name="organization_create",
+    ),
+    path(
         "<slug:tenant_slug>/organizations/<uuid:organization_id>/",
         views.OrganizationDetailView.as_view(),
         name="organization_detail",
+    ),
+    path(
+        "<slug:tenant_slug>/organizations/<uuid:organization_id>/edit/",
+        views.OrganizationUpdateView.as_view(),
+        name="organization_edit",
+    ),
+    path(
+        "<slug:tenant_slug>/organizations/<uuid:organization_id>/deactivate/",
+        views.OrganizationDeactivateView.as_view(),
+        name="organization_deactivate",
+    ),
+    # Memberships (Besetzung)
+    path(
+        "<slug:tenant_slug>/organizations/<uuid:organization_id>/memberships/add/",
+        views.MembershipCreateView.as_view(),
+        name="membership_create",
+    ),
+    path(
+        "<slug:tenant_slug>/memberships/<uuid:membership_id>/update/",
+        views.MembershipUpdateView.as_view(),
+        name="membership_update",
+    ),
+    path(
+        "<slug:tenant_slug>/memberships/<uuid:membership_id>/end/",
+        views.MembershipEndView.as_view(),
+        name="membership_end",
+    ),
+    path(
+        "<slug:tenant_slug>/memberships/<uuid:membership_id>/succession/",
+        views.MembershipSuccessionView.as_view(),
+        name="membership_succession",
     ),
     # Persons
     path(
@@ -135,9 +177,24 @@ urlpatterns = [
         name="persons",
     ),
     path(
+        "<slug:tenant_slug>/persons/create/",
+        views.PersonCreateView.as_view(),
+        name="person_create",
+    ),
+    path(
         "<slug:tenant_slug>/persons/<uuid:person_id>/",
         views.PersonDetailView.as_view(),
         name="person_detail",
+    ),
+    path(
+        "<slug:tenant_slug>/persons/<uuid:person_id>/edit/",
+        views.PersonUpdateView.as_view(),
+        name="person_edit",
+    ),
+    path(
+        "<slug:tenant_slug>/persons/<uuid:person_id>/deactivate/",
+        views.PersonDeactivateView.as_view(),
+        name="person_deactivate",
     ),
     # Settings
     path(
@@ -149,6 +206,26 @@ urlpatterns = [
         "<slug:tenant_slug>/settings/users/",
         views.UserListView.as_view(),
         name="users",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/users/invite/",
+        views.UserInviteView.as_view(),
+        name="user_invite",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/users/<uuid:session_user_id>/roles/",
+        views.UserRolesUpdateView.as_view(),
+        name="user_roles_update",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/users/<uuid:session_user_id>/deactivate/",
+        views.UserDeactivateView.as_view(),
+        name="user_deactivate",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/invitations/<uuid:invitation_id>/cancel/",
+        views.InvitationCancelView.as_view(),
+        name="invitation_cancel",
     ),
     # Audit-Log
     path(

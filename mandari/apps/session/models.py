@@ -358,6 +358,91 @@ class SessionUser(models.Model):
         return self.roles.filter(is_admin=True).exists()
 
 
+class SessionInvitation(models.Model):
+    """
+    Einladung eines Benutzers in einen Session-Mandanten (Issue #27).
+
+    Vorbild: Work-Einladungsflow (tenants.UserInvitation). Ermöglicht das
+    Einladen per E-Mail mit vorbelegten Rollen — auch für Personen, die
+    noch kein Konto haben.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="invitations",
+        verbose_name="Mandant",
+    )
+
+    email = models.EmailField(verbose_name="E-Mail")
+    token = models.CharField(max_length=64, unique=True, editable=False)
+
+    # Vorbelegte Rollen
+    roles = models.ManyToManyField(
+        SessionRole,
+        blank=True,
+        related_name="invitations",
+        verbose_name="Rollen",
+    )
+
+    invited_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="sent_invitations",
+        verbose_name="Eingeladen von",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(verbose_name="Gültig bis")
+    accepted_at = models.DateTimeField(blank=True, null=True, verbose_name="Angenommen am")
+    accepted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="accepted_session_invitations",
+        verbose_name="Angenommen von",
+    )
+
+    class Meta:
+        db_table = "session_invitations"
+        verbose_name = "Session-Einladung"
+        verbose_name_plural = "Session-Einladungen"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Einladung für {self.email} zu {self.tenant.name}"
+
+    @property
+    def is_valid(self) -> bool:
+        """Einladung noch offen und nicht abgelaufen?"""
+        return self.accepted_at is None and timezone.now() < self.expires_at
+
+    @classmethod
+    def create_for_tenant(cls, tenant, email: str, invited_by=None, roles=None, valid_days: int = 7):
+        """Neue Einladung mit kryptografisch sicherem Token anlegen."""
+        import secrets
+        from datetime import timedelta
+
+        invitation = cls.objects.create(
+            tenant=tenant,
+            email=email.lower().strip(),
+            token=secrets.token_urlsafe(48),
+            invited_by=invited_by,
+            expires_at=timezone.now() + timedelta(days=valid_days),
+        )
+        if roles:
+            for role in roles:
+                if role.tenant_id != tenant.id:
+                    invitation.delete()
+                    raise ValueError(f"Rolle '{role.name}' gehört nicht zu diesem Mandanten.")
+            invitation.roles.set(roles)
+        return invitation
+
+
 # =============================================================================
 # ORGANIZATION MODELS
 # =============================================================================
@@ -419,6 +504,7 @@ class SessionOrganization(models.Model):
     members = models.ManyToManyField(
         "SessionPerson",
         through="SessionOrganizationMembership",
+        through_fields=("organization", "person"),
         related_name="organizations",
         verbose_name="Mitglieder",
     )
@@ -426,6 +512,24 @@ class SessionOrganization(models.Model):
     # Settings
     default_meeting_location = models.CharField(max_length=255, blank=True, verbose_name="Standardort für Sitzungen")
     default_meeting_start_time = models.TimeField(blank=True, null=True, verbose_name="Standardzeit für Sitzungen")
+
+    # Sitzungsdienst-Stammdaten
+    meeting_frequency = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Sitzungsturnus",
+        help_text="z. B. monatlich, 6-wöchentlich, nach Bedarf",
+    )
+    invitation_period_days = models.PositiveIntegerField(
+        default=7,
+        verbose_name="Ladungsfrist (Tage)",
+        help_text="Frist zwischen Ladung und Sitzung gemäß Geschäftsordnung",
+    )
+    target_member_count = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Mitgliederzahl (Soll)",
+    )
 
     # Allowance settings
     allowance_amount = models.DecimalField(
@@ -559,6 +663,7 @@ class SessionOrganizationMembership(models.Model):
             ("member", "Mitglied"),
             ("chair", "Vorsitzende/r"),
             ("deputy_chair", "Stellv. Vorsitzende/r"),
+            ("expert_citizen", "Sachkundige/r Bürger/in"),
             ("advisor", "Beratendes Mitglied"),
             ("guest", "Gast"),
         ],
@@ -571,6 +676,17 @@ class SessionOrganizationMembership(models.Model):
 
     # Voting rights
     has_voting_rights = models.BooleanField(default=True, verbose_name="Stimmberechtigt")
+
+    # Vertreterregelung: Diese Mitgliedschaft vertritt eine andere Person
+    substitute_for = models.ForeignKey(
+        SessionPerson,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="substituted_by_memberships",
+        verbose_name="Vertretung für",
+        help_text="Wird als Stellvertreter/in dieser Person geführt",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
