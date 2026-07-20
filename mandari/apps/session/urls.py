@@ -160,6 +160,16 @@ urlpatterns = [
         name="paper_create",
     ),
     path(
+        "<slug:tenant_slug>/papers/review/",
+        views.PaperReviewListView.as_view(),
+        name="papers_review",
+    ),
+    path(
+        "<slug:tenant_slug>/papers/<uuid:paper_id>/workflow/<str:action>/",
+        views.PaperWorkflowView.as_view(),
+        name="paper_workflow",
+    ),
+    path(
         "<slug:tenant_slug>/papers/<uuid:paper_id>/",
         views.PaperDetailView.as_view(),
         name="paper_detail",

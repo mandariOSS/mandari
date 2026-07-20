@@ -1,0 +1,54 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Zu prüfende Vorlagen{% endblock %}
+
+{% block breadcrumb %}
+<h1 class="text-lg font-semibold text-gray-900 dark:text-white">Meine zu prüfenden Vorlagen</h1>
+{% endblock %}
+
+{% block page_content %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    {% for paper in papers %}
+    <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700/50 last:border-b-0 flex items-center gap-4 flex-wrap">
+        <div class="flex-1 min-w-0">
+            <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}"
+               class="text-sm font-medium text-gray-900 dark:text-white hover:underline">
+                <span class="font-mono text-gray-500 dark:text-gray-400">{{ paper.reference }}</span>
+                {{ paper.name }}
+            </a>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {{ paper.get_paper_type_display }}
+                {% if paper.main_organization %}· {{ paper.main_organization.name }}{% endif %}
+                {% if paper.created_by %}· eingereicht von {{ paper.created_by.user.email }}{% endif %}
+                · {{ paper.created_at|date:"d.m.Y" }}
+                {% if not paper.is_public %}· <span class="text-red-600 dark:text-red-400">NÖ</span>{% endif %}
+            </p>
+        </div>
+        <div class="flex items-center gap-2">
+            <form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='approve' %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors">
+                    <i data-lucide="check" class="w-4 h-4"></i> Freigeben
+                </button>
+            </form>
+            <form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='reject' %}"
+                  class="flex items-center gap-1.5">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <input type="text" name="comment" placeholder="Anmerkung…"
+                       class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white w-40">
+                <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors">
+                    <i data-lucide="undo-2" class="w-4 h-4"></i> Zurückweisen
+                </button>
+            </form>
+        </div>
+    </div>
+    {% empty %}
+    <div class="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+        <i data-lucide="clipboard-check" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+        Keine Vorlagen zur Prüfung — der Arbeitsvorrat ist leer.
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

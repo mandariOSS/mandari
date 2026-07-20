@@ -184,7 +184,18 @@ class SessionMixin(LoginRequiredMixin):
         context["session_tenant"] = self.session_tenant
         context["session_user"] = self.session_user
         context["tenant_slug"] = self.session_tenant.slug
-        context["permission_checker"] = SessionPermissionChecker(self.session_user)
+        checker = SessionPermissionChecker(self.session_user)
+        context["permission_checker"] = checker
+
+        # Arbeitsvorrat-Badge (Issue #33): Anzahl zu prüfender Vorlagen
+        if checker.has_permission("approve_papers"):
+            from apps.session.models import SessionPaper
+
+            review_qs = SessionPaper.objects.filter(tenant=self.session_tenant, status="review")
+            if not checker.has_permission("view_non_public_papers"):
+                review_qs = review_qs.filter(is_public=True)
+            context["papers_review_count"] = review_qs.count()
+
         return context
 
     def get_queryset(self):

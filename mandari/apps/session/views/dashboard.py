@@ -82,6 +82,13 @@ class DashboardView(SessionViewMixin, TemplateView):
             status__in=["submitted", "received", "in_review"],
         ).order_by("-submitted_at")[:5]
 
+        # Arbeitsvorrat „Meine zu prüfenden Vorlagen" (Issue #33)
+        if self.has_permission("approve_papers"):
+            review_papers = SessionPaper.objects.filter(tenant=tenant, status="review")
+            if not self.has_permission("view_non_public_papers"):
+                review_papers = review_papers.filter(is_public=True)
+            context["review_papers"] = review_papers.select_related("main_organization").order_by("created_at")[:5]
+
         # Statistics
         context["stats"] = {
             "meetings_total": SessionMeeting.objects.filter(tenant=tenant).count(),

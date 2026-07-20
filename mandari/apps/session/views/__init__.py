@@ -69,7 +69,9 @@ from .papers import (
     PaperCreateView,
     PaperDetailView,
     PaperListView,
+    PaperReviewListView,
     PaperUpdateView,
+    PaperWorkflowView,
 )
 from .persons import (
     PersonCreateView,
@@ -145,7 +147,9 @@ __all__ = [
     "PaperCreateView",
     "PaperDetailView",
     "PaperListView",
+    "PaperReviewListView",
     "PaperUpdateView",
+    "PaperWorkflowView",
     "PersonCreateView",
     "PersonDeactivateView",
     "PersonDetailView",

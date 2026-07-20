@@ -39,6 +39,7 @@ os.environ["DEBUG"] = "true"
 os.environ["DATABASE_URL"] = f"sqlite:///{_db_path.as_posix()}"
 os.environ["ENCRYPTION_MASTER_KEY"] = base64.b64encode(secrets.token_bytes(32)).decode()
 os.environ["ELASTICSEARCH_AUTO_INDEX"] = "False"
+os.environ["MANDARI_SYNC_WATCHDOG"] = "0"  # DB-Schreiber-Thread stoert SQLite-Migrationen
 os.environ["EMAIL_BACKEND"] = "django.core.mail.backends.locmem.EmailBackend"
 os.environ["ALLOWED_HOSTS"] = "testserver,localhost"
 
@@ -192,6 +193,7 @@ MATRIX_PERMS = [
     "view_papers",
     "create_papers",
     "edit_papers",
+    "approve_papers",
     "view_non_public_papers",
     "view_applications",
     "process_applications",
@@ -264,6 +266,7 @@ GET_MATRIX = [
     (f"{base}/papers/{paper_pub.id}/", {"view_papers"}),
     (f"{base}/papers/create/", {"create_papers"}),
     (f"{base}/papers/{paper_pub.id}/edit/", {"edit_papers"}),
+    (f"{base}/papers/review/", {"approve_papers"}),
     (f"{base}/applications/", {"view_applications"}),
     (f"{base}/applications/{app_a.id}/", {"view_applications"}),
     (f"{base}/applications/{app_a.id}/process/", {"process_applications"}),
@@ -310,6 +313,8 @@ mutations = [
     (f"{base}/meetings/create/", {"name": "M", "organization": str(org_a.id), "start": "2026-08-01T10:00"}),
     (f"{base}/meetings/{meeting_pub.id}/invitation/", {"dispatch_type": "invitation"}),
     (f"{base}/papers/create/", {"reference": "V/X", "name": "P", "paper_type": "proposal"}),
+    (f"{base}/papers/{paper_pub.id}/workflow/submit/", {}),
+    (f"{base}/papers/{paper_pub.id}/workflow/approve/", {}),
     (f"{base}/meetings/{meeting_pub.id}/agenda/add/", {"name": "T"}),
     (f"{base}/meetings/{meeting_pub.id}/attendance/generate/", {}),
     (f"{base}/meetings/{meeting_pub.id}/attendance/add/", {"person": str(person_a.id)}),
@@ -430,6 +435,7 @@ for url, data in [
     (f"{base}/meetings/{meeting_b.id}/attendance/generate/", {}),
     (f"{base}/meetings/{meeting_b.id}/resolutions/generate/", {}),
     (f"{base}/agenda/{top_b.id}/forwarding/add/", {"recipient": "Bauamt"}),
+    (f"{base}/papers/{paper_b.id}/workflow/submit/", {}),
 ]:
     status = admin.post(url, data).status_code
     if status != 404:
