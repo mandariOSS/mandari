@@ -160,6 +160,11 @@ jobs:
           python scripts/smoke_session_files.py
           python scripts/smoke_session_agenda.py
           python scripts/smoke_session_stammdaten.py
+          python scripts/smoke_session_invitations.py
+          python scripts/smoke_session_attendance.py
+          python scripts/smoke_session_protocols.py
+          python scripts/smoke_session_resolutions.py
+          python scripts/smoke_session_paper_workflow.py
 
   # ===========================================================================
   # Docker Build Validation

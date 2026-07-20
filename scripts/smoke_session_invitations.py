@@ -34,6 +34,7 @@ os.environ["DEBUG"] = "true"
 os.environ["DATABASE_URL"] = f"sqlite:///{_db_path.as_posix()}"
 os.environ["ENCRYPTION_MASTER_KEY"] = base64.b64encode(secrets.token_bytes(32)).decode()
 os.environ["ELASTICSEARCH_AUTO_INDEX"] = "False"
+os.environ["MANDARI_SYNC_WATCHDOG"] = "0"  # DB-Schreiber-Thread stoert SQLite-Migrationen
 os.environ["EMAIL_BACKEND"] = "django.core.mail.backends.locmem.EmailBackend"
 os.environ["ALLOWED_HOSTS"] = "testserver,localhost"
 
