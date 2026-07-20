@@ -1,0 +1,53 @@
+{% extends "session/pdf/base_pdf.html" %}
+{% comment %}Beschlussauszug-PDF (Issue #32): je TOP eine Seite, mit
+Auszugs- und Ausfertigungsvermerk. NÖ-Beschlusstexte nur intern.{% endcomment %}
+
+{% block content %}
+    {% for item in items %}
+    <h1>Beschlussauszug</h1>
+    <p class="muted">{{ variant_label }}</p>
+
+    <table class="meta-table">
+        {% if item.resolution_number %}
+        <tr><td><strong>Beschluss-Nr.:</strong></td><td>{{ item.resolution_number }}</td></tr>
+        {% endif %}
+        <tr><td><strong>Sitzung:</strong></td><td>{{ item.meeting.name }} am {{ item.meeting.start|date:"d.m.Y" }}</td></tr>
+        <tr><td><strong>Gremium:</strong></td><td>{{ item.meeting.organization.name }}</td></tr>
+        <tr><td><strong>TOP:</strong></td><td>{{ item.number }} — {{ item.name }}{% if not item.is_public %} (nichtöffentlich){% endif %}</td></tr>
+        {% if item.paper %}
+        <tr><td><strong>Vorlage:</strong></td><td>{{ item.paper.reference }}: {{ item.paper.name }}</td></tr>
+        {% endif %}
+    </table>
+
+    <h2>Beschluss</h2>
+    {% if item.resolution_text %}
+    <p>{{ item.resolution_text|linebreaksbr }}</p>
+    {% endif %}
+    {% if internal and item.resolution_np %}
+    <p><strong>Nichtöffentlicher Beschlusstext:</strong><br>{{ item.resolution_np|linebreaksbr }}</p>
+    {% endif %}
+    {% if not item.resolution_text and not item.resolution_np %}
+    <p class="muted">Kein Beschlusstext erfasst.</p>
+    {% endif %}
+
+    <h2>Abstimmungsergebnis</h2>
+    <p>
+        {{ item.get_vote_result_display }} —
+        Ja-Stimmen: {{ item.votes_yes }}, Nein-Stimmen: {{ item.votes_no }}, Enthaltungen: {{ item.votes_abstain }}
+    </p>
+
+    <h2>Auszugsvermerk</h2>
+    <p>
+        Auszug aus der Niederschrift über die Sitzung des Gremiums
+        {{ item.meeting.organization.name }} am {{ item.meeting.start|date:"d.m.Y" }}.
+    </p>
+    <div class="signature">
+        <p>
+            {{ tenant.name }}, den {{ generated_at|date:"d.m.Y" }}<br><br>
+            ____________________________<br>
+            <span class="muted">Für die Richtigkeit der Ausfertigung — Der Sitzungsdienst</span>
+        </p>
+    </div>
+    {% if not forloop.last %}<pdf:nextpage>{% endif %}
+    {% endfor %}
+{% endblock %}

@@ -92,6 +92,32 @@ urlpatterns = [
         views.ProtocolPdfView.as_view(),
         name="meeting_protocol_pdf",
     ),
+    # Beschlussregister und Beschlussauszüge (Issue #32)
+    path(
+        "<slug:tenant_slug>/resolutions/",
+        views.ResolutionRegisterView.as_view(),
+        name="resolutions",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/resolutions/generate/",
+        views.ResolutionBatchView.as_view(),
+        name="resolutions_generate",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/beschlussauszuege.pdf",
+        views.ResolutionMeetingPdfView.as_view(),
+        name="resolutions_meeting_pdf",
+    ),
+    path(
+        "<slug:tenant_slug>/agenda/<uuid:item_id>/beschlussauszug.pdf",
+        views.ResolutionExtractPdfView.as_view(),
+        name="resolution_extract_pdf",
+    ),
+    path(
+        "<slug:tenant_slug>/agenda/<uuid:item_id>/forwarding/add/",
+        views.ResolutionForwardingCreateView.as_view(),
+        name="resolution_forwarding_add",
+    ),
     path(
         "<slug:tenant_slug>/meetings/<uuid:meeting_id>/agenda/add/",
         views.AgendaItemCreateView.as_view(),

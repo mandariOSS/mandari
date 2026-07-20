@@ -372,6 +372,20 @@
                     <i data-lucide="calendar-plus" class="w-4 h-4"></i>
                     Termin als ICS
                 </a>
+                <a href="{% url 'session:resolutions_meeting_pdf' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                   class="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                    <i data-lucide="gavel" class="w-4 h-4"></i>
+                    Beschlussauszüge (PDF)
+                </a>
+                {% if "edit_meetings" in permission_checker.permissions %}
+                <form method="post" action="{% url 'session:resolutions_generate' tenant_slug=tenant_slug meeting_id=meeting.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                        <i data-lucide="stamp" class="w-4 h-4"></i>
+                        Beschlussnummern vergeben
+                    </button>
+                </form>
+                {% endif %}
             </div>
         </div>
 

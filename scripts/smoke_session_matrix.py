@@ -117,6 +117,9 @@ paper_np = SessionPaper.objects.create(
 )
 top_pub = SessionAgendaItem.objects.create(meeting=meeting_pub, number="1", name="OEFFENTLICHER-TOP-A", is_public=True)
 top_np = SessionAgendaItem.objects.create(meeting=meeting_pub, number="N1", name="GEHEIMER-TOP-A", is_public=False)
+top_decided = SessionAgendaItem.objects.create(
+    meeting=meeting_pub, number="2", name="BESCHLOSSENER-TOP-A", is_public=True, vote_result="approved"
+)
 app_a = SessionApplication.objects.create(
     tenant=tenant_a,
     title="ANTRAG-A",
@@ -254,6 +257,9 @@ GET_MATRIX = [
     (f"{base}/meetings/{meeting_pub.id}/protocol/edit/", {"edit_protocols"}),
     (f"{base}/meetings/{meeting_pub.id}/niederschrift.pdf", {"view_protocols"}),
     (f"{base}/agenda/{top_pub.id}/edit/", {"edit_meetings"}),
+    (f"{base}/resolutions/", {"view_meetings"}),
+    (f"{base}/agenda/{top_decided.id}/beschlussauszug.pdf", {"view_meetings"}),
+    (f"{base}/meetings/{meeting_pub.id}/beschlussauszuege.pdf", {"view_meetings"}),
     (f"{base}/papers/", {"view_papers"}),
     (f"{base}/papers/{paper_pub.id}/", {"view_papers"}),
     (f"{base}/papers/create/", {"create_papers"}),
@@ -310,6 +316,8 @@ mutations = [
     (f"{base}/meetings/{meeting_pub.id}/protocol/create/", {}),
     (f"{base}/meetings/{meeting_pub.id}/protocol/submit/", {}),
     (f"{base}/meetings/{meeting_pub.id}/protocol/approve/", {}),
+    (f"{base}/meetings/{meeting_pub.id}/resolutions/generate/", {}),
+    (f"{base}/agenda/{top_decided.id}/forwarding/add/", {"recipient": "Bauamt"}),
     (f"{base}/meetings/{meeting_pub.id}/agenda/reorder/", {"order": ""}),
     (f"{base}/agenda/{top_pub.id}/withdraw/", {"reason": "x"}),
     (f"{base}/agenda/{top_pub.id}/delete/", {}),
@@ -420,6 +428,8 @@ for url, data in [
     (f"{base}/memberships/{membership_b.id}/end/", {}),
     (f"{base}/organizations/{org_b.id}/deactivate/", {}),
     (f"{base}/meetings/{meeting_b.id}/attendance/generate/", {}),
+    (f"{base}/meetings/{meeting_b.id}/resolutions/generate/", {}),
+    (f"{base}/agenda/{top_b.id}/forwarding/add/", {"recipient": "Bauamt"}),
 ]:
     status = admin.post(url, data).status_code
     if status != 404:

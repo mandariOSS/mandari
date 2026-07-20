@@ -19,11 +19,7 @@ def _escape(value: str) -> str:
     if not value:
         return ""
     return (
-        value.replace("\\", "\\\\")
-        .replace(";", "\\;")
-        .replace(",", "\\,")
-        .replace("\r\n", "\\n")
-        .replace("\n", "\\n")
+        value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\\n").replace("\n", "\\n")
     )
 
 

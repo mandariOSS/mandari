@@ -1022,6 +1022,14 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
         verbose_name="Nicht-öffentlicher Protokolltext",
     )
 
+    # Beschlussregister (Issue #32): fortlaufende Beschlussnummer je Mandant/Jahr
+    resolution_number = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name="Beschlussnummer",
+        help_text="Wird bei der Beschlussausfertigung vergeben, z. B. B/2026/0012",
+    )
+
     vote_result = models.CharField(
         max_length=50,
         choices=[
@@ -1058,6 +1066,60 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
     def get_encryption_organization(self):
         """Return tenant for encryption."""
         return self.meeting.tenant
+
+
+class SessionResolutionForwarding(models.Model):
+    """
+    Versand-/Übergabevermerk eines Beschlussauszugs (Issue #32).
+
+    Dokumentiert nachweisbar, an welche Stelle (Fachamt, extern) der
+    Beschlussauszug eines TOP wann übergeben wurde.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    agenda_item = models.ForeignKey(
+        SessionAgendaItem,
+        on_delete=models.CASCADE,
+        related_name="forwardings",
+        verbose_name="Tagesordnungspunkt",
+    )
+
+    recipient = models.CharField(
+        max_length=255,
+        verbose_name="Zuständige Stelle/Amt",
+        help_text="z. B. Bauamt, Kämmerei, externe Stelle",
+    )
+    method = models.CharField(
+        max_length=20,
+        choices=[
+            ("email", "E-Mail"),
+            ("internal", "Interner Geschäftsgang"),
+            ("mail", "Postweg"),
+            ("handover", "Persönliche Übergabe"),
+        ],
+        default="internal",
+        verbose_name="Übergabeweg",
+    )
+    note = models.TextField(blank=True, verbose_name="Vermerk")
+
+    sent_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="resolution_forwardings",
+        verbose_name="Übergeben von",
+    )
+    sent_at = models.DateTimeField(auto_now_add=True, verbose_name="Übergeben am")
+
+    class Meta:
+        db_table = "session_resolution_forwardings"
+        verbose_name = "Beschlussauszug-Übergabe"
+        verbose_name_plural = "Beschlussauszug-Übergaben"
+        ordering = ["-sent_at"]
+
+    def __str__(self):
+        return f"Auszug TOP {self.agenda_item.number} an {self.recipient} ({self.sent_at:%d.%m.%Y})"
 
 
 # =============================================================================

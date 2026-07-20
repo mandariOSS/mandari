@@ -1,0 +1,117 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Beschlussregister{% endblock %}
+
+{% block breadcrumb %}
+<h1 class="text-lg font-semibold text-gray-900 dark:text-white">Beschlussregister</h1>
+{% endblock %}
+
+{% block page_content %}
+<!-- Filter -->
+<form method="get" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 flex flex-wrap items-end gap-3">
+    <div>
+        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Gremium</label>
+        <select name="organization" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            <option value="">Alle</option>
+            {% for org in organizations %}
+            <option value="{{ org.id }}" {% if filter_organization == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Jahr</label>
+        <select name="year" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            <option value="">Alle</option>
+            {% for y in years %}
+            <option value="{{ y }}" {% if filter_year == y|stringformat:"s" %}selected{% endif %}>{{ y }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Ergebnis</label>
+        <select name="result" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            <option value="">Alle</option>
+            {% for value, label in result_choices %}
+            <option value="{{ value }}" {% if filter_result == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
+        <i data-lucide="filter" class="w-4 h-4"></i> Filtern
+    </button>
+</form>
+
+<!-- Register -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    {% for item in items %}
+    <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700/50 last:border-b-0">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1 flex-wrap">
+                    {% if item.resolution_number %}
+                    <span class="px-2 py-0.5 text-xs font-bold rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400">{{ item.resolution_number }}</span>
+                    {% else %}
+                    <span class="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">ohne Nummer</span>
+                    {% endif %}
+                    <span class="px-2 py-0.5 text-xs font-medium rounded
+                        {% if item.vote_result == 'approved' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                        {% elif item.vote_result == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+                        {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                        {{ item.get_vote_result_display }}
+                    </span>
+                    {% if not item.is_public %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
+                        <i data-lucide="lock" class="w-3 h-3"></i> NÖ
+                    </span>
+                    {% endif %}
+                </div>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">TOP {{ item.number }}: {{ item.name }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=item.meeting_id %}" class="hover:underline">{{ item.meeting.name }}</a>
+                    · {{ item.meeting.organization.name }} · {{ item.meeting.start|date:"d.m.Y" }}
+                    · Ja: {{ item.votes_yes }}, Nein: {{ item.votes_no }}, Enth.: {{ item.votes_abstain }}
+                </p>
+                {% if item.forwardings.all %}
+                <div class="mt-2 space-y-0.5">
+                    {% for fw in item.forwardings.all %}
+                    <p class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                        <i data-lucide="corner-down-right" class="w-3 h-3"></i>
+                        Übergeben an <span class="font-medium">{{ fw.recipient }}</span> ({{ fw.get_method_display }}, {{ fw.sent_at|date:"d.m.Y H:i" }}{% if fw.sent_by %}, {{ fw.sent_by.user.email }}{% endif %})
+                    </p>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            <div class="flex flex-col items-end gap-2">
+                <a href="{% url 'session:resolution_extract_pdf' tenant_slug=tenant_slug item_id=item.id %}"
+                   class="inline-flex items-center gap-1.5 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                    <i data-lucide="file-down" class="w-4 h-4"></i> Auszug (PDF)
+                </a>
+                {% if can_manage %}
+                <form method="post" action="{% url 'session:resolution_forwarding_add' tenant_slug=tenant_slug item_id=item.id %}"
+                      class="flex items-center gap-1.5">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <input type="text" name="recipient" placeholder="Stelle/Amt" required
+                           class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white w-32">
+                    <select name="method" class="px-1.5 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        <option value="internal">Geschäftsgang</option>
+                        <option value="email">E-Mail</option>
+                        <option value="mail">Post</option>
+                        <option value="handover">Übergabe</option>
+                    </select>
+                    <button type="submit" class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-gray-700 dark:text-gray-300">
+                        Übergabe vermerken
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+        Keine gefassten Beschlüsse gefunden.
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

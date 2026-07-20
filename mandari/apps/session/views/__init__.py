@@ -85,6 +85,13 @@ from .protocols import (
     ProtocolPdfView,
     ProtocolWorkflowView,
 )
+from .resolutions import (
+    ResolutionBatchView,
+    ResolutionExtractPdfView,
+    ResolutionForwardingCreateView,
+    ResolutionMeetingPdfView,
+    ResolutionRegisterView,
+)
 from .settings import (
     InvitationAcceptView,
     InvitationCancelView,
@@ -149,6 +156,11 @@ __all__ = [
     "ProtocolEditView",
     "ProtocolPdfView",
     "ProtocolWorkflowView",
+    "ResolutionBatchView",
+    "ResolutionExtractPdfView",
+    "ResolutionForwardingCreateView",
+    "ResolutionMeetingPdfView",
+    "ResolutionRegisterView",
     "SettingsView",
     "UserDeactivateView",
     "UserInviteView",
