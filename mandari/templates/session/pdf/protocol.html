@@ -1,0 +1,90 @@
+{% extends "session/pdf/base_pdf.html" %}
+{% comment %}Niederschrift-PDF (Issue #31): Ö-Fassung bzw. interne NÖ-Fassung.{% endcomment %}
+
+{% block content %}
+    <h1>Niederschrift</h1>
+    <p class="muted">{{ variant_label }}{% if protocol.status != "published" and protocol.status != "approved" %} · Entwurfsstand: {{ protocol.get_status_display }}{% endif %}</p>
+
+    <table class="meta-table">
+        <tr><td><strong>Sitzung:</strong></td><td>{{ meeting.name }}</td></tr>
+        <tr><td><strong>Gremium:</strong></td><td>{{ meeting.organization.name }}</td></tr>
+        <tr><td><strong>Termin:</strong></td><td>{{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% if meeting.end %} bis {{ meeting.end|date:"H:i" }} Uhr{% endif %}</td></tr>
+        {% if meeting.location %}
+        <tr><td><strong>Ort:</strong></td><td>{{ meeting.location }}{% if meeting.room %}, {{ meeting.room }}{% endif %}</td></tr>
+        {% endif %}
+    </table>
+
+    {% if participants.all %}
+    <h2>Teilnehmerverzeichnis</h2>
+    {% if participants.present %}
+    <p><strong>Anwesend:</strong><br>
+    {% for a in participants.present %}{{ a.person.display_name }} ({{ a.get_role_display }}{% if a.status == "joined_late" %}, verspätet{% endif %}){% if not forloop.last %}; {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% if participants.excused %}
+    <p><strong>Entschuldigt:</strong><br>
+    {% for a in participants.excused %}{{ a.person.display_name }}{% if not forloop.last %}; {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% if participants.absent %}
+    <p><strong>Unentschuldigt abwesend:</strong><br>
+    {% for a in participants.absent %}{{ a.person.display_name }}{% if not forloop.last %}; {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% endif %}
+
+    {% if protocol.content %}
+    <h2>Allgemeines</h2>
+    <p>{{ protocol.content|linebreaksbr }}</p>
+    {% endif %}
+
+    {% if internal and content_np %}
+    <h2>Allgemeines (nichtöffentlich)</h2>
+    <p>{{ content_np|linebreaksbr }}</p>
+    {% endif %}
+
+    <h2>Verhandlung der Tagesordnung</h2>
+
+    {% if agenda_public %}
+    <div class="section-title">Öffentlicher Teil</div>
+    <table class="agenda">
+        {% for item in agenda_public %}
+        {% include "session/pdf/partial_protocol_top.html" %}
+        {% for sub in item.children_list %}
+        {% include "session/pdf/partial_protocol_top.html" with item=sub %}
+        {% endfor %}
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if internal and agenda_non_public %}
+    <div class="section-title">Nichtöffentlicher Teil</div>
+    <table class="agenda">
+        {% for item in agenda_non_public %}
+        {% include "session/pdf/partial_protocol_top.html" %}
+        {% for sub in item.children_list %}
+        {% include "session/pdf/partial_protocol_top.html" with item=sub %}
+        {% endfor %}
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if protocol.approval_note %}
+    <h2>Genehmigungsvermerk</h2>
+    <p>{{ protocol.approval_note }}</p>
+    {% endif %}
+
+    <div class="signature">
+        <table width="100%">
+            <tr>
+                <td width="50%">
+                    ____________________________<br>
+                    {{ protocol.chair_name|default:"Vorsitz" }}<br>
+                    <span class="muted">Vorsitz</span>
+                </td>
+                <td width="50%">
+                    ____________________________<br>
+                    {{ protocol.recorder_name|default:"Protokollführung" }}<br>
+                    <span class="muted">Protokollführung</span>
+                </td>
+            </tr>
+        </table>
+    </div>
+{% endblock %}

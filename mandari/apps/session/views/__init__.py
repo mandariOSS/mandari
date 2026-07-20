@@ -78,6 +78,13 @@ from .persons import (
     PersonListView,
     PersonUpdateView,
 )
+from .protocols import (
+    ProtocolCreateView,
+    ProtocolDetailView,
+    ProtocolEditView,
+    ProtocolPdfView,
+    ProtocolWorkflowView,
+)
 from .settings import (
     InvitationAcceptView,
     InvitationCancelView,
@@ -137,6 +144,11 @@ __all__ = [
     "PersonDetailView",
     "PersonListView",
     "PersonUpdateView",
+    "ProtocolCreateView",
+    "ProtocolDetailView",
+    "ProtocolEditView",
+    "ProtocolPdfView",
+    "ProtocolWorkflowView",
     "SettingsView",
     "UserDeactivateView",
     "UserInviteView",

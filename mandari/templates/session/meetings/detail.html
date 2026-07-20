@@ -375,19 +375,24 @@
             </div>
         </div>
 
-        <!-- Protocol -->
-        {% if protocol %}
+        <!-- Protocol (Issue #31) -->
+        {% if "view_protocols" in permission_checker.permissions %}
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                 <i data-lucide="file-text" class="w-5 h-5 text-purple-500"></i>
-                Protokoll
+                Niederschrift
             </h3>
+            {% if protocol %}
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
                 Status: <span class="font-medium">{{ protocol.get_status_display }}</span>
             </p>
-            <a href="#" class="inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+            {% else %}
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">Noch kein Protokoll angelegt.</p>
+            {% endif %}
+            <a href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+               class="inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
                 <i data-lucide="eye" class="w-4 h-4"></i>
-                Protokoll anzeigen
+                Zur Niederschrift
             </a>
         </div>
         {% endif %}

@@ -1,0 +1,56 @@
+{% comment %}Bearbeitungsblock eines TOP im Protokoll-Formular (Issue #31).
+Erwartet: item, vote_choices, can_view_np.{% endcomment %}
+<div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700/50 last:border-b-0 space-y-3">
+    <p class="text-sm font-medium text-gray-900 dark:text-white">
+        <span class="font-bold text-gray-500 dark:text-gray-400">{{ item.number }}</span>
+        {{ item.name }}
+        {% if item.is_withdrawn %}<span class="text-xs text-gray-400">(abgesetzt)</span>{% endif %}
+    </p>
+    <div class="grid sm:grid-cols-4 gap-3">
+        <div>
+            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Ergebnis</label>
+            <select name="vote_result_{{ item.pk }}" class="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                {% for value, label in vote_choices %}
+                <option value="{{ value }}" {% if item.vote_result == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Ja</label>
+            <input type="number" min="0" name="votes_yes_{{ item.pk }}" value="{{ item.votes_yes }}"
+                   class="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Nein</label>
+            <input type="number" min="0" name="votes_no_{{ item.pk }}" value="{{ item.votes_no }}"
+                   class="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Enthaltungen</label>
+            <input type="number" min="0" name="votes_abstain_{{ item.pk }}" value="{{ item.votes_abstain }}"
+                   class="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+        </div>
+    </div>
+    <div>
+        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Beschlusstext</label>
+        <textarea name="resolution_text_{{ item.pk }}" rows="2"
+                  class="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{ item.resolution_text }}</textarea>
+    </div>
+    <div>
+        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Protokolltext (Wortbeiträge, öffentlich)</label>
+        <textarea name="protocol_note_{{ item.pk }}" rows="3"
+                  class="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{ item.protocol_note }}</textarea>
+    </div>
+    {% if can_view_np %}
+    <div>
+        <label class="block text-xs text-red-600 dark:text-red-400 mb-1 flex items-center gap-1">
+            <i data-lucide="lock" class="w-3 h-3"></i> Nichtöffentlicher Protokolltext (verschlüsselt)
+        </label>
+        <textarea name="protocol_note_np_{{ item.pk }}" rows="2"
+                  class="w-full px-2 py-1 text-sm border border-red-300 dark:border-red-800 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{ item.protocol_note_np }}</textarea>
+    </div>
+    {% endif %}
+    {% for sub in item.children_list %}
+    {% include "session/protocols/partial_top_form.html" with item=sub %}
+    {% endfor %}
+</div>

@@ -1,0 +1,221 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Niederschrift: {{ meeting.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Sitzungen</a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 truncate max-w-[200px]">{{ meeting.name }}</a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Niederschrift</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+{% if not protocol %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-10 text-center">
+    <i data-lucide="file-text" class="w-10 h-10 mx-auto mb-3 text-gray-400"></i>
+    <p class="text-gray-600 dark:text-gray-400 mb-4">Für diese Sitzung existiert noch kein Protokoll.</p>
+    {% if can_create %}
+    <form method="post" action="{% url 'session:meeting_protocol_create' tenant_slug=tenant_slug meeting_id=meeting.id %}">
+        {% csrf_token %}
+        <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            Protokoll anlegen
+        </button>
+    </form>
+    {% endif %}
+</div>
+{% else %}
+<div class="grid lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 space-y-6">
+
+        <!-- Status + Aktionen -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div class="flex items-center gap-3">
+                    <span class="px-2.5 py-1 text-xs font-medium rounded-full
+                        {% if protocol.status == 'draft' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400
+                        {% elif protocol.status == 'review' %}bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-400
+                        {% elif protocol.status == 'approved' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
+                        {% else %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400{% endif %}">
+                        {{ protocol.get_status_display }}
+                    </span>
+                    {% if protocol.approval_note %}
+                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ protocol.approval_note }}</span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    {% if can_edit and protocol.status == 'draft' or can_edit and protocol.status == 'review' %}
+                    <a href="{% url 'session:meeting_protocol_edit' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                       class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                        <i data-lucide="edit" class="w-4 h-4"></i> Bearbeiten
+                    </a>
+                    {% endif %}
+                    {% if can_edit and protocol.status == 'draft' %}
+                    <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='submit' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors">
+                            <i data-lucide="send" class="w-4 h-4"></i> Zur Prüfung geben
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% if can_approve and protocol.status == 'review' %}
+                    <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='approve' %}"
+                          class="flex items-center gap-2">
+                        {% csrf_token %}
+                        <select name="approval_meeting" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                            <option value="">Genehmigt in Sitzung … (optional)</option>
+                            {% for am in approval_meetings %}
+                            <option value="{{ am.id }}">{{ am.name }} ({{ am.start|date:"d.m.Y" }})</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
+                            <i data-lucide="check" class="w-4 h-4"></i> Genehmigen
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='reject' %}"
+                          class="flex items-center gap-2">
+                        {% csrf_token %}
+                        <input type="text" name="comment" placeholder="Anmerkung zur Zurückweisung"
+                               class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors">
+                            <i data-lucide="undo-2" class="w-4 h-4"></i> Zurückweisen
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% if can_approve and protocol.status == 'approved' %}
+                    <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='publish' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors">
+                            <i data-lucide="globe" class="w-4 h-4"></i> Ö-Fassung veröffentlichen
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Allgemeiner Teil -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h2 class="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                <i data-lucide="file-text" class="w-5 h-5 text-purple-500"></i>
+                Niederschrift (öffentlicher Teil)
+            </h2>
+            <div class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{{ protocol.content|default:"—" }}</div>
+            {% if can_view_np and content_np %}
+            <div class="mt-4 pt-4 border-t border-red-200 dark:border-red-800">
+                <h3 class="text-sm font-semibold text-red-700 dark:text-red-400 mb-2 flex items-center gap-1.5">
+                    <i data-lucide="lock" class="w-4 h-4"></i> Nichtöffentlicher Teil
+                </h3>
+                <div class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{{ content_np }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- TOP-weise Protokollierung -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white">Tagesordnungspunkte</h2>
+            </div>
+            {% for item in agenda_public %}
+            {% include "session/protocols/partial_top.html" %}
+            {% endfor %}
+            {% if agenda_non_public %}
+            <div class="px-6 py-2 bg-red-50 dark:bg-red-900/20 text-xs font-semibold text-red-800 dark:text-red-300 uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="lock" class="w-3.5 h-3.5"></i> Nichtöffentlicher Teil
+            </div>
+            {% for item in agenda_non_public %}
+            {% include "session/protocols/partial_top.html" %}
+            {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Workflow</h3>
+            <dl class="space-y-3 text-sm">
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Erstellt von</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ protocol.created_by.user.email|default:"—" }}</dd>
+                </div>
+                {% if protocol.review_requested_at %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Zur Prüfung gegeben</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ protocol.review_requested_at|date:"d.m.Y H:i" }} ({{ protocol.review_requested_by.user.email|default:"—" }})</dd>
+                </div>
+                {% endif %}
+                {% if protocol.approved_at %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Genehmigt</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ protocol.approved_at|date:"d.m.Y H:i" }} ({{ protocol.approved_by.user.email|default:"—" }})</dd>
+                    {% if protocol.approval_meeting %}
+                    <dd class="text-xs text-gray-500 dark:text-gray-400 mt-1">in: {{ protocol.approval_meeting.name }} ({{ protocol.approval_meeting.start|date:"d.m.Y" }})</dd>
+                    {% endif %}
+                </div>
+                {% endif %}
+                {% if protocol.published_at %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Veröffentlicht</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ protocol.published_at|date:"d.m.Y H:i" }}</dd>
+                </div>
+                {% endif %}
+                {% if protocol.chair_name or protocol.recorder_name %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Unterschriften</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">
+                        {% if protocol.chair_name %}Vorsitz: {{ protocol.chair_name }}<br>{% endif %}
+                        {% if protocol.recorder_name %}Protokollführung: {{ protocol.recorder_name }}{% endif %}
+                    </dd>
+                </div>
+                {% endif %}
+            </dl>
+            <div class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                <a href="{% url 'session:meeting_protocol_pdf' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                   class="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                    <i data-lucide="file-down" class="w-4 h-4"></i> Niederschrift-PDF (Ö-Fassung)
+                </a>
+                {% if can_view_np %}
+                <a href="{% url 'session:meeting_protocol_pdf' tenant_slug=tenant_slug meeting_id=meeting.id %}?fassung=intern"
+                   class="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 hover:underline">
+                    <i data-lucide="file-lock" class="w-4 h-4"></i> Interne Fassung (inkl. NÖ)
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Teilnehmerverzeichnis -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-3">Teilnehmerverzeichnis</h3>
+            {% if participants.all %}
+            <div class="space-y-3 text-sm">
+                {% if participants.present %}
+                <div>
+                    <p class="text-xs font-semibold text-green-700 dark:text-green-400 uppercase mb-1">Anwesend</p>
+                    {% for a in participants.present %}<p class="text-gray-700 dark:text-gray-300">{{ a.person.display_name }} ({{ a.get_role_display }})</p>{% endfor %}
+                </div>
+                {% endif %}
+                {% if participants.excused %}
+                <div>
+                    <p class="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase mb-1">Entschuldigt</p>
+                    {% for a in participants.excused %}<p class="text-gray-700 dark:text-gray-300">{{ a.person.display_name }}</p>{% endfor %}
+                </div>
+                {% endif %}
+                {% if participants.absent %}
+                <div>
+                    <p class="text-xs font-semibold text-red-700 dark:text-red-400 uppercase mb-1">Unentschuldigt abwesend</p>
+                    {% for a in participants.absent %}<p class="text-gray-700 dark:text-gray-300">{{ a.person.display_name }}</p>{% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-500 dark:text-gray-400">Keine Anwesenheitsliste erfasst.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

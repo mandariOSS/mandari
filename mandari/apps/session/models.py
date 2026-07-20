@@ -1010,6 +1010,18 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
         verbose_name="Nicht-öffentlicher Beschlusstext",
     )
 
+    # Niederschrift (Issue #31): TOP-weise Protokolltexte
+    protocol_note = models.TextField(
+        blank=True,
+        verbose_name="Protokolltext",
+        help_text="Wortbeiträge/Beratungsverlauf zu diesem TOP (öffentlicher Teil der Niederschrift)",
+    )
+    protocol_note_encrypted = EncryptedTextField(
+        blank=True,
+        null=True,
+        verbose_name="Nicht-öffentlicher Protokolltext",
+    )
+
     vote_result = models.CharField(
         max_length=50,
         choices=[
@@ -1452,6 +1464,15 @@ class SessionProtocol(EncryptionMixin, models.Model):
         related_name="created_protocols",
         verbose_name="Erstellt von",
     )
+    review_requested_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="submitted_protocols",
+        verbose_name="Zur Prüfung gegeben von",
+    )
+    review_requested_at = models.DateTimeField(blank=True, null=True, verbose_name="Zur Prüfung gegeben am")
     approved_by = models.ForeignKey(
         SessionUser,
         on_delete=models.SET_NULL,
@@ -1461,6 +1482,24 @@ class SessionProtocol(EncryptionMixin, models.Model):
         verbose_name="Genehmigt von",
     )
     approved_at = models.DateTimeField(blank=True, null=True, verbose_name="Genehmigt am")
+    published_at = models.DateTimeField(blank=True, null=True, verbose_name="Veröffentlicht am")
+
+    # Genehmigungsvermerk (Issue #31): Genehmigung erfolgt üblicherweise in
+    # der Folgesitzung des Gremiums
+    approval_meeting = models.ForeignKey(
+        SessionMeeting,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_protocols",
+        verbose_name="Genehmigt in Sitzung",
+        help_text="Folgesitzung, in der die Niederschrift genehmigt wurde",
+    )
+    approval_note = models.CharField(max_length=500, blank=True, verbose_name="Genehmigungsvermerk")
+
+    # Unterschriften-Block (Vorsitz + Protokollführung)
+    chair_name = models.CharField(max_length=255, blank=True, verbose_name="Vorsitz (Unterschrift)")
+    recorder_name = models.CharField(max_length=255, blank=True, verbose_name="Protokollführung (Unterschrift)")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

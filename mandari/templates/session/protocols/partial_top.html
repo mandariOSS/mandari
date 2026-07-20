@@ -1,0 +1,34 @@
+{% comment %}Ein TOP in der Protokoll-Ansicht (Issue #31). Erwartet: item, can_view_np.{% endcomment %}
+<div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700/50 last:border-b-0">
+    <div class="flex items-start gap-3">
+        <span class="text-sm font-bold text-gray-500 dark:text-gray-400 w-10">{{ item.number }}</span>
+        <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-gray-900 dark:text-white {% if item.is_withdrawn %}line-through text-gray-400{% endif %}">
+                {{ item.name }}
+                {% if item.is_supplementary %}<span class="text-xs text-amber-600">(Nachtrag)</span>{% endif %}
+            </p>
+            {% if item.vote_result != "pending" %}
+            <p class="text-xs mt-1">
+                <span class="font-medium
+                    {% if item.vote_result == 'approved' %}text-green-700 dark:text-green-400
+                    {% elif item.vote_result == 'rejected' %}text-red-700 dark:text-red-400
+                    {% else %}text-gray-600 dark:text-gray-400{% endif %}">
+                    {{ item.get_vote_result_display }}</span>
+                <span class="text-gray-500 dark:text-gray-400">— Ja: {{ item.votes_yes }}, Nein: {{ item.votes_no }}, Enthaltungen: {{ item.votes_abstain }}</span>
+            </p>
+            {% endif %}
+            {% if item.resolution_text %}
+            <p class="text-xs text-gray-600 dark:text-gray-400 mt-1"><span class="font-medium">Beschluss:</span> {{ item.resolution_text|truncatechars:300 }}</p>
+            {% endif %}
+            {% if item.protocol_note %}
+            <p class="text-xs text-gray-600 dark:text-gray-400 mt-1 whitespace-pre-line">{{ item.protocol_note }}</p>
+            {% endif %}
+            {% if can_view_np and item.protocol_note_np %}
+            <p class="text-xs text-red-600 dark:text-red-400 mt-1 whitespace-pre-line"><i data-lucide="lock" class="w-3 h-3 inline"></i> {{ item.protocol_note_np }}</p>
+            {% endif %}
+            {% for sub in item.children_list %}
+            {% include "session/protocols/partial_top.html" with item=sub %}
+            {% endfor %}
+        </div>
+    </div>
+</div>

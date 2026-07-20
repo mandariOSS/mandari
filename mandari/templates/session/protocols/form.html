@@ -1,0 +1,80 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Protokoll bearbeiten: {{ meeting.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Niederschrift</a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Bearbeiten</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<form method="post" class="space-y-6 max-w-4xl">
+    {% csrf_token %}
+
+    <!-- Allgemeiner Teil -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+        <h2 class="font-semibold text-gray-900 dark:text-white">Allgemeiner Teil</h2>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Niederschrift (öffentlicher Teil)</label>
+            <textarea name="content" rows="6"
+                      class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">{{ protocol.content }}</textarea>
+        </div>
+        {% if can_view_np %}
+        <div>
+            <label class="block text-sm font-medium text-red-700 dark:text-red-400 mb-1 flex items-center gap-1">
+                <i data-lucide="lock" class="w-4 h-4"></i> Nichtöffentlicher Teil (verschlüsselt gespeichert)
+            </label>
+            <textarea name="content_np" rows="4"
+                      class="w-full rounded-lg border-red-300 dark:border-red-800 dark:bg-gray-700 dark:text-white text-sm">{{ content_np }}</textarea>
+        </div>
+        {% endif %}
+        <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Vorsitz (Unterschrift)</label>
+                <input type="text" name="chair_name" value="{{ protocol.chair_name }}"
+                       class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Protokollführung (Unterschrift)</label>
+                <input type="text" name="recorder_name" value="{{ protocol.recorder_name }}"
+                       class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+            </div>
+        </div>
+    </div>
+
+    <!-- TOP-weise Protokollierung -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white">Tagesordnungspunkte</h2>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Beschlusstext, Abstimmungsergebnis und Protokolltext je TOP.</p>
+        </div>
+        {% for item in agenda_public %}
+        {% include "session/protocols/partial_top_form.html" %}
+        {% endfor %}
+        {% if agenda_non_public %}
+        <div class="px-6 py-2 bg-red-50 dark:bg-red-900/20 text-xs font-semibold text-red-800 dark:text-red-300 uppercase tracking-wider flex items-center gap-2">
+            <i data-lucide="lock" class="w-3.5 h-3.5"></i> Nichtöffentlicher Teil
+        </div>
+        {% for item in agenda_non_public %}
+        {% include "session/protocols/partial_top_form.html" %}
+        {% endfor %}
+        {% endif %}
+    </div>
+
+    <div class="flex items-center gap-3">
+        <button type="submit" name="continue" value="1"
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors">
+            <i data-lucide="save" class="w-4 h-4"></i> Speichern und weiter bearbeiten
+        </button>
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
+            <i data-lucide="check" class="w-4 h-4"></i> Speichern
+        </button>
+        <a href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+           class="text-sm text-gray-500 dark:text-gray-400 hover:underline">Abbrechen</a>
+    </div>
+</form>
+{% endblock %}

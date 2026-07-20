@@ -66,6 +66,32 @@ urlpatterns = [
         views.MeetingIcsView.as_view(),
         name="meeting_ics",
     ),
+    # Niederschrift (Issue #31)
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/protocol/",
+        views.ProtocolDetailView.as_view(),
+        name="meeting_protocol",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/protocol/create/",
+        views.ProtocolCreateView.as_view(),
+        name="meeting_protocol_create",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/protocol/edit/",
+        views.ProtocolEditView.as_view(),
+        name="meeting_protocol_edit",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/protocol/<str:action>/",
+        views.ProtocolWorkflowView.as_view(),
+        name="meeting_protocol_action",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/niederschrift.pdf",
+        views.ProtocolPdfView.as_view(),
+        name="meeting_protocol_pdf",
+    ),
     path(
         "<slug:tenant_slug>/meetings/<uuid:meeting_id>/agenda/add/",
         views.AgendaItemCreateView.as_view(),
