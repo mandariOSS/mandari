@@ -37,6 +37,52 @@ def set_current_request(request):
     _thread_state.request = request
 
 
+# =============================================================================
+# Mandanten-Kaskadenlöschung (Issue #56)
+# =============================================================================
+#
+# Beim Löschen eines kompletten SessionTenant löscht Django alle abhängigen
+# Objekte in einer Kaskade. Die post_delete-Receiver würden dabei NEUE
+# SessionAuditLog-Zeilen für den gerade verschwindenden Mandanten anlegen —
+# der Collector kennt diese Zeilen nicht, sie blieben mit hängendem
+# Fremdschlüssel zurück und das abschließende DELETE des Mandanten schlägt
+# mit IntegrityError fehl. Daher wird der Mandant während seiner Löschung
+# markiert und das Protokollieren übersprungen (die Audit-Zeilen des
+# Mandanten werden ohnehin mitkaskadiert — es geht keine Historie verloren).
+
+
+def mark_tenant_deleting(tenant_pk):
+    """Mandanten-PK als 'wird gerade kaskadengelöscht' markieren (pre_delete)."""
+    pks = getattr(_thread_state, "deleting_tenant_pks", None)
+    if pks is None:
+        pks = set()
+        _thread_state.deleting_tenant_pks = pks
+    pks.add(tenant_pk)
+
+
+def unmark_tenant_deleting(tenant_pk):
+    """Markierung nach Abschluss der Kaskadenlöschung entfernen (post_delete)."""
+    pks = getattr(_thread_state, "deleting_tenant_pks", None)
+    if pks is not None:
+        pks.discard(tenant_pk)
+
+
+def is_tenant_deleting(tenant_pk) -> bool:
+    """Läuft für diesen Mandanten gerade eine Kaskadenlöschung?"""
+    pks = getattr(_thread_state, "deleting_tenant_pks", None)
+    return bool(pks) and tenant_pk in pks
+
+
+def tenant_pre_delete(sender, instance, **kwargs):
+    """pre_delete(SessionTenant): Kaskadenlöschung beginnt."""
+    mark_tenant_deleting(instance.pk)
+
+
+def tenant_post_delete(sender, instance, **kwargs):
+    """post_delete(SessionTenant): Kaskadenlöschung abgeschlossen."""
+    unmark_tenant_deleting(instance.pk)
+
+
 def clear_current_request():
     """Thread-Local-Request wieder entfernen (Middleware, Response/Exception)."""
     _thread_state.request = None
@@ -116,6 +162,10 @@ def log_event(action, instance, *, tenant=None, user=None, changes=None, request
 
     tenant = tenant or resolve_tenant(instance)
     if tenant is None:
+        return None
+
+    # Issue #56: Während einer Mandanten-Kaskadenlöschung nichts protokollieren
+    if is_tenant_deleting(tenant.pk):
         return None
 
     request = request or get_current_request()
@@ -211,5 +261,9 @@ def audit_post_save(sender, instance, created, **kwargs):
 
 
 def audit_post_delete(sender, instance, **kwargs):
-    """delete protokollieren."""
+    """delete protokollieren (übersprungen während Mandanten-Kaskadenlöschung)."""
+    # Schneller Pfad ohne DB-Zugriff: direkte tenant_id-Objekte (Issue #56)
+    tenant_id = getattr(instance, "tenant_id", None)
+    if tenant_id is not None and is_tenant_deleting(tenant_id):
+        return
     log_event("delete", instance)

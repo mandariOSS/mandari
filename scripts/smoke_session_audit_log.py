@@ -274,6 +274,58 @@ resp = foreign_client.get(f"/session/{tenant.slug}/audit/")
 check("Audit-Ansicht als Nicht-Mitglied -> 403", resp.status_code == 403, f"got {resp.status_code}")
 
 # =============================================================================
+# Phase E: Mandanten-Kaskadenlöschung (Regression Issue #56)
+# =============================================================================
+print()
+print("=== Phase E: Mandanten-Kaskadenlöschung (Issue #56) ===")
+
+# Mandant mit Bestandsdaten quer durch die auditierten Models anlegen
+tenant3 = SessionTenant.objects.create(name="Stadt Loeschstadt", slug="loeschstadt")
+t3_role = SessionRole.objects.create(tenant=tenant3, name="Admin", is_admin=True)
+t3_user = User.objects.create_user(email="loesch@example.org", password="pw-Smoke-Test-1!")
+t3_su = SessionUser.objects.create(user=t3_user, tenant=tenant3)
+t3_su.roles.add(t3_role)
+t3_org = SessionOrganization.objects.create(tenant=tenant3, name="Ausschuss Löschstadt")
+t3_meeting = SessionMeeting.objects.create(
+    tenant=tenant3, name="Sitzung Löschstadt", organization=t3_org, start=timezone.now()
+)
+t3_paper = SessionPaper.objects.create(tenant=tenant3, reference="V/2026/9999", name="Vorlage Löschstadt")
+t3_protocol = SessionProtocol.objects.create(meeting=t3_meeting, content="Protokoll Löschstadt")
+t3_person = SessionPerson.objects.create(tenant=tenant3, given_name="Paul", family_name="Probelösch")
+
+tenant3_pk = tenant3.pk
+check("Vorbedingung: Audit-Einträge für Mandant vorhanden", entries(tenant=tenant3).exists())
+other_tenant_entries_before = SessionAuditLog.objects.exclude(tenant_id=tenant3_pk).count()
+
+try:
+    tenant3.delete()
+    cascade_ok = True
+    cascade_error = ""
+except Exception as exc:  # noqa: BLE001 — Regressionstest will jeden Fehler sehen
+    cascade_ok = False
+    cascade_error = repr(exc)
+check("Mandanten-Kaskadenlöschung wirft keinen Fehler", cascade_ok, cascade_error)
+check("Mandant ist gelöscht", not SessionTenant.objects.filter(pk=tenant3_pk).exists())
+check(
+    "Keine verwaisten Audit-Zeilen des gelöschten Mandanten",
+    not SessionAuditLog.objects.filter(tenant_id=tenant3_pk).exists(),
+)
+check(
+    "Audit-Einträge anderer Mandanten unangetastet",
+    SessionAuditLog.objects.exclude(tenant_id=tenant3_pk).count() == other_tenant_entries_before,
+)
+
+# Nach der Kaskadenlöschung protokollieren die Receiver normal weiter
+after_org = SessionOrganization.objects.create(tenant=tenant, name="Ausschuss nach Löschung")
+after_org_pk = after_org.pk
+check("Audit-Logging läuft nach Kaskadenlöschung weiter (create)", entries(after_org, "create").exists())
+after_org.delete()
+check(
+    "Audit-Logging läuft nach Kaskadenlöschung weiter (delete)",
+    SessionAuditLog.objects.filter(object_id=after_org_pk, action="delete").exists(),
+)
+
+# =============================================================================
 print()
 print(f"=== Ergebnis: {PASS} OK, {FAIL} FAIL ===")
 sys.exit(1 if FAIL else 0)

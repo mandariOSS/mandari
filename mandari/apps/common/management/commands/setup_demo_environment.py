@@ -1162,12 +1162,10 @@ class Command(BaseCommand):
 
         deleted = []
 
-        # Audit-Signale während der Kaskadenlöschung stummschalten: Die
-        # post_delete-Receiver würden sonst WÄHREND des Löschens neue
-        # SessionAuditLog-Zeilen für den gerade gelöschten Mandanten anlegen
-        # (hängende Fremdschlüssel -> IntegrityError beim Commit).
-        with self._session_audit_muted():
-            count, _ = SessionTenant.objects.filter(slug=DEMO_SESSION_SLUG).delete()
+        # Die Audit-Receiver erkennen die Mandanten-Kaskadenlöschung selbst
+        # und überspringen das Protokollieren (Issue #56) — keine lokale
+        # Umgehung mehr nötig.
+        count, _ = SessionTenant.objects.filter(slug=DEMO_SESSION_SLUG).delete()
         deleted.append(f"Session-Mandant (+abhängige Objekte): {count}")
 
         count, _ = Organization.objects.filter(slug=DEMO_ORG_SLUG).delete()
@@ -1194,32 +1192,6 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Demo-Umgebung entfernt:"))
         for line in deleted:
             self.stdout.write(f"  - {line}")
-
-    @staticmethod
-    def _session_audit_muted():
-        """Kontextmanager: Session-Audit-Delete-Signale temporär trennen."""
-        from contextlib import contextmanager
-
-        from django.db.models.signals import post_delete
-
-        from apps.session import audit
-        from apps.session.signals import AUDITED_MODELS
-
-        @contextmanager
-        def muted():
-            for model in AUDITED_MODELS:
-                post_delete.disconnect(sender=model, dispatch_uid=f"session_audit_{model.__name__}_post_delete")
-            try:
-                yield
-            finally:
-                for model in AUDITED_MODELS:
-                    post_delete.connect(
-                        audit.audit_post_delete,
-                        sender=model,
-                        dispatch_uid=f"session_audit_{model.__name__}_post_delete",
-                    )
-
-        return muted()
 
     # ------------------------------------------------------------------
     # Ausgabe
