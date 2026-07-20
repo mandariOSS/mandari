@@ -37,7 +37,7 @@
                 <td class="px-6 py-3">
                     {% if link_type == "person" %}
                     <span class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                        {{ m.person.name }}
+                        {{ m.person.display_name|default:m.person.name }}
                     </span>
                     {% else %}
                     <span class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">

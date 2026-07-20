@@ -286,6 +286,32 @@ def get_person_seo(person, request: HttpRequest) -> SEOContext:
     )
 
 
+def get_page_seo(
+    request: HttpRequest,
+    title: str,
+    description: str,
+    body=None,
+    robots: str = "index, follow",
+    keywords: list[str] | None = None,
+) -> SEOContext:
+    """Generischer SEO-Kontext für Listen- und Funktionsseiten.
+
+    Ergänzt den Kommune-Namen im Titel, setzt Canonical/OG/Twitter und
+    erlaubt noindex für personalisierte Seiten (z.B. Merkliste).
+    """
+    if body:
+        title = f"{title} - {body.get_display_name()}"
+
+    return SEOContext(
+        title=title[:60],
+        description=description[:160],
+        canonical_url=build_canonical_url(request),
+        og_type="website",
+        robots=robots,
+        keywords=keywords or ["Kommunalpolitik", "Ratsinformationen", "Transparenz"],
+    )
+
+
 def get_portal_home_seo(request: HttpRequest, body=None) -> SEOContext:
     """SEO für die Portal-Startseite."""
     if body:
@@ -293,8 +319,11 @@ def get_portal_home_seo(request: HttpRequest, body=None) -> SEOContext:
         title = f"{name} - Insight Portal"[:60]
         description = f"Ratsinformationen für {name}. Aktuelle Sitzungen, Vorgänge und Beschlüsse."
     else:
-        title = "Insight Portal - Alle Kommunen"
-        description = "Übersicht aller verfügbaren Ratsinformationssysteme. Wählen Sie Ihre Kommune."
+        title = "Wähle deine Kommune - Mandari Insight"
+        description = (
+            "Lokalpolitik, die alle verstehen: Wähle deine Kommune und entdecke "
+            "Sitzungen, Vorgänge, Gremien und die Menschen hinter den Entscheidungen."
+        )
 
     return SEOContext(
         title=title,

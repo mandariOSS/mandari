@@ -41,7 +41,7 @@
                         <h4 class="font-semibold text-gray-900 dark:text-white text-[13px] mb-1">Datenschutzhinweis</h4>
                         <p class="text-gray-500 dark:text-gray-400 text-[11px] leading-relaxed">
                             Der KI-Assistent nutzt <strong class="text-gray-600 dark:text-gray-300">Nebius AI</strong> (Kimi K2). Ihre Anfragen werden an externe Server übermittelt.
-                            <a href="/datenschutz/" target="_blank" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Mehr erfahren</a>
+                            <a href="{{ marketing_url }}/datenschutz/" target="_blank" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Mehr erfahren</a>
                         </p>
                     </div>
                 </div>
@@ -208,10 +208,11 @@
     </button>
 </div>
 
+{% load static %}
 <script>
 if (typeof marked === 'undefined') {
     var s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
+    s.src = '{% static "vendor/marked/marked.min.js" %}';
     document.head.appendChild(s);
 }
 

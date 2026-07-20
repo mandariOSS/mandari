@@ -88,6 +88,8 @@ from .search import (
 )
 from .sitemap import (
     body_sitemap,
+    robots_txt,
+    sitemap_index,
 )
 from .subscriptions import (
     SubscribeView,
@@ -132,6 +134,8 @@ __all__ = [
     "_get_client_ip",
     "_send_confirmation_email",
     "body_sitemap",
+    "robots_txt",
+    "sitemap_index",
     "bookmark_entities",
     "bookmark_ids",
     "bookmark_toggle",

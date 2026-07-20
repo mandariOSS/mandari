@@ -33,7 +33,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="{% block meta_description %}Mandari - Kommunalpolitische Transparenz{% endblock %}">
+    <meta name="description" content="{% block meta_description %}{% if seo.description %}{{ seo.description }}{% else %}Mandari - Kommunalpolitische Transparenz{% endif %}{% endblock %}">
     <meta name="theme-color" content="#4f46e5">
     {% if seo.keywords %}<meta name="keywords" content="{{ seo.keywords }}">{% endif %}
     {% if seo.author %}<meta name="author" content="{{ seo.author }}">{% endif %}

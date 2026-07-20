@@ -37,7 +37,7 @@
                                 Der KI-Assistent nutzt <strong class="text-gray-700 dark:text-gray-300">Nebius AI</strong> (Kimi K2) zur Verarbeitung Ihrer Anfragen.
                                 Ihre Fragen werden an die Nebius TokenFactory API übermittelt.
                                 Es gelten die Bestimmungen unserer
-                                <a href="/datenschutz/" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Datenschutzerklärung</a>.
+                                <a href="{{ marketing_url }}/datenschutz/" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Datenschutzerklärung</a>.
                             </p>
                             <label class="flex items-start gap-3 p-3 -mx-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750 cursor-pointer select-none transition-colors">
                                 <input type="checkbox" x-model="consentChecked"
@@ -50,7 +50,7 @@
                     </div>
                 </div>
                 <div class="px-6 lg:px-8 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-700 flex items-center justify-end gap-3">
-                    <a href="/insight/"
+                    <a href="{% url 'insight_core:insight:portal_home' %}"
                        class="px-5 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
                         Abbrechen
                     </a>
@@ -216,7 +216,7 @@
                             <span class="text-xs text-gray-400 dark:text-gray-500">
                                 Noch <span x-text="remainingToday" class="font-semibold text-gray-500 dark:text-gray-400"></span> Fragen heute
                                 <template x-if="remainingToday <= 2 && !isRegistered">
-                                    <span class="ml-1">&mdash; <a href="/accounts/register/" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Konto erstellen</a> für mehr</span>
+                                    <span class="ml-1">&mdash; <a href="{% url 'accounts:register' %}" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Konto erstellen</a> für mehr</span>
                                 </template>
                             </span>
                             <span class="text-xs text-gray-300 dark:text-gray-600">&middot;</span>
@@ -259,7 +259,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="{% static 'vendor/marked/marked.min.js' %}"></script>
 <script>
 function chatApp() {
     return {

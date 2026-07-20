@@ -89,7 +89,11 @@ insight_patterns = [
 # Haupt-URL-Patterns
 # =============================================================================
 urlpatterns = [
-    # SEO: Body-Sitemaps (bleiben in Mandari, da OParl-Daten hier liegen)
+    # SEO: robots.txt (greift im Self-Hosting; in Produktion via Marketing-Site)
+    path("robots.txt", views.robots_txt, name="robots_txt"),
+    # SEO: Sitemap-Index + Body-Sitemaps (bleiben in Mandari, da OParl-Daten hier liegen)
+    # Wichtig: Index VOR dem Slug-Pattern registrieren ("index" wäre ein gültiger Slug)
+    path("sitemap-insight-index.xml", views.sitemap_index, name="sitemap_index"),
     path("sitemap-insight-<slug:body_slug>.xml", views.body_sitemap, name="body_sitemap"),
     # Insight Portal (RIS) - alle unter /insight/
     path("insight/", include((insight_patterns, "insight"))),

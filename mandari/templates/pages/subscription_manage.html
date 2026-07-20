@@ -141,7 +141,7 @@
 
         <!-- Actions -->
         <div class="flex items-center justify-between pt-2">
-            <a href="/insight/abo/abmelden/{{ subscriber.token }}/"
+            <a href="{% url 'insight_core:insight:unsubscribe' subscriber.token %}"
                class="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:underline">
                 Abo k&uuml;ndigen
             </a>

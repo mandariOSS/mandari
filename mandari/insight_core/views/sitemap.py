@@ -21,6 +21,56 @@ from ..models import (
 # =============================================================================
 
 
+def _site_url():
+    from django.conf import settings
+
+    return getattr(settings, "SITE_URL", "https://mandari.de")
+
+
+@require_GET
+def robots_txt(request):
+    """robots.txt mit Verweis auf den Insight-Sitemap-Index.
+
+    In der Produktions-Topologie beantwortet die Marketing-Site /robots.txt;
+    dieser Endpunkt greift im Self-Hosting-Betrieb (Django ist einzige Site).
+    """
+    lines = [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /admin/",
+        "Disallow: /accounts/",
+        "Disallow: /api/",
+        "Disallow: /session/",
+        "Disallow: /work/",
+        "Disallow: /insight/merkliste/",
+        "Disallow: /insight/gespeichert/",
+        "",
+        f"Sitemap: {_site_url()}/sitemap-insight-index.xml",
+        "",
+    ]
+    return HttpResponse("\n".join(lines), content_type="text/plain; charset=utf-8")
+
+
+@require_GET
+def sitemap_index(request):
+    """Sitemap-Index: listet die Body-Sitemaps aller Kommunen mit Slug."""
+    site_url = _site_url()
+    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
+    xml_parts.append('<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+    bodies = OParlBody.objects.filter(deleted=False).exclude(slug__isnull=True).exclude(slug="").order_by("slug")
+    for body in bodies:
+        xml_parts.append("  <sitemap>")
+        xml_parts.append(f"    <loc>{site_url}/sitemap-insight-{body.slug}.xml</loc>")
+        if body.last_sync:
+            xml_parts.append(f"    <lastmod>{body.last_sync.strftime('%Y-%m-%dT%H:%M:%S+00:00')}</lastmod>")
+        xml_parts.append("  </sitemap>")
+    xml_parts.append("</sitemapindex>")
+
+    response = HttpResponse("\n".join(xml_parts), content_type="application/xml; charset=utf-8")
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
+
+
 @require_GET
 def body_sitemap(request, body_slug):
     """
