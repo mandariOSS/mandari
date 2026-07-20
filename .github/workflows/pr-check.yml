@@ -147,6 +147,20 @@ jobs:
           cd mandari
           pytest -v || echo "No tests found (yet)"
 
+      # Session-Sicherheits-Suiten (Issue #28): Tenant-Isolation,
+      # OE/NOE-Sichtbarkeit und Permission-Matrix. Die Skripte setzen ihre
+      # Umgebung (SQLite, Schluessel) selbst.
+      - name: Session security smoke tests
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+        run: |
+          python scripts/smoke_session_matrix.py
+          python scripts/smoke_session_applications.py
+          python scripts/smoke_session_audit_log.py
+          python scripts/smoke_session_files.py
+          python scripts/smoke_session_agenda.py
+          python scripts/smoke_session_stammdaten.py
+
   # ===========================================================================
   # Docker Build Validation
   # ===========================================================================

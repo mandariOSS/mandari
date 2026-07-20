@@ -37,26 +37,24 @@ class DashboardView(SessionViewMixin, TemplateView):
         tenant = self.session_tenant
         today = timezone.now().date()
 
-        # Upcoming meetings (next 30 days)
-        context["upcoming_meetings"] = (
-            SessionMeeting.objects.filter(
-                tenant=tenant,
-                start__date__gte=today,
-                start__date__lte=today + timedelta(days=30),
-                cancelled=False,
-            )
-            .select_related("organization")
-            .order_by("start")[:5]
+        # Upcoming meetings (next 30 days) — Ö/NÖ nur für Berechtigte
+        upcoming = SessionMeeting.objects.filter(
+            tenant=tenant,
+            start__date__gte=today,
+            start__date__lte=today + timedelta(days=30),
+            cancelled=False,
         )
+        if not self.has_permission("view_non_public_meetings"):
+            upcoming = upcoming.filter(is_public=True)
+        context["upcoming_meetings"] = upcoming.select_related("organization").order_by("start")[:5]
 
-        # Recent papers
-        context["recent_papers"] = (
-            SessionPaper.objects.filter(
-                tenant=tenant,
-            )
-            .select_related("main_organization", "originator_organization")
-            .order_by("-created_at")[:5]
-        )
+        # Recent papers — Ö/NÖ nur für Berechtigte
+        recent_papers = SessionPaper.objects.filter(tenant=tenant)
+        if not self.has_permission("view_non_public_papers"):
+            recent_papers = recent_papers.filter(is_public=True)
+        context["recent_papers"] = recent_papers.select_related(
+            "main_organization", "originator_organization"
+        ).order_by("-created_at")[:5]
 
         # Pending applications
         context["pending_applications"] = SessionApplication.objects.filter(

@@ -39,6 +39,10 @@ class MeetingListView(SessionViewMixin, ListView):
         qs = super().get_queryset()
         qs = qs.select_related("organization").order_by("-start")
 
+        # Ö/NÖ: Nichtöffentliche Sitzungen nur für Berechtigte
+        if not self.has_permission("view_non_public_meetings"):
+            qs = qs.filter(is_public=True)
+
         # Filter by organization
         org_id = self.request.GET.get("organization")
         if org_id:
@@ -84,6 +88,9 @@ class MeetingDetailView(SessionViewMixin, DetailView):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        # Ö/NÖ: Nichtöffentliche Sitzungen nur für Berechtigte
+        if not self.has_permission("view_non_public_meetings"):
+            qs = qs.filter(is_public=True)
         return qs.select_related("organization", "created_by__user")
 
     def get_context_data(self, **kwargs):
@@ -176,6 +183,13 @@ class MeetingUpdateView(SessionViewMixin, UpdateView):
     ]
     pk_url_kwarg = "meeting_id"
     permission_required = "edit_meetings"
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Ö/NÖ: Nichtöffentliche Sitzungen nur für Berechtigte bearbeitbar
+        if not self.has_permission("view_non_public_meetings"):
+            qs = qs.filter(is_public=True)
+        return qs
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)

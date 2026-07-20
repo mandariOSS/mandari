@@ -42,6 +42,10 @@ class PaperListView(SessionViewMixin, ListView):
             "-date", "-created_at"
         )
 
+        # Ö/NÖ: Nichtöffentliche Vorlagen nur für Berechtigte
+        if not self.has_permission("view_non_public_papers"):
+            qs = qs.filter(is_public=True)
+
         # Filter by type
         paper_type = self.request.GET.get("type")
         if paper_type:
@@ -85,6 +89,9 @@ class PaperDetailView(SessionViewMixin, DetailView):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        # Ö/NÖ: Nichtöffentliche Vorlagen nur für Berechtigte
+        if not self.has_permission("view_non_public_papers"):
+            qs = qs.filter(is_public=True)
         return qs.select_related(
             "main_organization",
             "originator_organization",
@@ -181,6 +188,13 @@ class PaperUpdateView(SessionViewMixin, UpdateView):
     ]
     pk_url_kwarg = "paper_id"
     permission_required = "edit_papers"
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Ö/NÖ: Nichtöffentliche Vorlagen nur für Berechtigte bearbeitbar
+        if not self.has_permission("view_non_public_papers"):
+            qs = qs.filter(is_public=True)
+        return qs
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
