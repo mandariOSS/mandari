@@ -297,80 +297,20 @@
 
 {% else %}
 
-<section class="fade-up mb-8">
-    <div class="text-center mb-8">
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            Lokalpolitik, die alle verstehen
-        </h1>
-        <p class="text-[15px] text-gray-600 dark:text-gray-300 max-w-lg mx-auto">
-            W&auml;hle deine Kommune und entdecke Sitzungen, Vorg&auml;nge und die Menschen hinter den Entscheidungen.
-        </p>
+{# Fallback: keine Kommune ermittelbar (z.B. Datenbestand entfernt). Die #}
+{# eigentliche Kommune-Auswahl rendert pages/portal/select_body.html.    #}
+<section class="fade-up max-w-md mx-auto text-center py-16">
+    <div class="w-14 h-14 bg-primary-50 dark:bg-primary-900/20 rounded-2xl mx-auto mb-4 flex items-center justify-center">
+        <i data-lucide="database" class="w-6 h-6 text-primary-500 dark:text-primary-400"></i>
     </div>
-
-    {% if available_bodies %}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl mx-auto">
-        {% for body in available_bodies %}
-        <a href="{% url 'insight_core:insight:set_body' body.id %}"
-            class="group bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-primary-300 dark:hover:border-primary-600 transition-all">
-            <div class="flex items-center gap-3.5">
-                {% if body.logo %}
-                <img src="{{ body.logo.url }}" alt="" class="w-10 h-10 rounded-lg object-contain flex-shrink-0">
-                {% else %}
-                <div class="w-10 h-10 rounded-lg bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center flex-shrink-0">
-                    <span class="text-sm font-bold text-primary-600 dark:text-primary-400">{{ body.get_initials }}</span>
-                </div>
-                {% endif %}
-                <div class="min-w-0">
-                    <div class="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">{{ body.get_display_name }}</div>
-                    {% if body.classification %}
-                    <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ body.classification }}</div>
-                    {% endif %}
-                </div>
-            </div>
-        </a>
-        {% endfor %}
-    </div>
-    {% else %}
-    <div class="text-center py-12">
-        <div class="w-14 h-14 bg-gray-100 dark:bg-gray-800 rounded-full mx-auto mb-3 flex items-center justify-center">
-            <i data-lucide="database" class="w-6 h-6 text-gray-400"></i>
-        </div>
-        <h3 class="text-base font-medium text-gray-700 dark:text-gray-300 mb-1">Keine Kommunen verf&uuml;gbar</h3>
-        <p class="text-sm text-gray-500 dark:text-gray-400">Es wurden noch keine Kommunen synchronisiert.</p>
-    </div>
-    {% endif %}
-
-    {% if stats.bodies > 0 %}
-    <div class="mt-10 pt-6 border-t border-gray-200 dark:border-gray-700">
-        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 text-center">Insgesamt verf&uuml;gbar</p>
-        <div class="grid grid-cols-3 md:grid-cols-6 gap-4 text-center">
-            <div>
-                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.bodies }}</div>
-                <div class="text-xs text-gray-400 dark:text-gray-500">Kommunen</div>
-            </div>
-            <div>
-                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.organizations }}</div>
-                <div class="text-xs text-gray-400 dark:text-gray-500">Gremien</div>
-            </div>
-            <div>
-                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.persons }}</div>
-                <div class="text-xs text-gray-400 dark:text-gray-500">Personen</div>
-            </div>
-            <div>
-                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.meetings }}</div>
-                <div class="text-xs text-gray-400 dark:text-gray-500">Sitzungen</div>
-            </div>
-            <div>
-                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.papers }}</div>
-                <div class="text-xs text-gray-400 dark:text-gray-500">Vorg&auml;nge</div>
-            </div>
-            <div>
-                <div class="text-lg font-bold text-gray-700 dark:text-gray-200">{{ stats.files }}</div>
-                <div class="text-xs text-gray-400 dark:text-gray-500">Dokumente</div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
+    <h1 class="text-base font-bold text-gray-900 dark:text-white mb-1.5">Noch keine Kommune verf&uuml;gbar</h1>
+    <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed mb-4">
+        Es wurden noch keine Ratsinformationen synchronisiert.
+        Sobald eine Kommune angebunden ist, erscheint sie hier automatisch.
+    </p>
+    <a href="{% url 'insight_core:insight:clear_body' %}" class="text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+        Zur Kommune-Auswahl
+    </a>
 </section>
 {% endif %}
 {% endblock %}

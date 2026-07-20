@@ -7,6 +7,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 
 import json
 
+from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -27,23 +28,96 @@ from ._helpers import get_active_body, is_all_bodies_mode
 # Portal Homepage (RIS)
 # =============================================================================
 
+# Bundesland aus den ersten beiden Stellen des Amtlichen Gemeindeschlüssels (AGS)
+AGS_BUNDESLAND = {
+    "01": "Schleswig-Holstein",
+    "02": "Hamburg",
+    "03": "Niedersachsen",
+    "04": "Bremen",
+    "05": "Nordrhein-Westfalen",
+    "06": "Hessen",
+    "07": "Rheinland-Pfalz",
+    "08": "Baden-Württemberg",
+    "09": "Bayern",
+    "10": "Saarland",
+    "11": "Berlin",
+    "12": "Brandenburg",
+    "13": "Mecklenburg-Vorpommern",
+    "14": "Sachsen",
+    "15": "Sachsen-Anhalt",
+    "16": "Thüringen",
+}
+
+
+def get_bundesland_for_body(body):
+    """Leitet das Bundesland aus dem AGS der Kommune ab (oder None)."""
+    if body.ags and len(body.ags) >= 2:
+        return AGS_BUNDESLAND.get(body.ags[:2])
+    return None
+
+
+def _bodies_with_stats():
+    """Alle Kommunen inkl. Kennzahlen (Vorgänge/Gremien/Sitzungen) und Region.
+
+    Drei gruppierte Count-Queries statt Multi-Annotate (vermeidet Join-Explosion).
+    """
+    bodies = list(OParlBody.objects.filter(deleted=False).order_by("name"))
+
+    def counts_by_body(model):
+        qs = model.objects.filter(deleted=False).values("body").annotate(n=Count("id"))
+        return {row["body"]: row["n"] for row in qs}
+
+    paper_counts = counts_by_body(OParlPaper)
+    org_counts = counts_by_body(OParlOrganization)
+    meeting_counts = counts_by_body(OParlMeeting)
+
+    for body in bodies:
+        body.stat_papers = paper_counts.get(body.id, 0)
+        body.stat_organizations = org_counts.get(body.id, 0)
+        body.stat_meetings = meeting_counts.get(body.id, 0)
+        body.bundesland = get_bundesland_for_body(body)
+    return bodies
+
 
 class PortalHomeView(TemplateView):
     """Portal-Startseite mit Kommune-Auswahl und Statistiken."""
 
     template_name = "pages/portal/home.html"
+    select_template_name = "pages/portal/select_body.html"
+
+    def get(self, request, *args, **kwargs):
+        # Self-Hosting-Fall: Existiert genau eine Kommune, wird sie automatisch
+        # gewählt — kein Auswahlzwang beim ersten Aufruf.
+        if is_all_bodies_mode(request):
+            bodies = OParlBody.objects.filter(deleted=False)
+            if bodies.count() == 1:
+                only_body = bodies.first()
+                request.session["active_body_id"] = str(only_body.id)
+                request.session.modified = True
+                return redirect("insight_core:insight:portal_home")
+        return super().get(request, *args, **kwargs)
+
+    def get_template_names(self):
+        if is_all_bodies_mode(self.request):
+            return [self.select_template_name]
+        return [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        body = get_active_body(self.request)
+        # Wichtig: all_bodies_mode VOR get_active_body prüfen — der Fallback in
+        # get_active_body würde sonst beim Erstbesuch still die erste Kommune
+        # in die Session schreiben und die Auswahlseite überspringen.
         all_bodies_mode = is_all_bodies_mode(self.request)
+        body = None if all_bodies_mode else get_active_body(self.request)
 
         context["all_bodies_mode"] = all_bodies_mode
 
         if all_bodies_mode:
-            # Alle Kommunen Übersicht
+            # Kommune-Auswahl: alle Kommunen mit echten Kennzahlen
+            bodies = _bodies_with_stats()
+            context["select_bodies"] = bodies
             context["stats"] = {
-                "bodies": OParlBody.objects.filter(deleted=False).count(),
+                "bodies": len(bodies),
                 "organizations": OParlOrganization.objects.filter(deleted=False).count(),
                 "persons": OParlPerson.objects.filter(deleted=False).count(),
                 "meetings": OParlMeeting.objects.filter(deleted=False).count(),

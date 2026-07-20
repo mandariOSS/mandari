@@ -1,0 +1,225 @@
+{% extends "base_insight.html" %}
+{% load humanize %}
+
+{% block title %}Kommune w&auml;hlen{% endblock %}
+
+{% block meta_description %}W&auml;hle deine Kommune und entdecke Sitzungen, Vorg&auml;nge, Gremien und die Menschen hinter den Entscheidungen &ndash; transparent und verst&auml;ndlich.{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Ruhiger indigo Glow hinter dem Hero */
+    .select-hero-glow {
+        position: absolute;
+        inset: -120px 0 auto 0;
+        height: 380px;
+        pointer-events: none;
+        background:
+            radial-gradient(420px 220px at 50% 20%, rgba(79, 70, 229, .10), transparent 70%),
+            radial-gradient(680px 300px at 50% 0%, rgba(79, 70, 229, .05), transparent 75%);
+    }
+    .dark .select-hero-glow {
+        background:
+            radial-gradient(420px 220px at 50% 20%, rgba(129, 140, 248, .12), transparent 70%),
+            radial-gradient(680px 300px at 50% 0%, rgba(129, 140, 248, .06), transparent 75%);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="relative" x-data="bodySelectApp()">
+    <div class="select-hero-glow" aria-hidden="true"></div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Hero: Headline + Suche                                             #}
+    {# ------------------------------------------------------------------ #}
+    <section class="fade-up relative max-w-2xl mx-auto text-center pt-10 lg:pt-16 mb-10">
+        <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-primary-600 dark:text-primary-400 mb-4">
+            Mandari Insight
+        </p>
+        <h1 class="text-3xl sm:text-4xl lg:text-[2.75rem] font-extrabold tracking-tight text-gray-900 dark:text-white leading-tight mb-4">
+            W&auml;hle deine Kommune<span class="text-primary-600 dark:text-primary-400">.</span>
+        </h1>
+        <p class="text-base lg:text-lg text-gray-600 dark:text-gray-300 leading-relaxed max-w-xl mx-auto">
+            Sitzungen, Vorg&auml;nge, Gremien und die Menschen hinter den Entscheidungen &ndash;
+            Lokalpolitik, die alle verstehen.
+        </p>
+    </section>
+
+    {% if select_bodies %}
+    {# ------------------------------------------------------------------ #}
+    {# Suchfeld (Sofort-Filter, client-seitig)                            #}
+    {# ------------------------------------------------------------------ #}
+    <section class="fade-up d1 relative max-w-2xl mx-auto mb-8">
+        <label for="body-select-search" class="sr-only">Kommune suchen</label>
+        <div class="relative">
+            <i data-lucide="search" class="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"></i>
+            <input id="body-select-search" type="text"
+                   x-model="q"
+                   x-ref="searchInput"
+                   @keydown.escape="q = ''"
+                   placeholder="Kommune suchen &hellip;"
+                   autocomplete="off" autocapitalize="off" spellcheck="false"
+                   class="w-full pl-14 pr-14 py-4 text-base bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl text-gray-900 dark:text-white placeholder-gray-400 shadow-sm focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none">
+            <button x-show="q" x-cloak @click="q = ''; $refs.searchInput.focus()"
+                    class="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    aria-label="Suche zur&uuml;cksetzen">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+        </div>
+        <p class="mt-2 text-xs text-gray-400 dark:text-gray-500 text-center" x-show="q" x-cloak aria-live="polite">
+            <span x-text="visibleCount"></span> von {{ select_bodies|length }} Kommunen
+        </p>
+    </section>
+
+    {# ------------------------------------------------------------------ #}
+    {# Kommune-Karten                                                     #}
+    {# ------------------------------------------------------------------ #}
+    <section class="fade-up d2 relative max-w-4xl mx-auto mb-8">
+        <div x-ref="grid" class="grid grid-cols-1 sm:grid-cols-2 {% if select_bodies|length > 4 %}lg:grid-cols-3{% endif %} gap-4">
+            {% for body in select_bodies %}
+            <a href="{% url 'insight_core:insight:set_body' body.id %}"
+               data-search="{{ body.get_display_name|lower }} {{ body.name|lower }}{% if body.classification %} {{ body.classification|lower }}{% endif %}{% if body.bundesland %} {{ body.bundesland|lower }}{% endif %}"
+               x-show="matches($el.dataset.search)"
+               class="group flex flex-col bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-lg hover:shadow-primary-600/5 hover:-translate-y-0.5 transition-all">
+                <div class="flex items-center gap-3.5 mb-4">
+                    <div class="w-11 h-11 rounded-xl bg-primary-50 dark:bg-primary-900/25 flex items-center justify-center flex-shrink-0">
+                        <span class="text-sm font-extrabold text-primary-600 dark:text-primary-400">{{ body.get_initials }}</span>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-[15px] font-bold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">
+                            {{ body.get_display_name }}
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {% if body.bundesland %}{{ body.bundesland }}{% elif body.classification %}{{ body.classification }}{% else %}Kommune{% endif %}
+                        </div>
+                    </div>
+                    <i data-lucide="arrow-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 group-hover:text-primary-500 transition-all flex-shrink-0"></i>
+                </div>
+                <div class="mt-auto pt-3 border-t border-gray-100 dark:border-gray-700/60 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+                    <span class="flex items-center gap-1.5" title="Vorg&auml;nge">
+                        <i data-lucide="file-text" class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"></i>
+                        <strong class="font-bold text-gray-700 dark:text-gray-200">{{ body.stat_papers|intcomma }}</strong> Vorg&auml;nge
+                    </span>
+                    <span class="flex items-center gap-1.5" title="Gremien">
+                        <i data-lucide="building-2" class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"></i>
+                        <strong class="font-bold text-gray-700 dark:text-gray-200">{{ body.stat_organizations|intcomma }}</strong> Gremien
+                    </span>
+                    <span class="flex items-center gap-1.5" title="Sitzungen">
+                        <i data-lucide="calendar-days" class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"></i>
+                        <strong class="font-bold text-gray-700 dark:text-gray-200">{{ body.stat_meetings|intcomma }}</strong> Sitzungen
+                    </span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+
+        {# Kein Treffer #}
+        <div x-show="q && visibleCount === 0" x-cloak class="text-center py-12">
+            <div class="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full mx-auto mb-3 flex items-center justify-center">
+                <i data-lucide="search-x" class="w-5 h-5 text-gray-400"></i>
+            </div>
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Keine Kommune gefunden</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+                &bdquo;<span x-text="q"></span>&ldquo; ist (noch) nicht dabei &ndash; wir wachsen stetig.
+            </p>
+        </div>
+    </section>
+
+    {# ------------------------------------------------------------------ #}
+    {# Alle Kommunen durchsuchen (gleichwertige Option)                   #}
+    {# ------------------------------------------------------------------ #}
+    <section class="fade-up d3 relative max-w-4xl mx-auto mb-12">
+        <div class="flex items-center gap-3 mb-4" aria-hidden="true">
+            <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
+            <span class="text-[11px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">oder</span>
+            <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
+        </div>
+        <a href="{% url 'insight_core:insight:search' %}"
+           class="group flex items-center gap-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-lg hover:shadow-primary-600/5 transition-all">
+            <div class="w-11 h-11 rounded-xl bg-primary-600 flex items-center justify-center flex-shrink-0">
+                <i data-lucide="globe" class="w-5 h-5 text-white"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+                <div class="text-[15px] font-bold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                    Alle Kommunen durchsuchen
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    Kommunen&uuml;bergreifend in {{ stats.papers|intcomma }} Vorg&auml;ngen und {{ stats.files|intcomma }} Dokumenten suchen &ndash; ohne Festlegung auf eine Kommune.
+                </p>
+            </div>
+            <i data-lucide="arrow-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 group-hover:translate-x-0.5 transition-all flex-shrink-0"></i>
+        </a>
+    </section>
+
+    {# ------------------------------------------------------------------ #}
+    {# Zahlen-Leiste                                                      #}
+    {# ------------------------------------------------------------------ #}
+    <section class="fade-up d4 relative max-w-4xl mx-auto">
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-5 pb-2">
+            <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
+                <span class="text-xs font-medium text-gray-400 dark:text-gray-500">Mandari Insight in Zahlen</span>
+                <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.bodies|intcomma }}</strong> Kommunen</span>
+                <span class="text-gray-300 dark:text-gray-600">&middot;</span>
+                <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.organizations|intcomma }}</strong> Gremien</span>
+                <span class="text-gray-300 dark:text-gray-600">&middot;</span>
+                <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.persons|intcomma }}</strong> Personen</span>
+                <span class="text-gray-300 dark:text-gray-600">&middot;</span>
+                <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.meetings|intcomma }}</strong> Sitzungen</span>
+                <span class="text-gray-300 dark:text-gray-600">&middot;</span>
+                <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.papers|intcomma }}</strong> Vorg&auml;nge</span>
+                <span class="text-gray-300 dark:text-gray-600">&middot;</span>
+                <span><strong class="font-bold text-gray-700 dark:text-gray-200">{{ stats.files|intcomma }}</strong> Dokumente</span>
+            </div>
+        </div>
+    </section>
+
+    {% else %}
+    {# ------------------------------------------------------------------ #}
+    {# Leerer Zustand: Noch keine Kommune synchronisiert                  #}
+    {# ------------------------------------------------------------------ #}
+    <section class="fade-up d1 relative max-w-md mx-auto text-center py-10">
+        <div class="w-14 h-14 bg-primary-50 dark:bg-primary-900/20 rounded-2xl mx-auto mb-4 flex items-center justify-center">
+            <i data-lucide="database" class="w-6 h-6 text-primary-500 dark:text-primary-400"></i>
+        </div>
+        <h2 class="text-base font-bold text-gray-900 dark:text-white mb-1.5">Noch keine Kommune verf&uuml;gbar</h2>
+        <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+            Es wurden noch keine Ratsinformationen synchronisiert.
+            Sobald eine Kommune angebunden ist, erscheint sie hier automatisch.
+        </p>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function bodySelectApp() {
+    return {
+        q: '',
+        visibleCount: {{ select_bodies|length|default:0 }},
+
+        init() {
+            this.$watch('q', () => this.updateCount());
+        },
+
+        norm(s) {
+            return (s || '').toLowerCase().trim();
+        },
+
+        matches(haystack) {
+            const q = this.norm(this.q);
+            if (!q) return true;
+            return q.split(/\s+/).every(term => haystack.includes(term));
+        },
+
+        updateCount() {
+            if (!this.$refs.grid) { this.visibleCount = 0; return; }
+            const cards = this.$refs.grid.querySelectorAll('[data-search]');
+            let n = 0;
+            cards.forEach(el => { if (this.matches(el.dataset.search)) n++; });
+            this.visibleCount = n;
+        },
+    }
+}
+</script>
+{% endblock %}
