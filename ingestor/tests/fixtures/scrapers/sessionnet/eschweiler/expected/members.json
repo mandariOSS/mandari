@@ -1,0 +1,90 @@
+[
+  {
+    "kpenr": 128,
+    "name": "Frank Wagner",
+    "party": "SPD",
+    "role": "Vorsitz",
+    "section": "Vorsitzende/r",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Oliver Wald",
+    "party": "CDU",
+    "role": "Stv. Vorsitz",
+    "section": "Stv. Vorsitzende/r",
+    "voting_right": true
+  },
+  {
+    "kpenr": 84,
+    "name": "Claudia Moll",
+    "party": "SPD",
+    "role": "Ratsmitglied",
+    "section": "Ratsmitglieder SPD-Fraktion",
+    "voting_right": true
+  },
+  {
+    "kpenr": 705,
+    "name": "Aaron Möller",
+    "party": "SPD",
+    "role": "Ratsmitglied",
+    "section": "Ratsmitglieder SPD-Fraktion",
+    "voting_right": true
+  },
+  {
+    "kpenr": 1043,
+    "name": "Tim Bündgens",
+    "party": "CDU",
+    "role": "Ratsmitglied",
+    "section": "Ratsmitglieder CDU-Fraktion",
+    "voting_right": true
+  },
+  {
+    "kpenr": 421,
+    "name": "Bernd Leuchter",
+    "party": "CDU",
+    "role": "Ratsmitglied",
+    "section": "Ratsmitglieder CDU-Fraktion",
+    "voting_right": true
+  },
+  {
+    "kpenr": 960,
+    "name": "Michael Cremer",
+    "party": "BASIS",
+    "role": "Ratsmitglied",
+    "section": "Ratsmitglieder BASIS-Fraktion",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Undine Golke",
+    "party": "AfD",
+    "role": "Ratsmitglied",
+    "section": "Ratsmitglieder AfD-Fraktion",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Ralf Hans Hambloch",
+    "party": "AfD",
+    "role": "Ratsmitglied",
+    "section": "Ratsmitglieder AfD-Fraktion",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Jens Himmler",
+    "party": "Bündnis 90/Die Grünen",
+    "role": "Ausschussmitglied",
+    "section": "Weitere beratende Mitglieder",
+    "voting_right": false
+  },
+  {
+    "kpenr": 1491,
+    "name": "Antonios Koronios",
+    "party": "LINKE",
+    "role": "Ausschussmitglied",
+    "section": "Weitere beratende Mitglieder",
+    "voting_right": false
+  }
+]

@@ -1,0 +1,242 @@
+[
+  {
+    "kpenr": 261,
+    "name": "Tanja Tschöke",
+    "party": "BÜNDNIS 90/DIE GRÜNEN",
+    "role": "Ratsmitglied",
+    "section": "Vorsitz",
+    "voting_right": true
+  },
+  {
+    "kpenr": 2158,
+    "name": "Andrea Feldmann",
+    "party": "CDU",
+    "role": "Ratsmitglied",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": 2136,
+    "name": "Fabiola Ferber",
+    "party": "SPD",
+    "role": "Ratsmitglied",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": 879,
+    "name": "Jamel Hellwig",
+    "party": "SPD",
+    "role": "Ratsmitglied",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": 2160,
+    "name": "Valeria Klette",
+    "party": "CDU",
+    "role": "Ratsmitglied",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": 2386,
+    "name": "Jennifer Schmidt",
+    "party": "Die Linke",
+    "role": "Ratsmitglied",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": 2212,
+    "name": "Lenia Sommer",
+    "party": "SPD",
+    "role": "Ratsmitglied",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": 2418,
+    "name": "Christoph Thiel",
+    "party": "AfD",
+    "role": "Ratsmitglied",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": 1970,
+    "name": "Christoph Weiland",
+    "party": "CDU",
+    "role": "Ratsmitglied",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Cordula Bock",
+    "party": "Fraktionslos",
+    "role": "Sachk. Bürger/in (mit Stimmr.)",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Frauke Däumer",
+    "party": "",
+    "role": "Sachk. Bürger/in (mit Stimmr.)",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Nicola Halor",
+    "party": "",
+    "role": "Sachk. Bürger/in (mit Stimmr.)",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Stefan Hesse",
+    "party": "Fraktionslos",
+    "role": "Sachk. Bürger/in (mit Stimmr.)",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Kathrin May",
+    "party": "",
+    "role": "Sachk. Bürger/in",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Reinhildis Simon",
+    "party": "Fraktionslos",
+    "role": "Sachk. Bürger/in (mit Stimmr.)",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Thorsten Ausborn",
+    "party": "Fraktionslos",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Johannes Bock",
+    "party": "",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Aida Jukic",
+    "party": "Agentur für Arbeit",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Johannes Kirchhoff",
+    "party": "Fraktionslos",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Katrin Langescheid",
+    "party": "Fraktionslos",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Christiane Langs-Blöink",
+    "party": "Fraktionslos",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Susanne Schinman",
+    "party": "",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Michael Langhals",
+    "party": "Fraktionslos",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Anke Lohbeck-Hüttebreucker",
+    "party": "BÜNDNIS 90/DIE GRÜNEN",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Claudia Okon",
+    "party": "",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Stephan Thiel",
+    "party": "",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Florian Wüllner",
+    "party": "FDP",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Antje Korreck",
+    "party": "AfD",
+    "role": "Ratsmitglied",
+    "section": "Ausschussmitglieder mit Stimmrecht",
+    "voting_right": true
+  },
+  {
+    "kpenr": null,
+    "name": "Jochen Grün",
+    "party": "Fraktionslos",
+    "role": "Beratendes Mitglied",
+    "section": "Ausschussmitglieder mit beratender Stimme",
+    "voting_right": false
+  },
+  {
+    "kpenr": null,
+    "name": "Gülpasa Erdogan",
+    "party": "CDU-Internationale Liste",
+    "role": "Beratendes Mitglied",
+    "section": "Beratende Mitglieder Ausschuss für Chancengerechtigkeit und Integration",
+    "voting_right": false
+  }
+]

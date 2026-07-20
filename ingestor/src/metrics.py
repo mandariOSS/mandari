@@ -23,9 +23,10 @@ Usage:
 
 import asyncio
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from typing import Any
 
 from rich.console import Console
 
@@ -33,16 +34,16 @@ console = Console()
 
 # Try to import prometheus_client, gracefully degrade if not available
 try:
+    import aiohttp.web as web
     from prometheus_client import (
+        CONTENT_TYPE_LATEST,
         CollectorRegistry,
         Counter,
         Gauge,
         Histogram,
         generate_latest,
-        CONTENT_TYPE_LATEST,
     )
     from prometheus_client.exposition import basic_auth_handler
-    import aiohttp.web as web
 
     PROMETHEUS_AVAILABLE = True
 except ImportError:
@@ -191,6 +192,28 @@ class MetricsCollector:
             registry=self.registry,
         )
 
+        # Scraper metrics (Nicht-OParl-Quellen, siehe src/scrapers/)
+        self.scraper_pages_fetched_total = Counter(
+            "mandari_ingestor_scraper_pages_fetched_total",
+            "Total HTML pages fetched by scraper adapters",
+            ["source"],
+            registry=self.registry,
+        )
+
+        self.scraper_parse_failures_total = Counter(
+            "mandari_ingestor_scraper_parse_failures_total",
+            "Total scraper parse failures",
+            ["source", "page_type"],
+            registry=self.registry,
+        )
+
+        self.scraper_parse_quota = Gauge(
+            "mandari_ingestor_scraper_parse_quota",
+            "Share of successfully parsed detail pages in the last scraper run",
+            ["source"],
+            registry=self.registry,
+        )
+
         console.print("[dim]Prometheus metrics initialized[/dim]")
 
     # ========== HTTP Metrics ==========
@@ -230,6 +253,32 @@ class MetricsCollector:
 
         if self._prometheus_enabled:
             self.http_errors_total.labels(source=source, error_type=error_type).inc()
+
+    # ========== Scraper Metrics ==========
+
+    def record_scraper_page(self, source: str) -> None:
+        """Record an HTML page fetched by a scraper adapter."""
+        if not self.enabled:
+            return
+        self.simple.http_requests += 1
+        if self._prometheus_enabled:
+            self.scraper_pages_fetched_total.labels(source=source).inc()
+
+    def record_scraper_parse_failure(self, source: str, page_type: str) -> None:
+        """Record a scraper parse failure for a page type (e.g. 'si0057')."""
+        if not self.enabled:
+            return
+        if self._prometheus_enabled:
+            self.scraper_parse_failures_total.labels(
+                source=source, page_type=page_type
+            ).inc()
+
+    def record_scraper_quota(self, source: str, quota: float) -> None:
+        """Record the parse quota of the last scraper run (0.0-1.0)."""
+        if not self.enabled:
+            return
+        if self._prometheus_enabled:
+            self.scraper_parse_quota.labels(source=source).set(quota)
 
     # ========== Entity Metrics ==========
 

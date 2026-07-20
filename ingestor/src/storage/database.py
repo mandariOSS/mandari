@@ -5,33 +5,12 @@ High-performance async database operations with proper upsert support.
 Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from datetime import date as date_type
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, func, text, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from rich.console import Console
-
-from src.config import settings
-from src.storage.models import (
-    Base,
-    OParlAgendaItem,
-    OParlBody,
-    OParlConsultation,
-    OParlFile,
-    OParlLegislativeTerm,
-    OParlLocation,
-    OParlMeeting,
-    OParlMembership,
-    OParlOrganization,
-    OParlPaper,
-    OParlPerson,
-    OParlSource,
-)
 from mandari_oparl import (
-    OParlType,
     ProcessedAgendaItem,
     ProcessedBody,
     ProcessedConsultation,
@@ -45,8 +24,44 @@ from mandari_oparl import (
     ProcessedPaper,
     ProcessedPerson,
 )
+from rich.console import Console
+from sqlalchemy import and_, func, or_, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from src.config import settings
+from src.storage.models import (
+    OParlAgendaItem,
+    OParlBody,
+    OParlConsultation,
+    OParlFile,
+    OParlLegislativeTerm,
+    OParlLocation,
+    OParlMeeting,
+    OParlMembership,
+    OParlOrganization,
+    OParlPaper,
+    OParlPerson,
+    OParlSource,
+)
 
 console = Console()
+
+
+# Entity-Typ-Name -> SQLAlchemy-Modell (für generische Lookups, u. a.
+# Content-Hash-Diffing und Verschwinde-Erkennung der Scraper-Quellen).
+_ENTITY_MODEL_MAP: dict[str, type] = {
+    "meeting": OParlMeeting,
+    "paper": OParlPaper,
+    "person": OParlPerson,
+    "organization": OParlOrganization,
+    "membership": OParlMembership,
+    "location": OParlLocation,
+    "agendaitem": OParlAgendaItem,
+    "consultation": OParlConsultation,
+    "file": OParlFile,
+    "legislativeterm": OParlLegislativeTerm,
+}
 
 
 # Columns that are populated by enrichment workers AFTER the initial sync
@@ -304,7 +319,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             source = await session.get(OParlSource, source_id)
             if source:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 source.last_sync = now
                 if full_sync:
                     source.last_full_sync = now
@@ -351,6 +366,95 @@ class DatabaseStorage:
             sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_KEY] = sorted(merged)
             source.sync_config = sync_config
             await session.commit()
+
+    # Schlüssel in OParlSource.sync_config für den persistierten
+    # Scraper-Zustand (Listen-Snapshots, Missing-Counter, letzte Läufe).
+    SYNC_CONFIG_SCRAPER_STATE_KEY = "scraper_state"
+
+    async def update_scraper_state(self, source_url: str, state: dict[str, Any]) -> None:
+        """
+        Persistiert den Scraper-Zustand einer Quelle additiv in sync_config
+        (Schlüssel "scraper_state"); andere Schlüssel bleiben unberührt.
+        """
+        async with self.get_session() as session:
+            result = await session.execute(
+                select(OParlSource).where(OParlSource.url == source_url)
+            )
+            source = result.scalar_one_or_none()
+            if source is None:
+                return
+            sync_config = dict(source.sync_config or {})
+            sync_config[self.SYNC_CONFIG_SCRAPER_STATE_KEY] = state
+            source.sync_config = sync_config
+            await session.commit()
+
+    async def get_entity_content_hashes(
+        self,
+        entity_type: str,
+        external_ids: list[str],
+    ) -> dict[str, str | None]:
+        """
+        Liest die gespeicherten Content-Hashes ("mandari:contentHash" im
+        raw_json) für Feld-Diffing von Scraper-Quellen. Unbekannte IDs und
+        Objekte ohne Hash liefern None (=> Upsert).
+        """
+        model = _ENTITY_MODEL_MAP.get(entity_type)
+        if not model or not external_ids:
+            return {}
+
+        async with self.get_session() as session:
+            stmt = select(
+                model.external_id,
+                model.raw_json["mandari:contentHash"].astext,
+            ).where(model.external_id.in_(external_ids))
+            result = await session.execute(stmt)
+            hashes: dict[str, str | None] = {eid: None for eid in external_ids}
+            for external_id, stored_hash in result.all():
+                hashes[external_id] = stored_hash
+            return hashes
+
+    async def get_active_external_ids_for_body(
+        self,
+        entity_type: str,
+        body_id: UUID,
+    ) -> set[str]:
+        """
+        Alle nicht-tombstoneden external_ids eines Entity-Typs eines Bodies
+        (für die Verschwinde-Erkennung von Scraper-Quellen). Nur für Typen
+        mit body_id-Spalte.
+        """
+        model = _ENTITY_MODEL_MAP.get(entity_type)
+        if not model or not hasattr(model, "body_id"):
+            return set()
+        async with self.get_session() as session:
+            stmt = select(model.external_id).where(
+                model.body_id == body_id,
+                model.deleted == False,  # noqa: E712
+            )
+            result = await session.execute(stmt)
+            return {row[0] for row in result.all()}
+
+    async def get_active_meeting_ids_in_window(
+        self,
+        body_id: UUID,
+        window_start: "date_type",
+        window_end: "date_type",
+    ) -> set[str]:
+        """
+        Nicht-tombstonede Sitzungen eines Bodies mit Start im Crawl-Fenster
+        (Kandidatenmenge der Verschwinde-Erkennung — nur Objekte, die ein
+        Full-Crawl des Fensters sicher gesehen haben muss).
+        """
+        async with self.get_session() as session:
+            stmt = select(OParlMeeting.external_id).where(
+                OParlMeeting.body_id == body_id,
+                OParlMeeting.deleted == False,  # noqa: E712
+                OParlMeeting.start.isnot(None),
+                func.date(OParlMeeting.start) >= window_start,
+                func.date(OParlMeeting.start) <= window_end,
+            )
+            result = await session.execute(stmt)
+            return {row[0] for row in result.all()}
 
     def clear_uuid_caches(self) -> None:
         """
@@ -466,7 +570,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             body = await session.get(OParlBody, body_id)
             if body:
-                body.last_sync = datetime.now(timezone.utc)
+                body.last_sync = datetime.now(UTC)
                 await session.commit()
 
     # ========== Entity Existence Check ==========
@@ -605,7 +709,7 @@ class DatabaseStorage:
         if not model:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         async with self.get_session() as session:
             stmt = (
                 update(model)
@@ -1493,7 +1597,7 @@ class DatabaseStorage:
             batch_size: Maximum number of files to claim
             max_size_bytes: Skip files larger than this (optional)
         """
-        stale_cutoff = datetime.now(timezone.utc) - self.PROCESSING_STALE_AFTER
+        stale_cutoff = datetime.now(UTC) - self.PROCESSING_STALE_AFTER
 
         async with self.get_session() as session:
             candidates = (
@@ -1556,7 +1660,7 @@ class DatabaseStorage:
         sha256_hash: str | None = None,
     ) -> None:
         """Update a file with text extraction results."""
-        from datetime import datetime, timezone as tz
+        from datetime import datetime
 
         async with self.get_session() as session:
             values: dict = {
@@ -1574,7 +1678,7 @@ class DatabaseStorage:
             if sha256_hash is not None:
                 values["sha256_hash"] = sha256_hash
             if status == "completed":
-                values["text_extracted_at"] = datetime.now(tz.utc)
+                values["text_extracted_at"] = datetime.now(UTC)
 
             stmt = update(OParlFile).where(OParlFile.id == file_id).values(**values)
             await session.execute(stmt)

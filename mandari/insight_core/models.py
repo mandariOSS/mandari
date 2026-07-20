@@ -80,6 +80,13 @@ class OParlSource(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Bekannte source_type-Werte (sync_config["source_type"], additiv —
+    # bewusst KEINE eigene Spalte, um Schema-Drift zwischen Django und
+    # Ingestor-SQLAlchemy zu vermeiden). Siehe docs/SCRAPER_SOURCES.md.
+    SOURCE_TYPE_OPARL = "oparl"
+    SOURCE_TYPE_BRIDGE_ALLRIS = "bridge:allris"
+    SOURCE_TYPE_SCRAPER_SESSIONNET = "scraper:sessionnet"
+
     class Meta:
         db_table = "oparl_sources"
         verbose_name = "OParl-Quelle"
@@ -87,6 +94,22 @@ class OParlSource(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def source_type(self) -> str:
+        """
+        Art der Quelle: "oparl" (Default), "bridge:<vendor>" (externer
+        OParl-Proxy, z. B. Aeroid/oparl-bridge vor ALLRIS) oder
+        "scraper:<vendor>" (Ingestor-Scraper-Adapter, z. B. SessionNet).
+        Gespeichert in sync_config["source_type"].
+        """
+        if isinstance(self.sync_config, dict):
+            return str(self.sync_config.get("source_type") or self.SOURCE_TYPE_OPARL)
+        return self.SOURCE_TYPE_OPARL
+
+    @property
+    def is_scraper_source(self) -> bool:
+        return self.source_type.startswith("scraper:")
 
 
 class OParlBody(SourceDeletionModel):

@@ -1,0 +1,47 @@
+[
+  {
+    "ksinr": 4849,
+    "name": "Ausschuss für Stadtentwicklung, Umwelt und Mobilität",
+    "committee": "Ausschuss für Stadtentwicklung, Umwelt und Mobilität",
+    "date": "01.07.2026",
+    "time_start": "17:30",
+    "time_end": null,
+    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler"
+  },
+  {
+    "ksinr": 4850,
+    "name": "Haupt- und Finanzausschuss",
+    "committee": "Haupt- und Finanzausschuss",
+    "date": "07.07.2026",
+    "time_start": "17:30",
+    "time_end": null,
+    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler"
+  },
+  {
+    "ksinr": 4851,
+    "name": "Rat der Stadt Eschweiler",
+    "committee": "Rat der Stadt Eschweiler",
+    "date": "08.07.2026",
+    "time_start": "17:30",
+    "time_end": "21:36",
+    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler"
+  },
+  {
+    "ksinr": 4853,
+    "name": "Ausschuss für Wirtschaftsförderung, Strukturwandel und Tourismus",
+    "committee": "Ausschuss für Wirtschaftsförderung, Strukturwandel und Tourismus",
+    "date": "15.07.2026",
+    "time_start": "17:30",
+    "time_end": "18:15",
+    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler"
+  },
+  {
+    "ksinr": 4854,
+    "name": "Ausschuss für Schule und Sport",
+    "committee": "Ausschuss für Schule und Sport",
+    "date": "16.07.2026",
+    "time_start": "17:30",
+    "time_end": null,
+    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler"
+  }
+]

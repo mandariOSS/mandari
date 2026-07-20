@@ -12,10 +12,22 @@ Coordinates the complete OParl synchronization process with:
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from mandari_oparl import (
+    ProcessedAgendaItem,
+    ProcessedConsultation,
+    ProcessedEntity,
+    ProcessedFile,
+    ProcessedLocation,
+    ProcessedMeeting,
+    ProcessedMembership,
+    ProcessedOrganization,
+    ProcessedPaper,
+    ProcessedPerson,
+)
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -31,19 +43,6 @@ from src.config import settings
 from src.events import EventEmitter
 from src.metrics import metrics
 from src.storage.database import DatabaseStorage
-from mandari_oparl import (
-    ProcessedAgendaItem,
-    ProcessedBody,
-    ProcessedConsultation,
-    ProcessedEntity,
-    ProcessedFile,
-    ProcessedLocation,
-    ProcessedMeeting,
-    ProcessedMembership,
-    ProcessedOrganization,
-    ProcessedPaper,
-    ProcessedPerson,
-)
 from src.sync.processor import OParlProcessor
 
 console = Console()
@@ -198,7 +197,7 @@ class SyncOrchestrator:
         # Case 1: Single Body (ITK Rheinland pattern - no data[] wrapper)
         type_str = response.get("type", "") if isinstance(response, dict) else ""
         if type_str.endswith("/Body"):
-            console.print(f"[green]Detected: Single Body object[/green]")
+            console.print("[green]Detected: Single Body object[/green]")
             return "body", [response]
 
         # Case 2: Body list with data[] wrapper (standard OParl)
@@ -242,9 +241,22 @@ class SyncOrchestrator:
         Returns:
             SyncResult with statistics
         """
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
         result = SyncResult(source_url=url, source_name="", success=False)
         sync_type = "full" if full else "incremental"
+
+        # Scraper-Quellen (sync_config["source_type"] = "scraper:<vendor>")
+        # laufen über den ScraperSyncRunner statt über den OParl-Client.
+        # "bridge:*"-Quellen (z. B. oparl-bridge vor ALLRIS) sind normale
+        # OParl-Quellen und nehmen den Standardpfad.
+        source_row = await self.storage.get_source_by_url(url)
+        if source_row is not None and isinstance(source_row.sync_config, dict):
+            source_type = str(source_row.sync_config.get("source_type") or "oparl")
+            if source_type.startswith("scraper:"):
+                from src.scrapers.runner import ScraperSyncRunner
+
+                runner = ScraperSyncRunner(self, source_row)
+                return await runner.run(full=full)
 
         # Persistierten Capability-Cache laden (Issue #22): der Befund
         # "modified_since nicht unterstützt" überlebt so Daemon-Neustarts.
@@ -337,7 +349,7 @@ class SyncOrchestrator:
                     + result.agenda_items_synced + result.consultations_synced
                 )
 
-                end_time = datetime.now(timezone.utc)
+                end_time = datetime.now(UTC)
                 duration = (end_time - start_time).total_seconds()
 
                 if self._event_emitter:
@@ -362,13 +374,13 @@ class SyncOrchestrator:
                     source_url=url,
                     source_name=result.source_name or "Unknown",
                     error=str(e),
-                    duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+                    duration_seconds=(datetime.now(UTC) - start_time).total_seconds(),
                 )
 
         # Neu erkannte Hosts ohne modified_since-Support persistieren (Issue #22)
         await self._persist_modified_since_cache(url, capability_snapshot)
 
-        result.duration_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
+        result.duration_seconds = (datetime.now(UTC) - start_time).total_seconds()
         return result
 
     # ========== Sync Operations ==========
@@ -421,7 +433,7 @@ class SyncOrchestrator:
         Returns:
             SyncResult with statistics
         """
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
         result = SyncResult(source_url=url, source_name="", success=False)
         sync_type = "full" if full else "incremental"
 
@@ -544,7 +556,7 @@ class SyncOrchestrator:
                     + result.consultations_synced
                 )
 
-                end_time = datetime.now(timezone.utc)
+                end_time = datetime.now(UTC)
                 duration = (end_time - start_time).total_seconds()
 
                 # Emit sync completed event
@@ -598,13 +610,13 @@ class SyncOrchestrator:
                     source_url=url,
                     source_name=result.source_name or "Unknown",
                     error=str(e),
-                    duration_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+                    duration_seconds=(datetime.now(UTC) - start_time).total_seconds(),
                 )
 
         # Neu erkannte Hosts ohne modified_since-Support persistieren (Issue #22)
         await self._persist_modified_since_cache(url, capability_snapshot)
 
-        result.duration_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
+        result.duration_seconds = (datetime.now(UTC) - start_time).total_seconds()
         return result
 
     async def _sync_body(
@@ -656,7 +668,7 @@ class SyncOrchestrator:
             )
             console.print(f"[dim]Incremental sync: modified_since={modified_since.isoformat()}[/dim]")
         else:
-            console.print(f"[dim]Full sync: fetching ALL pages[/dim]")
+            console.print("[dim]Full sync: fetching ALL pages[/dim]")
 
         # Collects ES documents of entities that were tombstoned during this
         # body sync (index name -> doc ids). Flushed in Phase 3 so the search
@@ -692,7 +704,7 @@ class SyncOrchestrator:
                     return e
 
             extraction_task = asyncio.create_task(_run_extraction())
-            console.print(f"[dim]  Text extraction started in background[/dim]")
+            console.print("[dim]  Text extraction started in background[/dim]")
 
         # Drossel für Entity-Typ-Parallelität innerhalb eines Bodies
         # (Issue #22): begrenzt zusammen mit sync_body_concurrency und
@@ -823,7 +835,7 @@ class SyncOrchestrator:
                 if result > 0:
                     console.print(f"[green]  Extracted text from {result} files (parallel)[/green]")
                 else:
-                    console.print(f"[dim]  No pending files for text extraction[/dim]")
+                    console.print("[dim]  No pending files for text extraction[/dim]")
 
         # Phase 3: Elasticsearch Indexing
         # Only re-index during full sync or when entities actually changed.
@@ -836,101 +848,12 @@ class SyncOrchestrator:
         if settings.elasticsearch_indexing_enabled and (
             full or total_synced > 0 or total_tombstoned > 0
         ):
-            try:
-                from src.indexing.document_builders import (
-                    file_to_doc,
-                    meeting_to_doc,
-                    organization_to_doc,
-                    paper_to_doc,
-                    person_to_doc,
-                )
-                from src.indexing.elasticsearch import ElasticsearchIndexer
-                from src.storage.models import (
-                    OParlFile as FileModel,
-                    OParlMeeting as MeetingModel,
-                    OParlOrganization as OrgModel,
-                    OParlPaper as PaperModel,
-                    OParlPerson as PersonModel,
-                )
-
-                console.print(f"\n[bold yellow]Elasticsearch Indexing...[/bold yellow]")
-                async with ElasticsearchIndexer() as indexer:
-                    if not await indexer.is_healthy():
-                        console.print("[yellow]  Elasticsearch not reachable, skipping indexing[/yellow]")
-                    else:
-                        # Ensure index settings before first indexing
-                        await indexer.ensure_index_settings()
-                        batch_size = settings.elasticsearch_batch_size
-                        indexed_total = 0
-
-                        # Remove documents of tombstoned entities from the
-                        # search index (DB rows are kept, only flagged).
-                        if total_tombstoned:
-                            for index_name, doc_ids in es_deletions.items():
-                                await indexer.delete_documents(index_name, doc_ids)
-                            stats["es_deleted"] = total_tombstoned
-                            console.print(
-                                f"[yellow]  Removed {total_tombstoned} tombstoned "
-                                f"documents from Elasticsearch[/yellow]"
-                            )
-
-                        # Index papers (with file contents for paper-boosting)
-                        papers = await self.storage.get_all_for_body(body_id, PaperModel)
-                        # Build paper_id → files lookup from already-loaded files
-                        files_with_text = await self.storage.get_files_with_text(body_id)
-                        files_by_paper: dict[str, list] = {}
-                        for f in files_with_text:
-                            if f.paper_id:
-                                pid = str(f.paper_id)
-                                files_by_paper.setdefault(pid, []).append(f)
-
-                        for i in range(0, len(papers), batch_size):
-                            docs = [
-                                paper_to_doc(p, files=files_by_paper.get(str(p.id), []))
-                                for p in papers[i:i + batch_size]
-                            ]
-                            await indexer.index_documents("papers", docs)
-                            indexed_total += len(docs)
-
-                        # Index meetings
-                        meetings = await self.storage.get_all_for_body(body_id, MeetingModel)
-                        for i in range(0, len(meetings), batch_size):
-                            docs = [meeting_to_doc(m) for m in meetings[i:i + batch_size]]
-                            await indexer.index_documents("meetings", docs)
-                            indexed_total += len(docs)
-
-                        # Index persons
-                        persons = await self.storage.get_all_for_body(body_id, PersonModel)
-                        for i in range(0, len(persons), batch_size):
-                            docs = [person_to_doc(p) for p in persons[i:i + batch_size]]
-                            await indexer.index_documents("persons", docs)
-                            indexed_total += len(docs)
-
-                        # Index organizations
-                        orgs = await self.storage.get_all_for_body(body_id, OrgModel)
-                        for i in range(0, len(orgs), batch_size):
-                            docs = [organization_to_doc(o) for o in orgs[i:i + batch_size]]
-                            await indexer.index_documents("organizations", docs)
-                            indexed_total += len(docs)
-
-                        # Index files with text content
-                        files = await self.storage.get_files_with_text(body_id)
-                        for i in range(0, len(files), batch_size):
-                            docs = [file_to_doc(f) for f in files[i:i + batch_size]]
-                            await indexer.index_documents("files", docs)
-                            indexed_total += len(docs)
-
-                        stats["indexed"] = indexed_total
-                        console.print(f"[green]  Indexed {indexed_total} documents in Elasticsearch[/green]")
-
-            except Exception as e:
-                console.print(f"[red]  Elasticsearch indexing error: {e}[/red]")
-                stats["errors"].append(f"Elasticsearch indexing: {e}")
+            await self._index_body_elasticsearch(body_id, stats, es_deletions, full)
         elif settings.elasticsearch_indexing_enabled and not full:
-            console.print(f"[dim]  Elasticsearch indexing skipped (no changes)[/dim]")
+            console.print("[dim]  Elasticsearch indexing skipped (no changes)[/dim]")
 
         # Print summary
-        console.print(f"[green]Body sync complete:[/green]")
+        console.print("[green]Body sync complete:[/green]")
         console.print(f"  Organizations: {stats['organizations']}")
         console.print(f"  Persons: {stats['persons']}")
         console.print(f"  Memberships: {stats['memberships']}")
@@ -942,6 +865,117 @@ class SyncOrchestrator:
         console.print(f"  Consultations: {stats['consultations']}")
 
         return stats
+
+    async def _index_body_elasticsearch(
+        self,
+        body_id: UUID,
+        stats: dict[str, Any],
+        es_deletions: dict[str, list[str]],
+        full: bool,
+    ) -> None:
+        """
+        Indexiert alle Entitäten eines Bodies in Elasticsearch und entfernt
+        Dokumente tombstoneder Objekte. Gemeinsamer Pfad für OParl-Sync
+        (_sync_body) und Scraper-Quellen (ScraperSyncRunner).
+
+        Fehler landen in stats["errors"]; der Sync bricht dadurch nicht ab.
+        """
+        total_tombstoned = sum(len(ids) for ids in es_deletions.values())
+        try:
+            from src.indexing.document_builders import (
+                file_to_doc,
+                meeting_to_doc,
+                organization_to_doc,
+                paper_to_doc,
+                person_to_doc,
+            )
+            from src.indexing.elasticsearch import ElasticsearchIndexer
+            from src.storage.models import (
+                OParlMeeting as MeetingModel,
+            )
+            from src.storage.models import (
+                OParlOrganization as OrgModel,
+            )
+            from src.storage.models import (
+                OParlPaper as PaperModel,
+            )
+            from src.storage.models import (
+                OParlPerson as PersonModel,
+            )
+
+            console.print("\n[bold yellow]Elasticsearch Indexing...[/bold yellow]")
+            async with ElasticsearchIndexer() as indexer:
+                if not await indexer.is_healthy():
+                    console.print("[yellow]  Elasticsearch not reachable, skipping indexing[/yellow]")
+                else:
+                    # Ensure index settings before first indexing
+                    await indexer.ensure_index_settings()
+                    batch_size = settings.elasticsearch_batch_size
+                    indexed_total = 0
+
+                    # Remove documents of tombstoned entities from the
+                    # search index (DB rows are kept, only flagged).
+                    if total_tombstoned:
+                        for index_name, doc_ids in es_deletions.items():
+                            await indexer.delete_documents(index_name, doc_ids)
+                        stats["es_deleted"] = total_tombstoned
+                        console.print(
+                            f"[yellow]  Removed {total_tombstoned} tombstoned "
+                            f"documents from Elasticsearch[/yellow]"
+                        )
+
+                    # Index papers (with file contents for paper-boosting)
+                    papers = await self.storage.get_all_for_body(body_id, PaperModel)
+                    # Build paper_id → files lookup from already-loaded files
+                    files_with_text = await self.storage.get_files_with_text(body_id)
+                    files_by_paper: dict[str, list] = {}
+                    for f in files_with_text:
+                        if f.paper_id:
+                            pid = str(f.paper_id)
+                            files_by_paper.setdefault(pid, []).append(f)
+
+                    for i in range(0, len(papers), batch_size):
+                        docs = [
+                            paper_to_doc(p, files=files_by_paper.get(str(p.id), []))
+                            for p in papers[i:i + batch_size]
+                        ]
+                        await indexer.index_documents("papers", docs)
+                        indexed_total += len(docs)
+
+                    # Index meetings
+                    meetings = await self.storage.get_all_for_body(body_id, MeetingModel)
+                    for i in range(0, len(meetings), batch_size):
+                        docs = [meeting_to_doc(m) for m in meetings[i:i + batch_size]]
+                        await indexer.index_documents("meetings", docs)
+                        indexed_total += len(docs)
+
+                    # Index persons
+                    persons = await self.storage.get_all_for_body(body_id, PersonModel)
+                    for i in range(0, len(persons), batch_size):
+                        docs = [person_to_doc(p) for p in persons[i:i + batch_size]]
+                        await indexer.index_documents("persons", docs)
+                        indexed_total += len(docs)
+
+                    # Index organizations
+                    orgs = await self.storage.get_all_for_body(body_id, OrgModel)
+                    for i in range(0, len(orgs), batch_size):
+                        docs = [organization_to_doc(o) for o in orgs[i:i + batch_size]]
+                        await indexer.index_documents("organizations", docs)
+                        indexed_total += len(docs)
+
+                    # Index files with text content
+                    files = await self.storage.get_files_with_text(body_id)
+                    for i in range(0, len(files), batch_size):
+                        docs = [file_to_doc(f) for f in files[i:i + batch_size]]
+                        await indexer.index_documents("files", docs)
+                        indexed_total += len(docs)
+
+                    stats["indexed"] = indexed_total
+                    console.print(f"[green]  Indexed {indexed_total} documents in Elasticsearch[/green]")
+
+        except Exception as e:
+            console.print(f"[red]  Elasticsearch indexing error: {e}[/red]")
+            stats.setdefault("errors", []).append(f"Elasticsearch indexing: {e}")
 
     # Entity types that have their own Elasticsearch index (see indexing/)
     _ES_INDEX_BY_ENTITY_TYPE = {
@@ -1391,9 +1425,9 @@ class SyncOrchestrator:
         triggered_by: str = "daemon",
     ) -> None:
         """Schreibt aggregierte Sync-Ergebnisse in Django's SyncLog-Tabelle."""
-        end_time = datetime.now(timezone.utc)
+        end_time = datetime.now(UTC)
         if start_time.tzinfo is None:
-            start_time = start_time.replace(tzinfo=timezone.utc)
+            start_time = start_time.replace(tzinfo=UTC)
 
         total_entities = 0
         all_errors: list[str] = []

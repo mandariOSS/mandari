@@ -1,0 +1,24 @@
+{
+  "name": "SUM/003/2026",
+  "committee": "Ausschuss für Stadtentwicklung, Umwelt und Mobilität",
+  "room": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler",
+  "date": "01.07.2026",
+  "time": "17:30 Uhr",
+  "files": [
+    {
+      "href": "getfile.php?id=105406&type=do",
+      "name": "Einladung",
+      "title": "Dokument Download Dateityp: pdf"
+    },
+    {
+      "href": "getfile.php?id=105407&type=do",
+      "name": "Tagesordnung öffentlich",
+      "title": "Dokument Download Dateityp: pdf"
+    },
+    {
+      "href": "getfile.php?id=105707&type=do",
+      "name": "Sammeldokument öffentlich",
+      "title": "Dokument Download Dateityp: pdf"
+    }
+  ]
+}

@@ -110,6 +110,18 @@ class Settings(BaseSettings):
     elasticsearch_indexing_enabled: bool = True
     elasticsearch_batch_size: int = 500
 
+    # Scraper (Nicht-OParl-Quellen, siehe src/scrapers/ und
+    # docs/SCRAPER_SOURCES.md). Transparenter User-Agent mit Kontakt-URL,
+    # damit Kommunen uns identifizieren und gezielt steuern können.
+    scraper_user_agent: str = "mandari-ingestor (+https://mandari.de/crawler)"
+    # Log-Warnung + Fehler-Eintrag, wenn die Parse-Quote eines Laufs
+    # (erfolgreich geparste Detailseiten / abgerufene Detailseiten)
+    # unter diesen Wert fällt (Parser-Bruch-Erkennung).
+    scraper_parse_quota_warn: float = 0.8
+    # Objekte werden erst nach N aufeinanderfolgenden Full-Crawls ohne
+    # Sichtung als geloescht markiert (Tombstone, nie physisch).
+    scraper_tombstone_full_crawls: int = 3
+
 
 @lru_cache
 def get_settings() -> Settings:

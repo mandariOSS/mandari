@@ -18,6 +18,8 @@ dependencies = [
     "typer>=0.15.0",
     "rich>=13.9.0",
     "apscheduler>=3.10.0",
+    # Scraper-Adapter (SessionNet-HTML-Parsing, src/scrapers/)
+    "beautifulsoup4>=4.12.0",
     # Monitoring & Resilience
     "prometheus-client>=0.21.0",
     "aiohttp>=3.11.0",

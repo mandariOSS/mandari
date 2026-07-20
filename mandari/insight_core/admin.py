@@ -54,21 +54,94 @@ def run_sync_in_thread(source, full: bool = False):
     thread.start()
 
 
+class SourceTypeListFilter(admin.SimpleListFilter):
+    """Filter nach Quellen-Art (sync_config["source_type"], JSONB-Lookup)."""
+
+    title = "Quellen-Art"
+    parameter_name = "source_type"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("oparl", "OParl-API"),
+            ("bridge", "OParl-Bridge (z. B. ALLRIS)"),
+            ("scraper", "Scraper (z. B. SessionNet)"),
+        ]
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if value == "oparl":
+            # Default: kein source_type-Schlüssel oder explizit "oparl"
+            return queryset.exclude(sync_config__source_type__startswith="scraper:").exclude(
+                sync_config__source_type__startswith="bridge:"
+            )
+        if value == "bridge":
+            return queryset.filter(sync_config__source_type__startswith="bridge:")
+        if value == "scraper":
+            return queryset.filter(sync_config__source_type__startswith="scraper:")
+        return queryset
+
+
 @admin.register(OParlSource)
 class OParlSourceAdmin(ModelAdmin):
     list_display = [
         "name",
         "url",
+        "source_type_display",
         "is_active",
         "sync_status_display",
         "last_sync_ago",
         "body_count",
     ]
-    list_filter = ["is_active"]
+    list_filter = ["is_active", SourceTypeListFilter]
     search_fields = ["name", "url"]
-    readonly_fields = ["id", "created_at", "updated_at", "last_sync", "last_full_sync"]
+    readonly_fields = [
+        "id",
+        "created_at",
+        "updated_at",
+        "last_sync",
+        "last_full_sync",
+        "scraper_status_display",
+    ]
     actions_detail = ["sync_incremental_action", "sync_full_action"]
     actions = ["sync_all_incremental", "sync_all_full"]
+
+    @admin.display(description="Art")
+    def source_type_display(self, obj):
+        source_type = obj.source_type
+        if source_type.startswith("scraper:"):
+            color, label = "#9333ea", source_type
+        elif source_type.startswith("bridge:"):
+            color, label = "#0891b2", source_type
+        else:
+            color, label = "#16a34a", "oparl"
+        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{label}</span>')
+
+    @admin.display(description="Scraper-Status")
+    def scraper_status_display(self, obj):
+        """
+        Zustand einer Scraper-Quelle (aus sync_config["scraper_state"]):
+        letzter Lauf, Parse-Quote, robots.txt-Sperre.
+        Anlage einer Scraper-Quelle: siehe docs/SCRAPER_SOURCES.md.
+        """
+        if not obj.is_scraper_source:
+            return "— (keine Scraper-Quelle)"
+        state = (obj.sync_config or {}).get("scraper_state") or {}
+        if state.get("robots_disallowed"):
+            return mark_safe(
+                '<span style="color: #dc2626;">robots.txt verbietet Crawl — Quelle wird übersprungen</span>'
+            )
+        last_run = state.get("last_run") or {}
+        if not last_run:
+            return "Noch kein Lauf"
+        quota = last_run.get("parse_quota")
+        quota_str = f"{quota:.0%}" if isinstance(quota, (int, float)) else "?"
+        return (
+            f"Letzter Lauf: {last_run.get('at', '?')} | "
+            f"Parse-Quote: {quota_str} | "
+            f"gespeichert: {last_run.get('entities_stored', '?')} | "
+            f"unverändert: {last_run.get('unchanged_skipped', '?')} | "
+            f"Seiten: {last_run.get('pages_fetched', '?')}"
+        )
 
     @admin.display(description="Sync-Status")
     def sync_status_display(self, obj):

@@ -1,0 +1,45 @@
+# Beispiel: oparl-bridge als eigenständiger Container je ALLRIS-Kommune.
+#
+# Die Bridge (https://github.com/Aeroid/oparl-bridge, MIT, gepinnt v0.2.0)
+# scrapt EINE ALLRIS-Instanz und publiziert sie als OParl-1.1-API.
+# Mandari konsumiert diese API als normale OParl-Quelle
+# (sync_config: {"source_type": "bridge:allris"}) — der Ingestor-Kern
+# bleibt unverändert. Doku: docs/SCRAPER_SOURCES.md.
+#
+# Verwendung (neben der bestehenden docker-compose.yml):
+#   docker compose -f docs/examples/docker-compose.oparl-bridge.yml up -d
+
+# Image vorab bauen (Dockerfile siehe docs/examples/oparl-bridge.Dockerfile):
+#   docker build -f docs/examples/oparl-bridge.Dockerfile \
+#     -t mandari/oparl-bridge:v0.2.0 \
+#     https://github.com/Aeroid/oparl-bridge.git#v0.2.0
+
+services:
+  oparl-bridge-musterstadt:
+    image: mandari/oparl-bridge:v0.2.0
+    container_name: oparl-bridge-musterstadt
+    environment:
+      # Ziel-ALLRIS der Kommune (Pflicht)
+      OPARL_ALLRIS_BASE_URL: "https://ratsinfo.musterstadt.de/allris"
+      # Öffentliche Basis-URL, unter der die Bridge erreichbar ist
+      # (wird in den OParl-id-URLs verwendet — nachträglich ändern
+      # bedeutet neue external_ids!)
+      OPARL_API_BASE_URL: "https://oparl-musterstadt.intern.example"
+      OPARL_BODY_NAME: "Stadt Musterstadt"
+      OPARL_BODY_WEBSITE: "https://www.musterstadt.de"
+      OPARL_SYSTEM_NAME: "Ratsinformationssystem Musterstadt (oparl-bridge)"
+      # Politeness gegenüber dem ALLRIS-Server
+      OPARL_SCRAPER_DELAY_MS: "2000"
+      OPARL_APP_API_DELAY_MS: "500"
+      # Optional: Wikidata-ID der Kommune für Body-Metadaten
+      # OPARL_WIKIDATA_ID: "Q1234"
+    volumes:
+      - oparl_bridge_musterstadt:/data
+    ports:
+      - "127.0.0.1:8081:8000"
+    restart: unless-stopped
+    # Initial-Sync (einmalig, 10-40 min) manuell anstoßen:
+    #   docker exec -it oparl-bridge-musterstadt uv run oparl-bridge-sync
+
+volumes:
+  oparl_bridge_musterstadt:

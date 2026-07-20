@@ -1,0 +1,311 @@
+{
+  "title": "öffentliche/nicht öffentliche Sitzung des Rates der Stadt Lüdenscheid - 25.06.2012 - 17:00-18:40 Uhr",
+  "rows": [
+    {
+      "number": "1",
+      "title": "Öffentliche Fragestunde",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "2",
+      "title": "Bildung eines Ältestenrates",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "3",
+      "title": "Stellenplan für das Haushaltsjahr 2012",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "3.1",
+      "title": "Antrag der Ratsfraktionen SPD, CDU, FDP und Bündnis 90 / Die Grünen",
+      "public": true,
+      "result": "Mit Stimmenmehrheit zugestimmt",
+      "vote": "Ja: 45, Nein: 2",
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "3.2",
+      "title": "Stellenplan für das Haushaltsjahr 2012",
+      "public": true,
+      "result": "Einstimmig beschlossen",
+      "vote": "Ja: 47",
+      "paper_kvonr": 2636,
+      "paper_reference": "166/2011"
+    },
+    {
+      "number": "4",
+      "title": "Stellenplan für das Haushaltsjahr 2012 - Nachtrag",
+      "public": true,
+      "result": "Einstimmig beschlossen",
+      "vote": "Ja: 47",
+      "paper_kvonr": 2809,
+      "paper_reference": "059/2012"
+    },
+    {
+      "number": "5",
+      "title": "Änderungen von Steuersatzungen gemäß Entwurf des Haushaltssicherungskonzeptes 2012hier: Hebesatzsatzung, Hundesteuersatzung, Vergnügungssteuersatzung",
+      "public": true,
+      "result": "Gem. Ergänzungsvorlage beschlossen",
+      "vote": null,
+      "paper_kvonr": 2840,
+      "paper_reference": "090/2012"
+    },
+    {
+      "number": "5.1",
+      "title": "Änderungen von Steuersatzungen gemäß Entwurf des Haushaltssicherungskonzeptes 2012hier: Hebesatzsatzung, Hundesteuersatzung, Vergnügungssteuersatzung",
+      "public": true,
+      "result": "Mit Stimmenmehrheit zugestimmt",
+      "vote": "Ja: 45, Nein: 2",
+      "paper_kvonr": 2863,
+      "paper_reference": "090/2012/1"
+    },
+    {
+      "number": "6",
+      "title": "Haushaltssatzung und Haushaltsplan für das Haushaltsjahr 2012 (einschließlich Haushaltssicherungskonzept)",
+      "public": true,
+      "result": "Mit Stimmenmehrheit zugestimmt",
+      "vote": "Ja: 44, Nein: 3",
+      "paper_kvonr": 2848,
+      "paper_reference": "098/2012"
+    },
+    {
+      "number": "7",
+      "title": "Entgelt für das Mittagessen in städtischen Kindertageseinrichtungen",
+      "public": true,
+      "result": "Gem. Ergänzungsvorlage beschlossen",
+      "vote": null,
+      "paper_kvonr": 2832,
+      "paper_reference": "082/2012"
+    },
+    {
+      "number": "7.1",
+      "title": "Entgelt für das Mittagessen in städtischen Kindertageseinrichtungen / 1. Ergänzung",
+      "public": true,
+      "result": "Einstimmig beschlossen",
+      "vote": "Ja: 47",
+      "paper_kvonr": 2862,
+      "paper_reference": "082/2012/1"
+    },
+    {
+      "number": "8",
+      "title": "Festsetzung der Teilnehmerentgelte für die Volkshochschule Lüdenscheid ab 01.07.2012",
+      "public": true,
+      "result": "Einstimmig beschlossen",
+      "vote": "Ja: 47",
+      "paper_kvonr": 2647,
+      "paper_reference": "179/2011"
+    },
+    {
+      "number": "9",
+      "title": "Realisierung des Siegerentwurfes aus dem Wettbewerb \"Brückenplatz in Lüdenscheid - Brücke und öffentlicher Raum im Quartier der Denkfabrik\"",
+      "public": true,
+      "result": "Einstimmig beschlossen",
+      "vote": "Ja: 47",
+      "paper_kvonr": 2851,
+      "paper_reference": "101/2012"
+    },
+    {
+      "number": "10",
+      "title": "Neuaufstellung des Flächennutzungsplans der Stadt Lüdenscheid; Feststellungsbeschluss;Entscheidung über die während der frühzeitigen Öffentlichkeitsbeteiligung und die während der öffentlichen Auslegung abgegebenen Stellungnahmen und Anregungen",
+      "public": true,
+      "result": "Einstimmig beschlossen",
+      "vote": "Ja: 47",
+      "paper_kvonr": 2837,
+      "paper_reference": "087/2012"
+    },
+    {
+      "number": "11",
+      "title": "Richtlinie zur finanziellen Förderung der Neugestaltung und Wiederherrichtung von Außenanlagen und Fassaden im Stadtumbaugebiet „Bahnhofsquartier und Knapper Straße“",
+      "public": true,
+      "result": "Einstimmig beschlossen",
+      "vote": "Ja: 46",
+      "paper_kvonr": 2850,
+      "paper_reference": "100/2012"
+    },
+    {
+      "number": "12",
+      "title": "Bebauungsplan Nr. 813 \"Bräuckenstraße\" - vereinfachtes Verfahren nach § 13 BauGB; Entscheidung über die während der öffentlichen Auslegung abgegebenen Stellungnahmen; Satzungsbeschluss",
+      "public": true,
+      "result": "Einstimmig beschlossen",
+      "vote": "Ja: 46",
+      "paper_kvonr": 2849,
+      "paper_reference": "099/2012"
+    },
+    {
+      "number": "13",
+      "title": "Satzung der Stadt Lüdenscheid über das Teileinrichtungsprogramm der Erschließungsanlage \"Zum Stucken\"",
+      "public": true,
+      "result": "Einstimmig beschlossen",
+      "vote": "Ja: 46",
+      "paper_kvonr": 2847,
+      "paper_reference": "097/2012"
+    },
+    {
+      "number": "14",
+      "title": "Satzungsänderung der MVG Märkische Verkehrsgesellschaft",
+      "public": true,
+      "result": "Einstimmig beschlossen",
+      "vote": "Ja: 46",
+      "paper_kvonr": 2861,
+      "paper_reference": "111/2012"
+    },
+    {
+      "number": "15",
+      "title": "Sitzung der Verbandsversammlung der KDVZ Citkomm am 04.07.2012Fusion der KDVZ mit dem krz Siegenhier: Grundsatzbeschluss zur Gründung des Dachverbandes S-IT (Stufe 1 der Fusion)Empfehlung an die Vertreter der Stadt Lüdenscheid in der Verbandsversammlung",
+      "public": true,
+      "result": "Mit Stimmenmehrheit zugestimmt",
+      "vote": "Ja: 36, Nein: 11",
+      "paper_kvonr": 2852,
+      "paper_reference": "102/2012"
+    },
+    {
+      "number": "16",
+      "title": "Jahresbericht 2011 des Ehrenamtlichen Behindertenbeauftragen",
+      "public": true,
+      "result": "Zur Kenntnis genommen",
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "17",
+      "title": "Bericht \"Sale-and-lease-back-Modell\"",
+      "public": true,
+      "result": "Zur Kenntnis genommen",
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18",
+      "title": "Bekanntgaben, Beantwortung von Anfragen und Anfragen",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.1",
+      "title": "Bekanntgaben",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.1.1",
+      "title": "Sitzungskalender 2013 für Rat und Hauptausschuss",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.1.2",
+      "title": "Toiletten am Bahnhof",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.2",
+      "title": "Beantwortung von Anfragen",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.2.1",
+      "title": "Sachstand Kanal-Baumaßnahme Altenaer Straße",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.2.2",
+      "title": "Ausführung der Sanierungsarbeiten Altenaer Straße",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.2.3",
+      "title": "Kinderspielplatz in Brügge",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.2.4",
+      "title": "Anfallende Kosten für den Sitzungsdienst",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.3",
+      "title": "Anfragen",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.3.1",
+      "title": "Radweg Herscheider Landstraße",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.3.2",
+      "title": "Parkende Fahrzeuge auf dem Gehweg Richtung Neuenhofer Straße",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    },
+    {
+      "number": "18.3.3",
+      "title": "Fachdienste Musikschule und Volkshochschule",
+      "public": true,
+      "result": null,
+      "vote": null,
+      "paper_kvonr": null,
+      "paper_reference": null
+    }
+  ]
+}

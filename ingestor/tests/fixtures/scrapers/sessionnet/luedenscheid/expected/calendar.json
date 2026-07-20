@@ -1,0 +1,38 @@
+[
+  {
+    "ksinr": 7235,
+    "name": "öffentliche/nicht öffentliche Sitzung des Beirates für Menschen mit Behinderung",
+    "committee": "Beirat für Menschen mit Behinderung",
+    "date": "02.07.2026",
+    "time_start": "17:00",
+    "time_end": "18:45",
+    "location": "Rathaus II, im Besprechungsraum 14, Rathausplatz 2 b"
+  },
+  {
+    "ksinr": 7254,
+    "name": "öffentliche/nicht öffentliche Sitzung des Finanzausschusses der Stadt Lüdenscheid",
+    "committee": "Finanzausschuss",
+    "date": "02.07.2026",
+    "time_start": "17:00",
+    "time_end": "20:28",
+    "location": "Rathaus, im Ratssaal"
+  },
+  {
+    "ksinr": 7193,
+    "name": "öffentliche/nicht öffentliche Sitzung des Hauptausschusses der Stadt Lüdenscheid",
+    "committee": "Hauptausschuss",
+    "date": "06.07.2026",
+    "time_start": "17:04",
+    "time_end": "18:03",
+    "location": "Rathaus, im Ratssaal"
+  },
+  {
+    "ksinr": 7199,
+    "name": "öffentliche/nicht öffentliche Sitzung des Rates der Stadt Lüdenscheid",
+    "committee": "Rat der Stadt Lüdenscheid",
+    "date": "13.07.2026",
+    "time_start": "17:02",
+    "time_end": "20:21",
+    "location": "Rathaus, im Ratssaal"
+  }
+]
