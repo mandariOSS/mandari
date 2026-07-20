@@ -1090,6 +1090,13 @@ class SessionApplication(EncryptionMixin, models.Model):
         verbose_name = "Antrag"
         verbose_name_plural = "Anträge"
         ordering = ["-submitted_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "reference"],
+                condition=~models.Q(reference=""),
+                name="uniq_session_application_reference",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.reference or 'NEU'}: {self.title}"
@@ -1099,28 +1106,38 @@ class SessionApplication(EncryptionMixin, models.Model):
         return self.tenant
 
     def save(self, *args, **kwargs):
-        # Auto-generate reference on first save
+        # Auto-generate reference on first save.
+        # Sicherheit: Die Vergabe läuft in einer Transaktion mit Zeilen-Lock
+        # auf dem Tenant, damit parallele Einreichungen keine doppelten
+        # Eingangsnummern erzeugen. Zusätzlich sichert der UniqueConstraint
+        # (tenant, reference) auf DB-Ebene ab.
         if not self.reference:
-            year = timezone.now().year
-            # Get next number for this tenant and year
-            last_app = (
-                SessionApplication.objects.filter(
-                    tenant=self.tenant,
-                    reference__startswith=f"A/{year}/",
-                )
-                .order_by("-reference")
-                .first()
-            )
-            if last_app and last_app.reference:
-                try:
-                    last_num = int(last_app.reference.split("/")[-1])
-                    next_num = last_num + 1
-                except (ValueError, IndexError):
-                    next_num = 1
-            else:
-                next_num = 1
-            self.reference = f"A/{year}/{next_num:04d}"
+            from django.db import transaction
+
+            with transaction.atomic():
+                # Serialisiert die Nummernvergabe pro Mandant
+                SessionTenant.objects.select_for_update().get(pk=self.tenant_id)
+                self.reference = self._next_reference()
+                super().save(*args, **kwargs)
+            return
         super().save(*args, **kwargs)
+
+    def _next_reference(self) -> str:
+        """Nächste freie Eingangsnummer für Tenant + Jahr (numerisch ermittelt)."""
+        year = timezone.now().year
+        prefix = f"A/{year}/"
+        max_num = 0
+        refs = SessionApplication.objects.filter(
+            tenant_id=self.tenant_id,
+            reference__startswith=prefix,
+        ).values_list("reference", flat=True)
+        for ref in refs:
+            try:
+                num = int(ref.rsplit("/", 1)[-1])
+            except (TypeError, ValueError):
+                continue
+            max_num = max(max_num, num)
+        return f"{prefix}{max_num + 1:04d}"
 
 
 # =============================================================================

@@ -132,6 +132,11 @@ class ApplicationService:
         if not submitter_email or not submitter_email.strip():
             raise ValueError("E-Mail des Einreichers ist erforderlich")
 
+        # Antragsart gegen die Model-Choices validieren (Model ist führend)
+        valid_types = {choice[0] for choice in SessionApplication._meta.get_field("application_type").choices}
+        if application_type not in valid_types:
+            raise ValueError(f"Ungültige Antragsart: {application_type}. Gültig: {', '.join(sorted(valid_types))}")
+
         # Get target organization if specified
         target_org = None
         if target_organization_id:

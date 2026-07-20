@@ -68,7 +68,7 @@ class OParlMixin:
 
     def json_response(self, data: Any, status: int = 200) -> JsonResponse:
         """Return JSON response with proper headers."""
-        response = JsonResponse(data, safe=False, json_dumps_params={"ensure_ascii": False})
+        response = JsonResponse(data, safe=False, status=status, json_dumps_params={"ensure_ascii": False})
         response["Content-Type"] = "application/json; charset=utf-8"
         # CORS headers only for OParl (public) endpoints
         # Session API endpoints should not have wildcard CORS
@@ -76,7 +76,7 @@ class OParlMixin:
 
     def oparl_json_response(self, data: Any, status: int = 200) -> JsonResponse:
         """Return JSON response with CORS headers for OParl (public) API."""
-        response = JsonResponse(data, safe=False, json_dumps_params={"ensure_ascii": False})
+        response = JsonResponse(data, safe=False, status=status, json_dumps_params={"ensure_ascii": False})
         response["Content-Type"] = "application/json; charset=utf-8"
         # OParl is public API - allow CORS for data consumers
         response["Access-Control-Allow-Origin"] = "*"
@@ -734,9 +734,16 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
                 status=400,
             )
 
-        # Validate application type
-        valid_types = ["motion", "inquiry", "proposal", "resolution", "urgent_motion"]
+        # Validate application type — die Choices des Models sind führend.
+        # Legacy-Aliase früherer API-Versionen werden auf Model-Werte gemappt,
+        # damit bestehende Clients nicht brechen.
+        legacy_type_aliases = {
+            "proposal": "motion",
+            "urgent_motion": "urgent",
+        }
+        valid_types = [choice[0] for choice in SessionApplication._meta.get_field("application_type").choices]
         application_type = data.get("application_type", "motion")
+        application_type = legacy_type_aliases.get(application_type, application_type)
         if application_type not in valid_types:
             return self.json_response(
                 {"error": f"Invalid application_type. Valid types: {', '.join(valid_types)}"},
