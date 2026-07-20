@@ -30,7 +30,7 @@
                     <span class="font-medium text-gray-900 dark:text-white truncate">{{ contact.label }}</span>
                     <span class="text-sm text-gray-500 dark:text-gray-400 truncate">{{ contact.email }}</span>
                 </div>
-                <form method="post" action="" class="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <form method="post" action="" class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100 transition-opacity shrink-0">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="delete_admin_contact">
                     <input type="hidden" name="contact_id" value="{{ contact.id }}">

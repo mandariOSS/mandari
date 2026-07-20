@@ -61,7 +61,7 @@
                 <p class="text-sm text-gray-700 dark:text-gray-300">{{ comment.content }}</p>
 
                 <!-- Actions -->
-                <div class="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div class="flex items-center gap-2 mt-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100 transition-opacity">
                     {% if not comment.is_resolved %}
                     <button type="button"
                             @click.stop="replyToComment('{{ comment.id }}')"

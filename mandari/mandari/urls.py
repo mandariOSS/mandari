@@ -13,6 +13,8 @@ from django.shortcuts import redirect, render
 from django.urls import include, path, re_path
 from django.views.static import serve as static_serve
 
+from mandari import pwa
+
 
 def serve_media(request, path):
     """Serve uploaded media files (logos, uploads) via Django.
@@ -48,6 +50,10 @@ def health_check(request):
 urlpatterns = [
     # Health check (for Docker/Kubernetes)
     path("health/", health_check, name="health_check"),
+    # PWA: Manifest, Service Worker (Root-Scope), Offline-Fallback
+    path("manifest.webmanifest", pwa.manifest, name="pwa_manifest"),
+    path("sw.js", pwa.service_worker, name="pwa_sw"),
+    path("offline/", pwa.offline, name="pwa_offline"),
     # Admin custom endpoints (must come before admin.site.urls)
     path("admin/insight_sync/trigger-sync/", include("insight_sync.admin_urls")),
     # Redirect admin logout to custom logout (Django 5+ admin only accepts POST)

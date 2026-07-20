@@ -1,0 +1,25 @@
+{% comment %}
+Service-Worker-Registrierung + Install-Prompt-Capture (Android/Chromium).
+Eingebunden in work/base_work.html und accounts/base_auth.html.
+{% endcomment %}
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+            navigator.serviceWorker.register('{% url "pwa_sw" %}').catch(function () {
+                /* Registrierung ist optional — Fehler bewusst still schlucken. */
+            });
+        });
+    }
+    // Android/Chromium: Install-Prompt abfangen und für den
+    // "App installieren"-Eintrag im Nutzermenü aufheben.
+    window.mandariInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', function (event) {
+        event.preventDefault();
+        window.mandariInstallPrompt = event;
+        window.dispatchEvent(new CustomEvent('pwa-installable'));
+    });
+    window.addEventListener('appinstalled', function () {
+        window.mandariInstallPrompt = null;
+        window.dispatchEvent(new CustomEvent('pwa-installed'));
+    });
+</script>

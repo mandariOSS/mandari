@@ -32,10 +32,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const calendarEl = document.getElementById('calendar');
     if (!calendarEl) return;
 
+    // Mobil (unter 640px): Listenansicht als Standard + kompakte Toolbar —
+    // das Monatsraster ist auf Handy-Breite nicht sinnvoll lesbar.
+    const isMobile = window.matchMedia('(max-width: 639px)').matches;
     const calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
+        initialView: isMobile ? 'listMonth' : 'dayGridMonth',
         locale: 'de',
-        headerToolbar: {
+        headerToolbar: isMobile ? {
+            left: 'prev,next',
+            center: 'title',
+            right: 'listMonth,dayGridMonth'
+        } : {
             left: 'prev,next today',
             center: 'title',
             right: 'dayGridMonth,timeGridWeek,listMonth'
@@ -86,6 +93,15 @@ document.addEventListener('DOMContentLoaded', function() {
     .fc .fc-header-toolbar {
         flex-wrap: wrap;
         row-gap: 8px;
+    }
+    @media (max-width: 639px) {
+        .fc .fc-toolbar-title {
+            font-size: 1.05rem;
+        }
+        .fc .fc-button {
+            padding: 6px 10px;
+            font-size: 0.8rem;
+        }
     }
     .fc .fc-button-primary {
         background-color: #6366f1;

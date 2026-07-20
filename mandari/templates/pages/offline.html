@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#4f46e5">
+    <title>Offline | Mandari</title>
+    {# Bewusst komplett self-contained (Inline-CSS/SVG): Die Seite wird vom #}
+    {# Service Worker vorab gecacht und muss ohne weitere Requests rendern. #}
+    <style>
+        :root { color-scheme: light dark; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #faf9f7;
+            color: #111827;
+            padding: 24px;
+            padding-bottom: calc(24px + env(safe-area-inset-bottom));
+        }
+        @media (prefers-color-scheme: dark) {
+            body { background: #111827; color: #f3f4f6; }
+            .card { background: #1f2937 !important; border-color: #374151 !important; }
+            .muted { color: #9ca3af !important; }
+        }
+        .card {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+            padding: 40px 32px;
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+        }
+        .logo {
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
+            background: #4f46e5;
+            color: #fff;
+            font-size: 28px;
+            font-weight: 700;
+            line-height: 56px;
+            margin: 0 auto 20px;
+        }
+        h1 { font-size: 20px; margin-bottom: 8px; }
+        .muted { font-size: 14px; color: #6b7280; line-height: 1.5; }
+        button {
+            margin-top: 24px;
+            min-height: 44px;
+            padding: 10px 24px;
+            font-size: 15px;
+            font-weight: 600;
+            font-family: inherit;
+            color: #fff;
+            background: #4f46e5;
+            border: 0;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        button:active { background: #4338ca; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">m.</div>
+        <h1>Du bist offline</h1>
+        <p class="muted">
+            Es besteht gerade keine Internetverbindung.
+            Sobald du wieder online bist, kannst du normal weiterarbeiten.
+        </p>
+        <button type="button" onclick="location.reload()">Erneut versuchen</button>
+    </div>
+    <script>
+        // Sobald die Verbindung zurück ist, automatisch neu laden.
+        window.addEventListener('online', function () { location.reload(); });
+    </script>
+</body>
+</html>

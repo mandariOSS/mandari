@@ -1,0 +1,10 @@
+{% comment %}
+PWA-Meta: Manifest + iOS-Homescreen-Support.
+Eingebunden in work/base_work.html und accounts/base_auth.html.
+(Der apple-touch-icon-Link steht bereits im Favicon-Block der Basen.)
+{% endcomment %}
+<link rel="manifest" href="{% url 'pwa_manifest' %}">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="mandari">

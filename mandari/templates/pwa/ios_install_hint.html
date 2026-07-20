@@ -1,0 +1,49 @@
+{% comment %}
+Dezenter, einmalig wegklickbarer iOS-Installationshinweis.
+iOS-Safari zeigt keinen beforeinstallprompt — stattdessen kurze Anleitung
+"Teilen → Zum Home-Bildschirm". Nur auf iOS-Safari, nicht im Standalone-Modus,
+und nur bis zum ersten Wegklicken (localStorage).
+Inline-SVGs statt Lucide: das Element erscheint nach lucide.createIcons().
+{% endcomment %}
+<div x-data="iosInstallHint()" x-show="show" x-cloak
+     class="fixed inset-x-0 bottom-0 z-[90] p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:max-w-sm sm:left-auto sm:right-4">
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-4 flex items-start gap-3">
+        <div class="w-10 h-10 rounded-xl bg-primary-600 text-white flex items-center justify-center font-bold shrink-0">m.</div>
+        <div class="flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200">
+            <p class="font-semibold text-gray-900 dark:text-white">mandari als App nutzen</p>
+            <p class="mt-0.5 text-gray-600 dark:text-gray-400">
+                Tippe auf
+                <svg class="inline w-4 h-4 -mt-0.5 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-label="Teilen-Symbol"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg>
+                <span class="font-medium">Teilen</span> und dann
+                <span class="font-medium">&bdquo;Zum Home-Bildschirm&ldquo;</span>.
+            </p>
+        </div>
+        <button type="button" @click="dismiss()"
+                class="p-2 -m-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+                aria-label="Hinweis schließen">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+    </div>
+</div>
+<script>
+    function iosInstallHint() {
+        return {
+            show: false,
+            init() {
+                if (localStorage.getItem('iosInstallHintDismissed')) return;
+                const ua = navigator.userAgent;
+                // iPadOS meldet sich als Macintosh mit Touch
+                const isIos = /iPhone|iPad|iPod/.test(ua)
+                    || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+                const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome/.test(ua);
+                const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                    || window.navigator.standalone === true;
+                this.show = isIos && isSafari && !isStandalone;
+            },
+            dismiss() {
+                this.show = false;
+                localStorage.setItem('iosInstallHintDismissed', '1');
+            },
+        };
+    }
+</script>

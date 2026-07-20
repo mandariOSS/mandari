@@ -281,7 +281,7 @@
                             <!-- Kontextmenü: In Ordner verschieben -->
                             <div x-data="{ open: false }" class="relative" @click.stop>
                                 <button type="button" @click="open = !open" title="In Ordner verschieben"
-                                        class="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400">
+                                        class="p-1 rounded opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400">
                                     <i data-lucide="folder-input" class="w-4 h-4"></i>
                                 </button>
                                 <div x-show="open" x-cloak @click.outside="open = false"
@@ -484,7 +484,7 @@
                                 <td class="px-2 py-3" @click.stop>
                                     <div x-data="{ open: false }" class="relative">
                                         <button type="button" @click="open = !open" title="In Ordner verschieben"
-                                                class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400">
+                                                class="p-1.5 rounded-lg opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400">
                                             <i data-lucide="folder-input" class="w-4 h-4"></i>
                                         </button>
                                         <div x-show="open" x-cloak @click.outside="open = false"

@@ -61,6 +61,8 @@
 		path /insight/* /work/* /session/* /accounts/* /admin/* /api/* /public/* /ws/*
 		path /static/* /media/*
 		path /sitemap-insight-*
+		# PWA (mandari work): Manifest, Service Worker (Root-Scope), Offline-Fallback
+		path /manifest.webmanifest /sw.js /offline/
 	}
 	handle @mandari {
 		reverse_proxy mandari:8000 {

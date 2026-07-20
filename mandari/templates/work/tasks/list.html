@@ -134,8 +134,26 @@
         </form>
     </div>
 
-    <!-- Kanban Board -->
-    <div class="fade-up d1 grid grid-cols-1 md:grid-cols-3 gap-6">
+    <!-- Kanban Board: auf Mobil horizontales Scroll-Snapping der Spalten, ab md klassisches 3-Spalten-Grid -->
+    <style>
+        @media (max-width: 767.98px) {
+            .kanban-board {
+                display: flex;
+                overflow-x: auto;
+                scroll-snap-type: x mandatory;
+                -webkit-overflow-scrolling: touch;
+                gap: 12px;
+                margin: 0 -16px;
+                padding: 0 16px 8px;
+            }
+            .kanban-column {
+                flex: 0 0 85%;
+                max-width: 340px;
+                scroll-snap-align: center;
+            }
+        }
+    </style>
+    <div class="kanban-board fade-up d1 grid grid-cols-1 md:grid-cols-3 gap-6">
         <!-- TODO Column -->
         <div class="kanban-column">
             <div class="flex items-center justify-between mb-4 pb-3 border-b-2 border-blue-500">

@@ -6,9 +6,10 @@
       :class="{ 'dark': darkMode }">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="{% block meta_description %}Mandari - Anmeldung{% endblock %}">
     <meta name="theme-color" content="#4f46e5">
+    {% include "pwa/meta.html" %}
 
     <title>{% block title %}Anmeldung{% endblock %} | Mandari</title>
 
@@ -101,6 +102,7 @@
             }
         });
     </script>
+    {% include "pwa/register_sw.html" %}
     {% block extra_js %}{% endblock %}
 </body>
 </html>

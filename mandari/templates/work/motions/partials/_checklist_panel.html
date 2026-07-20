@@ -42,7 +42,7 @@ Kontext: motion, checklist_items, checklist_progress, can_edit, organization
             </div>
             {% if can_edit %}
             <button type="button" data-checklist-action="delete" data-item-id="{{ item.id }}"
-                    class="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity" title="Punkt löschen">
+                    class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity" title="Punkt löschen">
                 <i data-lucide="x" class="w-3.5 h-3.5"></i>
             </button>
             {% endif %}

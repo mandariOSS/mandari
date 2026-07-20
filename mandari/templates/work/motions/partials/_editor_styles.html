@@ -54,6 +54,14 @@
         }
     }
 
+    /* Touch: größere Toolbar-Tap-Targets (Buttons sonst nur ~32px) */
+    @media (max-width: 767px) {
+        #editor-toolbar button {
+            min-height: 40px;
+            min-width: 38px;
+        }
+    }
+
     /* Editor Panel */
     .editor-panel {
         display: flex;

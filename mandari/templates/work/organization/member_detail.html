@@ -185,15 +185,15 @@
                 <div class="px-6 py-4">
                     <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{{ cat.name }}</h4>
                     <div class="space-y-1">
-                        <div class="grid grid-cols-12 gap-2 text-xs text-gray-400 pb-1">
-                            <span class="col-span-6"></span>
-                            <span class="col-span-3 text-center">Individuell</span>
-                            <span class="col-span-3 text-center">Verweigert</span>
+                        <div class="grid grid-cols-12 gap-x-2 gap-y-1 text-xs text-gray-400 pb-1">
+                            <span class="hidden sm:block sm:col-span-6"></span>
+                            <span class="col-span-6 sm:col-span-3 text-center">Individuell</span>
+                            <span class="col-span-6 sm:col-span-3 text-center">Verweigert</span>
                         </div>
                         {% for perm in cat.permissions %}
                         {% with sources=role_permission_sources|dict_get:perm.code %}
-                        <div class="grid grid-cols-12 gap-2 items-center py-1 rounded {% if perm.code in denied_permission_codes %}bg-red-50 dark:bg-red-900/10{% elif perm.code in effective_permission_codes %}bg-green-50/50 dark:bg-green-900/5{% endif %}">
-                            <div class="col-span-6 flex items-center gap-2 min-w-0">
+                        <div class="grid grid-cols-12 gap-x-2 gap-y-1 items-center py-1 rounded {% if perm.code in denied_permission_codes %}bg-red-50 dark:bg-red-900/10{% elif perm.code in effective_permission_codes %}bg-green-50/50 dark:bg-green-900/5{% endif %}">
+                            <div class="col-span-12 sm:col-span-6 flex items-center gap-2 min-w-0">
                                 {% if perm.code in denied_permission_codes %}
                                 <i data-lucide="minus-circle" class="w-4 h-4 text-red-500 shrink-0"></i>
                                 {% elif perm.code in effective_permission_codes %}
@@ -212,13 +212,13 @@
                                     {% endif %}
                                 </div>
                             </div>
-                            <div class="col-span-3 text-center">
+                            <div class="col-span-6 sm:col-span-3 text-center">
                                 <input type="checkbox" name="individual_permissions" value="{{ perm.code }}"
                                        {% if perm.code in individual_permission_codes %}checked{% endif %}
                                        {% if not can_edit %}disabled{% endif %}
                                        class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500">
                             </div>
-                            <div class="col-span-3 text-center">
+                            <div class="col-span-6 sm:col-span-3 text-center">
                                 <input type="checkbox" name="denied_permissions" value="{{ perm.code }}"
                                        {% if perm.code in denied_permission_codes %}checked{% endif %}
                                        {% if not can_edit %}disabled{% endif %}

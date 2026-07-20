@@ -142,7 +142,7 @@
                 <span class="text-gray-600 dark:text-gray-400">{{ entry.get_content_decrypted }}</span>
             </div>
             {% if can_edit or can_protocol or entry.created_by == membership and not meeting.protocol_approved %}
-            <div class="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100" @click.stop>
+            <div class="flex items-center gap-1 flex-shrink-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100" @click.stop>
                 <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                         hx-vals='{"action": "delete_entry", "entry_id": "{{ entry.id }}"}'
                         hx-target="#agenda-container"
