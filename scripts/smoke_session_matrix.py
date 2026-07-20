@@ -67,6 +67,7 @@ from apps.session.models import (  # noqa: E402
     SessionAgendaItem,
     SessionApplication,
     SessionFile,
+    SessionInvitationDispatch,
     SessionMeeting,
     SessionOrganization,
     SessionOrganizationMembership,
@@ -243,6 +244,9 @@ GET_MATRIX = [
     (f"{base}/meetings/{meeting_pub.id}/", {"view_meetings"}),
     (f"{base}/meetings/create/", {"create_meetings"}),
     (f"{base}/meetings/{meeting_pub.id}/edit/", {"edit_meetings"}),
+    (f"{base}/meetings/{meeting_pub.id}/invitation/", {"edit_meetings"}),
+    (f"{base}/meetings/{meeting_pub.id}/agenda.pdf", {"view_meetings"}),
+    (f"{base}/meetings/{meeting_pub.id}/sitzung.ics", {"view_meetings"}),
     (f"{base}/agenda/{top_pub.id}/edit/", {"edit_meetings"}),
     (f"{base}/papers/", {"view_papers"}),
     (f"{base}/papers/{paper_pub.id}/", {"view_papers"}),
@@ -292,6 +296,7 @@ print("=== Phase B: Mutationen ohne Berechtigung ===")
 
 mutations = [
     (f"{base}/meetings/create/", {"name": "M", "organization": str(org_a.id), "start": "2026-08-01T10:00"}),
+    (f"{base}/meetings/{meeting_pub.id}/invitation/", {"dispatch_type": "invitation"}),
     (f"{base}/papers/create/", {"reference": "V/X", "name": "P", "paper_type": "proposal"}),
     (f"{base}/meetings/{meeting_pub.id}/agenda/add/", {"name": "T"}),
     (f"{base}/meetings/{meeting_pub.id}/agenda/reorder/", {"order": ""}),
@@ -317,6 +322,7 @@ before_counts = (
     SessionOrganization.objects.count(),
     SessionPerson.objects.count(),
     SessionOrganizationMembership.objects.count(),
+    SessionInvitationDispatch.objects.count(),
 )
 
 bad = [url for url, data in mutations if no_perm.post(url, data).status_code != 403]
@@ -330,6 +336,7 @@ after_counts = (
     SessionOrganization.objects.count(),
     SessionPerson.objects.count(),
     SessionOrganizationMembership.objects.count(),
+    SessionInvitationDispatch.objects.count(),
 )
 check("Keine Mutation ohne Berechtigung ausgeführt", before_counts == after_counts, f"{before_counts} -> {after_counts}")
 check("TOP nicht abgesetzt", not SessionAgendaItem.objects.get(pk=top_pub.pk).is_withdrawn)
@@ -370,6 +377,9 @@ check("Keine Fremddaten in Listen-/API-Views", not leaks, "; ".join(leaks[:5]))
 foreign_detail_urls = [
     f"{base}/meetings/{meeting_b.id}/",
     f"{base}/meetings/{meeting_b.id}/edit/",
+    f"{base}/meetings/{meeting_b.id}/invitation/",
+    f"{base}/meetings/{meeting_b.id}/agenda.pdf",
+    f"{base}/meetings/{meeting_b.id}/sitzung.ics",
     f"{base}/papers/{paper_b.id}/",
     f"{base}/papers/{paper_b.id}/edit/",
     f"{base}/applications/{app_b.id}/",

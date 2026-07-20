@@ -809,6 +809,133 @@ class SessionMeeting(EncryptionMixin, models.Model):
         """Return tenant for encryption."""
         return self.tenant
 
+    @property
+    def invitation_deadline(self):
+        """
+        Spätester Ladungstermin gemäß Ladungsfrist des Gremiums (Issue #29).
+
+        Beispiel: Sitzung am 20.08., Ladungsfrist 7 Tage -> Ladung bis 13.08.
+        """
+        from datetime import timedelta
+
+        period = self.organization.invitation_period_days or 0
+        return (timezone.localtime(self.start) - timedelta(days=period)).date()
+
+    @property
+    def invitation_overdue(self) -> bool:
+        """Ladungsfrist verstrichen, ohne dass eine Einladung versandt wurde?"""
+        if self.invitation_sent_at or self.cancelled:
+            return False
+        if self.meeting_state not in ("draft", "scheduled"):
+            return False
+        return timezone.localdate() > self.invitation_deadline
+
+
+class SessionInvitationDispatch(models.Model):
+    """
+    Versandvorgang einer Ladung/Einladung zu einer Sitzung (Issue #29).
+
+    Dokumentiert gerichtsfest, wer wann welche Art von Ladung (Erstladung
+    oder Nachtrags-Tagesordnung) an welchen Empfängerkreis versandt hat.
+    Die einzelnen Empfänger inkl. Zustellstatus hängen als
+    SessionInvitationRecipient daran.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    meeting = models.ForeignKey(
+        SessionMeeting,
+        on_delete=models.CASCADE,
+        related_name="invitation_dispatches",
+        verbose_name="Sitzung",
+    )
+
+    dispatch_type = models.CharField(
+        max_length=20,
+        choices=[
+            ("invitation", "Ladung"),
+            ("supplementary", "Nachladung/Nachtrag"),
+        ],
+        default="invitation",
+        verbose_name="Versandart",
+    )
+
+    subject = models.CharField(max_length=500, verbose_name="Betreff")
+    message = models.TextField(blank=True, verbose_name="Anschreiben")
+
+    sent_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="invitation_dispatches",
+        verbose_name="Versandt von",
+    )
+    sent_at = models.DateTimeField(auto_now_add=True, verbose_name="Versandt am")
+
+    class Meta:
+        db_table = "session_invitation_dispatches"
+        verbose_name = "Ladungsversand"
+        verbose_name_plural = "Ladungsversände"
+        ordering = ["-sent_at"]
+
+    def __str__(self):
+        return f"{self.get_dispatch_type_display()} für {self.meeting} am {self.sent_at:%d.%m.%Y}"
+
+
+class SessionInvitationRecipient(models.Model):
+    """
+    Einzelner Empfänger eines Ladungsversands inkl. Zustellstatus (Issue #29).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    dispatch = models.ForeignKey(
+        SessionInvitationDispatch,
+        on_delete=models.CASCADE,
+        related_name="recipients",
+        verbose_name="Versand",
+    )
+    person = models.ForeignKey(
+        SessionPerson,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="invitation_receipts",
+        verbose_name="Person",
+    )
+
+    name = models.CharField(max_length=255, verbose_name="Name")
+    email = models.EmailField(verbose_name="E-Mail")
+    membership_role = models.CharField(max_length=100, blank=True, verbose_name="Funktion")
+
+    # Ö/NÖ: hat dieser Empfänger die vollständige (inkl. NÖ-Teil) Tagesordnung erhalten?
+    includes_non_public = models.BooleanField(
+        default=False,
+        verbose_name="Inkl. nichtöffentlicher Teil",
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("sent", "Versandt"),
+            ("failed", "Fehlgeschlagen"),
+        ],
+        default="sent",
+        verbose_name="Zustellstatus",
+    )
+    error = models.TextField(blank=True, verbose_name="Fehler")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "session_invitation_recipients"
+        verbose_name = "Ladungsempfänger"
+        verbose_name_plural = "Ladungsempfänger"
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} <{self.email}> ({self.get_status_display()})"
+
 
 class SessionAgendaItem(EncryptionMixin, models.Model):
     """

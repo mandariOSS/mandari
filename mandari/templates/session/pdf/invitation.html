@@ -1,0 +1,71 @@
+{% extends "session/pdf/base_pdf.html" %}
+{% comment %}Einladungs-/Nachtrags-PDF mit Tagesordnung (Issue #29).{% endcomment %}
+
+{% block content %}
+    <h1>{{ title }}</h1>
+    <p>
+        {% if supplementary_only %}
+        Nachtrag zur Einladung zur Sitzung des Gremiums <strong>{{ meeting.organization.name }}</strong>.
+        {% else %}
+        Hiermit wird zur Sitzung des Gremiums <strong>{{ meeting.organization.name }}</strong> eingeladen.
+        {% endif %}
+    </p>
+
+    <table class="meta-table">
+        <tr><td><strong>Sitzung:</strong></td><td>{{ meeting.name }}</td></tr>
+        <tr><td><strong>Termin:</strong></td><td>{{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% if meeting.end %} bis {{ meeting.end|date:"H:i" }} Uhr{% endif %}</td></tr>
+        {% if meeting.location %}
+        <tr><td><strong>Ort:</strong></td><td>{{ meeting.location }}{% if meeting.room %}, {{ meeting.room }}{% endif %}{% if meeting.street_address %}, {{ meeting.street_address }}{% endif %}{% if meeting.postal_code or meeting.locality %}, {{ meeting.postal_code }} {{ meeting.locality }}{% endif %}</td></tr>
+        {% endif %}
+    </table>
+
+    <h2>{% if supplementary_only %}Nachtrags-Tagesordnung{% else %}Tagesordnung{% endif %}</h2>
+
+    {% if agenda_public %}
+    <div class="section-title">Öffentlicher Teil</div>
+    <table class="agenda">
+        {% for item in agenda_public %}
+        <tr>
+            <td class="top-nr {% if item.is_withdrawn %}withdrawn{% endif %}">{{ item.number }}</td>
+            <td>
+                <span class="{% if item.is_withdrawn %}withdrawn{% endif %}">{{ item.name }}</span>
+                {% if item.is_supplementary %}<span class="tag"> (Nachtrag)</span>{% endif %}
+                {% if item.is_withdrawn %}<span class="tag"> (abgesetzt)</span>{% endif %}
+                {% if item.paper %}<br><span class="muted">Vorlage: {{ item.paper.reference }}</span>{% endif %}
+                {% for sub in item.children_list %}
+                <br><strong>{{ sub.number }}</strong>&nbsp; <span class="{% if sub.is_withdrawn %}withdrawn{% endif %}">{{ sub.name }}</span>{% if sub.is_supplementary %}<span class="tag"> (Nachtrag)</span>{% endif %}
+                {% endfor %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if include_non_public and agenda_non_public %}
+    <div class="section-title">Nichtöffentlicher Teil</div>
+    <table class="agenda">
+        {% for item in agenda_non_public %}
+        <tr>
+            <td class="top-nr {% if item.is_withdrawn %}withdrawn{% endif %}">{{ item.number }}</td>
+            <td>
+                <span class="{% if item.is_withdrawn %}withdrawn{% endif %}">{{ item.name }}</span>
+                {% if item.is_supplementary %}<span class="tag"> (Nachtrag)</span>{% endif %}
+                {% if item.is_withdrawn %}<span class="tag"> (abgesetzt)</span>{% endif %}
+                {% if item.paper %}<br><span class="muted">Vorlage: {{ item.paper.reference }}</span>{% endif %}
+                {% for sub in item.children_list %}
+                <br><strong>{{ sub.number }}</strong>&nbsp; <span class="{% if sub.is_withdrawn %}withdrawn{% endif %}">{{ sub.name }}</span>{% if sub.is_supplementary %}<span class="tag"> (Nachtrag)</span>{% endif %}
+                {% endfor %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if not agenda_public and not agenda_non_public %}
+    <p class="muted">Keine Tagesordnungspunkte.</p>
+    {% endif %}
+
+    <div class="signature">
+        <p>{{ tenant.name }}<br><span class="muted">Der Sitzungsdienst</span></p>
+    </div>
+{% endblock %}

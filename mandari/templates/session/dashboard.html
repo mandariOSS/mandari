@@ -7,6 +7,31 @@
 {% endblock %}
 
 {% block page_content %}
+{% if invitation_warnings %}
+<!-- Fristwarnung Ladungsversand (Issue #29) -->
+<div class="mb-6 rounded-xl border p-4 {% if invitation_overdue_count %}bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800{% else %}bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800{% endif %}">
+    <div class="flex items-center gap-2 mb-2">
+        <i data-lucide="alarm-clock" class="w-5 h-5 {% if invitation_overdue_count %}text-red-600{% else %}text-amber-600{% endif %}"></i>
+        <h2 class="font-semibold {% if invitation_overdue_count %}text-red-800 dark:text-red-300{% else %}text-amber-800 dark:text-amber-300{% endif %}">
+            Ladungsfristen im Blick
+        </h2>
+    </div>
+    <ul class="space-y-1">
+        {% for meeting in invitation_warnings %}
+        <li class="text-sm {% if meeting.invitation_overdue %}text-red-700 dark:text-red-400{% else %}text-amber-700 dark:text-amber-400{% endif %}">
+            <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="hover:underline font-medium">{{ meeting.name }}</a>
+            ({{ meeting.organization.name }}, Sitzung am {{ meeting.start|date:"d.m.Y" }}):
+            {% if meeting.invitation_overdue %}
+            Ladungsfrist verstrichen — musste bis {{ meeting.invitation_deadline|date:"d.m." }} raus!
+            {% else %}
+            Ladung muss bis {{ meeting.invitation_deadline|date:"d.m." }} raus.
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
 <!-- Stats Grid -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
     <!-- Sitzungen -->

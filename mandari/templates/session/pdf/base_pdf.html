@@ -1,0 +1,52 @@
+{% comment %}
+Basis-Template für amtliche Session-PDFs (Issue #29).
+Briefkopf aus den Mandanten-Stammdaten (Name, Adresse, Kontakt, Primärfarbe);
+gerendert über die gemeinsamen PDF-Bausteine (apps/common/pdf.py, xhtml2pdf).
+{% endcomment %}<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<style>
+    @page {
+        size: A4;
+        margin: 22mm 22mm 22mm 25mm;
+        @frame footer_frame {
+            -pdf-frame-content: footer_content;
+            left: 25mm; width: 163mm; top: 279mm; height: 12mm;
+        }
+    }
+    body { font-family: Helvetica, sans-serif; font-size: 10.5pt; color: #111111; }
+    .letterhead { border-bottom: 2px solid {{ tenant.primary_color|default:"#1e40af" }}; padding-bottom: 6pt; margin-bottom: 14pt; }
+    .letterhead .org-name { font-size: 14pt; font-weight: bold; color: {{ tenant.primary_color|default:"#1e40af" }}; }
+    .letterhead .org-meta { font-size: 8pt; color: #444444; margin-top: 2pt; }
+    h1 { font-size: 13pt; margin: 14pt 0 4pt 0; }
+    h2 { font-size: 11pt; margin: 12pt 0 4pt 0; }
+    .meta-table td { font-size: 10pt; padding: 1pt 8pt 1pt 0; vertical-align: top; }
+    table.agenda { width: 100%; border-collapse: collapse; margin-top: 4pt; }
+    table.agenda td { font-size: 10pt; padding: 3pt 4pt; border-bottom: 0.5pt solid #cccccc; vertical-align: top; }
+    td.top-nr { width: 14mm; font-weight: bold; }
+    .section-title { font-size: 10pt; font-weight: bold; text-transform: uppercase; margin-top: 10pt; padding: 3pt 0; border-bottom: 1pt solid #888888; }
+    .muted { color: #666666; }
+    .withdrawn { color: #999999; text-decoration: line-through; }
+    .tag { font-size: 8pt; color: #92400e; }
+    .footer { font-size: 7.5pt; color: #666666; text-align: center; }
+    .signature { margin-top: 28pt; }
+</style>
+</head>
+<body>
+    <div class="letterhead">
+        <div class="org-name">{{ tenant.name }}</div>
+        <div class="org-meta">
+            {% if address_lines %}{{ address_lines|join:" · " }}{% endif %}
+            {% if tenant.contact_email %} · {{ tenant.contact_email }}{% endif %}
+            {% if tenant.contact_phone %} · Tel. {{ tenant.contact_phone }}{% endif %}
+        </div>
+    </div>
+
+    {% block content %}{% endblock %}
+
+    <div id="footer_content" class="footer">
+        {{ tenant.name }} · erstellt am {{ generated_at|date:"d.m.Y H:i" }} Uhr · Seite <pdf:pagenumber> von <pdf:pagecount>
+    </div>
+</body>
+</html>

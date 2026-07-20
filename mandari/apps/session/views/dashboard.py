@@ -48,6 +48,26 @@ class DashboardView(SessionViewMixin, TemplateView):
             upcoming = upcoming.filter(is_public=True)
         context["upcoming_meetings"] = upcoming.select_related("organization").order_by("start")[:5]
 
+        # Fristwarnung Ladung (Issue #29): kommende Sitzungen ohne versandte
+        # Einladung — „Ladung muss bis TT.MM. raus" (überfällige zuerst)
+        if self.has_permission("view_meetings"):
+            pending_invitations = (
+                SessionMeeting.objects.filter(
+                    tenant=tenant,
+                    start__gte=timezone.now(),
+                    cancelled=False,
+                    invitation_sent_at__isnull=True,
+                    meeting_state__in=["draft", "scheduled"],
+                )
+                .select_related("organization")
+                .order_by("start")
+            )
+            if not self.has_permission("view_non_public_meetings"):
+                pending_invitations = pending_invitations.filter(is_public=True)
+            warnings = sorted(pending_invitations[:20], key=lambda m: m.invitation_deadline)
+            context["invitation_warnings"] = warnings
+            context["invitation_overdue_count"] = sum(1 for m in warnings if m.invitation_overdue)
+
         # Recent papers — Ö/NÖ nur für Berechtigte
         recent_papers = SessionPaper.objects.filter(tenant=tenant)
         if not self.has_permission("view_non_public_papers"):

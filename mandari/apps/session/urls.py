@@ -52,6 +52,21 @@ urlpatterns = [
         name="meeting_edit",
     ),
     path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/invitation/",
+        views.MeetingInvitationView.as_view(),
+        name="meeting_invitation",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/agenda.pdf",
+        views.MeetingAgendaPdfView.as_view(),
+        name="meeting_agenda_pdf",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/sitzung.ics",
+        views.MeetingIcsView.as_view(),
+        name="meeting_ics",
+    ),
+    path(
         "<slug:tenant_slug>/meetings/<uuid:meeting_id>/agenda/add/",
         views.AgendaItemCreateView.as_view(),
         name="agenda_item_create",

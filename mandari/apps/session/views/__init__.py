@@ -36,6 +36,11 @@ from .files import (
     FileUpdateView,
     FileUploadView,
 )
+from .invitations import (
+    MeetingAgendaPdfView,
+    MeetingIcsView,
+    MeetingInvitationView,
+)
 from .meetings import (
     MeetingCreateView,
     MeetingDetailView,
@@ -103,8 +108,11 @@ __all__ = [
     "MembershipEndView",
     "MembershipSuccessionView",
     "MembershipUpdateView",
+    "MeetingAgendaPdfView",
     "MeetingCreateView",
     "MeetingDetailView",
+    "MeetingIcsView",
+    "MeetingInvitationView",
     "MeetingListView",
     "MeetingUpdateView",
     "OrganizationCreateView",

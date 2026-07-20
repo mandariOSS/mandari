@@ -49,6 +49,11 @@
                     </p>
                 </div>
                 {% if "edit_meetings" in permission_checker.permissions %}
+                <a href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                   class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium {% if meeting.invitation_overdue %}text-red-700 dark:text-red-400{% else %}text-gray-700 dark:text-gray-300{% endif %} hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                    Ladung
+                </a>
                 <a href="{% url 'session:meeting_edit' tenant_slug=tenant_slug meeting_id=meeting.id %}"
                    class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                     <i data-lucide="edit" class="w-4 h-4"></i>
@@ -273,8 +278,28 @@
                         {{ meeting.invitation_sent_at|date:"d.m.Y H:i" }}
                     </dd>
                 </div>
+                {% elif not meeting.cancelled %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Ladungsfrist</dt>
+                    <dd class="font-medium mt-1 {% if meeting.invitation_overdue %}text-red-600 dark:text-red-400{% else %}text-gray-900 dark:text-white{% endif %}">
+                        Ladung bis {{ meeting.invitation_deadline|date:"d.m.Y" }}
+                        {% if meeting.invitation_overdue %}(überfällig!){% endif %}
+                    </dd>
+                </div>
                 {% endif %}
             </dl>
+            <div class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                <a href="{% url 'session:meeting_agenda_pdf' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                   class="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                    <i data-lucide="file-down" class="w-4 h-4"></i>
+                    Tagesordnung als PDF
+                </a>
+                <a href="{% url 'session:meeting_ics' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                   class="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                    <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+                    Termin als ICS
+                </a>
+            </div>
         </div>
 
         <!-- Protocol -->
