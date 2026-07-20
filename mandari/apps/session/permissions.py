@@ -166,7 +166,17 @@ class SessionMixin(LoginRequiredMixin):
 
         request.session_user = self.session_user
 
+        # Sicherheit: Berechtigungen VOR der eigentlichen View-Verarbeitung
+        # prüfen (insbesondere vor POST-Mutationen). Anonyme Nutzer werden
+        # weiterhin von LoginRequiredMixin zum Login umgeleitet.
+        if request.user.is_authenticated:
+            self.check_view_permissions()
+
         return super().dispatch(request, *args, **kwargs)
+
+    def check_view_permissions(self):
+        """Hook für Berechtigungsprüfungen (Default: keine)."""
+        return None
 
     def get_context_data(self, **kwargs):
         """Add session context to templates."""
@@ -204,16 +214,10 @@ class SessionPermissionMixin(SessionMixin):
     permission_required: str | list[str] | None = None
     permission_require_all: bool = True
 
-    def dispatch(self, request, *args, **kwargs):
-        """Check permissions before view processing."""
-        # First set up session context
-        response = super().dispatch(request, *args, **kwargs)
-
-        # Check permissions
+    def check_view_permissions(self):
+        """Berechtigungen prüfen — läuft VOR der View-Verarbeitung (SessionMixin)."""
         if self.permission_required:
             self.check_permissions()
-
-        return response
 
     def check_permissions(self):
         """Verify the user has required permissions."""
