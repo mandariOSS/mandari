@@ -86,6 +86,15 @@ def _get_meeting_context(view, meeting):
         or view.membership.has_permission("protocols.edit")
     )
 
+    # Nachträge (Issue #63): nach endgültiger Genehmigung dürfen
+    # Protokollant/Vorsitz sichtbare Nachträge erfassen
+    can_add_addendum = meeting.protocol_approved and (
+        meeting.created_by == view.membership
+        or view.membership.has_permission("faction.manage")
+        or view.membership.has_permission("protocols.create")
+        or view.membership.has_permission("protocols.edit")
+    )
+
     start_allowed_from = meeting.start - timedelta(minutes=30)
     can_start = (
         view.membership.has_permission("faction.start")
@@ -151,6 +160,7 @@ def _get_meeting_context(view, meeting):
         "can_edit": can_edit,
         "is_protocol_phase": is_protocol_phase,
         "can_protocol": can_protocol,
+        "can_add_addendum": can_add_addendum,
         "can_start": can_start,
         "can_manage_attendance": can_manage_attendance,
         "invitation_release_pending": invitation_release_pending,

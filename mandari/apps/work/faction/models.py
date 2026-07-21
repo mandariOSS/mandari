@@ -408,17 +408,17 @@ class FactionMeeting(EncryptionMixin, models.Model):
         """
         settings = self.get_faction_settings()
 
-        # Default titles
-        default_title_with_prev = (
-            "Genehmigung der Tagesordnung und des Protokolls der Sitzung vom {datum_letzte_sitzung}"
-        )
-        default_title_no_prev = "Genehmigung der Tagesordnung"
+        # Default-Texte (Issue #63): verbindliche Standard-Formulierung,
+        # je Organisation weiterhin anpassbar
+        default_title_with_prev = "Tagesordnung festlegen und letztes Protokoll genehmigen"
+        default_title_no_prev = "Tagesordnung festlegen"
 
-        # Get custom template or use default
+        # Get custom template or use default (leere Vorlagen fallen auf den
+        # Default zurück — Issue #63)
         if self.previous_meeting:
-            title_template = settings.get("first_agenda_title_with_previous", default_title_with_prev)
+            title_template = settings.get("first_agenda_title_with_previous") or default_title_with_prev
         else:
-            title_template = settings.get("first_agenda_title_no_previous", default_title_no_prev)
+            title_template = settings.get("first_agenda_title_no_previous") or default_title_no_prev
 
         # Replace placeholders
         title = self._replace_placeholders(title_template)
@@ -826,6 +826,10 @@ class FactionProtocolEntry(EncryptionMixin, models.Model):
         ("action", "Aufgabe"),
         ("note", "Notiz"),
         ("vote", "Abstimmung"),
+        # Nachtrag (Issue #63): einziger nach endgültiger Protokoll-
+        # Genehmigung noch zulässiger Eintragstyp — sichtbar gekennzeichnet,
+        # das Original wird niemals verändert
+        ("addendum", "Nachtrag"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -916,6 +920,37 @@ class FactionProtocolEntry(EncryptionMixin, models.Model):
 
     def get_encryption_organization(self):
         return self.meeting.organization
+
+    # -- Endgültige Protokollsperre (Issue #63) ---------------------------
+
+    def _protocol_locked(self) -> bool:
+        """Ist das Protokoll der zugehörigen Sitzung endgültig genehmigt?"""
+        if not self.meeting_id:
+            return False
+        return FactionMeeting.objects.filter(pk=self.meeting_id, protocol_approved=True).exists()
+
+    def save(self, *args, **kwargs):
+        """
+        Endgültige Sperre (Issue #63): Nach der Genehmigung ist das
+        Vorprotokoll ENDGÜLTIG gesperrt — auch für Admins. Bestehende
+        Einträge sind unveränderbar; neue Einträge sind ausschließlich als
+        sichtbarer Nachtrag (entry_type="addendum") zulässig.
+        """
+        if self._protocol_locked():
+            if not self._state.adding:
+                raise ValueError(
+                    "Das Protokoll ist endgültig genehmigt — Originaleinträge sind unveränderbar. "
+                    "Korrekturen sind nur als Nachtrag möglich."
+                )
+            if self.entry_type != "addendum":
+                raise ValueError("Das Protokoll ist endgültig genehmigt — neue Einträge sind nur als Nachtrag möglich.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Endgültige Sperre (Issue #63): keine Löschung genehmigter Protokolleinträge."""
+        if self._protocol_locked():
+            raise ValueError("Das Protokoll ist endgültig genehmigt — Einträge können nicht gelöscht werden.")
+        super().delete(*args, **kwargs)
 
 
 class FactionDecision(models.Model):
@@ -1008,6 +1043,7 @@ class FactionAuditLog(models.Model):
         ("auto_cancelled", "Automatisch entfallen"),
         ("invitation_released", "Einladungsversand freigegeben"),
         ("release_notice_sent", "Freigabe-Hinweis versandt"),
+        ("addendum", "Nachtrag erfasst"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -295,8 +295,8 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
             "protocol_revision_safe": True,
             "auto_lock_protocol_on_complete": True,
             "require_protocol_approval": True,
-            "first_agenda_title_with_previous": "Genehmigung der Tagesordnung und des Protokolls der Sitzung vom {datum_letzte_sitzung}",
-            "first_agenda_title_no_previous": "Genehmigung der Tagesordnung",
+            "first_agenda_title_with_previous": "Tagesordnung festlegen und letztes Protokoll genehmigen",
+            "first_agenda_title_no_previous": "Tagesordnung festlegen",
             "first_agenda_description": "",
             # Einladungslogik (Issue #62)
             **INVITATION_DEFAULTS,

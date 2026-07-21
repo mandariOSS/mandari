@@ -164,6 +164,20 @@ class FactionActionView(WorkViewMixin, View):
         """Ersteller der Sitzung oder faction.manage — für Status-/Verwaltungsaktionen."""
         return meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
 
+    def _can_addendum(self, meeting):
+        """
+        Wer darf nach endgültiger Genehmigung Nachträge erfassen (Issue #63)?
+
+        Nur Protokollant/Vorsitz — unabhängig von der Genehmigungssperre,
+        denn Nachträge ändern das Original nicht.
+        """
+        return (
+            meeting.created_by == self.membership
+            or self.membership.has_permission("faction.manage")
+            or self.membership.has_permission("protocols.create")
+            or self.membership.has_permission("protocols.edit")
+        )
+
     # -- Status handlers -----------------------------------------------
 
     def _start(self, request, meeting):
@@ -480,10 +494,18 @@ class FactionActionView(WorkViewMixin, View):
     # -- Protocol handlers ---------------------------------------------
 
     def _add_entry(self, request, meeting):
+        # Endgültig genehmigte Protokolle (Issue #63): ausschließlich
+        # sichtbare Nachträge — Originale bleiben unangetastet
+        if meeting.protocol_approved:
+            return self._add_addendum(request, meeting)
+
         if not self._can_protocol(meeting):
             return HttpResponse(status=403)
 
         entry_type = request.POST.get("entry_type", "note")
+        if entry_type == "addendum":
+            # Nachträge gibt es nur für endgültig genehmigte Protokolle
+            return HttpResponse(status=400)
         content = request.POST.get("content", "").strip()
         agenda_item_id = request.POST.get("agenda_item_id")
 
@@ -550,6 +572,49 @@ class FactionActionView(WorkViewMixin, View):
 
         messages.success(request, "Protokolleintrag gespeichert.")
         return self._redirect_detail(meeting)
+
+    def _add_addendum(self, request, meeting):
+        """
+        Nachtrag zu einem endgültig genehmigten Protokoll erfassen (Issue #63).
+
+        Nur Protokollant/Vorsitz; der Eintrag wird sichtbar als "Nachtrag"
+        gekennzeichnet und auditiert — das Original bleibt unverändert.
+        """
+        if request.POST.get("entry_type", "addendum") != "addendum":
+            # Nach der Genehmigung sind nur noch Nachträge zulässig
+            return HttpResponse(status=403)
+        if not self._can_addendum(meeting):
+            return HttpResponse(status=403)
+
+        content = request.POST.get("content", "").strip()
+        if not content:
+            if request.headers.get("HX-Request"):
+                return HttpResponse("Inhalt ist erforderlich.", status=400)
+            return self._redirect_detail(meeting)
+
+        agenda_item = None
+        agenda_item_id = request.POST.get("agenda_item_id")
+        if agenda_item_id:
+            agenda_item = FactionAgendaItem.objects.filter(id=agenda_item_id, meeting=meeting).first()
+            # NÖ strikt (Issue #64): keine Nachträge zu NÖ-TOPs durch Nicht-Vereidigte
+            if agenda_item is not None and not can_view_item(agenda_item, self.membership):
+                return HttpResponse(status=403)
+
+        entry = FactionProtocolEntry(
+            meeting=meeting,
+            entry_type="addendum",
+            created_by=self.membership,
+            order=meeting.protocol_entries.count() + 1,
+            agenda_item=agenda_item,
+        )
+        # Inhalt VOR dem ersten Save setzen — die Modell-Sperre erlaubt bei
+        # genehmigten Protokollen keine nachträglichen Updates (auch nicht
+        # am frisch angelegten Nachtrag)
+        entry.set_content_encrypted(content)
+        entry._audit_created_action = "addendum"
+        entry.save()
+
+        return self._refresh_or_redirect(request, meeting, "Nachtrag erfasst.")
 
     def _edit_entry(self, request, meeting):
         entry_id = request.POST.get("entry_id")
@@ -898,8 +963,11 @@ class FactionActionView(WorkViewMixin, View):
             related_faction_meeting=meeting,
         )
 
-        entry.action_completed = True
-        entry.save()
+        # Endgültig genehmigte Protokolle sind unveränderbar (Issue #63) —
+        # die Aufgabe wird trotzdem angelegt, nur das Flag bleibt unberührt
+        if not meeting.protocol_approved:
+            entry.action_completed = True
+            entry.save()
 
         short_title = task_title[:50] + "..." if len(task_title) > 50 else task_title
         messages.success(request, f"Aufgabe '{short_title}' erstellt.")

@@ -107,6 +107,32 @@
     {% endif %}
 </div>
 
+{# Nachtrag (Issue #63): Protokoll ist endgültig — Korrekturen nur als sichtbarer Nachtrag #}
+{% if can_add_addendum %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+    <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+        <i data-lucide="file-plus" class="w-4 h-4 text-primary-600"></i>
+        Nachtrag zum Protokoll
+    </h4>
+    <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+        Das Protokoll ist endgültig genehmigt. Korrekturen sind nur als sichtbar
+        gekennzeichneter Nachtrag möglich — das Original bleibt unverändert.
+    </p>
+    <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "add_entry", "entry_type": "addendum"}'
+          class="space-y-2">
+        {% csrf_token %}
+        <textarea name="content" rows="2" required
+                  placeholder="Text des Nachtrags..."
+                  class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:border-primary-500 outline-none"></textarea>
+        <button type="submit" class="w-full py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 flex items-center justify-center gap-2">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            Nachtrag erfassen
+        </button>
+    </form>
+</div>
+{% endif %}
+
 {# Protocol PDF export (Issue #60) #}
 {% if meeting.status == 'completed' %}
 {% if membership|has_perm:"protocols.view_public" or can_view_internal and membership|has_perm:"protocols.view_full" %}

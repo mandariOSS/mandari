@@ -213,7 +213,7 @@
                     <input type="text" name="first_agenda_title_with_previous"
                            value="{{ faction_settings.first_agenda_title_with_previous }}"
                            class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
-                           placeholder="Genehmigung der Tagesordnung und des Protokolls der Sitzung vom {datum_letzte_sitzung}">
+                           placeholder="Tagesordnung festlegen und letztes Protokoll genehmigen">
                     <p class="text-xs text-gray-500 mt-1">
                         Wird verwendet, wenn eine vorherige Sitzung existiert.
                     </p>
@@ -226,7 +226,7 @@
                     <input type="text" name="first_agenda_title_no_previous"
                            value="{{ faction_settings.first_agenda_title_no_previous }}"
                            class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
-                           placeholder="Genehmigung der Tagesordnung">
+                           placeholder="Tagesordnung festlegen">
                     <p class="text-xs text-gray-500 mt-1">
                         Wird verwendet, wenn es die erste Sitzung ist oder keine vorherige existiert.
                     </p>
@@ -275,7 +275,7 @@
                     </span>
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white" id="preview-title">
-                            {{ faction_settings.first_agenda_title_with_previous|default:"Genehmigung der Tagesordnung und des Protokolls der Sitzung vom {datum_letzte_sitzung}" }}
+                            {{ faction_settings.first_agenda_title_with_previous|default:"Tagesordnung festlegen und letztes Protokoll genehmigen" }}
                         </p>
                         {% if faction_settings.first_agenda_description %}
                         <p class="text-sm text-gray-500 mt-1">{{ faction_settings.first_agenda_description }}</p>
