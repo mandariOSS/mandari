@@ -111,6 +111,38 @@
             </div>
         </div>
 
+        <!-- Public Protocols (Opt-in) -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Öffentliche Protokolle</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                Genehmigte Protokolle können im Bürgerportal veröffentlicht werden — es erscheinen
+                ausschließlich öffentliche Tagesordnungspunkte und deren Protokolleinträge.
+            </p>
+
+            <div class="flex items-start gap-4">
+                <div class="flex items-center h-6">
+                    <input type="checkbox" id="publish_protocols" name="publish_protocols"
+                           {% if organization.publish_protocols %}checked{% endif %}
+                           {% if not can_publish_protocols %}disabled{% endif %}
+                           class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 disabled:opacity-50">
+                </div>
+                <div class="flex-1">
+                    <label for="publish_protocols" class="block text-sm font-medium text-gray-900 dark:text-white">
+                        Genehmigte Protokolle im Bürgerportal veröffentlichen
+                    </label>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                        Standardmäßig deaktiviert. Solange die Veröffentlichung ausgeschaltet ist,
+                        sind Fraktionsprotokolle ausschließlich intern sichtbar.
+                    </p>
+                    {% if not can_publish_protocols %}
+                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                        Zum Ändern dieser Einstellung ist die Berechtigung „Protokolle veröffentlichen" erforderlich.
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
         <!-- Title Templates -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Titel für den ersten TOP</h3>

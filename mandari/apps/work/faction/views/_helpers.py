@@ -152,6 +152,26 @@ def _htmx_response(html, trigger=None, refresh=False):
     return response
 
 
+def _apply_approval_item_decision(agenda_item, decision, meeting, membership):
+    """
+    Genehmigungs-TOP auswerten: eine angenommene Abstimmung auf dem
+    automatischen ersten TOP genehmigt das Protokoll der vorherigen Sitzung
+    (ProtocolApprovalService setzt Status, Flag und Genehmigungs-Metadaten).
+    """
+    if not agenda_item.is_approval_item or not agenda_item.approves_meeting_id:
+        return False
+    if decision is None or not decision.passed:
+        return False
+
+    from ..services import ProtocolApprovalService
+
+    return ProtocolApprovalService.approve_protocol(
+        agenda_item.approves_meeting,
+        approved_in_meeting=meeting,
+        approved_by=membership,
+    )
+
+
 def _renumber_items(meeting, visibility):
     """Renumber items after reordering to maintain consistent numbering."""
     items = meeting.agenda_items.filter(visibility=visibility, parent__isnull=True, is_approval_item=False).order_by(

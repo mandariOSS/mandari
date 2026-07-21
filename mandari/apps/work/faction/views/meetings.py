@@ -148,10 +148,13 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
         for member in self.organization.memberships.filter(is_active=True):
             FactionAttendance.objects.create(meeting=meeting, membership=member, status="invited")
 
-        # Auto-create approval agenda item if enabled
+        # Auto-create approval agenda item if enabled — über den Service, damit
+        # das Vorprotokoll gleichzeitig in den Status "Zur Genehmigung" wechselt
         faction_settings = meeting.get_faction_settings()
         if faction_settings.get("auto_create_approval_item", True):
-            meeting.create_approval_agenda_item()
+            from ..services import ProtocolApprovalService
+
+            ProtocolApprovalService.auto_create_approval_item(meeting)
 
         messages.success(request, "Sitzung erfolgreich erstellt.")
         return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)

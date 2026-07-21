@@ -279,6 +279,8 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         context["active_nav"] = "organization"
         context["active_tab"] = "faction"
         context["can_manage_faction"] = True  # This view requires faction.manage
+        # Veröffentlichungs-Opt-in darf nur mit protocols.publish geändert werden
+        context["can_publish_protocols"] = self.membership.has_permission("protocols.publish")
 
         # Get current faction settings
         settings = self.organization.settings or {}
@@ -338,6 +340,11 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         # Save back to organization
         settings["faction"] = faction_settings
         self.organization.settings = settings
+
+        # Öffentliche Protokolle (Opt-in): nur mit protocols.publish änderbar
+        if self.membership.has_permission("protocols.publish"):
+            self.organization.publish_protocols = request.POST.get("publish_protocols") == "on"
+
         self.organization.save()
 
         messages.success(request, "Einstellungen gespeichert.")

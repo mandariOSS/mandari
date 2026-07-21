@@ -318,6 +318,14 @@ class Organization(models.Model):
     # === SETTINGS ===
 
     settings = models.JSONField(default=dict, blank=True, verbose_name="Einstellungen")
+    publish_protocols = models.BooleanField(
+        default=False,
+        verbose_name="Protokolle veröffentlichen",
+        help_text=(
+            "Expliziter Opt-in: genehmigte Fraktionsprotokolle erscheinen in der "
+            "öffentlichen Protokollansicht des Bürgerportals (nur Ö-Teile)."
+        ),
+    )
     require_2fa = models.BooleanField(
         default=False,
         verbose_name="2FA erforderlich",

@@ -30,6 +30,8 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
+from ._helpers import _apply_approval_item_decision
+
 
 class FactionItemPanelView(WorkViewMixin, TemplateView):
     """GET: Render agenda item slide-over panel content."""
@@ -334,7 +336,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         decision_text = request.POST.get("decision_text", "").strip()
         notes = request.POST.get("notes", "").strip()
 
-        FactionDecision.objects.update_or_create(
+        decision, _created = FactionDecision.objects.update_or_create(
             agenda_item=item,
             defaults={
                 "votes_yes": votes_yes,
@@ -352,6 +354,9 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         item.votes_against = votes_no
         item.votes_abstain = votes_abstain
         item.save()
+
+        # Genehmigungs-TOP: angenommene Abstimmung genehmigt das Vorprotokoll
+        _apply_approval_item_decision(item, decision, meeting, self.membership)
 
         return self._panel_response(request, meeting, item, "Abstimmung erfasst")
 

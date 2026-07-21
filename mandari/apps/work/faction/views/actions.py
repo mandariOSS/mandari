@@ -29,7 +29,13 @@ from ..models import (
 )
 
 logger = logging.getLogger(__name__)
-from ._helpers import _get_meeting_context, _htmx_response, _render_partial, _renumber_items
+from ._helpers import (
+    _apply_approval_item_decision,
+    _get_meeting_context,
+    _htmx_response,
+    _render_partial,
+    _renumber_items,
+)
 
 
 class FactionActionView(WorkViewMixin, View):
@@ -570,6 +576,10 @@ class FactionActionView(WorkViewMixin, View):
         agenda_item.votes_abstain = votes_abstain
         agenda_item.save()
 
+        # Genehmigungs-TOP: angenommene Abstimmung genehmigt das Protokoll
+        # der vorherigen Sitzung (ProtocolApprovalService setzt Status + Metadaten)
+        _apply_approval_item_decision(agenda_item, decision, meeting, self.membership)
+
         if request.headers.get("HX-Request"):
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
@@ -582,10 +592,12 @@ class FactionActionView(WorkViewMixin, View):
             messages.error(request, "Keine Berechtigung zur Protokollgenehmigung.")
             return self._redirect_detail(meeting)
         if meeting.status == "completed" and not meeting.protocol_approved:
-            meeting.protocol_approved = True
-            meeting.protocol_approved_at = timezone.now()
-            meeting.protocol_approved_by = self.membership
-            meeting.save()
+            from ..services import ProtocolApprovalService
+
+            # Direkte Genehmigung über die Sitzungsansicht — setzt neben dem
+            # Flag auch protocol_status="approved" (die öffentlichen Views
+            # filtern auf den Status, nicht das Flag)
+            ProtocolApprovalService.approve_protocol(meeting, approved_in_meeting=None, approved_by=self.membership)
 
         return self._refresh_or_redirect(request, meeting, "Protokoll genehmigt.")
 

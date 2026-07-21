@@ -390,6 +390,7 @@ class ProtocolApprovalService:
         Args:
             meeting: The FactionMeeting whose protocol is being approved
             approved_in_meeting: The meeting where approval is happening
+                (None bei direkter Genehmigung über die Sitzungsansicht)
             approved_by: Membership who approved
 
         Returns:
@@ -415,7 +416,7 @@ class ProtocolApprovalService:
 
         logger.info(
             f"Protocol approved: meeting {meeting.id} "
-            f"approved in meeting {approved_in_meeting.id} "
+            f"approved in meeting {approved_in_meeting.id if approved_in_meeting else 'direct'} "
             f"by {approved_by.user.email}"
         )
 

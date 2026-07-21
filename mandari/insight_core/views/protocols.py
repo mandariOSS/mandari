@@ -48,11 +48,13 @@ class PublicProtocolListView(TemplateView):
         context["body"] = body
 
         # Find organizations linked to this body that allow public protocols
+        # (expliziter Opt-in je Organisation, Default: aus)
         from apps.tenants.models import Organization
 
         organizations = Organization.objects.filter(
             body=body,
             is_active=True,
+            publish_protocols=True,
         )
 
         # Get approved protocols from these organizations
@@ -111,13 +113,16 @@ class PublicProtocolDetailView(TemplateView):
 
         from apps.work.faction.models import FactionMeeting
 
-        # Get the meeting
+        # Get the meeting — nur genehmigte Protokolle von Organisationen,
+        # die die Veröffentlichung explizit eingeschaltet haben
         meeting_id = kwargs.get("meeting_id")
         meeting = get_object_or_404(
             FactionMeeting,
             id=meeting_id,
             protocol_status="approved",  # Only approved protocols
             status="completed",
+            organization__is_active=True,
+            organization__publish_protocols=True,
         )
 
         context["meeting"] = meeting
@@ -132,10 +137,12 @@ class PublicProtocolDetailView(TemplateView):
 
         context["agenda_items"] = agenda_items
 
-        # Get public protocol entries (only for public items)
+        # Get public protocol entries — AUSSCHLIESSLICH Einträge, die einem
+        # öffentlichen TOP zugeordnet sind. TOP-lose Einträge (agenda_item=None)
+        # können interne Notizen sein und werden nie öffentlich ausgegeben.
         public_item_ids = agenda_items.values_list("id", flat=True)
         protocol_entries = (
-            meeting.protocol_entries.filter(Q(agenda_item__isnull=True) | Q(agenda_item_id__in=public_item_ids))
+            meeting.protocol_entries.filter(agenda_item_id__in=public_item_ids)
             .select_related("agenda_item", "speaker__user")
             .order_by("order", "created_at")
         )
