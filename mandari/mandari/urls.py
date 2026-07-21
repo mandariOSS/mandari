@@ -14,6 +14,7 @@ from django.urls import include, path, re_path
 from django.views.static import serve as static_serve
 
 from apps.work.faction.views.certificates import CertificateVerifyView
+from apps.work.faction.views.feeds import PersonalCalendarFeedView
 from mandari import pwa
 
 
@@ -87,6 +88,13 @@ urlpatterns = [
         "nachweis/<slug:token>/",
         CertificateVerifyView.as_view(),
         name="certificate_verify",
+    ),
+    # Persönlicher iCal-Feed (Issue #70) — opakes Token, ohne Login
+    # (Kalender-Clients können sich nicht anmelden)
+    path(
+        "kalender/feed/<slug:token>.ics",
+        PersonalCalendarFeedView.as_view(),
+        name="personal_calendar_feed",
     ),
     # Insight Core (RIS Portal, public protocols, body sitemaps)
     path("", include("insight_core.urls")),

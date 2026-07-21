@@ -27,6 +27,9 @@ from .certificates import (
 from .exports import (
     FactionProtocolPdfView,
 )
+from .feeds import (
+    PersonalCalendarFeedView,
+)
 from .meetings import (
     FactionMeetingDetailView,
     FactionMeetingListView,
@@ -51,6 +54,7 @@ __all__ = [
     "FactionMeetingListView",
     "FactionProtocolPdfView",
     "FactionSettingsView",
+    "PersonalCalendarFeedView",
     "_get_meeting_context",
     "_htmx_response",
     "_render_partial",

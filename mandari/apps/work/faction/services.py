@@ -289,16 +289,47 @@ class FactionMeetingEmailService:
 
         Returns the count of successfully sent emails.
         """
-        attendances = meeting.attendances.filter(
-            status__in=["confirmed", "tentative"], membership__isnull=False
-        ).select_related("membership__user")
+        attendances = list(
+            meeting.attendances.filter(status__in=["confirmed", "tentative"], membership__isnull=False).select_related(
+                "membership__user"
+            )
+        )
         sent_count = 0
 
         for attendance in attendances:
             if self._send_reminder_email(meeting, attendance, hours_before):
                 sent_count += 1
 
+        # In-App-Erinnerung (Issue #70) — E-Mail ging bereits separat raus
+        self._notify_reminder(meeting, attendances, hours_before)
+
         return sent_count
+
+    def _notify_reminder(self, meeting, attendances, hours_before: int) -> None:
+        """In-App-Benachrichtigung zur Sitzungserinnerung (Issue #70)."""
+        try:
+            from apps.work.notifications.models import NotificationType
+            from apps.work.notifications.services import NotificationHub
+
+            recipients = [a.membership for a in attendances]
+            if not recipients:
+                return
+
+            local_start = timezone.localtime(meeting.start)
+            NotificationHub.send_bulk(
+                recipients=recipients,
+                notification_type=NotificationType.FACTION_MEETING_REMINDER,
+                title="Erinnerung: Fraktionssitzung",
+                message=(
+                    f'"{meeting.title}" beginnt in etwa {hours_before} Stunden '
+                    f"({local_start.strftime('%d.%m.%Y %H:%M')} Uhr)."
+                ),
+                link=f"/work/{meeting.organization.slug}/faction/{meeting.id}/",
+                metadata={"meeting_id": str(meeting.id), "hours_before": hours_before},
+                send_email=False,
+            )
+        except Exception:
+            logger.exception("In-App-Erinnerung fehlgeschlagen (meeting=%s)", meeting.id)
 
     def _send_reminder_email(self, meeting, attendance, hours_before: int) -> bool:
         """Send a single reminder email."""
@@ -600,13 +631,16 @@ class AgendaProposalService:
             from apps.work.notifications.models import NotificationType
             from apps.work.notifications.services import NotificationHub
 
+            # Eigener Benachrichtigungstyp für Vorschlags-Entscheidungen
+            # (Issue #70) — je Typ in den Einstellungen abschaltbar
             NotificationHub.send(
                 recipient=item.proposed_by,
-                notification_type=NotificationType.FACTION_MEETING_UPDATED,
+                notification_type=NotificationType.FACTION_PROPOSAL_DECIDED,
                 title="TOP-Vorschlag angenommen",
                 message=f'Dein Vorschlag "{item.title}" wurde angenommen.',
                 link=f"/work/{item.meeting.organization.slug}/faction/{item.meeting.id}/",
                 actor=reviewed_by,
+                metadata={"meeting_id": str(item.meeting_id), "item_id": str(item.id), "decision": "accepted"},
             )
 
         return True
@@ -638,13 +672,15 @@ class AgendaProposalService:
             if reason:
                 message += f" Grund: {reason}"
 
+            # Eigener Benachrichtigungstyp für Vorschlags-Entscheidungen (Issue #70)
             NotificationHub.send(
                 recipient=item.proposed_by,
-                notification_type=NotificationType.FACTION_MEETING_UPDATED,
+                notification_type=NotificationType.FACTION_PROPOSAL_DECIDED,
                 title="TOP-Vorschlag abgelehnt",
                 message=message,
                 link=f"/work/{item.meeting.organization.slug}/faction/{item.meeting.id}/",
                 actor=reviewed_by,
+                metadata={"meeting_id": str(item.meeting_id), "item_id": str(item.id), "decision": "rejected"},
             )
 
         return True
@@ -730,7 +766,39 @@ class ProtocolApprovalService:
             f"by {approved_by.user.email}"
         )
 
+        # In-App-Benachrichtigung an die Mitglieder (Issue #70) — nur der
+        # Sitzungstitel, keine Protokollinhalte
+        cls._notify_protocol_approved(meeting, approved_by)
+
         return True
+
+    @classmethod
+    def _notify_protocol_approved(cls, meeting, approved_by):
+        """Mitglieder über die Protokoll-Genehmigung informieren (Issue #70)."""
+        try:
+            from apps.work.notifications.models import NotificationType
+            from apps.work.notifications.services import NotificationHub
+
+            recipients = list(
+                meeting.organization.memberships.filter(is_active=True, is_guest=False)
+                .exclude(id=approved_by.id)
+                .select_related("user")
+            )
+            if not recipients:
+                return
+
+            NotificationHub.send_bulk(
+                recipients=recipients,
+                notification_type=NotificationType.FACTION_PROTOCOL_APPROVED,
+                title="Protokoll genehmigt",
+                message=f'Das Protokoll der Sitzung "{meeting.title}" wurde genehmigt.',
+                link=f"/work/{meeting.organization.slug}/faction/{meeting.id}/",
+                actor=approved_by,
+                metadata={"meeting_id": str(meeting.id)},
+                send_email=False,
+            )
+        except Exception:
+            logger.exception("Benachrichtigung zur Protokoll-Genehmigung fehlgeschlagen (meeting=%s)", meeting.id)
 
     @classmethod
     def get_pending_approvals(cls, organization):

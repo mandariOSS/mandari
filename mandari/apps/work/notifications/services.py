@@ -85,6 +85,16 @@ class NotificationHub:
         if actor and actor.id == recipient.id:
             return None
 
+        # Typ-Einstellung (Issue #70): In-App-Benachrichtigungen sind je Typ
+        # in den Benachrichtigungseinstellungen abschaltbar (Default: an).
+        # Der E-Mail-Kanal wird separat in _queue_email geprüft.
+        try:
+            prefs = NotificationPreference.objects.filter(membership=recipient).first()
+            if prefs and not prefs.is_type_enabled(notification_type, "in_app"):
+                return None
+        except Exception:
+            logger.exception("Benachrichtigungseinstellungen konnten nicht geprüft werden")
+
         # Create the notification
         notification = Notification.objects.create(
             recipient=recipient,

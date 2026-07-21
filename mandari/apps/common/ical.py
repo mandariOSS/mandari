@@ -50,6 +50,46 @@ def _format_dt(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _vevent_lines(
+    *,
+    uid: str,
+    summary: str,
+    start: datetime,
+    end: datetime | None = None,
+    description: str = "",
+    location: str = "",
+    organizer_name: str = "",
+    organizer_email: str = "",
+    sequence: int = 0,
+    status: str = "CONFIRMED",
+) -> list[str]:
+    """Zeilen eines einzelnen VEVENT (gemeinsam für Einzel-ICS und Feeds)."""
+    lines = [
+        "BEGIN:VEVENT",
+        f"UID:{_escape(uid)}",
+        f"DTSTAMP:{_format_dt(timezone.now())}",
+        f"DTSTART:{_format_dt(start)}",
+    ]
+    if end is not None:
+        lines.append(f"DTEND:{_format_dt(end)}")
+    lines.append(f"SUMMARY:{_escape(summary)}")
+    if location:
+        lines.append(f"LOCATION:{_escape(location)}")
+    if description:
+        lines.append(f"DESCRIPTION:{_escape(description)}")
+    if organizer_email:
+        cn = f";CN={_escape(organizer_name)}" if organizer_name else ""
+        lines.append(f"ORGANIZER{cn}:mailto:{organizer_email}")
+    lines.extend(
+        [
+            f"SEQUENCE:{sequence}",
+            f"STATUS:{status}",
+            "END:VEVENT",
+        ]
+    )
+    return lines
+
+
 def build_ics_event(
     *,
     uid: str,
@@ -84,27 +124,45 @@ def build_ics_event(
         "VERSION:2.0",
         f"PRODID:{PRODID}",
         f"METHOD:{method}",
-        "BEGIN:VEVENT",
-        f"UID:{_escape(uid)}",
-        f"DTSTAMP:{_format_dt(timezone.now())}",
-        f"DTSTART:{_format_dt(start)}",
     ]
-    if end is not None:
-        lines.append(f"DTEND:{_format_dt(end)}")
-    lines.append(f"SUMMARY:{_escape(summary)}")
-    if location:
-        lines.append(f"LOCATION:{_escape(location)}")
-    if description:
-        lines.append(f"DESCRIPTION:{_escape(description)}")
-    if organizer_email:
-        cn = f";CN={_escape(organizer_name)}" if organizer_name else ""
-        lines.append(f"ORGANIZER{cn}:mailto:{organizer_email}")
     lines.extend(
-        [
-            f"SEQUENCE:{sequence}",
-            "STATUS:CONFIRMED",
-            "END:VEVENT",
-            "END:VCALENDAR",
-        ]
+        _vevent_lines(
+            uid=uid,
+            summary=summary,
+            start=start,
+            end=end,
+            description=description,
+            location=location,
+            organizer_name=organizer_name,
+            organizer_email=organizer_email,
+            sequence=sequence,
+        )
     )
+    lines.append("END:VCALENDAR")
+    return ("\r\n".join(_fold(line) for line in lines) + "\r\n").encode("utf-8")
+
+
+def build_ics_feed(events: list[dict], *, name: str = "mandari Sitzungen") -> bytes:
+    """
+    Abonnierbaren Kalender-Feed (mehrere VEVENTs) erzeugen (Issue #70).
+
+    Args:
+        events: Liste von dicts mit den Argumenten von :func:`_vevent_lines`
+            (uid, summary, start, optional end/description/location/status)
+        name: Kalendername (X-WR-CALNAME)
+
+    Returns:
+        bytes: ICS-Inhalt (UTF-8, CRLF-Zeilenenden)
+    """
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        f"PRODID:{PRODID}",
+        "METHOD:PUBLISH",
+        "CALSCALE:GREGORIAN",
+        f"X-WR-CALNAME:{_escape(name)}",
+    ]
+    for event in events:
+        lines.extend(_vevent_lines(**event))
+    lines.append("END:VCALENDAR")
     return ("\r\n".join(_fold(line) for line in lines) + "\r\n").encode("utf-8")

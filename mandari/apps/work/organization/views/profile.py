@@ -51,6 +51,16 @@ class ProfileView(WorkViewMixin, TemplateView):
         context["is_2fa_enabled"] = is_2fa
         context["sessions_count"] = sessions_count
 
+        # Persönlicher iCal-Feed (Issue #70): opakes Token, erneuerbar
+        from django.conf import settings as django_settings
+
+        from apps.work.faction.models import CalendarFeedToken
+
+        feed_token = CalendarFeedToken.for_user(user)
+        base_url = getattr(django_settings, "SITE_URL", "").rstrip("/")
+        context["calendar_feed_url"] = f"{base_url}/kalender/feed/{feed_token.token}.ics"
+        context["calendar_feed_token"] = feed_token
+
         return context
 
     def post(self, request, *args, **kwargs):
@@ -90,6 +100,18 @@ class ProfileView(WorkViewMixin, TemplateView):
                 user.avatar = None
                 user.save()
                 messages.success(request, "Profilbild entfernt.")
+
+        elif action == "regenerate_calendar_feed":
+            # Persönlichen iCal-Feed-Token erneuern (Issue #70) — die
+            # bisherige Feed-URL wird sofort ungültig
+            from apps.work.faction.models import CalendarFeedToken
+
+            CalendarFeedToken.for_user(user).regenerate()
+            messages.success(
+                request,
+                "Kalender-Feed-URL erneuert. Die bisherige URL ist ab sofort ungültig — "
+                "bitte den Feed im Kalender neu abonnieren.",
+            )
 
         return redirect("work:profile", org_slug=self.organization.slug)
 

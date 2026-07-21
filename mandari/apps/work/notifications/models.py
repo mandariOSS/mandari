@@ -42,6 +42,10 @@ class NotificationType(models.TextChoices):
     FACTION_MEETING_REMINDER = "faction_reminder", "Fraktionssitzung"
     FACTION_MEETING_UPDATED = "faction_updated", "Fraktionssitzung aktualisiert"
     FACTION_INVITATION_RELEASE = "faction_inv_release", "Einladungsfreigabe erforderlich"
+    # Sitzungs-Workflow (Issue #70)
+    FACTION_INVITATION = "faction_invitation", "Einladung zur Fraktionssitzung"
+    FACTION_PROPOSAL_DECIDED = "faction_prop_decided", "TOP-Vorschlag entschieden"
+    FACTION_PROTOCOL_APPROVED = "faction_prot_approved", "Fraktionsprotokoll genehmigt"
 
     # Organization
     MEMBER_JOINED = "member_joined", "Neues Mitglied"
@@ -162,6 +166,9 @@ class Notification(models.Model):
             NotificationType.FACTION_MEETING_REMINDER: "users",
             NotificationType.FACTION_MEETING_UPDATED: "users-cog",
             NotificationType.FACTION_INVITATION_RELEASE: "send",
+            NotificationType.FACTION_INVITATION: "mail",
+            NotificationType.FACTION_PROPOSAL_DECIDED: "list-checks",
+            NotificationType.FACTION_PROTOCOL_APPROVED: "file-check",
             NotificationType.MEMBER_JOINED: "user-plus",
             NotificationType.ROLE_CHANGED: "shield",
             NotificationType.SUPPORT_TICKET_CREATED: "ticket",
@@ -198,6 +205,9 @@ class Notification(models.Model):
             NotificationType.FACTION_MEETING_REMINDER: "purple",
             NotificationType.FACTION_MEETING_UPDATED: "purple",
             NotificationType.FACTION_INVITATION_RELEASE: "orange",
+            NotificationType.FACTION_INVITATION: "purple",
+            NotificationType.FACTION_PROPOSAL_DECIDED: "indigo",
+            NotificationType.FACTION_PROTOCOL_APPROVED: "green",
             NotificationType.MEMBER_JOINED: "green",
             NotificationType.ROLE_CHANGED: "yellow",
             NotificationType.SUPPORT_TICKET_CREATED: "blue",

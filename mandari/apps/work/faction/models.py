@@ -1239,6 +1239,54 @@ class FactionAttendanceCertificate(models.Model):
         )
 
 
+class CalendarFeedToken(models.Model):
+    """
+    Persönlicher iCal-Feed-Token (Issue #70).
+
+    Ein opakes Zufalls-Token je Benutzer:in — die Feed-URL enthält weder
+    User-ID noch Organisations-Slug und ist damit nicht rückführbar.
+    Kalender-Clients rufen den Feed OHNE Login ab; die Sicherheit liegt
+    ausschließlich im Token, das jederzeit in den Profileinstellungen
+    erneuert werden kann (alte URL wird sofort ungültig).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    user = models.OneToOneField(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="calendar_feed_token",
+        verbose_name="Benutzer:in",
+    )
+
+    token = models.CharField(
+        max_length=64, unique=True, default=generate_opaque_token, editable=False, verbose_name="Feed-Token"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    regenerated_at = models.DateTimeField(blank=True, null=True, verbose_name="Zuletzt erneuert")
+
+    class Meta:
+        verbose_name = "Kalender-Feed-Token"
+        verbose_name_plural = "Kalender-Feed-Tokens"
+
+    def __str__(self):
+        return f"Kalender-Feed für {self.user.email}"
+
+    @classmethod
+    def for_user(cls, user) -> "CalendarFeedToken":
+        """Token holen oder beim ersten Zugriff anlegen."""
+        obj, _created = cls.objects.get_or_create(user=user)
+        return obj
+
+    def regenerate(self):
+        """Token erneuern — die bisherige Feed-URL wird sofort ungültig."""
+        self.token = generate_opaque_token()
+        self.regenerated_at = timezone.now()
+        self.save(update_fields=["token", "regenerated_at"])
+        return self
+
+
 class FactionAgendaItemAttachment(models.Model):
     """Datei-Anhang eines Fraktions-TOPs."""
 

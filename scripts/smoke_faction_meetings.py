@@ -53,6 +53,11 @@ Welle 3 (Issues #68, #70, #71):
   Teilnahmen, dokumentierte Ausstellung (Token/Prüfsumme/Audit), öffentliche
   Verifikations-Seite OHNE Personenbezug (Response-Scan-Beweis), opakes
   Token, Sammel-Export nur für den Vorstand (PDF/CSV)
+- In-App + iCal (#70): In-App-Benachrichtigungen für Einladung/Erinnerung/
+  Vorschlags-Entscheidung/Protokoll-Genehmigung (je Typ abschaltbar),
+  persönlicher iCal-Feed mit opakem Token (ohne Login), Fraktions- und
+  RIS-Termine, Token-Erneuerung macht die alte URL sofort ungültig,
+  keinerlei NÖ-/Protokollinhalte im Feed (Response-Scan-Beweis)
 """
 
 import base64
@@ -1822,6 +1827,161 @@ check(
     "Sammel-Export auditiert",
     FactionAuditLog.objects.filter(organization=org, action="attendance_exported").count() >= 2,
 )
+
+# =============================================================================
+# Phase Q: In-App-Benachrichtigungen + persönlicher iCal-Feed (Issue #70)
+# =============================================================================
+print()
+print("=== Phase Q: In-App-Benachrichtigungen + iCal-Feed ===")
+
+from apps.work.faction.models import CalendarFeedToken  # noqa: E402
+from apps.work.notifications.models import Notification, NotificationPreference  # noqa: E402
+
+# -- Workflow-Ereignisse der früheren Phasen haben In-App-Benachrichtigungen erzeugt
+check(
+    "Einladungsversand erzeugt In-App-Benachrichtigung",
+    Notification.objects.filter(
+        notification_type="faction_invitation", metadata__meeting_id=str(meeting1.id)
+    ).exists(),
+)
+check(
+    "Aktualisierter Versand als eigene Benachrichtigung",
+    Notification.objects.filter(notification_type="faction_invitation", title="Aktualisierte Einladung").exists(),
+)
+check(
+    "Erinnerung erzeugt In-App-Benachrichtigung",
+    Notification.objects.filter(notification_type="faction_reminder", recipient=sworn_ms).exists(),
+)
+check(
+    "Protokoll-Genehmigung benachrichtigt Mitglieder",
+    Notification.objects.filter(
+        notification_type="faction_prot_approved", recipient=sworn_ms, metadata__meeting_id=str(meeting1.id)
+    ).exists(),
+)
+check(
+    "Genehmigende Person wird nicht selbst benachrichtigt",
+    not Notification.objects.filter(notification_type="faction_prot_approved", recipient=chair_ms).exists(),
+)
+
+# Vorschlags-Entscheidung: Annahme benachrichtigt die vorschlagende Person
+pub_proposal = meeting2.agenda_items.filter(title="OEFF-VORSCHLAG-OK", proposal_status="proposed").first()
+check("Offener Ö-Vorschlag vorhanden", pub_proposal is not None)
+resp = chair.post(
+    f"{base}/faction/{meeting2.id}/action/",
+    {"action": "accept_proposal", "item_id": str(pub_proposal.id)},
+)
+pub_proposal.refresh_from_db()
+check("Vorschlag angenommen", pub_proposal.proposal_status == "active", pub_proposal.proposal_status)
+check(
+    "Vorschlags-Entscheidung benachrichtigt Vorschlagende:n",
+    Notification.objects.filter(notification_type="faction_prop_decided", recipient=skb_ms).exists(),
+)
+
+# Typ abschaltbar: deaktivierter Typ erzeugt keine In-App-Benachrichtigung
+prefs_q, _ = NotificationPreference.objects.get_or_create(membership=unsworn_ms)
+prefs_q.type_settings = {"faction_invitation": {"in_app": False, "email": False}}
+prefs_q.save()
+
+start_q = (now + timedelta(days=8)).replace(minute=0, second=0, microsecond=0)
+resp = chair.post(
+    f"{base}/faction/",
+    {
+        "title": "Benachrichtigungs-Sitzung Q",
+        "start_date": timezone.localtime(start_q).strftime("%Y-%m-%d"),
+        "start_time": timezone.localtime(start_q).strftime("%H:%M"),
+    },
+)
+mq = FactionMeeting.objects.filter(organization=org, title="Benachrichtigungs-Sitzung Q").first()
+mail.outbox = []
+resp = chair.post(f"{base}/faction/{mq.id}/action/", {"action": "invite"})
+check(
+    "Abgeschalteter Typ: keine In-App-Benachrichtigung",
+    not Notification.objects.filter(
+        notification_type="faction_invitation", recipient=unsworn_ms, metadata__meeting_id=str(mq.id)
+    ).exists(),
+)
+check(
+    "Andere Mitglieder erhalten die Benachrichtigung",
+    Notification.objects.filter(
+        notification_type="faction_invitation", recipient=sworn_ms, metadata__meeting_id=str(mq.id)
+    ).exists(),
+)
+
+# -- Persönlicher iCal-Feed ---------------------------------------------------
+feed_token = CalendarFeedToken.for_user(sworn_user)
+check(
+    "Feed-Token opak (kein Personen-/Org-Bezug)",
+    len(feed_token.token) >= 20
+    and org.slug not in feed_token.token.lower()
+    and "veraxa" not in feed_token.token.lower()
+    and str(sworn_user.pk) not in feed_token.token,
+    feed_token.token,
+)
+
+# RIS-Gremium zuordnen + RIS-Termin anlegen
+ris_org_q = OParlOrganization.objects.create(
+    body=body,
+    external_id="https://ris.musterstadt.example/organization/feed-q",
+    name="Feed-Gremium QQ",
+    organization_type="Gremium",
+)
+ris_meeting_q = OParlMeeting.objects.create(
+    body=body,
+    external_id="https://ris.musterstadt.example/meeting/feed-q",
+    name="RIS-FEED-TERMIN-QQ",
+    start=now + timedelta(days=3),
+    cancelled=False,
+)
+ris_meeting_q.organizations.add(ris_org_q)
+sworn_ms.oparl_committees.add(ris_org_q)
+
+# Entwurfs-Sitzungen erscheinen nie im Feed
+FactionMeeting.objects.create(
+    organization=org, title="ENTWURF-SITZUNG-QQ", start=now + timedelta(days=6), status="draft"
+)
+
+anon_q = Client()
+resp = anon_q.get(f"/kalender/feed/{feed_token.token}.ics")
+check("Feed ohne Login -> 200", resp.status_code == 200, f"got {resp.status_code}")
+check("Feed: text/calendar", resp["Content-Type"].startswith("text/calendar"))
+feed_text = resp.content.decode("utf-8")
+check("Feed: VCALENDAR/VEVENT", "BEGIN:VCALENDAR" in feed_text and "BEGIN:VEVENT" in feed_text)
+check("Feed enthält Fraktionssitzung", "Fraktionssitzung Eins" in feed_text)
+check("Feed enthält RIS-Termin des zugeordneten Gremiums", "Feed-Gremium QQ" in feed_text)
+check("Feed OHNE Entwurfs-Sitzungen", "ENTWURF-SITZUNG-QQ" not in feed_text)
+check(
+    "Feed OHNE NÖ-/Protokollinhalte (Response-Scan)",
+    "GEHEIM-TOP-OMEGA" not in feed_text
+    and "GEHEIMER-EINTRAG-456" not in feed_text
+    and "OEFFENTLICHER-EINTRAG-123" not in feed_text
+    and "TOPLOSER-EINTRAG-789" not in feed_text,
+)
+
+# Anderer User ohne Gremien-Zuordnung: Fraktionssitzungen ja, RIS-Termin nein
+feed_token_unsworn = CalendarFeedToken.for_user(unsworn_user)
+resp = anon_q.get(f"/kalender/feed/{feed_token_unsworn.token}.ics")
+feed_text_unsworn = resp.content.decode("utf-8")
+check("Feed je User individuell (RIS nur bei Zuordnung)", "Feed-Gremium QQ" not in feed_text_unsworn)
+check("Feed des zweiten Users enthält Fraktionssitzungen", "Fraktionssitzung Eins" in feed_text_unsworn)
+
+# Tokenschutz: unbekanntes Token -> 404
+resp = anon_q.get("/kalender/feed/unbekanntes-token-999.ics")
+check("Unbekanntes Feed-Token -> 404", resp.status_code == 404, f"got {resp.status_code}")
+
+# Erneuerung über die Profileinstellungen: alte URL sofort ungültig
+sworn_role_q = sworn_ms.roles.first()
+sworn_role_q.permissions.add(perm("dashboard.view"))
+old_feed_token = feed_token.token
+resp = sworn.get(f"{base}/profile/")
+check("Profil zeigt Feed-URL", resp.status_code == 200 and old_feed_token in resp.content.decode("utf-8"))
+resp = sworn.post(f"{base}/profile/", {"action": "regenerate_calendar_feed"})
+check("Feed-Erneuerung -> Redirect", resp.status_code == 302, f"got {resp.status_code}")
+feed_token.refresh_from_db()
+check("Token wurde erneuert", feed_token.token != old_feed_token)
+resp = anon_q.get(f"/kalender/feed/{old_feed_token}.ics")
+check("Alte Feed-URL nach Erneuerung -> 404", resp.status_code == 404, f"got {resp.status_code}")
+resp = anon_q.get(f"/kalender/feed/{feed_token.token}.ics")
+check("Neue Feed-URL -> 200", resp.status_code == 200, f"got {resp.status_code}")
 
 # =============================================================================
 print()

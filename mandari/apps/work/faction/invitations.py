@@ -170,6 +170,10 @@ def dispatch_invitations(meeting, *, update: bool = False) -> int:
 
     sent_count = service.send_invitations(meeting, update=update, invitation_mode=settings["invitation_mode"])
 
+    # In-App-Benachrichtigung an die Angeschriebenen (Issue #70) — die
+    # E-Mail mit ICS/PDF ging bereits separat raus, daher send_email=False
+    _notify_invitations(meeting, update=update)
+
     if not update:
         # Opt-out: alle eingeladenen Mitglieder gelten als angemeldet
         if settings["invitation_mode"] == "opt_out":
@@ -184,6 +188,46 @@ def dispatch_invitations(meeting, *, update: bool = False) -> int:
         meeting.save(update_fields=["invitation_sent", "invitation_sent_at", "status", "updated_at"])
 
     return sent_count
+
+
+def _notify_invitations(meeting, *, update: bool) -> None:
+    """
+    In-App-Benachrichtigung für den Einladungsversand (Issue #70).
+
+    Gleicher Empfängerkreis wie der E-Mail-Versand: beim Erstversand alle
+    Eingeladenen, bei Aktualisierungen alle, die nicht abgesagt haben.
+    """
+    try:
+        from apps.work.notifications.models import NotificationType
+        from apps.work.notifications.services import NotificationHub
+
+        if update:
+            attendances = meeting.attendances.filter(membership__isnull=False).exclude(status="declined")
+        else:
+            attendances = meeting.attendances.filter(status="invited", membership__isnull=False)
+        recipients = [a.membership for a in attendances.select_related("membership__user")]
+        if not recipients:
+            return
+
+        local_start = timezone.localtime(meeting.start)
+        when = local_start.strftime("%d.%m.%Y %H:%M")
+        title = "Aktualisierte Einladung" if update else "Einladung zur Fraktionssitzung"
+        message = f'"{meeting.title}" am {when} Uhr.'
+        if meeting.location:
+            message += f" Ort: {meeting.location}."
+
+        NotificationHub.send_bulk(
+            recipients=recipients,
+            notification_type=NotificationType.FACTION_INVITATION,
+            title=title,
+            message=message,
+            link=f"/work/{meeting.organization.slug}/faction/{meeting.id}/",
+            metadata={"meeting_id": str(meeting.id), "update": update},
+            send_email=False,
+        )
+    except Exception:
+        # Benachrichtigungen dürfen den Versand niemals zum Scheitern bringen
+        logger.exception("In-App-Benachrichtigung zum Einladungsversand fehlgeschlagen (meeting=%s)", meeting.id)
 
 
 def release_invitations(meeting, membership) -> bool:
