@@ -168,6 +168,7 @@ jobs:
           python scripts/smoke_session_consultations.py
           python scripts/smoke_session_oparl.py
           python scripts/smoke_insight_durchstich.py
+          python scripts/smoke_faction_meetings.py
 
   # ===========================================================================
   # Docker Build Validation
