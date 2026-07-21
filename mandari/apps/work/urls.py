@@ -450,6 +450,11 @@ urlpatterns = [
         name="faction_item_panel_action",
     ),
     path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/niederschrift/<slug:variant>.pdf",
+        faction_views.FactionProtocolPdfView.as_view(),
+        name="faction_protocol_pdf",
+    ),
+    path(
         "<slug:org_slug>/faction/settings/",
         faction_views.FactionSettingsView.as_view(),
         name="faction_settings",

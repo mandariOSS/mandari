@@ -1,0 +1,89 @@
+{% extends "work/faction/pdf/base_pdf.html" %}
+{% comment %}Niederschrift-PDF für Fraktionssitzungen (Issue #60): Ö-Fassung bzw. interne Fassung.{% endcomment %}
+
+{% block content %}
+    <h1>Niederschrift</h1>
+    <p class="muted">
+        {{ variant_label }}
+        {% if not meeting.protocol_approved %} · Entwurfsstand: {{ meeting.get_protocol_status_display }}{% endif %}
+    </p>
+
+    <table class="meta-table">
+        <tr><td><strong>Sitzung:</strong></td><td>{{ meeting.title }}{% if meeting.meeting_number %} (Nr. {{ meeting.meeting_number }}){% endif %}</td></tr>
+        <tr><td><strong>Organisation:</strong></td><td>{{ organization.name }}</td></tr>
+        <tr><td><strong>Termin:</strong></td><td>{{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% if meeting.end %} bis {{ meeting.end|date:"H:i" }} Uhr{% endif %}</td></tr>
+        {% if meeting.location %}
+        <tr><td><strong>Ort:</strong></td><td>{{ meeting.location }}</td></tr>
+        {% endif %}
+        {% if meeting.protocol_approved %}
+        <tr><td><strong>Genehmigt:</strong></td><td>am {{ meeting.protocol_approved_at|date:"d.m.Y" }}{% if meeting.protocol_approved_in %} in der Sitzung „{{ meeting.protocol_approved_in.title }}“ vom {{ meeting.protocol_approved_in.start|date:"d.m.Y" }}{% endif %}</td></tr>
+        {% endif %}
+    </table>
+
+    {% if participants.all %}
+    <h2>Teilnehmerverzeichnis</h2>
+    {% if participants.present %}
+    <p><strong>Anwesend:</strong><br>
+    {% for a in participants.present %}{{ a.get_display_name }}{% if a.is_guest %} (Gast){% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% if participants.excused %}
+    <p><strong>Entschuldigt/Abgesagt:</strong><br>
+    {% for a in participants.excused %}{{ a.get_display_name }}{% if not forloop.last %}; {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% if participants.absent %}
+    <p><strong>Abwesend:</strong><br>
+    {% for a in participants.absent %}{{ a.get_display_name }}{% if not forloop.last %}; {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% endif %}
+
+    <h2>Verhandlung der Tagesordnung</h2>
+
+    {% if agenda_public %}
+    <div class="section-title">Öffentlicher Teil</div>
+    <table class="agenda">
+        {% for item in agenda_public %}
+        {% include "work/faction/pdf/partial_protocol_top.html" %}
+        {% for sub in item.children_list %}
+        {% include "work/faction/pdf/partial_protocol_top.html" with item=sub %}
+        {% endfor %}
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if internal and agenda_internal %}
+    <div class="section-title">Nichtöffentlicher Teil</div>
+    <table class="agenda">
+        {% for item in agenda_internal %}
+        {% include "work/faction/pdf/partial_protocol_top.html" %}
+        {% for sub in item.children_list %}
+        {% include "work/faction/pdf/partial_protocol_top.html" with item=sub %}
+        {% endfor %}
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if internal and general_entries %}
+    <div class="section-title">Allgemeine Einträge (ohne TOP-Zuordnung, intern)</div>
+    {% for entry in general_entries %}
+    <p class="entry">
+        <span class="entry-type">{{ entry.type_display }}</span>{% if entry.speaker %} · {{ entry.speaker }}{% endif %}<br>
+        {{ entry.content|linebreaksbr }}
+    </p>
+    {% endfor %}
+    {% endif %}
+
+    <div class="signature">
+        <table width="100%">
+            <tr>
+                <td width="50%">
+                    ____________________________<br>
+                    <span class="muted">Sitzungsleitung</span>
+                </td>
+                <td width="50%">
+                    ____________________________<br>
+                    <span class="muted">Protokollführung</span>
+                </td>
+            </tr>
+        </table>
+    </div>
+{% endblock %}

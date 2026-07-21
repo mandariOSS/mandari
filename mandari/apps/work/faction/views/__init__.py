@@ -16,6 +16,9 @@ from ._helpers import (
 from .actions import (
     FactionActionView,
 )
+from .exports import (
+    FactionProtocolPdfView,
+)
 from .meetings import (
     FactionMeetingDetailView,
     FactionMeetingListView,
@@ -34,6 +37,7 @@ __all__ = [
     "FactionItemPanelView",
     "FactionMeetingDetailView",
     "FactionMeetingListView",
+    "FactionProtocolPdfView",
     "FactionSettingsView",
     "_get_meeting_context",
     "_htmx_response",

@@ -1,0 +1,26 @@
+{% comment %}Einzelner TOP in der Niederschrift (Issue #60). Erwartet: item (mit entries_list, decision_obj).{% endcomment %}
+<tr>
+    <td class="top-nr">{% if item.parent_id %}{{ item.number }}{% else %}TOP {{ item.number }}{% endif %}</td>
+    <td>
+        <strong>{{ item.title }}</strong>
+        {% for entry in item.entries_list %}
+        <p class="entry">
+            <span class="entry-type">{{ entry.type_display }}</span>{% if entry.speaker %} · {{ entry.speaker }}{% endif %}<br>
+            {{ entry.content|linebreaksbr }}
+        </p>
+        {% endfor %}
+        {% if item.decision_obj %}
+        <div class="decision-box">
+            <strong>Beschluss: {{ item.decision_obj.get_result_display }}</strong>
+            (Ja: {{ item.decision_obj.votes_yes }}, Nein: {{ item.decision_obj.votes_no }}, Enthaltung: {{ item.decision_obj.votes_abstain }})
+            {% if item.decision_obj.decision_text %}<br>{{ item.decision_obj.decision_text|linebreaksbr }}{% endif %}
+            {% if item.decision_obj.notes %}<br><span class="muted">{{ item.decision_obj.notes|linebreaksbr }}</span>{% endif %}
+        </div>
+        {% elif item.has_decision %}
+        <div class="decision-box">
+            <strong>Abstimmung:</strong>
+            Ja: {{ item.votes_for }}, Nein: {{ item.votes_against }}, Enthaltung: {{ item.votes_abstain }}
+        </div>
+        {% endif %}
+    </td>
+</tr>

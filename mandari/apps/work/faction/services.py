@@ -378,6 +378,97 @@ def run_faction_reminder_pass(now=None) -> dict:
         cache.delete(_REMINDER_LOCK_KEY)
 
 
+def _decorate_protocol_items(items, entries_by_item):
+    """TOPs für das Niederschrift-PDF mit Einträgen/Beschlüssen anreichern."""
+    decorated = []
+    for item in items:
+        item.entries_list = entries_by_item.get(item.id, [])
+        try:
+            item.decision_obj = item.decision
+        except Exception:
+            item.decision_obj = None
+        item.children_list = []
+        for child in item.children.all().order_by("order", "number"):
+            child.entries_list = entries_by_item.get(child.id, [])
+            try:
+                child.decision_obj = child.decision
+            except Exception:
+                child.decision_obj = None
+            item.children_list.append(child)
+        decorated.append(item)
+    return decorated
+
+
+def build_faction_protocol_pdf(meeting, *, internal: bool) -> bytes:
+    """
+    Niederschrift-PDF für eine Fraktionssitzung erzeugen (Issue #60).
+
+    Args:
+        meeting: die FactionMeeting
+        internal: True = interne Fassung (inkl. NÖ-Teil und TOP-loser
+                  Einträge), False = öffentliche Fassung (ausschließlich
+                  Ö-TOPs und deren Einträge — NÖ- und TOP-lose Inhalte
+                  erscheinen niemals)
+
+    Returns:
+        bytes: PDF-Inhalt
+    """
+    public_items = list(
+        meeting.agenda_items.filter(visibility="public", proposal_status="active", parent__isnull=True)
+        .prefetch_related("children")
+        .order_by("order", "number")
+    )
+    internal_items = []
+    if internal:
+        internal_items = list(
+            meeting.agenda_items.filter(visibility="internal", proposal_status="active", parent__isnull=True)
+            .prefetch_related("children")
+            .order_by("order", "number")
+        )
+
+    # Protokolleinträge entschlüsseln und je TOP gruppieren
+    entries_by_item: dict = {}
+    general_entries = []
+    for entry in meeting.protocol_entries.select_related("speaker__user", "agenda_item").order_by(
+        "order", "created_at"
+    ):
+        payload = {
+            "type_display": entry.get_entry_type_display(),
+            "entry_type": entry.entry_type,
+            "content": entry.get_content_decrypted() or "",
+            "speaker": entry.speaker.user.get_display_name() if entry.speaker_id else "",
+        }
+        if entry.agenda_item_id:
+            entries_by_item.setdefault(entry.agenda_item_id, []).append(payload)
+        else:
+            # TOP-lose Einträge: ausschließlich in der internen Fassung
+            general_entries.append(payload)
+
+    # Teilnehmerverzeichnis aus der Anwesenheitserfassung
+    attendances = list(meeting.attendances.select_related("membership__user"))
+    participants = {
+        "present": [a for a in attendances if a.status == "present"],
+        "excused": [a for a in attendances if a.status in ("excused", "declined")],
+        "absent": [a for a in attendances if a.status == "absent"],
+        "other": [a for a in attendances if a.status not in ("present", "excused", "declined", "absent")],
+        "all": attendances,
+    }
+
+    context = {
+        "meeting": meeting,
+        "organization": meeting.organization,
+        "internal": internal,
+        "variant_label": "Interne Fassung (inkl. nichtöffentlicher Teil)" if internal else "Öffentliche Fassung",
+        "agenda_public": _decorate_protocol_items(public_items, entries_by_item),
+        "agenda_internal": _decorate_protocol_items(internal_items, entries_by_item) if internal else [],
+        "general_entries": general_entries if internal else [],
+        "participants": participants,
+        "generated_at": timezone.localtime(),
+    }
+    html = render_to_string("work/faction/pdf/protocol.html", context)
+    return html_to_pdf(html)
+
+
 class AgendaProposalService:
     """
     Service for handling agenda item proposals from Sachkundige Bürger*innen.
