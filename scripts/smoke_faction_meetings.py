@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Smoke-Test: Fraktionssitzungen — Einladungen, Genehmigungskette, Protokoll-PDF
-(Issues #58, #59, #60).
+Smoke-Test: Fraktionssitzungen — Einladungen, Genehmigungskette, Protokoll-PDF,
+Änderungshistorie, Sitzungserzeugung, NÖ-Abschottung
+(Issues #58, #59, #60, #61, #64, #66).
 
 Läuft gegen eine frische SQLite-Instanz:
     python scripts/smoke_faction_meetings.py
@@ -19,6 +20,16 @@ Prüft:
 - Leck-Beweis: TOP-lose und NÖ-Protokolleinträge erscheinen nie öffentlich
 - Niederschrift-PDF: öffentliche und interne Fassung, Berechtigungsprüfung
 - Permission-Matrix der Aktions-Handler (invite/start/approve/add_entry/...)
+- Änderungshistorie (Issue #66): Audit-Einträge für alle Aktionen inkl.
+  Spezial-Ereignisse, Attribution, Unveränderbarkeit, Einsichts-View mit
+  Berechtigung + NÖ-Maskierung, verschlüsselte Felder nie im Klartext,
+  Kaskadenlösch-Schutz beim Löschen einer Organisation
+- Sitzungserzeugung (Issue #61): rollierender Horizont, Idempotenz,
+  Ausfallregeln-Matrix (Urlaubszeitraum + RIS-Regel "nach Gremium X"),
+  ersatzlos gestrichene Termine als "entfällt" sichtbar
+- NÖ strikt (Issue #64): Nicht-Vereidigte sehen von NÖ-TOPs NICHTS außer
+  "Gesperrte Information" — über alle Ausgabewege (Detail, Panel, Aktionen,
+  Historie, Mails/PDFs); auch das Vorschlagen von NÖ-TOPs nur für Vereidigte
 """
 
 import base64
@@ -27,6 +38,8 @@ import os
 import secrets
 import sys
 import tempfile
+from datetime import datetime as _datetime
+from datetime import time as _time
 from datetime import timedelta
 from pathlib import Path
 
@@ -63,13 +76,18 @@ call_command("migrate", verbosity=0, interactive=False)
 from apps.accounts.models import User  # noqa: E402
 from apps.common.encryption import TenantEncryption  # noqa: E402
 from apps.tenants.models import Membership, Organization, Permission, Role  # noqa: E402
+from apps.work.faction.generation import run_faction_schedule_pass  # noqa: E402
 from apps.work.faction.models import (  # noqa: E402
     FactionAgendaItem,
+    FactionAuditLog,
     FactionMeeting,
+    FactionMeetingException,
+    FactionMeetingSchedule,
     FactionProtocolEntry,
+    FactionSuspensionRule,
 )
 from apps.work.faction.services import run_faction_reminder_pass  # noqa: E402
-from insight_core.models import OParlBody, OParlSource  # noqa: E402
+from insight_core.models import OParlBody, OParlMeeting, OParlOrganization, OParlSource  # noqa: E402
 
 PASS = 0
 FAIL = 0
@@ -137,6 +155,7 @@ ALL_PERMS = [
     "faction.start",
     "faction.invite",
     "faction.manage",
+    "faction.view_audit",
     "protocols.view_public",
     "protocols.view_full",
     "protocols.create",
@@ -495,6 +514,462 @@ check(
     f"{meeting3.protocol_approved}/{meeting3.protocol_status}",
 )
 check("Direkte Genehmigung: approved_by gesetzt", meeting3.protocol_approved_by_id == chair_ms.id)
+
+# =============================================================================
+# Phase H: Änderungshistorie (Issue #66)
+# =============================================================================
+print()
+print("=== Phase H: Änderungshistorie (Audit) ===")
+
+audit_qs = FactionAuditLog.objects.filter(organization=org)
+check("Audit-Einträge vorhanden", audit_qs.exists(), "keine Einträge")
+
+created_entry = audit_qs.filter(action="create", model_name="FactionMeeting", object_id=meeting1.id).first()
+check("Sitzung anlegen protokolliert", created_entry is not None)
+check(
+    "Attribution: Ersteller erfasst (wer)",
+    created_entry is not None and created_entry.membership_id == chair_ms.id,
+    str(created_entry.membership_id if created_entry else None),
+)
+check("Zeitpunkt erfasst (wann)", created_entry is not None and created_entry.created_at is not None)
+
+check(
+    "Einladungsversand protokolliert",
+    audit_qs.filter(action="invitation_sent", object_id=meeting1.id).exists(),
+)
+check(
+    "Aktualisierungsversand protokolliert",
+    audit_qs.filter(action="invitation_updated", object_id=meeting1.id).exists(),
+)
+check(
+    "Erinnerung protokolliert",
+    audit_qs.filter(action="reminder_sent", object_id=meeting1.id).exists(),
+)
+check(
+    "Protokoll-Genehmigung protokolliert",
+    audit_qs.filter(action="protocol_approved", object_id=meeting1.id).exists(),
+)
+check(
+    "Protokoll 'Zur Genehmigung' protokolliert",
+    audit_qs.filter(action="protocol_submitted", object_id=meeting1.id).exists(),
+)
+participation_entry = audit_qs.filter(action="participation", membership=unsworn_ms).first()
+check("Teilnahme-Änderung protokolliert (Absage)", participation_entry is not None)
+check(
+    "Abstimmung auf Genehmigungs-TOP protokolliert",
+    audit_qs.filter(action="decision", object_id=approval2.id).exists(),
+)
+check(
+    "TOP-Erstellung protokolliert (inkl. NÖ-Kennzeichnung)",
+    audit_qs.filter(action="create", object_id=top_int.id, is_internal=True).exists(),
+)
+check(
+    "Ö-TOP ohne NÖ-Kennzeichnung",
+    audit_qs.filter(action="create", object_id=top_pub.id, is_internal=False).exists(),
+)
+
+# Verschlüsselte Felder erscheinen nie im Klartext
+entry_int.set_content_encrypted("SUPERGEHEIM-NEU-999")
+entry_int.save()
+masked_entry = audit_qs.filter(model_name="FactionProtocolEntry", object_id=entry_int.id, action="update").first()
+check("Änderung an verschlüsseltem Feld protokolliert", masked_entry is not None)
+if masked_entry:
+    changes_text = str(masked_entry.changes)
+    check("Verschlüsselter Inhalt maskiert", "[verschlüsselt geändert]" in changes_text, changes_text[:200])
+    check("Klartext NICHT im Diff", "SUPERGEHEIM-NEU-999" not in changes_text)
+    check("Klartext NICHT in der Objekt-Beschreibung", "GEHEIM" not in masked_entry.object_repr)
+
+# Unveränderbarkeit (Save-/Delete-Guard)
+guard_entry = audit_qs.first()
+try:
+    guard_entry.action = "update"
+    guard_entry.save()
+    check("Audit-Eintrag unveränderbar (save)", False)
+except ValueError:
+    check("Audit-Eintrag unveränderbar (save)", True)
+try:
+    guard_entry.delete()
+    check("Audit-Eintrag unlöschbar (delete)", False)
+except ValueError:
+    check("Audit-Eintrag unlöschbar (delete)", True)
+
+# Einsichts-View: nur mit faction.view_audit
+resp = chair.get(f"{base}/faction/historie/")
+check("Historie mit faction.view_audit -> 200", resp.status_code == 200, f"got {resp.status_code}")
+resp = unsworn.get(f"{base}/faction/historie/")
+check("Historie ohne faction.view_audit -> 403", resp.status_code == 403, f"got {resp.status_code}")
+
+# NÖ-Maskierung in der Historie (Issue #64): Berechtigter, aber nicht vereidigt
+auditor_user, auditor_ms, auditor = make_member(
+    org, "auditor@example.org", ["faction.view_public", "faction.view_audit"], sworn=False
+)
+resp = auditor.get(f"{base}/faction/historie/?object={top_int.id}")
+html = resp.content.decode("utf-8")
+check("Historie für Nicht-Vereidigte -> 200", resp.status_code == 200, f"got {resp.status_code}")
+check("Historie: NÖ-Eintrag als 'Gesperrte Information'", "Gesperrte Information" in html)
+check("Historie: NÖ-Titel NICHT sichtbar", "GEHEIM-TOP-OMEGA" not in html)
+
+resp = chair.get(f"{base}/faction/historie/?object={top_int.id}")
+html = resp.content.decode("utf-8")
+check("Historie: Vereidigter sieht NÖ-Titel", "GEHEIM-TOP-OMEGA" in html)
+
+# Kaskadenlösch-Schutz (Muster aus Session-#56): Organisation löschen
+org2 = Organization.objects.create(name="Wegwerf-Fraktion", slug="wegwerf-fraktion", body=body)
+TenantEncryption(org2).key
+scrap_meeting = FactionMeeting.objects.create(
+    organization=org2, title="Wegwerf-Sitzung", start=now + timedelta(days=3), status="planned"
+)
+FactionAgendaItem.objects.create(meeting=scrap_meeting, title="Wegwerf-TOP", number="1", visibility="public")
+org2_id = org2.pk
+check("Wegwerf-Audit-Einträge vorhanden", FactionAuditLog.objects.filter(organization_id=org2_id).exists())
+try:
+    org2.delete()
+    check("Organisations-Löschung ohne IntegrityError", True)
+except Exception as exc:  # noqa: BLE001
+    check("Organisations-Löschung ohne IntegrityError", False, str(exc))
+check(
+    "Audit-Einträge mitkaskadiert (keine Waisen)",
+    FactionAuditLog.objects.filter(organization_id=org2_id).count() == 0,
+)
+
+# =============================================================================
+# Phase I: Sitzungserzeugung aus der Sitzungsreihe + Ausfallregeln (Issue #61)
+# =============================================================================
+print()
+print("=== Phase I: Sitzungserzeugung + Ausfallregeln ===")
+
+today = timezone.localdate()
+first_occ = today + timedelta(days=3)
+weekday = first_occ.weekday()
+
+# Reihe über die Einstellungs-UI anlegen (faction.manage erforderlich)
+resp = chair.post(
+    f"{base}/organization/faction-settings/",
+    {
+        "section": "add_schedule",
+        "name": "Wöchentliche Fraktionssitzung",
+        "recurrence": "weekly",
+        "weekday": str(weekday),
+        "time": "19:00",
+        "duration_minutes": "90",
+        "default_location": "Fraktionsbüro",
+    },
+)
+schedule = FactionMeetingSchedule.objects.filter(organization=org, name="Wöchentliche Fraktionssitzung").first()
+check("Sitzungsreihe über UI angelegt", schedule is not None)
+
+# Ausfallregel 1: Urlaubszeitraum um den 2. Termin
+occ2 = first_occ + timedelta(days=7)
+occ3 = first_occ + timedelta(days=14)
+resp = chair.post(
+    f"{base}/organization/faction-settings/",
+    {
+        "section": "add_exception",
+        "schedule_id": str(schedule.id),
+        "original_date": (occ2 - timedelta(days=2)).isoformat(),
+        "end_date": (occ2 + timedelta(days=2)).isoformat(),
+        "reason": "Sommerpause",
+    },
+)
+check(
+    "Urlaubszeitraum gespeichert",
+    FactionMeetingException.objects.filter(schedule=schedule, reason="Sommerpause").exists(),
+)
+
+# Ausfallregel 2: RIS-Regel — nach Ratssitzung entfällt die nächste Fraktionssitzung
+rat = OParlOrganization.objects.create(
+    body=body,
+    external_id="https://ris.musterstadt.example/organization/rat",
+    name="Rat der Stadt Musterstadt",
+    organization_type="Gremium",
+)
+rat_meeting_start = timezone.make_aware(_datetime.combine(occ3 - timedelta(days=1), _time(hour=17)))
+rat_meeting = OParlMeeting.objects.create(
+    body=body,
+    external_id="https://ris.musterstadt.example/meeting/rat-1",
+    name="Ratssitzung",
+    start=rat_meeting_start,
+    cancelled=False,
+)
+rat_meeting.organizations.add(rat)
+
+resp = chair.post(
+    f"{base}/organization/faction-settings/",
+    {
+        "section": "add_rule",
+        "schedule_id": str(schedule.id),
+        "ris_organization_id": str(rat.id),
+    },
+)
+check(
+    "RIS-Ausfallregel gespeichert",
+    FactionSuspensionRule.objects.filter(schedule=schedule, ris_organization=rat).exists(),
+)
+
+# Der Opt-in-POST in Phase E hat die übrigen Checkboxen (u.a.
+# auto_create_approval_item) auf False gesetzt — für die Erzeugung wieder an
+org.refresh_from_db()
+_settings = org.settings or {}
+_settings.setdefault("faction", {})["auto_create_approval_item"] = True
+org.settings = _settings
+org.save(update_fields=["settings"])
+
+# Erzeugungslauf (rollierender Horizont, Standard 90 Tage)
+stats = run_faction_schedule_pass()
+expected_dates = []
+d = first_occ
+while d <= today + timedelta(days=90):
+    expected_dates.append(d)
+    d += timedelta(days=7)
+
+generated = FactionMeeting.objects.filter(schedule=schedule, scheduled_date__isnull=False)
+check(
+    f"Alle Solltermine erzeugt ({len(expected_dates)})",
+    generated.count() == len(expected_dates),
+    f"stats={stats}, count={generated.count()}",
+)
+
+m_occ1 = generated.filter(scheduled_date=first_occ).first()
+m_occ2 = generated.filter(scheduled_date=occ2).first()
+m_occ3 = generated.filter(scheduled_date=occ3).first()
+check("Termin 1 geplant", m_occ1 is not None and m_occ1.status == "planned")
+check("Termin 1: Titel/Ort/Zeit aus der Reihe", m_occ1 is not None and m_occ1.location == "Fraktionsbüro")
+check(
+    "Termin 1: Anwesenheiten für alle Mitglieder",
+    m_occ1 is not None and m_occ1.attendances.count() == org.memberships.filter(is_active=True).count(),
+)
+check(
+    "Termin 1: Genehmigungs-TOP automatisch",
+    m_occ1 is not None and m_occ1.agenda_items.filter(is_approval_item=True).exists(),
+)
+check("Termin 1: automatisch erzeugt (created_by leer)", m_occ1 is not None and m_occ1.created_by_id is None)
+
+check(
+    "Urlaubstermin entfällt ersatzlos",
+    m_occ2 is not None and m_occ2.status == "cancelled" and "Sommerpause" in m_occ2.cancellation_reason,
+    m_occ2.cancellation_reason if m_occ2 else "fehlt",
+)
+check(
+    "Termin nach Ratssitzung entfällt (RIS-Regel)",
+    m_occ3 is not None and m_occ3.status == "cancelled" and "Rat" in m_occ3.cancellation_reason,
+    m_occ3.cancellation_reason if m_occ3 else "fehlt",
+)
+check(
+    "Entfallene Termine ohne Einladung/Anwesenheiten",
+    m_occ2 is not None and m_occ2.invitation_sent is False and m_occ2.attendances.count() == 0,
+)
+check(
+    "Kein Verschieben: kein Ersatztermin",
+    not FactionMeeting.objects.filter(schedule=schedule, scheduled_date__isnull=True).exists(),
+)
+
+# Ausfallregeln-Matrix: erwartete Zahl entfallener/geplanter Termine
+cancelled_count = generated.filter(status="cancelled").count()
+planned_count = generated.filter(status="planned").count()
+check(
+    "Ausfallregeln-Matrix: genau 2 Termine entfallen",
+    cancelled_count == 2 and planned_count == len(expected_dates) - 2,
+    f"cancelled={cancelled_count}, planned={planned_count}",
+)
+
+# Idempotenz: zweiter Lauf erzeugt nichts Neues
+count_before = FactionMeeting.objects.filter(schedule=schedule).count()
+stats2 = run_faction_schedule_pass()
+check(
+    "Zweiter Lauf idempotent",
+    FactionMeeting.objects.filter(schedule=schedule).count() == count_before
+    and stats2.get("created", 0) == 0
+    and stats2.get("cancelled", 0) == 0,
+    str(stats2),
+)
+
+# Historisierung (Issue #66): Erzeugung und Ausfälle im Audit
+check(
+    "Audit: automatisch erzeugte Termine protokolliert",
+    FactionAuditLog.objects.filter(organization=org, action="generated").count() == planned_count,
+)
+check(
+    "Audit: entfallene Termine protokolliert",
+    FactionAuditLog.objects.filter(organization=org, action="auto_cancelled").count() == 2,
+)
+
+# Entfällt-Anzeige in Liste und Detail
+resp = chair.get(f"{base}/faction/?time=all&status=cancelled")
+html = resp.content.decode("utf-8")
+check("Liste: entfallene Termine sichtbar", "Entfällt" in html and "Sommerpause" in html)
+resp = chair.get(f"{base}/faction/{m_occ2.id}/")
+check("Detail: Ausfallgrund sichtbar", "entfällt ersatzlos" in resp.content.decode("utf-8"))
+
+# Pausierte Reihe erzeugt nichts
+FactionMeetingSchedule.objects.filter(pk=schedule.pk).update(is_active=False)
+FactionMeeting.objects.filter(schedule=schedule, scheduled_date=first_occ).delete()
+stats3 = run_faction_schedule_pass()
+check(
+    "Pausierte Reihe erzeugt nichts",
+    not FactionMeeting.objects.filter(schedule=schedule, scheduled_date=first_occ).exists(),
+    str(stats3),
+)
+FactionMeetingSchedule.objects.filter(pk=schedule.pk).update(is_active=True)
+
+# =============================================================================
+# Phase J: NÖ strikt für Vereidigte (Issue #64)
+# =============================================================================
+print()
+print("=== Phase J: NÖ-Abschottung über alle Ausgabewege ===")
+
+# Detailansicht: Nicht-Vereidigte sehen NUR "Gesperrte Information"
+resp = unsworn.get(f"{base}/faction/{meeting1.id}/")
+html = resp.content.decode("utf-8")
+check("Detail (Nicht-Vereidigter) -> 200", resp.status_code == 200, f"got {resp.status_code}")
+check("Detail: Platzhalter 'Gesperrte Information'", "Gesperrte Information" in html)
+check("Detail: NÖ-Titel NICHT sichtbar", "GEHEIM-TOP-OMEGA" not in html)
+check("Detail: NÖ-Protokolleintrag NICHT sichtbar", "SUPERGEHEIM-NEU-999" not in html)
+check("Detail: gesperrte Anzahl angezeigt", "gesperrt" in html)
+
+resp = sworn.get(f"{base}/faction/{meeting1.id}/")
+html = resp.content.decode("utf-8")
+check("Detail: Vereidigter sieht NÖ-TOP", "GEHEIM-TOP-OMEGA" in html)
+
+# Panel: NÖ-TOP serverseitig gesperrt (kein Titel, keine Inhalte, keine Anhänge)
+resp = unsworn.get(f"{base}/faction/{meeting1.id}/item/{top_int.id}/panel/")
+check("Panel NÖ-TOP (Nicht-Vereidigter) -> 403", resp.status_code == 403, f"got {resp.status_code}")
+resp = sworn.get(f"{base}/faction/{meeting1.id}/item/{top_int.id}/panel/")
+check("Panel NÖ-TOP (Vereidigter) -> 200", resp.status_code == 200, f"got {resp.status_code}")
+
+# Unvereidigter Verwalter: faction.manage ersetzt die Vereidigung NICHT
+manager2_user, manager2_ms, manager2 = make_member(
+    org,
+    "verwaltung2@example.org",
+    ["faction.view_public", "faction.manage", "agenda.manage", "protocols.create"],
+    sworn=False,
+)
+
+resp = manager2.get(f"{base}/faction/{meeting1.id}/item/{top_int.id}/panel/")
+check("Panel NÖ-TOP (unvereidigter Verwalter) -> 403", resp.status_code == 403, f"got {resp.status_code}")
+resp = manager2.post(
+    f"{base}/faction/{meeting1.id}/item/{top_int.id}/panel/action/",
+    {"action": "update", "title": "gekapert"},
+)
+top_int.refresh_from_db()
+check(
+    "Panel-Aktion auf NÖ-TOP -> 403",
+    resp.status_code == 403 and top_int.title == "GEHEIM-TOP-OMEGA",
+    f"got {resp.status_code}",
+)
+
+# NÖ-TOP auf geplanter Sitzung für Aktions-Matrix
+top_int2 = FactionAgendaItem.objects.create(
+    meeting=meeting2, title="GEHEIM-ZWEI-PSI", number="NÖ 1", visibility="internal", order=5
+)
+
+item_count = meeting2.agenda_items.count()
+resp = manager2.post(
+    f"{base}/faction/{meeting2.id}/action/",
+    {"action": "add_item", "title": "nö-versuch", "visibility": "internal"},
+)
+check(
+    "add_item NÖ durch Nicht-Vereidigten -> 403",
+    resp.status_code == 403 and meeting2.agenda_items.count() == item_count,
+    f"got {resp.status_code}",
+)
+resp = manager2.post(
+    f"{base}/faction/{meeting2.id}/action/",
+    {"action": "edit_item", "item_id": str(top_int2.id), "title": "gekapert"},
+)
+top_int2.refresh_from_db()
+check(
+    "edit_item NÖ durch Nicht-Vereidigten -> 403",
+    resp.status_code == 403 and top_int2.title == "GEHEIM-ZWEI-PSI",
+    f"got {resp.status_code}",
+)
+resp = manager2.post(
+    f"{base}/faction/{meeting2.id}/action/",
+    {"action": "delete_item", "item_id": str(top_int2.id)},
+)
+check(
+    "delete_item NÖ durch Nicht-Vereidigten -> 403",
+    resp.status_code == 403 and FactionAgendaItem.objects.filter(pk=top_int2.pk).exists(),
+    f"got {resp.status_code}",
+)
+entry_count = meeting2.protocol_entries.count()
+resp = manager2.post(
+    f"{base}/faction/{meeting2.id}/action/",
+    {"action": "add_entry", "entry_type": "note", "content": "leck", "agenda_item_id": str(top_int2.id)},
+)
+check(
+    "add_entry zu NÖ-TOP durch Nicht-Vereidigten -> 403",
+    resp.status_code == 403 and meeting2.protocol_entries.count() == entry_count,
+    f"got {resp.status_code}",
+)
+resp = manager2.post(
+    f"{base}/faction/{meeting2.id}/action/",
+    {
+        "action": "record_decision",
+        "agenda_item_id": str(top_int2.id),
+        "votes_yes": "1",
+        "votes_no": "0",
+        "votes_abstain": "0",
+        "result": "accepted",
+    },
+)
+top_int2.refresh_from_db()
+check(
+    "record_decision auf NÖ-TOP durch Nicht-Vereidigten -> 403",
+    resp.status_code == 403 and top_int2.has_decision is False,
+    f"got {resp.status_code}",
+)
+
+# Vorschlagen von NÖ-TOPs: nur Vereidigte (serverseitig)
+skb_user, skb_ms, skb = make_member(org, "skb2@example.org", ["faction.view_public", "agenda.propose"], sworn=False)
+proposal_count = meeting2.agenda_items.filter(proposal_status="proposed").count()
+resp = skb.post(
+    f"{base}/faction/{meeting2.id}/action/",
+    {"action": "propose", "title": "NÖ-VORSCHLAG-LECK", "visibility": "internal"},
+)
+check(
+    "NÖ-Vorschlag durch Nicht-Vereidigten abgelehnt",
+    meeting2.agenda_items.filter(proposal_status="proposed").count() == proposal_count,
+    f"got {resp.status_code}",
+)
+resp = skb.post(
+    f"{base}/faction/{meeting2.id}/action/",
+    {"action": "propose", "title": "OEFF-VORSCHLAG-OK", "visibility": "public"},
+)
+check(
+    "Ö-Vorschlag durch Nicht-Vereidigten möglich",
+    meeting2.agenda_items.filter(proposal_status="proposed", title="OEFF-VORSCHLAG-OK").exists(),
+)
+
+# NÖ-Vorschlag eines Vereidigten ist für unvereidigte Verwalter unsichtbar
+resp = chair.post(
+    f"{base}/faction/{meeting2.id}/action/",
+    {"action": "propose", "title": "GEHEIM-VORSCHLAG-XI", "visibility": "internal"},
+)
+noe_proposal = meeting2.agenda_items.filter(proposal_status="proposed", title="GEHEIM-VORSCHLAG-XI").first()
+check("NÖ-Vorschlag durch Vereidigten angelegt", noe_proposal is not None)
+
+resp = manager2.get(f"{base}/faction/{meeting2.id}/")
+html = resp.content.decode("utf-8")
+check("NÖ-Vorschlag NICHT in Ansicht des Nicht-Vereidigten", "GEHEIM-VORSCHLAG-XI" not in html)
+check("Ö-Vorschlag sichtbar für Verwalter", "OEFF-VORSCHLAG-OK" in html)
+
+resp = manager2.post(
+    f"{base}/faction/{meeting2.id}/action/",
+    {"action": "accept_proposal", "item_id": str(noe_proposal.id)},
+)
+noe_proposal.refresh_from_db()
+check(
+    "accept_proposal auf NÖ-Vorschlag durch Nicht-Vereidigten -> 403",
+    resp.status_code == 403 and noe_proposal.proposal_status == "proposed",
+    f"got {resp.status_code}",
+)
+
+# Zentrale Sichtbarkeitsfunktion speist auch die PDFs (#59/#60):
+# Einladungs-PDF ohne NÖ (Phase A) und Ö-Niederschrift ohne NÖ (Phase F)
+# wurden oben bereits bewiesen — hier der Panel-/Historien-Beweis:
+resp = auditor.get(f"{base}/faction/historie/?object={top_int2.id}")
+html = resp.content.decode("utf-8")
+check("Historie: NÖ-TOP 2 maskiert", "GEHEIM-ZWEI-PSI" not in html)
 
 # =============================================================================
 print()
