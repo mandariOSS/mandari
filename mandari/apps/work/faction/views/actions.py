@@ -152,6 +152,10 @@ class FactionActionView(WorkViewMixin, View):
             or self.membership.has_permission("protocols.edit")
         )
 
+    def _can_manage_meeting(self, meeting):
+        """Ersteller der Sitzung oder faction.manage — für Status-/Verwaltungsaktionen."""
+        return meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
+
     # -- Status handlers -----------------------------------------------
 
     def _start(self, request, meeting):
@@ -164,6 +168,9 @@ class FactionActionView(WorkViewMixin, View):
         return self._refresh_or_redirect(request, meeting, "Sitzung gestartet.")
 
     def _end(self, request, meeting):
+        if not self.membership.has_permission("faction.start"):
+            messages.error(request, "Keine Berechtigung zum Beenden.")
+            return self._redirect_detail(meeting)
         if meeting.status == "ongoing":
             meeting.status = "completed"
             meeting.end = timezone.now()
@@ -171,6 +178,9 @@ class FactionActionView(WorkViewMixin, View):
         return self._refresh_or_redirect(request, meeting, "Sitzung beendet.")
 
     def _cancel(self, request, meeting):
+        if not self._can_manage_meeting(meeting):
+            messages.error(request, "Keine Berechtigung zum Absagen.")
+            return self._redirect_detail(meeting)
         if meeting.status not in ["completed", "cancelled"]:
             meeting.status = "cancelled"
             meeting.save()
@@ -188,6 +198,9 @@ class FactionActionView(WorkViewMixin, View):
         return redirect("work:faction", org_slug=self.organization.slug)
 
     def _update_status(self, request, meeting):
+        if not self._can_manage_meeting(meeting):
+            messages.error(request, "Keine Berechtigung zum Ändern des Status.")
+            return self._redirect_detail(meeting)
         new_status = request.POST.get("status")
         if new_status and new_status in dict(FactionMeeting.STATUS_CHOICES):
             meeting.status = new_status
@@ -565,6 +578,9 @@ class FactionActionView(WorkViewMixin, View):
         return self._redirect_detail(meeting)
 
     def _approve_protocol(self, request, meeting):
+        if not self.membership.has_permission("protocols.approve"):
+            messages.error(request, "Keine Berechtigung zur Protokollgenehmigung.")
+            return self._redirect_detail(meeting)
         if meeting.status == "completed" and not meeting.protocol_approved:
             meeting.protocol_approved = True
             meeting.protocol_approved_at = timezone.now()
@@ -694,6 +710,12 @@ class FactionActionView(WorkViewMixin, View):
     # -- Proposal handlers ---------------------------------------------
 
     def _propose(self, request, meeting):
+        # Serverseitige Prüfung — die UI blendet den Vorschlags-Dialog nur für
+        # Berechtigte ein, das ersetzt aber keine Prüfung im Handler.
+        if not self.membership.has_permission("agenda.propose") and not self.membership.has_permission("agenda.create"):
+            messages.error(request, "Keine Berechtigung zum Einreichen von Vorschlägen.")
+            return self._redirect_detail(meeting)
+
         title = request.POST.get("title", "").strip()
         description = request.POST.get("description", "").strip()
         visibility = request.POST.get("visibility", "public")
