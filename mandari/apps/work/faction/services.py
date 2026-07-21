@@ -99,10 +99,10 @@ class FactionMeetingEmailService:
         return html_to_pdf(html)
 
     def _include_internal(self, membership) -> bool:
-        """NÖ-Teil nur für Vereidigte mit Berechtigung (faction.view_non_public)."""
-        from apps.common.permissions import PermissionChecker
+        """NÖ-Teil nur für Vereidigte — zentrale Sichtbarkeitsfunktion (Issue #64)."""
+        from .visibility import can_view_internal
 
-        return PermissionChecker(membership).can_access_non_public()
+        return can_view_internal(membership)
 
     # -- Einladungen -----------------------------------------------------
 
@@ -528,11 +528,14 @@ class AgendaProposalService:
         from apps.work.notifications.models import NotificationType
         from apps.work.notifications.services import NotificationHub
 
-        # Find all members with agenda.manage permission
+        from .visibility import can_view_item
+
+        # Find all members with agenda.manage permission — NÖ strikt (Issue #64):
+        # Vorschläge für den nicht-öffentlichen Teil sehen nur Vereidigte
         managers = []
         for membership in meeting.organization.memberships.filter(is_active=True):
             checker = PermissionChecker(membership)
-            if checker.has_permission("agenda.manage"):
+            if checker.has_permission("agenda.manage") and can_view_item(item, membership):
                 managers.append(membership)
 
         if managers:

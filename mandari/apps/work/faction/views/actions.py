@@ -29,6 +29,7 @@ from ..models import (
 )
 
 logger = logging.getLogger(__name__)
+from ..visibility import can_view_internal, can_view_item
 from ._helpers import (
     _apply_approval_item_decision,
     _get_meeting_context,
@@ -295,6 +296,11 @@ class FactionActionView(WorkViewMixin, View):
         visibility = request.POST.get("visibility", "public")
         parent_id = request.POST.get("parent_id", "").strip()
 
+        # NÖ strikt (Issue #64): NÖ-TOPs (auch Unterpunkte von NÖ-TOPs)
+        # dürfen nur Vereidigte anlegen — serverseitig geprüft
+        if visibility == "internal" and not can_view_internal(self.membership):
+            return HttpResponse(status=403)
+
         if not title:
             if request.headers.get("HX-Request"):
                 return HttpResponse("Titel ist erforderlich.", status=400)
@@ -305,6 +311,9 @@ class FactionActionView(WorkViewMixin, View):
         if parent_id:
             parent = get_object_or_404(FactionAgendaItem, id=parent_id, meeting=meeting)
             visibility = parent.visibility
+            # NÖ strikt: Unterpunkte erben die Sichtbarkeit des Eltern-TOPs
+            if visibility == "internal" and not can_view_internal(self.membership):
+                return HttpResponse(status=403)
 
         # Auto-generate number
         if parent:
@@ -357,6 +366,9 @@ class FactionActionView(WorkViewMixin, View):
             return self._redirect_detail(meeting)
 
         item = get_object_or_404(FactionAgendaItem, id=item_id, meeting=meeting)
+        # NÖ strikt (Issue #64): Nicht-Vereidigte können NÖ-TOPs nicht bearbeiten
+        if not can_view_item(item, self.membership):
+            return HttpResponse(status=403)
         item.title = title
 
         description = request.POST.get("description", "").strip()
@@ -381,6 +393,10 @@ class FactionActionView(WorkViewMixin, View):
         item_id = request.POST.get("item_id")
         item = FactionAgendaItem.objects.filter(id=item_id, meeting=meeting, is_approval_item=False).first()
 
+        # NÖ strikt (Issue #64): Nicht-Vereidigte können NÖ-TOPs nicht löschen
+        if item and not can_view_item(item, self.membership):
+            return HttpResponse(status=403)
+
         if item:
             item.delete()
             _renumber_items(meeting, item.visibility if item else "public")
@@ -402,6 +418,10 @@ class FactionActionView(WorkViewMixin, View):
         item = FactionAgendaItem.objects.filter(
             id=item_id, meeting=meeting, is_approval_item=False, parent__isnull=True
         ).first()
+
+        # NÖ strikt (Issue #64): Nicht-Vereidigte können NÖ-TOPs nicht verschieben
+        if item and not can_view_item(item, self.membership):
+            return HttpResponse(status=403)
 
         if item and direction in ("up", "down"):
             siblings = list(
@@ -464,6 +484,9 @@ class FactionActionView(WorkViewMixin, View):
         agenda_item = None
         if agenda_item_id:
             agenda_item = FactionAgendaItem.objects.filter(id=agenda_item_id, meeting=meeting).first()
+            # NÖ strikt (Issue #64): keine Einträge zu NÖ-TOPs durch Nicht-Vereidigte
+            if agenda_item is not None and not can_view_item(agenda_item, self.membership):
+                return HttpResponse(status=403)
             if agenda_item is not None:
                 entry.agenda_item = agenda_item
 
@@ -514,6 +537,9 @@ class FactionActionView(WorkViewMixin, View):
             return HttpResponse(status=400)
 
         entry = get_object_or_404(FactionProtocolEntry, id=entry_id, meeting=meeting)
+        # NÖ strikt (Issue #64): Einträge zu NÖ-TOPs nur für Vereidigte
+        if entry.agenda_item_id and not can_view_item(entry.agenda_item, self.membership):
+            return HttpResponse(status=403)
         is_own = entry.created_by == self.membership and not meeting.protocol_approved
         if not self._can_protocol(meeting) and not is_own:
             return HttpResponse(status=403)
@@ -539,6 +565,9 @@ class FactionActionView(WorkViewMixin, View):
         entry_id = request.POST.get("entry_id")
         entry = FactionProtocolEntry.objects.filter(id=entry_id, meeting=meeting).first()
         if entry:
+            # NÖ strikt (Issue #64): Einträge zu NÖ-TOPs nur für Vereidigte
+            if entry.agenda_item_id and not can_view_item(entry.agenda_item, self.membership):
+                return HttpResponse(status=403)
             is_own = entry.created_by == self.membership and not meeting.protocol_approved
             if not self._can_protocol(meeting) and not is_own:
                 return HttpResponse(status=403)
@@ -556,6 +585,10 @@ class FactionActionView(WorkViewMixin, View):
 
         agenda_item_id = request.POST.get("agenda_item_id")
         agenda_item = get_object_or_404(FactionAgendaItem, id=agenda_item_id, meeting=meeting)
+
+        # NÖ strikt (Issue #64): keine Abstimmungen auf NÖ-TOPs durch Nicht-Vereidigte
+        if not can_view_item(agenda_item, self.membership):
+            return HttpResponse(status=403)
 
         try:
             votes_yes = int(request.POST.get("votes_yes", 0))
@@ -745,6 +778,12 @@ class FactionActionView(WorkViewMixin, View):
         description = request.POST.get("description", "").strip()
         visibility = request.POST.get("visibility", "public")
 
+        # NÖ strikt (Issue #64): auch das VORSCHLAGEN von NÖ-TOPs ist nur
+        # Vereidigten erlaubt — serverseitig geprüft
+        if visibility == "internal" and not can_view_internal(self.membership):
+            messages.error(request, "Nicht-öffentliche TOPs können nur vereidigte Mitglieder vorschlagen.")
+            return self._redirect_detail(meeting)
+
         if not title:
             messages.error(request, "Bitte einen Titel angeben.")
             return self._redirect_detail(meeting)
@@ -770,6 +809,10 @@ class FactionActionView(WorkViewMixin, View):
         item_id = request.POST.get("item_id")
         item = get_object_or_404(FactionAgendaItem, id=item_id, meeting=meeting, proposal_status="proposed")
 
+        # NÖ strikt (Issue #64): NÖ-Vorschläge sind für Nicht-Vereidigte unsichtbar
+        if not can_view_item(item, self.membership):
+            return HttpResponse(status=403)
+
         from ..services import AgendaProposalService
 
         assign_number = request.POST.get("number", "").strip()
@@ -787,6 +830,10 @@ class FactionActionView(WorkViewMixin, View):
         reason = request.POST.get("reason", "").strip()
         item = get_object_or_404(FactionAgendaItem, id=item_id, meeting=meeting, proposal_status="proposed")
 
+        # NÖ strikt (Issue #64): NÖ-Vorschläge sind für Nicht-Vereidigte unsichtbar
+        if not can_view_item(item, self.membership):
+            return HttpResponse(status=403)
+
         from ..services import AgendaProposalService
 
         AgendaProposalService.reject_proposal(item, self.membership, reason)
@@ -799,6 +846,10 @@ class FactionActionView(WorkViewMixin, View):
     def _create_task(self, request, meeting):
         entry_id = request.POST.get("entry_id")
         entry = get_object_or_404(FactionProtocolEntry, id=entry_id, meeting=meeting)
+
+        # NÖ strikt (Issue #64): Einträge zu NÖ-TOPs nur für Vereidigte
+        if entry.agenda_item_id and not can_view_item(entry.agenda_item, self.membership):
+            return HttpResponse(status=403)
 
         if entry.entry_type != "action":
             messages.error(request, "Nur Aufgaben-Einträge können ins Task-Board übernommen werden.")

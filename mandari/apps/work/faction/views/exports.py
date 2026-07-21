@@ -35,10 +35,10 @@ class FactionProtocolPdfView(WorkViewMixin, View):
         internal = variant == "intern"
 
         if internal:
-            from apps.common.permissions import PermissionChecker
+            # Zentrale Sichtbarkeitsfunktion (Issue #64): NÖ nur für Vereidigte
+            from ..visibility import can_view_internal
 
-            checker = PermissionChecker(self.membership)
-            if not (checker.can_access_non_public() and self.membership.has_permission("protocols.view_full")):
+            if not (can_view_internal(self.membership) and self.membership.has_permission("protocols.view_full")):
                 return HttpResponse(status=403)
         else:
             if not self.membership.has_permission("protocols.view_public"):

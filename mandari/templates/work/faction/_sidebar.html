@@ -69,7 +69,7 @@
     <div class="space-y-2 text-sm">
         <div class="flex justify-between">
             <span class="text-gray-500">TOPs</span>
-            <span class="font-medium text-gray-900 dark:text-white">{{ public_agenda_items|length }}{% if internal_agenda_items %} + {{ internal_agenda_items|length }} NÖ{% endif %}</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ public_agenda_items|length }}{% if internal_agenda_items %} + {{ internal_agenda_items|length }} NÖ{% elif locked_internal_count %} + {{ locked_internal_count }} gesperrt{% endif %}</span>
         </div>
         <div class="flex justify-between">
             <span class="text-gray-500">Einträge</span>

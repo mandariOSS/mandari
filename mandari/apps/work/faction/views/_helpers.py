@@ -33,6 +33,9 @@ def _get_meeting_context(view, meeting):
     """Build shared context dict for detail page and partials."""
     from apps.common.permissions import PermissionChecker
 
+    from ..visibility import LOCKED_PLACEHOLDER
+    from ..visibility import can_view_internal as _can_view_internal
+
     checker = PermissionChecker(view.membership)
 
     # Agenda items (top-level only, children via prefetch)
@@ -44,8 +47,11 @@ def _get_meeting_context(view, meeting):
     )
 
     public_items = [i for i in agenda_items if i.visibility == "public"]
-    can_view_internal = checker.can_access_non_public()
+    can_view_internal = _can_view_internal(view.membership)
+    # NÖ strikt (Issue #64): Nicht-Vereidigte erhalten KEINE NÖ-Objekte im
+    # Kontext — nur die Anzahl für "Gesperrte Information"-Platzhalter
     internal_items = [i for i in agenda_items if i.visibility == "internal"] if can_view_internal else []
+    locked_internal_count = 0 if can_view_internal else sum(1 for i in agenda_items if i.visibility == "internal")
 
     # Attendance
     attendances = meeting.attendances.select_related("membership__user")
@@ -102,19 +108,31 @@ def _get_meeting_context(view, meeting):
         .order_by("user__last_name", "user__first_name")
     )
 
-    # Protocol entries (sidebar summary)
-    protocol_entries = meeting.protocol_entries.select_related(
+    # Protocol entries (sidebar summary) — NÖ strikt (Issue #64):
+    # Einträge zu NÖ-TOPs erscheinen für Nicht-Vereidigte nirgends
+    protocol_entries_qs = meeting.protocol_entries.select_related(
         "agenda_item", "speaker__user", "created_by__user"
-    ).order_by("-created_at")[:10]
+    ).order_by("-created_at")
+    if not can_view_internal:
+        protocol_entries_qs = protocol_entries_qs.exclude(agenda_item__visibility="internal")
+    protocol_entries = protocol_entries_qs[:10]
 
-    protocol_entry_count = meeting.protocol_entries.count()
+    protocol_entry_count = protocol_entries_qs.count()
+
+    # TOP-Vorschläge: NÖ-Vorschläge sind für Nicht-Vereidigte unsichtbar
+    pending_proposals = meeting.agenda_items.filter(proposal_status="proposed")
+    if not can_view_internal:
+        pending_proposals = pending_proposals.exclude(visibility="internal")
 
     return {
         "meeting": meeting,
-        "agenda_items": agenda_items,
+        # NÖ strikt: Nicht-Vereidigte bekommen keine NÖ-Objekte in den Kontext
+        "agenda_items": list(agenda_items) if can_view_internal else public_items,
         "public_agenda_items": public_items,
         "internal_agenda_items": internal_items,
         "can_view_internal": can_view_internal,
+        "locked_internal_count": locked_internal_count,
+        "locked_placeholder": LOCKED_PLACEHOLDER,
         "attendances": attendances,
         "my_attendance": my_attendance,
         "attendance_stats": attendance_stats,
@@ -125,7 +143,7 @@ def _get_meeting_context(view, meeting):
         "can_manage_attendance": can_manage_attendance,
         "can_propose_agenda": can_propose and not can_create_directly,
         "can_approve_proposals": checker.can_approve_agenda_items() or view.membership.has_permission("agenda.manage"),
-        "pending_proposals": meeting.agenda_items.filter(proposal_status="proposed"),
+        "pending_proposals": pending_proposals,
         "protocol_entries": protocol_entries,
         "protocol_entry_count": protocol_entry_count,
         "available_members": available_members,

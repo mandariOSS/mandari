@@ -30,6 +30,7 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
+from ..visibility import can_view_item
 from ._helpers import _apply_approval_item_decision
 
 
@@ -57,6 +58,13 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
             id=kwargs["item_id"],
             meeting=meeting,
         )
+
+        # NÖ strikt (Issue #64): Nicht-Vereidigte sehen von NÖ-TOPs NICHTS —
+        # auch nicht über das Panel (serverseitig)
+        if not can_view_item(item, self.membership):
+            from django.core.exceptions import PermissionDenied
+
+            raise PermissionDenied("Gesperrte Information")
 
         # Try to get decision (OneToOne, may not exist)
         try:
@@ -135,6 +143,10 @@ class FactionItemPanelActionView(WorkViewMixin, View):
     def post(self, request, *args, **kwargs):
         meeting = get_object_or_404(FactionMeeting, id=kwargs["meeting_id"], organization=self.organization)
         item = get_object_or_404(FactionAgendaItem, id=kwargs["item_id"], meeting=meeting)
+
+        # NÖ strikt (Issue #64): keine Aktionen auf NÖ-TOPs für Nicht-Vereidigte
+        if not can_view_item(item, self.membership):
+            return HttpResponse(status=403)
 
         action = request.POST.get("action")
         can_edit = (
@@ -237,6 +249,12 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
         visibility = request.POST.get("visibility")
         if visibility in ("public", "internal"):
+            # NÖ strikt (Issue #64): nur Vereidigte dürfen TOPs in den
+            # nicht-öffentlichen Teil verschieben
+            from ..visibility import can_view_internal
+
+            if visibility == "internal" and not can_view_internal(self.membership):
+                return HttpResponse(status=403)
             item.visibility = visibility
 
         item.save()

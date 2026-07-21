@@ -13,7 +13,7 @@
             {% endif %}
         </h3>
         <span class="text-xs text-gray-400">
-            {{ public_agenda_items|length }}{% if internal_agenda_items %} + {{ internal_agenda_items|length }} NÖ{% endif %} TOPs
+            {{ public_agenda_items|length }}{% if internal_agenda_items %} + {{ internal_agenda_items|length }} NÖ{% elif locked_internal_count %} + {{ locked_internal_count }} gesperrt{% endif %} TOPs
         </span>
     </div>
 
@@ -42,6 +42,24 @@
             {% with is_internal=True is_first=forloop.first is_last=forloop.last %}
             {% include "work/faction/_agenda_item.html" %}
             {% endwith %}
+        {% endfor %}
+        {% endif %}
+
+        {# NÖ strikt (Issue #64): Nicht-Vereidigte sehen von NÖ-TOPs NICHTS #}
+        {# außer "Gesperrte Information" — kein Titel, keine Inhalte, keine Anhänge #}
+        {% if locked_internal_count and not can_view_internal %}
+        <div class="p-3 bg-amber-50 dark:bg-amber-900/20 flex items-center gap-2">
+            <i data-lucide="lock" class="w-4 h-4 text-amber-600"></i>
+            <span class="text-sm font-semibold text-amber-700 dark:text-amber-400">Nicht-öffentlicher Teil</span>
+            <span class="text-xs text-amber-600">(nur für Vereidigte)</span>
+        </div>
+        {% for _ in ""|rjust:locked_internal_count %}
+        <div class="p-4 flex items-center gap-3 bg-amber-50/30 dark:bg-amber-900/10">
+            <span class="flex-shrink-0 min-w-[2.5rem] h-10 px-3 rounded-lg flex items-center justify-center bg-amber-100 dark:bg-amber-900/30">
+                <i data-lucide="lock" class="w-4 h-4 text-amber-600"></i>
+            </span>
+            <span class="text-sm italic text-amber-700 dark:text-amber-400">{{ locked_placeholder|default:"Gesperrte Information" }}</span>
+        </div>
         {% endfor %}
         {% endif %}
     </div>
