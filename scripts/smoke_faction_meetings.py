@@ -47,6 +47,12 @@ Welle 2 (Issues #62, #63, #65, #67, #69):
 - Eigene Absender-Mail (#65): Versand über organisationseigenes SMTP
   (gemockt) mit Fallback-Verhalten, Testmail, SPF/DKIM-Hinweis,
   Passwort nur verschlüsselt und nie im Klartext sichtbar
+
+Welle 3 (Issues #68, #70, #71):
+- Teilnahmenachweis (#68): PDF ausschließlich aus vom Vorstand bestätigten
+  Teilnahmen, dokumentierte Ausstellung (Token/Prüfsumme/Audit), öffentliche
+  Verifikations-Seite OHNE Personenbezug (Response-Scan-Beweis), opakes
+  Token, Sammel-Export nur für den Vorstand (PDF/CSV)
 """
 
 import base64
@@ -1720,6 +1726,102 @@ mail.outbox = []
 ok = send_org_email(org, subject="O-TEST-STANDARD", body="Test", to=["vereidigt@example.org"])
 check("mandari-Standard: Versand ohne Org-SMTP", ok is True and len(mail.outbox) == 1)
 check("mandari-Standard: kein Org-Absender", "fraktion@example.org" not in mail.outbox[0].from_email)
+
+# =============================================================================
+# Phase P: Teilnahmenachweis + QR-Verifikation + Sammel-Export (Issue #68)
+# =============================================================================
+print()
+print("=== Phase P: Teilnahmenachweis + Verifikation + Sammel-Export ===")
+
+from apps.work.faction.models import FactionAttendanceCertificate  # noqa: E402
+
+# Klarnamen setzen, um Personenbezug beweisbar zu machen
+sworn_user.first_name = "Veraxa"
+sworn_user.last_name = "Eidigmann"
+sworn_user.save(update_fields=["first_name", "last_name"])
+
+p_from = (now - timedelta(days=10)).date().isoformat()
+p_to = (now + timedelta(days=10)).date().isoformat()
+
+# Eigener Nachweis: nur vom Vorstand bestätigte Teilnahmen (m67), nichts Unbestätigtes (m69)
+resp = sworn.get(f"{base}/faction/nachweis/?from={p_from}&to={p_to}")
+check("Nachweis-Download -> PDF", resp.status_code == 200 and resp["Content-Type"] == "application/pdf")
+cert_pdf = pdf_text(resp.content)
+check("PDF enthält bestätigte Sitzung", "Teilnahme-Sitzung M" in cert_pdf)
+check("PDF OHNE unbestätigte Sitzung (Quorum N)", "Quorum-Sitzung N" not in cert_pdf)
+check("PDF nennt Inhaberin", "Veraxa Eidigmann" in cert_pdf)
+check("PDF mit Bestätigungsvermerk", "Bestätigt durch" in cert_pdf and "stellv" in cert_pdf)
+check("PDF mit Prüf-URL", "/nachweis/" in cert_pdf)
+
+cert = FactionAttendanceCertificate.objects.filter(organization=org, membership=sworn_ms).order_by("-issued_at").first()
+check("Ausstellung dokumentiert", cert is not None and cert.attendance_count == 1, str(cert and cert.attendance_count))
+check("Prüfsumme gesetzt", cert is not None and len(cert.checksum) == 64)
+check("Prüfcode im PDF", cert.token in cert_pdf)
+check(
+    "Ausstellung auditiert",
+    FactionAuditLog.objects.filter(organization=org, action="certificate_issued", object_id=cert.id).exists(),
+)
+
+# Token-Opazität: kein Personen-/Organisationsbezug, nicht erratbar kurz
+check(
+    "Token opak (kein Personen-/Org-Bezug)",
+    len(cert.token) >= 20
+    and "veraxa" not in cert.token.lower()
+    and "eidigmann" not in cert.token.lower()
+    and org.slug not in cert.token.lower()
+    and str(sworn_user.pk) not in cert.token
+    and str(sworn_ms.pk) not in cert.token,
+    cert.token,
+)
+
+# Öffentliche Verifikations-Seite (ohne Login): KEINERLEI Personenbezug
+anon_p = Client()
+resp = anon_p.get(f"/nachweis/{cert.token}/")
+verify_html = resp.content.decode("utf-8")
+check("Verifikation ohne Login -> 200", resp.status_code == 200, f"got {resp.status_code}")
+check("Verifikation: 'Nachweis gültig'", "Nachweis gültig" in verify_html)
+check("Verifikation: Organisation", org.name in verify_html)
+check("Verifikation: Anzahl + Zeitraum", "Bestätigte Teilnahmen" in verify_html and "Zeitraum" in verify_html)
+check(
+    "Verifikation OHNE Personenbezug (Response-Scan)",
+    "Veraxa" not in verify_html
+    and "Eidigmann" not in verify_html
+    and "vereidigt@example.org" not in verify_html
+    and "@example.org" not in verify_html
+    and "Teilnahme-Sitzung M" not in verify_html,
+)
+
+# Ungültige Token werden sauber abgewiesen
+resp = anon_p.get("/nachweis/voellig-unbekanntes-token-123/")
+check("Unbekanntes Token -> 404", resp.status_code == 404, f"got {resp.status_code}")
+check("Unbekanntes Token: 'ungültig'", "ungültig" in resp.content.decode("utf-8"))
+
+# Ohne bestätigte Teilnahmen wird KEIN Nachweis ausgestellt
+before_count = FactionAttendanceCertificate.objects.count()
+resp = sworn.get(f"{base}/faction/nachweis/?from=1990-01-01&to=1990-12-31")
+check("Leerer Zeitraum -> Redirect ohne Ausstellung", resp.status_code == 302)
+check("Leerer Zeitraum: keine Ausstellung dokumentiert", FactionAttendanceCertificate.objects.count() == before_count)
+
+# Sammel-Export: nur Vorstand (Fallback faction.manage nur ohne besetzten Vorstand)
+resp = unsworn.get(f"{base}/faction/nachweise/export/?from={p_from}&to={p_to}&format=csv")
+check("Sammel-Export ohne Recht -> 403", resp.status_code == 403, f"got {resp.status_code}")
+resp = manager.get(f"{base}/faction/nachweise/export/?from={p_from}&to={p_to}&format=csv")
+check("faction.manage ersetzt den Vorstand nicht (Export)", resp.status_code == 403, f"got {resp.status_code}")
+
+resp = stellv.get(f"{base}/faction/nachweise/export/?from={p_from}&to={p_to}&format=csv")
+check("Sammel-Export CSV (Vorstand) -> 200", resp.status_code == 200, f"got {resp.status_code}")
+csv_text = resp.content.decode("utf-8")
+check("CSV enthält bestätigte Teilnahmen je Person", "Veraxa Eidigmann" in csv_text and "Teilnahme-Sitzung M" in csv_text)
+check("CSV OHNE unbestätigte Sitzungen", "Quorum-Sitzung N" not in csv_text)
+
+resp = stellv.get(f"{base}/faction/nachweise/export/?from={p_from}&to={p_to}&format=pdf")
+check("Sammel-Export PDF (Vorstand) -> 200", resp.status_code == 200 and resp["Content-Type"] == "application/pdf")
+export_pdf = pdf_text(resp.content)
+check("Export-PDF gruppiert je Person", "Veraxa Eidigmann" in export_pdf and "Teilnahme-Sitzung M" in export_pdf)
+check(
+    "Sammel-Export auditiert",
+    FactionAuditLog.objects.filter(organization=org, action="attendance_exported").count() >= 2,
+)
 
 # =============================================================================
 print()

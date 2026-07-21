@@ -39,6 +39,7 @@ Mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der O
 | **cryptography** | Verschlüsselung (AES-256-GCM) | BSD/Apache 2.0 | [Docs](https://cryptography.io/) |
 | **pytesseract** | OCR für PDFs | Apache 2.0 | [GitHub](https://github.com/tesseract-ocr/tesseract) |
 | **xhtml2pdf** | PDF-Generierung | Apache 2.0 | [GitHub](https://github.com/xhtml2pdf/xhtml2pdf) |
+| **segno** | QR-Code-Erzeugung (reines Python) | BSD-3-Clause | [GitHub](https://github.com/heuer/segno) |
 | **Gunicorn** | WSGI Server | MIT | [gunicorn.org](https://gunicorn.org/) |
 
 Vollständige Liste: [mandari/requirements.txt](mandari/requirements.txt)

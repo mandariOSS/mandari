@@ -1,0 +1,48 @@
+{% extends "work/faction/pdf/base_pdf.html" %}
+{% comment %}
+Sammel-Export der bestätigten Teilnahmen (Issue #68): alle Mitglieder
+eines Zeitraums in einem Durchgang — zum Einreichen bei der Verwaltung
+(z. B. Sitzungsgeld sachkundiger Bürger:innen).
+{% endcomment %}
+
+{% block content %}
+    <h1>Bestätigte Teilnahmen — Sammel-Export</h1>
+    <table class="meta-table">
+        <tr><td><strong>Organisation:</strong></td><td>{{ organization.name }}</td></tr>
+        <tr><td><strong>Zeitraum:</strong></td><td>{{ period_start|date:"d.m.Y" }} bis {{ period_end|date:"d.m.Y" }}</td></tr>
+        <tr><td><strong>Bestätigte Teilnahmen gesamt:</strong></td><td>{{ total_count }}</td></tr>
+    </table>
+    <p class="muted">
+        Grundlage sind ausschließlich die vom Vorstand final bestätigten Teilnahmen
+        (Anwesenheit in der Sitzung). Zur Vorlage bei der Verwaltung.
+    </p>
+
+    {% for group in groups %}
+    <h2>{{ group.membership.user.get_display_name }} — {{ group.attendances|length }} Teilnahme{{ group.attendances|length|pluralize:"n" }}</h2>
+    <table class="agenda">
+        <tr>
+            <td class="top-nr"><strong>Datum</strong></td>
+            <td><strong>Sitzung</strong></td>
+            <td><strong>Teilnahmeart</strong></td>
+            <td><strong>Bestätigt durch / am</strong></td>
+        </tr>
+        {% for attendance in group.attendances %}
+        <tr>
+            <td class="top-nr">{{ attendance.meeting.start|date:"d.m.Y" }}</td>
+            <td>{{ attendance.meeting.title }}</td>
+            <td>{{ attendance.get_participation_type_display }}</td>
+            <td>
+                {% if attendance.confirmed_final_by %}{{ attendance.confirmed_final_by.user.get_display_name }}{% else %}Vorstand{% endif %},
+                {{ attendance.confirmed_final_at|date:"d.m.Y" }}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% empty %}
+    <p class="muted">Im gewählten Zeitraum gibt es keine bestätigten Teilnahmen.</p>
+    {% endfor %}
+
+    <div class="signature">
+        <p>{{ organization.name }}</p>
+    </div>
+{% endblock %}

@@ -434,6 +434,17 @@ urlpatterns = [
         faction_views.FactionAuditLogView.as_view(),
         name="faction_audit",
     ),
+    # Teilnahmenachweis (Issue #68): eigener Nachweis + Sammel-Export
+    path(
+        "<slug:org_slug>/faction/nachweis/",
+        faction_views.FactionCertificateDownloadView.as_view(),
+        name="faction_certificate",
+    ),
+    path(
+        "<slug:org_slug>/faction/nachweise/export/",
+        faction_views.FactionAttendanceExportView.as_view(),
+        name="faction_attendance_export",
+    ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/",
         faction_views.FactionMeetingDetailView.as_view(),

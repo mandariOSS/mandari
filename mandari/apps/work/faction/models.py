@@ -9,6 +9,7 @@ Internal meetings for political organizations with:
 - Protocol/minutes with approval workflow
 """
 
+import secrets
 import uuid
 from datetime import timedelta
 
@@ -16,6 +17,16 @@ from django.db import models
 from django.utils import timezone
 
 from apps.common.encryption import EncryptedTextField, EncryptionMixin
+
+
+def generate_opaque_token() -> str:
+    """
+    Opakes Zufalls-Token für öffentlich erreichbare URLs (Issues #68/#70/#71).
+
+    Enthält keinerlei Personen- oder Organisationsbezug und ist nicht
+    erratbar/enumerierbar (32 Zeichen, URL-safe Base64 aus 24 Zufallsbytes).
+    """
+    return secrets.token_urlsafe(24)
 
 
 class FactionMeetingSchedule(models.Model):
@@ -1085,6 +1096,9 @@ class FactionAuditLog(models.Model):
         ("release_notice_sent", "Freigabe-Hinweis versandt"),
         ("addendum", "Nachtrag erfasst"),
         ("attendance_confirmed", "Teilnahmen bestätigt"),
+        ("certificate_issued", "Teilnahmenachweis ausgestellt"),
+        ("attendance_exported", "Teilnahmen-Sammel-Export erstellt"),
+        ("api_settings_changed", "Öffentliche API konfiguriert"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1151,6 +1165,78 @@ class FactionAuditLog(models.Model):
     def delete(self, *args, **kwargs):
         """Revisionssicherheit: Einträge können nicht gelöscht werden."""
         raise ValueError("Audit-Einträge sind unveränderbar und können nicht gelöscht werden.")
+
+
+class FactionAttendanceCertificate(models.Model):
+    """
+    Ausstellung eines Teilnahmenachweises (Issue #68).
+
+    Jeder Download erzeugt eine dokumentierte Ausstellung mit opakem
+    Prüf-Token und Prüfsumme. Die öffentliche Verifikations-Seite
+    (/nachweis/<token>/) zeigt AUSSCHLIESSLICH: gültig/ungültig,
+    Ausstellungsdatum, Organisation, Anzahl bestätigter Teilnahmen und
+    Zeitraum — niemals Namen oder andere personenbezogene Daten. Der Name
+    steht nur im PDF selbst, das die Inhaberin/der Inhaber vorzeigt.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    organization = models.ForeignKey(
+        "tenants.Organization",
+        on_delete=models.CASCADE,
+        related_name="attendance_certificates",
+        verbose_name="Organisation",
+    )
+
+    # Inhaber:in des Nachweises — erscheint NUR im PDF, nie auf der
+    # Verifikations-Seite
+    membership = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.CASCADE,
+        related_name="attendance_certificates",
+        verbose_name="Mitglied",
+    )
+
+    issued_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="issued_attendance_certificates",
+        verbose_name="Ausgestellt von",
+    )
+
+    period_start = models.DateField(verbose_name="Zeitraum von")
+    period_end = models.DateField(verbose_name="Zeitraum bis")
+    attendance_count = models.PositiveIntegerField(default=0, verbose_name="Bestätigte Teilnahmen")
+
+    # Opakes Prüf-Token (kein Personenbezug, nicht erratbar)
+    token = models.CharField(
+        max_length=64, unique=True, default=generate_opaque_token, editable=False, verbose_name="Prüfcode"
+    )
+    # SHA-256 über die bestätigten Teilnahmen (Manipulationsschutz)
+    checksum = models.CharField(max_length=64, blank=True, verbose_name="Prüfsumme")
+
+    issued_at = models.DateTimeField(auto_now_add=True, verbose_name="Ausgestellt am")
+
+    class Meta:
+        verbose_name = "Teilnahmenachweis"
+        verbose_name_plural = "Teilnahmenachweise"
+        ordering = ["-issued_at"]
+        indexes = [
+            models.Index(fields=["organization", "membership"]),
+        ]
+
+    def __str__(self):
+        return f"Teilnahmenachweis {self.period_start} – {self.period_end} ({self.attendance_count} Teilnahmen)"
+
+    @property
+    def audit_repr(self) -> str:
+        """Beschreibung für die Änderungshistorie — ohne Klarnamen."""
+        return (
+            f"Teilnahmenachweis {self.period_start.strftime('%d.%m.%Y')}"
+            f" – {self.period_end.strftime('%d.%m.%Y')} ({self.attendance_count} Teilnahmen)"
+        )
 
 
 class FactionAgendaItemAttachment(models.Model):

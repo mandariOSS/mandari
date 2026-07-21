@@ -114,6 +114,67 @@
     </form>
 </div>
 
+<!-- Teilnahmenachweis + Sammel-Export (Issue #68) -->
+{% if not membership.is_guest %}
+<div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+        <div class="min-w-[220px]">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="badge-check" class="w-4 h-4 text-primary-500"></i>
+                Teilnahmenachweis
+            </h3>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                PDF mit Ihren vom Vorstand bestätigten Teilnahmen — inkl. Prüfcode und QR-Verifikation.
+            </p>
+        </div>
+        <form method="get" action="{% url 'work:faction_certificate' org_slug=organization.slug %}" class="flex flex-wrap items-end gap-2">
+            <div>
+                <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">Von</label>
+                <input type="date" name="from" value="{{ certificate_default_from|date:'Y-m-d' }}"
+                       class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+            </div>
+            <div>
+                <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">Bis</label>
+                <input type="date" name="to" value="{{ certificate_default_to|date:'Y-m-d' }}"
+                       class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+            </div>
+            <button type="submit"
+                    class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                <i data-lucide="file-down" class="w-4 h-4"></i>
+                Nachweis (PDF)
+            </button>
+        </form>
+        {% if can_export_attendance %}
+        <form method="get" action="{% url 'work:faction_attendance_export' org_slug=organization.slug %}" class="flex flex-wrap items-end gap-2">
+            <div>
+                <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">Von</label>
+                <input type="date" name="from" value="{{ certificate_default_from|date:'Y-m-d' }}"
+                       class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+            </div>
+            <div>
+                <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">Bis</label>
+                <input type="date" name="to" value="{{ certificate_default_to|date:'Y-m-d' }}"
+                       class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+            </div>
+            <div>
+                <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">Format</label>
+                <select name="format" class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <option value="pdf">PDF</option>
+                    <option value="csv">CSV</option>
+                </select>
+            </div>
+            <button type="submit"
+                    class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                    title="Alle bestätigten Teilnahmen je Person (für die Verwaltung)">
+                <i data-lucide="users" class="w-4 h-4"></i>
+                Sammel-Export
+            </button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Meetings List -->
 <div class="fade-up d2">
     {% if meetings %}

@@ -1,0 +1,70 @@
+{% extends "base_insight.html" %}
+{% comment %}
+Öffentliche Verifikations-Seite für Teilnahmenachweise (Issue #68).
+
+DATENSCHUTZ (Akzeptanzkriterium): Diese Seite zeigt bei gültigem Token
+AUSSCHLIESSLICH Gültigkeit, Ausstellungsdatum, Organisation, Anzahl
+bestätigter Teilnahmen und Zeitraum sowie die Prüfsumme — niemals Namen
+oder andere personenbezogene Daten.
+{% endcomment %}
+
+{% block title %}Teilnahmenachweis prüfen{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto py-10">
+    {% if valid %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-green-200 dark:border-green-800 p-6">
+        <div class="flex items-center gap-3 mb-4">
+            <span class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30">
+                <i data-lucide="check-circle" class="w-6 h-6 text-green-600 dark:text-green-400"></i>
+            </span>
+            <div>
+                <h1 class="text-xl font-bold text-gray-900 dark:text-white">Nachweis gültig</h1>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Dieser Teilnahmenachweis wurde von mandari ausgestellt.</p>
+            </div>
+        </div>
+        <dl class="divide-y divide-gray-100 dark:divide-gray-700/50 text-sm">
+            <div class="py-3 flex justify-between gap-4">
+                <dt class="text-gray-500 dark:text-gray-400">Ausgestellt am</dt>
+                <dd class="font-medium text-gray-900 dark:text-white">{{ certificate.issued_at|date:"d.m.Y H:i" }} Uhr</dd>
+            </div>
+            <div class="py-3 flex justify-between gap-4">
+                <dt class="text-gray-500 dark:text-gray-400">Organisation</dt>
+                <dd class="font-medium text-gray-900 dark:text-white">{{ certificate.organization.name }}</dd>
+            </div>
+            <div class="py-3 flex justify-between gap-4">
+                <dt class="text-gray-500 dark:text-gray-400">Bestätigte Teilnahmen</dt>
+                <dd class="font-medium text-gray-900 dark:text-white">{{ certificate.attendance_count }}</dd>
+            </div>
+            <div class="py-3 flex justify-between gap-4">
+                <dt class="text-gray-500 dark:text-gray-400">Zeitraum</dt>
+                <dd class="font-medium text-gray-900 dark:text-white">
+                    {{ certificate.period_start|date:"d.m.Y" }} – {{ certificate.period_end|date:"d.m.Y" }}
+                </dd>
+            </div>
+            <div class="py-3 flex justify-between gap-4">
+                <dt class="text-gray-500 dark:text-gray-400">Prüfsumme</dt>
+                <dd class="font-mono text-xs text-gray-700 dark:text-gray-300 break-all text-right">{{ certificate.checksum }}</dd>
+            </div>
+        </dl>
+        <p class="mt-4 text-xs text-gray-400 dark:text-gray-500">
+            Aus Datenschutzgründen zeigt diese Seite keine personenbezogenen Daten.
+            Der Name der Inhaberin/des Inhabers steht ausschließlich im vorgezeigten PDF-Dokument.
+        </p>
+    </div>
+    {% else %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-800 p-6">
+        <div class="flex items-center gap-3 mb-2">
+            <span class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30">
+                <i data-lucide="x-circle" class="w-6 h-6 text-red-600 dark:text-red-400"></i>
+            </span>
+            <h1 class="text-xl font-bold text-gray-900 dark:text-white">Nachweis ungültig</h1>
+        </div>
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+            Zu diesem Prüfcode ist kein Teilnahmenachweis bekannt. Bitte prüfen Sie den Code
+            bzw. den QR-Link auf dem Dokument.
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

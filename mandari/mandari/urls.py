@@ -13,6 +13,7 @@ from django.shortcuts import redirect, render
 from django.urls import include, path, re_path
 from django.views.static import serve as static_serve
 
+from apps.work.faction.views.certificates import CertificateVerifyView
 from mandari import pwa
 
 
@@ -80,6 +81,13 @@ urlpatterns = [
     path("session/", include("apps.session.urls", namespace="session")),
     # Work module (portal for organizations)
     path("work/", include("apps.work.urls", namespace="work")),
+    # Öffentliche Verifikation von Teilnahmenachweisen (Issue #68) —
+    # opakes Token, ohne Login, ohne Personenbezug
+    path(
+        "nachweis/<slug:token>/",
+        CertificateVerifyView.as_view(),
+        name="certificate_verify",
+    ),
     # Insight Core (RIS Portal, public protocols, body sitemaps)
     path("", include("insight_core.urls")),
 ]

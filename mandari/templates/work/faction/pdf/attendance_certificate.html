@@ -1,0 +1,59 @@
+{% extends "work/faction/pdf/base_pdf.html" %}
+{% comment %}
+Teilnahmenachweis-PDF (Issue #68): vom Vorstand final bestätigte
+Teilnahmen eines Mitglieds im gewählten Zeitraum, mit Prüfcode + QR.
+Der Name der Inhaberin/des Inhabers steht NUR in diesem PDF — die
+öffentliche Verifikations-Seite zeigt keinerlei Personenbezug.
+{% endcomment %}
+
+{% block content %}
+    <h1>Teilnahmenachweis</h1>
+    <p>
+        Hiermit wird bestätigt, dass <strong>{{ holder_name }}</strong> im Zeitraum
+        <strong>{{ certificate.period_start|date:"d.m.Y" }} bis {{ certificate.period_end|date:"d.m.Y" }}</strong>
+        an den folgenden <strong>{{ certificate.attendance_count }}</strong> Fraktionssitzungen von
+        <strong>{{ organization.name }}</strong> teilgenommen hat.
+        Grundlage sind ausschließlich die vom Vorstand final bestätigten Teilnahmen.
+    </p>
+
+    <table class="agenda">
+        <tr>
+            <td class="top-nr"><strong>Datum</strong></td>
+            <td><strong>Sitzung</strong></td>
+            <td><strong>Teilnahmeart</strong></td>
+            <td><strong>Bestätigungsvermerk</strong></td>
+        </tr>
+        {% for attendance in attendances %}
+        <tr>
+            <td class="top-nr">{{ attendance.meeting.start|date:"d.m.Y" }}</td>
+            <td>{{ attendance.meeting.title }}</td>
+            <td>{{ attendance.get_participation_type_display }}</td>
+            <td>
+                Bestätigt durch
+                {% if attendance.confirmed_final_by %}{{ attendance.confirmed_final_by.user.get_display_name }}{% else %}den Vorstand{% endif %},
+                {{ attendance.confirmed_final_at|date:"d.m.Y" }}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Verifikation</h2>
+    <p class="muted">
+        Die Echtheit dieses Nachweises kann öffentlich und ohne Anmeldung geprüft werden.
+        Die Verifikations-Seite zeigt keinerlei personenbezogene Daten — nur Gültigkeit,
+        Ausstellungsdatum, Organisation, Anzahl und Zeitraum.
+    </p>
+    {% if qr_data_uri %}
+    <p><img src="{{ qr_data_uri }}" style="width: 30mm; height: 30mm;" alt="QR-Code zur Verifikation"></p>
+    {% endif %}
+    <table class="meta-table">
+        <tr><td><strong>Prüf-URL:</strong></td><td>{{ verify_url }}</td></tr>
+        <tr><td><strong>Prüfcode:</strong></td><td>{{ certificate.token }}</td></tr>
+        <tr><td><strong>Prüfsumme:</strong></td><td>{{ certificate.checksum }}</td></tr>
+        <tr><td><strong>Ausgestellt am:</strong></td><td>{{ certificate.issued_at|date:"d.m.Y H:i" }} Uhr</td></tr>
+    </table>
+
+    <div class="signature">
+        <p>{{ organization.name }}</p>
+    </div>
+{% endblock %}

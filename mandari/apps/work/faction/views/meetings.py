@@ -95,6 +95,16 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
 
         context["status_choices"] = FactionMeeting.STATUS_CHOICES
 
+        # Teilnahmenachweis (Issue #68): Standard-Zeitraum + Sammel-Export-Recht
+        from datetime import date as _date
+
+        from ..invitations import can_confirm_attendance
+
+        today = timezone.localdate()
+        context["certificate_default_from"] = _date(today.year, 1, 1)
+        context["certificate_default_to"] = today
+        context["can_export_attendance"] = can_confirm_attendance(self.membership)
+
         return context
 
     def post(self, request, *args, **kwargs):

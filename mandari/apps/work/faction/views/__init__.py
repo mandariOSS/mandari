@@ -19,6 +19,11 @@ from .actions import (
 from .audit import (
     FactionAuditLogView,
 )
+from .certificates import (
+    CertificateVerifyView,
+    FactionAttendanceExportView,
+    FactionCertificateDownloadView,
+)
 from .exports import (
     FactionProtocolPdfView,
 )
@@ -35,8 +40,11 @@ from .settings import (
 )
 
 __all__ = [
+    "CertificateVerifyView",
     "FactionActionView",
+    "FactionAttendanceExportView",
     "FactionAuditLogView",
+    "FactionCertificateDownloadView",
     "FactionItemPanelActionView",
     "FactionItemPanelView",
     "FactionMeetingDetailView",
