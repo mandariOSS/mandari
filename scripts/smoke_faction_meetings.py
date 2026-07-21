@@ -30,6 +30,23 @@ Prüft:
 - NÖ strikt (Issue #64): Nicht-Vereidigte sehen von NÖ-TOPs NICHTS außer
   "Gesperrte Information" — über alle Ausgabewege (Detail, Panel, Aktionen,
   Historie, Mails/PDFs); auch das Vorschlagen von NÖ-TOPs nur für Vereidigte
+
+Welle 2 (Issues #62, #63, #65, #67, #69):
+- Einladungslogik (#62): Opt-in/Opt-out-Matrix, konfigurierbarer Vorlauf,
+  Freigabe-Modus mit Hinweisen an Vorstand/Vorsitz (E-Mail abschaltbar),
+  Freigabe durch den stellv. Vorsitz ohne Delegation (auditiert WER),
+  automatischer Versand zum Vorlaufzeitpunkt (einmalig)
+- Standard-TOP 1 (#63): verbindlicher Default-Text, "Ja mit Änderungen"
+  genehmigt, danach ENDGÜLTIGE Sperre (Views UND Modellebene, auch für
+  Admins), Korrekturen nur als sichtbarer Nachtrag (auditiert)
+- Teilnahme-Workflow (#67): Teilnahmeart vor Ort/online, finale
+  Bestätigung durch den Vorstand (Zeitstempel + Bestätiger, Vertreter-Fall),
+  danach Teilnahme-Änderungen gesperrt
+- Quorum (#69): beschlussfähig ab MEHR als 50 % der Stimmberechtigten,
+  gemeinsamer Baustein mit dem Session-RIS
+- Eigene Absender-Mail (#65): Versand über organisationseigenes SMTP
+  (gemockt) mit Fallback-Verhalten, Testmail, SPF/DKIM-Hinweis,
+  Passwort nur verschlüsselt und nie im Klartext sichtbar
 """
 
 import base64
@@ -568,10 +585,25 @@ check(
     audit_qs.filter(action="create", object_id=top_pub.id, is_internal=False).exists(),
 )
 
-# Verschlüsselte Felder erscheinen nie im Klartext
-entry_int.set_content_encrypted("SUPERGEHEIM-NEU-999")
-entry_int.save()
-masked_entry = audit_qs.filter(model_name="FactionProtocolEntry", object_id=entry_int.id, action="update").first()
+# Verschlüsselte Felder erscheinen nie im Klartext — Edit auf einer noch
+# NICHT genehmigten Sitzung (genehmigte Protokolle sind seit #63 endgültig
+# gesperrt, siehe Phase L)
+meeting_h = FactionMeeting.objects.create(
+    organization=org,
+    title="Audit-Sitzung H",
+    start=now - timedelta(days=2),
+    status="completed",
+    created_by=chair_ms,
+)
+top_int_h = FactionAgendaItem.objects.create(
+    meeting=meeting_h, title="GEHEIM-TOP-H", number="NÖ 1", visibility="internal"
+)
+entry_h = FactionProtocolEntry(meeting=meeting_h, agenda_item=top_int_h, entry_type="note", created_by=chair_ms, order=1)
+entry_h.set_content_encrypted("GEHEIM-ALT-H")
+entry_h.save()
+entry_h.set_content_encrypted("SUPERGEHEIM-NEU-999")
+entry_h.save()
+masked_entry = audit_qs.filter(model_name="FactionProtocolEntry", object_id=entry_h.id, action="update").first()
 check("Änderung an verschlüsseltem Feld protokolliert", masked_entry is not None)
 if masked_entry:
     changes_text = str(masked_entry.changes)
@@ -823,7 +855,7 @@ html = resp.content.decode("utf-8")
 check("Detail (Nicht-Vereidigter) -> 200", resp.status_code == 200, f"got {resp.status_code}")
 check("Detail: Platzhalter 'Gesperrte Information'", "Gesperrte Information" in html)
 check("Detail: NÖ-Titel NICHT sichtbar", "GEHEIM-TOP-OMEGA" not in html)
-check("Detail: NÖ-Protokolleintrag NICHT sichtbar", "SUPERGEHEIM-NEU-999" not in html)
+check("Detail: NÖ-Protokolleintrag NICHT sichtbar", "GEHEIMER-EINTRAG-456" not in html)
 check("Detail: gesperrte Anzahl angezeigt", "gesperrt" in html)
 
 resp = sworn.get(f"{base}/faction/{meeting1.id}/")
@@ -970,6 +1002,724 @@ check(
 resp = auditor.get(f"{base}/faction/historie/?object={top_int2.id}")
 html = resp.content.decode("utf-8")
 check("Historie: NÖ-TOP 2 maskiert", "GEHEIM-ZWEI-PSI" not in html)
+
+# =============================================================================
+# Phase K: Einladungslogik je Organisation (Issue #62)
+# =============================================================================
+print()
+print("=== Phase K: Einladungslogik — Opt-in/Opt-out, Vorlauf, Freigabe ===")
+
+from unittest import mock  # noqa: E402
+
+from apps.tenants.models import Role as _Role  # noqa: E402
+from apps.work.faction.invitations import (  # noqa: E402
+    can_release_invitations,
+    get_invitation_settings,
+    is_board_member,
+    run_faction_invitation_pass,
+)
+from apps.work.notifications.models import Notification, NotificationPreference  # noqa: E402
+
+# Stellv. Vorsitz: Vorstands-Rolle OHNE faction.invite — beweist, dass die
+# Rolle allein zur Freigabe berechtigt (Vertretung ohne formale Delegation)
+stellv_role, _ = _Role.objects.get_or_create(organization=org, name="Stellv. Vorsitz")
+stellv_role.is_admin = False
+stellv_role.save()
+stellv_role.permissions.set([perm("faction.view_public")])
+stellv_user = User.objects.create_user(email="stellv@example.org", password="pw-Smoke-Test-1!")
+stellv_ms = Membership.objects.create(user=stellv_user, organization=org)
+stellv_ms.roles.add(stellv_role)
+stellv = Client()
+stellv.force_login(stellv_user)
+
+check("Stellv. Vorsitz ist Vorstand (Rolle)", is_board_member(stellv_ms) is True)
+check("Stellv. Vorsitz ohne faction.invite", stellv_ms.has_permission("faction.invite") is False)
+check("Stellv. Vorsitz darf freigeben", can_release_invitations(stellv_ms) is True)
+check("Vereidigter ohne Rolle/Recht darf NICHT freigeben", can_release_invitations(sworn_ms) is False)
+
+# Einstellungen: Opt-out, 48 h Vorlauf, Versand nach Freigabe (über die UI)
+resp = chair.post(
+    f"{base}/organization/faction-settings/",
+    {
+        "auto_create_approval_item": "on",
+        "link_previous_meeting": "on",
+        "protocol_revision_safe": "on",
+        "auto_lock_protocol_on_complete": "on",
+        "require_protocol_approval": "on",
+        "publish_protocols": "on",
+        "invitation_mode": "opt_out",
+        "invitation_lead_hours": "48",
+        "invitation_dispatch": "approval",
+        "quorum_rule": "majority",
+    },
+)
+org.refresh_from_db()
+inv_settings = get_invitation_settings(org)
+check(
+    "Einstellungen gespeichert (Opt-out, 48 h, Freigabe)",
+    inv_settings["invitation_mode"] == "opt_out"
+    and inv_settings["invitation_lead_hours"] == 48
+    and inv_settings["invitation_dispatch"] == "approval",
+    str(inv_settings),
+)
+
+# Sitzung in 36 h -> Versandzeitpunkt (Beginn - 48 h) liegt bereits in der
+# Vergangenheit -> Freigabe-Hinweis (3 h) fällig, aber KEIN Versand
+start4 = (now + timedelta(hours=36)).replace(minute=0, second=0, microsecond=0)
+resp = chair.post(
+    f"{base}/faction/",
+    {
+        "title": "Freigabe-Sitzung K4",
+        "start_date": timezone.localtime(start4).strftime("%Y-%m-%d"),
+        "start_time": timezone.localtime(start4).strftime("%H:%M"),
+    },
+)
+meeting4 = FactionMeeting.objects.filter(organization=org, title="Freigabe-Sitzung K4").first()
+check("Sitzung K4 existiert", meeting4 is not None)
+
+mail.outbox = []
+stats = run_faction_invitation_pass()
+meeting4.refresh_from_db()
+check("Freigabe-Modus: KEIN automatischer Versand", meeting4.invitation_sent is False, str(stats))
+check("Freigabe-Hinweis versandt (Statistik)", stats.get("notices", 0) >= 1, str(stats))
+check(
+    "Hinweis-E-Mail nur an den Vorstand (Stellv. Vorsitz)",
+    len(mail.outbox) == 1 and mail.outbox[0].to == ["stellv@example.org"],
+    f"outbox={[(m.to, m.subject) for m in mail.outbox]}",
+)
+check("Hinweis-Betreff 'Freigabe erforderlich'", "Freigabe erforderlich" in mail.outbox[0].subject)
+check(
+    "In-App-Benachrichtigung für den Vorstand",
+    Notification.objects.filter(
+        recipient=stellv_ms, notification_type="faction_inv_release", metadata__meeting_id=str(meeting4.id)
+    ).exists(),
+)
+check("Hinweis-Zeitstempel gesetzt", meeting4.release_notice_final_sent_at is not None)
+check(
+    "Freigabe-Hinweis auditiert",
+    FactionAuditLog.objects.filter(organization=org, action="release_notice_sent", object_id=meeting4.id).exists(),
+)
+
+mail.outbox = []
+stats2 = run_faction_invitation_pass()
+check("Zweiter Lauf: kein doppelter Hinweis", len(mail.outbox) == 0, str(stats2))
+
+# Nicht-Berechtigter kann nicht freigeben
+resp = sworn.post(f"{base}/faction/{meeting4.id}/action/", {"action": "release_invitations"})
+meeting4.refresh_from_db()
+check("Freigabe durch Unberechtigten wirkungslos", meeting4.invitation_released_at is None)
+
+# Freigabe durch den stellv. Vorsitz -> sofortiger Versand (Zeitpunkt überschritten)
+mail.outbox = []
+resp = stellv.post(f"{base}/faction/{meeting4.id}/action/", {"action": "release_invitations"})
+meeting4.refresh_from_db()
+check("Freigabe durch Stellv. -> OK", resp.status_code in (200, 302), f"got {resp.status_code}")
+check("Nach Freigabe versendet", meeting4.invitation_sent is True and len(mail.outbox) > 0)
+check("Freigebender auditiert (Feld)", meeting4.invitation_released_by_id == stellv_ms.id)
+release_audit = FactionAuditLog.objects.filter(
+    organization=org, action="invitation_released", object_id=meeting4.id
+).first()
+check(
+    "Audit: invitation_released mit Akteur", release_audit is not None and release_audit.membership_id == stellv_ms.id
+)
+
+# Opt-out: alle angeschriebenen Mitglieder gelten als angemeldet ("Zugesagt")
+member_states = list(meeting4.attendances.filter(membership__isnull=False).values_list("status", flat=True))
+check(
+    "Opt-out: alle Mitglieder auf 'Zugesagt'",
+    member_states and all(s == "confirmed" for s in member_states),
+    str(member_states),
+)
+optout_mail = mail.outbox[0]
+check("Opt-out-Hinweistext in der E-Mail", "angemeldet" in optout_mail.body)
+
+# Abmelden bleibt möglich (Opt-out = man meldet sich AB)
+resp = sworn.post(f"{base}/faction/{meeting4.id}/action/", {"action": "respond", "status": "declined"})
+check(
+    "Opt-out: Absage weiterhin möglich",
+    meeting4.attendances.get(membership=sworn_ms).status == "declined",
+)
+
+# E-Mail-Hinweise individuell abschaltbar (Benachrichtigungseinstellungen)
+prefs, _ = NotificationPreference.objects.get_or_create(membership=stellv_ms)
+prefs.type_settings = {"faction_inv_release": {"in_app": True, "email": False}}
+prefs.save()
+
+start5 = (now + timedelta(hours=30)).replace(minute=0, second=0, microsecond=0)
+resp = chair.post(
+    f"{base}/faction/",
+    {
+        "title": "Freigabe-Sitzung K5",
+        "start_date": timezone.localtime(start5).strftime("%Y-%m-%d"),
+        "start_time": timezone.localtime(start5).strftime("%H:%M"),
+    },
+)
+meeting5 = FactionMeeting.objects.filter(organization=org, title="Freigabe-Sitzung K5").first()
+mail.outbox = []
+run_faction_invitation_pass()
+check("Abgeschaltete Hinweis-Mail: keine E-Mail", len(mail.outbox) == 0)
+check(
+    "Abgeschaltete Hinweis-Mail: In-App bleibt",
+    Notification.objects.filter(
+        recipient=stellv_ms, notification_type="faction_inv_release", metadata__meeting_id=str(meeting5.id)
+    ).exists(),
+)
+FactionMeeting.objects.filter(pk=meeting5.pk).update(status="cancelled")
+
+# Opt-in + automatischer Versand zum Vorlaufzeitpunkt
+_settings = org.settings or {}
+_settings.setdefault("faction", {}).update({"invitation_mode": "opt_in", "invitation_dispatch": "automatic"})
+org.settings = _settings
+org.save(update_fields=["settings"])
+
+start6 = (now + timedelta(hours=36)).replace(minute=0, second=0, microsecond=0)
+resp = chair.post(
+    f"{base}/faction/",
+    {
+        "title": "Auto-Sitzung K6",
+        "start_date": timezone.localtime(start6).strftime("%Y-%m-%d"),
+        "start_time": timezone.localtime(start6).strftime("%H:%M"),
+    },
+)
+meeting6 = FactionMeeting.objects.filter(organization=org, title="Auto-Sitzung K6").first()
+mail.outbox = []
+stats = run_faction_invitation_pass()
+meeting6.refresh_from_db()
+check(
+    "Automatischer Versand zum Vorlaufzeitpunkt", meeting6.invitation_sent is True and len(mail.outbox) > 0, str(stats)
+)
+check("Status nach Auto-Versand = invited", meeting6.status == "invited")
+optin_states = set(meeting6.attendances.filter(membership__isnull=False).values_list("status", flat=True))
+check("Opt-in: Status bleibt 'Eingeladen'", optin_states == {"invited"}, str(optin_states))
+check(
+    "Auto-Versand auditiert (invitation_sent)",
+    FactionAuditLog.objects.filter(organization=org, action="invitation_sent", object_id=meeting6.id).exists(),
+)
+
+mail.outbox = []
+stats2 = run_faction_invitation_pass()
+check("Auto-Versand einmalig", len(mail.outbox) == 0, str(stats2))
+
+# =============================================================================
+# Phase L: Standard-TOP 1 + endgültige Protokollsperre + Nachtrag (Issue #63)
+# =============================================================================
+print()
+print("=== Phase L: Standard-TOP 1, Endgültigkeit, Nachtrag ===")
+
+from apps.work.faction.services import ProtocolApprovalService  # noqa: E402
+
+# Verbindlicher Default-Text (leere Vorlagen fallen auf den Default zurück)
+ml_a = FactionMeeting.objects.create(
+    organization=org,
+    title="L-Sitzung A",
+    start=now - timedelta(days=3),
+    status="completed",
+    created_by=chair_ms,
+)
+ml_entry = FactionProtocolEntry(meeting=ml_a, entry_type="note", created_by=chair_ms, order=1)
+ml_entry.set_content_encrypted("L-ORIGINAL-EINTRAG")
+ml_entry.save()
+
+ml_b = FactionMeeting.objects.create(
+    organization=org,
+    title="L-Sitzung B",
+    start=now + timedelta(days=21),
+    status="planned",
+    created_by=chair_ms,
+    previous_meeting=ml_a,
+)
+ml_approval = ProtocolApprovalService.auto_create_approval_item(ml_b)
+check(
+    "Standard-TOP 1: verbindlicher Default-Text",
+    ml_approval is not None and ml_approval.title == "Tagesordnung festlegen und letztes Protokoll genehmigen",
+    ml_approval.title if ml_approval else "fehlt",
+)
+
+# Während des TOPs: neue TOPs zur aktuellen Sitzung aufnehmen (Vorsitz)
+resp = chair.post(
+    f"{base}/faction/{ml_b.id}/action/",
+    {"action": "add_item", "title": "L-NEUER-TOP-WAEHREND-TOP1"},
+)
+check(
+    "Neue TOPs zur aktuellen Sitzung möglich",
+    ml_b.agenda_items.filter(title="L-NEUER-TOP-WAEHREND-TOP1").exists(),
+)
+
+# Vorprotokoll-Einträge der VORHERIGEN Sitzung vor der Genehmigung anpassbar
+resp = chair.post(
+    f"{base}/faction/{ml_a.id}/action/",
+    {"action": "edit_entry", "entry_id": str(ml_entry.id), "content": "L-ORIGINAL-EINTRAG-ANGEPASST"},
+)
+ml_entry.refresh_from_db()
+check(
+    "Vorprotokoll vor Genehmigung anpassbar (Vorsitz)",
+    ml_entry.get_content_decrypted() == "L-ORIGINAL-EINTRAG-ANGEPASST",
+)
+
+# "Ja mit Änderungen" (modified) genehmigt das Vorprotokoll ebenfalls
+resp = chair.post(
+    f"{base}/faction/{ml_b.id}/action/",
+    {
+        "action": "record_decision",
+        "agenda_item_id": str(ml_approval.id),
+        "votes_yes": "4",
+        "votes_no": "0",
+        "votes_abstain": "1",
+        "result": "modified",
+    },
+)
+ml_a.refresh_from_db()
+check(
+    "'Ja mit Änderungen' genehmigt das Vorprotokoll",
+    ml_a.protocol_approved is True and ml_a.protocol_status == "approved",
+    f"{ml_a.protocol_approved}/{ml_a.protocol_status}",
+)
+
+# Endgültige Sperre — auch für den Vorsitz mit allen Rechten ("Admin")
+resp = chair.post(
+    f"{base}/faction/{ml_a.id}/action/",
+    {"action": "edit_entry", "entry_id": str(ml_entry.id), "content": "HACK-VERSUCH"},
+)
+ml_entry.refresh_from_db()
+check(
+    "Nach Genehmigung: edit_entry -> 403, Inhalt unverändert",
+    resp.status_code == 403 and ml_entry.get_content_decrypted() == "L-ORIGINAL-EINTRAG-ANGEPASST",
+    f"got {resp.status_code}",
+)
+resp = chair.post(f"{base}/faction/{ml_a.id}/action/", {"action": "delete_entry", "entry_id": str(ml_entry.id)})
+check(
+    "Nach Genehmigung: delete_entry -> 403, Eintrag bleibt",
+    resp.status_code == 403 and FactionProtocolEntry.objects.filter(pk=ml_entry.pk).exists(),
+    f"got {resp.status_code}",
+)
+
+# Modellebene: Save-/Delete-Guard greift auch ohne View
+try:
+    ml_entry.set_content_encrypted("HACK-DIREKT")
+    ml_entry.save()
+    check("Modell-Sperre: save() verweigert", False)
+except ValueError:
+    check("Modell-Sperre: save() verweigert", True)
+try:
+    ml_entry.delete()
+    check("Modell-Sperre: delete() verweigert", False)
+except ValueError:
+    check("Modell-Sperre: delete() verweigert", True)
+ml_entry.refresh_from_db()
+check("Original nach Sperr-Versuchen intakt", ml_entry.get_content_decrypted() == "L-ORIGINAL-EINTRAG-ANGEPASST")
+
+# Normale Einträge nach Genehmigung: abgelehnt (nur Nachtrag)
+entry_count = ml_a.protocol_entries.count()
+resp = chair.post(
+    f"{base}/faction/{ml_a.id}/action/",
+    {"action": "add_entry", "entry_type": "note", "content": "kein-normaler-eintrag"},
+)
+check(
+    "Nach Genehmigung: normale Einträge -> 403",
+    resp.status_code == 403 and ml_a.protocol_entries.count() == entry_count,
+    f"got {resp.status_code}",
+)
+
+# Nachtrag durch den Vorsitz: sichtbar gekennzeichnet + auditiert
+resp = chair.post(
+    f"{base}/faction/{ml_a.id}/action/",
+    {"action": "add_entry", "entry_type": "addendum", "content": "NACHTRAG-KORREKTUR-001"},
+)
+addendum = ml_a.protocol_entries.filter(entry_type="addendum").first()
+check("Nachtrag angelegt", addendum is not None and addendum.get_content_decrypted() == "NACHTRAG-KORREKTUR-001")
+check("Nachtrag sichtbar gekennzeichnet", addendum is not None and addendum.get_entry_type_display() == "Nachtrag")
+check(
+    "Nachtrag auditiert",
+    addendum is not None
+    and FactionAuditLog.objects.filter(organization=org, action="addendum", object_id=addendum.id).exists(),
+)
+
+# Nachtrag ohne Protokollrechte -> 403
+resp = sworn.post(
+    f"{base}/faction/{ml_a.id}/action/",
+    {"action": "add_entry", "entry_type": "addendum", "content": "unberechtigt"},
+)
+check(
+    "Nachtrag ohne Protokollrecht -> 403",
+    resp.status_code == 403 and ml_a.protocol_entries.filter(entry_type="addendum").count() == 1,
+    f"got {resp.status_code}",
+)
+
+# Auch Nachträge sind nach dem Anlegen unveränderbar
+resp = chair.post(
+    f"{base}/faction/{ml_a.id}/action/",
+    {"action": "edit_entry", "entry_id": str(addendum.id), "content": "nachtrag-manipuliert"},
+)
+addendum.refresh_from_db()
+check(
+    "Nachtrag selbst unveränderbar",
+    resp.status_code == 403 and addendum.get_content_decrypted() == "NACHTRAG-KORREKTUR-001",
+    f"got {resp.status_code}",
+)
+
+# =============================================================================
+# Phase M: Teilnahme-Workflow — Teilnahmeart + Vorstands-Bestätigung (Issue #67)
+# =============================================================================
+print()
+print("=== Phase M: Teilnahmeart + Vorstands-Bestätigung ===")
+
+start_m = (now + timedelta(days=2)).replace(minute=0, second=0, microsecond=0)
+resp = chair.post(
+    f"{base}/faction/",
+    {
+        "title": "Teilnahme-Sitzung M",
+        "start_date": timezone.localtime(start_m).strftime("%Y-%m-%d"),
+        "start_time": timezone.localtime(start_m).strftime("%H:%M"),
+    },
+)
+m67 = FactionMeeting.objects.filter(organization=org, title="Teilnahme-Sitzung M").first()
+check("Sitzung M existiert", m67 is not None)
+FactionMeeting.objects.filter(pk=m67.pk).update(status="ongoing")
+m67.refresh_from_db()
+
+att_sworn = m67.attendances.get(membership=sworn_ms)
+att_unsworn = m67.attendances.get(membership=unsworn_ms)
+
+# Einchecken mit Teilnahmeart online (Geschäftsführung/Fraktionspersonal)
+resp = manager.post(
+    f"{base}/faction/{m67.id}/action/",
+    {"action": "check_in", "attendance_id": str(att_sworn.id), "participation_type": "online"},
+)
+att_sworn.refresh_from_db()
+check(
+    "Check-in mit Teilnahmeart online",
+    att_sworn.status == "present" and att_sworn.participation_type == "online",
+    f"{att_sworn.status}/{att_sworn.participation_type}",
+)
+
+resp = manager.post(
+    f"{base}/faction/{m67.id}/action/",
+    {"action": "check_in", "attendance_id": str(att_unsworn.id)},
+)
+att_unsworn.refresh_from_db()
+check("Check-in Default vor Ort", att_unsworn.status == "present" and att_unsworn.participation_type == "onsite")
+
+# Teilnahmeart umschalten
+resp = manager.post(
+    f"{base}/faction/{m67.id}/action/",
+    {"action": "set_participation", "attendance_id": str(att_sworn.id), "participation_type": "onsite"},
+)
+att_sworn.refresh_from_db()
+check("Teilnahmeart umschaltbar", att_sworn.participation_type == "onsite")
+resp = manager.post(
+    f"{base}/faction/{m67.id}/action/",
+    {"action": "set_participation", "attendance_id": str(att_sworn.id), "participation_type": "online"},
+)
+att_sworn.refresh_from_db()
+check("Teilnahmeart zurück auf online", att_sworn.participation_type == "online")
+
+# Bestätigung erst NACH der Sitzung
+resp = stellv.post(f"{base}/faction/{m67.id}/action/", {"action": "confirm_attendance"})
+m67.refresh_from_db()
+check("Bestätigung während der Sitzung abgelehnt", m67.attendance_confirmed_at is None)
+
+FactionMeeting.objects.filter(pk=m67.pk).update(status="completed", end=timezone.now())
+m67.refresh_from_db()
+
+# Geschäftsführung (faction.manage, kein Vorstand) darf NICHT bestätigen
+resp = manager.post(f"{base}/faction/{m67.id}/action/", {"action": "confirm_attendance"})
+m67.refresh_from_db()
+check("faction.manage ersetzt den Vorstand nicht", m67.attendance_confirmed_at is None)
+
+# Stellv. Vorsitz bestätigt direkt (ohne formale Delegation) — dokumentiert
+resp = stellv.post(f"{base}/faction/{m67.id}/action/", {"action": "confirm_attendance"})
+m67.refresh_from_db()
+check("Bestätigung durch Stellv. -> gesetzt", m67.attendance_confirmed_at is not None)
+check("Bestätiger dokumentiert", m67.attendance_confirmed_by_id == stellv_ms.id)
+att_sworn.refresh_from_db()
+check(
+    "Snapshot je Teilnahme (Zeitstempel + Bestätiger)",
+    att_sworn.confirmed_final_at is not None and att_sworn.confirmed_final_by_id == stellv_ms.id,
+)
+confirm_audit = FactionAuditLog.objects.filter(
+    organization=org, action="attendance_confirmed", object_id=m67.id
+).first()
+check("Bestätigung auditiert (wer/wann)", confirm_audit is not None and confirm_audit.membership_id == stellv_ms.id)
+
+# Nach der Bestätigung: Teilnahme-Änderungen gesperrt
+resp = manager.post(
+    f"{base}/faction/{m67.id}/action/",
+    {"action": "check_in", "attendance_id": str(att_unsworn.id)},
+)
+check("Nach Bestätigung: check_in -> 403", resp.status_code == 403, f"got {resp.status_code}")
+resp = manager.post(
+    f"{base}/faction/{m67.id}/action/",
+    {"action": "set_participation", "attendance_id": str(att_sworn.id), "participation_type": "onsite"},
+)
+att_sworn.refresh_from_db()
+check(
+    "Nach Bestätigung: Teilnahmeart gesperrt",
+    resp.status_code == 403 and att_sworn.participation_type == "online",
+    f"got {resp.status_code}",
+)
+resp = manager.post(
+    f"{base}/faction/{m67.id}/action/",
+    {"action": "add_attendee", "attendee_type": "guest", "guest_name": "Später Gast"},
+)
+check("Nach Bestätigung: add_attendee -> 403", resp.status_code == 403, f"got {resp.status_code}")
+
+# Anzeige in der Sitzungsansicht
+resp = chair.get(f"{base}/faction/{m67.id}/")
+html = resp.content.decode("utf-8")
+check("Detail zeigt finale Bestätigung", "Teilnahmen final bestätigt" in html)
+
+# =============================================================================
+# Phase N: Quorum — beschlussfähig ab mehr als 50 % (Issue #69)
+# =============================================================================
+print()
+print("=== Phase N: Quorum ===")
+
+from apps.common.quorum import quorum_status as common_quorum_status  # noqa: E402
+from apps.work.faction.quorum import faction_quorum_status  # noqa: E402
+
+# Gemeinsamer Baustein: Grenzfälle
+q = common_quorum_status(voting_total=4, voting_present=2)
+check("Baustein: genau 50 % ist NICHT beschlussfähig", q["met"] is False and q["required"] == 3, str(q))
+q = common_quorum_status(voting_total=4, voting_present=3)
+check("Baustein: mehr als 50 % ist beschlussfähig", q["met"] is True, str(q))
+q = common_quorum_status(voting_total=0, voting_present=0)
+check("Baustein: ohne Stimmberechtigte nicht beschlussfähig", q["met"] is False)
+q = common_quorum_status(voting_total=4, voting_present=3, rule="unbekannt")
+check("Baustein: unbekannte Regel fällt auf Mehrheitsregel zurück", q["rule"] == "majority")
+
+# Stimmrecht: genau 4 Mitglieder erhalten voting.participate
+voting_role = Role.objects.create(organization=org, name="Stimmrecht-Test", is_admin=False)
+voting_role.permissions.add(perm("voting.participate"))
+for ms in (chair_ms, manager_ms, sworn_ms, unsworn_ms):
+    ms.roles.add(voting_role)
+
+start_n = (now + timedelta(days=3)).replace(minute=0, second=0, microsecond=0)
+resp = chair.post(
+    f"{base}/faction/",
+    {
+        "title": "Quorum-Sitzung N",
+        "start_date": timezone.localtime(start_n).strftime("%Y-%m-%d"),
+        "start_time": timezone.localtime(start_n).strftime("%H:%M"),
+    },
+)
+m69 = FactionMeeting.objects.filter(organization=org, title="Quorum-Sitzung N").first()
+FactionMeeting.objects.filter(pk=m69.pk).update(status="ongoing")
+m69.refresh_from_db()
+
+q = faction_quorum_status(m69)
+check("Fraktion: 4 Stimmberechtigte erkannt", q["voting_total"] == 4, str(q))
+check("Fraktion: ohne Anwesende nicht beschlussfähig", q["met"] is False)
+
+for ms in (chair_ms, sworn_ms):
+    att = m69.attendances.get(membership=ms)
+    manager.post(f"{base}/faction/{m69.id}/action/", {"action": "check_in", "attendance_id": str(att.id)})
+q = faction_quorum_status(m69)
+check("Fraktion: 2 von 4 (genau 50 %) -> NICHT beschlussfähig", q["voting_present"] == 2 and q["met"] is False, str(q))
+
+# Anzeige in der Sitzungsansicht (nicht beschlussfähig)
+resp = chair.get(f"{base}/faction/{m69.id}/")
+html = resp.content.decode("utf-8")
+check("Detail zeigt Beschlussfähigkeit", "Beschlussfähig" in html)
+check("Detail: Nein bei 50 %", "Nein" in html and "2/4 stimmberechtigt" in html)
+
+att = m69.attendances.get(membership=manager_ms)
+manager.post(f"{base}/faction/{m69.id}/action/", {"action": "check_in", "attendance_id": str(att.id)})
+q = faction_quorum_status(m69)
+check("Fraktion: 3 von 4 -> beschlussfähig", q["voting_present"] == 3 and q["met"] is True, str(q))
+resp = chair.get(f"{base}/faction/{m69.id}/")
+html = resp.content.decode("utf-8")
+check("Detail: Ja bei mehr als 50 %", "3/4 stimmberechtigt" in html)
+
+# Online-Teilnahme zählt als Vollteilnahme (Teilnahmeart egal, #67)
+att_online = m69.attendances.get(membership=sworn_ms)
+manager.post(
+    f"{base}/faction/{m69.id}/action/",
+    {"action": "set_participation", "attendance_id": str(att_online.id), "participation_type": "online"},
+)
+q = faction_quorum_status(m69)
+check("Online-Teilnahme zählt voll fürs Quorum", q["voting_present"] == 3 and q["met"] is True, str(q))
+
+# =============================================================================
+# Phase O: Eigene Absender-Mail — SMTP mit Fallback (Issue #65, SMTP gemockt)
+# =============================================================================
+print()
+print("=== Phase O: Eigene Absender-Mail (SMTP gemockt) ===")
+
+from apps.common.org_email import OrgMailError, send_org_email  # noqa: E402
+from django.core.mail import get_connection as _get_connection  # noqa: E402
+
+org.mail_sender_mode = "smtp"
+org.smtp_host = "smtp.example.invalid"
+org.smtp_port = 587
+org.smtp_username = "fraktion"
+org.smtp_from_email = "fraktion@example.org"
+org.smtp_from_name = "Fraktion Testpartei"
+org.smtp_fallback_to_mandari = True
+org.set_smtp_password("geheimes-smtp-passwort")
+org.save()
+org.refresh_from_db()
+
+check("SMTP-Passwort über Accessor lesbar", org.get_smtp_password() == "geheimes-smtp-passwort")
+check(
+    "SMTP-Passwort nicht im Klartext gespeichert",
+    b"geheimes-smtp-passwort" not in bytes(org.smtp_password_encrypted),
+)
+
+
+def _locmem_connection(organization):
+    return _get_connection("django.core.mail.backends.locmem.EmailBackend")
+
+
+# Erfolgsfall: Versand über das (gemockte) Organisations-SMTP mit eigener Absender-Adresse
+mail.outbox = []
+with mock.patch("apps.common.org_email.get_organization_connection", _locmem_connection):
+    ok = send_org_email(org, subject="O-TEST-EIGENES-SMTP", body="Test", to=["vereidigt@example.org"])
+check("Versand über eigenes SMTP -> OK", ok is True and len(mail.outbox) == 1)
+check(
+    "Eigene Absender-Adresse verwendet",
+    mail.outbox[0].from_email == "Fraktion Testpartei <fraktion@example.org>",
+    mail.outbox[0].from_email,
+)
+
+# Fehlerfall MIT Fallback: mandari-Versand übernimmt (sichtbar im Log, Mail kommt an)
+mail.outbox = []
+with mock.patch("apps.common.org_email.get_organization_connection", side_effect=OSError("SMTP kaputt")):
+    ok = send_org_email(org, subject="O-TEST-FALLBACK", body="Test", to=["vereidigt@example.org"])
+check("SMTP-Fehler mit Fallback -> zugestellt", ok is True and len(mail.outbox) == 1)
+check(
+    "Fallback nutzt mandari-Absender (nicht die Org-Adresse)",
+    "fraktion@example.org" not in mail.outbox[0].from_email,
+    mail.outbox[0].from_email,
+)
+
+# Fehlerfall OHNE Fallback: Versand schlägt sichtbar fehl
+org.smtp_fallback_to_mandari = False
+org.save(update_fields=["smtp_fallback_to_mandari"])
+mail.outbox = []
+with mock.patch("apps.common.org_email.get_organization_connection", side_effect=OSError("SMTP kaputt")):
+    try:
+        send_org_email(org, subject="O-TEST-HART", body="Test", to=["vereidigt@example.org"])
+        check("Ohne Fallback: OrgMailError", False)
+    except OrgMailError:
+        check("Ohne Fallback: OrgMailError", True)
+    ok = send_org_email(
+        org, subject="O-TEST-HART-SILENT", body="Test", to=["vereidigt@example.org"], fail_silently=True
+    )
+check("Ohne Fallback: fail_silently -> False, keine Mail", ok is False and len(mail.outbox) == 0)
+
+# Einladungen laufen über den konfigurierten Weg (Erstversand über Org-SMTP)
+org.smtp_fallback_to_mandari = True
+org.save(update_fields=["smtp_fallback_to_mandari"])
+start_o = (now + timedelta(days=4)).replace(minute=0, second=0, microsecond=0)
+resp = chair.post(
+    f"{base}/faction/",
+    {
+        "title": "SMTP-Sitzung O",
+        "start_date": timezone.localtime(start_o).strftime("%Y-%m-%d"),
+        "start_time": timezone.localtime(start_o).strftime("%H:%M"),
+    },
+)
+mo = FactionMeeting.objects.filter(organization=org, title="SMTP-Sitzung O").first()
+mail.outbox = []
+with mock.patch("apps.common.org_email.get_organization_connection", _locmem_connection):
+    resp = chair.post(f"{base}/faction/{mo.id}/action/", {"action": "invite"})
+check("Einladungen über Org-SMTP versendet", len(mail.outbox) > 0)
+check(
+    "Alle Einladungen mit eigener Absender-Adresse",
+    all(m.from_email == "Fraktion Testpartei <fraktion@example.org>" for m in mail.outbox),
+    str({m.from_email for m in mail.outbox}),
+)
+
+# Sichtbares Fehlschlagen beim Einladungsversand (ohne Fallback)
+org.smtp_fallback_to_mandari = False
+org.save(update_fields=["smtp_fallback_to_mandari"])
+start_o2 = (now + timedelta(days=5)).replace(minute=0, second=0, microsecond=0)
+resp = chair.post(
+    f"{base}/faction/",
+    {
+        "title": "SMTP-Sitzung O2",
+        "start_date": timezone.localtime(start_o2).strftime("%Y-%m-%d"),
+        "start_time": timezone.localtime(start_o2).strftime("%H:%M"),
+    },
+)
+mo2 = FactionMeeting.objects.filter(organization=org, title="SMTP-Sitzung O2").first()
+mail.outbox = []
+with mock.patch("apps.common.org_email.get_organization_connection", side_effect=OSError("SMTP kaputt")):
+    resp = chair.post(f"{base}/faction/{mo2.id}/action/", {"action": "invite"})
+check("Ohne Fallback: keine einzige Mail (sichtbares Fehlschlagen)", len(mail.outbox) == 0)
+
+# Einstellungs-UI: Berechtigung, SPF/DKIM-Hinweis, Passwort nie im Klartext
+chair_role = chair_ms.roles.first()
+chair_role.permissions.add(perm("organization.edit"))
+
+resp = manager.get(f"{base}/organization/email-settings/")
+check("E-Mail-Einstellungen ohne organization.edit -> 403", resp.status_code == 403, f"got {resp.status_code}")
+
+resp = chair.get(f"{base}/organization/email-settings/")
+html = resp.content.decode("utf-8")
+check("E-Mail-Einstellungen -> 200", resp.status_code == 200, f"got {resp.status_code}")
+check("SPF/DKIM-Hinweis vorhanden", "SPF" in html and "DKIM" in html)
+check("Passwort NIE im Klartext in der UI", "geheimes-smtp-passwort" not in html)
+check("Hinterlegtes Passwort nur als Status", "hinterlegt" in html)
+
+resp = chair.post(
+    f"{base}/organization/email-settings/",
+    {
+        "action": "save",
+        "mail_sender_mode": "smtp",
+        "smtp_fallback_to_mandari": "on",
+        "smtp_host": "smtp2.example.org",
+        "smtp_port": "2525",
+        "smtp_username": "neuer-user",
+        "smtp_password": "neues-geheimnis",
+        "smtp_use_tls": "on",
+        "smtp_from_email": "fraktion@example.org",
+        "smtp_from_name": "Fraktion Testpartei",
+    },
+)
+org.refresh_from_db()
+check(
+    "Einstellungen gespeichert (Host/Port/Fallback)",
+    org.smtp_host == "smtp2.example.org" and org.smtp_port == 2525 and org.smtp_fallback_to_mandari is True,
+)
+check("Neues Passwort verschlüsselt übernommen", org.get_smtp_password() == "neues-geheimnis")
+
+# Passwort leer lassen = unverändert
+resp = chair.post(
+    f"{base}/organization/email-settings/",
+    {
+        "action": "save",
+        "mail_sender_mode": "smtp",
+        "smtp_fallback_to_mandari": "on",
+        "smtp_host": "smtp2.example.org",
+        "smtp_port": "2525",
+        "smtp_username": "neuer-user",
+        "smtp_password": "",
+        "smtp_use_tls": "on",
+        "smtp_from_email": "fraktion@example.org",
+        "smtp_from_name": "Fraktion Testpartei",
+    },
+)
+org.refresh_from_db()
+check("Leeres Passwortfeld lässt Passwort unverändert", org.get_smtp_password() == "neues-geheimnis")
+
+# Testmail über den konfigurierten Weg
+mail.outbox = []
+with mock.patch("apps.common.org_email.get_organization_connection", _locmem_connection):
+    resp = chair.post(f"{base}/organization/email-settings/", {"action": "send_test"})
+check(
+    "Testmail versendet (an den Auslöser, über Org-SMTP)",
+    len(mail.outbox) == 1 and mail.outbox[0].to == ["vorsitz@example.org"] and "Testmail" in mail.outbox[0].subject,
+    str([(m.to, m.subject, m.from_email) for m in mail.outbox]),
+)
+
+# Zurück auf mandari-Standard: Versand läuft ohne Org-SMTP
+org.mail_sender_mode = "mandari"
+org.save(update_fields=["mail_sender_mode"])
+mail.outbox = []
+ok = send_org_email(org, subject="O-TEST-STANDARD", body="Test", to=["vereidigt@example.org"])
+check("mandari-Standard: Versand ohne Org-SMTP", ok is True and len(mail.outbox) == 1)
+check("mandari-Standard: kein Org-Absender", "fraktion@example.org" not in mail.outbox[0].from_email)
 
 # =============================================================================
 print()
