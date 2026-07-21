@@ -270,8 +270,8 @@ class ProfileAbsenceView(WorkViewMixin, TemplateView):
 
             meetings = FactionMeeting.objects.filter(
                 organization=self.organization,
-                date__range=[start_date, end_date],
-                status__in=["draft", "invited", "scheduled"],
+                start__date__range=(start_date, end_date),
+                status__in=["draft", "planned", "invited"],
             )
 
             for meeting in meetings:
