@@ -60,6 +60,7 @@ class FactionActionView(WorkViewMixin, View):
             # Meeting
             "update": self._update_meeting,
             "invite": self._invite,
+            "release_invitations": self._release_invitations,
             # Agenda
             "add_item": self._add_item,
             "edit_item": self._edit_item,
@@ -253,9 +254,7 @@ class FactionActionView(WorkViewMixin, View):
             messages.error(request, "Keine Berechtigung zum Einladen.")
             return self._redirect_detail(meeting)
 
-        from ..services import FactionMeetingEmailService
-
-        email_service = FactionMeetingEmailService()
+        from ..invitations import dispatch_invitations
 
         if meeting.invitation_sent:
             # Aktualisierung/Nachladung nach TO-Änderungen: erneuter Versand
@@ -265,25 +264,48 @@ class FactionActionView(WorkViewMixin, View):
             meeting.invitation_updated_at = timezone.now()
             meeting.save(update_fields=["invitation_sequence", "invitation_updated_at"])
 
-            sent_count = email_service.send_invitations(meeting, update=True)
+            sent_count = dispatch_invitations(meeting, update=True)
 
             if sent_count > 0:
                 messages.success(request, f"Aktualisierte Einladung an {sent_count} Mitglieder versendet.")
             else:
                 messages.warning(request, "Aktualisierung versendet. Keine E-Mails versendet.")
         else:
-            sent_count = email_service.send_invitations(meeting)
-
-            meeting.invitation_sent = True
-            meeting.invitation_sent_at = timezone.now()
-            meeting.status = "invited"
-            meeting.save()
+            # Zentraler Versandweg (Issue #62): wendet den Opt-in/Opt-out-
+            # Modus der Organisation an und setzt die Versand-Metadaten
+            sent_count = dispatch_invitations(meeting)
 
             if sent_count > 0:
                 messages.success(request, f"Einladungen an {sent_count} Mitglieder versendet.")
             else:
                 messages.warning(request, "Einladungsstatus aktualisiert. Keine E-Mails versendet.")
 
+        return self._refresh_or_redirect(request, meeting)
+
+    def _release_invitations(self, request, meeting):
+        """
+        Einladungsversand freigeben (Freigabe-Modus, Issue #62).
+
+        Vorstand/Vorsitz — auch der stellv. Vorsitz ohne formale Delegation —
+        dürfen freigeben; auditiert wird schlicht, WER es war.
+        """
+        from ..invitations import can_release_invitations, release_invitations
+
+        if not can_release_invitations(self.membership):
+            messages.error(request, "Keine Berechtigung zur Freigabe des Einladungsversands.")
+            if request.headers.get("HX-Request"):
+                return HttpResponse(status=403)
+            return self._redirect_detail(meeting)
+
+        if release_invitations(meeting, self.membership):
+            meeting.refresh_from_db()
+            if meeting.invitation_sent:
+                msg = "Versand freigegeben — Einladungen wurden versendet."
+            else:
+                msg = "Versand freigegeben — Einladungen gehen zum geplanten Zeitpunkt raus."
+            return self._refresh_or_redirect(request, meeting, msg)
+
+        messages.warning(request, "Freigabe nicht möglich (bereits freigegeben oder versendet).")
         return self._refresh_or_redirect(request, meeting)
 
     # -- Agenda handlers -----------------------------------------------

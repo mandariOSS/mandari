@@ -133,6 +133,37 @@
 {% endif %}
 {% endif %}
 
+{# Einladungsfreigabe (Issue #62): Versand wartet auf Freigabe durch Vorstand/Vorsitz #}
+{% if invitation_release_pending and can_release_invitations %}
+<div class="bg-orange-50 dark:bg-orange-900/20 rounded-xl border border-orange-200 dark:border-orange-800 p-4">
+    <h4 class="text-sm font-medium text-orange-800 dark:text-orange-300 mb-2 flex items-center gap-2">
+        <i data-lucide="send" class="w-4 h-4"></i>
+        Einladungsversand freigeben
+    </h4>
+    <p class="text-xs text-orange-700 dark:text-orange-400 mb-3">
+        Geplanter Versand: {{ invitation_dispatch_at|date:"d.m.Y H:i" }} Uhr.
+        Der Versand erfolgt erst nach Freigabe.
+    </p>
+    <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "release_invitations"}'
+          hx-confirm="Einladungsversand jetzt freigeben?"
+          class="w-full">
+        {% csrf_token %}
+        <button type="submit" class="w-full py-2 text-sm font-medium text-orange-700 bg-orange-100 rounded-lg hover:bg-orange-200 flex items-center justify-center gap-2">
+            <i data-lucide="check" class="w-4 h-4"></i>
+            Freigeben
+        </button>
+    </form>
+</div>
+{% elif meeting.invitation_released_at and not meeting.invitation_sent %}
+<div class="bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4">
+    <p class="text-xs text-green-700 dark:text-green-400 flex items-center gap-2">
+        <i data-lucide="check-circle" class="w-4 h-4"></i>
+        Versand freigegeben — Einladungen gehen zum geplanten Zeitpunkt raus.
+    </p>
+</div>
+{% endif %}
+
 {# Actions card #}
 {% if can_edit %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-2">

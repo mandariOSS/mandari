@@ -277,6 +277,30 @@ class FactionMeeting(EncryptionMixin, models.Model):
     )
     reminder_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Erinnerung versendet am")
 
+    # Einladungslogik je Organisation (Issue #62): Im Freigabe-Modus wird der
+    # Versand erst nach ausdrücklicher Freigabe durch Vorstand/Vorsitz
+    # ausgelöst. Stellv. Vorsitz darf ohne formale Delegation direkt
+    # freigeben — auditiert wird schlicht, WER es war.
+    invitation_released_at = models.DateTimeField(
+        blank=True, null=True, verbose_name="Einladungsversand freigegeben am"
+    )
+    invitation_released_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="released_faction_invitations",
+        verbose_name="Freigegeben von",
+    )
+    # Freigabe-Hinweise an Vorstand/Vorsitz (Standard: 24 h und 3 h vor dem
+    # geplanten Versandzeitpunkt) — je Sitzung höchstens einmal
+    release_notice_first_sent_at = models.DateTimeField(
+        blank=True, null=True, verbose_name="Freigabe-Hinweis (24 h) versandt am"
+    )
+    release_notice_final_sent_at = models.DateTimeField(
+        blank=True, null=True, verbose_name="Freigabe-Hinweis (3 h) versandt am"
+    )
+
     # Protocol (encrypted)
     protocol_encrypted = EncryptedTextField(verbose_name="Protokoll")
     protocol_status = models.CharField(
@@ -982,6 +1006,8 @@ class FactionAuditLog(models.Model):
         ("decision", "Abstimmung erfasst"),
         ("generated", "Automatisch erzeugt"),
         ("auto_cancelled", "Automatisch entfallen"),
+        ("invitation_released", "Einladungsversand freigegeben"),
+        ("release_notice_sent", "Freigabe-Hinweis versandt"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

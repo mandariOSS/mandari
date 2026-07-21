@@ -111,6 +111,61 @@
             </div>
         </div>
 
+        <!-- Einladungslogik (Issue #62) -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Einladungen</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                Legen Sie fest, wie Einladungen zu Fraktionssitzungen versendet werden und ob sich
+                Mitglieder anmelden (Opt-in) oder abmelden (Opt-out).
+            </p>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Teilnahme-Modus
+                    </label>
+                    <select name="invitation_mode"
+                            class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                        <option value="opt_in" {% if faction_settings.invitation_mode == "opt_in" %}selected{% endif %}>Opt-in — Teilnehmende melden sich an (Zusagen)</option>
+                        <option value="opt_out" {% if faction_settings.invitation_mode == "opt_out" %}selected{% endif %}>Opt-out — Teilnehmende gelten als angemeldet und melden sich ab</option>
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">
+                        Im Opt-out-Modus stehen alle Eingeladenen nach dem Versand auf „Zugesagt" und können absagen.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Einladungsvorlauf (Stunden vor Sitzungsbeginn)
+                    </label>
+                    <input type="number" name="invitation_lead_hours" min="1" max="1440"
+                           value="{{ faction_settings.invitation_lead_hours }}"
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    <p class="text-xs text-gray-500 mt-1">
+                        z. B. 48 oder 72 — zu diesem Zeitpunkt werden Einladungen automatisch versendet
+                        (bzw. ist der Versand nach Freigabe geplant).
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Versandart
+                    </label>
+                    <select name="invitation_dispatch"
+                            class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                        <option value="automatic" {% if faction_settings.invitation_dispatch == "automatic" %}selected{% endif %}>Automatisch zum Vorlaufzeitpunkt</option>
+                        <option value="approval" {% if faction_settings.invitation_dispatch == "approval" %}selected{% endif %}>Erst nach Freigabe durch Vorstand/Vorsitz</option>
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">
+                        Im Freigabe-Modus werden Vorstand/Vorsitz 24 h und 3 h vor dem geplanten
+                        Versandzeitpunkt benachrichtigt (in-App und E-Mail; E-Mails in den
+                        Benachrichtigungseinstellungen abschaltbar). Der stellv. Vorsitz darf direkt
+                        freigeben — dokumentiert wird, wer freigegeben hat.
+                    </p>
+                </div>
+            </div>
+        </div>
+
         <!-- Public Protocols (Opt-in) -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Öffentliche Protokolle</h3>

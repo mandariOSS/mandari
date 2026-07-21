@@ -287,6 +287,8 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         context["faction_settings"] = settings.get("faction", {})
 
         # Default values for display
+        from apps.work.faction.invitations import INVITATION_DEFAULTS
+
         defaults = {
             "auto_create_approval_item": True,
             "link_previous_meeting": True,
@@ -296,6 +298,8 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
             "first_agenda_title_with_previous": "Genehmigung der Tagesordnung und des Protokolls der Sitzung vom {datum_letzte_sitzung}",
             "first_agenda_title_no_previous": "Genehmigung der Tagesordnung",
             "first_agenda_description": "",
+            # Einladungslogik (Issue #62)
+            **INVITATION_DEFAULTS,
         }
 
         for key, default in defaults.items():
@@ -367,6 +371,21 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         faction_settings["protocol_revision_safe"] = request.POST.get("protocol_revision_safe") == "on"
         faction_settings["auto_lock_protocol_on_complete"] = request.POST.get("auto_lock_protocol_on_complete") == "on"
         faction_settings["require_protocol_approval"] = request.POST.get("require_protocol_approval") == "on"
+
+        # Einladungslogik je Organisation (Issue #62)
+        from apps.work.faction.invitations import INVITATION_DISPATCH_MODES, INVITATION_MODES
+
+        invitation_mode = request.POST.get("invitation_mode", "")
+        if invitation_mode in INVITATION_MODES:
+            faction_settings["invitation_mode"] = invitation_mode
+        invitation_dispatch = request.POST.get("invitation_dispatch", "")
+        if invitation_dispatch in INVITATION_DISPATCH_MODES:
+            faction_settings["invitation_dispatch"] = invitation_dispatch
+        try:
+            lead_hours = int(request.POST.get("invitation_lead_hours", ""))
+            faction_settings["invitation_lead_hours"] = max(1, min(lead_hours, 24 * 60))
+        except (TypeError, ValueError):
+            pass
 
         # Update title templates
         faction_settings["first_agenda_title_with_previous"] = request.POST.get(

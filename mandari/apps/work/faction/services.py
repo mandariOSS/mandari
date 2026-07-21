@@ -106,7 +106,7 @@ class FactionMeetingEmailService:
 
     # -- Einladungen -----------------------------------------------------
 
-    def send_invitations(self, meeting, *, update: bool = False) -> int:
+    def send_invitations(self, meeting, *, update: bool = False, invitation_mode: str = "opt_in") -> int:
         """
         Send invitation emails to all invited members.
 
@@ -114,6 +114,9 @@ class FactionMeetingEmailService:
             update: Aktualisierung/Nachladung nach TO-Änderungen — geht an
                 alle Mitglieder, die nicht abgesagt haben (ICS-SEQUENCE
                 wurde vom Aufrufer bereits erhöht)
+            invitation_mode: Opt-in/Opt-out je Organisation (Issue #62) —
+                steuert nur den Hinweistext (im Opt-out-Modus gilt man als
+                angemeldet und sagt bei Bedarf ab)
 
         Returns the count of successfully sent emails.
         """
@@ -138,12 +141,15 @@ class FactionMeetingEmailService:
                 pdf_full=pdf_full,
                 ics_bytes=ics_bytes,
                 update=update,
+                invitation_mode=invitation_mode,
             ):
                 sent_count += 1
 
         return sent_count
 
-    def _send_invitation_email(self, meeting, attendance, *, pdf_public, pdf_full, ics_bytes, update=False) -> bool:
+    def _send_invitation_email(
+        self, meeting, attendance, *, pdf_public, pdf_full, ics_bytes, update=False, invitation_mode="opt_in"
+    ) -> bool:
         """Send a single invitation email (mit ICS- und Tagesordnungs-Anhang)."""
         user = attendance.membership.user
         if not user.email:
@@ -172,6 +178,8 @@ class FactionMeetingEmailService:
             "internal_agenda_items": internal_items,
             "is_sworn_in": include_internal,
             "is_update": update,
+            "invitation_mode": invitation_mode,
+            "is_opt_out": invitation_mode == "opt_out",
             "meeting_url": meeting_url,
         }
 
@@ -185,7 +193,13 @@ class FactionMeetingEmailService:
             # Fall back to simple text
             html_content = None
             text_content = self._get_simple_invitation_text(
-                meeting, user, public_items, internal_items, meeting_url=meeting_url, update=update
+                meeting,
+                user,
+                public_items,
+                internal_items,
+                meeting_url=meeting_url,
+                update=update,
+                opt_out=invitation_mode == "opt_out",
             )
 
         try:
@@ -209,7 +223,7 @@ class FactionMeetingEmailService:
             return False
 
     def _get_simple_invitation_text(
-        self, meeting, user, public_items=None, internal_items=None, meeting_url="", update=False
+        self, meeting, user, public_items=None, internal_items=None, meeting_url="", update=False, opt_out=False
     ) -> str:
         """Generate simple text fallback for invitation email."""
         intro = (
@@ -247,10 +261,15 @@ class FactionMeetingEmailService:
             for item in internal_items:
                 lines.append(f"TOP {item.number}: {item.title}")
 
+        rsvp_line = (
+            "Du bist angemeldet. Falls du nicht teilnehmen kannst, sage bitte in der Sitzungsansicht ab (Absagen)."
+            if opt_out
+            else "Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen)."
+        )
         lines.extend(
             [
                 "",
-                "Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen).",
+                rsvp_line,
                 "",
                 "Viele Grüße,",
                 f"{meeting.organization.name}",

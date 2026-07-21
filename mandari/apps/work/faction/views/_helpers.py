@@ -97,6 +97,18 @@ def _get_meeting_context(view, meeting):
     can_propose = checker.can_propose_agenda_items()
     can_create_directly = checker.can_create_agenda_items_directly()
 
+    # Einladungslogik (Issue #62): Freigabe-Status für die Sidebar
+    from ..invitations import can_release_invitations as _can_release
+    from ..invitations import get_invitation_settings, invitation_dispatch_at
+
+    inv_settings = get_invitation_settings(view.organization)
+    invitation_release_pending = (
+        inv_settings["invitation_dispatch"] == "approval"
+        and not meeting.invitation_sent
+        and meeting.invitation_released_at is None
+        and meeting.status in ("draft", "planned")
+    )
+
     # Available members (for adding attendees)
     existing_ids = list(attendances.filter(membership__isnull=False).values_list("membership_id", flat=True))
     from apps.tenants.models import Membership
@@ -141,6 +153,10 @@ def _get_meeting_context(view, meeting):
         "can_protocol": can_protocol,
         "can_start": can_start,
         "can_manage_attendance": can_manage_attendance,
+        "invitation_release_pending": invitation_release_pending,
+        "can_release_invitations": _can_release(view.membership),
+        "invitation_dispatch_at": invitation_dispatch_at(meeting, inv_settings),
+        "invitation_settings": inv_settings,
         "can_propose_agenda": can_propose and not can_create_directly,
         "can_approve_proposals": checker.can_approve_agenda_items() or view.membership.has_permission("agenda.manage"),
         "pending_proposals": pending_proposals,

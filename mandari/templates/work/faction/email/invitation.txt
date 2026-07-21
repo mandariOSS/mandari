@@ -33,7 +33,7 @@ Zur Sitzung im Work-Portal:
 {% endfor %}{% endif %}
 Die vollständige Tagesordnung findest du im Anhang (PDF); der Termin liegt als Kalenderdatei (ICS) bei.
 
-Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen):
+{% if is_opt_out %}Du bist angemeldet. Falls du nicht teilnehmen kannst, sage bitte in der Sitzungsansicht ab (Absagen):{% else %}Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen):{% endif %}
 {{ meeting_url }}
 
 ---

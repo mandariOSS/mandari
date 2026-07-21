@@ -192,6 +192,15 @@ def _special_action(old_instance, new_instance) -> str | None:
             return "invitation_updated"
         if old_instance.reminder_sent_at is None and new_instance.reminder_sent_at is not None:
             return "reminder_sent"
+        # Freigabe des Einladungsversands (Issue #62) — auditiert WER freigab
+        if old_instance.invitation_released_at is None and new_instance.invitation_released_at is not None:
+            return "invitation_released"
+        # Freigabe-Hinweis an Vorstand/Vorsitz versandt (Issue #62)
+        if (
+            old_instance.release_notice_first_sent_at != new_instance.release_notice_first_sent_at
+            or old_instance.release_notice_final_sent_at != new_instance.release_notice_final_sent_at
+        ):
+            return "release_notice_sent"
         if not old_instance.protocol_approved and new_instance.protocol_approved:
             return "protocol_approved"
         if old_instance.protocol_status != new_instance.protocol_status and new_instance.protocol_status == "pending":

@@ -125,6 +125,16 @@ def _run_periodic_faction_reminders():
         logger.exception("Periodischer Fraktions-Erinnerungslauf fehlgeschlagen")
 
 
+def _run_periodic_faction_invitations():
+    """Periodischer Einladungslauf für Fraktionssitzungen (Issue #62, cache-gelockt)."""
+    try:
+        from apps.work.faction.invitations import run_faction_invitation_pass
+
+        run_faction_invitation_pass()
+    except Exception:
+        logger.exception("Periodischer Fraktions-Einladungslauf fehlgeschlagen")
+
+
 def _run_periodic_faction_schedule():
     """Periodische Sitzungserzeugung aus Sitzungsreihen (Issue #61, cache-gelockt)."""
     try:
@@ -153,6 +163,9 @@ def _watchdog_loop():
     schedule_interval = max(1, int(getattr(settings, "FACTION_SCHEDULE_INTERVAL_MINUTES", 60)))
     minutes_since_schedule = schedule_interval  # erster Lauf direkt nach dem Start
 
+    invitation_interval = max(1, int(getattr(settings, "FACTION_INVITATION_INTERVAL_MINUTES", 15)))
+    minutes_since_invitation = invitation_interval  # erster Lauf direkt nach dem Start
+
     while not _stop_event.is_set():
         try:
             _cleanup_stale_syncs()
@@ -175,6 +188,12 @@ def _watchdog_loop():
             if minutes_since_schedule >= schedule_interval:
                 minutes_since_schedule = 0
                 _run_periodic_faction_schedule()
+
+            # Periodischer Einladungsversand/Freigabe-Hinweise (Issue #62)
+            minutes_since_invitation += 1
+            if minutes_since_invitation >= invitation_interval:
+                minutes_since_invitation = 0
+                _run_periodic_faction_invitations()
 
             _wait(60)
         except Exception:
