@@ -403,7 +403,11 @@ list_urls = [
     f"{base}/api/oparl/meetings/",
     f"{base}/api/oparl/papers/",
     f"{base}/api/oparl/organizations/",
-    f"{base}/api/oparl/persons/",
+    f"{base}/api/oparl/people/",
+    f"{base}/api/oparl/agendaitems/",
+    f"{base}/api/oparl/consultations/",
+    f"{base}/api/oparl/files/",
+    f"{base}/api/oparl/memberships/",
 ]
 leaks = []
 for url in list_urls:
@@ -537,14 +541,39 @@ resp = anon.get(f"{base}/api/oparl/meetings/")
 check("OParl-Meetings -> 200 (anonym)", resp.status_code == 200, f"got {resp.status_code}")
 check("OParl-Meetings: nur öffentliche", b"GEHEIME-SITZUNG-A" not in resp.content)
 check("OParl-Meetings: öffentliche enthalten", b"OEFFENTLICHE-SITZUNG-A" in resp.content)
+check("OParl-Meetings: kein NÖ-TOP eingebettet", b"GEHEIMER-TOP-A" not in resp.content)
 
 resp = anon.get(f"{base}/api/oparl/papers/")
 check("OParl-Papers -> 200 (anonym)", resp.status_code == 200, f"got {resp.status_code}")
 check("OParl-Papers: nur öffentliche", b"GEHEIME-VORLAGE-A" not in resp.content)
 check("OParl-Papers: öffentliche enthalten", b"OEFFENTLICHE-VORLAGE-A" in resp.content)
+check("OParl-Papers: keine NÖ-Anlage", b"geheime-anlage-a" not in resp.content)
 
 resp = anon.get(f"{base}/api/oparl/organizations/")
 check("OParl-Organizations: keine Fremddaten", b"FREMDGREMIUM" not in resp.content)
+
+# Alle OParl-Listen anonym erreichbar und frei von NÖ-/Fremd-Markern
+markers = (b"GEHEIM", b"geheime-anlage", b"FREMD", b"fremd-anlage")
+leaks = []
+for segment in ("meetings", "papers", "organizations", "people", "agendaitems", "consultations", "files", "memberships", "legislativeterms"):
+    resp = anon.get(f"{base}/api/oparl/{segment}/")
+    if resp.status_code != 200:
+        leaks.append(f"{segment}: status {resp.status_code}")
+    elif any(m in resp.content for m in markers):
+        leaks.append(f"{segment}: NÖ-/Fremddaten sichtbar")
+check("Alle OParl-Listen: 200 + keine NÖ-/Fremddaten", not leaks, "; ".join(leaks))
+
+# NÖ-Objekt-Endpunkte anonym -> 404 (nie veröffentlicht, kein Tombstone)
+wrong = []
+for kind, pk in [("meeting", meeting_np.id), ("paper", paper_np.id), ("agendaitem", top_np.id), ("file", file_np.id)]:
+    status = anon.get(f"{base}/api/oparl/{kind}/{pk}/").status_code
+    if status != 404:
+        wrong.append(f"{kind}: {status}")
+check("OParl-Objekt-Endpunkte: NÖ-Objekte -> 404", not wrong, "; ".join(wrong))
+
+# NÖ-Datei-Download anonym -> 404
+resp = anon.get(f"{base}/api/oparl/file/{file_np.id}/download/")
+check("OParl-Datei-Download: NÖ-Anlage -> 404", resp.status_code == 404, f"got {resp.status_code}")
 
 # Anonymer Zugriff auf geschützte Views -> Redirect zum Login (kein Inhalt)
 resp = anon.get(f"{base}/meetings/")

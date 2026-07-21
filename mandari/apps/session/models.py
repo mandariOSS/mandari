@@ -1479,6 +1479,94 @@ class SessionApplication(EncryptionMixin, models.Model):
 
 
 # =============================================================================
+# LEGISLATIVE TERM (Wahlperioden, Issue #35)
+# =============================================================================
+
+
+class SessionLegislativeTerm(models.Model):
+    """
+    Wahlperiode eines Mandanten (Issue #35).
+
+    Wird in der Session-OParl-API als ``legislativeTerm`` am Body
+    ausgeliefert. Pflege über den Django-Admin (Systemebene) — eine
+    eigene Portal-UI folgt bei Bedarf.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="legislative_terms",
+        verbose_name="Mandant",
+    )
+
+    name = models.CharField(max_length=255, verbose_name="Name", help_text="z. B. Wahlperiode 2025–2030")
+    start_date = models.DateField(blank=True, null=True, verbose_name="Beginn")
+    end_date = models.DateField(blank=True, null=True, verbose_name="Ende")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_legislative_terms"
+        verbose_name = "Wahlperiode"
+        verbose_name_plural = "Wahlperioden"
+        ordering = ["-start_date", "name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.tenant.name})"
+
+
+# =============================================================================
+# OPARL TOMBSTONES (Issue #35)
+# =============================================================================
+
+
+class SessionOParlTombstone(models.Model):
+    """
+    Tombstone für die Session-OParl-API (Issue #35, OParl 1.1 §2.8).
+
+    Objekte, die einmal öffentlich über die OParl-API ausgeliefert wurden
+    und danach gelöscht oder auf „nicht öffentlich“ gestellt werden,
+    hinterlassen hier einen Grabstein. Die API liefert dafür weiterhin
+    HTTP 200 mit dem gekürzten Objekt (``deleted: true``) und nimmt die
+    Tombstones in ``modified_since``-Listen auf, damit inkrementelle
+    Clients (z. B. der Insight-Ingestor) Löschungen zuverlässig mitbekommen.
+
+    Sicherheit: Ein Tombstone enthält KEINE Inhalte — nur Objekttyp, ID
+    und Zeitstempel.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="oparl_tombstones",
+        verbose_name="Mandant",
+    )
+
+    # Objekttyp = URL-Segment der API (meeting, paper, file, agendaitem, …)
+    oparl_type = models.CharField(max_length=50, verbose_name="Objekttyp")
+    object_id = models.UUIDField(verbose_name="Objekt-ID")
+
+    # created des ursprünglichen Objekts (für das Pflichtfeld created)
+    object_created_at = models.DateTimeField(verbose_name="Objekt erstellt am")
+    deleted_at = models.DateTimeField(default=timezone.now, verbose_name="Gelöscht am")
+
+    class Meta:
+        db_table = "session_oparl_tombstones"
+        verbose_name = "OParl-Tombstone"
+        verbose_name_plural = "OParl-Tombstones"
+        unique_together = ["tenant", "oparl_type", "object_id"]
+        indexes = [
+            models.Index(fields=["tenant", "oparl_type", "deleted_at"]),
+        ]
+
+    def __str__(self):
+        return f"Tombstone {self.oparl_type}/{self.object_id} ({self.tenant.slug})"
+
+
+# =============================================================================
 # CONSULTATION MODELS (Beratungsfolge, Issue #34)
 # =============================================================================
 

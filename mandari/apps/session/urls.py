@@ -8,6 +8,7 @@ All URLs are prefixed with /session/<tenant_slug>/
 from django.urls import path
 
 from . import views
+from .api import oparl as oparl_api_views
 from .api import views as api_views
 
 app_name = "session"
@@ -395,40 +396,36 @@ urlpatterns = [
         api_views.APIRootView.as_view(),
         name="api_root",
     ),
+    # OParl-1.1-API je Mandant (Issue #35) — spec-konform, anonym, JSON
     path(
         "<slug:tenant_slug>/api/oparl/",
-        api_views.OParlSystemView.as_view(),
+        oparl_api_views.system_view,
         name="oparl_system",
     ),
     path(
         "<slug:tenant_slug>/api/oparl/bodies/",
-        api_views.OParlBodyListView.as_view(),
+        oparl_api_views.bodies_view,
         name="oparl_bodies",
     ),
     path(
         "<slug:tenant_slug>/api/oparl/body/",
-        api_views.OParlBodyView.as_view(),
+        oparl_api_views.body_view,
         name="oparl_body",
     ),
     path(
-        "<slug:tenant_slug>/api/oparl/organizations/",
-        api_views.OParlOrganizationListView.as_view(),
-        name="oparl_organizations",
+        "<slug:tenant_slug>/api/oparl/file/<uuid:pk>/download/",
+        oparl_api_views.file_download_view,
+        name="oparl_file_download",
     ),
     path(
-        "<slug:tenant_slug>/api/oparl/persons/",
-        api_views.OParlPersonListView.as_view(),
-        name="oparl_persons",
+        "<slug:tenant_slug>/api/oparl/<str:segment>/",
+        oparl_api_views.list_view,
+        name="oparl_list",
     ),
     path(
-        "<slug:tenant_slug>/api/oparl/meetings/",
-        api_views.OParlMeetingListView.as_view(),
-        name="oparl_meetings",
-    ),
-    path(
-        "<slug:tenant_slug>/api/oparl/papers/",
-        api_views.OParlPaperListView.as_view(),
-        name="oparl_papers",
+        "<slug:tenant_slug>/api/oparl/<str:kind>/<uuid:pk>/",
+        oparl_api_views.object_view,
+        name="oparl_object",
     ),
     # Session API (extended, authenticated)
     path(

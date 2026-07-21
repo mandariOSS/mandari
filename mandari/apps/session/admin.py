@@ -26,6 +26,7 @@ from .models import (
     SessionAuditLog,
     SessionConsultation,
     SessionFile,
+    SessionLegislativeTerm,
     SessionMeeting,
     SessionOrganization,
     SessionPaper,
@@ -524,6 +525,20 @@ class SessionPaperAdmin(ModelAdmin):
         ),
         # NOTE: Workflow section removed - created_by/approved_by reference SessionUser
     )
+
+
+# =============================================================================
+# LEGISLATIVE TERM ADMIN (Wahlperioden, Issue #35)
+# =============================================================================
+
+
+@admin.register(SessionLegislativeTerm)
+class SessionLegislativeTermAdmin(ModelAdmin):
+    """Admin für Wahlperioden (werden über die OParl-API als legislativeTerm ausgeliefert)."""
+
+    list_display = ["name", "tenant", "start_date", "end_date"]
+    list_filter = ["tenant"]
+    search_fields = ["name"]
 
 
 # =============================================================================

@@ -8,13 +8,14 @@ Session-Models. Wird über SessionConfig.ready() geladen.
 
 from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 
-from apps.session import audit
+from apps.session import audit, oparl_publication
 from apps.session.models import (
     SessionAgendaItem,
     SessionApplication,
     SessionAttendance,
     SessionConsultation,
     SessionFile,
+    SessionLegislativeTerm,
     SessionMeeting,
     SessionOrganization,
     SessionOrganizationMembership,
@@ -37,6 +38,7 @@ AUDITED_MODELS = [
     SessionOrganizationMembership,
     SessionAttendance,
     SessionConsultation,
+    SessionLegislativeTerm,
     SessionFile,
     SessionUser,
 ]
@@ -52,6 +54,16 @@ for _model in AUDITED_MODELS:
 # verschwindenden Mandanten anlegen (IntegrityError/hängende Fremdschlüssel).
 pre_delete.connect(audit.tenant_pre_delete, sender=SessionTenant, dispatch_uid="session_audit_tenant_pre_delete")
 post_delete.connect(audit.tenant_post_delete, sender=SessionTenant, dispatch_uid="session_audit_tenant_post_delete")
+
+
+# =============================================================================
+# OParl-Tombstones (Issue #35): Löschungen/Ö->NÖ-Wechsel nachhalten
+# =============================================================================
+
+for _model in oparl_publication.KIND_BY_MODEL:
+    _uid = f"session_oparl_tombstone_{_model.__name__}"
+    post_save.connect(oparl_publication.tombstone_post_save, sender=_model, dispatch_uid=f"{_uid}_post_save")
+    post_delete.connect(oparl_publication.tombstone_post_delete, sender=_model, dispatch_uid=f"{_uid}_post_delete")
 
 
 # =============================================================================
