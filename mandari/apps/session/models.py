@@ -88,6 +88,15 @@ class SessionTenant(models.Model):
     # Settings
     settings = models.JSONField(default=dict, blank=True, verbose_name="Einstellungen")
 
+    # Bürgerportal-Veröffentlichung (Issue #36): Erst wenn der Mandant den
+    # Schalter aktiviert, wird seine OParl-API als Quelle im Insight-Ingestor
+    # registriert und die öffentlichen Daten fließen ins Bürgerportal.
+    insight_publish = models.BooleanField(
+        default=False,
+        verbose_name="Im Bürgerportal veröffentlichen",
+        help_text="Registriert die OParl-API dieses Mandanten als Quelle für das Insight-Bürgerportal",
+    )
+
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     created_at = models.DateTimeField(auto_now_add=True)

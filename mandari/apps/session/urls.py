@@ -312,6 +312,11 @@ urlpatterns = [
         name="settings",
     ),
     path(
+        "<slug:tenant_slug>/settings/insight-publish/",
+        views.InsightPublishView.as_view(),
+        name="insight_publish",
+    ),
+    path(
         "<slug:tenant_slug>/settings/users/",
         views.UserListView.as_view(),
         name="users",

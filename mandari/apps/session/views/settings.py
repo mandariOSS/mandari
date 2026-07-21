@@ -42,6 +42,52 @@ class SettingsView(SessionViewMixin, TemplateView):
     permission_required = "manage_settings"
 
 
+class InsightPublishView(SessionViewMixin, View):
+    """
+    Veröffentlichungs-Schalter für das Bürgerportal (Issue #36).
+
+    Der Mandant entscheidet, ab wann seine öffentlichen Daten über die
+    OParl-API ins Insight-Portal fließen. Das Umschalten registriert bzw.
+    deaktiviert die OParl-Quelle automatisch (Signal in signals.py) und
+    wird im Audit-Log protokolliert.
+    """
+
+    permission_required = "manage_settings"
+    http_method_names = ["post"]
+
+    def post(self, request, tenant_slug):
+        from .. import audit
+
+        publish = request.POST.get("publish") == "1"
+        tenant = self.session_tenant
+        if tenant.insight_publish == publish:
+            messages.info(request, "Der Veröffentlichungs-Status ist bereits gesetzt.")
+            return redirect("session:settings", tenant_slug=tenant_slug)
+
+        old_value = tenant.insight_publish
+        tenant.insight_publish = publish
+        tenant.save(update_fields=["insight_publish", "updated_at"])
+
+        audit.log_event(
+            "publish" if publish else "update",
+            tenant,
+            tenant=tenant,
+            user=self.session_user,
+            request=request,
+            changes={"insight_publish": {"alt": old_value, "neu": publish}},
+        )
+
+        if publish:
+            messages.success(
+                request,
+                "Veröffentlichung aktiviert — die öffentlichen Daten dieses Mandanten "
+                "erscheinen mit dem nächsten Sync-Zyklus im Bürgerportal.",
+            )
+        else:
+            messages.success(request, "Veröffentlichung ins Bürgerportal wurde beendet.")
+        return redirect("session:settings", tenant_slug=tenant_slug)
+
+
 class UserListView(SessionViewMixin, ListView):
     """List of session users (mit Rollen-Verwaltung und Einladungen)."""
 

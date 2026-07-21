@@ -99,8 +99,91 @@ OParl 1.1 §2.8, Muster wie beim Aggregator: Objekte, die einmal
 
 Ein generischer OParl-Client kann einen Session-Mandanten vollständig und
 inkrementell spiegeln — insbesondere der mandari-Ingestor bzw. der lokale
-Sync-Befehl für den Insight-Durchstich (Issue #36, siehe
-„Session-Kommunen im Bürgerportal“ weiter unten in dieser Datei).
+Sync-Befehl für den Insight-Durchstich (Issue #36, nächster Abschnitt).
+
+# Session-Kommunen im Bürgerportal (Insight-Durchstich)
+
+Der eigentliche USP: Eine Session-Kommune erscheint **automatisch** im
+offenen, kommunenübergreifenden Insight-Bürgerportal (Issue #36) — der
+Ingestor konsumiert die Session-OParl-API als ganz normale OParl-Quelle.
+
+## Veröffentlichungs-Schalter
+
+Der Mandant entscheidet, ab wann seine öffentlichen Daten ins Portal
+fließen: **Session → Einstellungen → Bürgerportal** (Berechtigung
+`manage_settings`; Feld `SessionTenant.insight_publish`, Umschalten wird
+im Audit-Log protokolliert).
+
+Beim Aktivieren wird die OParl-API des Mandanten automatisch als
+`OParlSource` registriert (Signal-Hook, `sync_config.session_tenant` =
+Mandanten-Slug); beim Deaktivieren wird die Quelle inaktiv gesetzt —
+es findet kein weiterer Sync statt. Bereits gespiegelte Daten bleiben
+erhalten, bis die Kommune eine Löschung beauftragt
+(`manage.py purge_deleted`, siehe `docs/OPARL_API.md`).
+
+## Quelle per CLI registrieren
+
+```bash
+# Registrieren (setzt insight_publish und legt die OParlSource an)
+python manage.py session_insight_source --tenant musterstadt
+
+# Alle veröffentlichten Mandanten (nach)registrieren, z. B. nach Umzug
+python manage.py session_insight_source --all
+
+# Deaktivieren
+python manage.py session_insight_source --tenant musterstadt --deactivate
+
+# Abweichende Basis-URL (z. B. lokale Instanz)
+python manage.py session_insight_source --tenant musterstadt --base-url http://localhost:8000
+```
+
+## Sync-Wege
+
+1. **Produktion: Ingestor-Daemon** (`ingestor/`): Die registrierte Quelle
+   ist eine normale OParl-Quelle und wird vom Daemon im regulären Zyklus
+   mitsynchronisiert (inkl. `modified_since` und Tombstones). Es ist
+   keine weitere Konfiguration nötig — hier wird bewusst **kein**
+   automatischer Prod-Sync eingerichtet; der Daemon-Zyklus übernimmt.
+2. **Lokal/Einzel-Sync: `sync_session_insight`** — synchroner,
+   leichtgewichtiger Spiegel ohne Daemon-Abhängigkeiten (urllib,
+   funktioniert auch mit SQLite):
+
+   ```bash
+   # inkrementell (modified_since = letzter Sync, inkl. Tombstones)
+   python manage.py sync_session_insight --tenant musterstadt
+
+   # Voll-Sync bzw. gezielt nach Quell-URL
+   python manage.py sync_session_insight --source-url http://localhost:8000/session/musterstadt/api/oparl/ --full
+
+   # alle registrierten Session-Quellen
+   python manage.py sync_session_insight --all
+   ```
+
+   Implementierung: `mandari/insight_sync/session_mirror.py`.
+
+Nach dem Sync ist die Kommune im Bürgerportal sichtbar
+(`/insight/vorgaenge/…`, `/insight/termine/…`, Suche/Karte je nach
+aktivierten Diensten); Änderungen erscheinen mit dem nächsten Zyklus,
+Ö→NÖ-Wechsel und Löschungen werden über Tombstones nachgezogen und im
+Portal ausgeblendet.
+
+## Anleitung: Musterstadt-Mandant an Insight anbinden
+
+1. In Session als Admin des Mandanten anmelden:
+   `/session/musterstadt/settings/` → Karte **Bürgerportal** →
+   „Im Bürgerportal veröffentlichen“. (Alternativ:
+   `python manage.py session_insight_source --tenant musterstadt`.)
+2. Prüfen: Im Django-Admin unter *OParl-Quellen* existiert jetzt
+   `Sitzungsdienst Stadt Musterstadt` mit der URL
+   `<SITE_URL>/session/musterstadt/api/oparl/` (aktiv).
+3. Sync anstoßen (falls nicht auf den Daemon-Zyklus gewartet werden soll):
+   `python manage.py sync_session_insight --tenant musterstadt --full`
+4. Ergebnis: Die öffentlichen Gremien, Personen, Sitzungen (nur Ö-Teile),
+   Vorlagen, Anlagen und Beratungsfolgen der Musterstadt erscheinen im
+   Bürgerportal unter `/insight/`.
+
+Ende-zu-Ende-Beweis (inkl. NÖ-Ausschluss über den kompletten
+Insight-Datenbestand): `python scripts/smoke_insight_durchstich.py`.
 
 ## Betrieb
 

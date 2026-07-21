@@ -103,6 +103,7 @@ from .resolutions import (
     ResolutionRegisterView,
 )
 from .settings import (
+    InsightPublishView,
     InvitationAcceptView,
     InvitationCancelView,
     SettingsView,
@@ -140,6 +141,7 @@ __all__ = [
     "FileReplaceView",
     "FileUpdateView",
     "FileUploadView",
+    "InsightPublishView",
     "InvitationAcceptView",
     "InvitationCancelView",
     "MembershipCreateView",

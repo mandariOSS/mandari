@@ -112,6 +112,53 @@
             </div>
         </div>
 
+        <!-- Bürgerportal (Issue #36) -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-center gap-4 mb-3">
+                <div class="w-12 h-12 rounded-xl bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center">
+                    <i data-lucide="landmark" class="w-6 h-6 text-teal-600 dark:text-teal-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Bürgerportal</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Veröffentlichung im mandari-Insight-Portal</p>
+                </div>
+            </div>
+            <div class="mt-4 space-y-3 text-sm">
+                {% if session_tenant.insight_publish %}
+                <p class="inline-flex items-center gap-2 text-green-700 dark:text-green-400 font-medium">
+                    <i data-lucide="check-circle" class="w-4 h-4"></i>
+                    Veröffentlichung aktiv — öffentliche Daten fließen ins Bürgerportal.
+                </p>
+                {% else %}
+                <p class="inline-flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <i data-lucide="circle-off" class="w-4 h-4"></i>
+                    Veröffentlichung inaktiv — es fließen keine Daten ins Bürgerportal.
+                </p>
+                {% endif %}
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    Übertragen werden ausschließlich als öffentlich markierte Inhalte
+                    (Ö-Sitzungen, Ö-Vorlagen, Ö-Anlagen) über die OParl-Schnittstelle.
+                </p>
+                <form method="post" action="{% url 'session:insight_publish' tenant_slug=tenant_slug %}">
+                    {% csrf_token %}
+                    {% if session_tenant.insight_publish %}
+                    <input type="hidden" name="publish" value="0">
+                    <button type="submit" class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                            onclick="return confirm('Veröffentlichung ins Bürgerportal wirklich beenden?');">
+                        <i data-lucide="pause" class="w-4 h-4"></i>
+                        Veröffentlichung beenden
+                    </button>
+                    {% else %}
+                    <input type="hidden" name="publish" value="1">
+                    <button type="submit" class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors">
+                        <i data-lucide="megaphone" class="w-4 h-4"></i>
+                        Im Bürgerportal veröffentlichen
+                    </button>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+
         <!-- Branding -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <div class="flex items-center gap-4 mb-3">

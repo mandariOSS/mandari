@@ -67,6 +67,52 @@ for _model in oparl_publication.KIND_BY_MODEL:
 
 
 # =============================================================================
+# Insight-Durchstich (Issue #36): Veröffentlichungs-Schalter -> OParl-Quelle
+# =============================================================================
+
+
+def tenant_publication_pre_save(sender, instance, **kwargs):
+    """Alten Veröffentlichungs-Stand merken (Provisioning-Hook)."""
+    if instance.pk:
+        old = sender.objects.filter(pk=instance.pk).values_list("insight_publish", flat=True).first()
+        instance._insight_publish_old = old
+    else:
+        instance._insight_publish_old = None
+
+
+def tenant_publication_post_save(sender, instance, created, **kwargs):
+    """
+    Auto-Registrierung der OParl-Quelle bei Veröffentlichung (Issue #36).
+
+    Sobald ein Mandant insight_publish aktiviert (Settings-UI, Admin oder
+    Provisioning), wird seine OParl-API als Insight-Quelle registriert;
+    beim Deaktivieren wird die Quelle inaktiv gesetzt.
+    """
+    if kwargs.get("raw"):
+        return
+    old = getattr(instance, "_insight_publish_old", None)
+    if created and not instance.insight_publish:
+        return
+    if not created and old == instance.insight_publish:
+        return
+    from apps.session.services import insight_service
+
+    insight_service.sync_publication_state(instance)
+
+
+pre_save.connect(
+    tenant_publication_pre_save,
+    sender=SessionTenant,
+    dispatch_uid="session_tenant_publication_pre_save",
+)
+post_save.connect(
+    tenant_publication_post_save,
+    sender=SessionTenant,
+    dispatch_uid="session_tenant_publication_post_save",
+)
+
+
+# =============================================================================
 # Beratungsfolge (Issue #34): Beschlussergebnis an die Station zurückschreiben
 # =============================================================================
 
