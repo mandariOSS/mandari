@@ -265,7 +265,7 @@ def _send_release_notice(meeting, dispatch_at, *, final: bool) -> int:
         if not user.email:
             continue
 
-        from apps.common.email import send_email
+        from apps.common.org_email import send_org_email
 
         body = "\n".join(
             [
@@ -279,7 +279,9 @@ def _send_release_notice(meeting, dispatch_at, *, final: bool) -> int:
             ]
         )
         try:
-            if send_email(
+            # Versand über den konfigurierten Weg der Organisation (Issue #65)
+            if send_org_email(
+                organization,
                 subject=f"Freigabe erforderlich: {meeting.title}",
                 body=body,
                 to=[user.email],

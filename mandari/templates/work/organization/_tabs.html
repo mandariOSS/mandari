@@ -19,6 +19,10 @@ Values: "general", "faction", "documents", "parties", "members", "roles"
            class="{% if active_tab == 'documents' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
             Anträge & Vorgänge
         </a>
+        <a href="{% url 'work:organization_email_settings' org_slug=organization.slug %}"
+           class="{% if active_tab == 'email' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            E-Mail
+        </a>
         <a href="{% url 'work:council_parties' org_slug=organization.slug %}"
            class="{% if active_tab == 'parties' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
             Ratsfraktionen

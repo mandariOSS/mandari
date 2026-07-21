@@ -203,9 +203,12 @@ class FactionMeetingEmailService:
             )
 
         try:
-            from apps.common.email import send_email
+            # Versand über den konfigurierten Weg der Organisation —
+            # eigenes SMTP oder mandari-Standard (Issue #65)
+            from apps.common.org_email import send_org_email
 
-            send_email(
+            send_org_email(
+                meeting.organization,
                 subject=subject,
                 body=text_content,
                 html_body=html_content,
@@ -323,9 +326,11 @@ class FactionMeetingEmailService:
             text_content = f"Erinnerung: {meeting.title} findet in {hours_before} Stunden statt."
 
         try:
-            from apps.common.email import send_email
+            # Versand über den konfigurierten Weg der Organisation (Issue #65)
+            from apps.common.org_email import send_org_email
 
-            send_email(
+            send_org_email(
+                meeting.organization,
                 subject=subject,
                 body=text_content,
                 html_body=html_content,

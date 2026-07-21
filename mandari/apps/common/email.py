@@ -63,6 +63,7 @@ def send_email(
     reply_to: list[str] | None = None,
     attachments: list[tuple] | None = None,
     fail_silently: bool = False,
+    connection=None,
 ) -> bool:
     """
     Send an email using configured SMTP settings.
@@ -76,12 +77,14 @@ def send_email(
         reply_to: Reply-to addresses (optional)
         attachments: List of (filename, content, mimetype) tuples
         fail_silently: Don't raise exceptions on errors
+        connection: Override email connection (optional) — genutzt vom
+            organisationseigenen SMTP-Versand (Issue #65)
 
     Returns:
         True if email was sent successfully, False otherwise
     """
     try:
-        connection = get_email_connection()
+        connection = connection or get_email_connection()
         sender = from_email or get_from_email()
 
         if html_body:

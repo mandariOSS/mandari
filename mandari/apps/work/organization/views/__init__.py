@@ -16,6 +16,9 @@ from .change_requests import (
 from .council import (
     CouncilPartyListView,
 )
+from .email_settings import (
+    OrganizationEmailSettingsView,
+)
 from .invitations import (
     AcceptInvitationView,
     GuestInviteView,
@@ -81,6 +84,7 @@ __all__ = [
     "MemberListView",
     "MemberRejectView",
     "OrganizationDocumentsView",
+    "OrganizationEmailSettingsView",
     "OrganizationFactionSettingsView",
     "OrganizationSettingsView",
     "ProfileAbsenceView",

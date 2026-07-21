@@ -1,0 +1,152 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}E-Mail-Einstellungen{% endblock %}
+
+{% block header_title %}Einstellungen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ organization.name }} verwalten</p>
+{% endblock %}
+
+{% block work_content %}
+{% include "work/organization/_tabs.html" %}
+
+<!-- E-Mail / Absender (Issue #65) -->
+<div class="space-y-6 fade-up">
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save">
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Absender / Versandweg</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                Fraktions-Mails (Einladungen, Erinnerungen, Freigabe-Hinweise) können über den
+                mandari-Standardversand oder über das eigene SMTP eurer Organisation verschickt werden.
+            </p>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Versandweg</label>
+                    <select name="mail_sender_mode"
+                            class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                        <option value="mandari" {% if mail_sender_mode == "mandari" %}selected{% endif %}>mandari-Standardversand</option>
+                        <option value="smtp" {% if mail_sender_mode == "smtp" %}selected{% endif %}>Eigenes SMTP der Organisation</option>
+                    </select>
+                </div>
+
+                <div class="flex items-start gap-4">
+                    <div class="flex items-center h-6">
+                        <input type="checkbox" id="smtp_fallback_to_mandari" name="smtp_fallback_to_mandari"
+                               {% if smtp_fallback_to_mandari %}checked{% endif %}
+                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                    </div>
+                    <div class="flex-1">
+                        <label for="smtp_fallback_to_mandari" class="block text-sm font-medium text-gray-900 dark:text-white">
+                            Bei SMTP-Fehler auf den mandari-Versand zurückfallen
+                        </label>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                            Deaktiviert: Der Versand schlägt bei SMTP-Fehlern sichtbar fehl,
+                            es wird keine E-Mail über mandari verschickt.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">SMTP-Zugangsdaten</h3>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">SMTP-Server</label>
+                    <input type="text" name="smtp_host" value="{{ smtp_host }}" placeholder="smtp.example.org"
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Port</label>
+                    <input type="number" name="smtp_port" value="{{ smtp_port }}" min="1" max="65535"
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Benutzername</label>
+                    <input type="text" name="smtp_username" value="{{ smtp_username }}" autocomplete="off"
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Passwort {% if smtp_password_set %}<span class="text-xs text-green-600">(hinterlegt)</span>{% endif %}
+                    </label>
+                    <input type="password" name="smtp_password" value="" autocomplete="new-password"
+                           placeholder="{% if smtp_password_set %}Unverändert lassen{% else %}Passwort{% endif %}"
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                    <p class="text-xs text-gray-500 mt-1">
+                        Wird verschlüsselt gespeichert und nie angezeigt. Leer lassen = unverändert.
+                    </p>
+                    {% if smtp_password_set %}
+                    <label class="inline-flex items-center gap-2 mt-1 text-xs text-gray-500">
+                        <input type="checkbox" name="smtp_password_clear" class="w-3.5 h-3.5 rounded border-gray-300">
+                        Hinterlegtes Passwort löschen
+                    </label>
+                    {% endif %}
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Absender-Adresse</label>
+                    <input type="email" name="smtp_from_email" value="{{ smtp_from_email }}" placeholder="fraktion@example.org"
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Absender-Name</label>
+                    <input type="text" name="smtp_from_name" value="{{ smtp_from_name }}" placeholder="{{ organization.name }}"
+                           class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 mt-4">
+                <input type="checkbox" id="smtp_use_tls" name="smtp_use_tls" {% if smtp_use_tls %}checked{% endif %}
+                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                <label for="smtp_use_tls" class="text-sm font-medium text-gray-900 dark:text-white">TLS verwenden (STARTTLS)</label>
+            </div>
+        </div>
+
+        <!-- SPF/DKIM-Hinweis (Issue #65) -->
+        <div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 p-6">
+            <h3 class="text-base font-medium text-amber-800 dark:text-amber-300 mb-2 flex items-center gap-2">
+                <i data-lucide="shield-alert" class="w-5 h-5"></i>
+                Zustellbarkeit: SPF und DKIM
+            </h3>
+            <p class="text-sm text-amber-700 dark:text-amber-400">
+                Beim Versand über das eigene SMTP ist eure Organisation für die korrekte
+                Konfiguration von <strong>SPF</strong> und <strong>DKIM</strong> (und idealerweise DMARC)
+                der Absender-Domain verantwortlich. Ohne diese DNS-Einträge landen E-Mails
+                häufig im Spam oder werden abgewiesen. Bitte klärt das mit dem Betreiber
+                eurer Domain bzw. eures Mail-Servers.
+            </p>
+        </div>
+
+        <div class="flex items-center justify-end pt-2">
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                Einstellungen speichern
+            </button>
+        </div>
+    </form>
+
+    <!-- Testmail (Issue #65) -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Testmail senden</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Sendet eine Testmail an deine eigene Adresse ({{ request.user.email }}) über den
+            aktuell gespeicherten Versandweg.
+        </p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="send_test">
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100">
+                <i data-lucide="mail-check" class="w-4 h-4"></i>
+                Testmail senden
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

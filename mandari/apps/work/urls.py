@@ -554,6 +554,11 @@ urlpatterns = [
         name="organization_documents",
     ),
     path(
+        "<slug:org_slug>/organization/email-settings/",
+        organization_views.OrganizationEmailSettingsView.as_view(),
+        name="organization_email_settings",
+    ),
+    path(
         "<slug:org_slug>/organization/members/",
         organization_views.MemberListView.as_view(),
         name="members",

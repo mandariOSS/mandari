@@ -237,6 +237,26 @@ class Organization(models.Model):
 
     # === SMTP (for sending emails from org domain) ===
 
+    # Eigene Absender-Adresse (Issue #65): Die Organisation entscheidet,
+    # ob Fraktions-Mails über das eigene SMTP oder den mandari-Standard
+    # laufen. SPF/DKIM der eigenen Domain verantwortet die Organisation.
+    MAIL_SENDER_MODE_CHOICES = [
+        ("mandari", "mandari-Standardversand"),
+        ("smtp", "Eigenes SMTP der Organisation"),
+    ]
+    mail_sender_mode = models.CharField(
+        max_length=10,
+        choices=MAIL_SENDER_MODE_CHOICES,
+        default="mandari",
+        verbose_name="Versandweg",
+        help_text="Fraktions-Mails über eigenes SMTP oder den mandari-Standard versenden",
+    )
+    smtp_fallback_to_mandari = models.BooleanField(
+        default=True,
+        verbose_name="Bei SMTP-Fehler auf mandari-Versand zurückfallen",
+        help_text="Deaktiviert: Der Versand schlägt bei SMTP-Fehlern sichtbar fehl",
+    )
+
     smtp_host = models.CharField(max_length=200, blank=True)
     smtp_port = models.PositiveIntegerField(default=587)
     smtp_username = models.CharField(max_length=200, blank=True)
