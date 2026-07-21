@@ -10,6 +10,7 @@ This allows accessing all models via `from apps.work.models import ...`
 from apps.work.faction.models import (
     FactionAgendaItem,
     FactionAttendance,
+    FactionAuditLog,
     FactionMeeting,
     FactionMeetingException,
     FactionMeetingSchedule,
@@ -71,6 +72,7 @@ __all__ = [
     "FactionMeetingException",
     "FactionAgendaItem",
     "FactionAttendance",
+    "FactionAuditLog",
     # Tasks
     "Task",
     "TaskComment",

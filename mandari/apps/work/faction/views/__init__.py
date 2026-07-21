@@ -16,6 +16,9 @@ from ._helpers import (
 from .actions import (
     FactionActionView,
 )
+from .audit import (
+    FactionAuditLogView,
+)
 from .exports import (
     FactionProtocolPdfView,
 )
@@ -33,6 +36,7 @@ from .settings import (
 
 __all__ = [
     "FactionActionView",
+    "FactionAuditLogView",
     "FactionItemPanelActionView",
     "FactionItemPanelView",
     "FactionMeetingDetailView",

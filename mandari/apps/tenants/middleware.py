@@ -11,6 +11,8 @@ import re
 from django.conf import settings
 from django.http import HttpResponseRedirect
 
+from apps.common import audit_core
+
 
 class OrganizationMiddleware:
     """
@@ -36,7 +38,14 @@ class OrganizationMiddleware:
         if org_slug:
             self._set_organization_context(request, org_slug)
 
-        response = self.get_response(request)
+        # Request für die Audit-Attribution bereitstellen (Issue #66) —
+        # der gemeinsame Baustein apps/common/audit_core ermittelt daraus
+        # die auslösende Membership für die Fraktions-Änderungshistorie
+        audit_core.set_current_request(request)
+        try:
+            response = self.get_response(request)
+        finally:
+            audit_core.clear_current_request()
         return response
 
     def _get_org_slug(self, path: str) -> str | None:

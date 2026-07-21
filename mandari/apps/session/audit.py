@@ -8,6 +8,12 @@ Model-Signale (create/update/delete) sowie explizit über
 :func:`log_event` für Spezial-Ereignisse (Freigabe, Veröffentlichung,
 Einladungsversand, Absetzung, Datei-Ersetzung).
 
+Die generischen Grundfunktionen (Thread-Local-Request, Feld-Diff,
+Kaskadenlösch-Schutz) liegen seit Issue #66 im gemeinsamen Baustein
+:mod:`apps.common.audit_core` und werden auch vom Work-Portal
+(Fraktionssitzungen) genutzt. Dieses Modul behält seine bisherige
+öffentliche API — das Session-Verhalten ändert sich nicht.
+
 Sicherheit:
 - Einträge sind unveränderbar (Save-/Delete-Guard auf dem Model).
 - Verschlüsselte Felder werden niemals im Klartext protokolliert —
@@ -16,25 +22,27 @@ Sicherheit:
   den die SessionTenantMiddleware setzt.
 """
 
-import threading
+from apps.common import audit_core
 
-from django.db import models
-
-_thread_state = threading.local()
+# Öffentliche API (unverändert) — delegiert an den gemeinsamen Baustein
+set_current_request = audit_core.set_current_request
+clear_current_request = audit_core.clear_current_request
+get_current_request = audit_core.get_current_request
+build_changes = audit_core.build_changes
 
 # Felder, die nie in den Änderungs-Diff aufgenommen werden
-_SKIP_FIELDS = {"id", "created_at", "updated_at", "last_access", "joined_at", "submitted_at"}
+_SKIP_FIELDS = audit_core.DEFAULT_SKIP_FIELDS
 
 # Maximale Länge protokollierter Werte
-_MAX_VALUE_LENGTH = 300
+_MAX_VALUE_LENGTH = audit_core.MAX_VALUE_LENGTH
 
 # Platzhalter für verschlüsselte/binäre Felder
-_MASKED = "[verschlüsselt geändert]"
+_MASKED = audit_core.MASKED
 
+_serialize_value = audit_core.serialize_value
 
-def set_current_request(request):
-    """Aktuellen Request für die Audit-Attribution merken (Middleware)."""
-    _thread_state.request = request
+# Kaskadenlösch-Schutz-Scope für Session-Mandanten (Issue #56)
+_TENANT_SCOPE = "session_tenant"
 
 
 # =============================================================================
@@ -53,24 +61,17 @@ def set_current_request(request):
 
 def mark_tenant_deleting(tenant_pk):
     """Mandanten-PK als 'wird gerade kaskadengelöscht' markieren (pre_delete)."""
-    pks = getattr(_thread_state, "deleting_tenant_pks", None)
-    if pks is None:
-        pks = set()
-        _thread_state.deleting_tenant_pks = pks
-    pks.add(tenant_pk)
+    audit_core.mark_root_deleting(_TENANT_SCOPE, tenant_pk)
 
 
 def unmark_tenant_deleting(tenant_pk):
     """Markierung nach Abschluss der Kaskadenlöschung entfernen (post_delete)."""
-    pks = getattr(_thread_state, "deleting_tenant_pks", None)
-    if pks is not None:
-        pks.discard(tenant_pk)
+    audit_core.unmark_root_deleting(_TENANT_SCOPE, tenant_pk)
 
 
 def is_tenant_deleting(tenant_pk) -> bool:
     """Läuft für diesen Mandanten gerade eine Kaskadenlöschung?"""
-    pks = getattr(_thread_state, "deleting_tenant_pks", None)
-    return bool(pks) and tenant_pk in pks
+    return audit_core.is_root_deleting(_TENANT_SCOPE, tenant_pk)
 
 
 def tenant_pre_delete(sender, instance, **kwargs):
@@ -81,16 +82,6 @@ def tenant_pre_delete(sender, instance, **kwargs):
 def tenant_post_delete(sender, instance, **kwargs):
     """post_delete(SessionTenant): Kaskadenlöschung abgeschlossen."""
     unmark_tenant_deleting(instance.pk)
-
-
-def clear_current_request():
-    """Thread-Local-Request wieder entfernen (Middleware, Response/Exception)."""
-    _thread_state.request = None
-
-
-def get_current_request():
-    """Aktuellen Request abrufen (oder None außerhalb eines Requests)."""
-    return getattr(_thread_state, "request", None)
 
 
 def resolve_tenant(instance):
@@ -108,42 +99,6 @@ def resolve_tenant(instance):
     if attendance is not None:
         return attendance.meeting.tenant
     return None
-
-
-def _serialize_value(field, value):
-    """Feldwert für das Änderungsprotokoll aufbereiten (nie Klartext-Sensitives)."""
-    if isinstance(field, models.BinaryField):
-        # Deckt EncryptedTextField ab: niemals Inhalte protokollieren
-        return _MASKED if value else ""
-    if value is None:
-        return None
-    if isinstance(value, (bool, int, float)):
-        return value
-    text = str(value)
-    if len(text) > _MAX_VALUE_LENGTH:
-        text = text[:_MAX_VALUE_LENGTH] + "…"
-    return text
-
-
-def build_changes(old_instance, new_instance) -> dict:
-    """Feld-Diff zwischen altem und neuem Zustand (verschlüsselte Werte maskiert)."""
-    changes = {}
-    for field in new_instance._meta.concrete_fields:
-        if field.name in _SKIP_FIELDS:
-            continue
-        old_value = getattr(old_instance, field.attname, None)
-        new_value = getattr(new_instance, field.attname, None)
-        if old_value == new_value:
-            continue
-        if isinstance(field, models.BinaryField):
-            # Nur die Tatsache der Änderung festhalten
-            changes[field.name] = {"alt": _MASKED, "neu": _MASKED}
-        else:
-            changes[field.name] = {
-                "alt": _serialize_value(field, old_value),
-                "neu": _serialize_value(field, new_value),
-            }
-    return changes
 
 
 def log_event(action, instance, *, tenant=None, user=None, changes=None, request=None):
@@ -169,19 +124,11 @@ def log_event(action, instance, *, tenant=None, user=None, changes=None, request
         return None
 
     request = request or get_current_request()
-    ip_address = None
-    user_agent = ""
-    if request is not None:
-        if user is None:
-            session_user = getattr(request, "session_user", None)
-            if session_user is not None and session_user.tenant_id == tenant.pk:
-                user = session_user
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        if x_forwarded_for:
-            ip_address = x_forwarded_for.split(",")[0].strip()
-        else:
-            ip_address = request.META.get("REMOTE_ADDR") or None
-        user_agent = request.META.get("HTTP_USER_AGENT", "")[:500]
+    if request is not None and user is None:
+        session_user = getattr(request, "session_user", None)
+        if session_user is not None and session_user.tenant_id == tenant.pk:
+            user = session_user
+    ip_address, user_agent = audit_core.get_client_meta(request)
 
     return SessionAuditLog.objects.create(
         tenant=tenant,
@@ -231,13 +178,7 @@ def _special_action(old_instance, new_instance) -> str | None:
 
 def audit_pre_save(sender, instance, **kwargs):
     """Alten Zustand für den Diff laden."""
-    if instance.pk:
-        try:
-            instance._audit_old = sender.objects.get(pk=instance.pk)
-        except sender.DoesNotExist:
-            instance._audit_old = None
-    else:
-        instance._audit_old = None
+    audit_core.capture_old_state(sender, instance)
 
 
 def audit_post_save(sender, instance, created, **kwargs):

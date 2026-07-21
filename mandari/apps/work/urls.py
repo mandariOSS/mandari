@@ -430,6 +430,11 @@ urlpatterns = [
     # Faction meetings (simplified: 4 URLs)
     path("<slug:org_slug>/faction/", faction_views.FactionMeetingListView.as_view(), name="faction"),
     path(
+        "<slug:org_slug>/faction/historie/",
+        faction_views.FactionAuditLogView.as_view(),
+        name="faction_audit",
+    ),
+    path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/",
         faction_views.FactionMeetingDetailView.as_view(),
         name="faction_detail",

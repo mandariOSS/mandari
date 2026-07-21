@@ -792,6 +792,20 @@ class FactionProtocolEntry(EncryptionMixin, models.Model):
         return f"{self.get_entry_type_display()}: {preview}..."
 
     @property
+    def audit_repr(self) -> str:
+        """
+        Beschreibung für die Änderungshistorie (Issue #66) — enthält NIEMALS
+        den entschlüsselten Inhalt (im Gegensatz zu __str__).
+        """
+        label = self.get_entry_type_display()
+        try:
+            if self.agenda_item_id and self.agenda_item:
+                return f"{label} zu TOP {self.agenda_item.number}"
+        except Exception:
+            pass
+        return f"{label} (ohne TOP)"
+
+    @property
     def content(self):
         """Get decrypted content for templates."""
         return self.get_content_decrypted()
@@ -858,6 +872,102 @@ class FactionDecision(models.Model):
     @property
     def passed(self):
         return self.result in ["accepted", "modified"]
+
+
+class FactionAuditLog(models.Model):
+    """
+    Änderungshistorie für Fraktionssitzungen (Issue #66).
+
+    Revisionssichere Protokollierung aller Aktionen rund um
+    Fraktionssitzungen — wer hat was wann geändert. Einträge entstehen
+    automatisch über Model-Signale (apps/work/faction/audit.py) sowie
+    explizit für Spezial-Ereignisse (Einladungsversand, Genehmigung,
+    Teilnahme-Änderungen, automatische Erzeugung/Ausfälle).
+    """
+
+    ACTION_CHOICES = [
+        ("create", "Erstellt"),
+        ("update", "Geändert"),
+        ("delete", "Gelöscht"),
+        ("status", "Statuswechsel"),
+        ("invitation_sent", "Einladung versandt"),
+        ("invitation_updated", "Aktualisierte Einladung versandt"),
+        ("reminder_sent", "Erinnerung versandt"),
+        ("protocol_submitted", "Protokoll zur Genehmigung"),
+        ("protocol_approved", "Protokoll genehmigt"),
+        ("participation", "Teilnahme geändert"),
+        ("proposal", "TOP vorgeschlagen"),
+        ("proposal_accepted", "TOP-Vorschlag angenommen"),
+        ("proposal_rejected", "TOP-Vorschlag abgelehnt"),
+        ("decision", "Abstimmung erfasst"),
+        ("generated", "Automatisch erzeugt"),
+        ("auto_cancelled", "Automatisch entfallen"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    organization = models.ForeignKey(
+        "tenants.Organization",
+        on_delete=models.CASCADE,
+        related_name="faction_audit_logs",
+        verbose_name="Organisation",
+    )
+
+    # Akteur (Membership kann später gelöscht werden — Label bleibt erhalten)
+    membership = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="faction_audit_entries",
+        verbose_name="Mitglied",
+    )
+    actor_label = models.CharField(max_length=200, blank=True, verbose_name="Akteur")
+    ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name="IP-Adresse")
+    user_agent = models.TextField(blank=True, verbose_name="User-Agent")
+
+    # Aktion
+    action = models.CharField(max_length=50, choices=ACTION_CHOICES, verbose_name="Aktion")
+
+    # Betroffenes Objekt
+    model_name = models.CharField(max_length=100, verbose_name="Modell")
+    object_id = models.UUIDField(verbose_name="Objekt-ID")
+    object_repr = models.CharField(max_length=500, blank=True, verbose_name="Objekt-Beschreibung")
+
+    # Zugehörige Sitzung (für Deep-Links/Filter; nullable, überlebt Löschung nicht)
+    meeting_id_ref = models.UUIDField(null=True, blank=True, verbose_name="Sitzungs-ID")
+
+    # NÖ-Kennzeichnung (Issue #64): Einträge zu nicht-öffentlichen TOPs
+    # werden Nicht-Vereidigten nur maskiert angezeigt
+    is_internal = models.BooleanField(default=False, verbose_name="Nicht-öffentlicher Inhalt")
+
+    # Änderungs-Diff (verschlüsselte Felder maskiert)
+    changes = models.JSONField(default=dict, blank=True, verbose_name="Änderungen")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Fraktions-Audit-Eintrag"
+        verbose_name_plural = "Fraktions-Änderungshistorie"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["organization", "model_name", "object_id"]),
+            models.Index(fields=["organization", "created_at"]),
+            models.Index(fields=["organization", "meeting_id_ref"]),
+        ]
+
+    def __str__(self):
+        return f"{self.actor_label or 'System'}: {self.action} {self.model_name} {self.object_repr}"
+
+    def save(self, *args, **kwargs):
+        """Revisionssicherheit: Einträge sind nach dem Anlegen unveränderbar."""
+        if not self._state.adding:
+            raise ValueError("Audit-Einträge sind unveränderbar und können nicht aktualisiert werden.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Revisionssicherheit: Einträge können nicht gelöscht werden."""
+        raise ValueError("Audit-Einträge sind unveränderbar und können nicht gelöscht werden.")
 
 
 class FactionAgendaItemAttachment(models.Model):

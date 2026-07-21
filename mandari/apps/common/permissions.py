@@ -39,6 +39,7 @@ PERMISSIONS = {
     "faction.start": "Fraktionssitzung starten/beenden",
     "faction.invite": "Einladungen zu Fraktionssitzungen versenden",
     "faction.manage": "Fraktionssitzungen vollständig verwalten (inkl. Status)",
+    "faction.view_audit": "Änderungshistorie der Fraktionssitzungen einsehen",
     # === TAGESORDNUNG (Agenda) ===
     "agenda.view": "Tagesordnung anzeigen",
     "agenda.create": "Tagesordnungspunkte direkt erstellen",
@@ -141,6 +142,7 @@ PERMISSION_CATEGORIES = {
             "faction.start",
             "faction.invite",
             "faction.manage",
+            "faction.view_audit",
         ],
     },
     "agenda": {
@@ -322,6 +324,7 @@ DEFAULT_ROLES = {
             "faction.start",
             "faction.invite",
             "faction.manage",
+            "faction.view_audit",
             # Agenda - full control including approval
             "agenda.view",
             "agenda.create",
@@ -419,6 +422,7 @@ DEFAULT_ROLES = {
             "faction.start",
             "faction.invite",
             "faction.manage",
+            "faction.view_audit",
             "agenda.view",
             "agenda.create",
             "agenda.edit",

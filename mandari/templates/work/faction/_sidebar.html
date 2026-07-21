@@ -98,6 +98,13 @@
             </span>
         </div>
     </div>
+    {% if membership|has_perm:"faction.view_audit" %}
+    <a href="{% url 'work:faction_audit' org_slug=org_slug %}?meeting={{ meeting.id }}"
+       class="mt-3 w-full py-2 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center gap-1.5">
+        <i data-lucide="history" class="w-3.5 h-3.5"></i>
+        Änderungshistorie
+    </a>
+    {% endif %}
 </div>
 
 {# Protocol PDF export (Issue #60) #}

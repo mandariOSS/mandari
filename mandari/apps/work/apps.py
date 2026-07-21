@@ -16,5 +16,7 @@ class WorkConfig(AppConfig):
     verbose_name = "Work Portal"
 
     def ready(self):
-        # Import submodules to register their models
-        pass
+        # Änderungshistorie (Audit) für Fraktionssitzungen registrieren (Issue #66)
+        from apps.work.faction import audit as faction_audit
+
+        faction_audit.register()
