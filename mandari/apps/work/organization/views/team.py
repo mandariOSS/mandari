@@ -300,6 +300,9 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
             "first_agenda_description": "",
             # Einladungslogik (Issue #62)
             **INVITATION_DEFAULTS,
+            # Beschlussfähigkeit (Issue #69): Erweiterungspunkt — aktuell
+            # nur die Mehrheitsregel implementiert
+            "quorum_rule": "majority",
         }
 
         for key, default in defaults.items():
@@ -386,6 +389,14 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
             faction_settings["invitation_lead_hours"] = max(1, min(lead_hours, 24 * 60))
         except (TypeError, ValueError):
             pass
+
+        # Beschlussfähigkeit (Issue #69): nur Datenfeld/Erweiterungspunkt —
+        # andere Regeln als die Mehrheitsregel gibt es noch nicht
+        from apps.common.quorum import QUORUM_RULES
+
+        quorum_rule = request.POST.get("quorum_rule", "")
+        if quorum_rule in QUORUM_RULES:
+            faction_settings["quorum_rule"] = quorum_rule
 
         # Update title templates
         faction_settings["first_agenda_title_with_previous"] = request.POST.get(

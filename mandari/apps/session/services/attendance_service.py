@@ -78,20 +78,20 @@ def quorum_status(meeting: SessionMeeting) -> dict:
     Beschlussfähigkeit (Quorum) live berechnen.
 
     Grundlage: alle Anwesenheitszeilen mit Stimmrecht; anwesend zählt
-    present/joined_late. Beschlussfähig ab mehr als der Hälfte.
+    present/joined_late. Beschlussfähig ab mehr als der Hälfte —
+    Berechnung über den gemeinsamen Baustein apps/common/quorum.py
+    (Issue #69, generalisiert aus dieser Session-Implementierung).
 
     Returns:
-        dict: voting_total, voting_present, required, met, has_list
+        dict: voting_total, voting_present, required, met, has_list, rule
     """
+    from apps.common.quorum import quorum_status as common_quorum_status
+
     attendances = meeting.attendances.all()
     voting = [a for a in attendances if a.has_voting_rights]
     present = [a for a in voting if a.status in PRESENT_STATUSES]
-    total = len(voting)
-    required = (total // 2) + 1 if total else 0
-    return {
-        "has_list": bool(attendances),
-        "voting_total": total,
-        "voting_present": len(present),
-        "required": required,
-        "met": total > 0 and len(present) >= required,
-    }
+    return common_quorum_status(
+        voting_total=len(voting),
+        voting_present=len(present),
+        has_list=bool(attendances),
+    )

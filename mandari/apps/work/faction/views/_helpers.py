@@ -118,6 +118,11 @@ def _get_meeting_context(view, meeting):
     can_propose = checker.can_propose_agenda_items()
     can_create_directly = checker.can_create_agenda_items_directly()
 
+    # Beschlussfähigkeit (Issue #69): Anzeige während/nach der Sitzung
+    from ..quorum import faction_quorum_status
+
+    quorum = faction_quorum_status(meeting) if meeting.status in ("ongoing", "completed") else None
+
     # Einladungslogik (Issue #62): Freigabe-Status für die Sidebar
     from ..invitations import can_release_invitations as _can_release
     from ..invitations import get_invitation_settings, invitation_dispatch_at
@@ -177,6 +182,7 @@ def _get_meeting_context(view, meeting):
         "can_manage_attendance": can_manage_attendance,
         "attendance_confirmed": attendance_confirmed,
         "can_confirm_attendance": can_confirm_attendance,
+        "quorum": quorum,
         "invitation_release_pending": invitation_release_pending,
         "can_release_invitations": _can_release(view.membership),
         "invitation_dispatch_at": invitation_dispatch_at(meeting, inv_settings),

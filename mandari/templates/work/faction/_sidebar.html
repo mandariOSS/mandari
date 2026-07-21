@@ -79,6 +79,16 @@
             <span class="text-gray-500">Anwesend</span>
             <span class="font-medium text-gray-900 dark:text-white">{{ attendance_stats.present }}/{{ attendances|length }}</span>
         </div>
+        {% if quorum %}
+        {# Beschlussfähigkeit (Issue #69): mehr als 50 % der Stimmberechtigten anwesend #}
+        <div class="flex justify-between" title="Beschlussfähig ab mehr als 50 % der stimmberechtigten Mitglieder ({{ quorum.required }} von {{ quorum.voting_total }})">
+            <span class="text-gray-500">Beschlussfähig</span>
+            <span class="font-medium {% if quorum.met %}text-green-600{% else %}text-red-600{% endif %}">
+                {% if quorum.met %}Ja{% else %}Nein{% endif %}
+                ({{ quorum.voting_present }}/{{ quorum.voting_total }} stimmberechtigt)
+            </span>
+        </div>
+        {% endif %}
         {% if attendance_stats.confirmed %}
         <div class="flex justify-between">
             <span class="text-gray-500">Zugesagt</span>
