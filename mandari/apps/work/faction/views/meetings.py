@@ -139,8 +139,11 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
             meeting_number=FactionMeeting.get_next_meeting_number(self.organization),
         )
 
-        # Find and link previous meeting
+        # Find and link previous meeting — nur wenn die Vorsitzung noch
+        # nicht verkettet ist (OneToOne; Muster aus der Sitzungserzeugung #61)
         previous = FactionMeeting.find_previous_meeting(self.organization, before_date=meeting.start)
+        if previous is not None and FactionMeeting.objects.filter(previous_meeting=previous).exists():
+            previous = None
         meeting.previous_meeting = previous
         meeting.save()
 
