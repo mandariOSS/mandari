@@ -333,6 +333,9 @@ GEOREF_TEXT_MAX_CHARS = int(os.environ.get("GEOREF_TEXT_MAX_CHARS", "8000"))
 GEOREF_AUTO_ENABLED = os.environ.get("GEOREF_AUTO_ENABLED", "True").lower() in ("true", "1", "yes")
 GEOREF_AUTO_LIMIT = int(os.environ.get("GEOREF_AUTO_LIMIT", "50"))  # Papers pro Lauf
 GEOREF_AUTO_INTERVAL_MINUTES = int(os.environ.get("GEOREF_AUTO_INTERVAL_MINUTES", "15"))
+# Fraktionssitzungen: periodische Erzeugung aus Sitzungsreihen (Issue #61)
+FACTION_SCHEDULE_INTERVAL_MINUTES = int(os.environ.get("FACTION_SCHEDULE_INTERVAL_MINUTES", "60"))
+FACTION_SCHEDULE_HORIZON_DAYS = int(os.environ.get("FACTION_SCHEDULE_HORIZON_DAYS", "90"))
 # Kartenmarker-Cache (map_markers-Endpoint)
 MAP_MARKERS_CACHE_SECONDS = int(os.environ.get("MAP_MARKERS_CACHE_SECONDS", "600"))
 

@@ -145,7 +145,15 @@
                         Protokoll offen
                     </span>
                     {% endif %}
+                    {% if meeting.status == 'cancelled' and meeting.cancellation_reason %}
+                    <span class="flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300">
+                        Entfällt
+                    </span>
+                    {% endif %}
                 </div>
+                {% if meeting.cancellation_reason %}
+                <p class="text-xs text-red-600 dark:text-red-400 mt-0.5">{{ meeting.cancellation_reason }}</p>
+                {% endif %}
                 <div class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2.5 mt-0.5">
                     <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> {{ meeting.start|time:"H:i" }}</span>
                     {% if meeting.location %}

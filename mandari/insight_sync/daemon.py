@@ -125,6 +125,16 @@ def _run_periodic_faction_reminders():
         logger.exception("Periodischer Fraktions-Erinnerungslauf fehlgeschlagen")
 
 
+def _run_periodic_faction_schedule():
+    """Periodische Sitzungserzeugung aus Sitzungsreihen (Issue #61, cache-gelockt)."""
+    try:
+        from apps.work.faction.generation import run_faction_schedule_pass
+
+        run_faction_schedule_pass()
+    except Exception:
+        logger.exception("Periodische Fraktions-Sitzungserzeugung fehlgeschlagen")
+
+
 def _watchdog_loop():
     """Watchdog-Loop: Bereinigt hängende Logs, prüft Ingestor-Status."""
     from django.conf import settings
@@ -139,6 +149,9 @@ def _watchdog_loop():
 
     reminder_interval = max(1, int(getattr(settings, "FACTION_REMINDER_INTERVAL_MINUTES", 15)))
     minutes_since_reminder = reminder_interval  # erster Lauf direkt nach dem Start
+
+    schedule_interval = max(1, int(getattr(settings, "FACTION_SCHEDULE_INTERVAL_MINUTES", 60)))
+    minutes_since_schedule = schedule_interval  # erster Lauf direkt nach dem Start
 
     while not _stop_event.is_set():
         try:
@@ -156,6 +169,12 @@ def _watchdog_loop():
             if minutes_since_reminder >= reminder_interval:
                 minutes_since_reminder = 0
                 _run_periodic_faction_reminders()
+
+            # Periodische Sitzungserzeugung aus Sitzungsreihen (Issue #61)
+            minutes_since_schedule += 1
+            if minutes_since_schedule >= schedule_interval:
+                minutes_since_schedule = 0
+                _run_periodic_faction_schedule()
 
             _wait(60)
         except Exception:

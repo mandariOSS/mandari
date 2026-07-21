@@ -286,6 +286,7 @@ def register():
         FactionMeetingException,
         FactionMeetingSchedule,
         FactionProtocolEntry,
+        FactionSuspensionRule,
     )
 
     audited_models = [
@@ -297,6 +298,7 @@ def register():
         FactionAgendaItemAttachment,
         FactionMeetingSchedule,
         FactionMeetingException,
+        FactionSuspensionRule,
     ]
 
     for model in audited_models:

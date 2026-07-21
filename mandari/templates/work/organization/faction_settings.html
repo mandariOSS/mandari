@@ -243,6 +243,180 @@
             </button>
         </div>
     </form>
+
+    <!-- Sitzungsreihen + Ausfallregeln (Issue #61) -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-1">Sitzungsreihen</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+            Aus aktiven Sitzungsreihen werden Termine automatisch im Voraus erzeugt
+            (rollierend, {{ schedule_horizon_days|default:"90" }} Tage).
+            Ausfallregeln streichen Termine ersatzlos — sie bleiben als „Entfällt" sichtbar.
+        </p>
+
+        {% for schedule in schedules %}
+        <div class="border border-gray-200 dark:border-gray-700 rounded-xl p-4 mb-4">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <p class="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                        {{ schedule.name }}
+                        {% if not schedule.is_active %}
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500">Pausiert</span>
+                        {% endif %}
+                    </p>
+                    <p class="text-xs text-gray-500 mt-0.5">
+                        {{ schedule.get_recurrence_display }} · {{ schedule.get_weekday_display }} · {{ schedule.time|time:"H:i" }} Uhr
+                        {% if schedule.default_location %} · {{ schedule.default_location }}{% endif %}
+                    </p>
+                </div>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="section" value="toggle_schedule">
+                        <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
+                        <button type="submit" class="px-2.5 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900 rounded-lg hover:bg-gray-100">
+                            {% if schedule.is_active %}Pausieren{% else %}Aktivieren{% endif %}
+                        </button>
+                    </form>
+                    <form method="post" onsubmit="return confirm('Sitzungsreihe wirklich löschen? Bereits erzeugte Sitzungen bleiben bestehen.');">
+                        {% csrf_token %}
+                        <input type="hidden" name="section" value="delete_schedule">
+                        <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
+                        <button type="submit" class="px-2.5 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100">Löschen</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Urlaubszeiträume / manuelle Ausnahmen -->
+            <div class="mt-4">
+                <p class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">Ausnahmen / Urlaubszeiträume</p>
+                {% for exception in schedule.exceptions.all %}
+                <div class="flex items-center justify-between gap-2 py-1.5 border-b border-gray-100 dark:border-gray-700/50 last:border-0">
+                    <p class="text-sm text-gray-700 dark:text-gray-300">
+                        {{ exception.original_date|date:"d.m.Y" }}{% if exception.end_date %} – {{ exception.end_date|date:"d.m.Y" }}{% endif %}
+                        {% if exception.reason %}<span class="text-gray-400">· {{ exception.reason }}</span>{% endif %}
+                    </p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="section" value="delete_exception">
+                        <input type="hidden" name="exception_id" value="{{ exception.id }}">
+                        <button type="submit" class="text-xs text-red-500 hover:text-red-600">Entfernen</button>
+                    </form>
+                </div>
+                {% empty %}
+                <p class="text-xs text-gray-400">Keine Ausnahmen hinterlegt.</p>
+                {% endfor %}
+                <form method="post" class="flex flex-wrap items-end gap-2 mt-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="section" value="add_exception">
+                    <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
+                    <div>
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Von</label>
+                        <input type="date" name="original_date" required class="px-2 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Bis (optional)</label>
+                        <input type="date" name="end_date" class="px-2 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    </div>
+                    <div class="flex-1 min-w-[140px]">
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Grund (optional)</label>
+                        <input type="text" name="reason" placeholder="z.B. Sommerpause" class="w-full px-2 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    </div>
+                    <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Hinzufügen</button>
+                </form>
+            </div>
+
+            <!-- RIS-Ausfallregeln -->
+            <div class="mt-4">
+                <p class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">RIS-Ausfallregeln</p>
+                {% for rule in schedule.suspension_rules.all %}
+                <div class="flex items-center justify-between gap-2 py-1.5 border-b border-gray-100 dark:border-gray-700/50 last:border-0">
+                    <p class="text-sm text-gray-700 dark:text-gray-300">
+                        Nach Sitzung von <span class="font-medium">{{ rule.ris_organization.name }}</span> entfällt die nächste Fraktionssitzung
+                    </p>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="section" value="delete_rule">
+                        <input type="hidden" name="rule_id" value="{{ rule.id }}">
+                        <button type="submit" class="text-xs text-red-500 hover:text-red-600">Entfernen</button>
+                    </form>
+                </div>
+                {% empty %}
+                <p class="text-xs text-gray-400">Keine RIS-Regeln hinterlegt.</p>
+                {% endfor %}
+                {% if ris_organizations %}
+                <form method="post" class="flex flex-wrap items-end gap-2 mt-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="section" value="add_rule">
+                    <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
+                    <div class="flex-1 min-w-[220px]">
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Gremium der verknüpften Kommune</label>
+                        <select name="ris_organization_id" required class="w-full px-2 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                            <option value="">-- Gremium wählen (z.B. Rat) --</option>
+                            {% for ris_org in ris_organizations %}
+                            <option value="{{ ris_org.id }}">{{ ris_org.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Regel hinzufügen</button>
+                </form>
+                {% else %}
+                <p class="text-xs text-amber-600 mt-2">Keine Kommune verknüpft — RIS-Regeln benötigen eine verknüpfte Kommune mit Gremien.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <p class="text-sm text-gray-400 mb-4">Noch keine Sitzungsreihe angelegt.</p>
+        {% endfor %}
+
+        <!-- Neue Sitzungsreihe -->
+        <form method="post" class="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-4">
+            {% csrf_token %}
+            <input type="hidden" name="section" value="add_schedule">
+            <p class="text-sm font-medium text-gray-900 dark:text-white mb-3">Neue Sitzungsreihe</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div class="lg:col-span-3">
+                    <label class="block text-[11px] text-gray-500 mb-0.5">Name</label>
+                    <input type="text" name="name" required placeholder="z.B. Wöchentliche Fraktionssitzung"
+                           class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                </div>
+                <div>
+                    <label class="block text-[11px] text-gray-500 mb-0.5">Wiederholung</label>
+                    <select name="recurrence" class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                        {% for value, label in recurrence_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[11px] text-gray-500 mb-0.5">Wochentag</label>
+                    <select name="weekday" class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                        {% for value, label in weekday_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[11px] text-gray-500 mb-0.5">Uhrzeit</label>
+                    <input type="time" name="time" required value="18:00"
+                           class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                </div>
+                <div>
+                    <label class="block text-[11px] text-gray-500 mb-0.5">Dauer (Minuten)</label>
+                    <input type="number" name="duration_minutes" value="120" min="15" step="15"
+                           class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block text-[11px] text-gray-500 mb-0.5">Standard-Ort (optional)</label>
+                    <input type="text" name="default_location" placeholder="z.B. Fraktionsbüro"
+                           class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                </div>
+            </div>
+            <button type="submit" class="mt-3 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+                <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+                Sitzungsreihe anlegen
+            </button>
+        </form>
+    </div>
 </div>
 
 <script>

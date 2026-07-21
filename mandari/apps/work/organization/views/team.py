@@ -312,10 +312,50 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
             ("{nr}", "Nummer der aktuellen Sitzung"),
         ]
 
+        # Sitzungsreihen + Ausfallregeln (Issue #61)
+        from apps.work.faction.models import FactionMeetingSchedule
+
+        context["schedules"] = (
+            FactionMeetingSchedule.objects.filter(organization=self.organization)
+            .prefetch_related("exceptions", "suspension_rules__ris_organization")
+            .order_by("weekday", "time")
+        )
+        context["weekday_choices"] = FactionMeetingSchedule.WEEKDAY_CHOICES
+        context["recurrence_choices"] = FactionMeetingSchedule.RECURRENCE_CHOICES
+
+        # Gremien-Auswahl aus den OParl-Organizations der verknüpften Kommune(n)
+        from insight_core.models import OParlOrganization
+
+        context["ris_organizations"] = OParlOrganization.objects.filter(
+            body__in=self.organization.get_all_bodies()
+        ).order_by("name")
+
+        from django.conf import settings as django_settings
+
+        context["schedule_horizon_days"] = getattr(django_settings, "FACTION_SCHEDULE_HORIZON_DAYS", 90)
+
         return context
 
     def post(self, request, *args, **kwargs):
         from django.contrib import messages
+
+        # Sitzungsreihen + Ausfallregeln (Issue #61) — eigene Formularaktionen
+        section = request.POST.get("section", "")
+        if section:
+            handler = {
+                "add_schedule": self._add_schedule,
+                "toggle_schedule": self._toggle_schedule,
+                "delete_schedule": self._delete_schedule,
+                "add_exception": self._add_exception,
+                "delete_exception": self._delete_exception,
+                "add_rule": self._add_rule,
+                "delete_rule": self._delete_rule,
+            }.get(section)
+            if handler is None:
+                messages.error(request, "Ungültige Aktion.")
+            else:
+                handler(request)
+            return redirect("work:organization_faction_settings", org_slug=self.organization.slug)
 
         # Get current settings
         settings = self.organization.settings or {}
@@ -349,6 +389,140 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
 
         messages.success(request, "Einstellungen gespeichert.")
         return redirect("work:organization_faction_settings", org_slug=self.organization.slug)
+
+    # -- Sitzungsreihen + Ausfallregeln (Issue #61) -----------------------
+
+    def _get_schedule(self, request):
+        from apps.work.faction.models import FactionMeetingSchedule
+
+        return FactionMeetingSchedule.objects.filter(
+            id=request.POST.get("schedule_id"), organization=self.organization
+        ).first()
+
+    def _add_schedule(self, request):
+        from django.contrib import messages
+
+        from apps.work.faction.models import FactionMeetingSchedule
+
+        name = request.POST.get("name", "").strip()
+        time_value = request.POST.get("time", "").strip()
+        if not name or not time_value:
+            messages.error(request, "Name und Uhrzeit sind erforderlich.")
+            return
+        try:
+            weekday = int(request.POST.get("weekday", "0"))
+            duration = max(15, int(request.POST.get("duration_minutes", "120") or 120))
+        except ValueError:
+            messages.error(request, "Ungültige Eingaben.")
+            return
+        recurrence = request.POST.get("recurrence", "weekly")
+        if recurrence not in dict(FactionMeetingSchedule.RECURRENCE_CHOICES):
+            recurrence = "weekly"
+        if weekday not in dict(FactionMeetingSchedule.WEEKDAY_CHOICES):
+            weekday = 0
+
+        FactionMeetingSchedule.objects.create(
+            organization=self.organization,
+            name=name,
+            recurrence=recurrence,
+            weekday=weekday,
+            time=time_value,
+            duration_minutes=duration,
+            default_location=request.POST.get("default_location", "").strip(),
+            default_video_link=request.POST.get("default_video_link", "").strip(),
+        )
+        messages.success(request, f"Sitzungsreihe '{name}' angelegt. Termine werden automatisch erzeugt.")
+
+    def _toggle_schedule(self, request):
+        from django.contrib import messages
+
+        schedule = self._get_schedule(request)
+        if schedule is None:
+            messages.error(request, "Sitzungsreihe nicht gefunden.")
+            return
+        schedule.is_active = not schedule.is_active
+        schedule.save()
+        state = "aktiviert" if schedule.is_active else "pausiert"
+        messages.success(request, f"Sitzungsreihe '{schedule.name}' {state}.")
+
+    def _delete_schedule(self, request):
+        from django.contrib import messages
+
+        schedule = self._get_schedule(request)
+        if schedule is None:
+            messages.error(request, "Sitzungsreihe nicht gefunden.")
+            return
+        name = schedule.name
+        schedule.delete()
+        messages.success(request, f"Sitzungsreihe '{name}' gelöscht. Bereits erzeugte Sitzungen bleiben bestehen.")
+
+    def _add_exception(self, request):
+        from django.contrib import messages
+
+        from apps.work.faction.models import FactionMeetingException
+
+        schedule = self._get_schedule(request)
+        if schedule is None:
+            messages.error(request, "Sitzungsreihe nicht gefunden.")
+            return
+        original_date = request.POST.get("original_date", "").strip()
+        if not original_date:
+            messages.error(request, "Bitte ein Datum angeben.")
+            return
+        end_date = request.POST.get("end_date", "").strip() or None
+        FactionMeetingException.objects.update_or_create(
+            schedule=schedule,
+            original_date=original_date,
+            defaults={
+                "end_date": end_date,
+                "exception_type": "cancelled",
+                "reason": request.POST.get("reason", "").strip(),
+            },
+        )
+        messages.success(request, "Ausnahmezeitraum gespeichert — Termine im Zeitraum entfallen ersatzlos.")
+
+    def _delete_exception(self, request):
+        from django.contrib import messages
+
+        from apps.work.faction.models import FactionMeetingException
+
+        FactionMeetingException.objects.filter(
+            id=request.POST.get("exception_id"), schedule__organization=self.organization
+        ).delete()
+        messages.success(request, "Ausnahme entfernt.")
+
+    def _add_rule(self, request):
+        from django.contrib import messages
+
+        from apps.work.faction.models import FactionSuspensionRule
+        from insight_core.models import OParlOrganization
+
+        schedule = self._get_schedule(request)
+        if schedule is None:
+            messages.error(request, "Sitzungsreihe nicht gefunden.")
+            return
+        # Gremien-Auswahl nur aus den OParl-Organizations der verknüpften Kommune(n)
+        ris_org = OParlOrganization.objects.filter(
+            id=request.POST.get("ris_organization_id"), body__in=self.organization.get_all_bodies()
+        ).first()
+        if ris_org is None:
+            messages.error(request, "Gremium nicht gefunden.")
+            return
+        FactionSuspensionRule.objects.get_or_create(schedule=schedule, ris_organization=ris_org)
+        messages.success(
+            request,
+            f"Ausfallregel gespeichert: Nach einer Sitzung von '{ris_org.name}' entfällt die nächste Fraktionssitzung.",
+        )
+
+    def _delete_rule(self, request):
+        from django.contrib import messages
+
+        from apps.work.faction.models import FactionSuspensionRule
+
+        FactionSuspensionRule.objects.filter(
+            id=request.POST.get("rule_id"), schedule__organization=self.organization
+        ).delete()
+        messages.success(request, "Ausfallregel entfernt.")
 
 
 class OrganizationDocumentsView(WorkViewMixin, TemplateView):

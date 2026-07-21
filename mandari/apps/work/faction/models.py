@@ -105,6 +105,16 @@ class FactionMeetingException(models.Model):
     # The date that is affected
     original_date = models.DateField(verbose_name="Ursprüngliches Datum")
 
+    # Optionales Enddatum (Issue #61): Urlaubs-/Ausfallzeitraum von
+    # original_date bis einschließlich end_date — alle Termine der Reihe
+    # in diesem Zeitraum entfallen ersatzlos
+    end_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name="Enddatum",
+        help_text="Optional: Zeitraum bis einschließlich dieses Datums (z.B. Urlaub)",
+    )
+
     exception_type = models.CharField(max_length=20, choices=EXCEPTION_TYPE_CHOICES, verbose_name="Art")
     reason = models.CharField(max_length=500, blank=True, verbose_name="Grund")
 
@@ -122,6 +132,53 @@ class FactionMeetingException(models.Model):
 
     def __str__(self):
         return f"{self.schedule.name} - {self.original_date} ({self.exception_type})"
+
+    def covers(self, date) -> bool:
+        """Fällt das Datum in den Ausnahmezeitraum?"""
+        if self.end_date:
+            return self.original_date <= date <= self.end_date
+        return self.original_date == date
+
+
+class FactionSuspensionRule(models.Model):
+    """
+    RIS-Ausfallregel für eine Sitzungsreihe (Issue #61).
+
+    "Nach einer Sitzung von Gremium X fällt die nächste Fraktionssitzung
+    aus" — z.B. nach jeder Ratssitzung. Die Gremien-Auswahl stammt aus den
+    OParl-Organizations der mit der Organisation verknüpften Kommune(n).
+    Ausgefallene Termine werden ersatzlos gestrichen (als "entfällt"
+    sichtbar), es wird nicht verschoben.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    schedule = models.ForeignKey(
+        FactionMeetingSchedule,
+        on_delete=models.CASCADE,
+        related_name="suspension_rules",
+        verbose_name="Sitzungsplan",
+    )
+
+    ris_organization = models.ForeignKey(
+        "insight_core.OParlOrganization",
+        on_delete=models.CASCADE,
+        related_name="faction_suspension_rules",
+        verbose_name="RIS-Gremium",
+        help_text="Nach einer Sitzung dieses Gremiums entfällt die nächste Fraktionssitzung",
+    )
+
+    is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "RIS-Ausfallregel"
+        verbose_name_plural = "RIS-Ausfallregeln"
+        unique_together = ["schedule", "ris_organization"]
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.schedule.name}: nach {self.ris_organization.name}"
 
 
 class FactionMeeting(EncryptionMixin, models.Model):
@@ -182,6 +239,18 @@ class FactionMeeting(EncryptionMixin, models.Model):
         related_name="meetings",
         verbose_name="Sitzungsplan",
     )
+
+    # Erzeugung aus der Sitzungsreihe (Issue #61): Solltermin des Plans —
+    # macht die rollierende Erzeugung idempotent (ein Termin je Plan+Datum)
+    scheduled_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name="Plantermin",
+        help_text="Solltermin laut Sitzungsreihe (für automatisch erzeugte Sitzungen)",
+    )
+
+    # Ausfallgrund (Issue #61): warum der Termin ersatzlos entfällt
+    cancellation_reason = models.CharField(max_length=300, blank=True, verbose_name="Ausfallgrund")
 
     # Timing
     start = models.DateTimeField(verbose_name="Beginn")
@@ -247,10 +316,13 @@ class FactionMeeting(EncryptionMixin, models.Model):
         help_text="Öffentliche Sitzung die in dieser Fraktionssitzung vorbereitet wird",
     )
 
-    # Metadata
+    # Metadata — null bei automatisch aus der Sitzungsreihe erzeugten
+    # Sitzungen (Issue #61)
     created_by = models.ForeignKey(
         "tenants.Membership",
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="created_faction_meetings",
         verbose_name="Erstellt von",
     )
@@ -264,6 +336,14 @@ class FactionMeeting(EncryptionMixin, models.Model):
         indexes = [
             models.Index(fields=["organization", "start"]),
             models.Index(fields=["organization", "status"]),
+        ]
+        constraints = [
+            # Idempotente Erzeugung aus der Sitzungsreihe (Issue #61)
+            models.UniqueConstraint(
+                fields=["schedule", "scheduled_date"],
+                condition=models.Q(scheduled_date__isnull=False),
+                name="uniq_faction_meeting_schedule_scheduled_date",
+            ),
         ]
 
     def __str__(self):
