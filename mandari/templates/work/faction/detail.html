@@ -62,6 +62,15 @@
             <i data-lucide="send" class="w-4 h-4"></i> Einladen
         </button>
     </form>
+    {% elif meeting.invitation_sent and meeting.status in 'planned,invited' and membership|has_perm:"faction.invite" %}
+    {# Aktualisierung/Nachladung nach TO-Änderungen (Issue #59) #}
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "invite"}' hx-confirm="Aktualisierte Einladung (neue Tagesordnung) an alle versenden?">
+        {% csrf_token %}
+        <button type="submit" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i> Aktualisierung senden
+        </button>
+    </form>
     {% endif %}
 
     {# Edit button #}

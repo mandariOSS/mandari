@@ -99,12 +99,16 @@
 </head>
 <body>
     <div class="header">
-        <h1>Einladung zur Fraktionssitzung</h1>
+        <h1>{% if is_update %}Aktualisierte Einladung zur Fraktionssitzung{% else %}Einladung zur Fraktionssitzung{% endif %}</h1>
         <p class="org-name">{{ organization.name }}</p>
     </div>
 
     <p>Hallo {{ user.first_name|default:user.email }},</p>
+    {% if is_update %}
+    <p>die Tagesordnung der folgenden Sitzung wurde aktualisiert — anbei die aktuelle Fassung:</p>
+    {% else %}
     <p>du bist herzlich zur folgenden Sitzung eingeladen:</p>
+    {% endif %}
 
     <div class="meeting-card">
         <h2 class="meeting-title">{{ meeting.title }}</h2>
@@ -194,7 +198,17 @@
     </div>
     {% endif %}
 
-    <p>Bitte gib uns Bescheid, ob du teilnehmen kannst.</p>
+    {% if meeting_url %}
+    <div class="cta-section">
+        <a href="{{ meeting_url }}" class="btn btn-primary">Zur Sitzung im Work-Portal</a>
+    </div>
+    {% endif %}
+
+    <p>
+        Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen).
+        Die vollständige Tagesordnung findest du im Anhang (PDF); der Termin liegt als
+        Kalenderdatei (ICS) bei.
+    </p>
 
     <div class="footer">
         <p>Diese E-Mail wurde automatisch von {{ organization.name }} versendet.</p>

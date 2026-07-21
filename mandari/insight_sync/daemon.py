@@ -115,6 +115,16 @@ def _run_periodic_georef():
         logger.exception("Periodischer Georef-Lauf fehlgeschlagen")
 
 
+def _run_periodic_faction_reminders():
+    """Periodischer Erinnerungslauf für Fraktionssitzungen (48 h vorher, cache-gelockt)."""
+    try:
+        from apps.work.faction.services import run_faction_reminder_pass
+
+        run_faction_reminder_pass()
+    except Exception:
+        logger.exception("Periodischer Fraktions-Erinnerungslauf fehlgeschlagen")
+
+
 def _watchdog_loop():
     """Watchdog-Loop: Bereinigt hängende Logs, prüft Ingestor-Status."""
     from django.conf import settings
@@ -127,6 +137,9 @@ def _watchdog_loop():
     georef_interval = max(1, int(getattr(settings, "GEOREF_AUTO_INTERVAL_MINUTES", 15)))
     minutes_since_georef = georef_interval  # erster Lauf direkt nach dem Start
 
+    reminder_interval = max(1, int(getattr(settings, "FACTION_REMINDER_INTERVAL_MINUTES", 15)))
+    minutes_since_reminder = reminder_interval  # erster Lauf direkt nach dem Start
+
     while not _stop_event.is_set():
         try:
             _cleanup_stale_syncs()
@@ -137,6 +150,12 @@ def _watchdog_loop():
             if minutes_since_georef >= georef_interval:
                 minutes_since_georef = 0
                 _run_periodic_georef()
+
+            # Periodische Erinnerungen für Fraktionssitzungen (Issue #59)
+            minutes_since_reminder += 1
+            if minutes_since_reminder >= reminder_interval:
+                minutes_since_reminder = 0
+                _run_periodic_faction_reminders()
 
             _wait(60)
         except Exception:

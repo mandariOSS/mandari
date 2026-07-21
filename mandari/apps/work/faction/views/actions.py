@@ -252,12 +252,25 @@ class FactionActionView(WorkViewMixin, View):
             messages.error(request, "Keine Berechtigung zum Einladen.")
             return self._redirect_detail(meeting)
 
-        if meeting.invitation_sent:
-            messages.warning(request, "Einladungen wurden bereits versendet.")
-        else:
-            from ..services import FactionMeetingEmailService
+        from ..services import FactionMeetingEmailService
 
-            email_service = FactionMeetingEmailService()
+        email_service = FactionMeetingEmailService()
+
+        if meeting.invitation_sent:
+            # Aktualisierung/Nachladung nach TO-Änderungen: erneuter Versand
+            # als eigener Versandtyp — die ICS-SEQUENCE wird erhöht, damit
+            # Kalender den Termin als Aktualisierung erkennen
+            meeting.invitation_sequence += 1
+            meeting.invitation_updated_at = timezone.now()
+            meeting.save(update_fields=["invitation_sequence", "invitation_updated_at"])
+
+            sent_count = email_service.send_invitations(meeting, update=True)
+
+            if sent_count > 0:
+                messages.success(request, f"Aktualisierte Einladung an {sent_count} Mitglieder versendet.")
+            else:
+                messages.warning(request, "Aktualisierung versendet. Keine E-Mails versendet.")
+        else:
             sent_count = email_service.send_invitations(meeting)
 
             meeting.invitation_sent = True

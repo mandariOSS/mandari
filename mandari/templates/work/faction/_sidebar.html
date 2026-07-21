@@ -118,6 +118,17 @@
             Einladen
         </button>
     </form>
+    {% elif meeting.invitation_sent and meeting.status in 'planned,invited' %}
+    <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "invite"}'
+          hx-confirm="Aktualisierte Einladung (neue Tagesordnung) an alle versenden?"
+          class="w-full">
+        {% csrf_token %}
+        <button type="submit" class="w-full py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 flex items-center justify-center gap-2">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            Aktualisierung versenden
+        </button>
+    </form>
     {% endif %}
 
     {% if meeting.status == 'completed' and not meeting.protocol_approved %}

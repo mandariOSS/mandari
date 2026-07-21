@@ -198,6 +198,15 @@ class FactionMeeting(EncryptionMixin, models.Model):
     # Invitations
     invitation_sent = models.BooleanField(default=False, verbose_name="Einladung versendet")
     invitation_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Einladung versendet am")
+    invitation_sequence = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Einladungs-Sequenz",
+        help_text="ICS-SEQUENCE: wird bei jeder Aktualisierung/Nachladung erhöht",
+    )
+    invitation_updated_at = models.DateTimeField(
+        blank=True, null=True, verbose_name="Aktualisierte Einladung versendet am"
+    )
+    reminder_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Erinnerung versendet am")
 
     # Protocol (encrypted)
     protocol_encrypted = EncryptedTextField(verbose_name="Protokoll")

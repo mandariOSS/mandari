@@ -1,11 +1,11 @@
-Einladung zur Fraktionssitzung
+{% if is_update %}Aktualisierte Einladung zur Fraktionssitzung{% else %}Einladung zur Fraktionssitzung{% endif %}
 ==============================
 
 {{ organization.name }}
 
 Hallo {{ user.first_name|default:user.email }},
 
-du bist herzlich zur folgenden Sitzung eingeladen:
+{% if is_update %}die Tagesordnung der folgenden Sitzung wurde aktualisiert — anbei die aktuelle Fassung:{% else %}du bist herzlich zur folgenden Sitzung eingeladen:{% endif %}
 
 {{ meeting.title }}
 -------------------
@@ -22,7 +22,19 @@ Hinweise:
 {{ meeting.description }}
 {% endif %}
 
-Bitte gib uns Bescheid, ob du teilnehmen kannst.
+Zur Sitzung im Work-Portal:
+{{ meeting_url }}
+
+{% if public_agenda_items %}TAGESORDNUNG
+{% for item in public_agenda_items %}TOP {{ item.number }}: {{ item.title }}
+{% endfor %}{% endif %}
+{% if internal_agenda_items %}NICHT-ÖFFENTLICHER TEIL
+{% for item in internal_agenda_items %}TOP {{ item.number }}: {{ item.title }}
+{% endfor %}{% endif %}
+Die vollständige Tagesordnung findest du im Anhang (PDF); der Termin liegt als Kalenderdatei (ICS) bei.
+
+Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen):
+{{ meeting_url }}
 
 ---
 Diese E-Mail wurde automatisch von {{ organization.name }} versendet.

@@ -9,52 +9,160 @@ Includes:
 """
 
 import logging
+from datetime import timedelta
 
 from django.conf import settings
-from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from apps.common.ical import build_ics_event
+from apps.common.pdf import html_to_pdf
+
 logger = logging.getLogger(__name__)
+
+# Erinnerungen: Vorlauf vor Sitzungsbeginn und Lock gegen parallele Läufe
+FACTION_REMINDER_WINDOW_HOURS = 48
+_REMINDER_LOCK_KEY = "faction:reminder:lock"
+_REMINDER_LOCK_TIMEOUT = 10 * 60
 
 
 class FactionMeetingEmailService:
-    """Service for sending faction meeting emails."""
+    """
+    Service for sending faction meeting emails (Issue #59).
 
-    def send_invitations(self, meeting) -> int:
+    Einladungen auf dem Niveau der Session-Ladungen mit den geteilten
+    Bausteinen aus apps/common:
+    - ICS-Kalenderanhang (SEQUENCE wird bei Aktualisierungen erhöht)
+    - Tagesordnungs-PDF getrennt Ö/NÖ (Nicht-Vereidigte erhalten nur Ö)
+    - Deep-Link zur Sitzung + RSVP-Hinweis
+    - Aktualisierungs-/Nachladungsversand nach TO-Änderungen
+    - Erinnerungen ~48 h vor Sitzungsbeginn (einmalig je Sitzung)
+    """
+
+    # -- Bausteine -------------------------------------------------------
+
+    def get_meeting_url(self, meeting) -> str:
+        """Deep-Link zur Sitzungsansicht im Work-Portal."""
+        base = getattr(settings, "SITE_URL", "").rstrip("/")
+        return f"{base}/work/{meeting.organization.slug}/faction/{meeting.id}/"
+
+    def build_meeting_ics(self, meeting, sequence: int | None = None) -> bytes:
+        """ICS-Kalenderanhang (gemeinsamer Baustein apps/common/ical.py)."""
+        description_parts = []
+        if meeting.description:
+            description_parts.append(meeting.description)
+        if meeting.video_link:
+            description_parts.append(f"Video-Link: {meeting.video_link}")
+        description_parts.append(f"Sitzung im Work-Portal: {self.get_meeting_url(meeting)}")
+
+        return build_ics_event(
+            uid=f"faction-meeting-{meeting.pk}@mandari",
+            summary=meeting.title,
+            start=meeting.start,
+            end=meeting.end,
+            description="\n".join(description_parts),
+            location=meeting.location or ("Online" if meeting.is_virtual else ""),
+            organizer_name=meeting.organization.name,
+            sequence=meeting.invitation_sequence if sequence is None else sequence,
+        )
+
+    def build_agenda_pdf(self, meeting, *, include_internal: bool) -> bytes:
+        """
+        Tagesordnungs-PDF (gemeinsamer Baustein apps/common/pdf.py).
+
+        Args:
+            include_internal: NÖ-Teil aufnehmen (nur für Vereidigte mit
+                Berechtigung für den nicht-öffentlichen Teil)
+        """
+        public_items = (
+            meeting.agenda_items.filter(visibility="public", proposal_status="active", parent__isnull=True)
+            .prefetch_related("children")
+            .order_by("order", "number")
+        )
+        internal_items = []
+        if include_internal:
+            internal_items = (
+                meeting.agenda_items.filter(visibility="internal", proposal_status="active", parent__isnull=True)
+                .prefetch_related("children")
+                .order_by("order", "number")
+            )
+
+        context = {
+            "meeting": meeting,
+            "organization": meeting.organization,
+            "public_agenda_items": public_items,
+            "internal_agenda_items": internal_items,
+            "include_internal": include_internal,
+            "generated_at": timezone.localtime(),
+        }
+        html = render_to_string("work/faction/pdf/agenda.html", context)
+        return html_to_pdf(html)
+
+    def _include_internal(self, membership) -> bool:
+        """NÖ-Teil nur für Vereidigte mit Berechtigung (faction.view_non_public)."""
+        from apps.common.permissions import PermissionChecker
+
+        return PermissionChecker(membership).can_access_non_public()
+
+    # -- Einladungen -----------------------------------------------------
+
+    def send_invitations(self, meeting, *, update: bool = False) -> int:
         """
         Send invitation emails to all invited members.
 
+        Args:
+            update: Aktualisierung/Nachladung nach TO-Änderungen — geht an
+                alle Mitglieder, die nicht abgesagt haben (ICS-SEQUENCE
+                wurde vom Aufrufer bereits erhöht)
+
         Returns the count of successfully sent emails.
         """
-        attendances = meeting.attendances.filter(status="invited")
-        sent_count = 0
+        if update:
+            attendances = meeting.attendances.filter(membership__isnull=False).exclude(status="declined")
+        else:
+            attendances = meeting.attendances.filter(status="invited", membership__isnull=False)
 
+        attendances = attendances.select_related("membership__user")
+
+        # PDF-Varianten nur einmal erzeugen (Ö-only und vollständig) + ICS
+        pdf_public = self.build_agenda_pdf(meeting, include_internal=False)
+        pdf_full = self.build_agenda_pdf(meeting, include_internal=True)
+        ics_bytes = self.build_meeting_ics(meeting)
+
+        sent_count = 0
         for attendance in attendances:
-            if self._send_invitation_email(meeting, attendance):
+            if self._send_invitation_email(
+                meeting,
+                attendance,
+                pdf_public=pdf_public,
+                pdf_full=pdf_full,
+                ics_bytes=ics_bytes,
+                update=update,
+            ):
                 sent_count += 1
 
         return sent_count
 
-    def _send_invitation_email(self, meeting, attendance) -> bool:
-        """Send a single invitation email."""
+    def _send_invitation_email(self, meeting, attendance, *, pdf_public, pdf_full, ics_bytes, update=False) -> bool:
+        """Send a single invitation email (mit ICS- und Tagesordnungs-Anhang)."""
         user = attendance.membership.user
         if not user.email:
             logger.warning(f"Skipping invitation for user {user.id} - no email address")
             return False
 
-        # Get agenda items based on whether the member is sworn in
-        is_sworn_in = attendance.membership.is_sworn_in
+        # NÖ-Teil nur für Vereidigte mit entsprechender Berechtigung
+        include_internal = self._include_internal(attendance.membership)
         public_items = meeting.agenda_items.filter(visibility="public", proposal_status="active").order_by(
             "order", "number"
         )
 
         internal_items = []
-        if is_sworn_in:
+        if include_internal:
             internal_items = meeting.agenda_items.filter(visibility="internal", proposal_status="active").order_by(
                 "order", "number"
             )
 
+        meeting_url = self.get_meeting_url(meeting)
         context = {
             "meeting": meeting,
             "user": user,
@@ -62,10 +170,12 @@ class FactionMeetingEmailService:
             "attendance": attendance,
             "public_agenda_items": public_items,
             "internal_agenda_items": internal_items,
-            "is_sworn_in": is_sworn_in,
+            "is_sworn_in": include_internal,
+            "is_update": update,
+            "meeting_url": meeting_url,
         }
 
-        subject = f"Einladung: {meeting.title}"
+        subject = f"Aktualisierte Einladung: {meeting.title}" if update else f"Einladung: {meeting.title}"
 
         try:
             html_content = render_to_string("work/faction/email/invitation.html", context)
@@ -74,29 +184,43 @@ class FactionMeetingEmailService:
             logger.error(f"Failed to render email template: {e}")
             # Fall back to simple text
             html_content = None
-            text_content = self._get_simple_invitation_text(meeting, user, public_items, internal_items)
+            text_content = self._get_simple_invitation_text(
+                meeting, user, public_items, internal_items, meeting_url=meeting_url, update=update
+            )
 
         try:
-            send_mail(
+            from apps.common.email import send_email
+
+            send_email(
                 subject=subject,
-                message=text_content,
-                html_message=html_content,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
+                body=text_content,
+                html_body=html_content,
+                to=[user.email],
+                attachments=[
+                    ("tagesordnung.pdf", pdf_full if include_internal else pdf_public, "application/pdf"),
+                    ("sitzung.ics", ics_bytes, "text/calendar"),
+                ],
                 fail_silently=False,
             )
-            logger.info(f"Invitation sent to {user.email} for meeting {meeting.id}")
+            logger.info(f"Invitation sent to {user.email} for meeting {meeting.id} (update={update})")
             return True
         except Exception as e:
             logger.error(f"Failed to send invitation to {user.email}: {e}")
             return False
 
-    def _get_simple_invitation_text(self, meeting, user, public_items=None, internal_items=None) -> str:
+    def _get_simple_invitation_text(
+        self, meeting, user, public_items=None, internal_items=None, meeting_url="", update=False
+    ) -> str:
         """Generate simple text fallback for invitation email."""
+        intro = (
+            "die Tagesordnung der folgenden Fraktionssitzung wurde aktualisiert:"
+            if update
+            else "du bist zur folgenden Fraktionssitzung eingeladen:"
+        )
         lines = [
             f"Hallo {user.first_name or user.email},",
             "",
-            "du bist zur folgenden Fraktionssitzung eingeladen:",
+            intro,
             "",
             f"{meeting.title}",
             f"Datum: {meeting.start.strftime('%A, %d. %B %Y')}",
@@ -108,6 +232,9 @@ class FactionMeetingEmailService:
 
         if meeting.video_link:
             lines.append(f"Video-Link: {meeting.video_link}")
+
+        if meeting_url:
+            lines.append(f"Sitzung im Work-Portal: {meeting_url}")
 
         # Add agenda items
         if public_items:
@@ -123,7 +250,7 @@ class FactionMeetingEmailService:
         lines.extend(
             [
                 "",
-                "Bitte gib uns Bescheid, ob du teilnehmen kannst.",
+                "Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen).",
                 "",
                 "Viele Grüße,",
                 f"{meeting.organization.name}",
@@ -132,13 +259,17 @@ class FactionMeetingEmailService:
 
         return "\n".join(lines)
 
+    # -- Erinnerungen ----------------------------------------------------
+
     def send_reminder(self, meeting, hours_before: int = 24) -> int:
         """
         Send reminder emails to confirmed attendees.
 
         Returns the count of successfully sent emails.
         """
-        attendances = meeting.attendances.filter(status__in=["confirmed", "tentative"])
+        attendances = meeting.attendances.filter(
+            status__in=["confirmed", "tentative"], membership__isnull=False
+        ).select_related("membership__user")
         sent_count = 0
 
         for attendance in attendances:
@@ -159,6 +290,7 @@ class FactionMeetingEmailService:
             "organization": meeting.organization,
             "attendance": attendance,
             "hours_before": hours_before,
+            "meeting_url": self.get_meeting_url(meeting),
         }
 
         subject = f"Erinnerung: {meeting.title} in {hours_before} Stunden"
@@ -172,18 +304,78 @@ class FactionMeetingEmailService:
             text_content = f"Erinnerung: {meeting.title} findet in {hours_before} Stunden statt."
 
         try:
-            send_mail(
+            from apps.common.email import send_email
+
+            send_email(
                 subject=subject,
-                message=text_content,
-                html_message=html_content,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
+                body=text_content,
+                html_body=html_content,
+                to=[user.email],
                 fail_silently=False,
             )
             return True
         except Exception as e:
             logger.error(f"Failed to send reminder to {user.email}: {e}")
             return False
+
+
+def run_faction_reminder_pass(now=None) -> dict:
+    """
+    Periodischer Erinnerungslauf (Issue #59).
+
+    Wird vom Sync-Watchdog-Zyklus (insight_sync/daemon.py) aufgerufen —
+    analog zum Auto-Georef-Lauf. Verschickt einmalig je Sitzung eine
+    Erinnerung an Zusagen/Vielleicht-Antworten, sobald der Sitzungsbeginn
+    weniger als FACTION_REMINDER_WINDOW_HOURS (48 h) entfernt ist.
+
+    Ein Cache-Lock verhindert parallele Läufe (mehrere Worker/Prozesse).
+
+    Returns:
+        Statistik-Dict (meetings, sent bzw. skipped-Grund).
+    """
+    from django.core.cache import cache
+
+    from .models import FactionMeeting
+
+    now = now or timezone.now()
+
+    if not cache.add(_REMINDER_LOCK_KEY, "1", timeout=_REMINDER_LOCK_TIMEOUT):
+        return {"skipped": "lock"}
+
+    try:
+        stats = {"meetings": 0, "sent": 0}
+        window_end = now + timedelta(hours=FACTION_REMINDER_WINDOW_HOURS)
+        meetings = FactionMeeting.objects.filter(
+            status__in=["planned", "invited"],
+            invitation_sent=True,
+            reminder_sent_at__isnull=True,
+            start__gt=now,
+            start__lte=window_end,
+        ).select_related("organization")
+
+        service = FactionMeetingEmailService()
+        for meeting in meetings:
+            hours_before = max(1, int((meeting.start - now).total_seconds() // 3600))
+            try:
+                sent = service.send_reminder(meeting, hours_before=hours_before)
+            except Exception:
+                logger.exception("Erinnerungsversand fehlgeschlagen (meeting=%s)", meeting.id)
+                continue
+            # Einmalig je Sitzung — auch bei 0 Empfängern nicht erneut versuchen
+            meeting.reminder_sent_at = now
+            meeting.save(update_fields=["reminder_sent_at"])
+            stats["meetings"] += 1
+            stats["sent"] += sent
+
+        if stats["meetings"]:
+            logger.info(
+                "Fraktions-Erinnerungen: %d Sitzung(en), %d E-Mail(s) versendet",
+                stats["meetings"],
+                stats["sent"],
+            )
+        return stats
+    finally:
+        cache.delete(_REMINDER_LOCK_KEY)
 
 
 class AgendaProposalService:

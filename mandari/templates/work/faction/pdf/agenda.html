@@ -1,0 +1,65 @@
+{% extends "work/faction/pdf/base_pdf.html" %}
+{% comment %}Tagesordnungs-PDF für Einladungen zu Fraktionssitzungen (Issue #59).{% endcomment %}
+
+{% block content %}
+    <h1>Einladung mit Tagesordnung</h1>
+    <p>
+        Einladung zur Fraktionssitzung von <strong>{{ organization.name }}</strong>.
+        {% if not include_internal %}<span class="muted">(Öffentlicher Teil)</span>{% endif %}
+    </p>
+
+    <table class="meta-table">
+        <tr><td><strong>Sitzung:</strong></td><td>{{ meeting.title }}{% if meeting.meeting_number %} (Nr. {{ meeting.meeting_number }}){% endif %}</td></tr>
+        <tr><td><strong>Termin:</strong></td><td>{{ meeting.start|date:"l, d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% if meeting.end %} bis {{ meeting.end|date:"H:i" }} Uhr{% endif %}</td></tr>
+        {% if meeting.location %}
+        <tr><td><strong>Ort:</strong></td><td>{{ meeting.location }}</td></tr>
+        {% endif %}
+        {% if meeting.is_virtual %}
+        <tr><td><strong>Format:</strong></td><td>Online-Sitzung{% if meeting.video_link %} — {{ meeting.video_link }}{% endif %}</td></tr>
+        {% endif %}
+    </table>
+
+    <h2>Tagesordnung</h2>
+
+    {% if public_agenda_items %}
+    <div class="section-title">Öffentlicher Teil</div>
+    <table class="agenda">
+        {% for item in public_agenda_items %}
+        <tr>
+            <td class="top-nr">TOP {{ item.number }}</td>
+            <td>
+                {{ item.title }}
+                {% for sub in item.children.all %}
+                <br><strong>{{ sub.number }}</strong>&nbsp; {{ sub.title }}
+                {% endfor %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if include_internal and internal_agenda_items %}
+    <div class="section-title">Nichtöffentlicher Teil</div>
+    <table class="agenda">
+        {% for item in internal_agenda_items %}
+        <tr>
+            <td class="top-nr">{{ item.number }}</td>
+            <td>
+                {{ item.title }}
+                {% for sub in item.children.all %}
+                <br><strong>{{ sub.number }}</strong>&nbsp; {{ sub.title }}
+                {% endfor %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if not public_agenda_items and not internal_agenda_items %}
+    <p class="muted">Keine Tagesordnungspunkte.</p>
+    {% endif %}
+
+    <div class="signature">
+        <p>{{ organization.name }}</p>
+    </div>
+{% endblock %}

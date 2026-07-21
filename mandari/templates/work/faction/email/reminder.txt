@@ -1,0 +1,27 @@
+Erinnerung: Fraktionssitzung
+============================
+
+{{ organization.name }}
+
+Hallo {{ user.first_name|default:user.email }},
+
+zur Erinnerung: die folgende Sitzung beginnt in etwa {{ hours_before }} Stunden.
+
+{{ meeting.title }}
+-------------------
+
+Datum:   {{ meeting.start|date:"l, d. F Y" }}
+Uhrzeit: {{ meeting.start|time:"H:i" }} Uhr
+{% if meeting.location %}Ort:     {{ meeting.location }}{% endif %}
+{% if meeting.is_virtual %}Format:  Online-Sitzung{% endif %}
+{% if meeting.video_link %}
+Video-Link: {{ meeting.video_link }}
+{% endif %}
+
+Zur Sitzung im Work-Portal:
+{{ meeting_url }}
+
+{% if attendance.status == 'tentative' %}Du hast bisher mit "Vielleicht" geantwortet — bitte bestätige deine Teilnahme in der Sitzungsansicht.{% endif %}
+
+---
+Diese E-Mail wurde automatisch von {{ organization.name }} versendet.
