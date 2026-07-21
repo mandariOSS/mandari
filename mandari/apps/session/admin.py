@@ -24,6 +24,7 @@ from .models import (
     SessionAPIToken,
     SessionApplication,
     SessionAuditLog,
+    SessionConsultation,
     SessionFile,
     SessionMeeting,
     SessionOrganization,
@@ -523,6 +524,22 @@ class SessionPaperAdmin(ModelAdmin):
         ),
         # NOTE: Workflow section removed - created_by/approved_by reference SessionUser
     )
+
+
+# =============================================================================
+# CONSULTATION ADMIN (Beratungsfolge, Issue #34)
+# =============================================================================
+
+
+@admin.register(SessionConsultation)
+class SessionConsultationAdmin(ModelAdmin):
+    """Admin für Beratungsstationen (Beratungsfolge einer Vorlage)."""
+
+    list_display = ["paper", "order", "organization", "role", "authoritative", "result", "meeting"]
+    list_filter = ["role", "authoritative", "result", "paper__tenant"]
+    search_fields = ["paper__reference", "paper__name", "organization__name"]
+    raw_id_fields = ["paper", "organization", "meeting", "agenda_item"]
+    ordering = ["paper", "order"]
 
 
 # =============================================================================

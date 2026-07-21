@@ -1479,6 +1479,124 @@ class SessionApplication(EncryptionMixin, models.Model):
 
 
 # =============================================================================
+# CONSULTATION MODELS (Beratungsfolge, Issue #34)
+# =============================================================================
+
+
+class SessionConsultation(models.Model):
+    """
+    Beratungsstation einer Vorlage (Beratungsfolge, Issue #34).
+
+    Bildet den realen Entscheidungsweg einer Vorlage über mehrere Gremien ab
+    (z. B. Fachausschuss -> Hauptausschuss -> Rat). Entspricht der OParl-
+    Entität ``Consultation``: Rolle (Vorberatung/Anhörung/Entscheidung),
+    ``authoritative``-Flag für die entscheidende Station, Verknüpfung zum
+    Tagesordnungspunkt, sobald die Station terminiert ist, und Ergebnis je
+    Station (wird beim Erfassen des Abstimmungsergebnisses am TOP
+    automatisch zurückgeschrieben, siehe signals.sync_consultation_result).
+    """
+
+    ROLE_CHOICES = [
+        ("preliminary", "Vorberatung"),
+        ("hearing", "Anhörung"),
+        ("decision", "Entscheidung"),
+        ("information", "Kenntnisnahme"),
+    ]
+
+    # Ergebnis-Auswahl entspricht SessionAgendaItem.vote_result, damit die
+    # Rückschreibung 1:1 möglich ist.
+    RESULT_CHOICES = [
+        ("pending", "Ausstehend"),
+        ("approved", "Angenommen"),
+        ("rejected", "Abgelehnt"),
+        ("deferred", "Vertagt"),
+        ("withdrawn", "Zurückgezogen"),
+        ("noted", "Zur Kenntnis genommen"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    paper = models.ForeignKey(
+        SessionPaper,
+        on_delete=models.CASCADE,
+        related_name="consultations",
+        verbose_name="Vorlage",
+    )
+    organization = models.ForeignKey(
+        SessionOrganization,
+        on_delete=models.CASCADE,
+        related_name="consultations",
+        verbose_name="Gremium",
+    )
+
+    # Terminierung: Zielsitzung und (sobald angelegt) der zugehörige TOP
+    meeting = models.ForeignKey(
+        SessionMeeting,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="consultations",
+        verbose_name="Sitzung",
+        help_text="Zielsitzung dieser Beratungsstation (sobald terminiert)",
+    )
+    agenda_item = models.OneToOneField(
+        SessionAgendaItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="consultation",
+        verbose_name="Tagesordnungspunkt",
+    )
+
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default="preliminary",
+        verbose_name="Rolle",
+    )
+    authoritative = models.BooleanField(
+        default=False,
+        verbose_name="Entscheidende Beratung",
+        help_text="OParl: authoritative — die Station, die abschließend entscheidet",
+    )
+    order = models.PositiveIntegerField(default=1, verbose_name="Reihenfolge")
+
+    result = models.CharField(
+        max_length=50,
+        choices=RESULT_CHOICES,
+        default="pending",
+        verbose_name="Ergebnis",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_consultations"
+        verbose_name = "Beratungsstation"
+        verbose_name_plural = "Beratungsfolge"
+        ordering = ["order", "created_at"]
+
+    def __str__(self):
+        return f"{self.paper.reference} – Station {self.order}: {self.organization.name} ({self.get_role_display()})"
+
+    @property
+    def tenant(self):
+        """Tenant der Station (für Audit-Attribution und Filterung)."""
+        return self.paper.tenant
+
+    @property
+    def is_scheduled(self) -> bool:
+        """Station terminiert (TOP angelegt)?"""
+        return self.agenda_item_id is not None
+
+    @property
+    def is_done(self) -> bool:
+        """Station abgeschlossen (Ergebnis liegt vor)?"""
+        return self.result != "pending"
+
+
+# =============================================================================
 # PROTOCOL MODELS
 # =============================================================================
 

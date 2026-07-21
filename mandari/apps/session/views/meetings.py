@@ -108,6 +108,28 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         context["agenda_non_public"] = agenda["non_public"]
         context["agenda_can_edit"] = self.has_permission("edit_meetings")
 
+        # Beratungsfolge (Issue #34): Kette je Vorlagen-TOP anzeigen, damit
+        # z. B. das Vorberatungsergebnis in der Ratssitzung sichtbar ist.
+        from ..models import SessionConsultation
+
+        all_items = []
+        for top in context["agenda_public"] + context["agenda_non_public"]:
+            all_items.append(top)
+            all_items.extend(getattr(top, "children_list", []))
+        paper_ids = {item.paper_id for item in all_items if item.paper_id}
+        if paper_ids:
+            chains = {}
+            stations = (
+                SessionConsultation.objects.filter(paper_id__in=paper_ids)
+                .select_related("organization", "meeting")
+                .order_by("paper_id", "order", "created_at")
+            )
+            for station in stations:
+                chains.setdefault(station.paper_id, []).append(station)
+            for item in all_items:
+                if item.paper_id:
+                    item.consultation_chain = chains.get(item.paper_id, [])
+
         # Attendances (Issue #30): Schnellerfassung, Quorum, Gäste-Ergänzung
         from ..services import attendance_service
 

@@ -68,6 +68,7 @@ from apps.session.models import (  # noqa: E402
     SessionAgendaItem,
     SessionApplication,
     SessionAttendance,
+    SessionConsultation,
     SessionFile,
     SessionInvitationDispatch,
     SessionMeeting,
@@ -129,6 +130,7 @@ app_a = SessionApplication.objects.create(
     submitter_name="N",
     submitter_email="n@example.org",
 )
+consultation_a = SessionConsultation.objects.create(paper=paper_pub, organization=org_a, order=1)
 protocol_a = SessionProtocol.objects.create(meeting=meeting_pub, content="Protokoll A")
 file_pub = SessionFile.objects.create(
     tenant=tenant_a,
@@ -171,6 +173,7 @@ file_b = SessionFile.objects.create(
     paper=paper_b,
 )
 membership_b = SessionOrganizationMembership.objects.create(organization=org_b, person=person_b)
+consultation_b = SessionConsultation.objects.create(paper=paper_b, organization=org_b, order=1)
 
 # =============================================================================
 # Nutzer: Admin, ohne Rechte, je Berechtigung genau ein Nutzer
@@ -178,9 +181,7 @@ membership_b = SessionOrganizationMembership.objects.create(organization=org_b, 
 
 # Alle Permission-Flags des Role-Models (can_* Booleans)
 ALL_PERM_FLAGS = [
-    field.name[4:]
-    for field in SessionRole._meta.get_fields()
-    if field.name.startswith("can_") and field.concrete
+    field.name[4:] for field in SessionRole._meta.get_fields() if field.name.startswith("can_") and field.concrete
 ]
 
 # Berechtigungen, die in der GET-Matrix vorkommen
@@ -297,7 +298,9 @@ def run_matrix(label, client, user_perms):
     check(f"Matrix: {label} ({len(GET_MATRIX)} URLs)", not mismatches, "; ".join(mismatches[:5]))
 
 
-run_matrix("Admin hat überall Zugriff", admin, set(MATRIX_PERMS) | {"view_non_public_meetings", "view_non_public_papers"})
+run_matrix(
+    "Admin hat überall Zugriff", admin, set(MATRIX_PERMS) | {"view_non_public_meetings", "view_non_public_papers"}
+)
 run_matrix("Nutzer ohne Rechte überall 403", no_perm, set())
 for perm, client in single.items():
     run_matrix(f"nur {perm}", client, {perm})
@@ -336,6 +339,13 @@ mutations = [
     (f"{base}/persons/{person_a.id}/deactivate/", {}),
     (f"{base}/settings/users/invite/", {"email": "x@example.org"}),
     (f"{base}/applications/{app_a.id}/process/", {"status": "received"}),
+    # Beratungsfolge (Issue #34)
+    (f"{base}/papers/{paper_pub.id}/consultations/add/", {"organization": str(org_a.id)}),
+    (f"{base}/consultations/{consultation_a.id}/update/", {"role": "hearing"}),
+    (f"{base}/consultations/{consultation_a.id}/delete/", {}),
+    (f"{base}/consultations/{consultation_a.id}/move/", {"direction": "up"}),
+    (f"{base}/consultations/{consultation_a.id}/schedule/", {"meeting": str(meeting_pub.id)}),
+    (f"{base}/consultations/{consultation_a.id}/forward/", {}),
 ]
 
 before_counts = (
@@ -348,6 +358,7 @@ before_counts = (
     SessionOrganizationMembership.objects.count(),
     SessionInvitationDispatch.objects.count(),
     SessionAttendance.objects.count(),
+    SessionConsultation.objects.count(),
 )
 
 bad = [url for url, data in mutations if no_perm.post(url, data).status_code != 403]
@@ -363,8 +374,11 @@ after_counts = (
     SessionOrganizationMembership.objects.count(),
     SessionInvitationDispatch.objects.count(),
     SessionAttendance.objects.count(),
+    SessionConsultation.objects.count(),
 )
-check("Keine Mutation ohne Berechtigung ausgeführt", before_counts == after_counts, f"{before_counts} -> {after_counts}")
+check(
+    "Keine Mutation ohne Berechtigung ausgeführt", before_counts == after_counts, f"{before_counts} -> {after_counts}"
+)
 check("TOP nicht abgesetzt", not SessionAgendaItem.objects.get(pk=top_pub.pk).is_withdrawn)
 check("Antrag-Status unverändert", SessionApplication.objects.get(pk=app_a.pk).status == "submitted")
 
@@ -436,6 +450,9 @@ for url, data in [
     (f"{base}/meetings/{meeting_b.id}/resolutions/generate/", {}),
     (f"{base}/agenda/{top_b.id}/forwarding/add/", {"recipient": "Bauamt"}),
     (f"{base}/papers/{paper_b.id}/workflow/submit/", {}),
+    (f"{base}/papers/{paper_b.id}/consultations/add/", {"organization": str(org_b.id)}),
+    (f"{base}/consultations/{consultation_b.id}/update/", {"role": "hearing"}),
+    (f"{base}/consultations/{consultation_b.id}/delete/", {}),
 ]:
     status = admin.post(url, data).status_code
     if status != 404:

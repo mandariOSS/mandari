@@ -13,6 +13,7 @@ from apps.session.models import (
     SessionAgendaItem,
     SessionApplication,
     SessionAttendance,
+    SessionConsultation,
     SessionFile,
     SessionMeeting,
     SessionOrganization,
@@ -35,6 +36,7 @@ AUDITED_MODELS = [
     SessionOrganization,
     SessionOrganizationMembership,
     SessionAttendance,
+    SessionConsultation,
     SessionFile,
     SessionUser,
 ]
@@ -50,3 +52,35 @@ for _model in AUDITED_MODELS:
 # verschwindenden Mandanten anlegen (IntegrityError/hängende Fremdschlüssel).
 pre_delete.connect(audit.tenant_pre_delete, sender=SessionTenant, dispatch_uid="session_audit_tenant_pre_delete")
 post_delete.connect(audit.tenant_post_delete, sender=SessionTenant, dispatch_uid="session_audit_tenant_post_delete")
+
+
+# =============================================================================
+# Beratungsfolge (Issue #34): Beschlussergebnis an die Station zurückschreiben
+# =============================================================================
+
+
+def sync_consultation_result(sender, instance, **kwargs):
+    """
+    Schreibt das Abstimmungsergebnis eines TOP an die verknüpfte
+    Beratungsstation zurück (Issue #34).
+
+    Wird das Ergebnis am TOP erfasst (Niederschrift/Beschlussregister,
+    Issues #31/#32), spiegelt die Station der Beratungsfolge den Stand —
+    so ist z. B. das Vorberatungsergebnis in der Ratssitzung sichtbar.
+    """
+    if kwargs.get("raw"):
+        return
+    try:
+        consultation = instance.consultation
+    except SessionConsultation.DoesNotExist:
+        return
+    if consultation.result != instance.vote_result:
+        consultation.result = instance.vote_result
+        consultation.save(update_fields=["result", "updated_at"])
+
+
+post_save.connect(
+    sync_consultation_result,
+    sender=SessionAgendaItem,
+    dispatch_uid="session_consultation_result_sync",
+)

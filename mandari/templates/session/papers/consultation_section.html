@@ -1,0 +1,224 @@
+{% comment %}
+Beratungsfolge einer Vorlage (Issue #34).
+Kontext: paper, consultations, consultation_can_edit, consultation_can_schedule,
+consultation_roles, consultation_results, consultation_organizations,
+consultation_meetings, tenant_slug
+{% endcomment %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="route" class="w-5 h-5 text-indigo-500"></i>
+            Beratungsfolge
+        </h2>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Weg der Vorlage durch die Gremien — Vorberatung bis Entscheidung.
+        </p>
+    </div>
+
+    {% if consultations %}
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for station in consultations %}
+        <div class="px-6 py-4">
+            <div class="flex items-start gap-4">
+                <span class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
+                    {% if station.is_done %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                    {% elif station.is_scheduled %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
+                    {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                    {{ station.order }}
+                </span>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-medium text-gray-900 dark:text-white text-sm">{{ station.organization.name }}</span>
+                        <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300">
+                            {{ station.get_role_display }}
+                        </span>
+                        {% if station.authoritative %}
+                        <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+                              title="Entscheidende Beratung (OParl: authoritative)">
+                            Entscheidend
+                        </span>
+                        {% endif %}
+                        {% if station.result != "pending" %}
+                        <span class="px-2 py-0.5 text-xs font-medium rounded-full
+                            {% if station.result == 'approved' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                            {% elif station.result == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+                            {% elif station.result == 'deferred' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400
+                            {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                            {{ station.get_result_display }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {% if station.agenda_item %}
+                        <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=station.agenda_item.meeting_id %}"
+                           class="text-primary-600 dark:text-primary-400 hover:underline">
+                            TOP {{ station.agenda_item.number }} — {{ station.agenda_item.meeting.name }}
+                            ({{ station.agenda_item.meeting.start|date:"d.m.Y" }})
+                        </a>
+                        {% elif station.meeting %}
+                        Zielsitzung:
+                        <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=station.meeting.id %}"
+                           class="text-primary-600 dark:text-primary-400 hover:underline">
+                            {{ station.meeting.name }} ({{ station.meeting.start|date:"d.m.Y" }})
+                        </a>
+                        — noch kein TOP
+                        {% else %}
+                        Noch nicht terminiert
+                        {% endif %}
+                    </p>
+
+                    {% if consultation_can_edit %}
+                    <!-- Station bearbeiten -->
+                    <form method="post" action="{% url 'session:consultation_update' tenant_slug=tenant_slug consultation_id=station.id %}"
+                          class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        {% csrf_token %}
+                        <select name="role" class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                            {% for value, label in consultation_roles %}
+                            <option value="{{ value }}" {% if station.role == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <select name="meeting" class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white max-w-[240px]"
+                                {% if station.agenda_item %}disabled title="Zielsitzung fest, solange ein TOP existiert"{% endif %}>
+                            <option value="">— Zielsitzung wählen —</option>
+                            {% for meeting in consultation_meetings %}
+                            {% if meeting.organization_id == station.organization_id %}
+                            <option value="{{ meeting.id }}" {% if station.meeting_id == meeting.id %}selected{% endif %}>
+                                {{ meeting.start|date:"d.m.Y" }} — {{ meeting.name|truncatechars:40 }}
+                            </option>
+                            {% endif %}
+                            {% endfor %}
+                            {% if station.meeting and station.meeting not in consultation_meetings %}
+                            <option value="{{ station.meeting_id }}" selected>{{ station.meeting.start|date:"d.m.Y" }} — {{ station.meeting.name|truncatechars:40 }}</option>
+                            {% endif %}
+                        </select>
+                        {% if station.agenda_item %}
+                        <input type="hidden" name="meeting" value="{{ station.meeting_id }}">
+                        {% endif %}
+                        {% if not station.agenda_item %}
+                        <select name="result" class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                title="Manuelles Ergebnis (nur ohne TOP — sonst kommt das Ergebnis aus der Sitzung)">
+                            {% for value, label in consultation_results %}
+                            <option value="{{ value }}" {% if station.result == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        {% endif %}
+                        <label class="inline-flex items-center gap-1 text-gray-600 dark:text-gray-400">
+                            <input type="checkbox" name="authoritative" {% if station.authoritative %}checked{% endif %}
+                                   class="rounded border-gray-300 dark:border-gray-600">
+                            entscheidend
+                        </label>
+                        <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                            Speichern
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+
+                <div class="flex items-center gap-1 flex-shrink-0">
+                    {% if consultation_can_schedule and not station.agenda_item and station.meeting %}
+                    <form method="post" action="{% url 'session:consultation_schedule' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline">
+                        {% csrf_token %}
+                        <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                                title="TOP auf der Zielsitzung anlegen">
+                            TOP anlegen
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% if consultation_can_schedule and station.is_done and not forloop.last %}
+                    <form method="post" action="{% url 'session:consultation_forward' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline">
+                        {% csrf_token %}
+                        <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"
+                                title="An die nächste Station weiterleiten (TOP anlegen)">
+                            Weiterleiten
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% if consultation_can_edit %}
+                    <form method="post" action="{% url 'session:consultation_move' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="direction" value="up">
+                        <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded" title="Nach oben">
+                            <i data-lucide="chevron-up" class="w-4 h-4"></i>
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'session:consultation_move' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="direction" value="down">
+                        <button type="submit" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded" title="Nach unten">
+                            <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'session:consultation_delete' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline"
+                          onsubmit="return confirm('Station wirklich aus der Beratungsfolge entfernen? Ein bereits angelegter TOP bleibt bestehen.');">
+                        {% csrf_token %}
+                        <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded" title="Station entfernen">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="px-6 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+        Noch keine Beratungsfolge geplant.
+    </div>
+    {% endif %}
+
+    {% if consultation_can_edit %}
+    <!-- Station hinzufügen -->
+    <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30">
+        <form method="post" action="{% url 'session:consultation_add' tenant_slug=tenant_slug paper_id=paper.id %}"
+              class="flex flex-wrap items-center gap-2 text-sm">
+            {% csrf_token %}
+            <span class="text-sm text-gray-600 dark:text-gray-400">Station hinzufügen:</span>
+            <select name="organization" required id="consultation-add-org"
+                    class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <option value="">— Gremium —</option>
+                {% for org in consultation_organizations %}
+                <option value="{{ org.id }}">{{ org.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="role" class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                {% for value, label in consultation_roles %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select name="meeting" id="consultation-add-meeting"
+                    class="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white max-w-[260px]">
+                <option value="">— Zielsitzung (optional) —</option>
+                {% for meeting in consultation_meetings %}
+                <option value="{{ meeting.id }}" data-org="{{ meeting.organization_id }}">
+                    {{ meeting.start|date:"d.m.Y" }} — {{ meeting.name|truncatechars:40 }}
+                </option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="inline-flex items-center gap-1 px-3 py-1 text-xs bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors">
+                <i data-lucide="plus" class="w-3 h-3"></i>
+                Hinzufügen
+            </button>
+        </form>
+        <script>
+        // Zielsitzungs-Auswahl auf das gewählte Gremium einschränken
+        (function () {
+            var orgSelect = document.getElementById('consultation-add-org');
+            var meetingSelect = document.getElementById('consultation-add-meeting');
+            if (!orgSelect || !meetingSelect) return;
+            function filterMeetings() {
+                var org = orgSelect.value;
+                Array.prototype.forEach.call(meetingSelect.options, function (opt) {
+                    if (!opt.value) return;
+                    var visible = !org || opt.getAttribute('data-org') === org;
+                    opt.hidden = !visible;
+                    if (!visible && opt.selected) meetingSelect.value = '';
+                });
+            }
+            orgSelect.addEventListener('change', filterMeetings);
+            filterMeetings();
+        })();
+        </script>
+    </div>
+    {% endif %}
+</div>

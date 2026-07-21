@@ -124,6 +124,9 @@
         <!-- Anlagen -->
         {% include "session/partials/file_section.html" with file_target_type="paper" file_target_id=paper.id %}
 
+        <!-- Beratungsfolge (Issue #34) -->
+        {% include "session/papers/consultation_section.html" %}
+
         <!-- Beratungshistorie -->
         {% if agenda_items %}
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">

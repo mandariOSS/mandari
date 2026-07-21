@@ -29,6 +29,8 @@ from django.views.generic import (
 
 from .. import audit
 from ..models import (
+    SessionConsultation,
+    SessionMeeting,
     SessionOrganization,
     SessionPaper,
     SessionPerson,
@@ -130,6 +132,33 @@ class PaperDetailView(SessionViewMixin, DetailView):
 
         # Agenda items (where this paper was discussed)
         context["agenda_items"] = paper.agenda_items.select_related("meeting__organization").order_by("-meeting__start")
+
+        # Beratungsfolge (Issue #34): Stationen + Formulardaten
+        context["consultations"] = list(
+            paper.consultations.select_related("organization", "meeting", "agenda_item__meeting").order_by(
+                "order", "created_at"
+            )
+        )
+        context["consultation_can_edit"] = self.has_permission("edit_papers")
+        context["consultation_can_schedule"] = self.has_permission("edit_meetings")
+        context["consultation_roles"] = SessionConsultation.ROLE_CHOICES
+        context["consultation_results"] = SessionConsultation.RESULT_CHOICES
+        if context["consultation_can_edit"] or context["consultation_can_schedule"]:
+            context["consultation_organizations"] = SessionOrganization.objects.filter(
+                tenant=self.session_tenant, is_active=True
+            ).order_by("name")
+            # Zielsitzungen: kommende (und kürzlich vergangene) Sitzungen;
+            # Ö/NÖ: NÖ-Sitzungen nur für Berechtigte wählbar/sichtbar
+            from datetime import timedelta
+
+            meetings = SessionMeeting.objects.filter(
+                tenant=self.session_tenant,
+                cancelled=False,
+                start__gte=timezone.now() - timedelta(days=14),
+            )
+            if not self.has_permission("view_non_public_meetings"):
+                meetings = meetings.filter(is_public=True)
+            context["consultation_meetings"] = meetings.select_related("organization").order_by("start")[:200]
 
         return context
 

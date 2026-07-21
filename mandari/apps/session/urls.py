@@ -179,6 +179,37 @@ urlpatterns = [
         views.PaperUpdateView.as_view(),
         name="paper_edit",
     ),
+    # Beratungsfolge (Issue #34)
+    path(
+        "<slug:tenant_slug>/papers/<uuid:paper_id>/consultations/add/",
+        views.ConsultationCreateView.as_view(),
+        name="consultation_add",
+    ),
+    path(
+        "<slug:tenant_slug>/consultations/<uuid:consultation_id>/update/",
+        views.ConsultationUpdateView.as_view(),
+        name="consultation_update",
+    ),
+    path(
+        "<slug:tenant_slug>/consultations/<uuid:consultation_id>/delete/",
+        views.ConsultationDeleteView.as_view(),
+        name="consultation_delete",
+    ),
+    path(
+        "<slug:tenant_slug>/consultations/<uuid:consultation_id>/move/",
+        views.ConsultationMoveView.as_view(),
+        name="consultation_move",
+    ),
+    path(
+        "<slug:tenant_slug>/consultations/<uuid:consultation_id>/schedule/",
+        views.ConsultationScheduleView.as_view(),
+        name="consultation_schedule",
+    ),
+    path(
+        "<slug:tenant_slug>/consultations/<uuid:consultation_id>/forward/",
+        views.ConsultationForwardView.as_view(),
+        name="consultation_forward",
+    ),
     # Applications
     path(
         "<slug:tenant_slug>/applications/",

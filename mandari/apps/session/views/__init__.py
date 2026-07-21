@@ -31,6 +31,14 @@ from .attendance import (
 from .audit import (
     AuditLogListView,
 )
+from .consultations import (
+    ConsultationCreateView,
+    ConsultationDeleteView,
+    ConsultationForwardView,
+    ConsultationMoveView,
+    ConsultationScheduleView,
+    ConsultationUpdateView,
+)
 from .dashboard import (
     DashboardView,
 )
@@ -120,6 +128,12 @@ __all__ = [
     "AttendanceGenerateView",
     "AttendanceUpdateView",
     "AuditLogListView",
+    "ConsultationCreateView",
+    "ConsultationDeleteView",
+    "ConsultationForwardView",
+    "ConsultationMoveView",
+    "ConsultationScheduleView",
+    "ConsultationUpdateView",
     "DashboardView",
     "FileDeleteView",
     "FileDownloadView",
