@@ -1287,6 +1287,64 @@ class CalendarFeedToken(models.Model):
         return self
 
 
+class FactionPublicApiAccess(models.Model):
+    """
+    Öffentliche API v1 je Organisation (Issue #71).
+
+    Bewusstes Opt-in (Default: AUS). Der Zugriff läuft über ein opakes
+    Zufalls-Token in der URL — kein Organisations-Slug, dadurch nicht
+    enumerierbar. Das Token ist jederzeit regenerierbar (alte URLs werden
+    sofort ungültig). Die API liefert ausschließlich ÖFFENTLICHE Termine
+    und Tagesordnungen: niemals NÖ-TOPs (auch nicht als Platzhalter),
+    niemals Protokollinhalte/Beschlüsse/Teilnehmer.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    organization = models.OneToOneField(
+        "tenants.Organization",
+        on_delete=models.CASCADE,
+        related_name="public_api_access",
+        verbose_name="Organisation",
+    )
+
+    is_enabled = models.BooleanField(default=False, verbose_name="Öffentliche API aktiviert")
+
+    token = models.CharField(
+        max_length=64, unique=True, default=generate_opaque_token, editable=False, verbose_name="API-Token"
+    )
+
+    # Konfigurierbarer Zeitraum für vergangene Sitzungen (in Tagen)
+    past_days = models.PositiveIntegerField(default=90, verbose_name="Vergangene Sitzungen (Tage)")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Öffentlicher API-Zugang"
+        verbose_name_plural = "Öffentliche API-Zugänge"
+
+    def __str__(self):
+        status = "aktiv" if self.is_enabled else "inaktiv"
+        return f"Öffentliche API für {self.organization.name} ({status})"
+
+    @property
+    def audit_repr(self) -> str:
+        return f"Öffentliche Fraktions-API ({'aktiviert' if self.is_enabled else 'deaktiviert'})"
+
+    @classmethod
+    def for_organization(cls, organization) -> "FactionPublicApiAccess":
+        """Zugangs-Konfiguration holen oder (deaktiviert) anlegen."""
+        obj, _created = cls.objects.get_or_create(organization=organization)
+        return obj
+
+    def regenerate(self):
+        """Token erneuern — bisherige API-URLs werden sofort ungültig."""
+        self.token = generate_opaque_token()
+        self.save(update_fields=["token", "updated_at"])
+        return self
+
+
 class FactionAgendaItemAttachment(models.Model):
     """Datei-Anhang eines Fraktions-TOPs."""
 

@@ -70,6 +70,10 @@ urlpatterns = [
     path("admin/logout/", lambda request: redirect("accounts:logout")),
     # Admin
     path("admin/", admin.site.urls),
+    # Öffentliche Fraktions-API v1 (Issue #71): read-only, Opt-in je
+    # Organisation, opakes Token — pfadbasiert unter /api/public/v1/
+    # (Subdomain api.mandari.de wäre reines Caddy-Routing, gleiche Pfade)
+    path("api/public/v1/", include("apps.work.faction.public_api", namespace="faction_public_api")),
     # Public API (stats, contact form - consumed by Wagtail marketing site)
     path("api/", include("insight_core.api_urls")),
     # Provisioning-API fürs Billing-Portal (nur aktiv wenn PROVISIONING_API_KEY gesetzt)

@@ -58,6 +58,10 @@ Welle 3 (Issues #68, #70, #71):
   persönlicher iCal-Feed mit opakem Token (ohne Login), Fraktions- und
   RIS-Termine, Token-Erneuerung macht die alte URL sofort ungültig,
   keinerlei NÖ-/Protokollinhalte im Feed (Response-Scan-Beweis)
+- Öffentliche API v1 (#71): Aktivierungspflicht je Organisation (Opt-in,
+  Default aus), Zugriff nur über opakes Token (404 bei unbekannt/inaktiv),
+  CORS + Cache-Header, keine Entwürfe, NÖ-/Protokoll-Freiheit als
+  Response-Scan-Beweis, valides OpenAPI-Schema, Token-Erneuerung
 """
 
 import base64
@@ -1982,6 +1986,119 @@ resp = anon_q.get(f"/kalender/feed/{old_feed_token}.ics")
 check("Alte Feed-URL nach Erneuerung -> 404", resp.status_code == 404, f"got {resp.status_code}")
 resp = anon_q.get(f"/kalender/feed/{feed_token.token}.ics")
 check("Neue Feed-URL -> 200", resp.status_code == 200, f"got {resp.status_code}")
+
+# =============================================================================
+# Phase R: Öffentliche API v1 — Opt-in, Token, NÖ-Freiheit, OpenAPI (Issue #71)
+# =============================================================================
+print()
+print("=== Phase R: Öffentliche API v1 ===")
+
+import json  # noqa: E402
+import uuid as _uuid  # noqa: E402
+
+from apps.work.faction.models import FactionPublicApiAccess  # noqa: E402
+
+anon_r = Client()
+access = FactionPublicApiAccess.for_organization(org)
+check("Default: API deaktiviert (Opt-in)", access.is_enabled is False)
+
+# Ohne Opt-in liefert die API nichts — auch mit korrektem (deaktiviertem) Token
+resp = anon_r.get(f"/api/public/v1/fraktionen/{access.token}/sitzungen/")
+check("Ohne Opt-in -> 404 (auch mit korrektem Token)", resp.status_code == 404, f"got {resp.status_code}")
+resp = anon_r.get("/api/public/v1/fraktionen/voellig-unbekanntes-token/sitzungen/")
+check("Unbekanntes Token -> 404", resp.status_code == 404, f"got {resp.status_code}")
+
+# Aktivierung nur mit faction.manage
+resp = unsworn.post(f"{base}/organization/faction-settings/", {"section": "api_save", "api_enabled": "on"})
+access.refresh_from_db()
+check("Aktivierung ohne faction.manage -> 403", resp.status_code == 403 and access.is_enabled is False)
+
+resp = chair.post(
+    f"{base}/organization/faction-settings/",
+    {"section": "api_save", "api_enabled": "on", "api_past_days": "365"},
+)
+access.refresh_from_db()
+check("Opt-in gespeichert (aktiv, 365 Tage)", access.is_enabled is True and access.past_days == 365)
+check(
+    "API-Konfiguration auditiert",
+    FactionAuditLog.objects.filter(organization=org, action="api_settings_changed").exists(),
+)
+check(
+    "API-Token opak (kein Org-Bezug, nicht erratbar)",
+    len(access.token) >= 20 and org.slug not in access.token.lower(),
+    access.token,
+)
+
+# Terminliste: JSON, CORS, Caching, keine Entwürfe
+resp = anon_r.get(f"/api/public/v1/fraktionen/{access.token}/sitzungen/")
+check("Terminliste -> 200 JSON", resp.status_code == 200 and resp["Content-Type"].startswith("application/json"))
+check("CORS-Header gesetzt", resp["Access-Control-Allow-Origin"] == "*")
+check("Cache-Header gesetzt", "max-age" in resp.get("Cache-Control", ""))
+list_data = json.loads(resp.content)
+list_titles = [m["title"] for m in list_data["meetings"]]
+check("Liste enthält öffentliche Sitzungen", "Fraktionssitzung Eins" in list_titles, str(list_titles))
+check("Liste OHNE Entwürfe", "ENTWURF-SITZUNG-QQ" not in list_titles)
+list_text = resp.content.decode("utf-8")
+check(
+    "Liste ohne NÖ-/Protokoll-/Personen-Inhalte (Response-Scan)",
+    "GEHEIM" not in list_text and "EINTRAG" not in list_text and "Veraxa" not in list_text,
+)
+
+# OPTIONS-Preflight für Browser-Einbindung
+resp = anon_r.options(f"/api/public/v1/fraktionen/{access.token}/sitzungen/")
+check("OPTIONS-Preflight mit CORS", resp.status_code == 204 and resp["Access-Control-Allow-Origin"] == "*")
+
+# Sitzungsdetail: öffentliche TO, NÖ erscheint niemals (auch nicht als Platzhalter)
+resp = anon_r.get(f"/api/public/v1/fraktionen/{access.token}/sitzungen/{meeting1.id}/")
+check("Detail -> 200", resp.status_code == 200, f"got {resp.status_code}")
+detail_data = json.loads(resp.content)
+agenda_titles = [item["title"] for item in detail_data.get("agenda", [])]
+check("Detail mit öffentlicher Tagesordnung", "OEFF-TOP-ALPHA" in agenda_titles, str(agenda_titles))
+check(
+    "Genau die 3 Ö-TOPs, kein NÖ-Platzhalter",
+    len(detail_data.get("agenda", [])) == 3,
+    str(detail_data.get("agenda")),
+)
+detail_text = resp.content.decode("utf-8")
+check(
+    "NÖ-TOPs/Protokolle/Beschlüsse erscheinen niemals (Response-Scan)",
+    "GEHEIM-TOP-OMEGA" not in detail_text
+    and "GEHEIMER-EINTRAG-456" not in detail_text
+    and "OEFFENTLICHER-EINTRAG-123" not in detail_text
+    and "TOPLOSER-EINTRAG-789" not in detail_text
+    and "Veraxa" not in detail_text,
+)
+
+resp = anon_r.get(f"/api/public/v1/fraktionen/{access.token}/sitzungen/{_uuid.uuid4()}/")
+check("Unbekannte Sitzung -> 404", resp.status_code == 404, f"got {resp.status_code}")
+
+# OpenAPI-Schema: valide, versioniert, ohne Token abrufbar
+resp = anon_r.get("/api/public/v1/openapi.json")
+check("OpenAPI-Endpoint -> 200", resp.status_code == 200, f"got {resp.status_code}")
+schema = json.loads(resp.content)
+check(
+    "OpenAPI-Schema valide (3.x, Pfade, Schemas)",
+    schema.get("openapi", "").startswith("3.")
+    and "/fraktionen/{token}/sitzungen/" in schema.get("paths", {})
+    and "Meeting" in schema.get("components", {}).get("schemas", {}),
+)
+
+# Token-Erneuerung: alte URL sofort ungültig
+old_api_token = access.token
+resp = chair.post(f"{base}/organization/faction-settings/", {"section": "api_regenerate"})
+access.refresh_from_db()
+check("API-Token erneuert", access.token != old_api_token)
+resp = anon_r.get(f"/api/public/v1/fraktionen/{old_api_token}/sitzungen/")
+check("Altes API-Token -> 404", resp.status_code == 404, f"got {resp.status_code}")
+resp = anon_r.get(f"/api/public/v1/fraktionen/{access.token}/sitzungen/")
+check("Neues API-Token -> 200", resp.status_code == 200, f"got {resp.status_code}")
+
+# Deaktivierung wirkt sofort
+resp = chair.post(f"{base}/organization/faction-settings/", {"section": "api_save", "api_past_days": "365"})
+access.refresh_from_db()
+check("Deaktivierung gespeichert", access.is_enabled is False)
+resp = anon_r.get(f"/api/public/v1/fraktionen/{access.token}/sitzungen/")
+check("Nach Deaktivierung -> 404", resp.status_code == 404, f"got {resp.status_code}")
 
 # =============================================================================
 print()

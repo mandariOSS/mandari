@@ -341,6 +341,15 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
 
         context["schedule_horizon_days"] = getattr(django_settings, "FACTION_SCHEDULE_HORIZON_DAYS", 90)
 
+        # Öffentliche API v1 (Issue #71): Opt-in-Schalter + opakes Token
+        from apps.work.faction.models import FactionPublicApiAccess
+
+        api_access = FactionPublicApiAccess.for_organization(self.organization)
+        site_url = getattr(django_settings, "SITE_URL", "").rstrip("/")
+        context["api_access"] = api_access
+        context["api_base_url"] = f"{site_url}/api/public/v1/fraktionen/{api_access.token}/"
+        context["api_openapi_url"] = f"{site_url}/api/public/v1/openapi.json"
+
         return context
 
     def post(self, request, *args, **kwargs):
@@ -357,6 +366,8 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
                 "delete_exception": self._delete_exception,
                 "add_rule": self._add_rule,
                 "delete_rule": self._delete_rule,
+                "api_save": self._api_save,
+                "api_regenerate": self._api_regenerate,
             }.get(section)
             if handler is None:
                 messages.error(request, "Ungültige Aktion.")
@@ -553,6 +564,61 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
             id=request.POST.get("rule_id"), schedule__organization=self.organization
         ).delete()
         messages.success(request, "Ausfallregel entfernt.")
+
+    # -- Öffentliche API v1 (Issue #71) -----------------------------------
+
+    def _api_save(self, request):
+        """Opt-in-Schalter und Zeitraum der öffentlichen API speichern (auditiert)."""
+        from django.contrib import messages
+
+        from apps.work.faction.audit import log_event
+        from apps.work.faction.models import FactionPublicApiAccess
+
+        access = FactionPublicApiAccess.for_organization(self.organization)
+        access.is_enabled = request.POST.get("api_enabled") == "on"
+        try:
+            past_days = int(request.POST.get("api_past_days", access.past_days))
+            access.past_days = max(0, min(past_days, 3650))
+        except (TypeError, ValueError):
+            pass
+        access.save(update_fields=["is_enabled", "past_days", "updated_at"])
+
+        log_event(
+            "api_settings_changed",
+            access,
+            organization=self.organization,
+            membership=self.membership,
+            is_internal=False,
+            changes={"is_enabled": access.is_enabled, "past_days": access.past_days},
+        )
+        if access.is_enabled:
+            messages.success(request, "Öffentliche API aktiviert.")
+        else:
+            messages.success(request, "Öffentliche API deaktiviert.")
+
+    def _api_regenerate(self, request):
+        """API-Token erneuern — bisherige URLs werden sofort ungültig (auditiert)."""
+        from django.contrib import messages
+
+        from apps.work.faction.audit import log_event
+        from apps.work.faction.models import FactionPublicApiAccess
+
+        access = FactionPublicApiAccess.for_organization(self.organization)
+        access.regenerate()
+
+        log_event(
+            "api_settings_changed",
+            access,
+            organization=self.organization,
+            membership=self.membership,
+            is_internal=False,
+            changes={"token": "erneuert"},
+        )
+        messages.success(
+            request,
+            "API-Token erneuert. Bisherige API-URLs sind ab sofort ungültig — "
+            "bitte die Einbindung auf der Webseite aktualisieren.",
+        )
 
 
 class OrganizationDocumentsView(WorkViewMixin, TemplateView):
