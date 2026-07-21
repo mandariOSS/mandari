@@ -77,6 +77,8 @@ class FactionActionView(WorkViewMixin, View):
             "check_in": self._check_in,
             "check_out": self._check_out,
             "add_attendee": self._add_attendee,
+            "set_participation": self._set_participation,
+            "confirm_attendance": self._confirm_attendance,
             # Proposals
             "propose": self._propose,
             "accept_proposal": self._accept_proposal,
@@ -737,6 +739,9 @@ class FactionActionView(WorkViewMixin, View):
     # -- Attendance handlers -------------------------------------------
 
     def _respond(self, request, meeting):
+        # Nach der finalen Bestätigung (Issue #67) sind Teilnahme-Änderungen gesperrt
+        if meeting.attendance_confirmed_at is not None:
+            return HttpResponse(status=403)
         try:
             attendance = meeting.attendances.get(membership=self.membership)
         except FactionAttendance.DoesNotExist:
@@ -771,11 +776,18 @@ class FactionActionView(WorkViewMixin, View):
     def _check_in(self, request, meeting):
         if not self.membership.has_permission("faction.manage"):
             return HttpResponse(status=403)
+        # Nach der finalen Bestätigung (Issue #67) sind Änderungen gesperrt
+        if meeting.attendance_confirmed_at is not None:
+            return HttpResponse(status=403)
 
         attendance = self._get_attendance(request, meeting)
         if attendance:
             attendance.status = "present"
             attendance.checked_in_at = timezone.now()
+            # Teilnahmeart (Issue #67): optional direkt beim Einchecken setzen
+            participation_type = request.POST.get("participation_type", "")
+            if participation_type in dict(FactionAttendance.PARTICIPATION_TYPE_CHOICES):
+                attendance.participation_type = participation_type
             attendance.save()
 
         if request.headers.get("HX-Request"):
@@ -786,6 +798,8 @@ class FactionActionView(WorkViewMixin, View):
 
     def _check_out(self, request, meeting):
         if not self.membership.has_permission("faction.manage"):
+            return HttpResponse(status=403)
+        if meeting.attendance_confirmed_at is not None:
             return HttpResponse(status=403)
 
         attendance = self._get_attendance(request, meeting)
@@ -799,8 +813,70 @@ class FactionActionView(WorkViewMixin, View):
 
         return self._redirect_detail(meeting)
 
+    def _set_participation(self, request, meeting):
+        """Teilnahmeart je Person setzen: vor Ort/online (Issue #67)."""
+        if not self.membership.has_permission("faction.manage"):
+            return HttpResponse(status=403)
+        # Nach der finalen Bestätigung (Issue #67) sind Änderungen gesperrt
+        if meeting.attendance_confirmed_at is not None:
+            return HttpResponse(status=403)
+
+        attendance = self._get_attendance(request, meeting)
+        participation_type = request.POST.get("participation_type", "")
+        if attendance and participation_type in dict(FactionAttendance.PARTICIPATION_TYPE_CHOICES):
+            attendance.participation_type = participation_type
+            attendance.save(update_fields=["participation_type", "updated_at"])
+
+        if request.headers.get("HX-Request"):
+            html = self._render_attendance(request, meeting)
+            return _htmx_response(html)
+
+        return self._redirect_detail(meeting)
+
+    def _confirm_attendance(self, request, meeting):
+        """
+        Teilnahmen final bestätigen (Issue #67).
+
+        Nach der Sitzung durch den Vorstand (Vorsitz/stellv. Vorsitz — der
+        Stellvertreter ohne formale Delegation, dokumentiert wird nur, wer
+        bestätigt hat). Setzt Zeitstempel + Bestätiger an Sitzung und allen
+        Teilnahmen; danach sind Teilnahme-Änderungen gesperrt.
+        """
+        from ..invitations import can_confirm_attendance
+
+        if not can_confirm_attendance(self.membership):
+            messages.error(request, "Nur Vorstand/Vorsitz können Teilnahmen bestätigen.")
+            if request.headers.get("HX-Request"):
+                return HttpResponse(status=403)
+            return self._redirect_detail(meeting)
+
+        if meeting.status != "completed":
+            messages.error(request, "Teilnahmen können erst nach Sitzungsende bestätigt werden.")
+            if request.headers.get("HX-Request"):
+                return HttpResponse(status=400)
+            return self._redirect_detail(meeting)
+
+        if meeting.attendance_confirmed_at is not None:
+            messages.warning(request, "Teilnahmen sind bereits bestätigt.")
+            return self._refresh_or_redirect(request, meeting)
+
+        now = timezone.now()
+        for attendance in meeting.attendances.all():
+            attendance.confirmed_final_at = now
+            attendance.confirmed_final_by = self.membership
+            attendance.save(update_fields=["confirmed_final_at", "confirmed_final_by", "updated_at"])
+
+        meeting.attendance_confirmed_at = now
+        meeting.attendance_confirmed_by = self.membership
+        meeting.save(update_fields=["attendance_confirmed_at", "attendance_confirmed_by", "updated_at"])
+
+        return self._refresh_or_redirect(request, meeting, "Teilnahmen final bestätigt.")
+
     def _add_attendee(self, request, meeting):
         if not self.membership.has_permission("faction.manage"):
+            return HttpResponse(status=403)
+        # Nach der finalen Bestätigung (Issue #67) sind Änderungen gesperrt
+        if meeting.attendance_confirmed_at is not None:
             return HttpResponse(status=403)
 
         attendee_type = request.POST.get("attendee_type")

@@ -107,6 +107,38 @@
     {% endif %}
 </div>
 
+{# Teilnahme-Bestätigung (Issue #67): nach der Sitzung durch den Vorstand #}
+{% if attendance_confirmed %}
+<div class="bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4">
+    <p class="text-xs text-green-700 dark:text-green-400 flex items-center gap-2">
+        <i data-lucide="badge-check" class="w-4 h-4"></i>
+        Teilnahmen final bestätigt am {{ meeting.attendance_confirmed_at|date:"d.m.Y H:i" }} Uhr
+        {% if meeting.attendance_confirmed_by %}durch {{ meeting.attendance_confirmed_by.user.get_display_name }}{% endif %}
+    </p>
+</div>
+{% elif can_confirm_attendance %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+    <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+        <i data-lucide="badge-check" class="w-4 h-4 text-primary-600"></i>
+        Teilnahmen bestätigen
+    </h4>
+    <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+        Bestätigt die erfassten Teilnahmen final (Grundlage für Teilnahmenachweise).
+        Danach sind Änderungen an der Anwesenheit gesperrt.
+    </p>
+    <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "confirm_attendance"}'
+          hx-confirm="Teilnahmen final bestätigen? Danach sind keine Änderungen mehr möglich."
+          class="w-full">
+        {% csrf_token %}
+        <button type="submit" class="w-full py-2 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 flex items-center justify-center gap-2">
+            <i data-lucide="badge-check" class="w-4 h-4"></i>
+            Final bestätigen
+        </button>
+    </form>
+</div>
+{% endif %}
+
 {# Nachtrag (Issue #63): Protokoll ist endgültig — Korrekturen nur als sichtbarer Nachtrag #}
 {% if can_add_addendum %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">

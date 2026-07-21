@@ -201,6 +201,9 @@ def _special_action(old_instance, new_instance) -> str | None:
             or old_instance.release_notice_final_sent_at != new_instance.release_notice_final_sent_at
         ):
             return "release_notice_sent"
+        # Finale Teilnahme-Bestätigung durch den Vorstand (Issue #67)
+        if old_instance.attendance_confirmed_at is None and new_instance.attendance_confirmed_at is not None:
+            return "attendance_confirmed"
         if not old_instance.protocol_approved and new_instance.protocol_approved:
             return "protocol_approved"
         if old_instance.protocol_status != new_instance.protocol_status and new_instance.protocol_status == "pending":

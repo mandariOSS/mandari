@@ -128,6 +128,22 @@ def can_release_invitations(membership) -> bool:
     return is_board_member(membership) or membership.has_permission("faction.invite")
 
 
+def can_confirm_attendance(membership) -> bool:
+    """
+    Darf das Mitglied Teilnahmen final bestätigen (Issue #67)?
+
+    Die Rolle Vorstand/Vorsitz — der stellv. Vorsitz darf ohne formale
+    Delegation direkt bestätigen (dokumentiert wird nur, wer es war).
+    Fallback: Sind keine Vorstands-Rollen besetzt, genügt faction.manage.
+    """
+    if membership is None or not membership.is_active:
+        return False
+    if is_board_member(membership):
+        return True
+    has_board = membership.organization.memberships.filter(is_active=True, roles__name__in=BOARD_ROLE_NAMES).exists()
+    return not has_board and membership.has_permission("faction.manage")
+
+
 # =============================================================================
 # Versand (zentral — wendet den Opt-in/Opt-out-Modus an)
 # =============================================================================

@@ -103,6 +103,18 @@ def _get_meeting_context(view, meeting):
     )
 
     can_manage_attendance = view.membership.has_permission("faction.manage")
+
+    # Teilnahme-Workflow (Issue #67): finale Bestätigung durch den Vorstand
+    from ..invitations import can_confirm_attendance as _can_confirm
+
+    attendance_confirmed = meeting.attendance_confirmed_at is not None
+    can_confirm_attendance = (
+        meeting.status == "completed" and not attendance_confirmed and _can_confirm(view.membership)
+    )
+    if attendance_confirmed:
+        # Gesperrt: keine Anwesenheitspflege mehr nach der Bestätigung
+        can_manage_attendance = False
+
     can_propose = checker.can_propose_agenda_items()
     can_create_directly = checker.can_create_agenda_items_directly()
 
@@ -163,6 +175,8 @@ def _get_meeting_context(view, meeting):
         "can_add_addendum": can_add_addendum,
         "can_start": can_start,
         "can_manage_attendance": can_manage_attendance,
+        "attendance_confirmed": attendance_confirmed,
+        "can_confirm_attendance": can_confirm_attendance,
         "invitation_release_pending": invitation_release_pending,
         "can_release_invitations": _can_release(view.membership),
         "invitation_dispatch_at": invitation_dispatch_at(meeting, inv_settings),

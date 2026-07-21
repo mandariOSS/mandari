@@ -301,6 +301,20 @@ class FactionMeeting(EncryptionMixin, models.Model):
         blank=True, null=True, verbose_name="Freigabe-Hinweis (3 h) versandt am"
     )
 
+    # Teilnahme-Workflow (Issue #67): Nach der Sitzung bestätigt der
+    # Vorstand (Vorsitz/stellv. Vorsitz) die Teilnahmen final — mit
+    # Zeitstempel und auditiertem Bestätiger. Bestätigte Teilnahmen sind
+    # die Grundlage für den Teilnahmenachweis (Issue #68).
+    attendance_confirmed_at = models.DateTimeField(blank=True, null=True, verbose_name="Teilnahmen bestätigt am")
+    attendance_confirmed_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="attendance_confirmed_meetings",
+        verbose_name="Teilnahmen bestätigt von",
+    )
+
     # Protocol (encrypted)
     protocol_encrypted = EncryptedTextField(verbose_name="Protokoll")
     protocol_status = models.CharField(
@@ -774,6 +788,32 @@ class FactionAttendance(models.Model):
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="invited", verbose_name="Status")
 
+    # Teilnahmeart (Issue #67): "vor Ort" oder "online" — digitale
+    # Teilnahme gilt als Vollteilnahme, die Unterscheidung dient
+    # ausschließlich Auswertungen
+    PARTICIPATION_TYPE_CHOICES = [
+        ("onsite", "Vor Ort"),
+        ("online", "Online"),
+    ]
+    participation_type = models.CharField(
+        max_length=10,
+        choices=PARTICIPATION_TYPE_CHOICES,
+        default="onsite",
+        verbose_name="Teilnahmeart",
+    )
+
+    # Finale Bestätigung durch den Vorstand (Issue #67) — Snapshot je
+    # Teilnahme als Grundlage für den Teilnahmenachweis (Issue #68)
+    confirmed_final_at = models.DateTimeField(blank=True, null=True, verbose_name="Final bestätigt am")
+    confirmed_final_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="finally_confirmed_attendances",
+        verbose_name="Final bestätigt von",
+    )
+
     # Response
     response_message = models.TextField(blank=True, verbose_name="Nachricht", help_text="Begründung bei Absage")
     responded_at = models.DateTimeField(blank=True, null=True, verbose_name="Antwort am")
@@ -1044,6 +1084,7 @@ class FactionAuditLog(models.Model):
         ("invitation_released", "Einladungsversand freigegeben"),
         ("release_notice_sent", "Freigabe-Hinweis versandt"),
         ("addendum", "Nachtrag erfasst"),
+        ("attendance_confirmed", "Teilnahmen bestätigt"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
