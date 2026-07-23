@@ -1,0 +1,57 @@
+{% extends "base_insight.html" %}
+{% comment %}
+Öffentliche Hinweisseite "Datenschutz im RIS" je Session-Mandant (Issue #43).
+Ohne Login erreichbar; Inhalt je Mandant konfigurierbar (Einstellungen ->
+Datenschutz). Ohne eigenen Text erscheint ein neutraler Standardhinweis.
+{% endcomment %}
+
+{% block title %}Datenschutz — {{ tenant.name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto py-10">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center gap-3 mb-6">
+            <span class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-teal-100 dark:bg-teal-900/30">
+                <i data-lucide="shield" class="w-6 h-6 text-teal-600 dark:text-teal-400"></i>
+            </span>
+            <div>
+                <h1 class="text-xl font-bold text-gray-900 dark:text-white">Datenschutz im Ratsinformationssystem</h1>
+                <p class="text-sm text-gray-500 dark:text-gray-400">{{ tenant.name }}</p>
+            </div>
+        </div>
+
+        {% if notice %}
+        <div class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 whitespace-pre-line">{{ notice }}</div>
+        {% else %}
+        <div class="space-y-4 text-sm text-gray-700 dark:text-gray-300">
+            <p>
+                Dieses Ratsinformationssystem verarbeitet personenbezogene Daten von Mandatsträgerinnen
+                und Mandatsträgern sowie von Beschäftigten der Verwaltung ausschließlich zur Erfüllung
+                der kommunalrechtlichen Aufgaben (Sitzungsdienst, Beschlussdokumentation, Entschädigungen).
+            </p>
+            <p>
+                Öffentlich einsehbar sind nur Inhalte, die die Kommune ausdrücklich als öffentlich
+                gekennzeichnet hat (Sitzungstermine, öffentliche Tagesordnungen, Vorlagen und Beschlüsse).
+                Nicht-öffentliche Inhalte, Kontakt- und Bankdaten sind verschlüsselt gespeichert und
+                nur berechtigten Personen zugänglich.
+            </p>
+            <p>
+                Nach Ablauf der konfigurierten Aufbewahrungsfristen werden Kontakt- und Bankdaten
+                ausgeschiedener Mandatsträger anonymisiert; historische Beschlüsse bleiben aus
+                Gründen der Nachvollziehbarkeit erhalten.
+            </p>
+            <p>
+                Auskunftsersuchen nach Art. 15 DSGVO richten Sie bitte an die Kommune
+                {% if tenant.contact_email %}({{ tenant.contact_email }}){% endif %}.
+            </p>
+        </div>
+        {% endif %}
+
+        {% if tenant.contact_email or tenant.address %}
+        <div class="mt-6 pt-4 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+            Verantwortliche Stelle: {{ tenant.name }}{% if tenant.address %} · {{ tenant.address }}{% endif %}{% if tenant.contact_email %} · {{ tenant.contact_email }}{% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

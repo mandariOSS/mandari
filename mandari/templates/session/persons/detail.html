@@ -41,6 +41,14 @@
                 {% endif %}
                 {% if can_manage_persons %}
                 <div class="flex items-center gap-2">
+                    {% if "manage_settings" in permission_checker.permissions %}
+                    <a href="{% url 'session:person_data_export' tenant_slug=tenant_slug person_id=person.id %}"
+                       title="Betroffenenauskunft (Art. 15 DSGVO) als JSON exportieren"
+                       class="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
+                        <i data-lucide="file-search" class="w-4 h-4"></i>
+                        Auskunft
+                    </a>
+                    {% endif %}
                     <a href="{% url 'session:person_edit' tenant_slug=tenant_slug person_id=person.id %}"
                        class="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
                         <i data-lucide="pencil" class="w-4 h-4"></i>

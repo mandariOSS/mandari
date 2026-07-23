@@ -72,6 +72,22 @@
         </a>
         {% endif %}
 
+        <!-- Datenschutz (Issue #43) -->
+        {% if "manage_settings" in permission_checker.permissions %}
+        <a href="{% url 'session:privacy_settings' tenant_slug=tenant_slug %}"
+           class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-300 dark:hover:border-primary-700 transition-colors group">
+            <div class="flex items-center gap-4 mb-3">
+                <div class="w-12 h-12 rounded-xl bg-rose-100 dark:bg-rose-900/50 flex items-center justify-center">
+                    <i data-lucide="shield" class="w-6 h-6 text-rose-600 dark:text-rose-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">Datenschutz</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Fristen, Löschlauf, Auskunft, Hinweisseite</p>
+                </div>
+            </div>
+        </a>
+        {% endif %}
+
         <!-- Kontakt -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <div class="flex items-center gap-4 mb-3">

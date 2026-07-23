@@ -305,6 +305,27 @@ urlpatterns = [
         views.PersonDeactivateView.as_view(),
         name="person_deactivate",
     ),
+    # DSGVO-Paket (Issue #43)
+    path(
+        "<slug:tenant_slug>/datenschutz/",
+        views.PrivacyNoticeView.as_view(),
+        name="privacy_notice",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/privacy/",
+        views.PrivacySettingsView.as_view(),
+        name="privacy_settings",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/privacy/purge/",
+        views.PrivacyPurgeRunView.as_view(),
+        name="privacy_purge",
+    ),
+    path(
+        "<slug:tenant_slug>/persons/<uuid:person_id>/auskunft.json",
+        views.PersonDataExportView.as_view(),
+        name="person_data_export",
+    ),
     # Sitzungsgeld-Abrechnung (Issue #38)
     path(
         "<slug:tenant_slug>/allowances/",

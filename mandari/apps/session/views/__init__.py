@@ -100,6 +100,12 @@ from .persons import (
     PersonListView,
     PersonUpdateView,
 )
+from .privacy import (
+    PersonDataExportView,
+    PrivacyNoticeView,
+    PrivacyPurgeRunView,
+    PrivacySettingsView,
+)
 from .protocols import (
     ProtocolCreateView,
     ProtocolDetailView,
@@ -201,7 +207,11 @@ __all__ = [
     "PaperUpdateView",
     "PaperWorkflowView",
     "PersonCreateView",
+    "PersonDataExportView",
     "PersonDeactivateView",
+    "PrivacyNoticeView",
+    "PrivacyPurgeRunView",
+    "PrivacySettingsView",
     "PersonDetailView",
     "PersonListView",
     "PersonUpdateView",

@@ -1,0 +1,158 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Datenschutz{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Einstellungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Datenschutz</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Datenschutz (DSGVO)</h1>
+
+    <!-- Dokumente -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h2 class="font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+            <i data-lucide="file-check" class="w-5 h-5 text-teal-500"></i>
+            AVV, TOM und Löschkonzept
+        </h2>
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+            Die Muster-Dokumente liegen im Repository unter
+            <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">docs/DSGVO_AVV_MUSTER.md</code>
+            (Auftragsverarbeitungsvertrag),
+            <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">docs/DSGVO_TOM.md</code>
+            (technische und organisatorische Maßnahmen) und
+            <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">docs/DSGVO_LOESCHKONZEPT.md</code>
+            (Löschkonzept und Fristen).
+        </p>
+    </div>
+
+    <!-- Aufbewahrungsfristen -->
+    <form method="post" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+        {% csrf_token %}
+        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="timer" class="w-5 h-5 text-primary-500"></i>
+            Aufbewahrungsfristen je Datenart
+        </h2>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+            Angabe in Jahren; 0 = Frist deaktiviert (es wird nichts gelöscht). Maßgeblich sind die
+            örtlichen Satzungen und Aufbewahrungsvorschriften — Details im Löschkonzept.
+        </p>
+        <div class="grid sm:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Kontakt-/Bankdaten ausgeschiedener Mandatsträger
+                </label>
+                <input type="number" name="persons_years" value="{{ privacy.persons_years }}" min="0" max="100"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <p class="text-xs text-gray-400 mt-1">Jahre nach Mandatsende; der Name bleibt erhalten.</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Nicht-öffentliche Inhalte (NÖ-Protokolle, interne Notizen)
+                </label>
+                <input type="number" name="np_content_years" value="{{ privacy.np_content_years }}" min="0" max="100"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <p class="text-xs text-gray-400 mt-1">Jahre nach Sitzungsdatum.</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Audit-Log-Einträge
+                </label>
+                <input type="number" name="audit_years" value="{{ privacy.audit_years }}" min="0" max="100"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <p class="text-xs text-gray-400 mt-1">Jahre nach Eintragsdatum.</p>
+            </div>
+        </div>
+
+        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2 pt-2">
+            <i data-lucide="shield" class="w-5 h-5 text-teal-500"></i>
+            Öffentliche Hinweisseite „Datenschutz im RIS“
+        </h2>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+            Erreichbar ohne Anmeldung unter
+            <a href="{% url 'session:privacy_notice' tenant_slug=tenant_slug %}" class="text-primary-600 dark:text-primary-400 hover:underline" target="_blank">/session/{{ tenant_slug }}/datenschutz/</a>.
+            Leerer Text zeigt einen neutralen Standardhinweis.
+        </p>
+        <textarea name="notice" rows="8" placeholder="Datenschutzhinweise Ihrer Kommune für dieses Ratsinformationssystem …"
+                  class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{ privacy.notice }}</textarea>
+
+        <button type="submit"
+                class="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
+            Speichern
+        </button>
+    </form>
+
+    <!-- Löschlauf -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-amber-300 dark:border-amber-700 p-6 space-y-3">
+        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="eraser" class="w-5 h-5 text-amber-500"></i>
+            Anonymisierungs-/Löschlauf
+        </h2>
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+            Wendet die konfigurierten Fristen an: Kontakt- und Bankdaten ausgeschiedener
+            Mandatsträger werden entfernt (der Name bleibt in historischen Beschlüssen erhalten),
+            NÖ-Inhalte und alte Audit-Einträge werden gelöscht. Jeder Lauf wird im Audit-Log
+            dokumentiert. Alternativ per Kommandozeile: <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">manage.py session_privacy_purge</code>
+        </p>
+        <div class="flex flex-wrap gap-3">
+            <form method="post" action="{% url 'session:privacy_purge' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="dry_run" value="1">
+                <button type="submit"
+                        class="px-4 py-2 text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">
+                    Probelauf (nichts löschen)
+                </button>
+            </form>
+            <form method="post" action="{% url 'session:privacy_purge' tenant_slug=tenant_slug %}"
+                  onsubmit="return confirm('Löschlauf wirklich ausführen? Anonymisierte Daten sind nicht wiederherstellbar.');">
+                {% csrf_token %}
+                <button type="submit"
+                        class="px-4 py-2 text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white rounded-lg">
+                    Löschlauf ausführen
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Betroffenenauskunft -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-3">
+        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="file-search" class="w-5 h-5 text-blue-500"></i>
+            Betroffenenauskunft (Art. 15 DSGVO)
+        </h2>
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+            Export aller zu einer Person gespeicherten Daten als JSON-Datei (Stammdaten,
+            Mitgliedschaften, Anwesenheiten, Sitzungsgelder, Vorlagen). Bankdaten werden nur
+            mit der Berechtigung „Sitzungsgelder verwalten“ entschlüsselt. Jeder Export wird auditiert.
+        </p>
+        <form method="get" onsubmit="if(this.person.value){this.action='/session/{{ tenant_slug }}/persons/' + this.person.value + '/auskunft.json'; return true;} return false;"
+              class="flex flex-wrap items-end gap-3">
+            <div class="flex-1 min-w-[220px]">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Person</label>
+                <select name="person" required
+                        class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Person wählen …</option>
+                    {% for person in persons_for_export %}
+                    <option value="{{ person.id }}">{{ person.display_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit"
+                    class="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
+                Auskunft exportieren
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
