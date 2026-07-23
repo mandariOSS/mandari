@@ -1,0 +1,91 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Jahresübersicht Sitzungsgelder{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:allowances' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Sitzungsgelder
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Jahresübersicht</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Jahresübersicht {{ year }}</h1>
+        <div class="flex items-center gap-3">
+            <form method="get" class="flex items-center gap-2">
+                <input type="number" name="year" value="{{ year }}" min="2000" max="2100"
+                       class="w-24 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <button type="submit"
+                        class="px-3 py-1.5 text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">
+                    Anzeigen
+                </button>
+            </form>
+            <a href="?year={{ year }}&format=csv"
+               class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">
+                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                CSV
+            </a>
+        </div>
+    </div>
+
+    <p class="text-sm text-gray-500 dark:text-gray-400">
+        Summen je Person als Grundlage für die Jahressteuerbescheinigung (ohne stornierte Positionen).
+    </p>
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        {% if rows %}
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-900/50 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th class="px-4 py-3">Person</th>
+                        <th class="px-4 py-3 text-right">Positionen</th>
+                        <th class="px-4 py-3 text-right">Ausgezahlt</th>
+                        <th class="px-4 py-3 text-right">Genehmigt</th>
+                        <th class="px-4 py-3 text-right">Ausstehend</th>
+                        <th class="px-4 py-3 text-right">Gesamt</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+                    {% for row in rows %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-4 py-2 text-gray-900 dark:text-white">
+                            <a href="{% url 'session:person_detail' tenant_slug=tenant_slug person_id=row.person.id %}" class="hover:text-primary-600 dark:hover:text-primary-400">
+                                {{ row.person.display_name }}
+                            </a>
+                        </td>
+                        <td class="px-4 py-2 text-right text-gray-600 dark:text-gray-400">{{ row.count }}</td>
+                        <td class="px-4 py-2 text-right text-gray-600 dark:text-gray-400">{{ row.paid }} €</td>
+                        <td class="px-4 py-2 text-right text-gray-600 dark:text-gray-400">{{ row.approved }} €</td>
+                        <td class="px-4 py-2 text-right text-gray-600 dark:text-gray-400">{{ row.pending }} €</td>
+                        <td class="px-4 py-2 text-right font-medium text-gray-900 dark:text-white">{{ row.total }} €</td>
+                    </tr>
+                    {% endfor %}
+                    <tr class="bg-gray-50 dark:bg-gray-900/50 font-semibold">
+                        <td class="px-4 py-2 text-gray-900 dark:text-white">Gesamt</td>
+                        <td class="px-4 py-2"></td>
+                        <td class="px-4 py-2"></td>
+                        <td class="px-4 py-2"></td>
+                        <td class="px-4 py-2"></td>
+                        <td class="px-4 py-2 text-right text-gray-900 dark:text-white">{{ year_total }} €</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+            Keine Sitzungsgeld-Positionen im Jahr {{ year }}.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

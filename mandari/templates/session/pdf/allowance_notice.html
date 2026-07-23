@@ -1,0 +1,44 @@
+{% extends "session/pdf/base_pdf.html" %}
+{% comment %}
+Abrechnungsmitteilung Sitzungsgeld je Empfänger (Issue #38).
+Enthält KEINE Bankdaten — nur Positionen und Summen.
+{% endcomment %}
+
+{% block content %}
+<h1>Abrechnungsmitteilung Sitzungsgeld</h1>
+
+<table class="meta-table">
+    <tr><td>Empfänger/in:</td><td><strong>{{ person.display_name }}</strong></td></tr>
+    <tr><td>Zeitraum:</td><td>{{ period_start|date:"d.m.Y" }} – {{ period_end|date:"d.m.Y" }}</td></tr>
+    <tr><td>Positionen:</td><td>{{ allowances|length }}</td></tr>
+</table>
+
+<div class="section-title">Abgerechnete Sitzungen</div>
+<table class="agenda">
+    <tr>
+        <td><strong>Datum</strong></td>
+        <td><strong>Gremium / Sitzung</strong></td>
+        <td><strong>Funktion</strong></td>
+        <td><strong>Status</strong></td>
+        <td style="text-align: right;"><strong>Betrag</strong></td>
+    </tr>
+    {% for allowance in allowances %}
+    <tr>
+        <td>{{ allowance.attendance.meeting.start|date:"d.m.Y" }}</td>
+        <td>{{ allowance.attendance.meeting.organization.name }} — {{ allowance.attendance.meeting.name }}</td>
+        <td>{{ allowance.attendance.get_role_display }}</td>
+        <td>{{ allowance.get_status_display }}{% if allowance.export_reference %} ({{ allowance.export_reference }}){% endif %}</td>
+        <td style="text-align: right;">{{ allowance.amount }} {{ allowance.currency }}</td>
+    </tr>
+    {% endfor %}
+    <tr>
+        <td colspan="4"><strong>Gesamt</strong></td>
+        <td style="text-align: right;"><strong>{{ total }} EUR</strong></td>
+    </tr>
+</table>
+
+<p class="muted" style="margin-top: 14pt; font-size: 8.5pt;">
+    Diese Mitteilung dient Ihrer Information über die abgerechneten Sitzungsgelder.
+    Grundlage sind die dokumentierten Anwesenheiten der aufgeführten Sitzungen.
+</p>
+{% endblock %}

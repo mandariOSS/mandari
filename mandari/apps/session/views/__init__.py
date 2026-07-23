@@ -17,6 +17,18 @@ from .agenda import (
     AgendaReorderView,
     AttendanceUpdateView,
 )
+from .allowances import (
+    AllowanceApproveView,
+    AllowanceCsvExportView,
+    AllowanceDebtorSaveView,
+    AllowanceGenerateView,
+    AllowanceListView,
+    AllowanceNoticePdfView,
+    AllowanceRateDeleteView,
+    AllowanceRateSaveView,
+    AllowanceSepaExportView,
+    AllowanceYearView,
+)
 from .applications import (
     ApplicationConvertView,
     ApplicationDetailView,
@@ -122,6 +134,16 @@ from .terms import (
 
 __all__ = [
     "AgendaItemCreateView",
+    "AllowanceApproveView",
+    "AllowanceCsvExportView",
+    "AllowanceDebtorSaveView",
+    "AllowanceGenerateView",
+    "AllowanceListView",
+    "AllowanceNoticePdfView",
+    "AllowanceRateDeleteView",
+    "AllowanceRateSaveView",
+    "AllowanceSepaExportView",
+    "AllowanceYearView",
     "ArchiveView",
     "TermChangeView",
     "TermDeleteView",

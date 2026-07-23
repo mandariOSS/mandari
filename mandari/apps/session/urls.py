@@ -305,6 +305,57 @@ urlpatterns = [
         views.PersonDeactivateView.as_view(),
         name="person_deactivate",
     ),
+    # Sitzungsgeld-Abrechnung (Issue #38)
+    path(
+        "<slug:tenant_slug>/allowances/",
+        views.AllowanceListView.as_view(),
+        name="allowances",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/rates/save/",
+        views.AllowanceRateSaveView.as_view(),
+        name="allowance_rate_save",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/rates/<uuid:rate_id>/delete/",
+        views.AllowanceRateDeleteView.as_view(),
+        name="allowance_rate_delete",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/debtor/save/",
+        views.AllowanceDebtorSaveView.as_view(),
+        name="allowance_debtor_save",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/generate/",
+        views.AllowanceGenerateView.as_view(),
+        name="allowance_generate",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/approve/",
+        views.AllowanceApproveView.as_view(),
+        name="allowance_approve",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/export.csv",
+        views.AllowanceCsvExportView.as_view(),
+        name="allowance_export_csv",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/export/sepa/",
+        views.AllowanceSepaExportView.as_view(),
+        name="allowance_export_sepa",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/notice/<uuid:person_id>.pdf",
+        views.AllowanceNoticePdfView.as_view(),
+        name="allowance_notice_pdf",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/year/",
+        views.AllowanceYearView.as_view(),
+        name="allowance_year",
+    ),
     # Wahlperioden (Issue #39)
     path(
         "<slug:tenant_slug>/archive/",

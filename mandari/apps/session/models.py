@@ -1945,6 +1945,53 @@ class SessionAttendance(models.Model):
         return f"{self.person} - {self.meeting}: {self.status}"
 
 
+class SessionAllowanceRate(models.Model):
+    """
+    Entschädigungssatz je Gremium und Funktion (Issue #38).
+
+    Der Abrechnungslauf zieht für jede anrechenbare Anwesenheit den Satz
+    der Funktion (Vorsitz, Mitglied, …) im Gremium heran; ohne
+    Funktions-Satz gilt das Standard-Sitzungsgeld des Gremiums
+    (``SessionOrganization.allowance_amount``).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    organization = models.ForeignKey(
+        SessionOrganization,
+        on_delete=models.CASCADE,
+        related_name="allowance_rates",
+        verbose_name="Gremium",
+    )
+    role = models.CharField(
+        max_length=50,
+        choices=[
+            ("member", "Mitglied"),
+            ("chair", "Vorsitz"),
+            ("deputy_chair", "Stellv. Vorsitz"),
+            ("expert", "Sachverständige/r"),
+            ("recorder", "Protokollant/in"),
+        ],
+        default="member",
+        verbose_name="Funktion",
+    )
+    amount = models.DecimalField(max_digits=8, decimal_places=2, verbose_name="Betrag")
+    currency = models.CharField(max_length=3, default="EUR", verbose_name="Währung")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_allowance_rates"
+        verbose_name = "Entschädigungssatz"
+        verbose_name_plural = "Entschädigungssätze"
+        unique_together = ["organization", "role"]
+        ordering = ["organization__name", "role"]
+
+    def __str__(self):
+        return f"{self.organization.name} / {self.get_role_display()}: {self.amount} {self.currency}"
+
+
 class SessionAllowance(models.Model):
     """
     Allowance payment for meeting attendance.
@@ -1974,6 +2021,17 @@ class SessionAllowance(models.Model):
         ],
         default="pending",
         verbose_name="Status",
+    )
+
+    # Vier-Augen-Prinzip (Issue #38): Wer den Abrechnungslauf erzeugt hat,
+    # darf die entstandenen Positionen nicht selbst genehmigen
+    created_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_allowances",
+        verbose_name="Erzeugt von",
     )
 
     # Payment tracking

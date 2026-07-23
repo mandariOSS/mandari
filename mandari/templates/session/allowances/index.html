@@ -1,0 +1,303 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Sitzungsgelder{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Sitzungsgelder</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Sitzungsgeld-Abrechnung</h1>
+        <a href="{% url 'session:allowance_year' tenant_slug=tenant_slug %}"
+           class="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+            <i data-lucide="calendar-check" class="w-4 h-4"></i>
+            Jahresübersicht
+        </a>
+    </div>
+
+    <!-- Zeitraum-Filter -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <form method="get" class="flex flex-wrap items-end gap-3">
+            <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Von</label>
+                <input type="date" name="from" value="{{ period_start|date:'Y-m-d' }}"
+                       class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bis</label>
+                <input type="date" name="to" value="{{ period_end|date:'Y-m-d' }}"
+                       class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div class="w-48">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Gremium</label>
+                <select name="organization"
+                        class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Alle Gremien</option>
+                    {% for org in organizations %}
+                    <option value="{{ org.id }}" {% if selected_organization == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="w-40">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Status</label>
+                <select name="status"
+                        class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Alle</option>
+                    {% for value, label in allowance_statuses %}
+                    <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit"
+                    class="px-4 py-2 text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">
+                Anzeigen
+            </button>
+        </form>
+    </div>
+
+    <!-- Kennzahlen + Aktionen -->
+    <div class="grid sm:grid-cols-4 gap-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div class="text-2xl font-bold text-gray-900 dark:text-white">{{ total_amount }} €</div>
+            <div class="text-sm text-gray-500 dark:text-gray-400">Summe im Zeitraum</div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div class="text-2xl font-bold text-amber-600 dark:text-amber-400">{{ pending_count }}</div>
+            <div class="text-sm text-gray-500 dark:text-gray-400">Ausstehend</div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div class="text-2xl font-bold text-green-600 dark:text-green-400">{{ approved_count }}</div>
+            <div class="text-sm text-gray-500 dark:text-gray-400">Genehmigt</div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ paid_count }}</div>
+            <div class="text-sm text-gray-500 dark:text-gray-400">Ausgezahlt</div>
+        </div>
+    </div>
+
+    <!-- Workflow-Aktionen -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="workflow" class="w-5 h-5 text-primary-500"></i>
+            Abrechnungslauf für {{ period_start|date:"d.m.Y" }} – {{ period_end|date:"d.m.Y" }}
+        </h2>
+        <div class="flex flex-wrap gap-3">
+            <!-- 1) Erzeugen -->
+            <form method="post" action="{% url 'session:allowance_generate' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="from" value="{{ period_start|date:'Y-m-d' }}">
+                <input type="hidden" name="to" value="{{ period_end|date:'Y-m-d' }}">
+                <input type="hidden" name="organization" value="{{ selected_organization }}">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
+                    <i data-lucide="calculator" class="w-4 h-4"></i>
+                    1. Positionen erzeugen
+                </button>
+            </form>
+            <!-- 2) Genehmigen (Vier-Augen) -->
+            <form method="post" action="{% url 'session:allowance_approve' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="from" value="{{ period_start|date:'Y-m-d' }}">
+                <input type="hidden" name="to" value="{{ period_end|date:'Y-m-d' }}">
+                <input type="hidden" name="organization" value="{{ selected_organization }}">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg">
+                    <i data-lucide="check-check" class="w-4 h-4"></i>
+                    2. Genehmigen (Vier-Augen)
+                </button>
+            </form>
+            <!-- 3) SEPA -->
+            <form method="post" action="{% url 'session:allowance_export_sepa' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="from" value="{{ period_start|date:'Y-m-d' }}">
+                <input type="hidden" name="to" value="{{ period_end|date:'Y-m-d' }}">
+                <input type="hidden" name="organization" value="{{ selected_organization }}">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
+                    <i data-lucide="landmark" class="w-4 h-4"></i>
+                    3. SEPA-Datei (pain.001)
+                </button>
+            </form>
+            <!-- CSV -->
+            <a href="{% url 'session:allowance_export_csv' tenant_slug=tenant_slug %}?from={{ period_start|date:'Y-m-d' }}&to={{ period_end|date:'Y-m-d' }}&organization={{ selected_organization }}&status={{ selected_status }}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">
+                <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                CSV fürs Finanzverfahren
+            </a>
+        </div>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+            Positionen entstehen aus dokumentierten Anwesenheiten (anwesend, verspätet, vorzeitig gegangen — keine Gäste).
+            Vier-Augen-Prinzip: Wer den Lauf erzeugt hat, kann die Positionen nicht selbst genehmigen.
+            Der SEPA-Export umfasst genehmigte Positionen und markiert sie als ausgezahlt.
+        </p>
+    </div>
+
+    <!-- Positionen -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white">Positionen ({{ allowances|length }})</h2>
+        </div>
+        {% if allowances %}
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-900/50 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th class="px-4 py-3">Person</th>
+                        <th class="px-4 py-3">Sitzung</th>
+                        <th class="px-4 py-3">Datum</th>
+                        <th class="px-4 py-3">Funktion</th>
+                        <th class="px-4 py-3 text-right">Betrag</th>
+                        <th class="px-4 py-3">Status</th>
+                        <th class="px-4 py-3">Referenz</th>
+                        <th class="px-4 py-3"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+                    {% for allowance in allowances %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td class="px-4 py-2 text-gray-900 dark:text-white">{{ allowance.attendance.person.display_name }}</td>
+                        <td class="px-4 py-2 text-gray-600 dark:text-gray-400">{{ allowance.attendance.meeting.organization.short_name|default:allowance.attendance.meeting.organization.name }}: {{ allowance.attendance.meeting.name }}</td>
+                        <td class="px-4 py-2 text-gray-600 dark:text-gray-400">{{ allowance.attendance.meeting.start|date:"d.m.Y" }}</td>
+                        <td class="px-4 py-2 text-gray-600 dark:text-gray-400">{{ allowance.attendance.get_role_display }}</td>
+                        <td class="px-4 py-2 text-right font-medium text-gray-900 dark:text-white">{{ allowance.amount }} €</td>
+                        <td class="px-4 py-2">
+                            {% if allowance.status == "pending" %}
+                            <span class="px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400">Ausstehend</span>
+                            {% elif allowance.status == "approved" %}
+                            <span class="px-2 py-0.5 text-xs rounded bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400">Genehmigt</span>
+                            {% elif allowance.status == "paid" %}
+                            <span class="px-2 py-0.5 text-xs rounded bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400">Ausgezahlt</span>
+                            {% else %}
+                            <span class="px-2 py-0.5 text-xs rounded bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">{{ allowance.get_status_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-2 text-xs text-gray-500 dark:text-gray-400">{{ allowance.export_reference|default:"—" }}</td>
+                        <td class="px-4 py-2 text-right">
+                            <a href="{% url 'session:allowance_notice_pdf' tenant_slug=tenant_slug person_id=allowance.attendance.person.id %}?from={{ period_start|date:'Y-m-d' }}&to={{ period_end|date:'Y-m-d' }}"
+                               title="Abrechnungsmitteilung (PDF)"
+                               class="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 inline-flex">
+                                <i data-lucide="file-down" class="w-4 h-4"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+            Keine Positionen im Zeitraum — zuerst den Abrechnungslauf starten.
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-6">
+        <!-- Entschädigungssätze -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h2 class="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+                <i data-lucide="euro" class="w-5 h-5 text-primary-500"></i>
+                Entschädigungssätze
+            </h2>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                Satz je Gremium und Funktion. Ohne Funktions-Satz gilt das Standard-Sitzungsgeld
+                des Gremiums (Stammdaten).
+            </p>
+            {% if rates %}
+            <table class="w-full text-sm mb-4">
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    {% for rate in rates %}
+                    <tr>
+                        <td class="py-2 text-gray-900 dark:text-white">{{ rate.organization.name }}</td>
+                        <td class="py-2 text-gray-600 dark:text-gray-400">{{ rate.get_role_display }}</td>
+                        <td class="py-2 text-right font-medium text-gray-900 dark:text-white">{{ rate.amount }} €</td>
+                        <td class="py-2 text-right">
+                            <form method="post" action="{% url 'session:allowance_rate_delete' tenant_slug=tenant_slug rate_id=rate.id %}" class="inline">
+                                {% csrf_token %}
+                                <button type="submit" class="text-gray-400 hover:text-red-600" title="Satz entfernen">
+                                    <i data-lucide="x" class="w-4 h-4"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            <form method="post" action="{% url 'session:allowance_rate_save' tenant_slug=tenant_slug %}" class="flex flex-wrap items-end gap-2">
+                {% csrf_token %}
+                <div class="flex-1 min-w-[140px]">
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Gremium</label>
+                    <select name="organization" required
+                            class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% for org in organizations %}
+                        <option value="{{ org.id }}">{{ org.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Funktion</label>
+                    <select name="role"
+                            class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% for value, label in rate_roles %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="w-24">
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Betrag (€)</label>
+                    <input type="text" name="amount" required placeholder="30,00"
+                           class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <button type="submit"
+                        class="px-3 py-1.5 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
+                    Speichern
+                </button>
+            </form>
+        </div>
+
+        <!-- SEPA-Auftraggeberkonto -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h2 class="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+                <i data-lucide="landmark" class="w-5 h-5 text-blue-500"></i>
+                Auftraggeberkonto (SEPA)
+            </h2>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                Konto der Kommune, von dem die Sitzungsgelder überwiesen werden.
+                Empfänger-Bankdaten werden verschlüsselt bei den Personen gepflegt.
+            </p>
+            <form method="post" action="{% url 'session:allowance_debtor_save' tenant_slug=tenant_slug %}" class="space-y-3">
+                {% csrf_token %}
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Kontoinhaber</label>
+                    <input type="text" name="debtor_name" value="{{ debtor.debtor_name|default:session_tenant.name }}"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="col-span-2">
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">IBAN</label>
+                        <input type="text" name="debtor_iban" value="{{ debtor.debtor_iban|default:'' }}" placeholder="DE00 0000 0000 0000 0000 00"
+                               class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">BIC (optional)</label>
+                        <input type="text" name="debtor_bic" value="{{ debtor.debtor_bic|default:'' }}"
+                               class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono">
+                    </div>
+                </div>
+                <button type="submit"
+                        class="px-3 py-1.5 text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">
+                    Speichern
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

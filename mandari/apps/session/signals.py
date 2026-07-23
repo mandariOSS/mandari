@@ -11,6 +11,8 @@ from django.db.models.signals import post_delete, post_save, pre_delete, pre_sav
 from apps.session import audit, oparl_publication
 from apps.session.models import (
     SessionAgendaItem,
+    SessionAllowance,
+    SessionAllowanceRate,
     SessionApplication,
     SessionAttendance,
     SessionConsultation,
@@ -41,6 +43,9 @@ AUDITED_MODELS = [
     SessionLegislativeTerm,
     SessionFile,
     SessionUser,
+    # Sitzungsgeld (Issue #38): Positionen und Sätze revisionssicher
+    SessionAllowance,
+    SessionAllowanceRate,
 ]
 
 for _model in AUDITED_MODELS:
