@@ -94,9 +94,9 @@ class AllowanceListView(SessionViewMixin, TemplateView):
         context["organizations"] = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
         ).order_by("name")
-        context["rates"] = SessionAllowanceRate.objects.filter(
-            organization__tenant=self.session_tenant
-        ).select_related("organization")
+        context["rates"] = SessionAllowanceRate.objects.filter(organization__tenant=self.session_tenant).select_related(
+            "organization"
+        )
         context["rate_roles"] = SessionAllowanceRate._meta.get_field("role").choices
         context["allowance_statuses"] = SessionAllowance._meta.get_field("status").choices
         context["debtor"] = _debtor_settings(self.session_tenant)
@@ -143,9 +143,7 @@ class AllowanceRateDeleteView(SessionViewMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug, rate_id):
-        rate = get_object_or_404(
-            SessionAllowanceRate, pk=rate_id, organization__tenant=self.session_tenant
-        )
+        rate = get_object_or_404(SessionAllowanceRate, pk=rate_id, organization__tenant=self.session_tenant)
         rate.delete()
         messages.success(request, "Entschädigungssatz entfernt.")
         return redirect("session:allowances", tenant_slug=tenant_slug)
@@ -332,9 +330,7 @@ class AllowanceSepaExportView(SessionViewMixin, View):
             return redirect("session:allowances", tenant_slug=tenant_slug)
 
         allowances = list(
-            _allowance_queryset(
-                self, period_start, period_end, request.POST.get("organization", ""), status="approved"
-            )
+            _allowance_queryset(self, period_start, period_end, request.POST.get("organization", ""), status="approved")
         )
         if not allowances:
             messages.warning(request, "Keine genehmigten Positionen im Zeitraum — nichts zu exportieren.")
@@ -355,17 +351,14 @@ class AllowanceSepaExportView(SessionViewMixin, View):
         if txn_count == 0:
             messages.error(
                 request,
-                "SEPA-Export nicht möglich — für keine der Personen ist eine IBAN hinterlegt: "
-                + ", ".join(skipped),
+                "SEPA-Export nicht möglich — für keine der Personen ist eine IBAN hinterlegt: " + ", ".join(skipped),
             )
             return redirect(
                 f"/session/{tenant_slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
             )
 
         # Nur Positionen von Personen MIT IBAN als exportiert/ausgezahlt markieren
-        exportable = [
-            a for a in allowances if (a.attendance.person.get_bank_iban_decrypted() or "").strip()
-        ]
+        exportable = [a for a in allowances if (a.attendance.person.get_bank_iban_decrypted() or "").strip()]
         allowance_service.mark_exported(exportable, reference, mark_paid=True)
 
         audit.log_event(
@@ -409,9 +402,7 @@ class AllowanceNoticePdfView(SessionViewMixin, View):
             return HttpResponse(status=400)
 
         person = get_object_or_404(SessionPerson, pk=person_id, tenant=self.session_tenant)
-        allowances = list(
-            _allowance_queryset(self, period_start, period_end).filter(attendance__person=person)
-        )
+        allowances = list(_allowance_queryset(self, period_start, period_end).filter(attendance__person=person))
         if not allowances:
             messages.warning(request, f"Keine Sitzungsgeld-Positionen für {person.display_name} im Zeitraum.")
             return redirect("session:allowances", tenant_slug=tenant_slug)

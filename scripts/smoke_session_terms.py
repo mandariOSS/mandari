@@ -226,7 +226,10 @@ carried = SessionOrganizationMembership.objects.filter(
 ).first()
 check(
     "Besetzung in neue Periode übernommen (Funktion/Stimmrecht)",
-    carried is not None and carried.role == "chair" and carried.has_voting_rights and carried.start_date == date(2025, 11, 1),
+    carried is not None
+    and carried.role == "chair"
+    and carried.has_voting_rights
+    and carried.start_date == date(2025, 11, 1),
 )
 
 meeting_old.refresh_from_db()
@@ -237,9 +240,7 @@ check(
     SessionAuditLog.objects.filter(
         tenant=tenant, model_name="SessionLegislativeTerm", changes__has_key="periodenwechsel"
     ).exists()
-    or SessionAuditLog.objects.filter(tenant=tenant, model_name="SessionLegislativeTerm")
-    .exclude(changes={})
-    .exists(),
+    or SessionAuditLog.objects.filter(tenant=tenant, model_name="SessionLegislativeTerm").exclude(changes={}).exists(),
 )
 
 # Neue Sitzung landet in der neuen Periode
@@ -290,7 +291,9 @@ names = [p.name for p in resp.context["papers"]]
 check("Vorlagenliste gefiltert (Zeitraum)", names == ["Alte Vorlage"], str(names))
 
 resp = admin.get(f"{base}/papers/", {"term": str(term_new.id)})
-check("Vorlagenliste: alte Vorlage nicht in neuer Periode", "Alte Vorlage" not in [p.name for p in resp.context["papers"]])
+check(
+    "Vorlagenliste: alte Vorlage nicht in neuer Periode", "Alte Vorlage" not in [p.name for p in resp.context["papers"]]
+)
 
 resp = admin.get(f"{base}/organizations/", {"term": str(term_old.id)})
 check("Gremienliste gefiltert (Besetzungen der Periode)", org in list(resp.context["organizations"]))

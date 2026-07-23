@@ -92,8 +92,7 @@ def generate_allowances(tenant, period_start, period_end, *, organization=None, 
         attendances = attendances.filter(meeting__organization=organization)
 
     rates_map = {
-        (r.organization_id, r.role): r.amount
-        for r in SessionAllowanceRate.objects.filter(organization__tenant=tenant)
+        (r.organization_id, r.role): r.amount for r in SessionAllowanceRate.objects.filter(organization__tenant=tenant)
     }
 
     stats = {"created": 0, "skipped_existing": 0, "skipped_zero": 0, "total": Decimal("0.00")}
@@ -250,9 +249,7 @@ def build_sepa_xml(tenant, allowances, *, debtor_name, debtor_iban, debtor_bic="
     per_person: dict = {}
     for allowance in allowances:
         person = allowance.attendance.person
-        entry = per_person.setdefault(
-            person.pk, {"person": person, "amount": Decimal("0.00"), "count": 0}
-        )
+        entry = per_person.setdefault(person.pk, {"person": person, "amount": Decimal("0.00"), "count": 0})
         entry["amount"] += allowance.amount
         entry["count"] += 1
 
@@ -332,9 +329,7 @@ def build_sepa_xml(tenant, allowances, *, debtor_name, debtor_iban, debtor_bic="
         cdtr_acct_id = SubElement(cdtr_acct, "Id")
         SubElement(cdtr_acct_id, "IBAN").text = txn["iban"]
         rmt = SubElement(cdt, "RmtInf")
-        SubElement(rmt, "Ustrd").text = _sepa_text(
-            f"Sitzungsgeld {txn['count']} Sitzung(en) {reference}".strip(), 140
-        )
+        SubElement(rmt, "Ustrd").text = _sepa_text(f"Sitzungsgeld {txn['count']} Sitzung(en) {reference}".strip(), 140)
 
     xml_bytes = b'<?xml version="1.0" encoding="UTF-8"?>\n' + tostring(root, encoding="unicode").encode("utf-8")
     return xml_bytes, len(transactions), total, skipped

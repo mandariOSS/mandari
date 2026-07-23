@@ -277,7 +277,10 @@ check(
     and chair_allowance.export_reference.startswith("SG-")
     and member_allowance.status == "paid",
 )
-check("Position ohne IBAN bleibt genehmigt", no_iban_allowance.status == "approved" and not no_iban_allowance.export_reference)
+check(
+    "Position ohne IBAN bleibt genehmigt",
+    no_iban_allowance.status == "approved" and not no_iban_allowance.export_reference,
+)
 
 check(
     "SEPA-Export im Audit-Log",

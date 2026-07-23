@@ -253,7 +253,9 @@ check(
     and "anwesenheiten" in data
     and "sitzungsgelder" in data,
 )
-check("Bankdaten entschlüsselt (Admin hat manage_allowances)", data["bankdaten"].get("iban") == "DE02120300000000202052")
+check(
+    "Bankdaten entschlüsselt (Admin hat manage_allowances)", data["bankdaten"].get("iban") == "DE02120300000000202052"
+)
 check(
     "Auskunfts-Export auditiert",
     SessionAuditLog.objects.filter(tenant=tenant, action="download", changes__has_key="dsgvo_auskunft").exists(),

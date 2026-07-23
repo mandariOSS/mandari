@@ -72,7 +72,11 @@ def _anonymize_person(person) -> list[str]:
     if person.get_address_decrypted():
         person.set_address_encrypted("")
         cleared.append("Adresse")
-    if person.get_bank_iban_decrypted() or person.get_bank_bic_decrypted() or person.get_bank_account_holder_decrypted():
+    if (
+        person.get_bank_iban_decrypted()
+        or person.get_bank_bic_decrypted()
+        or person.get_bank_account_holder_decrypted()
+    ):
         person.set_bank_account_holder_encrypted("")
         person.set_bank_iban_encrypted("")
         person.set_bank_bic_encrypted("")
@@ -110,7 +114,9 @@ def run_privacy_purge(tenant, *, now=None, dry_run=False, user=None, request=Non
     # 1) Ausgeschiedene Mandatsträger: Kontakt-/Bankdaten nach Frist
     if settings["persons_years"] > 0:
         cutoff = today - timedelta(days=365 * settings["persons_years"])
-        persons = SessionPerson.objects.filter(tenant=tenant, is_active=False, end_date__isnull=False, end_date__lte=cutoff)
+        persons = SessionPerson.objects.filter(
+            tenant=tenant, is_active=False, end_date__isnull=False, end_date__lte=cutoff
+        )
         for person in persons:
             if dry_run:
                 has_data = bool(
