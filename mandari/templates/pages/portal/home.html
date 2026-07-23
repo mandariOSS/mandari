@@ -17,9 +17,16 @@
 <section class="fade-up mb-10" x-data="homeSearchApp()">
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         <div class="lg:col-span-3">
-            <h1 class="text-3xl lg:text-4xl font-extrabold text-gray-900 dark:text-white mb-3">
-                {{ active_body.get_display_name }} transparent
-            </h1>
+            <div class="flex items-center gap-4 mb-3">
+                {% if active_body.logo %}
+                <div class="w-14 h-14 lg:w-16 lg:h-16 rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm flex items-center justify-center flex-shrink-0 overflow-hidden p-1.5">
+                    <img src="{{ active_body.logo.url }}" alt="Logo {{ active_body.get_display_name }}" class="max-w-full max-h-full object-contain">
+                </div>
+                {% endif %}
+                <h1 class="text-3xl lg:text-4xl font-extrabold text-gray-900 dark:text-white">
+                    {{ active_body.get_display_name }} transparent
+                </h1>
+            </div>
             {% if active_body.description %}
             <p class="text-base lg:text-lg leading-relaxed text-gray-600 dark:text-gray-300 mb-5">{{ active_body.description }}</p>
             {% else %}

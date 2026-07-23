@@ -82,9 +82,15 @@
                x-show="matches($el.dataset.search)"
                class="group flex flex-col bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-lg hover:shadow-primary-600/5 hover:-translate-y-0.5 transition-all">
                 <div class="flex items-center gap-3.5 mb-4">
+                    {% if body.logo %}
+                    <div class="w-11 h-11 rounded-xl bg-white dark:bg-gray-700 border border-gray-100 dark:border-gray-600 flex items-center justify-center flex-shrink-0 overflow-hidden p-1">
+                        <img src="{{ body.logo.url }}" alt="Logo {{ body.get_display_name }}" class="max-w-full max-h-full object-contain" loading="lazy">
+                    </div>
+                    {% else %}
                     <div class="w-11 h-11 rounded-xl bg-primary-50 dark:bg-primary-900/25 flex items-center justify-center flex-shrink-0">
                         <span class="text-sm font-extrabold text-primary-600 dark:text-primary-400">{{ body.get_initials }}</span>
                     </div>
+                    {% endif %}
                     <div class="min-w-0 flex-1">
                         <div class="text-[15px] font-bold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">
                             {{ body.get_display_name }}
