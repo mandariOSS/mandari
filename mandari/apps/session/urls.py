@@ -305,6 +305,32 @@ urlpatterns = [
         views.PersonDeactivateView.as_view(),
         name="person_deactivate",
     ),
+    # Wahlperioden (Issue #39)
+    path(
+        "<slug:tenant_slug>/archive/",
+        views.ArchiveView.as_view(),
+        name="archive",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/terms/",
+        views.TermListView.as_view(),
+        name="terms",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/terms/save/",
+        views.TermSaveView.as_view(),
+        name="term_save",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/terms/change/",
+        views.TermChangeView.as_view(),
+        name="term_change",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/terms/<uuid:term_id>/delete/",
+        views.TermDeleteView.as_view(),
+        name="term_delete",
+    ),
     # Settings
     path(
         "<slug:tenant_slug>/settings/",

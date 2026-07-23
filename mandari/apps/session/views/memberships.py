@@ -17,6 +17,7 @@ from django.utils import timezone
 from django.views import View
 
 from ..models import (
+    SessionLegislativeTerm,
     SessionOrganization,
     SessionOrganizationMembership,
     SessionPerson,
@@ -71,14 +72,17 @@ def _membership_from_post(view, request, organization) -> SessionOrganizationMem
     valid_roles = {c[0] for c in SessionOrganizationMembership._meta.get_field("role").choices}
     if role not in valid_roles:
         role = "member"
+    start_date = _parse_date(request.POST.get("start_date")) or timezone.now().date()
     return SessionOrganizationMembership(
         organization=organization,
         person=person,
         role=role,
         has_voting_rights=request.POST.get("has_voting_rights") == "on",
         substitute_for=substitute_for,
-        start_date=_parse_date(request.POST.get("start_date")) or timezone.now().date(),
+        start_date=start_date,
         end_date=_parse_date(request.POST.get("end_date")),
+        # Wahlperiode automatisch aus dem Beginn ableiten (Issue #39)
+        legislative_term=SessionLegislativeTerm.for_date(view.session_tenant, start_date),
     )
 
 
@@ -197,6 +201,8 @@ class MembershipSuccessionView(SessionViewMixin, View):
             role=membership.role,
             has_voting_rights=membership.has_voting_rights,
             start_date=change_date,
+            # Wahlperiode aus dem Stichtag ableiten (Issue #39)
+            legislative_term=SessionLegislativeTerm.for_date(self.session_tenant, change_date),
         )
 
         messages.success(

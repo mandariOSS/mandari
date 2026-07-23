@@ -79,6 +79,16 @@ class PaperListView(SessionViewMixin, ListView):
         if org_id:
             qs = qs.filter(Q(main_organization_id=org_id) | Q(originator_organization_id=org_id))
 
+        # Perioden-Filter (Issue #39): Vorlagen über den Zeitraum der Periode
+        term_id = self.request.GET.get("term")
+        if term_id:
+            from ..models import SessionLegislativeTerm
+            from .terms import term_date_filter
+
+            term = SessionLegislativeTerm.objects.filter(tenant=self.session_tenant, pk=term_id).first()
+            if term is not None:
+                qs = qs.filter(term_date_filter(term))
+
         # Search
         search = self.request.GET.get("q")
         if search:
@@ -93,6 +103,12 @@ class PaperListView(SessionViewMixin, ListView):
         ).order_by("name")
         context["paper_types"] = SessionPaper._meta.get_field("paper_type").choices
         context["paper_statuses"] = SessionPaper._meta.get_field("status").choices
+
+        # Perioden-Filter (Issue #39)
+        from ..models import SessionLegislativeTerm
+
+        context["legislative_terms"] = SessionLegislativeTerm.objects.filter(tenant=self.session_tenant)
+        context["selected_term"] = self.request.GET.get("term", "")
         return context
 
 

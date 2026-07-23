@@ -50,6 +50,22 @@
             <label for="active_filter" class="text-sm text-gray-700 dark:text-gray-300">Nur aktive</label>
         </div>
 
+        <!-- Wahlperiode (Issue #39): Gremien mit Besetzungen in der Periode -->
+        {% if legislative_terms %}
+        <div class="w-full sm:w-48">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Wahlperiode</label>
+            <select name="term"
+                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <option value="">Alle Perioden</option>
+                {% for term in legislative_terms %}
+                <option value="{{ term.id }}" {% if selected_term == term.id|stringformat:"s" %}selected{% endif %}>
+                    {{ term.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
         <!-- Submit -->
         <button type="submit"
                 class="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors">

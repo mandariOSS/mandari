@@ -1,0 +1,82 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Archiv{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Archiv</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Archiv nach Wahlperioden</h1>
+        {% if can_manage_terms %}
+        <a href="{% url 'session:terms' tenant_slug=tenant_slug %}"
+           class="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+            <i data-lucide="settings" class="w-4 h-4"></i>
+            Perioden verwalten
+        </a>
+        {% endif %}
+    </div>
+
+    {% if rows %}
+    <div class="space-y-4">
+        {% for row in rows %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                    <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                        <i data-lucide="calendar-range" class="w-5 h-5 text-indigo-500"></i>
+                        {{ row.term.name }}
+                        {% if row.is_current %}
+                        <span class="px-2 py-0.5 text-xs rounded bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 font-medium">Aktuell</span>
+                        {% endif %}
+                    </h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        {% if row.term.start_date %}{{ row.term.start_date|date:"d.m.Y" }}{% endif %}
+                        {% if row.term.start_date or row.term.end_date %}&ndash;{% endif %}
+                        {% if row.term.end_date %}{{ row.term.end_date|date:"d.m.Y" }}{% else %}{% if row.term.start_date %}offen{% endif %}{% endif %}
+                    </p>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}?term={{ row.term.id }}"
+                   class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:border-primary-300 dark:hover:border-primary-700 transition-colors">
+                    <div class="text-lg font-bold text-gray-900 dark:text-white">{{ row.meeting_count }}</div>
+                    <div class="text-gray-500 dark:text-gray-400">Sitzungen</div>
+                </a>
+                <a href="{% url 'session:papers' tenant_slug=tenant_slug %}?term={{ row.term.id }}"
+                   class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:border-primary-300 dark:hover:border-primary-700 transition-colors">
+                    <div class="text-lg font-bold text-gray-900 dark:text-white">{{ row.paper_count }}</div>
+                    <div class="text-gray-500 dark:text-gray-400">Vorlagen</div>
+                </a>
+                <a href="{% url 'session:organizations' tenant_slug=tenant_slug %}?term={{ row.term.id }}"
+                   class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:border-primary-300 dark:hover:border-primary-700 transition-colors">
+                    <div class="text-lg font-bold text-gray-900 dark:text-white">{{ row.organization_count }}</div>
+                    <div class="text-gray-500 dark:text-gray-400">Gremien besetzt</div>
+                </a>
+                <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                    <div class="text-lg font-bold text-gray-900 dark:text-white">{{ row.membership_count }}</div>
+                    <div class="text-gray-500 dark:text-gray-400">Besetzungen</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+        <i data-lucide="archive" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Wahlperioden vorhanden</h3>
+        <p class="text-gray-500 dark:text-gray-400">
+            Sobald Wahlperioden gepflegt sind, erscheinen hier die Kennzahlen je Periode.
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

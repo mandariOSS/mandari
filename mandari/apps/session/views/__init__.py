@@ -112,9 +112,21 @@ from .settings import (
     UserListView,
     UserRolesUpdateView,
 )
+from .terms import (
+    ArchiveView,
+    TermChangeView,
+    TermDeleteView,
+    TermListView,
+    TermSaveView,
+)
 
 __all__ = [
     "AgendaItemCreateView",
+    "ArchiveView",
+    "TermChangeView",
+    "TermDeleteView",
+    "TermListView",
+    "TermSaveView",
     "AgendaItemDeleteView",
     "AgendaItemMoveView",
     "AgendaItemUpdateView",

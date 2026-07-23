@@ -1,0 +1,180 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Wahlperioden{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Einstellungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Wahlperioden</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Wahlperioden</h1>
+        <a href="{% url 'session:archive' tenant_slug=tenant_slug %}"
+           class="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+            <i data-lucide="archive" class="w-4 h-4"></i>
+            Archiv-Ansicht
+        </a>
+    </div>
+
+    <!-- Bestehende Perioden -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="calendar-range" class="w-5 h-5 text-indigo-500"></i>
+                Perioden ({{ terms|length }})
+            </h2>
+        </div>
+        {% if terms %}
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for term in terms %}
+            <div class="px-6 py-4">
+                <form method="post" action="{% url 'session:term_save' tenant_slug=tenant_slug %}"
+                      class="flex flex-wrap items-end gap-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="term_id" value="{{ term.id }}">
+                    <div class="flex-1 min-w-[180px]">
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Name</label>
+                        <input type="text" name="name" value="{{ term.name }}" required
+                               class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Beginn</label>
+                        <input type="date" name="start_date" value="{{ term.start_date|date:'Y-m-d' }}"
+                               class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Ende</label>
+                        <input type="date" name="end_date" value="{{ term.end_date|date:'Y-m-d' }}"
+                               class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    <button type="submit"
+                            class="px-3 py-2 text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">
+                        Speichern
+                    </button>
+                </form>
+                <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                    {% if current_term and current_term.id == term.id %}
+                    <span class="px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 font-medium">Aktuelle Periode</span>
+                    {% endif %}
+                    <span>{{ term.meeting_count }} Sitzung(en)</span>
+                    <span>{{ term.membership_count }} Besetzung(en)</span>
+                    {% if not term.meeting_count and not term.membership_count %}
+                    <form method="post" action="{% url 'session:term_delete' tenant_slug=tenant_slug term_id=term.id %}"
+                          onsubmit="return confirm('Wahlperiode wirklich löschen?');">
+                        {% csrf_token %}
+                        <button type="submit" class="text-red-600 dark:text-red-400 hover:underline">Löschen</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+            Noch keine Wahlperioden angelegt. Neue Sitzungen und Besetzungen werden automatisch
+            der passenden Periode zugeordnet, sobald Perioden gepflegt sind.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Neue Periode anlegen (ohne Wechsel-Logik) -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h2 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <i data-lucide="plus" class="w-5 h-5 text-primary-500"></i>
+            Periode anlegen
+        </h2>
+        <form method="post" action="{% url 'session:term_save' tenant_slug=tenant_slug %}" class="flex flex-wrap items-end gap-3">
+            {% csrf_token %}
+            <div class="flex-1 min-w-[180px]">
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Name</label>
+                <input type="text" name="name" required placeholder="z. B. Wahlperiode 2020–2025"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Beginn</label>
+                <input type="date" name="start_date"
+                       class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Ende</label>
+                <input type="date" name="end_date"
+                       class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <button type="submit"
+                    class="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
+                Anlegen
+            </button>
+        </form>
+        <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            Legt nur die Periode an — bestehende Besetzungen bleiben unverändert.
+            Für den Wechsel nach einer Kommunalwahl den Assistenten unten nutzen.
+        </p>
+    </div>
+
+    <!-- Periodenwechsel-Assistent (Issue #39) -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-amber-300 dark:border-amber-700 p-6">
+        <h2 class="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+            <i data-lucide="refresh-ccw" class="w-5 h-5 text-amber-500"></i>
+            Periodenwechsel-Assistent
+        </h2>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Nach der Kommunalwahl: Neue Periode anlegen und die
+            {{ active_membership_count }} laufende(n) Gremienbesetzung(en) zum Stichtag behandeln.
+            Alt-Daten bleiben unter der bisherigen Periode auffindbar (Archiv).
+        </p>
+        <form method="post" action="{% url 'session:term_change' tenant_slug=tenant_slug %}"
+              onsubmit="return confirm('Periodenwechsel wirklich durchführen? Laufende Besetzungen werden zum Stichtag beendet.');"
+              class="space-y-4">
+            {% csrf_token %}
+            <div class="flex flex-wrap items-end gap-3">
+                <div class="flex-1 min-w-[180px]">
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Name der neuen Periode</label>
+                    <input type="text" name="name" required placeholder="z. B. Wahlperiode 2025–2030"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Beginn (Stichtag)</label>
+                    <input type="date" name="start_date" required
+                           class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Ende (optional)</label>
+                    <input type="date" name="end_date"
+                           class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+            </div>
+            <div class="space-y-2 text-sm">
+                <label class="flex items-start gap-2">
+                    <input type="radio" name="mode" value="carry" checked class="mt-1 text-primary-600">
+                    <span class="text-gray-700 dark:text-gray-300">
+                        <span class="font-medium">Besetzungen übernehmen</span> —
+                        laufende Besetzungen werden beendet und mit gleicher Funktion in der neuen Periode fortgeführt.
+                    </span>
+                </label>
+                <label class="flex items-start gap-2">
+                    <input type="radio" name="mode" value="fresh" class="mt-1 text-primary-600">
+                    <span class="text-gray-700 dark:text-gray-300">
+                        <span class="font-medium">Neu besetzen</span> —
+                        laufende Besetzungen werden nur beendet; die Gremien werden anschließend von Hand neu besetzt.
+                    </span>
+                </label>
+            </div>
+            <button type="submit"
+                    class="px-4 py-2 text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white rounded-lg">
+                Periodenwechsel durchführen
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -55,11 +55,29 @@
 
         <!-- Mitglieder -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
                 <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                     <i data-lucide="user-check" class="w-5 h-5 text-green-500"></i>
+                    {% if selected_term %}
+                    Besetzung {{ selected_term.name }} ({{ memberships|length }})
+                    {% else %}
                     Aktive Mitglieder ({{ memberships|length }})
+                    {% endif %}
                 </h2>
+                {% if legislative_terms %}
+                <!-- Besetzung je Wahlperiode (Issue #39) -->
+                <form method="get" class="flex items-center gap-2">
+                    <select name="term" onchange="this.form.submit()"
+                            class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        <option value="">Aktuelle Besetzung</option>
+                        {% for term in legislative_terms %}
+                        <option value="{{ term.id }}" {% if selected_term and selected_term.id == term.id %}selected{% endif %}>
+                            {{ term.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </form>
+                {% endif %}
             </div>
             {% if memberships %}
             <div class="overflow-x-auto">

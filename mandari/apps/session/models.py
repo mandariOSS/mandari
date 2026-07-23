@@ -697,6 +697,18 @@ class SessionOrganizationMembership(models.Model):
         help_text="Wird als Stellvertreter/in dieser Person geführt",
     )
 
+    # Wahlperiode (Issue #39): Besetzungen werden je Periode geführt —
+    # nach dem Periodenwechsel bleiben Alt-Besetzungen unter der alten
+    # Periode auffindbar (Archiv)
+    legislative_term = models.ForeignKey(
+        "SessionLegislativeTerm",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="memberships",
+        verbose_name="Wahlperiode",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -747,6 +759,17 @@ class SessionMeeting(EncryptionMixin, models.Model):
         on_delete=models.CASCADE,
         related_name="meetings",
         verbose_name="Gremium",
+    )
+
+    # Wahlperiode (Issue #39) — wird bei Anlage automatisch aus dem
+    # Sitzungsdatum abgeleitet, bleibt beim Periodenwechsel erhalten
+    legislative_term = models.ForeignKey(
+        "SessionLegislativeTerm",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="meetings",
+        verbose_name="Wahlperiode",
     )
 
     # Date/Time
@@ -1524,6 +1547,52 @@ class SessionLegislativeTerm(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.tenant.name})"
+
+    def contains(self, date) -> bool:
+        """Liegt das Datum im Zeitraum der Periode (offene Grenzen zählen mit)?"""
+        if date is None:
+            return False
+        if self.start_date and date < self.start_date:
+            return False
+        if self.end_date and date > self.end_date:
+            return False
+        return bool(self.start_date or self.end_date)
+
+    @property
+    def is_current(self) -> bool:
+        """Umfasst die Periode das heutige Datum?"""
+        return self.contains(timezone.localdate())
+
+    @classmethod
+    def for_date(cls, tenant, date):
+        """
+        Passende Wahlperiode eines Mandanten zu einem Datum (Issue #39).
+
+        Fallback: aktuelle Periode (enthält heute), sonst die jüngste.
+        Gibt None zurück, wenn der Mandant keine Perioden pflegt.
+        """
+        terms = list(cls.objects.filter(tenant=tenant))
+        if not terms:
+            return None
+        if date is not None:
+            for term in terms:
+                if term.contains(date):
+                    return term
+        return cls.current_for(tenant)
+
+    @classmethod
+    def current_for(cls, tenant):
+        """Aktuelle Wahlperiode des Mandanten (enthält heute, sonst die jüngste)."""
+        terms = list(cls.objects.filter(tenant=tenant))
+        if not terms:
+            return None
+        today = timezone.localdate()
+        for term in terms:
+            if term.contains(today):
+                return term
+        # Jüngste Periode: höchstes Startdatum zuerst, Perioden ohne Datum zuletzt
+        terms.sort(key=lambda t: (t.start_date is not None, t.start_date or timezone.localdate()), reverse=True)
+        return terms[0]
 
 
 # =============================================================================

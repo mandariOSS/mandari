@@ -53,11 +53,22 @@ class OrganizationListView(SessionViewMixin, ListView):
         if self.request.GET.get("active") == "1":
             qs = qs.filter(is_active=True)
 
+        # Perioden-Filter (Issue #39): Gremien mit Besetzungen in der Periode
+        term_id = self.request.GET.get("term")
+        if term_id:
+            qs = qs.filter(memberships__legislative_term_id=term_id).distinct()
+
         return qs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["organization_types"] = SessionOrganization._meta.get_field("organization_type").choices
+
+        # Perioden-Filter (Issue #39)
+        from ..models import SessionLegislativeTerm
+
+        context["legislative_terms"] = SessionLegislativeTerm.objects.filter(tenant=self.session_tenant)
+        context["selected_term"] = self.request.GET.get("term", "")
         return context
 
 
@@ -74,12 +85,26 @@ class OrganizationDetailView(SessionViewMixin, DetailView):
         context = super().get_context_data(**kwargs)
         org = self.object
 
-        # Members (aktive Besetzung)
-        context["memberships"] = (
-            org.memberships.select_related("person", "substitute_for")
-            .filter(end_date__isnull=True)
-            .order_by("person__family_name")
-        )
+        # Besetzung je Wahlperiode (Issue #39): Standard ist die aktive
+        # Besetzung; über ?term=<id> lassen sich vergangene Perioden einsehen
+        from ..models import SessionLegislativeTerm
+
+        context["legislative_terms"] = SessionLegislativeTerm.objects.filter(tenant=self.session_tenant)
+        selected_term_id = self.request.GET.get("term", "")
+        selected_term = None
+        if selected_term_id:
+            selected_term = SessionLegislativeTerm.objects.filter(
+                tenant=self.session_tenant, pk=selected_term_id
+            ).first()
+        context["selected_term"] = selected_term
+
+        memberships_qs = org.memberships.select_related("person", "substitute_for")
+        if selected_term is not None:
+            context["memberships"] = memberships_qs.filter(legislative_term=selected_term).order_by(
+                "person__family_name"
+            )
+        else:
+            context["memberships"] = memberships_qs.filter(end_date__isnull=True).order_by("person__family_name")
 
         # Beendete Mitgliedschaften (Historie)
         context["ended_memberships"] = (

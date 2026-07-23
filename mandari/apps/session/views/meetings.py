@@ -55,6 +55,11 @@ class MeetingListView(SessionViewMixin, ListView):
         if state:
             qs = qs.filter(meeting_state=state)
 
+        # Perioden-Filter (Issue #39)
+        term_id = self.request.GET.get("term")
+        if term_id:
+            qs = qs.filter(legislative_term_id=term_id)
+
         # Filter by date range
         date_from = self.request.GET.get("from")
         date_to = self.request.GET.get("to")
@@ -76,6 +81,12 @@ class MeetingListView(SessionViewMixin, ListView):
             tenant=self.session_tenant, is_active=True
         ).order_by("name")
         context["meeting_states"] = SessionMeeting._meta.get_field("meeting_state").choices
+
+        # Perioden-Filter (Issue #39)
+        from ..models import SessionLegislativeTerm
+
+        context["legislative_terms"] = SessionLegislativeTerm.objects.filter(tenant=self.session_tenant)
+        context["selected_term"] = self.request.GET.get("term", "")
         return context
 
 
@@ -186,6 +197,15 @@ class MeetingCreateView(SessionViewMixin, CreateView):
     def form_valid(self, form):
         form.instance.tenant = self.session_tenant
         form.instance.created_by = self.session_user
+
+        # Wahlperiode automatisch aus dem Sitzungsdatum ableiten (Issue #39)
+        if form.instance.legislative_term_id is None and form.instance.start:
+            from ..models import SessionLegislativeTerm
+
+            form.instance.legislative_term = SessionLegislativeTerm.for_date(
+                self.session_tenant, form.instance.start.date()
+            )
+
         messages.success(self.request, "Sitzung wurde erstellt.")
         return super().form_valid(form)
 
