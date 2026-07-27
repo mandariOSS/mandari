@@ -36,6 +36,9 @@ MAJOR_CITIES = [
     OParlSource("Stadt Krefeld", "https://ris.krefeld.de/webservice/oparl/v1.1/system", 1),
     OParlSource("Stadt Freiburg", "https://ris.freiburg.de/oparl", 1),
     OParlSource("München Transparent", "https://www.muenchen-transparent.de/oparl/v1.0", 1),
+    # Volt-Standorte NRW (Kommunalwahl 2025) — Endpunkte 2026-07 geprüft, OParl aktiv
+    OParlSource("Stadt Bochum", "https://bochum.ratsinfomanagement.net/webservice/oparl/v1.1/system", 1),
+    OParlSource("Stadt Hamm", "https://hamm.ratsinfomanagement.net/webservice/oparl/v1.1/system", 1),
 ]
 
 # =============================================================================
@@ -52,6 +55,9 @@ MEDIUM_CITIES = [
     OParlSource("Stadt Rheda-Wiedenbrück", "https://ratsinfo.rheda-wiedenbrueck.de/webservice/oparl/v1.1/system"),
     OParlSource("Stadt Gronau", "https://gronau.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     OParlSource("Stadt Brühl", "https://ratsinfo.bruehl.de/webservice/oparl/v1.1/system"),
+    OParlSource("Stadt Kleve", "https://ris.kleve.de/webservice/oparl/v1.1/system"),  # Volt-Standort NRW
+    OParlSource("Stadt Moers", "https://ris.moers.de/webservice/oparl/v1.1/system"),
+    OParlSource("Bezirksregierung Köln", "https://bezreg-koeln.ratsinfomanagement.net/webservice/oparl/v1.1/system", 2, "other"),
     OParlSource("Stadt Lahr/Schwarzwald", "https://lahr.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     OParlSource("Stadt Bad Kreuznach", "https://bad-kreuznach-stadt.gremien.info/oparl/system"),
     OParlSource("Stadt Pirmasens", "https://oparl.stadt-pirmasens.de/oparl/system"),
@@ -84,6 +90,20 @@ DISTRICTS = [
     OParlSource("Kreis Viersen", "https://kis.kreis-viersen.de/webservice/oparl/v1.0/system", 2, "district"),
     OParlSource("Kreisverwaltung Euskirchen", "https://sdnetrim.kdvz-frechen.de/rim4520/webservice/oparl/v1.1/system", 2, "district"),
     OParlSource("Regionalverband Ruhr", "https://rvr-online.gremien.info/oparl", 2, "district"),
+]
+
+# =============================================================================
+# OParl vorhanden, aber vom Betreiber DEAKTIVIERT (Stand 2026-07)
+# Antwort des Endpunkts: {"error": "Webservice \"OParl\" ist nicht aktiviert!"}
+# -> Kein Scraping noetig, eine Freischaltungsanfrage an die Kommune genuegt.
+#    Nach Freischaltung hier auskommentieren und in die Listen oben verschieben.
+# =============================================================================
+OPARL_DEACTIVATED = [
+    # ("Stadt Essen", "https://ris.essen.de/webservice/oparl/v1.1/system"),          # Volt-Standort, 570k EW
+    # ("Stadt Minden", "https://minden.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    # ("Stadt Steinfurt", "https://steinfurt.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    # ("Stadt Greven", "https://greven.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    # ("Stadt Tecklenburg", "https://tecklenburg.ratsinfomanagement.net/webservice/oparl/v1.1/system"),  # Volt-Standort
 ]
 
 # =============================================================================
