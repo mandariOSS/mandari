@@ -6,6 +6,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 import json
+import re
 
 from django.db.models import Count
 from django.http import HttpResponse
@@ -49,6 +50,31 @@ AGS_BUNDESLAND = {
 }
 
 
+#: Ableitung des Körperschafts-Typs aus dem Namen, wenn die OParl-Quelle
+#: keine ``classification`` liefert (Reihenfolge = Priorität).
+_KIND_PATTERNS = (
+    (re.compile(r"^(bezirksregierung|regionalrat|regionalverband|landschaftsverband)", re.I), "Regionalrat"),
+    (re.compile(r"^(landkreis|kreis)(\s|$)", re.I), "Landkreis"),
+    (re.compile(r"^(bundesstadt|landeshauptstadt|freie und hansestadt|hansestadt)", re.I), "Kreisfreie Stadt"),
+    (re.compile(r"kreisfrei", re.I), "Kreisfreie Stadt"),
+    (re.compile(r"^(samtgemeinde|verbandsgemeinde|amt)(\s|$)", re.I), "Gemeindeverband"),
+    (re.compile(r"^(gemeinde|markt|flecken)(\s|$)", re.I), "Gemeinde"),
+    (re.compile(r"^stadt(\s|$)", re.I), "Stadt"),
+)
+
+
+def get_kind_label_for_body(body):
+    """Anzeige-Typ einer Körperschaft: OParl-``classification`` oder Ableitung
+    aus dem Namen; letzter Fallback „Kommune"."""
+    if body.classification:
+        return body.classification
+    name = body.name or ""
+    for pattern, label in _KIND_PATTERNS:
+        if pattern.search(name):
+            return label
+    return "Kommune"
+
+
 def get_bundesland_for_body(body):
     """Leitet das Bundesland aus dem AGS der Kommune ab (oder None)."""
     if body.ags and len(body.ags) >= 2:
@@ -76,6 +102,7 @@ def _bodies_with_stats():
         body.stat_organizations = org_counts.get(body.id, 0)
         body.stat_meetings = meeting_counts.get(body.id, 0)
         body.bundesland = get_bundesland_for_body(body)
+        body.kind_label = get_kind_label_for_body(body)
     return bodies
 
 
