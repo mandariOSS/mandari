@@ -511,7 +511,11 @@ class DatabaseStorage:
                 "short_name": stmt.excluded.short_name,
                 "website": stmt.excluded.website,
                 "license": stmt.excluded.license,
-                "classification": stmt.excluded.classification,
+                # Manuell gepflegte Klassifikation (z. B. "Kreisfreie Stadt")
+                # nicht mit NULL ueberschreiben, wenn die Quelle keine liefert
+                "classification": func.coalesce(
+                    stmt.excluded.classification, OParlBody.classification
+                ),
                 "organization_list_url": stmt.excluded.organization_list_url,
                 "person_list_url": stmt.excluded.person_list_url,
                 "meeting_list_url": stmt.excluded.meeting_list_url,
