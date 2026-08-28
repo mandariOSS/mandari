@@ -895,6 +895,38 @@ class Motion(EncryptionMixin, models.Model):
                 return level
         return None
 
+    def guest_share_since(self, membership):
+        """
+        Zeitpunkt, seit dem ein Gast-Zugang dieses Dokument sieht (oder None).
+
+        Frühester Beginn aller wirksamen Freigaben: persönliche Dokument-
+        Freigabe (MotionShare, scope=user) oder Ordner-Freigaben auf dem
+        Ordner des Dokuments bzw. seinen Vorfahren. Datenschutz: Gäste sehen
+        die Versionshistorie erst ab diesem Zeitpunkt – Entwürfe und
+        Änderungen vor der Freigabe bleiben ihnen verborgen.
+        """
+        timestamps = list(self.shares.filter(scope="user", user=membership.user).values_list("created_at", flat=True))
+        node = self.folder
+        while node is not None:
+            timestamps.extend(node.guest_shares.filter(user=membership.user).values_list("created_at", flat=True))
+            node = node.parent
+        return min(timestamps) if timestamps else None
+
+    def revisions_for(self, membership):
+        """
+        Versionshistorie, die ein Mitglied sehen darf.
+
+        Mitglieder mit Zugriff sehen alle Versionen; Gäste nur die ab dem
+        Beginn ihrer Freigabe (guest_share_since).
+        """
+        qs = self.revisions.all()
+        if getattr(membership, "is_guest", False):
+            since = self.guest_share_since(membership)
+            if since is None:
+                return qs.none()
+            qs = qs.filter(created_at__gte=since)
+        return qs
+
     def can_access(self, membership) -> bool:
         """
         Check if a membership has access to this document.

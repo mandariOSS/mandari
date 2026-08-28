@@ -20,6 +20,8 @@ Prüft:
 - Gast-Limit gilt auch bei Reaktivierung
 - Entfernen einer Mitgliedschaft löscht Dokument- und Ordner-Freigaben
   der Organisation (andere Organisationen unberührt)
+- Revisionshistorie für Gäste erst ab Beginn ihrer Freigabe (Liste und
+  Detail; ältere Versionen -> 404), Mitglieder sehen alles
 """
 
 import os
@@ -316,6 +318,66 @@ check("Entfernter Gast: Download -> kein Zugriff", resp.status_code in (403, 404
 # Erneute Aufnahme als Gast: keine Altlasten
 m_guest_again = Membership.objects.create(user=user_guest, organization=org_a, is_guest=True)
 check("Nach erneuter Aufnahme: keine alte Freigabe wirksam", not doc.can_access(m_guest_again))
+
+# =============================================================================
+print("=== 6. Revisionshistorie für Gäste erst ab Freigabe ===")
+from datetime import timedelta  # noqa: E402
+
+from apps.work.motions.models import MotionRevision  # noqa: E402
+from django.utils import timezone  # noqa: E402
+
+doc_rev = Motion.objects.create(organization=org_a, author=m_admin, title="Mit Historie", visibility="private")
+alt = []
+for v in (1, 2):
+    rev = MotionRevision(motion=doc_rev, version=v, changed_by=m_admin, change_summary=f"Entwurf {v}")
+    rev.set_content_encrypted(f"<p>Interner Entwurf {v}</p>")
+    rev.save()
+    MotionRevision.objects.filter(id=rev.id).update(created_at=timezone.now() - timedelta(days=3 - v))
+    alt.append(rev)
+
+user_guest3 = User.objects.create_user(email="guest3@example.org", password="test1234!")
+m_guest3 = Membership.objects.create(user=user_guest3, organization=org_a, is_guest=True)
+c_guest3 = client_for(user_guest3)
+rev_url = f"{BASE_A}/documents/{doc_rev.id}/revisions/"
+
+resp = c_guest3.get(rev_url, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+check("Gast ohne Freigabe: Historie -> 403", resp.status_code == 403, f"got {resp.status_code}")
+
+share3 = MotionShare.objects.create(motion=doc_rev, scope="user", user=user_guest3, level="view", created_by=user_admin)
+neu = MotionRevision(motion=doc_rev, version=3, changed_by=m_admin, change_summary="Nach Freigabe")
+neu.set_content_encrypted("<p>Version nach Freigabe</p>")
+neu.save()
+
+resp = c_guest3.get(rev_url, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+versions = [r["version"] for r in resp.json().get("revisions", [])]
+check("Gast: nur Versionen ab Freigabe", versions == [3], str(versions))
+check("Gast: restricted_since gesetzt", resp.json().get("restricted_since") is not None)
+resp = c_guest3.get(f"{rev_url}{alt[0].id}/", HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+check("Gast: alte Version im Detail -> 404", resp.status_code == 404, f"got {resp.status_code}")
+resp = c_guest3.get(f"{rev_url}{neu.id}/", HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+check("Gast: neue Version im Detail -> 200", resp.status_code == 200, f"got {resp.status_code}")
+check(
+    "Gast: Detail enthält keinen alten Inhalt",
+    resp.status_code == 200 and "Interner Entwurf" not in resp.content.decode("utf-8", errors="ignore"),
+)
+
+resp = c_admin.get(rev_url, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+versions = [r["version"] for r in resp.json().get("revisions", [])]
+check("Autor: alle Versionen", sorted(versions) == [1, 2, 3], str(versions))
+check("Autor: restricted_since leer", resp.json().get("restricted_since") is None)
+
+# Ordner-Freigabe: Zeitpunkt der Ordner-Freigabe zählt
+folder_rev = DocumentFolder.objects.create(organization=org_a, name="Historie", created_by=m_admin)
+doc_rev.folder = folder_rev
+doc_rev.save(update_fields=["folder"])
+share3.delete()
+FolderGuestShare.objects.create(folder=folder_rev, user=user_guest3, level="view", created_by=user_admin)
+neu2 = MotionRevision(motion=doc_rev, version=4, changed_by=m_admin, change_summary="Nach Ordner-Freigabe")
+neu2.set_content_encrypted("<p>v4</p>")
+neu2.save()
+resp = c_guest3.get(rev_url, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+versions = [r["version"] for r in resp.json().get("revisions", [])]
+check("Ordner-Freigabe: nur Versionen ab deren Beginn", versions == [4], str(versions))
 
 # =============================================================================
 import shutil  # noqa: E402

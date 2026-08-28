@@ -36,7 +36,12 @@ class DocumentRevisionsAPIView(WorkViewMixin, View):
         if not motion.can_access(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
-        revisions = motion.revisions.select_related("changed_by__user").order_by("-version")
+        # Gäste: Historie erst ab Beginn ihrer Freigabe (Datenschutz)
+        revisions = motion.revisions_for(self.membership).select_related("changed_by__user").order_by("-version")
+        restricted_since = None
+        if getattr(self.membership, "is_guest", False):
+            since = motion.guest_share_since(self.membership)
+            restricted_since = since.isoformat() if since else None
 
         data = []
         for rev in revisions:
@@ -50,7 +55,7 @@ class DocumentRevisionsAPIView(WorkViewMixin, View):
                 }
             )
 
-        return JsonResponse({"success": True, "revisions": data})
+        return JsonResponse({"success": True, "revisions": data, "restricted_since": restricted_since})
 
 
 class DocumentRevisionDetailAPIView(WorkViewMixin, View):
@@ -65,7 +70,8 @@ class DocumentRevisionDetailAPIView(WorkViewMixin, View):
         if not motion.can_access(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
-        revision = get_object_or_404(MotionRevision, id=kwargs.get("revision_id"), motion=motion)
+        # Gäste: nur Versionen ab Beginn ihrer Freigabe (sonst 404 wie unbekannt)
+        revision = get_object_or_404(motion.revisions_for(self.membership), id=kwargs.get("revision_id"))
 
         return JsonResponse(
             {
