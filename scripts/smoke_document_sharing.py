@@ -42,12 +42,15 @@ if DB_PATH.exists():
 MEDIA_DIR = BASE_DIR / "smoke_document_sharing_media"
 
 os.environ["DJANGO_SETTINGS_MODULE"] = "mandari.settings"
-os.environ["DEBUG"] = "true"
+os.environ["DEBUG"] = "true"  # LocMem-Cache + DB-Sessions statt Redis
 os.environ["DATABASE_URL"] = f"sqlite:///{DB_PATH.as_posix()}"
 os.environ.setdefault("SECRET_KEY", "smoke-document-sharing")
 # Verschlüsselte Inhalte (Revisionen) brauchen einen Master-Key – im CI nicht gesetzt
-os.environ.setdefault("ENCRYPTION_MASTER_KEY", base64.b64encode(secrets.token_bytes(32)).decode())
-os.environ.setdefault("ALLOWED_HOSTS", "testserver,localhost")
+os.environ["ENCRYPTION_MASTER_KEY"] = base64.b64encode(secrets.token_bytes(32)).decode()
+os.environ["ELASTICSEARCH_AUTO_INDEX"] = "False"
+os.environ["MANDARI_SYNC_WATCHDOG"] = "0"  # DB-Schreiber-Thread stoert SQLite-Migrationen
+os.environ["EMAIL_BACKEND"] = "django.core.mail.backends.locmem.EmailBackend"
+os.environ["ALLOWED_HOSTS"] = "testserver,localhost"
 
 import django  # noqa: E402
 
