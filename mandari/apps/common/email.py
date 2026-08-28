@@ -114,7 +114,11 @@ def send_email(
             for filename, content, mimetype in attachments:
                 email.attach(filename, content, mimetype)
 
-        email.send(fail_silently=fail_silently)
+        # Kein fail_silently an send() – ab Django 6.1 ist die Kombination mit
+        # einer expliziten connection ein TypeError (der hier still geschluckt
+        # würde: "keine Mail, kein Fehler"). Die fail_silently-Semantik
+        # übernimmt der umschließende try/except.
+        email.send()
         logger.info(f"Email sent successfully to {', '.join(to)}: {subject}")
         return True
 
