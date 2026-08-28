@@ -337,6 +337,14 @@ class MemberDetailView(WorkViewMixin, TemplateView):
                 return redirect("work:members", org_slug=self.organization.slug)
 
         elif action == "reactivate":
+            # Gast-Limit gilt auch bei Reaktivierung (sonst wäre es per
+            # Deaktivieren/Reaktivieren umgehbar)
+            if member.is_guest and not member.is_active and not self.organization.has_free_guest_slot():
+                messages.error(
+                    request,
+                    f"Gast-Limit erreicht ({self.organization.guest_limit}). Erweiterung als Addon im Kundenportal.",
+                )
+                return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
             member.is_active = True
             member.save()
             messages.success(request, f"{member.user.get_full_name() or member.user.email} wurde reaktiviert.")

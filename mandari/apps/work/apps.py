@@ -20,3 +20,8 @@ class WorkConfig(AppConfig):
         from apps.work.faction import audit as faction_audit
 
         faction_audit.register()
+
+        # Dokument-Freigaben beim Entfernen einer Mitgliedschaft aufräumen
+        from apps.work.motions import signals as motion_signals
+
+        motion_signals.register()

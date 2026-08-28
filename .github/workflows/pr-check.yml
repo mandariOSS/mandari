@@ -170,6 +170,16 @@ jobs:
           python scripts/smoke_insight_durchstich.py
           python scripts/smoke_faction_meetings.py
 
+      # Work-Portal: Gastzugänge, Dokument-Freigaben und geschützte Anhänge
+      - name: Work guest & document smoke tests
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+        run: |
+          python scripts/smoke_guest_isolation.py
+          python scripts/smoke_org_guests.py
+          python scripts/smoke_document_folders.py
+          python scripts/smoke_document_sharing.py
+
   # ===========================================================================
   # Docker Build Validation
   # ===========================================================================

@@ -17,6 +17,23 @@ from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
 from mandari import pwa
 
+#: Medien, die ohne Anmeldung ausgeliefert werden (Logos, Hero-Bilder, Demo).
+PUBLIC_MEDIA_PREFIXES = (
+    "bodies/",
+    "organizations/logos/",
+    "parties/logos/",
+    "session/tenants/logos/",
+    "avatars/",
+    "demo/",
+)
+
+#: Medien, die NIE direkt ausgeliefert werden – nur über zugriffsgeprüfte
+#: Download-Views (Session-Anlagen, Dokument-Anhänge im Work-Portal).
+PROTECTED_MEDIA_PREFIXES = (
+    "session/files/",
+    "motions/documents/",
+)
+
 
 def serve_media(request, path):
     """Serve uploaded media files (logos, uploads) via Django.
@@ -26,16 +43,26 @@ def serve_media(request, path):
     dort für alle Uploads 404. ``django.views.static.serve`` kümmert
     sich um Last-Modified/304; wir ergänzen einen moderaten Cache-Header.
 
-    Sicherheit: Session-Anlagen (session/files/) werden hier NICHT
-    ausgeliefert — sie können nichtöffentlich sein und sind nur über die
-    zugriffsgeprüfte Download-View des Session-Portals erreichbar.
+    Sicherheit (drei Stufen):
+    - PROTECTED_MEDIA_PREFIXES werden hier NIE ausgeliefert – sie können
+      nichtöffentlich sein und sind nur über die zugriffsgeprüften
+      Download-Views erreichbar (Session-Anlagen, Dokument-Anhänge).
+    - PUBLIC_MEDIA_PREFIXES (Logos, Hero-Bilder) sind ohne Anmeldung
+      abrufbar.
+    - Alle übrigen Uploads (z. B. Anhänge von Aufgaben, Fraktionssitzungen,
+      Support) erfordern mindestens eine Anmeldung; sie sind nicht mehr
+      per bloßer URL-Kenntnis für Dritte abrufbar.
     """
-    if path.startswith("session/files/"):
-        from django.http import Http404
+    from django.http import Http404
 
-        raise Http404("Session-Anlagen werden nur über die geschützte Download-View ausgeliefert.")
+    if path.startswith(PROTECTED_MEDIA_PREFIXES):
+        raise Http404("Diese Datei wird nur über die geschützte Download-View ausgeliefert.")
+    if not path.startswith(PUBLIC_MEDIA_PREFIXES) and not request.user.is_authenticated:
+        raise Http404("Datei nicht gefunden.")
     response = static_serve(request, path, document_root=settings.MEDIA_ROOT)
-    response["Cache-Control"] = "public, max-age=3600"
+    response["Cache-Control"] = (
+        "public, max-age=3600" if path.startswith(PUBLIC_MEDIA_PREFIXES) else "private, no-store"
+    )
     return response
 
 

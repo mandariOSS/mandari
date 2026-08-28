@@ -345,8 +345,19 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
 
         # Nur Nutzer mit aktivem Zugang zu DIESER Organisation — sonst wäre
         # die Freigabe wirkungslos bzw. liefe an der Org-Grenze vorbei.
-        if not Membership.objects.filter(user=user, organization=self.organization, is_active=True).exists():
+        target = Membership.objects.filter(user=user, organization=self.organization, is_active=True).first()
+        if target is None:
             return JsonResponse({"error": "Der Nutzer hat keinen Zugang zu dieser Organisation."}, status=400)
+        # Ordner-Freigaben wirken ausschließlich für Gastzugänge – Mitglieder
+        # sehen Dokumente über deren Sichtbarkeit (Motion.visibility/MotionShare).
+        if not target.is_guest:
+            return JsonResponse(
+                {
+                    "error": "Ordner-Freigaben gelten nur für Gastzugänge. "
+                    "Mitglieder sehen Dokumente über die Sichtbarkeit."
+                },
+                status=400,
+            )
 
         FolderGuestShare.objects.update_or_create(
             folder=folder,

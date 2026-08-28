@@ -111,6 +111,13 @@
                             <option value="{{ m.user.email }}">{{ m.user.get_full_name|default:m.user.email }}{% if m.is_guest %} — Gast{% endif %}</option>
                             {% endfor %}
                         </datalist>
+                        <select name="level"
+                                class="px-3 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                                title="Berechtigungsstufe">
+                            <option value="view">Lesen</option>
+                            <option value="comment">Kommentieren</option>
+                            <option value="edit">Bearbeiten</option>
+                        </select>
                         <button type="button"
                                 @click="$refs.shareForm && $refs.shareForm.submit()"
                                 :disabled="!addUserEmail"
@@ -120,8 +127,9 @@
                     </div>
                     <p class="text-xs text-gray-500 mt-2">
                         <i data-lucide="info" class="w-3 h-3 inline-block mr-1"></i>
-                        Der Benutzer muss bereits ein Konto haben. Gäste sind als "Gast" markiert
-                        und sehen nur explizit freigegebene Dokumente.
+                        Nur Mitglieder und Gäste dieser Organisation. Gäste sind als "Gast" markiert
+                        und sehen ausschließlich freigegebene Dokumente – wählen Sie die Stufe bewusst
+                        (Standard: Lesen).
                     </p>
                 </div>
             </div>

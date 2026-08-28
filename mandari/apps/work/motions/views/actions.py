@@ -7,8 +7,10 @@ import logging
 import uuid
 
 from django.contrib import messages
-from django.http import JsonResponse
+from django.core.exceptions import PermissionDenied
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView, View
 
@@ -28,6 +30,7 @@ from ..models import (
     MotionApproval,
     MotionChecklistItem,
     MotionComment,
+    MotionDocument,
     MotionShare,
     MotionType,
 )
@@ -63,14 +66,22 @@ class MotionShareView(WorkViewMixin, TemplateView):
             # Handle user sharing by email
             if share.scope == "user":
                 from apps.accounts.models import User
+                from apps.tenants.models import Membership
 
-                email = form.cleaned_data.get("email")
-                try:
-                    user = User.objects.get(email=email)
-                    share.user = user
-                except User.DoesNotExist:
-                    messages.error(request, "Benutzer nicht gefunden.")
+                email = (form.cleaned_data.get("email") or "").strip().lower()
+                user = User.objects.filter(email=email).first()
+                target = (
+                    Membership.objects.filter(user=user, organization=self.organization, is_active=True).first()
+                    if user is not None
+                    else None
+                )
+                if target is None:
+                    messages.error(request, f"'{email}' ist kein Mitglied bzw. Gast dieser Organisation.")
                     return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
+                share.user = user
+                # Gäste erhalten nie Verwaltungsrechte
+                if share.level == "admin" and target.is_guest:
+                    share.level = "edit"
 
             share.save()
             messages.success(request, "Freigabe erstellt.")
@@ -496,11 +507,52 @@ class MotionDocumentUploadView(WorkViewMixin, View):
                         "id": str(document.id),
                         "filename": document.filename,
                         "size": document.file_size,
+                        "download_url": reverse(
+                            "work:document_file_download",
+                            kwargs={
+                                "org_slug": self.organization.slug,
+                                "motion_id": motion.id,
+                                "document_id": document.id,
+                            },
+                        ),
                     },
                 }
             )
 
         return JsonResponse({"error": form.errors}, status=400)
+
+
+class MotionDocumentDownloadView(WorkViewMixin, View):
+    """
+    Geschützte Auslieferung von Dokument-Anhängen (MotionDocument).
+
+    Anhänge liegen unter media/motions/documents/ und werden vom
+    Medien-Handler NICHT direkt ausgeliefert (siehe serve_media) – nur hier,
+    nach derselben Zugriffsprüfung wie das Dokument selbst (can_access:
+    Sichtbarkeit bzw. persönliche/Ordner-Freigabe, auch für Gäste).
+    """
+
+    permission_required = "motions.view"
+    guest_allowed = True  # Zugriff wird share-basiert geprüft (can_access)
+
+    def get(self, request, *args, **kwargs):
+        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
+        if not motion.can_access(self.membership):
+            raise PermissionDenied("Keine Berechtigung für dieses Dokument.")
+        document = get_object_or_404(MotionDocument, id=kwargs.get("document_id"), motion=motion)
+        try:
+            handle = document.file.open("rb")
+        except (FileNotFoundError, ValueError):
+            raise Http404("Datei nicht gefunden.")
+        response = FileResponse(
+            handle,
+            as_attachment=True,
+            filename=document.filename or document.file.name.rsplit("/", 1)[-1],
+            content_type=document.mime_type or "application/octet-stream",
+        )
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "private, no-store"
+        return response
 
 
 class MotionCommentResolveView(WorkViewMixin, View):
@@ -680,6 +732,11 @@ class MotionImportView(WorkViewMixin, TemplateView):
         return redirect("work:documents", org_slug=self.organization.slug)
 
 
+#: Im Teilen-Dialog wählbare Stufen (kein "admin" – Verwaltungsrecht bleibt
+#: beim Autor bzw. motions.edit_all).
+SHARE_DIALOG_LEVELS = ("view", "comment", "edit")
+
+
 class MotionShareUpdateView(WorkViewMixin, View):
     """HTMX endpoint for updating share settings via modal."""
 
@@ -700,24 +757,35 @@ class MotionShareUpdateView(WorkViewMixin, View):
 
         # Handle adding users for shared visibility
         if new_visibility == "shared":
-            add_user_email = request.POST.get("add_user_email", "").strip()
+            add_user_email = request.POST.get("add_user_email", "").strip().lower()
             if add_user_email:
                 from apps.accounts.models import User
+                from apps.tenants.models import Membership
 
-                try:
-                    user = User.objects.get(email=add_user_email)
-                    # Create share if doesn't exist
-                    MotionShare.objects.get_or_create(
-                        motion=motion,
-                        scope="user",
-                        user=user,
-                        defaults={
-                            "level": "edit",
-                            "created_by": request.user,
-                        },
+                # Stufenwahl (Lesen/Kommentieren/Bearbeiten) – "admin" ist
+                # Verwaltungsrecht und wird über den Dialog nie vergeben.
+                level = request.POST.get("level", "view")
+                if level not in SHARE_DIALOG_LEVELS:
+                    level = "view"
+
+                user = User.objects.filter(email=add_user_email).first()
+                # Nur Nutzer mit aktivem Zugang zu DIESER Organisation – sonst
+                # wäre die Freigabe wirkungslos (und die Antwort ließe
+                # Rückschlüsse zu, welche E-Mail-Adressen ein Konto haben).
+                if (
+                    user is None
+                    or not Membership.objects.filter(user=user, organization=self.organization, is_active=True).exists()
+                ):
+                    return JsonResponse(
+                        {"error": f"'{add_user_email}' ist kein Mitglied bzw. Gast dieser Organisation."},
+                        status=400,
                     )
-                except User.DoesNotExist:
-                    return JsonResponse({"error": f"Benutzer '{add_user_email}' nicht gefunden."}, status=400)
+                MotionShare.objects.update_or_create(
+                    motion=motion,
+                    scope="user",
+                    user=user,
+                    defaults={"level": level, "created_by": request.user},
+                )
 
         # Return success for HTMX
         from django.http import HttpResponse

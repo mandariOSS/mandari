@@ -269,6 +269,11 @@ urlpatterns = [
         name="document_upload",
     ),
     path(
+        "<slug:org_slug>/documents/<uuid:motion_id>/files/<uuid:document_id>/download/",
+        motions_views.MotionDocumentDownloadView.as_view(),
+        name="document_file_download",
+    ),
+    path(
         "<slug:org_slug>/documents/<uuid:motion_id>/export/",
         motions_views.MotionExportView.as_view(),
         name="document_export",
