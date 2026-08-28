@@ -24,7 +24,9 @@ Prüft:
   Detail; ältere Versionen -> 404), Mitglieder sehen alles
 """
 
+import base64
 import os
+import secrets
 import sys
 from pathlib import Path
 
@@ -44,7 +46,7 @@ os.environ["DEBUG"] = "true"
 os.environ["DATABASE_URL"] = f"sqlite:///{DB_PATH.as_posix()}"
 os.environ.setdefault("SECRET_KEY", "smoke-document-sharing")
 # Verschlüsselte Inhalte (Revisionen) brauchen einen Master-Key – im CI nicht gesetzt
-os.environ.setdefault("ENCRYPTION_MASTER_KEY", "c21va2UtZG9jdW1lbnQtc2hhcmluZy1tYXN0ZXIta2V5LTMy")
+os.environ.setdefault("ENCRYPTION_MASTER_KEY", base64.b64encode(secrets.token_bytes(32)).decode())
 os.environ.setdefault("ALLOWED_HOSTS", "testserver,localhost")
 
 import django  # noqa: E402
