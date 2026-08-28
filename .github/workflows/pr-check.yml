@@ -172,6 +172,8 @@ jobs:
 
       # Work-Portal: Gastzugänge, Dokument-Freigaben und geschützte Anhänge
       - name: Work guest & document smoke tests
+        # Auch ausführen, wenn ein vorheriger Smoke-Step rot ist (kein Verdecken)
+        if: ${{ !cancelled() }}
         env:
           SECRET_KEY: test-secret-key-for-ci
         run: |
