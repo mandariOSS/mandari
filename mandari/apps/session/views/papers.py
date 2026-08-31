@@ -49,9 +49,7 @@ def _active_text_blocks(tenant, categories=("resolution", "general")):
     """Aktive Textbausteine für die Editor-Auswahl (Issue #85)."""
     from ..models import SessionTextBlock
 
-    return SessionTextBlock.objects.filter(
-        tenant=tenant, is_active=True, category__in=categories
-    )
+    return SessionTextBlock.objects.filter(tenant=tenant, is_active=True, category__in=categories)
 
 
 class PaperListView(SessionViewMixin, ListView):

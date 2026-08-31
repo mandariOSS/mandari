@@ -24,8 +24,19 @@ from ..permissions import SessionViewMixin
 from ..services import calendar_service
 
 MONTH_NAMES = [
-    "", "Januar", "Februar", "März", "April", "Mai", "Juni",
-    "Juli", "August", "September", "Oktober", "November", "Dezember",
+    "",
+    "Januar",
+    "Februar",
+    "März",
+    "April",
+    "Mai",
+    "Juni",
+    "Juli",
+    "August",
+    "September",
+    "Oktober",
+    "November",
+    "Dezember",
 ]
 
 
@@ -47,9 +58,7 @@ class MeetingCalendarView(SessionViewMixin, TemplateView):
         year = max(2000, min(2100, year))
 
         include_np = self.has_permission("view_non_public_meetings")
-        weeks, count = calendar_service.month_grid(
-            self.session_tenant, year, month, include_non_public=include_np
-        )
+        weeks, count = calendar_service.month_grid(self.session_tenant, year, month, include_non_public=include_np)
 
         prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
         next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
@@ -107,9 +116,7 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
         org_id = request.POST.get("organization", "").strip()
         if org_id:
             try:
-                org = SessionOrganization.objects.filter(
-                    tenant=self.session_tenant, is_active=True, pk=org_id
-                ).first()
+                org = SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True, pk=org_id).first()
             except (ValueError, DjangoValidationError):
                 org = None
         if org is None:
@@ -148,8 +155,7 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
             "date_from": date_from,
             "date_to": date_to,
             "name": request.POST.get("name", "").strip()[:500] or f"Sitzung: {org.name}",
-            "location": request.POST.get("location", "").strip()[:500]
-            or org.default_meeting_location,
+            "location": request.POST.get("location", "").strip()[:500] or org.default_meeting_location,
             "room": request.POST.get("room", "").strip()[:100],
             "is_public": request.POST.get("is_public", "1") == "1",
         }
@@ -175,9 +181,7 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
         entries = [
             {
                 "start": start,
-                "conflicts": calendar_service.find_conflicts(
-                    self.session_tenant, start, room=form["room"]
-                ),
+                "conflicts": calendar_service.find_conflicts(self.session_tenant, start, room=form["room"]),
             }
             for start in starts
         ]
@@ -247,9 +251,7 @@ class YearPlanPdfView(SessionViewMixin, View):
         org_id = request.GET.get("organization")
         if org_id:
             try:
-                organization = SessionOrganization.objects.filter(
-                    tenant=self.session_tenant, pk=org_id
-                ).first()
+                organization = SessionOrganization.objects.filter(tenant=self.session_tenant, pk=org_id).first()
             except (ValueError, DjangoValidationError):
                 organization = None
 

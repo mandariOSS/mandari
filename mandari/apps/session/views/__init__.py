@@ -43,6 +43,12 @@ from .attendance import (
 from .audit import (
     AuditLogListView,
 )
+from .calendar import (
+    MeetingCalendarView,
+    MeetingPlanView,
+    OrganizationIcsFeedView,
+    YearPlanPdfView,
+)
 from .consultations import (
     ConsultationCreateView,
     ConsultationDeleteView,
@@ -140,14 +146,6 @@ from .terms import (
     TermListView,
     TermSaveView,
 )
-
-from .calendar import (
-    MeetingCalendarView,
-    MeetingPlanView,
-    OrganizationIcsFeedView,
-    YearPlanPdfView,
-)
-
 from .textblocks import (
     StandardItemManageView,
     TextblockManageView,

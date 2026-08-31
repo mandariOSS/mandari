@@ -64,9 +64,7 @@ def _claim(tenant: SessionTenant, kind: str, dedup_key: str, recipients: list[st
     Erinnerung atomar beanspruchen. False, wenn sie bereits versendet wurde.
     """
     try:
-        SessionReminderLog.objects.create(
-            tenant=tenant, kind=kind, dedup_key=dedup_key, recipients=recipients
-        )
+        SessionReminderLog.objects.create(tenant=tenant, kind=kind, dedup_key=dedup_key, recipients=recipients)
         return True
     except IntegrityError:
         return False
@@ -158,8 +156,7 @@ def _remind_papers(tenant, config, today, *, dry_run) -> dict:
     for paper in papers:
         overdue = paper.deadline < today
         subject = (
-            f"[{tenant.name}] Vorlagenfrist "
-            f"{'verstrichen' if overdue else 'läuft ab'}: {paper.reference or paper.name}"
+            f"[{tenant.name}] Vorlagenfrist {'verstrichen' if overdue else 'läuft ab'}: {paper.reference or paper.name}"
         )
         body = (
             f"Die Vorlage „{paper.name}“ ({paper.reference or 'ohne Nummer'}, "
@@ -241,10 +238,7 @@ def _remind_resolutions(tenant, config, today, *, dry_run) -> dict:
     for item in items:
         overdue = item.implementation_deadline < today
         label = item.resolution_number or f"TOP {item.number}"
-        subject = (
-            f"[{tenant.name}] Beschlusskontrolle: {label} "
-            f"{'überfällig' if overdue else 'zur Wiedervorlage'}"
-        )
+        subject = f"[{tenant.name}] Beschlusskontrolle: {label} {'überfällig' if overdue else 'zur Wiedervorlage'}"
         body = (
             f"Der Beschluss {label} „{item.name}“ ({item.meeting.organization.name}) "
             f"hat die Erledigungsfrist {item.implementation_deadline.strftime('%d.%m.%Y')}"

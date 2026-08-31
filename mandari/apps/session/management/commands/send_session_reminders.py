@@ -27,9 +27,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        totals = reminder_service.run_all(
-            dry_run=options["dry_run"], tenant_slug=options.get("tenant")
-        )
+        totals = reminder_service.run_all(dry_run=options["dry_run"], tenant_slug=options.get("tenant"))
         if not totals or not any(totals.values()):
             self.stdout.write("Keine fälligen Erinnerungen.")
             return

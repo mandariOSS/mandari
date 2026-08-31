@@ -82,9 +82,7 @@ class DashboardView(SessionViewMixin, TemplateView):
                 .order_by("implementation_deadline")
             )
             if not self.has_permission("view_non_public_meetings"):
-                overdue_resolutions = overdue_resolutions.filter(
-                    is_public=True, meeting__is_public=True
-                )
+                overdue_resolutions = overdue_resolutions.filter(is_public=True, meeting__is_public=True)
             context["overdue_resolutions"] = list(overdue_resolutions[:5])
             context["overdue_resolutions_count"] = overdue_resolutions.count()
 

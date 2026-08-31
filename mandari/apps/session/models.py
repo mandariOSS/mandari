@@ -1135,13 +1135,9 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
         verbose_name="Zuständige Stelle/Amt",
         help_text="z. B. Bauamt, Kämmerei",
     )
-    implementation_deadline = models.DateField(
-        blank=True, null=True, verbose_name="Erledigungsfrist"
-    )
+    implementation_deadline = models.DateField(blank=True, null=True, verbose_name="Erledigungsfrist")
     implementation_note = models.TextField(blank=True, verbose_name="Erledigungsvermerk")
-    implementation_updated_at = models.DateTimeField(
-        blank=True, null=True, verbose_name="Umsetzung aktualisiert am"
-    )
+    implementation_updated_at = models.DateTimeField(blank=True, null=True, verbose_name="Umsetzung aktualisiert am")
     implementation_updated_by = models.ForeignKey(
         SessionUser,
         on_delete=models.SET_NULL,
@@ -2378,11 +2374,7 @@ class SessionReminderLog(models.Model):
         db_table = "session_reminder_logs"
         verbose_name = "Erinnerungs-Protokoll"
         verbose_name_plural = "Erinnerungs-Protokolle"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["tenant", "kind", "dedup_key"], name="uniq_session_reminder"
-            )
-        ]
+        constraints = [models.UniqueConstraint(fields=["tenant", "kind", "dedup_key"], name="uniq_session_reminder")]
         ordering = ["-sent_at"]
 
     def __str__(self):
@@ -2425,9 +2417,7 @@ class SessionStandardAgendaItem(models.Model):
         help_text="Leer = gilt für alle Gremien",
     )
     name = models.CharField(max_length=500, verbose_name="Betreff")
-    placement = models.CharField(
-        max_length=10, choices=PLACEMENT_CHOICES, default="start", verbose_name="Position"
-    )
+    placement = models.CharField(max_length=10, choices=PLACEMENT_CHOICES, default="start", verbose_name="Position")
     order = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
     is_public = models.BooleanField(default=True, verbose_name="Öffentlich")
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
@@ -2466,9 +2456,7 @@ class SessionTextBlock(models.Model):
     )
     title = models.CharField(max_length=200, verbose_name="Titel")
     content = models.TextField(verbose_name="Text")
-    category = models.CharField(
-        max_length=20, choices=CATEGORY_CHOICES, default="general", verbose_name="Kategorie"
-    )
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="general", verbose_name="Kategorie")
     order = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     created_at = models.DateTimeField(auto_now_add=True)

@@ -64,9 +64,7 @@ def find_conflicts(
     """
     day = timezone.localtime(start).date()
     qs = (
-        SessionMeeting.objects.filter(
-            tenant=tenant, cancelled=False, start__date=day
-        )
+        SessionMeeting.objects.filter(tenant=tenant, cancelled=False, start__date=day)
         .select_related("organization")
         .order_by("start")
     )
@@ -136,9 +134,7 @@ def month_grid(tenant: SessionTenant, year: int, month: int, *, include_non_publ
         Liste von dicts {day, in_month, is_today, meetings}
     """
     qs = (
-        SessionMeeting.objects.filter(
-            tenant=tenant, start__year=year, start__month=month
-        )
+        SessionMeeting.objects.filter(tenant=tenant, start__year=year, start__month=month)
         .select_related("organization")
         .order_by("start")
     )
@@ -182,23 +178,16 @@ def year_meetings(tenant: SessionTenant, year: int, *, organization=None, includ
     months: dict[int, list[SessionMeeting]] = {}
     for meeting in qs:
         months.setdefault(timezone.localtime(meeting.start).month, []).append(meeting)
-    return [
-        {"month": month, "meetings": meetings}
-        for month, meetings in sorted(months.items())
-    ]
+    return [{"month": month, "meetings": meetings} for month, meetings in sorted(months.items())]
 
 
-def build_year_plan_pdf(
-    tenant: SessionTenant, year: int, *, organization=None, include_non_public: bool
-) -> bytes:
+def build_year_plan_pdf(tenant: SessionTenant, year: int, *, organization=None, include_non_public: bool) -> bytes:
     """Sitzungsplan-PDF (Jahresübersicht, optional je Gremium)."""
     context = {
         "tenant": tenant,
         "year": year,
         "organization": organization,
-        "months": year_meetings(
-            tenant, year, organization=organization, include_non_public=include_non_public
-        ),
+        "months": year_meetings(tenant, year, organization=organization, include_non_public=include_non_public),
         "internal": include_non_public,
         "generated_at": timezone.localtime(),
         "address_lines": [line for line in (tenant.address or "").splitlines() if line.strip()],
@@ -216,20 +205,15 @@ def build_organization_feed(organization: SessionOrganization) -> bytes:
     Sitzungen erscheinen hier nie.
     """
     since = timezone.now() - timedelta(days=90)
-    meetings = (
-        SessionMeeting.objects.filter(
-            organization=organization,
-            is_public=True,
-            cancelled=False,
-            start__gte=since,
-        )
-        .order_by("start")[:200]
-    )
+    meetings = SessionMeeting.objects.filter(
+        organization=organization,
+        is_public=True,
+        cancelled=False,
+        start__gte=since,
+    ).order_by("start")[:200]
     events = []
     for meeting in meetings:
-        location = ", ".join(
-            part for part in (meeting.location, meeting.room) if part
-        )
+        location = ", ".join(part for part in (meeting.location, meeting.room) if part)
         events.append(
             {
                 "uid": f"session-meeting-{meeting.pk}@mandari",

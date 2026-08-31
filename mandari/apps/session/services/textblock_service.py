@@ -21,9 +21,7 @@ END_ORDER_BASE = 900000
 def standard_items_for(meeting: SessionMeeting):
     """Aktive Standard-TOPs für das Gremium der Sitzung (inkl. „alle Gremien")."""
     return (
-        SessionStandardAgendaItem.objects.filter(
-            tenant=meeting.tenant, is_active=True
-        )
+        SessionStandardAgendaItem.objects.filter(tenant=meeting.tenant, is_active=True)
         .filter(Q(organization__isnull=True) | Q(organization=meeting.organization))
         .order_by("placement", "order", "name")
     )

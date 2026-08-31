@@ -24,9 +24,9 @@ class TextblockSettingsView(SessionViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context.update(
             {
-                "standard_items": SessionStandardAgendaItem.objects.filter(
-                    tenant=self.session_tenant
-                ).select_related("organization"),
+                "standard_items": SessionStandardAgendaItem.objects.filter(tenant=self.session_tenant).select_related(
+                    "organization"
+                ),
                 "text_blocks": SessionTextBlock.objects.filter(tenant=self.session_tenant),
                 "organizations": SessionOrganization.objects.filter(
                     tenant=self.session_tenant, is_active=True
@@ -72,8 +72,11 @@ class StandardItemManageView(_ManageBase):
                 messages.error(request, "Standard-TOP nicht gefunden.")
             else:
                 audit.log_event(
-                    "delete", instance, tenant=self.session_tenant,
-                    user=self.session_user, request=request,
+                    "delete",
+                    instance,
+                    tenant=self.session_tenant,
+                    user=self.session_user,
+                    request=request,
                 )
                 instance.delete()
                 messages.success(request, "Standard-TOP gelöscht.")
@@ -102,9 +105,7 @@ class StandardItemManageView(_ManageBase):
             "is_active": request.POST.get("is_active", "1") == "1",
         }
         if instance is None:
-            instance = SessionStandardAgendaItem.objects.create(
-                tenant=self.session_tenant, **values
-            )
+            instance = SessionStandardAgendaItem.objects.create(tenant=self.session_tenant, **values)
             action = "create"
             messages.success(request, f"Standard-TOP „{name}“ angelegt.")
         else:
@@ -115,8 +116,11 @@ class StandardItemManageView(_ManageBase):
             messages.success(request, f"Standard-TOP „{name}“ gespeichert.")
 
         audit.log_event(
-            action, instance, tenant=self.session_tenant,
-            user=self.session_user, request=request,
+            action,
+            instance,
+            tenant=self.session_tenant,
+            user=self.session_user,
+            request=request,
             changes={"betreff": name, "position": placement},
         )
         return self._redirect()
@@ -133,8 +137,11 @@ class TextblockManageView(_ManageBase):
                 messages.error(request, "Textbaustein nicht gefunden.")
             else:
                 audit.log_event(
-                    "delete", instance, tenant=self.session_tenant,
-                    user=self.session_user, request=request,
+                    "delete",
+                    instance,
+                    tenant=self.session_tenant,
+                    user=self.session_user,
+                    request=request,
                 )
                 instance.delete()
                 messages.success(request, "Textbaustein gelöscht.")
@@ -169,8 +176,11 @@ class TextblockManageView(_ManageBase):
             messages.success(request, f"Textbaustein „{title}“ gespeichert.")
 
         audit.log_event(
-            action, instance, tenant=self.session_tenant,
-            user=self.session_user, request=request,
+            action,
+            instance,
+            tenant=self.session_tenant,
+            user=self.session_user,
+            request=request,
             changes={"titel": title, "kategorie": category},
         )
         return self._redirect()
