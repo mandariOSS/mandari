@@ -45,6 +45,15 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
+def _active_text_blocks(tenant, categories=("resolution", "general")):
+    """Aktive Textbausteine für die Editor-Auswahl (Issue #85)."""
+    from ..models import SessionTextBlock
+
+    return SessionTextBlock.objects.filter(
+        tenant=tenant, is_active=True, category__in=categories
+    )
+
+
 class PaperListView(SessionViewMixin, ListView):
     """List of papers."""
 
@@ -198,6 +207,11 @@ class PaperCreateView(SessionViewMixin, CreateView):
         "originator_person",
     ]
     permission_required = "create_papers"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["text_blocks"] = _active_text_blocks(self.session_tenant)
+        return context
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
@@ -430,6 +444,11 @@ class PaperUpdateView(SessionViewMixin, UpdateView):
     ]
     pk_url_kwarg = "paper_id"
     permission_required = "edit_papers"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["text_blocks"] = _active_text_blocks(self.session_tenant)
+        return context
 
     def get_queryset(self):
         qs = super().get_queryset()

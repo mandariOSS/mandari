@@ -188,6 +188,8 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
             context.update({"preview": entries, "form": form, "form_post": request.POST})
             return self.render_to_response(context)
 
+        from ..services import textblock_service
+
         created = 0
         for entry in entries:
             meeting = SessionMeeting.objects.create(
@@ -200,6 +202,8 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
                 is_public=form["is_public"],
                 meeting_state="draft",
             )
+            # Standard-TOPs des Gremiums automatisch übernehmen (Issue #85)
+            textblock_service.apply_standard_items(meeting)
             created += 1
         audit.log_event(
             "create",

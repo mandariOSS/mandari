@@ -451,6 +451,22 @@ urlpatterns = [
         views.ReminderSettingsView.as_view(),
         name="settings_reminders",
     ),
+    # Textbausteine und Standard-TOPs (Issue #85)
+    path(
+        "<slug:tenant_slug>/settings/textblocks/",
+        views.TextblockSettingsView.as_view(),
+        name="settings_textblocks",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/textblocks/standard/",
+        views.StandardItemManageView.as_view(),
+        name="standard_item_manage",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/textblocks/block/",
+        views.TextblockManageView.as_view(),
+        name="textblock_manage",
+    ),
     path(
         "<slug:tenant_slug>/settings/users/",
         views.UserListView.as_view(),

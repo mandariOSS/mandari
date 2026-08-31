@@ -19,7 +19,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from .. import audit
-from ..models import SessionAgendaItem, SessionMeeting
+from ..models import SessionAgendaItem, SessionMeeting, SessionTextBlock
 from ..permissions import SessionViewMixin
 from ..services import agenda_service, protocol_service
 
@@ -146,6 +146,12 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
                 "content_np": (protocol.get_content_decrypted() or "") if can_view_np else "",
                 "can_view_np": can_view_np,
                 "vote_choices": SessionAgendaItem._meta.get_field("vote_result").choices,
+                # Textbausteine für die Protokollführung (Issue #85)
+                "text_blocks": SessionTextBlock.objects.filter(
+                    tenant=self.session_tenant,
+                    is_active=True,
+                    category__in=["protocol", "general"],
+                ),
             }
         )
         return context

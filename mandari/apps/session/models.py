@@ -2390,6 +2390,101 @@ class SessionReminderLog(models.Model):
 
 
 # =============================================================================
+# TEXTBAUSTEINE UND STANDARD-TAGESORDNUNGSPUNKTE (Issue #85)
+# =============================================================================
+
+
+class SessionStandardAgendaItem(models.Model):
+    """
+    Standard-Tagesordnungspunkt (Issue #85).
+
+    Wird beim Anlegen einer Sitzung automatisch in die Tagesordnung
+    übernommen — z. B. „Eröffnung der Sitzung", „Genehmigung der
+    Niederschrift", „Anfragen und Mitteilungen".
+    """
+
+    PLACEMENT_CHOICES = [
+        ("start", "Am Anfang"),
+        ("end", "Am Ende"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="standard_agenda_items",
+        verbose_name="Mandant",
+    )
+    organization = models.ForeignKey(
+        SessionOrganization,
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="standard_agenda_items",
+        verbose_name="Gremium",
+        help_text="Leer = gilt für alle Gremien",
+    )
+    name = models.CharField(max_length=500, verbose_name="Betreff")
+    placement = models.CharField(
+        max_length=10, choices=PLACEMENT_CHOICES, default="start", verbose_name="Position"
+    )
+    order = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
+    is_public = models.BooleanField(default=True, verbose_name="Öffentlich")
+    is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_standard_agenda_items"
+        verbose_name = "Standard-Tagesordnungspunkt"
+        verbose_name_plural = "Standard-Tagesordnungspunkte"
+        ordering = ["placement", "order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class SessionTextBlock(models.Model):
+    """
+    Textbaustein (Issue #85) für wiederkehrende Formulierungen in
+    Beschlussvorschlägen und Niederschriften. Platzhalter wie {gremium},
+    {datum} oder {vorlage} werden beim Einfügen ersetzt.
+    """
+
+    CATEGORY_CHOICES = [
+        ("resolution", "Beschlusstext"),
+        ("protocol", "Protokolltext"),
+        ("general", "Allgemein"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="text_blocks",
+        verbose_name="Mandant",
+    )
+    title = models.CharField(max_length=200, verbose_name="Titel")
+    content = models.TextField(verbose_name="Text")
+    category = models.CharField(
+        max_length=20, choices=CATEGORY_CHOICES, default="general", verbose_name="Kategorie"
+    )
+    order = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
+    is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_text_blocks"
+        verbose_name = "Textbaustein"
+        verbose_name_plural = "Textbausteine"
+        ordering = ["category", "order", "title"]
+
+    def __str__(self):
+        return self.title
+
+
+# =============================================================================
 # API TOKEN MODEL
 # =============================================================================
 

@@ -207,7 +207,18 @@ class MeetingCreateView(SessionViewMixin, CreateView):
             )
 
         messages.success(self.request, "Sitzung wurde erstellt.")
-        return super().form_valid(form)
+        response = super().form_valid(form)
+
+        # Standard-TOPs des Gremiums automatisch übernehmen (Issue #85)
+        from ..services import textblock_service
+
+        applied = textblock_service.apply_standard_items(self.object)
+        if applied:
+            messages.info(
+                self.request,
+                f"{applied} Standard-Tagesordnungspunkt(e) wurden übernommen.",
+            )
+        return response
 
     def get_success_url(self):
         return reverse(

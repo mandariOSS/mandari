@@ -166,6 +166,7 @@ jobs:
           python scripts/smoke_session_resolutions.py
           python scripts/smoke_session_reminders.py
           python scripts/smoke_session_calendar.py
+          python scripts/smoke_session_textblocks.py
           python scripts/smoke_session_paper_workflow.py
           python scripts/smoke_session_consultations.py
           python scripts/smoke_session_oparl.py

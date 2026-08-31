@@ -18,7 +18,10 @@
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
         <h2 class="font-semibold text-gray-900 dark:text-white">Allgemeiner Teil</h2>
         <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Niederschrift (öffentlicher Teil)</label>
+            <div class="flex items-center justify-between gap-3 flex-wrap mb-1">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Niederschrift (öffentlicher Teil)</label>
+                {% include "session/partials/textblock_picker.html" with tb_gremium=meeting.organization.name tb_sitzung=meeting.name %}
+            </div>
             <textarea name="content" rows="6"
                       class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">{{ protocol.content }}</textarea>
         </div>

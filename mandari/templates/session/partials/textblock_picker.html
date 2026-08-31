@@ -1,0 +1,78 @@
+{% comment %}
+Textbaustein-Auswahl (Issue #85).
+
+Kontext:
+- text_blocks: aktive SessionTextBlocks des Mandanten
+- tb_gremium / tb_sitzung: optionale Platzhalter-Werte
+- tb_target: optionale ID der Ziel-Textarea (sonst zuletzt fokussierte)
+
+Platzhalter: {gremium}, {datum}, {sitzung}, {vorlage} (aus #id_reference).
+{% endcomment %}
+{% if text_blocks %}
+<div class="flex items-center gap-2 flex-wrap"
+     data-textblock-picker
+     data-tb-gremium="{{ tb_gremium|default:'' }}"
+     data-tb-sitzung="{{ tb_sitzung|default:'' }}"
+     data-tb-target="{{ tb_target|default:'' }}">
+    <i data-lucide="text-select" class="w-4 h-4 text-gray-400"></i>
+    <select class="tb-select px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white max-w-[220px]">
+        <option value="">Textbaustein wählen…</option>
+        {% for block in text_blocks %}
+        <option value="{{ block.content }}">{{ block.title }} ({{ block.get_category_display }})</option>
+        {% endfor %}
+    </select>
+    <button type="button" class="tb-insert px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
+        Einfügen
+    </button>
+</div>
+<script>
+(function () {
+    // Zuletzt fokussierte Textarea merken (für Formulare mit mehreren Feldern)
+    if (!window.__tbFocusTracked) {
+        window.__tbFocusTracked = true;
+        document.addEventListener('focusin', function (event) {
+            if (event.target.tagName === 'TEXTAREA') {
+                window.__tbLastTextarea = event.target;
+            }
+        });
+    }
+    var pickers = document.querySelectorAll('[data-textblock-picker]:not([data-tb-ready])');
+    pickers.forEach(function (picker) {
+        picker.setAttribute('data-tb-ready', '1');
+        picker.querySelector('.tb-insert').addEventListener('click', function () {
+            var select = picker.querySelector('.tb-select');
+            var text = select.value;
+            if (!text) return;
+
+            // Platzhalter ersetzen
+            var today = new Date().toLocaleDateString('de-DE');
+            var refInput = document.getElementById('id_reference');
+            text = text
+                .replaceAll('{datum}', today)
+                .replaceAll('{gremium}', picker.dataset.tbGremium || '')
+                .replaceAll('{sitzung}', picker.dataset.tbSitzung || '')
+                .replaceAll('{vorlage}', refInput ? refInput.value : '');
+
+            var target = picker.dataset.tbTarget
+                ? document.getElementById(picker.dataset.tbTarget)
+                : window.__tbLastTextarea;
+            if (!target && picker.dataset.tbTarget === '') {
+                // Fallback: erste Textarea der Seite
+                target = document.querySelector('textarea');
+            }
+            if (!target) return;
+
+            var start = target.selectionStart ?? target.value.length;
+            var end = target.selectionEnd ?? target.value.length;
+            var prefix = target.value.slice(0, start);
+            var sep = prefix && !prefix.endsWith('\n') && !prefix.endsWith(' ') ? ' ' : '';
+            target.value = prefix + sep + text + target.value.slice(end);
+            target.focus();
+            var pos = (prefix + sep + text).length;
+            target.setSelectionRange(pos, pos);
+            select.value = '';
+        });
+    });
+})();
+</script>
+{% endif %}

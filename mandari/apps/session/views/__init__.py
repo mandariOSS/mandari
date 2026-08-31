@@ -148,7 +148,16 @@ from .calendar import (
     YearPlanPdfView,
 )
 
+from .textblocks import (
+    StandardItemManageView,
+    TextblockManageView,
+    TextblockSettingsView,
+)
+
 __all__ = [
+    "StandardItemManageView",
+    "TextblockManageView",
+    "TextblockSettingsView",
     "MeetingCalendarView",
     "MeetingPlanView",
     "OrganizationIcsFeedView",

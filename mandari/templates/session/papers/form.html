@@ -90,7 +90,10 @@
 
             <!-- Inhalt -->
             <div>
-                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Inhalt</h2>
+                <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
+                    <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Inhalt</h2>
+                    {% include "session/partials/textblock_picker.html" %}
+                </div>
 
                 <!-- Sachverhalt -->
                 <div class="mb-4">
