@@ -181,6 +181,7 @@ jobs:
           python scripts/smoke_org_guests.py
           python scripts/smoke_document_folders.py
           python scripts/smoke_document_sharing.py
+          python scripts/smoke_demo_environment.py
 
   # ===========================================================================
   # Docker Build Validation

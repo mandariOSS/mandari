@@ -75,6 +75,31 @@ DEMO_USERS = {
         "first_name": "Victor",
         "last_name": "Verwaltung",
     },
+    # Weitere Verwaltungsnutzer, um die Rollen des Session-RIS erlebbar zu
+    # machen (Sachbearbeitung, Protokollführung, reiner Lesezugriff).
+    "sachbearbeitung": {
+        "email": f"demo-sachbearbeitung@{DEMO_EMAIL_DOMAIN}",
+        "first_name": "Sabine",
+        "last_name": "Sachbearbeitung",
+    },
+    "protokoll": {
+        "email": f"demo-protokoll@{DEMO_EMAIL_DOMAIN}",
+        "first_name": "Paul",
+        "last_name": "Protokoll",
+    },
+    "lesezugriff": {
+        "email": f"demo-lesezugriff@{DEMO_EMAIL_DOMAIN}",
+        "first_name": "Lena",
+        "last_name": "Lesezugriff",
+    },
+}
+
+#: Zuordnung Demo-Nutzer -> Name der Session-Standardrolle (create_default_roles).
+DEMO_SESSION_ROLE_BY_USER = {
+    "verwaltung": "Administrator",
+    "sachbearbeitung": "Sachbearbeiter",
+    "protokoll": "Protokollant",
+    "lesezugriff": "Lesezugriff",
 }
 
 
@@ -884,19 +909,24 @@ class Command(BaseCommand):
 
         if not tenant.roles.exists():
             SessionRole.create_default_roles(tenant)
-        admin_role = tenant.roles.filter(is_admin=True).first()
         self._count("Session: Rollen", tenant.roles.count())
 
-        # --- Demo-Verwaltungsnutzer -----------------------------------
-        user_verwaltung = self._make_user("verwaltung")
-        session_user, _ = SessionUser.objects.update_or_create(
-            user=user_verwaltung,
-            tenant=tenant,
-            defaults={"is_active": True},
-        )
-        if admin_role:
-            session_user.roles.set([admin_role])
-        self._count("Session: Verwaltungsnutzer")
+        # --- Demo-Verwaltungsnutzer (ein Login je Rolle) --------------
+        roles_by_name = {r.name: r for r in tenant.roles.all()}
+        session_users: dict[str, SessionUser] = {}
+        for user_key, role_name in DEMO_SESSION_ROLE_BY_USER.items():
+            demo_user = self._make_user(user_key)
+            s_user, _ = SessionUser.objects.update_or_create(
+                user=demo_user,
+                tenant=tenant,
+                defaults={"is_active": True},
+            )
+            role = roles_by_name.get(role_name)
+            if role:
+                s_user.roles.set([role])
+            session_users[user_key] = s_user
+        session_user = session_users["verwaltung"]
+        self._count("Session: Verwaltungsnutzer", len(session_users))
 
         # --- Gremien --------------------------------------------------
         s_orgs: dict[str, SessionOrganization] = {}
@@ -1147,6 +1177,48 @@ class Command(BaseCommand):
                 )
                 application.save()
         self._count("Session: Anträge", len(applications_def))
+
+        # --- Anwesenheit + genehmigtes Protokoll (vergangene Sitzung) -
+        from apps.session.models import SessionAttendance, SessionProtocol
+
+        past_meeting = SessionMeeting.objects.filter(
+            tenant=tenant, organization=s_orgs["hauptausschuss"], name="Hauptausschuss (Demo, vergangen)"
+        ).first()
+        if past_meeting is not None:
+            attendance_def = [
+                ("anna-amberg", "present", "chair"),
+                ("elif-erden", "present", "deputy_chair"),
+                ("bernd-birkholz", "excused", "member"),
+            ]
+            for person_key, att_status, att_role in attendance_def:
+                SessionAttendance.objects.update_or_create(
+                    meeting=past_meeting,
+                    person=s_persons[person_key],
+                    defaults={"status": att_status, "role": att_role, "has_voting_rights": True},
+                )
+            self._count("Session: Anwesenheiten", len(attendance_def))
+
+            recorder = s_persons["elif-erden"]
+            chair = s_persons["anna-amberg"]
+            protocol, _ = SessionProtocol.objects.update_or_create(
+                meeting=past_meeting,
+                defaults={
+                    "content": (
+                        "Sitzung des Hauptausschusses (Demo).\n\n"
+                        "TOP 1 – Eröffnung: Der Vorsitz begrüßt die Anwesenden und stellt die "
+                        "ordnungsgemäße Ladung sowie die Beschlussfähigkeit fest.\n\n"
+                        "TOP 2 – Mitteilung: Fortschreibung des Lärmaktionsplans: Die Verwaltung "
+                        "berichtet über den Sachstand. Der Ausschuss nimmt die Mitteilung zur Kenntnis."
+                    ),
+                    "status": "approved",
+                    "created_by": session_users["protokoll"],
+                    "approved_by": session_user,
+                    "approved_at": now - timedelta(days=21),
+                    "chair_name": f"{chair.given_name} {chair.family_name}",
+                    "recorder_name": f"{recorder.given_name} {recorder.family_name}",
+                },
+            )
+            self._count("Session: Protokolle")
 
         return tenant
 

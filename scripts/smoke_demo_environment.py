@@ -59,10 +59,12 @@ call_command("migrate", verbosity=0, interactive=False)
 from apps.accounts.models import User  # noqa: E402
 from apps.session.models import (  # noqa: E402
     SessionApplication,
+    SessionAttendance,
     SessionMeeting,
     SessionOrganization,
     SessionPaper,
     SessionPerson,
+    SessionProtocol,
     SessionTenant,
     SessionUser,
 )
@@ -132,6 +134,12 @@ def demo_counts() -> dict:
             tenant__slug="stadtverwaltung-musterstadt-demo"
         ).count(),
         "session_users": SessionUser.objects.filter(tenant__slug="stadtverwaltung-musterstadt-demo").count(),
+        "session_attendances": SessionAttendance.objects.filter(
+            meeting__tenant__slug="stadtverwaltung-musterstadt-demo"
+        ).count(),
+        "session_protocols": SessionProtocol.objects.filter(
+            meeting__tenant__slug="stadtverwaltung-musterstadt-demo"
+        ).count(),
     }
 
 
@@ -157,7 +165,7 @@ counts_first = demo_counts()
 output_second = run_command()
 counts_second = demo_counts()
 
-check("Erster Lauf legt Demo-Daten an", counts_first["bodies"] == 1 and counts_first["users"] == 4)
+check("Erster Lauf legt Demo-Daten an", counts_first["bodies"] == 1 and counts_first["users"] == 7)
 check(
     "Zweiter Lauf dupliziert nichts (alle Zähler stabil)",
     counts_first == counts_second,
@@ -177,9 +185,12 @@ check("Work: Ordner-Freigabe für Gast", counts_second["guest_shares"] == 1)
 check("Session: 3 Sitzungen", counts_second["session_meetings"] == 3)
 check("Session: 4 Vorlagen", counts_second["session_papers"] == 4)
 check("Session: 2 Anträge", counts_second["session_applications"] == 2)
+check("Session: 4 Verwaltungsnutzer (je Rolle)", counts_second["session_users"] == 4)
+check("Session: 3 Anwesenheiten (vergangene Sitzung)", counts_second["session_attendances"] == 3)
+check("Session: 1 genehmigtes Protokoll", counts_second["session_protocols"] == 1)
 
 passwords = parse_passwords(output_second)
-check("Passwörter im Output (4 Nutzer)", len(passwords) == 4, detail=str(list(passwords)))
+check("Passwörter im Output (7 Nutzer)", len(passwords) == 7, detail=str(list(passwords)))
 
 # PDF-Dateien physisch vorhanden + text_content gesetzt
 pdf_ok = all(
@@ -209,6 +220,9 @@ for email in sorted(passwords):
 vorsitz = sessions.get("demo-vorsitz@demo.mandari.de")
 gast = sessions.get("demo-gast@demo.mandari.de")
 verwaltung = sessions.get("demo-verwaltung@demo.mandari.de")
+sachbearbeitung = sessions.get("demo-sachbearbeitung@demo.mandari.de")
+protokoll = sessions.get("demo-protokoll@demo.mandari.de")
+lesezugriff = sessions.get("demo-lesezugriff@demo.mandari.de")
 
 # ---------------------------------------------------------------------------
 print("\n=== 3. Insight-Seiten der Musterstadt ===")
@@ -273,6 +287,23 @@ if verwaltung:
     check("Session-Sitzungsliste rendert", resp.status_code == 200)
     resp = verwaltung.get("/session/stadtverwaltung-musterstadt-demo/papers/")
     check("Session-Vorlagenliste rendert", resp.status_code == 200)
+    past = SessionMeeting.objects.get(
+        tenant__slug="stadtverwaltung-musterstadt-demo", name="Hauptausschuss (Demo, vergangen)"
+    )
+    resp = verwaltung.get(f"/session/stadtverwaltung-musterstadt-demo/meetings/{past.id}/protocol/")
+    check("Session-Protokoll (genehmigt) rendert", resp.status_code == 200)
+
+# Rollen erlebbar: Sachbearbeitung darf Vorlagen anlegen, Lesezugriff nicht
+if sachbearbeitung and lesezugriff:
+    create_url = "/session/stadtverwaltung-musterstadt-demo/papers/create/"
+    resp = sachbearbeitung.get(create_url)
+    check("Sachbearbeitung darf Vorlage anlegen (200)", resp.status_code == 200, detail=f"status={resp.status_code}")
+    resp = lesezugriff.get(create_url, follow=False)
+    check(
+        "Lesezugriff darf keine Vorlage anlegen (302/403)",
+        resp.status_code in (302, 403),
+        detail=f"status={resp.status_code}",
+    )
 
 # ---------------------------------------------------------------------------
 print("\n=== 6. --reset entfernt alles ===")
