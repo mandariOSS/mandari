@@ -1,0 +1,196 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Suche{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Suche</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-4xl">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">Suche</h1>
+
+    <form method="get" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 space-y-3">
+        <div class="relative">
+            <i data-lucide="search" class="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+            <input type="search" name="q" value="{{ query }}" minlength="2" required autofocus
+                   placeholder="Vorlagen, Beschlüsse, Sitzungen, Anlagen durchsuchen…"
+                   class="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+        </div>
+        <div class="flex flex-wrap items-end gap-2">
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Trefferart</label>
+                <select name="kind" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    {% for value, label in kind_choices %}
+                    <option value="{{ value }}" {% if filters.kind == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Gremium</label>
+                <select name="organization" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Alle</option>
+                    {% for org in organizations %}
+                    <option value="{{ org.id }}" {% if filters.organization and filters.organization.id == org.id %}selected{% endif %}>{{ org.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Jahr</label>
+                <input type="number" name="year" value="{{ filters.year|default:'' }}" min="2000" max="2100" placeholder="Alle"
+                       class="w-24 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            {% if terms %}
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Wahlperiode</label>
+                <select name="term" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Alle</option>
+                    {% for term in terms %}
+                    <option value="{{ term.id }}" {% if filters.term and filters.term.id == term.id %}selected{% endif %}>{{ term.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                <i data-lucide="search" class="w-4 h-4"></i> Suchen
+            </button>
+        </div>
+    </form>
+
+    {% if query|length >= 2 %}
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        {{ total }} Treffer für <span class="font-medium text-gray-900 dark:text-white">„{{ query }}“</span>
+        {% if total >= result_limit %}<span class="text-xs">(je Kategorie max. {{ result_limit }})</span>{% endif %}
+    </p>
+
+    {% if results.papers %}
+    <div class="mb-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="file-text" class="w-4 h-4 text-amber-500"></i> Vorlagen ({{ results.papers|length }})
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for paper in results.papers %}
+            <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}"
+               class="block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ paper.name }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ paper.reference }} · {{ paper.get_status_display }}{% if paper.main_organization %} · {{ paper.main_organization.name }}{% endif %}{% if not paper.is_public %} · NÖ{% endif %}
+                </p>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if results.resolutions %}
+    <div class="mb-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="gavel" class="w-4 h-4 text-blue-500"></i> TOPs & Beschlüsse ({{ results.resolutions|length }})
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for item in results.resolutions %}
+            <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=item.meeting_id %}"
+               class="block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">
+                    {% if item.resolution_number %}{{ item.resolution_number }} · {% endif %}TOP {{ item.number }}: {{ item.name }}
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ item.meeting.name }} · {{ item.meeting.organization.name }} · {{ item.meeting.start|date:"d.m.Y" }}{% if item.vote_result != 'pending' %} · {{ item.get_vote_result_display }}{% endif %}
+                </p>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if results.meetings %}
+    <div class="mb-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="calendar" class="w-4 h-4 text-primary-500"></i> Sitzungen ({{ results.meetings|length }})
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for meeting in results.meetings %}
+            <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+               class="block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ meeting.name }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ meeting.organization.name }} · {{ meeting.start|date:"d.m.Y H:i" }}{% if meeting.location %} · {{ meeting.location }}{% endif %}{% if not meeting.is_public %} · NÖ{% endif %}
+                </p>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if results.protocols %}
+    <div class="mb-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="scroll-text" class="w-4 h-4 text-purple-500"></i> Protokolle ({{ results.protocols|length }})
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for protocol in results.protocols %}
+            <a href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=protocol.meeting_id %}"
+               class="block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">Niederschrift: {{ protocol.meeting.name }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ protocol.meeting.organization.name }} · {{ protocol.meeting.start|date:"d.m.Y" }} · {{ protocol.get_status_display }}
+                </p>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if results.files %}
+    <div class="mb-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="paperclip" class="w-4 h-4 text-gray-500"></i> Anlagen ({{ results.files|length }})
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for file in results.files %}
+            <a href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=file.id %}"
+               class="block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ file.name }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {% if file.paper %}Vorlage {{ file.paper.reference }}{% elif file.meeting %}Sitzung {{ file.meeting.name }}{% elif file.agenda_item %}TOP {{ file.agenda_item.number }} · {{ file.agenda_item.meeting.name }}{% endif %}
+                    {% if not file.is_public %} · NÖ{% endif %}
+                </p>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if results.applications %}
+    <div class="mb-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="inbox" class="w-4 h-4 text-red-500"></i> Anträge ({{ results.applications|length }})
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for app in results.applications %}
+            <a href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=app.id %}"
+               class="block px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ app.title }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ app.reference }} · {{ app.submitter_name }} · {{ app.get_status_display }}</p>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not total %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+        <i data-lucide="search-x" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+        <p>Keine Treffer für „{{ query }}“.</p>
+        <p class="text-xs mt-1">Hinweis: Verschlüsselte nichtöffentliche Inhalte sind nicht durchsuchbar.</p>
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

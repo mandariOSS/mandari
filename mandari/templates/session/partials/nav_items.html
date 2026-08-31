@@ -10,6 +10,14 @@
     <span class="nav-label">Dashboard</span>
 </a>
 
+<!-- Suche (Issue #45) -->
+<a href="{% url 'session:search' tenant_slug=tenant_slug %}"
+   class="session-nav-item {% if current_url == 'search' %}active{% endif %}"
+   :title="sidebarCollapsed ? 'Suche' : ''">
+    <i data-lucide="search"></i>
+    <span class="nav-label">Suche</span>
+</a>
+
 <div class="session-nav-section"><span class="nav-label">Sitzungsdienst</span></div>
 
 <!-- Sitzungen -->

@@ -132,6 +132,7 @@ from .resolutions import (
     ResolutionRegisterView,
     ResolutionTrackingUpdateView,
 )
+from .search import SessionSearchView
 from .settings import (
     InsightPublishView,
     InvitationAcceptView,
@@ -157,6 +158,7 @@ from .textblocks import (
 )
 
 __all__ = [
+    "SessionSearchView",
     "ReportCsvExportView",
     "ReportsView",
     "StandardItemManageView",

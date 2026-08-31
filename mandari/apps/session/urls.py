@@ -114,6 +114,12 @@ urlpatterns = [
         views.OrganizationIcsFeedView.as_view(),
         name="organization_ics_feed",
     ),
+    # Übergreifende Suche (Issue #45)
+    path(
+        "<slug:tenant_slug>/search/",
+        views.SessionSearchView.as_view(),
+        name="search",
+    ),
     # Statistiken und Berichte (Issue #84)
     path(
         "<slug:tenant_slug>/reports/",

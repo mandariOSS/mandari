@@ -418,6 +418,15 @@
                 </div>
 
                 <div class="flex items-center gap-2">
+                    <!-- Suche (Issue #45) -->
+                    <form method="get" action="{% url 'session:search' tenant_slug=tenant_slug %}" class="hidden md:block">
+                        <div class="relative">
+                            <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                            <input type="search" name="q" placeholder="Suchen…" minlength="2"
+                                   class="w-44 lg:w-56 pl-8 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        </div>
+                    </form>
+
                     <!-- Dark Mode Toggle -->
                     <button @click="darkMode = !darkMode"
                             class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
