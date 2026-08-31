@@ -13,6 +13,7 @@ from django.views.generic import (
 )
 
 from ..models import (
+    SessionAgendaItem,
     SessionApplication,
     SessionMeeting,
     SessionOrganization,
@@ -67,6 +68,25 @@ class DashboardView(SessionViewMixin, TemplateView):
             warnings = sorted(pending_invitations[:20], key=lambda m: m.invitation_deadline)
             context["invitation_warnings"] = warnings
             context["invitation_overdue_count"] = sum(1 for m in warnings if m.invitation_overdue)
+
+        # Beschlusskontrolle (Issue #37): überfällige Beschlüsse prominent warnen
+        if self.has_permission("view_meetings"):
+            overdue_resolutions = (
+                SessionAgendaItem.objects.filter(
+                    meeting__tenant=tenant,
+                    vote_result="approved",
+                    implementation_deadline__lt=today,
+                )
+                .exclude(implementation_status="done")
+                .select_related("meeting__organization")
+                .order_by("implementation_deadline")
+            )
+            if not self.has_permission("view_non_public_meetings"):
+                overdue_resolutions = overdue_resolutions.filter(
+                    is_public=True, meeting__is_public=True
+                )
+            context["overdue_resolutions"] = list(overdue_resolutions[:5])
+            context["overdue_resolutions_count"] = overdue_resolutions.count()
 
         # Recent papers — Ö/NÖ nur für Berechtigte
         recent_papers = SessionPaper.objects.filter(tenant=tenant)

@@ -318,6 +318,107 @@ top_b.refresh_from_db()
 check("Fremde Nummernvergabe -> 404, keine Nummer", resp.status_code == 404 and top_b.resolution_number == "")
 
 # =============================================================================
+# Phase F: Beschlusskontrolle (Issue #37)
+# =============================================================================
+print()
+print("=== Phase F: Beschlusskontrolle ===")
+
+past_deadline = (timezone.localdate() - timedelta(days=7)).isoformat()
+resp = admin.post(
+    f"{base}/agenda/{top1.id}/tracking/",
+    {
+        "status": "in_progress",
+        "recipient": "Bauamt",
+        "deadline": past_deadline,
+        "note": "Ausschreibung läuft.",
+    },
+)
+top1.refresh_from_db()
+check("Tracking-Update -> Redirect", resp.status_code == 302, f"got {resp.status_code}")
+check(
+    "Tracking-Felder gespeichert",
+    top1.implementation_status == "in_progress"
+    and top1.implementation_recipient == "Bauamt"
+    and str(top1.implementation_deadline) == past_deadline
+    and top1.implementation_note == "Ausschreibung läuft.",
+)
+check("Tracking: aktualisiert von", top1.implementation_updated_by_id == su_admin.id)
+check("Tracking: überfällig erkannt", top1.implementation_overdue is True)
+
+audit_entry = SessionAuditLog.objects.filter(
+    tenant=tenant, model_name="SessionAgendaItem", action="update",
+    changes__umsetzungsstand="In Umsetzung",
+).first()
+check("Audit: Beschlusskontroll-Eintrag", audit_entry is not None)
+check(
+    "Audit: Stelle + Frist im Eintrag",
+    audit_entry is not None
+    and audit_entry.changes.get("zustaendige_stelle") == "Bauamt"
+    and audit_entry.changes.get("frist") == past_deadline,
+)
+
+html = admin.get(f"{base}/resolutions/").content.decode("utf-8")
+check("Register: Umsetzungsstand sichtbar", "Umsetzung: In Umsetzung" in html)
+check("Register: überfällig markiert", "überfällig" in html)
+check("Register: Erledigungsvermerk sichtbar", "Ausschreibung läuft." in html)
+
+html = admin.get(f"{base}/resolutions/?overdue=1").content.decode("utf-8")
+check("Überfällig-Filter zeigt Beschluss", "BESCHLUSS-SPIELPLATZ" in html)
+check("Überfällig-Filter blendet andere aus", "ALTER-BAUBESCHLUSS" not in html)
+
+html = admin.get(f"{base}/resolutions/?status=open").content.decode("utf-8")
+check("Status-Filter offen", "ALTER-BAUBESCHLUSS" in html and "BESCHLUSS-SPIELPLATZ" not in html)
+
+html = admin.get(f"{base}/").content.decode("utf-8")
+check("Dashboard: Warnung überfällige Beschlüsse", "Überfällige Beschlüsse" in html and "BESCHLUSS-SPIELPLATZ" in html)
+
+# Erledigt -> nicht mehr überfällig, aus Dashboard-Warnung raus
+resp = admin.post(
+    f"{base}/agenda/{top1.id}/tracking/",
+    {"status": "done", "recipient": "Bauamt", "deadline": past_deadline, "note": "Fertig."},
+)
+top1.refresh_from_db()
+check("Erledigt gespeichert", top1.implementation_status == "done")
+check("Erledigt: nicht mehr überfällig", top1.implementation_overdue is False)
+html = admin.get(f"{base}/").content.decode("utf-8")
+check("Dashboard: Warnung verschwunden", "Überfällige Beschlüsse" not in html)
+
+# Fehlerfälle
+resp = admin.post(f"{base}/agenda/{top2.id}/tracking/", {"status": "in_progress"})
+top2.refresh_from_db()
+check("Tracking für abgelehnten Beschluss abgelehnt", top2.implementation_status == "open")
+resp = admin.post(f"{base}/agenda/{top1.id}/tracking/", {"status": "quatsch"})
+top1.refresh_from_db()
+check("Ungültiger Status abgelehnt", top1.implementation_status == "done")
+resp = admin.post(
+    f"{base}/agenda/{top1.id}/tracking/",
+    {"status": "open", "deadline": "kein-datum"},
+)
+top1.refresh_from_db()
+check("Ungültiges Datum abgelehnt", top1.implementation_status == "done")
+
+# Berechtigungen und Isolation
+resp = viewer.post(f"{base}/agenda/{top1.id}/tracking/", {"status": "open"})
+check("Tracking ohne edit_meetings -> 403", resp.status_code == 403, f"got {resp.status_code}")
+resp = admin.post(f"{base}/agenda/{top_b.id}/tracking/", {"status": "done"})
+top_b.refresh_from_db()
+check("Fremdes Tracking -> 404", resp.status_code == 404 and top_b.implementation_status == "open")
+
+# CSV-Export
+resp = admin.get(f"{base}/resolutions/export.csv")
+check("CSV-Export -> 200", resp.status_code == 200 and "text/csv" in resp["Content-Type"], f"got {resp.status_code}")
+csv_text = resp.content.decode("utf-8")
+check("CSV: Kopfzeile", "Umsetzungsstand" in csv_text and "Erledigungsfrist" in csv_text)
+check("CSV: Beschluss mit Stand", "BESCHLUSS-SPIELPLATZ" in csv_text and "Erledigt" in csv_text)
+check("CSV: NÖ-Beschluss für Admin enthalten", "GEHEIMER-BESCHLUSS-XYZ" in csv_text)
+check("CSV: keine Fremddaten", "FREMD-BESCHLUSS" not in csv_text)
+
+resp = viewer.get(f"{base}/resolutions/export.csv")
+csv_text = resp.content.decode("utf-8")
+check("Viewer-CSV: kein NÖ-Beschluss", "GEHEIMER-BESCHLUSS-XYZ" not in csv_text)
+check("Viewer-CSV: Ö-Beschlüsse enthalten", "BESCHLUSS-SPIELPLATZ" in csv_text)
+
+# =============================================================================
 print()
 print(f"=== Ergebnis: {PASS} OK, {FAIL} FAIL ===")
 sys.exit(1 if FAIL else 0)

@@ -1079,6 +1079,43 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
     votes_no = models.PositiveIntegerField(default=0, verbose_name="Nein-Stimmen")
     votes_abstain = models.PositiveIntegerField(default=0, verbose_name="Enthaltungen")
 
+    # Beschlusskontrolle (Issue #37): Umsetzung nach der Beschlussfassung.
+    # Nur für angenommene Beschlüsse relevant; die Verwaltung dokumentiert
+    # hier Zuständigkeit, Frist und Erledigung.
+    IMPLEMENTATION_CHOICES = [
+        ("open", "Offen"),
+        ("in_progress", "In Umsetzung"),
+        ("done", "Erledigt"),
+        ("deferred", "Zurückgestellt"),
+    ]
+    implementation_status = models.CharField(
+        max_length=20,
+        choices=IMPLEMENTATION_CHOICES,
+        default="open",
+        verbose_name="Umsetzungsstand",
+    )
+    implementation_recipient = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Zuständige Stelle/Amt",
+        help_text="z. B. Bauamt, Kämmerei",
+    )
+    implementation_deadline = models.DateField(
+        blank=True, null=True, verbose_name="Erledigungsfrist"
+    )
+    implementation_note = models.TextField(blank=True, verbose_name="Erledigungsvermerk")
+    implementation_updated_at = models.DateTimeField(
+        blank=True, null=True, verbose_name="Umsetzung aktualisiert am"
+    )
+    implementation_updated_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="resolution_tracking_updates",
+        verbose_name="Umsetzung aktualisiert von",
+    )
+
     # Timing
     start_time = models.TimeField(blank=True, null=True, verbose_name="Beginn")
     end_time = models.TimeField(blank=True, null=True, verbose_name="Ende")
@@ -1098,6 +1135,13 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
     def get_encryption_organization(self):
         """Return tenant for encryption."""
         return self.meeting.tenant
+
+    @property
+    def implementation_overdue(self) -> bool:
+        """Frist verstrichen, aber Beschluss noch nicht erledigt."""
+        if not self.implementation_deadline or self.implementation_status == "done":
+            return False
+        return self.implementation_deadline < timezone.localdate()
 
 
 class SessionResolutionForwarding(models.Model):

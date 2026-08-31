@@ -7,6 +7,30 @@
 {% endblock %}
 
 {% block page_content %}
+<!-- Beschlusskontrolle: Ampel-Übersicht (Issue #37) -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <a href="?status=open{% if filter_organization %}&organization={{ filter_organization }}{% endif %}{% if filter_year %}&year={{ filter_year }}{% endif %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border p-4 transition-colors hover:border-gray-300 dark:hover:border-gray-600 {% if filter_status == 'open' %}border-primary-400 dark:border-primary-500{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+        <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ tracking_stats.open }}</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Offen</p>
+    </a>
+    <a href="?status=in_progress{% if filter_organization %}&organization={{ filter_organization }}{% endif %}{% if filter_year %}&year={{ filter_year }}{% endif %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border p-4 transition-colors hover:border-gray-300 dark:hover:border-gray-600 {% if filter_status == 'in_progress' %}border-primary-400 dark:border-primary-500{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+        <p class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ tracking_stats.in_progress }}</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">In Umsetzung</p>
+    </a>
+    <a href="?overdue=1{% if filter_organization %}&organization={{ filter_organization }}{% endif %}{% if filter_year %}&year={{ filter_year }}{% endif %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border p-4 transition-colors hover:border-red-300 dark:hover:border-red-700 {% if filter_overdue %}border-red-400 dark:border-red-600{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+        <p class="text-2xl font-bold {% if tracking_stats.overdue %}text-red-600 dark:text-red-400{% else %}text-gray-900 dark:text-white{% endif %}">{{ tracking_stats.overdue }}</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Überfällig</p>
+    </a>
+    <a href="?status=done{% if filter_organization %}&organization={{ filter_organization }}{% endif %}{% if filter_year %}&year={{ filter_year }}{% endif %}"
+       class="bg-white dark:bg-gray-800 rounded-xl border p-4 transition-colors hover:border-gray-300 dark:hover:border-gray-600 {% if filter_status == 'done' %}border-primary-400 dark:border-primary-500{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+        <p class="text-2xl font-bold text-green-600 dark:text-green-400">{{ tracking_stats.done }}</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Erledigt</p>
+    </a>
+</div>
+
 <!-- Filter -->
 <form method="get" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 flex flex-wrap items-end gap-3">
     <div>
@@ -36,9 +60,27 @@
             {% endfor %}
         </select>
     </div>
+    <div>
+        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Umsetzung</label>
+        <select name="status" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            <option value="">Alle</option>
+            {% for value, label in implementation_choices %}
+            <option value="{{ value }}" {% if filter_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 pb-1.5">
+        <input type="checkbox" name="overdue" value="1" {% if filter_overdue %}checked{% endif %}
+               class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+        Nur überfällige
+    </label>
     <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
         <i data-lucide="filter" class="w-4 h-4"></i> Filtern
     </button>
+    <a href="{% url 'session:resolutions_export_csv' tenant_slug=tenant_slug %}?organization={{ filter_organization }}&year={{ filter_year }}&result={{ filter_result }}"
+       class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors ml-auto">
+        <i data-lucide="download" class="w-4 h-4"></i> CSV-Export
+    </a>
 </form>
 
 <!-- Register -->
@@ -79,6 +121,80 @@
                         Übergeben an <span class="font-medium">{{ fw.recipient }}</span> ({{ fw.get_method_display }}, {{ fw.sent_at|date:"d.m.Y H:i" }}{% if fw.sent_by %}, {{ fw.sent_by.user.email }}{% endif %})
                     </p>
                     {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if item.vote_result == 'approved' %}
+                <!-- Beschlusskontrolle (Issue #37) -->
+                <div class="mt-2" x-data="{ editTracking: false }">
+                    <div class="flex items-center gap-2 flex-wrap text-xs">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 font-medium rounded
+                            {% if item.implementation_overdue %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+                            {% elif item.implementation_status == 'done' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                            {% elif item.implementation_status == 'in_progress' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
+                            {% elif item.implementation_status == 'deferred' %}bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-400
+                            {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                            <i data-lucide="{% if item.implementation_status == 'done' %}check-circle{% elif item.implementation_overdue %}alert-triangle{% else %}circle-dashed{% endif %}" class="w-3 h-3"></i>
+                            Umsetzung: {{ item.get_implementation_status_display }}{% if item.implementation_overdue %} – überfällig{% endif %}
+                        </span>
+                        {% if item.implementation_recipient %}
+                        <span class="text-gray-500 dark:text-gray-400">Zuständig: <span class="font-medium text-gray-700 dark:text-gray-300">{{ item.implementation_recipient }}</span></span>
+                        {% endif %}
+                        {% if item.implementation_deadline %}
+                        <span class="{% if item.implementation_overdue %}text-red-600 dark:text-red-400 font-medium{% else %}text-gray-500 dark:text-gray-400{% endif %}">
+                            Frist: {{ item.implementation_deadline|date:"d.m.Y" }}
+                        </span>
+                        {% endif %}
+                        {% if can_manage %}
+                        <button type="button" @click="editTracking = !editTracking"
+                                class="text-primary-600 dark:text-primary-400 hover:underline">
+                            Bearbeiten
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% if item.implementation_note %}
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ item.implementation_note }}</p>
+                    {% endif %}
+                    {% if item.implementation_updated_at %}
+                    <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
+                        Zuletzt aktualisiert {{ item.implementation_updated_at|date:"d.m.Y H:i" }}{% if item.implementation_updated_by %} von {{ item.implementation_updated_by.user.email }}{% endif %}
+                    </p>
+                    {% endif %}
+
+                    {% if can_manage %}
+                    <form method="post" action="{% url 'session:resolution_tracking_update' tenant_slug=tenant_slug item_id=item.id %}"
+                          x-show="editTracking" x-cloak x-transition
+                          class="mt-2 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 flex flex-wrap items-end gap-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                        <div>
+                            <label class="block text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">Stand</label>
+                            <select name="status" class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                {% for value, label in implementation_choices %}
+                                <option value="{{ value }}" {% if item.implementation_status == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">Zuständige Stelle</label>
+                            <input type="text" name="recipient" value="{{ item.implementation_recipient }}" placeholder="z. B. Bauamt"
+                                   class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white w-36">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">Frist</label>
+                            <input type="date" name="deadline" value="{{ item.implementation_deadline|date:'Y-m-d' }}"
+                                   class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        </div>
+                        <div class="flex-1 min-w-[160px]">
+                            <label class="block text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">Vermerk</label>
+                            <input type="text" name="note" value="{{ item.implementation_note }}" placeholder="Erledigungsvermerk"
+                                   class="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        </div>
+                        <button type="submit" class="px-3 py-1 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                            Speichern
+                        </button>
+                    </form>
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>

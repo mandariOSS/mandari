@@ -119,6 +119,17 @@ urlpatterns = [
         views.ResolutionForwardingCreateView.as_view(),
         name="resolution_forwarding_add",
     ),
+    # Beschlusskontrolle (Issue #37)
+    path(
+        "<slug:tenant_slug>/agenda/<uuid:item_id>/tracking/",
+        views.ResolutionTrackingUpdateView.as_view(),
+        name="resolution_tracking_update",
+    ),
+    path(
+        "<slug:tenant_slug>/resolutions/export.csv",
+        views.ResolutionCsvExportView.as_view(),
+        name="resolutions_export_csv",
+    ),
     path(
         "<slug:tenant_slug>/meetings/<uuid:meeting_id>/agenda/add/",
         views.AgendaItemCreateView.as_view(),

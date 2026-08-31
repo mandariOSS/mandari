@@ -115,10 +115,12 @@ from .protocols import (
 )
 from .resolutions import (
     ResolutionBatchView,
+    ResolutionCsvExportView,
     ResolutionExtractPdfView,
     ResolutionForwardingCreateView,
     ResolutionMeetingPdfView,
     ResolutionRegisterView,
+    ResolutionTrackingUpdateView,
 )
 from .settings import (
     InsightPublishView,
@@ -221,10 +223,12 @@ __all__ = [
     "ProtocolPdfView",
     "ProtocolWorkflowView",
     "ResolutionBatchView",
+    "ResolutionCsvExportView",
     "ResolutionExtractPdfView",
     "ResolutionForwardingCreateView",
     "ResolutionMeetingPdfView",
     "ResolutionRegisterView",
+    "ResolutionTrackingUpdateView",
     "SettingsView",
     "UserDeactivateView",
     "UserInviteView",
