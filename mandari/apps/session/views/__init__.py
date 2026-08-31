@@ -119,6 +119,10 @@ from .protocols import (
     ProtocolPdfView,
     ProtocolWorkflowView,
 )
+from .reports import (
+    ReportCsvExportView,
+    ReportsView,
+)
 from .resolutions import (
     ResolutionBatchView,
     ResolutionCsvExportView,
@@ -153,6 +157,8 @@ from .textblocks import (
 )
 
 __all__ = [
+    "ReportCsvExportView",
+    "ReportsView",
     "StandardItemManageView",
     "TextblockManageView",
     "TextblockSettingsView",

@@ -114,6 +114,17 @@ urlpatterns = [
         views.OrganizationIcsFeedView.as_view(),
         name="organization_ics_feed",
     ),
+    # Statistiken und Berichte (Issue #84)
+    path(
+        "<slug:tenant_slug>/reports/",
+        views.ReportsView.as_view(),
+        name="reports",
+    ),
+    path(
+        "<slug:tenant_slug>/reports/export.csv",
+        views.ReportCsvExportView.as_view(),
+        name="reports_export_csv",
+    ),
     # Beschlussregister und Beschlussauszüge (Issue #32)
     path(
         "<slug:tenant_slug>/resolutions/",

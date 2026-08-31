@@ -100,7 +100,7 @@
     <span class="nav-label">Personen</span>
 </a>
 
-{% if "manage_allowances" in permission_checker.permissions or "view_audit_log" in permission_checker.permissions or "manage_settings" in permission_checker.permissions %}
+{% if "manage_allowances" in permission_checker.permissions or "view_audit_log" in permission_checker.permissions or "manage_settings" in permission_checker.permissions or "view_meetings" in permission_checker.permissions %}
 <div class="session-nav-section"><span class="nav-label">Verwaltung</span></div>
 {% endif %}
 
@@ -111,6 +111,16 @@
    :title="sidebarCollapsed ? 'Sitzungsgelder' : ''">
     <i data-lucide="banknote"></i>
     <span class="nav-label">Sitzungsgelder</span>
+</a>
+{% endif %}
+
+{% if "view_meetings" in permission_checker.permissions %}
+<!-- Berichte (Issue #84) -->
+<a href="{% url 'session:reports' tenant_slug=tenant_slug %}"
+   class="session-nav-item {% if current_url == 'reports' %}active{% endif %}"
+   :title="sidebarCollapsed ? 'Berichte' : ''">
+    <i data-lucide="bar-chart-3"></i>
+    <span class="nav-label">Berichte</span>
 </a>
 {% endif %}
 

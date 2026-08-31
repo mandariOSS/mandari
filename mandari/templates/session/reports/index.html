@@ -1,0 +1,196 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Berichte{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Berichte</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Berichte {{ year }}</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Anwesenheit, Sitzungen, Sitzungsgelder und Durchlaufzeiten</p>
+    </div>
+    <form method="get" class="flex items-end gap-2 flex-wrap">
+        <div>
+            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Jahr</label>
+            <select name="year" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                {% for y in years %}
+                <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Gremium (Anwesenheit)</label>
+            <select name="organization" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <option value="">Alle</option>
+                {% for org in organizations %}
+                <option value="{{ org.id }}" {% if organization and organization.id == org.id %}selected{% endif %}>{{ org.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+            <i data-lucide="filter" class="w-4 h-4"></i> Anzeigen
+        </button>
+    </form>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-6">
+    <!-- Sitzungsstatistik je Gremium -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="bar-chart-3" class="w-5 h-5 text-blue-500"></i>
+                Sitzungen je Gremium
+            </h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 dark:text-gray-400 uppercase">
+                    <tr>
+                        <th class="px-4 py-2 text-left">Gremium</th>
+                        <th class="px-4 py-2 text-right">Sitzungen</th>
+                        <th class="px-4 py-2 text-right">TOPs</th>
+                        <th class="px-4 py-2 text-right">Beschlüsse</th>
+                        <th class="px-4 py-2 text-right">Ø Dauer</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                    {% for row in meeting_stats %}
+                    <tr>
+                        <td class="px-4 py-2 text-gray-900 dark:text-white">{{ row.organization.name }}</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.meetings }}</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.tops }}</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.resolutions }}</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{% if row.avg_duration %}{{ row.avg_duration }} min{% else %}–{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">Keine Sitzungen in {{ year }}.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Vorlagen-Durchlaufzeit -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="timer" class="w-5 h-5 text-amber-500"></i>
+                Vorlagen-Durchlaufzeit
+            </h2>
+        </div>
+        <div class="p-6 grid grid-cols-3 gap-4 text-center">
+            <div>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ paper_throughput.count }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Freigegebene Vorlagen</p>
+            </div>
+            <div>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{% if paper_throughput.median_days is not None %}{{ paper_throughput.median_days }} T.{% else %}–{% endif %}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Median Entwurf → Freigabe</p>
+            </div>
+            <div>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{% if paper_throughput.max_days is not None %}{{ paper_throughput.max_days }} T.{% else %}–{% endif %}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Längster Durchlauf</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Anwesenheit -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden {% if not can_view_allowances %}lg:col-span-2{% endif %}">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-2">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="user-check" class="w-5 h-5 text-green-500"></i>
+                Anwesenheit{% if organization %} · {{ organization.name }}{% endif %}
+            </h2>
+            <a href="{% url 'session:reports_export_csv' tenant_slug=tenant_slug %}?type=attendance&year={{ year }}{% if organization %}&organization={{ organization.id }}{% endif %}"
+               class="text-sm text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                <i data-lucide="download" class="w-4 h-4"></i> CSV
+            </a>
+        </div>
+        <div class="overflow-x-auto max-h-96 overflow-y-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 dark:text-gray-400 uppercase sticky top-0">
+                    <tr>
+                        <th class="px-4 py-2 text-left">Person</th>
+                        <th class="px-4 py-2 text-right">Eingeladen</th>
+                        <th class="px-4 py-2 text-right">Anwesend</th>
+                        <th class="px-4 py-2 text-right">Entschuldigt</th>
+                        <th class="px-4 py-2 text-right">Quote</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                    {% for row in attendance %}
+                    <tr>
+                        <td class="px-4 py-2 text-gray-900 dark:text-white">{{ row.name }}</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.invited }}</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.present }}</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.excused }}</td>
+                        <td class="px-4 py-2 text-right font-medium {% if row.rate >= 75 %}text-green-600 dark:text-green-400{% elif row.rate >= 50 %}text-amber-600 dark:text-amber-400{% else %}text-red-600 dark:text-red-400{% endif %}">{{ row.rate }} %</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">Keine Anwesenheitsdaten in {{ year }}.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Sitzungsgeld -->
+    {% if can_view_allowances %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-2">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="banknote" class="w-5 h-5 text-emerald-500"></i>
+                Sitzungsgeld-Jahresbericht
+            </h2>
+            <a href="{% url 'session:reports_export_csv' tenant_slug=tenant_slug %}?type=allowances&year={{ year }}"
+               class="text-sm text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                <i data-lucide="download" class="w-4 h-4"></i> CSV
+            </a>
+        </div>
+        <div class="overflow-x-auto max-h-96 overflow-y-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 dark:text-gray-400 uppercase sticky top-0">
+                    <tr>
+                        <th class="px-4 py-2 text-left">Person</th>
+                        <th class="px-4 py-2 text-right">Anzahl</th>
+                        <th class="px-4 py-2 text-right">Summe</th>
+                        <th class="px-4 py-2 text-right">Ausgezahlt</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                    {% for row in allowances %}
+                    <tr>
+                        <td class="px-4 py-2 text-gray-900 dark:text-white">{{ row.name }}</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.count }}</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.amount }} €</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.paid }} €</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">Keine Sitzungsgelder in {{ year }}.</td></tr>
+                    {% endfor %}
+                </tbody>
+                {% if allowances %}
+                <tfoot class="bg-gray-50 dark:bg-gray-700/50 font-semibold">
+                    <tr>
+                        <td class="px-4 py-2 text-gray-900 dark:text-white">Gesamt</td>
+                        <td class="px-4 py-2 text-right text-gray-900 dark:text-white">{{ allowance_totals.count }}</td>
+                        <td class="px-4 py-2 text-right text-gray-900 dark:text-white">{{ allowance_totals.amount }} €</td>
+                        <td class="px-4 py-2 text-right text-gray-900 dark:text-white">{{ allowance_totals.paid }} €</td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
