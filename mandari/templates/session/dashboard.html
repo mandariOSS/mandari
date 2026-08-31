@@ -2,11 +2,17 @@
 
 {% block page_title %}Dashboard{% endblock %}
 
-{% block breadcrumb %}
-<h1 class="text-lg font-semibold text-gray-900 dark:text-white">Dashboard</h1>
-{% endblock %}
+{% block breadcrumb %}{% endblock %}
 
 {% block page_content %}
+<!-- Seitenkopf -->
+<div class="mb-6 fade-up">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+        {{ session_tenant.name }} &middot; {% now "l, j. F Y" %}
+    </p>
+</div>
+
 {% if invitation_warnings %}
 <!-- Fristwarnung Ladungsversand (Issue #29) -->
 <div class="mb-6 rounded-xl border p-4 {% if invitation_overdue_count %}bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800{% else %}bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800{% endif %}">
@@ -67,7 +73,7 @@
 {% endif %}
 
 <!-- Stats Grid -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 fade-up d1">
     <!-- Sitzungen -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div class="flex items-center gap-3 mb-2">
@@ -125,7 +131,7 @@
     </div>
 </div>
 
-<div class="grid lg:grid-cols-2 gap-6">
+<div class="grid lg:grid-cols-2 gap-6 fade-up d2">
     <!-- Anstehende Sitzungen -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
