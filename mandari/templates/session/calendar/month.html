@@ -1,0 +1,105 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Sitzungskalender{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Sitzungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Kalender</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <div class="flex items-center gap-2">
+        <a href="?year={{ prev_year }}&month={{ prev_month }}"
+           class="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700" title="Voriger Monat">
+            <i data-lucide="chevron-left" class="w-5 h-5"></i>
+        </a>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white w-56 text-center">{{ month_name }} {{ year }}</h1>
+        <a href="?year={{ next_year }}&month={{ next_month }}"
+           class="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700" title="Nächster Monat">
+            <i data-lucide="chevron-right" class="w-5 h-5"></i>
+        </a>
+        <a href="{% url 'session:meeting_calendar' tenant_slug=tenant_slug %}"
+           class="ml-2 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
+            Heute
+        </a>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+        <a href="{% url 'session:year_plan_pdf' tenant_slug=tenant_slug %}?year={{ year }}"
+           class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
+            <i data-lucide="file-down" class="w-4 h-4"></i> Sitzungsplan {{ year }} (PDF)
+        </a>
+        {% if can_plan %}
+        <a href="{% url 'session:meeting_plan' tenant_slug=tenant_slug %}"
+           class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+            <i data-lucide="calendar-plus" class="w-4 h-4"></i> Jahresplanung
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Kalender -->
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="grid grid-cols-7 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
+        {% for label in weekday_labels %}
+        <div class="px-2 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 text-center uppercase tracking-wide">{{ label }}</div>
+        {% endfor %}
+    </div>
+    {% for week in weeks %}
+    <div class="grid grid-cols-7 border-b border-gray-100 dark:border-gray-700/50 last:border-b-0">
+        {% for cell in week %}
+        <div class="min-h-[96px] p-1.5 border-r border-gray-100 dark:border-gray-700/50 last:border-r-0 {% if not cell.in_month %}bg-gray-50/70 dark:bg-gray-900/40{% endif %}">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-xs {% if cell.is_today %}w-6 h-6 flex items-center justify-center rounded-full bg-primary-600 text-white font-bold{% elif cell.in_month %}text-gray-700 dark:text-gray-300 font-medium{% else %}text-gray-400 dark:text-gray-600{% endif %}">
+                    {{ cell.day.day }}
+                </span>
+            </div>
+            <div class="space-y-1">
+                {% for meeting in cell.meetings %}
+                <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                   class="block px-1.5 py-1 rounded text-[11px] leading-tight truncate transition-colors
+                       {% if meeting.cancelled %}bg-gray-100 text-gray-400 line-through dark:bg-gray-700 dark:text-gray-500
+                       {% elif not meeting.is_public %}bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/40 dark:text-red-300
+                       {% else %}bg-primary-50 text-primary-700 hover:bg-primary-100 dark:bg-primary-900/40 dark:text-primary-300{% endif %}"
+                   title="{{ meeting.name }} · {{ meeting.organization.name }} · {{ meeting.start|date:'H:i' }} Uhr{% if meeting.room %} · {{ meeting.room }}{% endif %}">
+                    <span class="font-semibold">{{ meeting.start|date:"H:i" }}</span>
+                    {% if not meeting.is_public %}<i data-lucide="lock" class="w-3 h-3 inline"></i>{% endif %}
+                    {{ meeting.organization.name }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+    {% if not meetings_count %}
+    <div class="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700/50">
+        Keine Sitzungen in diesem Monat.
+    </div>
+    {% endif %}
+</div>
+
+<!-- ICS-Feeds je Gremium -->
+<div class="mt-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+    <h2 class="text-sm font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+        <i data-lucide="calendar-sync" class="w-4 h-4 text-gray-400"></i>
+        Kalender abonnieren (ICS)
+    </h2>
+    <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+        Abonnierbare Feeds je Gremium für Outlook/Thunderbird — enthalten ausschließlich öffentliche Sitzungen.
+    </p>
+    <div class="flex flex-wrap gap-2">
+        {% for org in organizations %}
+        <a href="{% url 'session:organization_ics_feed' tenant_slug=tenant_slug org_id=org.id %}"
+           class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
+            <i data-lucide="rss" class="w-3.5 h-3.5"></i> {{ org.name }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

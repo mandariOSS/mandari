@@ -141,7 +141,18 @@ from .terms import (
     TermSaveView,
 )
 
+from .calendar import (
+    MeetingCalendarView,
+    MeetingPlanView,
+    OrganizationIcsFeedView,
+    YearPlanPdfView,
+)
+
 __all__ = [
+    "MeetingCalendarView",
+    "MeetingPlanView",
+    "OrganizationIcsFeedView",
+    "YearPlanPdfView",
     "AgendaItemCreateView",
     "AllowanceApproveView",
     "AllowanceCsvExportView",

@@ -93,6 +93,27 @@ urlpatterns = [
         views.ProtocolPdfView.as_view(),
         name="meeting_protocol_pdf",
     ),
+    # Sitzungskalender und Jahresplanung (Issue #82)
+    path(
+        "<slug:tenant_slug>/meetings/calendar/",
+        views.MeetingCalendarView.as_view(),
+        name="meeting_calendar",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/plan/",
+        views.MeetingPlanView.as_view(),
+        name="meeting_plan",
+    ),
+    path(
+        "<slug:tenant_slug>/sitzungsplan.pdf",
+        views.YearPlanPdfView.as_view(),
+        name="year_plan_pdf",
+    ),
+    path(
+        "<slug:tenant_slug>/organizations/<uuid:org_id>/sitzungen.ics",
+        views.OrganizationIcsFeedView.as_view(),
+        name="organization_ics_feed",
+    ),
     # Beschlussregister und Beschlussauszüge (Issue #32)
     path(
         "<slug:tenant_slug>/resolutions/",

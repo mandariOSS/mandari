@@ -1,0 +1,33 @@
+{% extends "session/pdf/base_pdf.html" %}
+{% comment %}
+Sitzungsplan-PDF (Issue #82): Jahresübersicht aller Sitzungen,
+optional auf ein Gremium eingeschränkt.
+{% endcomment %}
+
+{% block content %}
+<h1>Sitzungsplan {{ year }}{% if organization %} — {{ organization.name }}{% endif %}</h1>
+<p class="muted">
+    {% if internal %}Interne Fassung (inkl. nichtöffentlicher Sitzungen){% else %}Öffentliche Fassung{% endif %}
+</p>
+
+{% for group in months %}
+<div class="section-title">
+    {% if group.month == 1 %}Januar{% elif group.month == 2 %}Februar{% elif group.month == 3 %}März{% elif group.month == 4 %}April{% elif group.month == 5 %}Mai{% elif group.month == 6 %}Juni{% elif group.month == 7 %}Juli{% elif group.month == 8 %}August{% elif group.month == 9 %}September{% elif group.month == 10 %}Oktober{% elif group.month == 11 %}November{% else %}Dezember{% endif %}
+</div>
+<table class="agenda">
+    {% for meeting in group.meetings %}
+    <tr>
+        <td style="width: 30mm;">{{ meeting.start|date:"D, d.m.Y" }}</td>
+        <td style="width: 16mm;">{{ meeting.start|date:"H:i" }}</td>
+        <td>
+            {{ meeting.organization.name }}
+            {% if not meeting.is_public %}<span class="tag">(nichtöffentlich)</span>{% endif %}
+        </td>
+        <td style="width: 45mm;" class="muted">{{ meeting.location }}{% if meeting.room %}, {{ meeting.room }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% empty %}
+<p class="muted">Für {{ year }} sind keine Sitzungen erfasst.</p>
+{% endfor %}
+{% endblock %}

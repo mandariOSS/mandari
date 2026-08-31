@@ -15,10 +15,20 @@
 <!-- Sitzungen -->
 {% if "view_meetings" in permission_checker.permissions %}
 <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}"
-   class="session-nav-item {% if 'meeting' in current_url %}active{% endif %}"
+   class="session-nav-item {% if 'meeting' in current_url and current_url != 'meeting_calendar' and current_url != 'meeting_plan' %}active{% endif %}"
    :title="sidebarCollapsed ? 'Sitzungen' : ''">
     <i data-lucide="calendar"></i>
     <span class="nav-label">Sitzungen</span>
+</a>
+{% endif %}
+
+<!-- Sitzungskalender (Issue #82) -->
+{% if "view_meetings" in permission_checker.permissions %}
+<a href="{% url 'session:meeting_calendar' tenant_slug=tenant_slug %}"
+   class="session-nav-item {% if current_url == 'meeting_calendar' or current_url == 'meeting_plan' %}active{% endif %}"
+   :title="sidebarCollapsed ? 'Kalender' : ''">
+    <i data-lucide="calendar-days"></i>
+    <span class="nav-label">Kalender</span>
 </a>
 {% endif %}
 

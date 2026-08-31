@@ -1,0 +1,130 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Jahresplanung{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:meeting_calendar' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Kalender
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Jahresplanung</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-3xl">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Jahresplanung</h1>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+        Serientermine für ein Gremium berechnen, Kollisionen prüfen und als Sitzungs-Entwürfe anlegen.
+    </p>
+
+    <form method="post" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+        {% csrf_token %}
+        <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Gremium *</label>
+                <select name="organization" required class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Bitte wählen…</option>
+                    {% for org in organizations %}
+                    <option value="{{ org.id }}" {% if form_post.organization == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sitzungsname</label>
+                <input type="text" name="name" value="{{ form_post.name|default:'' }}" placeholder="z. B. Sitzung des Hauptausschusses"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rhythmus *</label>
+                <select name="rhythm" required class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    {% for value, label in rhythm_choices %}
+                    <option value="{{ value }}" {% if form_post.rhythm == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Wochentag *</label>
+                <select name="weekday" required class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    {% for value, label in weekday_choices %}
+                    <option value="{{ value }}" {% if form_post.weekday == value|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Uhrzeit *</label>
+                <input type="time" name="time" value="{{ form_post.time|default:'18:00' }}" required
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Von *</label>
+                    <input type="date" name="date_from" value="{{ form_post.date_from|default:'' }}" required
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bis *</label>
+                    <input type="date" name="date_to" value="{{ form_post.date_to|default:'' }}" required
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ort</label>
+                <input type="text" name="location" value="{{ form_post.location|default:'' }}" placeholder="Standardort des Gremiums"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Raum</label>
+                <input type="text" name="room" value="{{ form_post.room|default:'' }}" placeholder="z. B. Ratssaal"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+        </div>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input type="checkbox" name="is_public" value="1" {% if not form_post or form_post.is_public == '1' %}checked{% endif %}
+                   class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+            Öffentliche Sitzungen
+        </label>
+        <div class="flex items-center gap-3">
+            <button type="submit" name="action" value="preview"
+                    class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
+                <i data-lucide="eye" class="w-4 h-4"></i> Vorschau berechnen
+            </button>
+            {% if preview %}
+            <button type="submit" name="action" value="create"
+                    class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                <i data-lucide="calendar-plus" class="w-4 h-4"></i> {{ preview|length }} Termine als Entwurf anlegen
+            </button>
+            {% endif %}
+        </div>
+    </form>
+
+    {% if preview %}
+    <div class="mt-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white">Vorschau: {{ preview|length }} Termine für {{ form.organization.name }}</h2>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for entry in preview %}
+            <div class="px-6 py-3 flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ entry.start|date:"l, d.m.Y" }} · {{ entry.start|date:"H:i" }} Uhr</p>
+                    {% for conflict in entry.conflicts %}
+                    <p class="text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-0.5">
+                        <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+                        {{ conflict.conflict_reason }}: {{ conflict.name }} ({{ conflict.organization.name }}, {{ conflict.start|date:"H:i" }} Uhr{% if conflict.room %}, {{ conflict.room }}{% endif %})
+                    </p>
+                    {% endfor %}
+                </div>
+                {% if entry.conflicts %}
+                <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300">Kollision</span>
+                {% else %}
+                <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400">frei</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
