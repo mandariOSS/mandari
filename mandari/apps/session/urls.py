@@ -426,6 +426,11 @@ urlpatterns = [
         name="insight_publish",
     ),
     path(
+        "<slug:tenant_slug>/settings/reminders/",
+        views.ReminderSettingsView.as_view(),
+        name="settings_reminders",
+    ),
+    path(
         "<slug:tenant_slug>/settings/users/",
         views.UserListView.as_view(),
         name="users",

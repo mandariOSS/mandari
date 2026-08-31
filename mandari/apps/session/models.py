@@ -97,6 +97,26 @@ class SessionTenant(models.Model):
         help_text="Registriert die OParl-API dieses Mandanten als Quelle für das Insight-Bürgerportal",
     )
 
+    # Fristen-Erinnerungen (Issue #83): Vorlaufzeiten und An/Aus je Typ.
+    # Nur abweichende Werte werden gespeichert; Defaults siehe
+    # REMINDER_DEFAULTS bzw. reminder_config().
+    REMINDER_DEFAULTS = {
+        "invitation_enabled": True,
+        "invitation_days_before": 3,
+        "paper_enabled": True,
+        "paper_days_before": 3,
+        "rsvp_enabled": True,
+        "rsvp_days_before": 5,
+        "resolution_enabled": True,
+        "resolution_days_before": 7,
+    }
+    reminder_settings = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Erinnerungs-Einstellungen",
+        help_text="Abweichungen von den Standard-Vorlaufzeiten für Fristen-Erinnerungen",
+    )
+
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -115,6 +135,21 @@ class SessionTenant(models.Model):
         if not self.slug:
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
+
+    def reminder_config(self) -> dict:
+        """Erinnerungs-Einstellungen mit Defaults zusammenführen (Issue #83)."""
+        config = dict(self.REMINDER_DEFAULTS)
+        stored = self.reminder_settings if isinstance(self.reminder_settings, dict) else {}
+        for key, default in self.REMINDER_DEFAULTS.items():
+            value = stored.get(key, default)
+            if key.endswith("_enabled"):
+                config[key] = bool(value)
+            else:
+                try:
+                    config[key] = max(0, min(60, int(value)))
+                except (TypeError, ValueError):
+                    config[key] = default
+        return config
 
     def get_encryption_organization(self):
         """Required for EncryptionMixin compatibility."""
@@ -2299,6 +2334,59 @@ class SessionAuditLog(models.Model):
     def delete(self, *args, **kwargs):
         """Revisionssicherheit: Einträge können nicht gelöscht werden."""
         raise ValueError("Audit-Einträge sind unveränderbar und können nicht gelöscht werden.")
+
+
+# =============================================================================
+# FRISTEN-ERINNERUNGEN (Issue #83)
+# =============================================================================
+
+
+class SessionReminderLog(models.Model):
+    """
+    Protokoll versendeter Fristen-Erinnerungen (Issue #83).
+
+    Der unique-Constraint auf (tenant, kind, dedup_key) macht den
+    Erinnerungslauf idempotent: mehrfaches Ausführen am selben Tag
+    erzeugt keine doppelten E-Mails.
+    """
+
+    KIND_CHOICES = [
+        ("invitation_upcoming", "Ladungsfrist läuft ab"),
+        ("invitation_overdue", "Ladungsfrist verstrichen"),
+        ("paper_deadline", "Vorlagenfrist läuft ab"),
+        ("attendance_rsvp", "Rückmeldung zur Sitzung fehlt"),
+        ("resolution_followup", "Wiedervorlage Beschlusskontrolle"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="reminder_logs",
+        verbose_name="Mandant",
+    )
+    kind = models.CharField(max_length=40, choices=KIND_CHOICES, verbose_name="Erinnerungstyp")
+    dedup_key = models.CharField(
+        max_length=255,
+        verbose_name="Deduplizierungs-Schlüssel",
+        help_text="Objekt-/Frist-Bezug, verhindert doppelte Erinnerungen",
+    )
+    recipients = models.JSONField(default=list, blank=True, verbose_name="Empfänger")
+    sent_at = models.DateTimeField(auto_now_add=True, verbose_name="Versendet am")
+
+    class Meta:
+        db_table = "session_reminder_logs"
+        verbose_name = "Erinnerungs-Protokoll"
+        verbose_name_plural = "Erinnerungs-Protokolle"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "kind", "dedup_key"], name="uniq_session_reminder"
+            )
+        ]
+        ordering = ["-sent_at"]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} ({self.dedup_key})"
 
 
 # =============================================================================

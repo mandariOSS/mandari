@@ -191,6 +191,84 @@
             </div>
         </div>
 
+        <!-- Fristen-Erinnerungen (Issue #83) -->
+        {% if "manage_settings" in permission_checker.permissions %}
+        <div class="sm:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-center gap-4 mb-3">
+                <div class="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center">
+                    <i data-lucide="alarm-clock" class="w-6 h-6 text-orange-600 dark:text-orange-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Fristen-Erinnerungen</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Automatische E-Mails vor Fristablauf (täglicher Lauf)</p>
+                </div>
+            </div>
+            <form method="post" action="{% url 'session:settings_reminders' tenant_slug=tenant_slug %}" class="mt-4 space-y-3">
+                {% csrf_token %}
+                {% with cfg=reminder_config %}
+                <div class="grid sm:grid-cols-2 gap-3 text-sm">
+                    <label class="flex items-center justify-between gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                        <span class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                            <input type="checkbox" name="invitation_enabled" {% if cfg.invitation_enabled %}checked{% endif %}
+                                   class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                            Ladungsfrist (an Sitzungsdienst)
+                        </span>
+                        <span class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                            <input type="number" name="invitation_days_before" value="{{ cfg.invitation_days_before }}" min="0" max="60"
+                                   class="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                            Tage vorher
+                        </span>
+                    </label>
+                    <label class="flex items-center justify-between gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                        <span class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                            <input type="checkbox" name="paper_enabled" {% if cfg.paper_enabled %}checked{% endif %}
+                                   class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                            Vorlagenfrist (an Sachbearbeitung)
+                        </span>
+                        <span class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                            <input type="number" name="paper_days_before" value="{{ cfg.paper_days_before }}" min="0" max="60"
+                                   class="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                            Tage vorher
+                        </span>
+                    </label>
+                    <label class="flex items-center justify-between gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                        <span class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                            <input type="checkbox" name="rsvp_enabled" {% if cfg.rsvp_enabled %}checked{% endif %}
+                                   class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                            Fehlende Rückmeldung (an Mitglieder)
+                        </span>
+                        <span class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                            <input type="number" name="rsvp_days_before" value="{{ cfg.rsvp_days_before }}" min="0" max="60"
+                                   class="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                            Tage vorher
+                        </span>
+                    </label>
+                    <label class="flex items-center justify-between gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                        <span class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                            <input type="checkbox" name="resolution_enabled" {% if cfg.resolution_enabled %}checked{% endif %}
+                                   class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                            Wiedervorlage Beschlusskontrolle
+                        </span>
+                        <span class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                            <input type="number" name="resolution_days_before" value="{{ cfg.resolution_days_before }}" min="0" max="60"
+                                   class="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                            Tage vorher
+                        </span>
+                    </label>
+                </div>
+                {% endwith %}
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        Voraussetzung: Der tägliche Erinnerungslauf (<code>send_session_reminders</code>) ist im Betrieb eingerichtet.
+                    </p>
+                    <button type="submit" class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors">
+                        <i data-lucide="save" class="w-4 h-4"></i> Speichern
+                    </button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+
         <!-- Branding -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <div class="flex items-center gap-4 mb-3">

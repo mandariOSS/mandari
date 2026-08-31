@@ -41,6 +41,50 @@ class SettingsView(SessionViewMixin, TemplateView):
     template_name = "session/settings/index.html"
     permission_required = "manage_settings"
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["reminder_config"] = self.session_tenant.reminder_config()
+        return context
+
+
+class ReminderSettingsView(SessionViewMixin, View):
+    """Fristen-Erinnerungen konfigurieren (Issue #83)."""
+
+    permission_required = "manage_settings"
+    http_method_names = ["post"]
+
+    def post(self, request, tenant_slug):
+        from .. import audit
+        from ..models import SessionTenant
+
+        tenant = self.session_tenant
+        old_config = tenant.reminder_config()
+
+        settings_dict = {}
+        for key, default in SessionTenant.REMINDER_DEFAULTS.items():
+            if key.endswith("_enabled"):
+                settings_dict[key] = key in request.POST
+            else:
+                raw = request.POST.get(key, "").strip()
+                try:
+                    settings_dict[key] = max(0, min(60, int(raw)))
+                except (TypeError, ValueError):
+                    settings_dict[key] = default
+
+        tenant.reminder_settings = settings_dict
+        tenant.save(update_fields=["reminder_settings", "updated_at"])
+
+        audit.log_event(
+            "update",
+            tenant,
+            tenant=tenant,
+            user=self.session_user,
+            request=request,
+            changes={"erinnerungen": {"alt": old_config, "neu": tenant.reminder_config()}},
+        )
+        messages.success(request, "Erinnerungs-Einstellungen gespeichert.")
+        return redirect("session:settings", tenant_slug=tenant_slug)
+
 
 class InsightPublishView(SessionViewMixin, View):
     """
