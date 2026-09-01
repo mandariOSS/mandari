@@ -50,6 +50,16 @@
 </a>
 {% endif %}
 
+<!-- Umlaufbeschlüsse (Issue #41) -->
+{% if "view_meetings" in permission_checker.permissions %}
+<a href="{% url 'session:circulars' tenant_slug=tenant_slug %}"
+   class="session-nav-item {% if 'circular' in current_url %}active{% endif %}"
+   :title="sidebarCollapsed ? 'Umlaufbeschlüsse' : ''">
+    <i data-lucide="mail-check"></i>
+    <span class="nav-label">Umlaufbeschlüsse</span>
+</a>
+{% endif %}
+
 <!-- Vorlagen -->
 {% if "view_papers" in permission_checker.permissions %}
 <a href="{% url 'session:papers' tenant_slug=tenant_slug %}"

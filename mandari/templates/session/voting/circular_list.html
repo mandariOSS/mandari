@@ -1,0 +1,120 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Umlaufbeschlüsse{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Umlaufbeschlüsse</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-4xl">
+    <div class="flex items-center justify-between gap-3 flex-wrap mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Umlaufbeschlüsse</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Beschlussfassung im schriftlichen Verfahren ohne Sitzung</p>
+        </div>
+    </div>
+
+    {% if can_manage %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6" x-data="{ open: false }">
+        <button type="button" @click="open = !open"
+                class="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 dark:text-primary-400">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i> Neuen Umlaufbeschluss starten
+        </button>
+        <form method="post" action="{% url 'session:circular_create' tenant_slug=tenant_slug %}"
+              x-show="open" x-cloak x-transition class="mt-4 space-y-3">
+            {% csrf_token %}
+            <div class="grid sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Gremium *</label>
+                    <select name="organization" required class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        <option value="">Bitte wählen…</option>
+                        {% for org in organizations %}
+                        <option value="{{ org.id }}">{{ org.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Rückmeldefrist *</label>
+                    <input type="date" name="deadline" required
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Betreff *</label>
+                <input type="text" name="title" required placeholder="z. B. Eilentscheidung: Auftragsvergabe Winterdienst"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Beschlussvorschlag *</label>
+                <textarea name="resolution_text" rows="3" required
+                          class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"></textarea>
+            </div>
+            <div class="flex items-end gap-3 flex-wrap">
+                <div>
+                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Zugehörige Vorlage (optional)</label>
+                    <select name="paper" class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white max-w-[280px]">
+                        <option value="">Keine</option>
+                        {% for paper in papers %}
+                        <option value="{{ paper.id }}">{{ paper.reference }}: {{ paper.name|truncatechars:50 }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 pb-2.5">
+                    <input type="checkbox" name="is_public" value="1" checked
+                           class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                    Öffentlich
+                </label>
+                <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                    <i data-lucide="send" class="w-4 h-4"></i> Umlauf starten
+                </button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for circular in circulars %}
+            <a href="{% url 'session:circular_detail' tenant_slug=tenant_slug circular_id=circular.id %}"
+               class="block px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                <div class="flex items-center gap-2 flex-wrap mb-1">
+                    {% if circular.reference %}
+                    <span class="px-2 py-0.5 text-xs font-bold rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-400">{{ circular.reference }}</span>
+                    {% endif %}
+                    <span class="px-2 py-0.5 text-xs font-medium rounded
+                        {% if circular.status == 'adopted' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                        {% elif circular.status == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+                        {% elif circular.status == 'cancelled' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400
+                        {% else %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400{% endif %}">
+                        {{ circular.get_status_display }}
+                    </span>
+                    {% if circular.is_overdue %}
+                    <span class="px-2 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300">Frist verstrichen</span>
+                    {% endif %}
+                    {% if not circular.is_public %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400">
+                        <i data-lucide="lock" class="w-3 h-3"></i> NÖ
+                    </span>
+                    {% endif %}
+                </div>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ circular.title }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    {{ circular.organization.name }} · Frist {{ circular.deadline|date:"d.m.Y" }}
+                </p>
+            </a>
+            {% empty %}
+            <div class="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+                Keine Umlaufbeschlüsse vorhanden.
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

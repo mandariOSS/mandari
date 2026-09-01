@@ -170,6 +170,7 @@ jobs:
           python scripts/smoke_session_reports.py
           python scripts/smoke_session_search.py
           python scripts/smoke_session_cosign.py
+          python scripts/smoke_session_voting.py
           python scripts/smoke_session_paper_workflow.py
           python scripts/smoke_session_consultations.py
           python scripts/smoke_session_oparl.py

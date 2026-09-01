@@ -1125,6 +1125,22 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
     votes_no = models.PositiveIntegerField(default=0, verbose_name="Nein-Stimmen")
     votes_abstain = models.PositiveIntegerField(default=0, verbose_name="Enthaltungen")
 
+    # Digitale Abstimmung (Issue #41): Art der Abstimmung. Bei „namentlich"
+    # und „offen (einzeln)" werden Einzelstimmen erfasst (SessionVote);
+    # bei „geheim" werden bewusst nur Summen gespeichert.
+    VOTING_METHOD_CHOICES = [
+        ("summary", "Nur Summen"),
+        ("open", "Offen (einzeln erfasst)"),
+        ("roll_call", "Namentlich"),
+        ("secret", "Geheim"),
+    ]
+    voting_method = models.CharField(
+        max_length=20,
+        choices=VOTING_METHOD_CHOICES,
+        default="summary",
+        verbose_name="Abstimmungsart",
+    )
+
     # Beschlusskontrolle (Issue #37): Umsetzung nach der Beschlussfassung.
     # Nur für angenommene Beschlüsse relevant; die Verwaltung dokumentiert
     # hier Zuständigkeit, Frist und Erledigung.
@@ -2408,6 +2424,180 @@ class SessionReminderLog(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()} ({self.dedup_key})"
+
+
+# =============================================================================
+# DIGITALE ABSTIMMUNG UND UMLAUFBESCHLÜSSE (Issue #41)
+# =============================================================================
+
+
+class SessionVote(models.Model):
+    """
+    Einzelstimme eines Mitglieds zu einem TOP (Issue #41).
+
+    Wird bei namentlicher bzw. offener Einzelabstimmung erfasst. „Befangen"
+    dokumentiert das Mitwirkungsverbot nach Gemeindeordnung — die Person
+    zählt nicht zur Abstimmung. Bei geheimer Abstimmung werden keine
+    Einzelstimmen gespeichert (nur Befangenheits-Vermerke).
+    """
+
+    VOTE_CHOICES = [
+        ("yes", "Ja"),
+        ("no", "Nein"),
+        ("abstain", "Enthaltung"),
+        ("excluded", "Befangen (Mitwirkungsverbot)"),
+        ("not_participating", "Nicht teilgenommen"),
+    ]
+    # Stimmen, die in die Summenzählung eingehen
+    COUNTED_VOTES = ("yes", "no", "abstain")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    agenda_item = models.ForeignKey(
+        SessionAgendaItem,
+        on_delete=models.CASCADE,
+        related_name="votes",
+        verbose_name="Tagesordnungspunkt",
+    )
+    person = models.ForeignKey(
+        SessionPerson,
+        on_delete=models.CASCADE,
+        related_name="votes",
+        verbose_name="Person",
+    )
+    vote = models.CharField(max_length=20, choices=VOTE_CHOICES, verbose_name="Stimme")
+    recorded_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="recorded_votes",
+        verbose_name="Erfasst von",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_votes"
+        verbose_name = "Einzelstimme"
+        verbose_name_plural = "Einzelstimmen"
+        constraints = [models.UniqueConstraint(fields=["agenda_item", "person"], name="uniq_session_vote")]
+        ordering = ["person__family_name", "person__given_name"]
+
+    def __str__(self):
+        return f"{self.person.display_name}: {self.get_vote_display()}"
+
+
+class SessionCircularResolution(models.Model):
+    """
+    Umlaufbeschluss (Issue #41): Beschlussfassung im schriftlichen Verfahren
+    ohne Sitzung. Der Sitzungsdienst erfasst die Rückläufe der Mitglieder
+    und stellt das Ergebnis fest.
+    """
+
+    STATUS_CHOICES = [
+        ("open", "Im Umlauf"),
+        ("adopted", "Angenommen"),
+        ("rejected", "Abgelehnt"),
+        ("cancelled", "Abgebrochen"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="circular_resolutions",
+        verbose_name="Mandant",
+    )
+    organization = models.ForeignKey(
+        SessionOrganization,
+        on_delete=models.CASCADE,
+        related_name="circular_resolutions",
+        verbose_name="Gremium",
+    )
+    reference = models.CharField(max_length=50, blank=True, verbose_name="Umlauf-Nr.", help_text="z. B. U/2026/0001")
+    title = models.CharField(max_length=500, verbose_name="Betreff")
+    resolution_text = models.TextField(verbose_name="Beschlussvorschlag")
+    paper = models.ForeignKey(
+        "SessionPaper",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="circular_resolutions",
+        verbose_name="Vorlage",
+    )
+    deadline = models.DateField(verbose_name="Rückmeldefrist")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="open", verbose_name="Status")
+    result_note = models.TextField(blank=True, verbose_name="Ergebnisvermerk")
+    is_public = models.BooleanField(default=True, verbose_name="Öffentlich")
+    created_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="circular_resolutions",
+        verbose_name="Angelegt von",
+    )
+    decided_at = models.DateTimeField(blank=True, null=True, verbose_name="Ergebnis festgestellt am")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_circular_resolutions"
+        verbose_name = "Umlaufbeschluss"
+        verbose_name_plural = "Umlaufbeschlüsse"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.reference or 'Umlauf'}: {self.title}"
+
+    @property
+    def is_overdue(self) -> bool:
+        return self.status == "open" and self.deadline < timezone.localdate()
+
+
+class SessionCircularVote(models.Model):
+    """Rücklauf eines Mitglieds zu einem Umlaufbeschluss (Issue #41)."""
+
+    VOTE_CHOICES = [
+        ("yes", "Ja"),
+        ("no", "Nein"),
+        ("abstain", "Enthaltung"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    circular = models.ForeignKey(
+        SessionCircularResolution,
+        on_delete=models.CASCADE,
+        related_name="votes",
+        verbose_name="Umlaufbeschluss",
+    )
+    person = models.ForeignKey(
+        SessionPerson,
+        on_delete=models.CASCADE,
+        related_name="circular_votes",
+        verbose_name="Person",
+    )
+    vote = models.CharField(max_length=20, choices=VOTE_CHOICES, verbose_name="Stimme")
+    received_at = models.DateField(verbose_name="Eingegangen am")
+    recorded_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="recorded_circular_votes",
+        verbose_name="Erfasst von",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "session_circular_votes"
+        verbose_name = "Umlauf-Rücklauf"
+        verbose_name_plural = "Umlauf-Rückläufe"
+        constraints = [models.UniqueConstraint(fields=["circular", "person"], name="uniq_session_circular_vote")]
+        ordering = ["person__family_name", "person__given_name"]
+
+    def __str__(self):
+        return f"{self.person.display_name}: {self.get_vote_display()}"
 
 
 # =============================================================================

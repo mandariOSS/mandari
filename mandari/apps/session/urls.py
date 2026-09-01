@@ -468,6 +468,37 @@ urlpatterns = [
         views.ReminderSettingsView.as_view(),
         name="settings_reminders",
     ),
+    # Digitale Abstimmung und Umlaufbeschlüsse (Issue #41)
+    path(
+        "<slug:tenant_slug>/agenda/<uuid:item_id>/voting/",
+        views.VotingCaptureView.as_view(),
+        name="voting_capture",
+    ),
+    path(
+        "<slug:tenant_slug>/circulars/",
+        views.CircularListView.as_view(),
+        name="circulars",
+    ),
+    path(
+        "<slug:tenant_slug>/circulars/create/",
+        views.CircularCreateView.as_view(),
+        name="circular_create",
+    ),
+    path(
+        "<slug:tenant_slug>/circulars/<uuid:circular_id>/",
+        views.CircularDetailView.as_view(),
+        name="circular_detail",
+    ),
+    path(
+        "<slug:tenant_slug>/circulars/<uuid:circular_id>/vote/",
+        views.CircularVoteView.as_view(),
+        name="circular_vote",
+    ),
+    path(
+        "<slug:tenant_slug>/circulars/<uuid:circular_id>/close/",
+        views.CircularCloseView.as_view(),
+        name="circular_close",
+    ),
     # Mitzeichnung (Issue #81)
     path(
         "<slug:tenant_slug>/cosignatures/",

@@ -1,11 +1,21 @@
 {% comment %}Bearbeitungsblock eines TOP im Protokoll-Formular (Issue #31).
 Erwartet: item, vote_choices, can_view_np.{% endcomment %}
 <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700/50 last:border-b-0 space-y-3">
-    <p class="text-sm font-medium text-gray-900 dark:text-white">
-        <span class="font-bold text-gray-500 dark:text-gray-400">{{ item.number }}</span>
-        {{ item.name }}
-        {% if item.is_withdrawn %}<span class="text-xs text-gray-400">(abgesetzt)</span>{% endif %}
-    </p>
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+        <p class="text-sm font-medium text-gray-900 dark:text-white">
+            <span class="font-bold text-gray-500 dark:text-gray-400">{{ item.number }}</span>
+            {{ item.name }}
+            {% if item.is_withdrawn %}<span class="text-xs text-gray-400">(abgesetzt)</span>{% endif %}
+            {% if item.voting_method != 'summary' %}
+            <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-400">{{ item.get_voting_method_display }}</span>
+            {% endif %}
+        </p>
+        <!-- Einzelabstimmung erfassen (Issue #41) -->
+        <a href="{% url 'session:voting_capture' tenant_slug=tenant_slug item_id=item.pk %}?next={{ request.get_full_path|urlencode }}"
+           class="inline-flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline">
+            <i data-lucide="vote" class="w-3.5 h-3.5"></i> Abstimmung erfassen
+        </a>
+    </div>
     <div class="grid sm:grid-cols-4 gap-3">
         <div>
             <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Ergebnis</label>

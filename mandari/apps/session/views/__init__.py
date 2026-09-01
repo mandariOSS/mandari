@@ -163,8 +163,22 @@ from .textblocks import (
     TextblockManageView,
     TextblockSettingsView,
 )
+from .voting import (
+    CircularCloseView,
+    CircularCreateView,
+    CircularDetailView,
+    CircularListView,
+    CircularVoteView,
+    VotingCaptureView,
+)
 
 __all__ = [
+    "CircularCloseView",
+    "CircularCreateView",
+    "CircularDetailView",
+    "CircularListView",
+    "CircularVoteView",
+    "VotingCaptureView",
     "CosignatureActionView",
     "CosignRuleManageView",
     "CosignSettingsView",

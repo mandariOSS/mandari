@@ -1,0 +1,123 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Abstimmung TOP {{ item.number }}{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 truncate max-w-[200px]">
+        {{ meeting.name }}
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Abstimmung TOP {{ item.number }}</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-3xl" x-data="{ method: '{{ item.voting_method }}' }">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Abstimmung erfassen</h1>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">TOP {{ item.number }}: {{ item.name }}</p>
+
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+            <div class="grid sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Abstimmungsart</label>
+                    <select name="voting_method" x-model="method"
+                            class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% for value, label in method_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ergebnis</label>
+                    <select name="vote_result"
+                            class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% for value, label in result_choices %}
+                        <option value="{{ value }}" {% if item.vote_result == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <!-- Geheime Abstimmung: nur Summen -->
+            <div x-show="method === 'secret'" x-cloak class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Ja</label>
+                    <input type="number" name="votes_yes" value="{{ item.votes_yes }}" min="0"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Nein</label>
+                    <input type="number" name="votes_no" value="{{ item.votes_no }}" min="0"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Enthaltung</label>
+                    <input type="number" name="votes_abstain" value="{{ item.votes_abstain }}" min="0"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+            </div>
+            <p x-show="method === 'secret'" x-cloak class="text-xs text-gray-500 dark:text-gray-400">
+                Bei geheimer Abstimmung wird kein individuelles Stimmverhalten gespeichert — nur Summen
+                und ggf. Befangenheits-Vermerke.
+            </p>
+            <p x-show="method !== 'secret' && method !== 'summary'" x-cloak class="text-xs text-gray-500 dark:text-gray-400">
+                Die Summen werden automatisch aus den Einzelstimmen berechnet. Befangene
+                (Mitwirkungsverbot nach Gemeindeordnung) zählen nicht mit.
+            </p>
+        </div>
+
+        <!-- Einzelstimmen aus der Anwesenheitsliste -->
+        <div x-show="method !== 'summary'" x-cloak
+             class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white">Einzelstimmen ({{ attendances|length }} Anwesenheitsliste)</h2>
+            </div>
+            <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {% for attendance in attendances %}
+                <div class="px-6 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                    <div class="min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ attendance.person.display_name }}</p>
+                        <p class="text-xs text-gray-400 dark:text-gray-500">{{ attendance.get_status_display }}</p>
+                    </div>
+                    <div class="flex items-center gap-3 text-sm flex-wrap">
+                        <label class="inline-flex items-center gap-1">
+                            <input type="radio" name="vote_{{ attendance.person_id }}" value=""
+                                   {% if not attendance.current_vote %}checked{% endif %}
+                                   class="border-gray-300 dark:border-gray-600 text-gray-400"> —
+                        </label>
+                        {% for value, label in vote_choices %}
+                        <label class="inline-flex items-center gap-1 {% if value == 'excluded' %}text-amber-700 dark:text-amber-400{% endif %}"
+                               x-show="!(method === 'secret' && ('{{ value }}' === 'yes' || '{{ value }}' === 'no' || '{{ value }}' === 'abstain'))">
+                            <input type="radio" name="vote_{{ attendance.person_id }}" value="{{ value }}"
+                                   {% if attendance.current_vote == value %}checked{% endif %}
+                                   class="border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                            {% if value == 'yes' %}Ja{% elif value == 'no' %}Nein{% elif value == 'abstain' %}Enth.{% elif value == 'excluded' %}Befangen{% else %}n. teilg.{% endif %}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% empty %}
+                <p class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                    Keine Anwesenheitsliste vorhanden — bitte zuerst in der Sitzung die Anwesenheit erfassen.
+                </p>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                <i data-lucide="save" class="w-4 h-4"></i> Abstimmung speichern
+            </button>
+            <span class="text-sm text-gray-500 dark:text-gray-400">
+                Aktuell: Ja {{ item.votes_yes }} / Nein {{ item.votes_no }} / Enthaltung {{ item.votes_abstain }}
+                {% if tally.excluded %} · Befangen: {% for p in tally.excluded %}{{ p.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}
+            </span>
+        </div>
+    </form>
+</div>
+{% endblock %}

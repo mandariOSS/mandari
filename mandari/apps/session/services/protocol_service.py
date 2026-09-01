@@ -94,13 +94,23 @@ def build_protocol_pdf(protocol: SessionProtocol, *, internal: bool) -> bytes:
     agenda = agenda_service.grouped_agenda(meeting, include_non_public=internal)
 
     # NÖ-Texte nur für die interne Fassung entschlüsseln
+    def add_votes(item):
+        # Namentliche Abstimmung + Befangenheit (Issue #41)
+        votes = list(item.votes.select_related("person"))
+        item.roll_call_votes = (
+            [v for v in votes if v.vote in ("yes", "no", "abstain")] if item.voting_method == "roll_call" else []
+        )
+        item.excluded_persons = [v.person for v in votes if v.vote == "excluded"]
+
     def decorate(items):
         for item in items:
             item.protocol_note_np = item.get_protocol_note_decrypted() if internal else ""
             item.resolution_np = item.get_resolution_text_decrypted() if internal else ""
+            add_votes(item)
             for sub in item.children_list:
                 sub.protocol_note_np = sub.get_protocol_note_decrypted() if internal else ""
                 sub.resolution_np = sub.get_resolution_text_decrypted() if internal else ""
+                add_votes(sub)
         return items
 
     context = {

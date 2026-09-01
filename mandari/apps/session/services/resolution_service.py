@@ -101,6 +101,12 @@ def build_extract_pdf(items: list, *, internal: bool) -> bytes:
     tenant = items[0].meeting.tenant
     for item in items:
         item.resolution_np = item.get_resolution_text_decrypted() if internal else ""
+        # Namentliche Abstimmung + Befangenheit (Issue #41)
+        votes = list(item.votes.select_related("person"))
+        item.roll_call_votes = (
+            [v for v in votes if v.vote in ("yes", "no", "abstain")] if item.voting_method == "roll_call" else []
+        )
+        item.excluded_persons = [v.person for v in votes if v.vote == "excluded"]
 
     context = {
         "tenant": tenant,

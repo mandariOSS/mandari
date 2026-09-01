@@ -32,9 +32,27 @@ Auszugs- und Ausfertigungsvermerk. NÖ-Beschlusstexte nur intern.{% endcomment %
 
     <h2>Abstimmungsergebnis</h2>
     <p>
-        {{ item.get_vote_result_display }} —
+        {{ item.get_vote_result_display }}{% if item.voting_method != 'summary' %} ({{ item.get_voting_method_display }}){% endif %} —
         Ja-Stimmen: {{ item.votes_yes }}, Nein-Stimmen: {{ item.votes_no }}, Enthaltungen: {{ item.votes_abstain }}
     </p>
+    {% if item.roll_call_votes %}
+    <p><strong>Namentliche Abstimmung:</strong></p>
+    <table class="agenda">
+        {% for vote in item.roll_call_votes %}
+        <tr>
+            <td>{{ vote.person.display_name }}</td>
+            <td style="width: 35mm;">{{ vote.get_vote_display }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+    {% if item.excluded_persons %}
+    <p>
+        <strong>Mitwirkungsverbot (§ 31 GO):</strong>
+        {% for person in item.excluded_persons %}{{ person.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+        — an Beratung und Abstimmung nicht beteiligt.
+    </p>
+    {% endif %}
 
     <h2>Auszugsvermerk</h2>
     <p>

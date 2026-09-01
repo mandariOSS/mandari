@@ -11,8 +11,17 @@
         {% if item.resolution_text %}<br><strong>Beschluss:</strong> {{ item.resolution_text|linebreaksbr }}{% endif %}
         {% if internal and item.resolution_np %}<br><strong>Beschluss (NÖ):</strong> {{ item.resolution_np|linebreaksbr }}{% endif %}
         {% if item.vote_result != "pending" %}
-        <br><strong>Abstimmung:</strong> {{ item.get_vote_result_display }}
+        <br><strong>Abstimmung:</strong> {{ item.get_vote_result_display }}{% if item.voting_method != 'summary' %} ({{ item.get_voting_method_display }}){% endif %}
         (Ja: {{ item.votes_yes }}, Nein: {{ item.votes_no }}, Enthaltungen: {{ item.votes_abstain }})
+        {% endif %}
+        {% if item.roll_call_votes %}
+        <br><span class="muted">Namentlich:
+        {% for vote in item.roll_call_votes %}{{ vote.person.display_name }} ({{ vote.get_vote_display }}){% if not forloop.last %}, {% endif %}{% endfor %}</span>
+        {% endif %}
+        {% if item.excluded_persons %}
+        <br><span class="muted">Mitwirkungsverbot (§ 31 GO):
+        {% for person in item.excluded_persons %}{{ person.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+        — an Beratung und Abstimmung nicht beteiligt.</span>
         {% endif %}
     </td>
 </tr>
