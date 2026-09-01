@@ -57,6 +57,13 @@ from .consultations import (
     ConsultationScheduleView,
     ConsultationUpdateView,
 )
+from .cosign import (
+    CosignatureActionView,
+    CosignRuleManageView,
+    CosignSettingsView,
+    DepartmentAssignmentView,
+    MyCosignaturesView,
+)
 from .dashboard import (
     DashboardView,
 )
@@ -158,6 +165,11 @@ from .textblocks import (
 )
 
 __all__ = [
+    "CosignatureActionView",
+    "CosignRuleManageView",
+    "CosignSettingsView",
+    "DepartmentAssignmentView",
+    "MyCosignaturesView",
     "SessionSearchView",
     "ReportCsvExportView",
     "ReportsView",

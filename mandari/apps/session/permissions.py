@@ -196,6 +196,12 @@ class SessionMixin(LoginRequiredMixin):
                 review_qs = review_qs.filter(is_public=True)
             context["papers_review_count"] = review_qs.count()
 
+        # Arbeitsvorrat-Badge (Issue #81): offene Mitzeichnungen der eigenen Ämter
+        if checker.has_permission("view_papers"):
+            from apps.session.services import cosign_service
+
+            context["cosign_count"] = cosign_service.my_pending_cosignatures(self.session_user).count()
+
         return context
 
     def get_queryset(self):

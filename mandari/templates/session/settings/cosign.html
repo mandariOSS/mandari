@@ -1,0 +1,161 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Mitzeichnung & Ämter{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Einstellungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Mitzeichnung & Ämter</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-4xl space-y-8">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Mitzeichnung & Ämter</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+            Mitzeichnungsregeln legen fest, welche Ämter eine Vorlage vor der Freigabe der Reihe nach
+            mitzeichnen müssen. Ämter/Fachbereiche werden unter
+            <a href="{% url 'session:organizations' tenant_slug=tenant_slug %}" class="text-primary-600 dark:text-primary-400 hover:underline">Gremien</a>
+            mit dem Typ „Amt/Fachbereich" angelegt.
+        </p>
+    </div>
+
+    {% if not departments %}
+    <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 text-sm text-amber-800 dark:text-amber-300">
+        Es sind noch keine Ämter/Fachbereiche angelegt. Legen Sie zuerst unter
+        <a href="{% url 'session:organization_create' tenant_slug=tenant_slug %}" class="font-medium hover:underline">Gremien → Neu</a>
+        eine Organisation vom Typ „Amt/Fachbereich" an (z. B. Kämmerei, Bauamt, Rechtsamt).
+    </div>
+    {% endif %}
+
+    <!-- Mitzeichnungsregeln -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="pen-line" class="w-5 h-5 text-indigo-500"></i>
+                Mitzeichnungsregeln
+            </h2>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for rule in rules %}
+            <div class="px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">
+                        {{ rule.order }}. {{ rule.department.name }}
+                    </p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ rule.get_paper_type_label }}{% if rule.only_financial %} · nur bei finanziellen Auswirkungen{% endif %}
+                    </p>
+                </div>
+                <form method="post" action="{% url 'session:cosign_rule_manage' tenant_slug=tenant_slug %}"
+                      onsubmit="return confirm('Mitzeichnungsregel wirklich löschen?');">
+                    {% csrf_token %}
+                    <input type="hidden" name="rule_id" value="{{ rule.id }}">
+                    <input type="hidden" name="action" value="delete">
+                    <button type="submit" class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30" title="Löschen">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </form>
+            </div>
+            {% empty %}
+            <p class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                Keine Regeln hinterlegt — Vorlagen benötigen dann keine Mitzeichnung.
+            </p>
+            {% endfor %}
+        </div>
+        {% if departments %}
+        <form method="post" action="{% url 'session:cosign_rule_manage' tenant_slug=tenant_slug %}"
+              class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 flex flex-wrap items-end gap-2">
+            {% csrf_token %}
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Amt/Fachbereich *</label>
+                <select name="department" required class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Bitte wählen…</option>
+                    {% for dep in departments %}
+                    <option value="{{ dep.id }}">{{ dep.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Vorlagenart</label>
+                <select name="paper_type" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Alle Vorlagenarten</option>
+                    {% for value, label in paper_type_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Reihenfolge</label>
+                <input type="number" name="order" value="0" min="0" max="999"
+                       class="w-20 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 pb-2">
+                <input type="checkbox" name="only_financial" value="1"
+                       class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                Nur bei finanziellen Auswirkungen
+            </label>
+            <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                <i data-lucide="plus" class="w-4 h-4"></i> Hinzufügen
+            </button>
+        </form>
+        {% endif %}
+    </div>
+
+    <!-- Amts-Zuordnungen -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="users" class="w-5 h-5 text-blue-500"></i>
+                Amts-Zuordnungen der Benutzer
+            </h2>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Nur zugeordnete Benutzer (oder Administratoren) können für ein Amt mitzeichnen.
+            </p>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for su in session_users %}
+            <div class="px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ su.user.email }}</p>
+                    <div class="flex items-center gap-1.5 flex-wrap mt-1">
+                        {% for dep in su.departments.all %}
+                        <form method="post" action="{% url 'session:department_assignment' tenant_slug=tenant_slug %}" class="inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="session_user" value="{{ su.id }}">
+                            <input type="hidden" name="department" value="{{ dep.id }}">
+                            <input type="hidden" name="action" value="remove">
+                            <button type="submit" title="Zuordnung entfernen"
+                                    class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300 hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-900 dark:hover:text-red-300">
+                                {{ dep.name }} <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
+                        </form>
+                        {% empty %}
+                        <span class="text-xs text-gray-400 dark:text-gray-500">Keinem Amt zugeordnet</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% if departments %}
+                <form method="post" action="{% url 'session:department_assignment' tenant_slug=tenant_slug %}" class="flex items-center gap-1.5">
+                    {% csrf_token %}
+                    <input type="hidden" name="session_user" value="{{ su.id }}">
+                    <select name="department" class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% for dep in departments %}
+                        <option value="{{ dep.id }}">{{ dep.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-gray-700 dark:text-gray-300">
+                        Zuordnen
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

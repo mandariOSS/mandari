@@ -468,6 +468,32 @@ urlpatterns = [
         views.ReminderSettingsView.as_view(),
         name="settings_reminders",
     ),
+    # Mitzeichnung (Issue #81)
+    path(
+        "<slug:tenant_slug>/cosignatures/",
+        views.MyCosignaturesView.as_view(),
+        name="my_cosignatures",
+    ),
+    path(
+        "<slug:tenant_slug>/cosignatures/<uuid:cosign_id>/<slug:action>/",
+        views.CosignatureActionView.as_view(),
+        name="cosignature_action",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/cosign/",
+        views.CosignSettingsView.as_view(),
+        name="settings_cosign",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/cosign/rule/",
+        views.CosignRuleManageView.as_view(),
+        name="cosign_rule_manage",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/cosign/assignment/",
+        views.DepartmentAssignmentView.as_view(),
+        name="department_assignment",
+    ),
     # Textbausteine und Standard-TOPs (Issue #85)
     path(
         "<slug:tenant_slug>/settings/textblocks/",

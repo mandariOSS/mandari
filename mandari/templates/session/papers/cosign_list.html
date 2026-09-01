@@ -1,0 +1,76 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Meine Mitzeichnungen{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:papers' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Vorlagen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Meine Mitzeichnungen</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-4xl">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Meine Mitzeichnungen</h1>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+        Offene Mitzeichnungsstationen
+        {% if my_departments %}Ihrer Ämter: {% for dep in my_departments %}{{ dep.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}
+    </p>
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for cosign in cosignatures %}
+            <div class="px-6 py-4 flex items-start justify-between gap-3 flex-wrap">
+                <div class="min-w-0">
+                    <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=cosign.paper.id %}"
+                       class="text-sm font-medium text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400">
+                        {{ cosign.paper.reference }}: {{ cosign.paper.name }}
+                    </a>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        Station {{ cosign.order }}: {{ cosign.department.name }}
+                        {% if cosign.paper.has_financial_impact %} · <span class="text-amber-700 dark:text-amber-400">finanzielle Auswirkungen</span>{% endif %}
+                        {% if not cosign.actionable %} · <span class="text-gray-400">wartet auf vorherige Station</span>{% endif %}
+                    </p>
+                </div>
+                {% if cosign.actionable %}
+                <div x-data="{ rejectOpen: false }" class="flex flex-col items-end gap-1.5">
+                    <div class="flex items-center gap-1.5">
+                        <form method="post" action="{% url 'session:cosignature_action' tenant_slug=tenant_slug cosign_id=cosign.id action='sign' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                            <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg">
+                                Mitzeichnen
+                            </button>
+                        </form>
+                        <button type="button" @click="rejectOpen = !rejectOpen"
+                                class="px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg">
+                            Zurückweisen
+                        </button>
+                    </div>
+                    <form method="post" action="{% url 'session:cosignature_action' tenant_slug=tenant_slug cosign_id=cosign.id action='reject' %}"
+                          x-show="rejectOpen" x-cloak x-transition class="flex items-center gap-1.5">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                        <input type="text" name="comment" required placeholder="Grund der Zurückweisung"
+                               class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white w-52">
+                        <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg">OK</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+            {% empty %}
+            <div class="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+                <i data-lucide="check-circle" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                <p>Keine offenen Mitzeichnungen.</p>
+                {% if not my_departments %}
+                <p class="text-xs mt-1">Sie sind bisher keinem Amt/Fachbereich zugeordnet.</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

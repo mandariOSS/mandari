@@ -375,6 +375,16 @@ class SessionUser(models.Model):
     # User-specific settings
     settings = models.JSONField(default=dict, blank=True, verbose_name="Einstellungen")
 
+    # Ämterstruktur (Issue #81): Zuordnung zu Ämtern/Fachbereichen
+    # (SessionOrganization mit organization_type="department") für die
+    # Mitzeichnung von Vorlagen.
+    departments = models.ManyToManyField(
+        "SessionOrganization",
+        blank=True,
+        related_name="assigned_users",
+        verbose_name="Ämter/Fachbereiche",
+    )
+
     # Status
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     joined_at = models.DateTimeField(auto_now_add=True, verbose_name="Beigetreten")
@@ -528,6 +538,7 @@ class SessionOrganization(models.Model):
             ("faction", "Fraktion"),
             ("advisory", "Beirat"),
             ("commission", "Kommission"),
+            ("department", "Amt/Fachbereich"),
             ("other", "Sonstiges"),
         ],
         default="committee",
@@ -1343,6 +1354,24 @@ class SessionPaper(EncryptionMixin, models.Model):
         blank=True,
         related_name="main_papers",
         verbose_name="Federführendes Gremium",
+    )
+
+    # Ämterstruktur und Mitzeichnung (Issue #81)
+    lead_department = models.ForeignKey(
+        SessionOrganization,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lead_papers",
+        verbose_name="Federführendes Amt",
+        help_text="Amt/Fachbereich, das die Vorlage erstellt hat",
+    )
+    # Pflichtangabe vor der Vorlage zur Freigabe; None = noch nicht erfasst
+    has_financial_impact = models.BooleanField(null=True, blank=True, verbose_name="Finanzielle Auswirkungen")
+    financial_impact_note = models.TextField(
+        blank=True,
+        verbose_name="Erläuterung der finanziellen Auswirkungen",
+        help_text="z. B. Höhe, Haushaltsstelle, Deckung",
     )
 
     # Source (if from application)
@@ -2379,6 +2408,114 @@ class SessionReminderLog(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()} ({self.dedup_key})"
+
+
+# =============================================================================
+# ÄMTERSTRUKTUR UND MITZEICHNUNG (Issue #81)
+# =============================================================================
+
+
+class SessionCosignatureRule(models.Model):
+    """
+    Standard-Mitzeichnungskette (Issue #81): Welche Ämter müssen eine
+    Vorlage welcher Art in welcher Reihenfolge mitzeichnen, bevor sie
+    freigegeben werden darf.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="cosignature_rules",
+        verbose_name="Mandant",
+    )
+    paper_type = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Vorlagenart",
+        help_text="Leer = gilt für alle Vorlagenarten",
+    )
+    department = models.ForeignKey(
+        SessionOrganization,
+        on_delete=models.CASCADE,
+        related_name="cosignature_rules",
+        verbose_name="Amt/Fachbereich",
+    )
+    order = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
+    only_financial = models.BooleanField(
+        default=False,
+        verbose_name="Nur bei finanziellen Auswirkungen",
+        help_text="z. B. Kämmerei: Mitzeichnung nur, wenn die Vorlage finanzielle Auswirkungen hat",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "session_cosignature_rules"
+        verbose_name = "Mitzeichnungsregel"
+        verbose_name_plural = "Mitzeichnungsregeln"
+        ordering = ["paper_type", "order"]
+
+    def __str__(self):
+        scope = self.get_paper_type_label()
+        return f"{self.department.name} ({scope}, Position {self.order})"
+
+    def get_paper_type_label(self) -> str:
+        if not self.paper_type:
+            return "alle Vorlagenarten"
+        return dict(SessionPaper._meta.get_field("paper_type").choices).get(self.paper_type, self.paper_type)
+
+
+class SessionCosignature(models.Model):
+    """
+    Mitzeichnungsstation einer konkreten Vorlage (Issue #81).
+
+    Wird beim Vorlegen zur Freigabe aus den Mitzeichnungsregeln erzeugt.
+    Die Freigabe der Vorlage ist erst möglich, wenn alle Stationen
+    mitgezeichnet haben; eine Zurückweisung wirft die Vorlage zurück in
+    den Entwurf.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Offen"),
+        ("signed", "Mitgezeichnet"),
+        ("rejected", "Zurückgewiesen"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    paper = models.ForeignKey(
+        "SessionPaper",
+        on_delete=models.CASCADE,
+        related_name="cosignatures",
+        verbose_name="Vorlage",
+    )
+    department = models.ForeignKey(
+        SessionOrganization,
+        on_delete=models.CASCADE,
+        related_name="cosignatures",
+        verbose_name="Amt/Fachbereich",
+    )
+    order = models.PositiveIntegerField(default=0, verbose_name="Reihenfolge")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", verbose_name="Status")
+    comment = models.TextField(blank=True, verbose_name="Kommentar")
+    decided_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="cosignature_decisions",
+        verbose_name="Entschieden von",
+    )
+    decided_at = models.DateTimeField(blank=True, null=True, verbose_name="Entschieden am")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "session_cosignatures"
+        verbose_name = "Mitzeichnung"
+        verbose_name_plural = "Mitzeichnungen"
+        ordering = ["order", "created_at"]
+
+    def __str__(self):
+        return f"{self.department.name}: {self.get_status_display()}"
 
 
 # =============================================================================

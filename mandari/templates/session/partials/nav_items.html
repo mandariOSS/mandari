@@ -75,6 +75,21 @@
 </a>
 {% endif %}
 
+<!-- Meine Mitzeichnungen (Issue #81) -->
+{% if "view_papers" in permission_checker.permissions %}
+<a href="{% url 'session:my_cosignatures' tenant_slug=tenant_slug %}"
+   class="session-nav-item {% if current_url == 'my_cosignatures' %}active{% endif %}"
+   :title="sidebarCollapsed ? 'Mitzeichnungen' : ''">
+    <i data-lucide="pen-line"></i>
+    <span class="nav-label">Mitzeichnungen</span>
+    {% if cosign_count %}
+    <span class="nav-badge ml-auto inline-flex items-center justify-center px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+        {{ cosign_count }}
+    </span>
+    {% endif %}
+</a>
+{% endif %}
+
 <!-- Anträge -->
 {% if "view_applications" in permission_checker.permissions %}
 <a href="{% url 'session:applications' tenant_slug=tenant_slug %}"

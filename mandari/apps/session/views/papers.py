@@ -164,6 +164,18 @@ class PaperDetailView(SessionViewMixin, DetailView):
         )
         context["consultation_can_edit"] = self.has_permission("edit_papers")
         context["consultation_can_schedule"] = self.has_permission("edit_meetings")
+
+        # Mitzeichnungslauf (Issue #81)
+        from ..services import cosign_service
+
+        cosignatures = list(paper.cosignatures.select_related("department", "decided_by__user"))
+        for cosignature in cosignatures:
+            cosignature.actionable = (
+                paper.status == "review"
+                and cosign_service.is_actionable(cosignature)
+                and cosign_service.can_decide(self.session_user, cosignature)
+            )
+        context["cosignatures"] = cosignatures
         context["consultation_roles"] = SessionConsultation.ROLE_CHOICES
         context["consultation_results"] = SessionConsultation.RESULT_CHOICES
         if context["consultation_can_edit"] or context["consultation_can_schedule"]:
@@ -201,6 +213,9 @@ class PaperCreateView(SessionViewMixin, CreateView):
         "date",
         "deadline",
         "main_organization",
+        "lead_department",
+        "has_financial_impact",
+        "financial_impact_note",
         "originator_organization",
         "originator_person",
     ]
@@ -221,6 +236,9 @@ class PaperCreateView(SessionViewMixin, CreateView):
         )
         form.fields["originator_person"].queryset = SessionPerson.objects.filter(
             tenant=self.session_tenant, is_active=True
+        )
+        form.fields["lead_department"].queryset = SessionOrganization.objects.filter(
+            tenant=self.session_tenant, is_active=True, organization_type="department"
         )
         return form
 
@@ -306,12 +324,42 @@ class PaperWorkflowView(SessionViewMixin, View):
             )
             return self._redirect(paper)
 
+        from ..services import cosign_service
+
+        # Pflichtangabe „Finanzielle Auswirkungen" vor dem Freigabelauf (Issue #81)
+        if action == "submit" and paper.has_financial_impact is None:
+            messages.error(
+                request,
+                "Bitte zuerst angeben, ob die Vorlage finanzielle Auswirkungen hat (Vorlage bearbeiten).",
+            )
+            return self._redirect(paper)
+
+        # Freigabe erst nach vollständiger Mitzeichnung (Issue #81)
+        if action == "approve":
+            blockers = list(cosign_service.pending_blockers(paper).select_related("department")[:5])
+            if blockers:
+                names = ", ".join(b.department.name for b in blockers)
+                messages.error(
+                    request,
+                    f"Freigabe nicht möglich — Mitzeichnung noch offen: {names}.",
+                )
+                return self._redirect(paper)
+
         paper.status = new_status
 
         if action == "submit":
             paper.save()  # Audit: update über Signal
+            # Mitzeichnungskette aus den Regeln aufbauen (Issue #81)
+            chain_count = cosign_service.build_chain(paper)
             self._notify_approvers(paper)
-            messages.success(request, f"Vorlage {paper.reference} wurde zur Freigabe vorgelegt.")
+            if chain_count:
+                messages.success(
+                    request,
+                    f"Vorlage {paper.reference} wurde zur Freigabe vorgelegt "
+                    f"({chain_count} Mitzeichnung(en) erforderlich).",
+                )
+            else:
+                messages.success(request, f"Vorlage {paper.reference} wurde zur Freigabe vorgelegt.")
 
         elif action == "approve":
             paper.approved_by = self.session_user
@@ -437,6 +485,9 @@ class PaperUpdateView(SessionViewMixin, UpdateView):
         "date",
         "deadline",
         "main_organization",
+        "lead_department",
+        "has_financial_impact",
+        "financial_impact_note",
         "originator_organization",
         "originator_person",
     ]
@@ -465,6 +516,9 @@ class PaperUpdateView(SessionViewMixin, UpdateView):
         )
         form.fields["originator_person"].queryset = SessionPerson.objects.filter(
             tenant=self.session_tenant, is_active=True
+        )
+        form.fields["lead_department"].queryset = SessionOrganization.objects.filter(
+            tenant=self.session_tenant, is_active=True, organization_type="department"
         )
         return form
 

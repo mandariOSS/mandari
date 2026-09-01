@@ -143,6 +143,45 @@
                         </select>
                     </div>
 
+                    <!-- Federführendes Amt (Issue #81) -->
+                    {% if form.lead_department.field.queryset %}
+                    <div>
+                        <label for="id_lead_department" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Federführendes Amt
+                        </label>
+                        <select name="lead_department" id="id_lead_department"
+                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                            <option value="">Kein Amt</option>
+                            {% for dep in form.lead_department.field.queryset %}
+                            <option value="{{ dep.id }}" {% if form.lead_department.value == dep.id|stringformat:"s" %}selected{% endif %}>
+                                {{ dep.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+
+                    <!-- Finanzielle Auswirkungen (Issue #81) -->
+                    <div x-data="{ fin: '{{ form.has_financial_impact.value|default_if_none:'' }}' }">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Finanzielle Auswirkungen <span class="text-red-500">*</span>
+                        </label>
+                        <div class="flex items-center gap-4 text-sm text-gray-700 dark:text-gray-300">
+                            <label class="inline-flex items-center gap-1.5">
+                                <input type="radio" name="has_financial_impact" value="True" x-model="fin"
+                                       class="border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"> Ja
+                            </label>
+                            <label class="inline-flex items-center gap-1.5">
+                                <input type="radio" name="has_financial_impact" value="False" x-model="fin"
+                                       class="border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"> Nein
+                            </label>
+                        </div>
+                        <textarea name="financial_impact_note" rows="2" x-show="fin === 'True'" x-cloak
+                                  placeholder="Höhe, Haushaltsstelle, Deckung…"
+                                  class="mt-2 w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">{{ form.financial_impact_note.value|default:'' }}</textarea>
+                        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Pflichtangabe vor der Vorlage zur Freigabe.</p>
+                    </div>
+
                     <div class="grid sm:grid-cols-2 gap-4">
                         <!-- Urheber-Organisation -->
                         <div>

@@ -191,7 +191,7 @@ class MeetingCreateView(SessionViewMixin, CreateView):
         # Limit organization choices to current tenant
         form.fields["organization"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
-        )
+        ).exclude(organization_type="department")
         return form
 
     def form_valid(self, form):
@@ -262,7 +262,7 @@ class MeetingUpdateView(SessionViewMixin, UpdateView):
         form = super().get_form(form_class)
         form.fields["organization"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True
-        )
+        ).exclude(organization_type="department")
         return form
 
     def form_valid(self, form):

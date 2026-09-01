@@ -121,6 +121,96 @@
         </div>
         {% endif %}
 
+        <!-- Finanzielle Auswirkungen + Mitzeichnungslauf (Issue #81) -->
+        {% if paper.has_financial_impact is not None or cosignatures %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="pen-line" class="w-5 h-5 text-indigo-500"></i>
+                    Mitzeichnung & finanzielle Auswirkungen
+                </h2>
+            </div>
+            <div class="px-6 py-4 space-y-3 text-sm">
+                <div class="flex items-start gap-2">
+                    <span class="text-gray-500 dark:text-gray-400 w-52 shrink-0">Finanzielle Auswirkungen:</span>
+                    {% if paper.has_financial_impact %}
+                    <span class="text-amber-700 dark:text-amber-400 font-medium">Ja{% if paper.financial_impact_note %} — {{ paper.financial_impact_note }}{% endif %}</span>
+                    {% elif paper.has_financial_impact is False %}
+                    <span class="text-gray-700 dark:text-gray-300">Nein</span>
+                    {% else %}
+                    <span class="text-red-600 dark:text-red-400">Noch nicht erfasst (Pflichtangabe vor der Freigabe)</span>
+                    {% endif %}
+                </div>
+                {% if paper.lead_department %}
+                <div class="flex items-start gap-2">
+                    <span class="text-gray-500 dark:text-gray-400 w-52 shrink-0">Federführendes Amt:</span>
+                    <span class="text-gray-700 dark:text-gray-300">{{ paper.lead_department.name }}</span>
+                </div>
+                {% endif %}
+
+                {% if cosignatures %}
+                <div class="pt-2 border-t border-gray-100 dark:border-gray-700/50 space-y-2">
+                    {% for cosign in cosignatures %}
+                    <div class="flex items-start justify-between gap-3 flex-wrap">
+                        <div class="flex items-start gap-2 min-w-0">
+                            <span class="mt-0.5">
+                                {% if cosign.status == 'signed' %}<i data-lucide="check-circle" class="w-4 h-4 text-green-600"></i>
+                                {% elif cosign.status == 'rejected' %}<i data-lucide="x-circle" class="w-4 h-4 text-red-600"></i>
+                                {% else %}<i data-lucide="circle-dashed" class="w-4 h-4 text-gray-400"></i>{% endif %}
+                            </span>
+                            <div class="min-w-0">
+                                <p class="font-medium text-gray-900 dark:text-white">
+                                    {{ forloop.counter }}. {{ cosign.department.name }}
+                                    <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded
+                                        {% if cosign.status == 'signed' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                                        {% elif cosign.status == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+                                        {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                                        {{ cosign.get_status_display }}
+                                    </span>
+                                </p>
+                                {% if cosign.decided_at %}
+                                <p class="text-xs text-gray-500 dark:text-gray-400">
+                                    {{ cosign.decided_at|date:"d.m.Y H:i" }}{% if cosign.decided_by %} · {{ cosign.decided_by.user.email }}{% endif %}
+                                </p>
+                                {% endif %}
+                                {% if cosign.comment %}
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">„{{ cosign.comment }}“</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% if cosign.actionable %}
+                        <div x-data="{ rejectOpen: false }" class="flex flex-col items-end gap-1.5">
+                            <div class="flex items-center gap-1.5">
+                                <form method="post" action="{% url 'session:cosignature_action' tenant_slug=tenant_slug cosign_id=cosign.id action='sign' %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="px-2.5 py-1 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg">
+                                        Mitzeichnen
+                                    </button>
+                                </form>
+                                <button type="button" @click="rejectOpen = !rejectOpen"
+                                        class="px-2.5 py-1 text-xs font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg">
+                                    Zurückweisen
+                                </button>
+                            </div>
+                            <form method="post" action="{% url 'session:cosignature_action' tenant_slug=tenant_slug cosign_id=cosign.id action='reject' %}"
+                                  x-show="rejectOpen" x-cloak x-transition class="flex items-center gap-1.5">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                <input type="text" name="comment" required placeholder="Grund der Zurückweisung"
+                                       class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white w-52">
+                                <button type="submit" class="px-2 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg">OK</button>
+                            </form>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Anlagen -->
         {% include "session/partials/file_section.html" with file_target_type="paper" file_target_id=paper.id %}
 

@@ -1039,7 +1039,15 @@ class Command(BaseCommand):
                 "Der Rat beschließt die Neufassung der Straßenreinigungssatzung.",
             ),
         ]
+        # Finanzielle Auswirkungen (Issue #81): Pflichtangabe je Vorlage
+        financial_by_reference = {
+            "SV/2026/D-001": (True, "180.000 € brutto, Haushaltsstelle 5410.9500"),
+            "SV/2026/D-002": (True, "Investitionen gemäß Bedarfsplan, ca. 420.000 € über 5 Jahre"),
+            "SV/2026/D-003": (False, ""),
+            "SV/2026/D-004": (False, ""),
+        }
         for reference, name, ptype, status, org_key, main_text, resolution in session_papers_def:
+            has_impact, impact_note = financial_by_reference.get(reference, (False, ""))
             paper, _ = SessionPaper.objects.update_or_create(
                 tenant=tenant,
                 reference=reference,
@@ -1053,9 +1061,28 @@ class Command(BaseCommand):
                     "date": today - timedelta(days=20),
                     "main_organization": s_orgs[org_key],
                     "created_by": session_user,
+                    "has_financial_impact": has_impact,
+                    "financial_impact_note": impact_note,
                 },
             )
             s_papers[reference] = paper
+
+        # Ämterstruktur + Mitzeichnung (Issue #81): Kämmerei als Amt,
+        # Mitzeichnungsregel „nur bei finanziellen Auswirkungen"
+        from apps.session.models import SessionCosignatureRule
+
+        kaemmerei, _ = SessionOrganization.objects.update_or_create(
+            tenant=tenant,
+            name="Kämmerei (Demo)",
+            defaults={"organization_type": "department", "is_active": True},
+        )
+        SessionCosignatureRule.objects.update_or_create(
+            tenant=tenant,
+            department=kaemmerei,
+            paper_type="",
+            defaults={"order": 1, "only_financial": True},
+        )
+        session_user.departments.add(kaemmerei)
         # Ein Beispiel für vertraulichen (verschlüsselten) Inhalt
         vertraulich = s_papers["SV/2026/D-004"]
         vertraulich.set_confidential_text_encrypted(

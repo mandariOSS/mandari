@@ -98,9 +98,9 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context.update(
             {
-                "organizations": SessionOrganization.objects.filter(
-                    tenant=self.session_tenant, is_active=True
-                ).order_by("name"),
+                "organizations": SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True)
+                .exclude(organization_type="department")
+                .order_by("name"),
                 "rhythm_choices": calendar_service.RHYTHM_CHOICES,
                 "weekday_choices": calendar_service.WEEKDAY_CHOICES,
                 "next_year": timezone.localdate().year + 1,

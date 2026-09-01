@@ -124,6 +124,7 @@ approver2, su_approver2 = make_client(
 viewer, _ = make_client("leser", can_view_papers=True)
 
 paper = SessionPaper.objects.create(
+    has_financial_impact=False,
     tenant=tenant,
     reference="V/2026/0100",
     name="Sanierung des Spielplatzes",
@@ -132,6 +133,7 @@ paper = SessionPaper.objects.create(
     created_by=su_clerk,
 )
 paper_np = SessionPaper.objects.create(
+    has_financial_impact=False,
     tenant=tenant,
     reference="V/2026/0101",
     name="GEHEIME-VORLAGE-XYZ",
@@ -261,6 +263,7 @@ print()
 print("=== Phase E: Berechtigungen und Isolation ===")
 
 paper2 = SessionPaper.objects.create(
+    has_financial_impact=False,
     tenant=tenant, reference="V/2026/0102", name="Zweite Vorlage", status="draft", created_by=su_clerk
 )
 resp = viewer.post(f"{base}/papers/{paper2.id}/workflow/submit/")
