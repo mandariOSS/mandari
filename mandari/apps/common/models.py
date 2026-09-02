@@ -308,3 +308,78 @@ class AISettings(models.Model):
         if self.base_url:
             return self.base_url
         return self.PROVIDER_BASE_URLS.get(self.provider, "")
+
+
+class ProblemReport(models.Model):
+    """
+    Fehlermeldung aus dem „Problem melden"-Formular (Fehlerseiten).
+
+    Wird als Ticket im Admin-Dashboard bearbeitet; bei hinterlegter
+    E-Mail-Adresse (oder angemeldetem Konto) erhält die meldende Person
+    eine Rückmeldung, sobald der Status auf „gelöst" gesetzt wird.
+    """
+
+    STATUS_CHOICES = [
+        ("open", "Offen"),
+        ("in_progress", "In Bearbeitung"),
+        ("resolved", "Gelöst"),
+        ("closed", "Geschlossen"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=None, editable=False)
+    reference = models.CharField(max_length=20, unique=True, verbose_name="Ticket-Nr.")
+    error_id = models.CharField(max_length=64, blank=True, verbose_name="Fehler-ID")
+    url = models.URLField(max_length=1000, blank=True, verbose_name="Betroffene Seite")
+    message = models.TextField(verbose_name="Beschreibung")
+    browser_info = models.TextField(blank=True, verbose_name="Browser-Informationen")
+
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="problem_reports",
+        verbose_name="Konto",
+    )
+    email = models.EmailField(blank=True, verbose_name="E-Mail für Rückmeldung")
+    ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name="IP-Adresse")
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="open", verbose_name="Status")
+    admin_note = models.TextField(
+        blank=True,
+        verbose_name="Rückmeldung an die meldende Person",
+        help_text="Wird beim Lösen des Tickets per E-Mail mitgeschickt",
+    )
+    resolved_at = models.DateTimeField(blank=True, null=True, verbose_name="Gelöst am")
+    notified_at = models.DateTimeField(blank=True, null=True, verbose_name="Rückmeldung versandt am")
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Eingegangen am")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Fehlermeldung"
+        verbose_name_plural = "Fehlermeldungen"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.reference}: {self.message[:60]}"
+
+    def save(self, *args, **kwargs):
+        import uuid as _uuid
+
+        if self.id is None:
+            self.id = _uuid.uuid4()
+        if not self.reference:
+            from django.utils import timezone as _tz
+
+            # Kurze, gut kommunizierbare Ticket-Nummer
+            self.reference = f"PM-{_tz.localdate().year}-{_uuid.uuid4().hex[:6].upper()}"
+        super().save(*args, **kwargs)
+
+    @property
+    def reporter_email(self) -> str:
+        if self.email:
+            return self.email
+        if self.user and self.user.email:
+            return self.user.email
+        return ""

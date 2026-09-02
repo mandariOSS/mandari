@@ -1,0 +1,32 @@
+{% extends "accounts/base_auth.html" %}
+
+{% block title %}Meldung eingegangen{% endblock %}
+{% block header_title %}Danke für deine Meldung!{% endblock %}
+{% block header_subtitle %}Unser Team schaut sich das Problem an.{% endblock %}
+
+{% block content %}
+<div class="text-center space-y-4">
+    <div class="mx-auto w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
+        <i data-lucide="check" class="w-7 h-7 text-green-600 dark:text-green-400"></i>
+    </div>
+    <div>
+        <p class="text-sm text-gray-600 dark:text-gray-300">Deine Ticket-Nummer:</p>
+        <p class="mt-1 text-lg font-bold font-mono text-gray-900 dark:text-white">{{ reference }}</p>
+    </div>
+    {% if has_contact %}
+    <p class="text-sm text-gray-500 dark:text-gray-400">
+        Sobald das Problem gelöst ist, erhältst du eine Rückmeldung per E-Mail.
+    </p>
+    {% else %}
+    <p class="text-sm text-gray-500 dark:text-gray-400">
+        Du hast keine Kontaktadresse angegeben — notiere dir die Ticket-Nummer,
+        falls du später nachfragen möchtest.
+    </p>
+    {% endif %}
+    <a href="/" class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors">
+        <i data-lucide="home" class="w-4 h-4"></i> Zur Startseite
+    </a>
+</div>
+{% endblock %}
+
+{% block footer %}{% endblock %}

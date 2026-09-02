@@ -13,6 +13,7 @@ from django.shortcuts import redirect, render
 from django.urls import include, path, re_path
 from django.views.static import serve as static_serve
 
+from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
 from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
 from mandari import pwa
@@ -91,6 +92,9 @@ urlpatterns = [
     path("manifest.webmanifest", pwa.manifest, name="pwa_manifest"),
     path("sw.js", pwa.service_worker, name="pwa_sw"),
     path("offline/", pwa.offline, name="pwa_offline"),
+    # „Problem melden": Fehlermeldung -> Ticket im Admin-Dashboard
+    path("feedback/", ProblemReportView.as_view(), name="problem_report"),
+    path("feedback/<str:reference>/danke/", ProblemReportDoneView.as_view(), name="problem_report_done"),
     # Admin custom endpoints (must come before admin.site.urls)
     path("admin/insight_sync/trigger-sync/", include("insight_sync.admin_urls")),
     # Redirect admin logout to custom logout (Django 5+ admin only accepts POST)

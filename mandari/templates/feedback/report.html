@@ -1,0 +1,109 @@
+{% extends "accounts/base_auth.html" %}
+
+{% block title %}Problem melden{% endblock %}
+{% block meta_description %}mandari - Problem melden{% endblock %}
+{% block header_title %}Problem melden{% endblock %}
+{% block header_subtitle %}Wir kümmern uns darum — danke für deine Hilfe!{% endblock %}
+
+{% block content %}
+{% if messages %}
+{% for message in messages %}
+<div class="mb-4 p-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300{% else %}bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300{% endif %}">
+    {{ message }}
+</div>
+{% endfor %}
+{% endif %}
+
+<form method="post" class="space-y-4" id="report-form">
+    {% csrf_token %}
+    <input type="hidden" name="url" value="{{ page_url }}">
+    <input type="hidden" name="browser_info" id="id_browser_info">
+
+    {% if error_id %}
+    <div class="flex items-center gap-2 text-sm">
+        <span class="text-gray-500 dark:text-gray-400">Fehler-ID:</span>
+        <code class="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-mono text-xs">{{ error_id }}</code>
+        <input type="hidden" name="error_id" value="{{ error_id }}">
+    </div>
+    {% else %}
+    <div>
+        <label for="id_error_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Fehler-ID <span class="text-gray-400 font-normal">(falls angezeigt, optional)</span>
+        </label>
+        <input type="text" name="error_id" id="id_error_id" placeholder="z. B. 37ada1b6"
+               class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono">
+    </div>
+    {% endif %}
+
+    <div>
+        <label for="id_message" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Was ist passiert? <span class="text-red-500">*</span>
+        </label>
+        <textarea name="message" id="id_message" rows="5" required minlength="10"
+                  placeholder="Beschreibe kurz, was du gemacht hast und was schiefgelaufen ist…"
+                  class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{ message_value|default:'' }}</textarea>
+    </div>
+
+    {% if user.is_authenticated %}
+    <div class="flex items-center gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-900/20 text-sm text-green-800 dark:text-green-300">
+        <i data-lucide="user-check" class="w-4 h-4 shrink-0"></i>
+        <span>Angemeldet als <span class="font-medium">{{ user.email }}</span> — du erhältst die Rückmeldung an diese Adresse.</span>
+    </div>
+    {% else %}
+    <div>
+        <label for="id_email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            E-Mail für Rückmeldung <span class="text-gray-400 font-normal">(optional)</span>
+        </label>
+        <input type="email" name="email" id="id_email" value="{{ email_value|default:'' }}" placeholder="du@example.org"
+               class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Oder
+            <a href="/accounts/login/?next={{ request.get_full_path|urlencode }}" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">mit deinem Konto anmelden</a>,
+            um Rückmeldungen automatisch zu erhalten.
+        </p>
+    </div>
+    {% endif %}
+
+    <!-- Technische Angaben (transparent einsehbar) -->
+    <div x-data="{ open: false }" class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <button type="button" @click="open = !open"
+                class="w-full px-3 py-2 flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/40">
+            <span class="flex items-center gap-2"><i data-lucide="monitor" class="w-4 h-4"></i> Technische Angaben (werden mitgesendet)</span>
+            <i data-lucide="chevron-down" class="w-4 h-4 transition-transform" :class="open && 'rotate-180'"></i>
+        </button>
+        <pre x-show="open" x-cloak id="browser-info-preview"
+             class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 whitespace-pre-wrap border-t border-gray-100 dark:border-gray-700"></pre>
+    </div>
+
+    <button type="submit"
+            class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors">
+        <i data-lucide="send" class="w-4 h-4"></i> Meldung absenden
+    </button>
+</form>
+
+<script>
+(function () {
+    // Browser-/Umgebungsinformationen für die Fehlersuche einsammeln
+    var info = [
+        "Browser: " + navigator.userAgent,
+        "Sprache: " + (navigator.language || "-"),
+        "Plattform: " + (navigator.platform || "-"),
+        "Bildschirm: " + screen.width + "x" + screen.height + " (Fenster " + window.innerWidth + "x" + window.innerHeight + ")",
+        "Zeitzone: " + (Intl.DateTimeFormat().resolvedOptions().timeZone || "-"),
+        "Cookies aktiv: " + navigator.cookieEnabled,
+        "Seite: " + (document.querySelector("input[name='url']").value || document.referrer || "-"),
+        "Gemeldet am: " + new Date().toISOString(),
+    ].join("\n");
+    document.getElementById("id_browser_info").value = info;
+    var preview = document.getElementById("browser-info-preview");
+    if (preview) preview.textContent = info;
+})();
+</script>
+{% endblock %}
+
+{% block footer_content %}
+<span class="text-xs text-gray-500 dark:text-gray-400">
+    Deine Meldung landet direkt bei unserem Team. IP-Adresse und technische Angaben
+    werden ausschließlich zur Fehlersuche verwendet.
+</span>
+{% endblock %}

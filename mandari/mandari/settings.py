@@ -167,10 +167,14 @@ DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 # Parse DATABASE_URL
 import dj_database_url
 
+# conn_max_age: Unter ASGI/Channels hält jeder Worker-Thread eine persistente
+# Verbindung — bei 600s summiert sich das schnell auf Postgres' max_connections
+# („FATAL: sorry, too many clients already"). 60s behält den Wiederverwendungs-
+# Vorteil, begrenzt aber die Ansammlung. Per Env übersteuerbar.
 DATABASES = {
     "default": dj_database_url.parse(
         DATABASE_URL,
-        conn_max_age=600,
+        conn_max_age=int(os.environ.get("DB_CONN_MAX_AGE", "60")),
         conn_health_checks=True,
     )
 }

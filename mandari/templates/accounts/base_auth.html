@@ -7,92 +7,84 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="description" content="{% block meta_description %}Mandari - Anmeldung{% endblock %}">
+    <meta name="description" content="{% block meta_description %}mandari - Anmeldung{% endblock %}">
     <meta name="theme-color" content="#4f46e5">
     {% include "pwa/meta.html" %}
 
-    <title>{% block title %}Anmeldung{% endblock %} | Mandari</title>
+    <title>{% block title %}Anmeldung{% endblock %} | mandari</title>
 
-    <!-- Favicon (Brand "m." — Quelle: marketing-website/scripts/generate_logo.py) -->
     <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
     <link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/favicon-32.png' %}">
     <link rel="apple-touch-icon" sizes="180x180" href="{% static 'brand/apple-touch-icon.png' %}">
 
-    <!-- TailwindCSS -->
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-
-    <!-- Alpine.js -->
     <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
-
-    <!-- Lucide Icons -->
     <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>
 
     <style>
         [x-cloak] { display: none !important; }
+        @keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-up { animation: fade-up .4s cubic-bezier(.16,1,.3,1) both; }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
-<body class="h-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-    <div class="min-h-full flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div class="w-full max-w-md">
-            <!-- Logo & Header -->
-            <div class="bg-white dark:bg-gray-800 rounded-t-2xl px-8 py-8 text-center shadow-2xl">
-                <a href="/" class="inline-flex items-center justify-center mb-4">
-                    <div class="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
-                        <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
-                        </svg>
+<body class="h-full bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <div class="min-h-full flex flex-col">
+        <!-- Kopfzeile mit Wortmarke (wie mandari.de / Work) -->
+        <header class="px-6 py-4 flex items-center justify-between">
+            <a href="/" class="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
+                mandari<span class="text-primary-600">.</span>
+            </a>
+            <button @click="darkMode = !darkMode"
+                    class="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    title="Dunkelmodus umschalten">
+                <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
+                <i data-lucide="moon" class="w-5 h-5 dark:hidden"></i>
+            </button>
+        </header>
+
+        <main class="flex-1 flex items-center justify-center px-4 py-8">
+            <div class="w-full max-w-md fade-up">
+                <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+                    <!-- Header -->
+                    <div class="px-8 pt-8 pb-6 text-center border-b border-gray-100 dark:border-gray-700">
+                        <a href="/" class="inline-flex items-center justify-center mb-3">
+                            <img src="{% static 'brand/favicon.svg' %}" alt="mandari" class="w-11 h-11 rounded-xl">
+                        </a>
+                        <h1 class="text-xl font-bold text-gray-900 dark:text-white">
+                            {% block header_title %}mandari{% endblock %}
+                        </h1>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            {% block header_subtitle %}Das offene Ratsinformationssystem{% endblock %}
+                        </p>
                     </div>
-                </a>
-                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
-                    {% block header_title %}Mandari{% endblock %}
-                </h1>
-                <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    {% block header_subtitle %}Ratsinformationssystem{% endblock %}
+
+                    <!-- Content -->
+                    <div class="px-8 py-8">
+                        {# Auth pages should NOT display general messages - those belong in the work area #}
+                        {# Login-specific errors are shown via form.non_field_errors in the login template #}
+                        {% block content %}{% endblock %}
+                    </div>
+
+                    <!-- Footer -->
+                    {% block footer %}
+                    <div class="bg-gray-50 dark:bg-gray-900/40 px-8 py-4 text-center border-t border-gray-100 dark:border-gray-700">
+                        {% block footer_content %}
+                        <a href="{% url 'accounts:login' %}" class="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline">
+                            &larr; Zurück zum Login
+                        </a>
+                        {% endblock %}
+                    </div>
+                    {% endblock %}
+                </div>
+
+                <p class="mt-6 text-center text-xs text-gray-400 dark:text-gray-500">
+                    © mandari — Open Source unter AGPL-3.0 ·
+                    <a href="https://mandari.de/datenschutz/" class="hover:underline">Datenschutz</a> ·
+                    <a href="https://mandari.de/impressum/" class="hover:underline">Impressum</a>
                 </p>
             </div>
-
-            <!-- Content -->
-            <div class="bg-white dark:bg-gray-800 px-8 py-8 shadow-2xl">
-                {# Auth pages should NOT display general messages - those belong in the work area #}
-                {# Login-specific errors are shown via form.non_field_errors in the login template #}
-                {% block content %}{% endblock %}
-            </div>
-
-            <!-- Footer -->
-            {% block footer %}
-            <div class="bg-gray-50 dark:bg-gray-900 rounded-b-2xl px-8 py-4 text-center shadow-2xl border-t border-gray-100 dark:border-gray-700">
-                {% block footer_content %}
-                <a href="{% url 'accounts:login' %}" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
-                    &larr; Zurück zum Login
-                </a>
-                {% endblock %}
-            </div>
-            {% endblock %}
-
-            <!-- Dark mode toggle -->
-            <div class="mt-6 text-center">
-                <button @click="darkMode = !darkMode"
-                        class="inline-flex items-center gap-2 text-sm text-white/70 hover:text-white transition-colors">
-                    <template x-if="!darkMode">
-                        <span class="flex items-center gap-1">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
-                            </svg>
-                            Dark Mode
-                        </span>
-                    </template>
-                    <template x-if="darkMode">
-                        <span class="flex items-center gap-1">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
-                            </svg>
-                            Light Mode
-                        </span>
-                    </template>
-                </button>
-            </div>
-        </div>
+        </main>
     </div>
 
     <script>

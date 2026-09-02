@@ -13,7 +13,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from unfold.admin import ModelAdmin
 from unfold.decorators import action
 
-from .models import AISettings, SiteSettings
+from .models import AISettings, ProblemReport, SiteSettings
 
 
 def get_safe_admin_redirect(request):
@@ -281,3 +281,72 @@ class AISettingsAdmin(ModelAdmin):
 
             return redirect(f"/admin/common/aisettings/{instance.pk}/change/")
         return super().changeform_view(request, object_id, form_url, extra_context)
+
+
+@admin.register(ProblemReport)
+class ProblemReportAdmin(ModelAdmin):
+    """Fehlermeldungen als Tickets im Admin-Dashboard (Issue-Formular „Problem melden")."""
+
+    list_display = ("reference", "status", "short_message", "error_id", "reporter", "created_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("reference", "error_id", "message", "email", "url")
+    readonly_fields = (
+        "reference",
+        "error_id",
+        "url",
+        "message",
+        "browser_info",
+        "user",
+        "email",
+        "ip_address",
+        "created_at",
+        "notified_at",
+    )
+    fieldsets = (
+        ("Meldung", {"fields": ("reference", "status", "error_id", "url", "message", "browser_info")}),
+        ("Kontakt", {"fields": ("user", "email", "ip_address", "created_at")}),
+        ("Bearbeitung", {"fields": ("admin_note", "resolved_at", "notified_at")}),
+    )
+    actions = ("mark_resolved_and_notify",)
+
+    @admin.display(description="Beschreibung")
+    def short_message(self, obj):
+        return obj.message[:80]
+
+    @admin.display(description="Meldende Person")
+    def reporter(self, obj):
+        return obj.reporter_email or "anonym"
+
+    @admin.action(description="Als gelöst markieren und Rückmeldung senden")
+    def mark_resolved_and_notify(self, request, queryset):
+        from django.utils import timezone
+
+        from apps.common.email import send_email
+
+        notified = 0
+        for report in queryset:
+            report.status = "resolved"
+            report.resolved_at = timezone.now()
+            recipient = report.reporter_email
+            if recipient:
+                body = (
+                    f"Guten Tag,\n\n"
+                    f"vielen Dank für deine Fehlermeldung {report.reference}"
+                    f"{f' (Fehler-ID {report.error_id})' if report.error_id else ''}.\n"
+                    f"Das Problem wurde behoben.\n\n"
+                    + (f"Anmerkung unseres Teams: {report.admin_note}\n\n" if report.admin_note else "")
+                    + "Mit freundlichen Grüßen\nDein mandari-Team"
+                )
+                if send_email(
+                    subject=f"Rückmeldung zu deiner Fehlermeldung {report.reference}",
+                    body=body,
+                    to=[recipient],
+                    fail_silently=True,
+                ):
+                    report.notified_at = timezone.now()
+                    notified += 1
+            report.save()
+        self.message_user(
+            request,
+            f"{queryset.count()} Meldung(en) als gelöst markiert, {notified} Rückmeldung(en) versandt.",
+        )

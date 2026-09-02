@@ -1,81 +1,23 @@
 {% extends "errors/base_error.html" %}
 
 {% block title %}Seite nicht gefunden (404){% endblock %}
-
 {% block error_code %}404{% endblock %}
-
-{% block header_gradient %}from-amber-500 to-orange-500{% endblock %}
+{% block icon %}compass{% endblock %}
 
 {% block error_title %}Seite nicht gefunden{% endblock %}
 
 {% block error_message %}
-Die angeforderte Seite konnte leider nicht gefunden werden. Möglicherweise wurde sie verschoben, gelöscht oder die URL ist falsch.
-{% endblock %}
-
-{% block error_details %}
-<div class="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4">
-    <p class="text-sm text-amber-700 dark:text-amber-400">
-        <strong>Gesuchte URL:</strong><br>
-        <code class="text-xs bg-amber-100 dark:bg-amber-900/40 px-2 py-1 rounded mt-1 inline-block break-all">{{ request.path }}</code>
-    </p>
-</div>
-
-<div class="mt-6 text-left">
-    <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Vielleicht suchst du eine dieser Seiten:</p>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <a href="/insight/" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors group">
-            <span class="flex-shrink-0 w-9 h-9 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center">
-                <svg class="w-4 h-4 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-            </span>
-            <span class="min-w-0">
-                <span class="block text-sm font-medium text-gray-900 dark:text-white group-hover:text-indigo-600">Ratsinformationen</span>
-                <span class="block text-xs text-gray-500 dark:text-gray-400">Sitzungen, Vorlagen &amp; Gremien</span>
-            </span>
-        </a>
-        <a href="/work/" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-purple-400 dark:hover:border-purple-500 transition-colors group">
-            <span class="flex-shrink-0 w-9 h-9 rounded-lg bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center">
-                <svg class="w-4 h-4 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z"/></svg>
-            </span>
-            <span class="min-w-0">
-                <span class="block text-sm font-medium text-gray-900 dark:text-white group-hover:text-purple-600">mandari work</span>
-                <span class="block text-xs text-gray-500 dark:text-gray-400">Zum Arbeitsbereich / Login</span>
-            </span>
-        </a>
-        <a href="https://mandari.de/kontakt/" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-rose-400 dark:hover:border-rose-500 transition-colors group">
-            <span class="flex-shrink-0 w-9 h-9 rounded-lg bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center">
-                <svg class="w-4 h-4 text-rose-600 dark:text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-            </span>
-            <span class="min-w-0">
-                <span class="block text-sm font-medium text-gray-900 dark:text-white group-hover:text-rose-600">Kontakt &amp; Hilfe</span>
-                <span class="block text-xs text-gray-500 dark:text-gray-400">Wir helfen gern weiter</span>
-            </span>
-        </a>
-        <a href="https://status.mandari.de" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-emerald-400 dark:hover:border-emerald-500 transition-colors group">
-            <span class="flex-shrink-0 w-9 h-9 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
-                <svg class="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            </span>
-            <span class="min-w-0">
-                <span class="block text-sm font-medium text-gray-900 dark:text-white group-hover:text-emerald-600">System-Status</span>
-                <span class="block text-xs text-gray-500 dark:text-gray-400">Sind alle Dienste erreichbar?</span>
-            </span>
-        </a>
-    </div>
-</div>
+Die aufgerufene Seite existiert nicht (mehr) oder die Adresse wurde falsch
+eingegeben. Vielleicht hilft dir die Suche im Bürgerportal weiter.
 {% endblock %}
 
 {% block error_actions %}
 <a href="/"
-   class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors">
-    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
-    </svg>
-    Zur Startseite
+   class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors">
+    <i data-lucide="home" class="w-4 h-4"></i> Zur Startseite
 </a>
-<a href="/suche/"
-   class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium transition-colors">
-    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-    </svg>
-    Suchen
+<a href="/insight/"
+   class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium transition-colors">
+    <i data-lucide="search" class="w-4 h-4"></i> Zum Bürgerportal
 </a>
 {% endblock %}
