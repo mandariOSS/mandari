@@ -92,11 +92,11 @@ class ReportCsvExportView(SessionViewMixin, View):
                 response.status_code = 403
                 return response
             response["Content-Disposition"] = f'attachment; filename="sitzungsgeld-{year}.csv"'
-            writer.writerow(["Person", "Anzahl", "Summe", "Davon ausgezahlt"])
+            writer.writerow(["Person", "Sitzungsgelder (Anzahl)", "Pauschalen", "Summe", "Davon ausgezahlt"])
             rows, totals = report_service.allowance_stats(tenant, year)
             for row in rows:
-                writer.writerow([row["name"], row["count"], row["amount"], row["paid"]])
-            writer.writerow(["Gesamt", totals["count"], totals["amount"], totals["paid"]])
+                writer.writerow([row["name"], row["count"], row["monthly"], row["amount"], row["paid"]])
+            writer.writerow(["Gesamt", totals["count"], totals["monthly"], totals["amount"], totals["paid"]])
         else:
             export_type = "attendance"
             organization = _parse_organization(self, request)

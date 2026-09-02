@@ -161,7 +161,8 @@
                 <thead class="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 dark:text-gray-400 uppercase sticky top-0">
                     <tr>
                         <th class="px-4 py-2 text-left">Person</th>
-                        <th class="px-4 py-2 text-right">Anzahl</th>
+                        <th class="px-4 py-2 text-right">Sitzungen</th>
+                        <th class="px-4 py-2 text-right">Pauschalen</th>
                         <th class="px-4 py-2 text-right">Summe</th>
                         <th class="px-4 py-2 text-right">Ausgezahlt</th>
                     </tr>
@@ -171,11 +172,12 @@
                     <tr>
                         <td class="px-4 py-2 text-gray-900 dark:text-white">{{ row.name }}</td>
                         <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.count }}</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.monthly }} €</td>
                         <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.amount }} €</td>
                         <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ row.paid }} €</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="4" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">Keine Sitzungsgelder in {{ year }}.</td></tr>
+                    <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">Keine Sitzungsgelder in {{ year }}.</td></tr>
                     {% endfor %}
                 </tbody>
                 {% if allowances %}
@@ -183,6 +185,7 @@
                     <tr>
                         <td class="px-4 py-2 text-gray-900 dark:text-white">Gesamt</td>
                         <td class="px-4 py-2 text-right text-gray-900 dark:text-white">{{ allowance_totals.count }}</td>
+                        <td class="px-4 py-2 text-right text-gray-900 dark:text-white">{{ allowance_totals.monthly }} €</td>
                         <td class="px-4 py-2 text-right text-gray-900 dark:text-white">{{ allowance_totals.amount }} €</td>
                         <td class="px-4 py-2 text-right text-gray-900 dark:text-white">{{ allowance_totals.paid }} €</td>
                     </tr>

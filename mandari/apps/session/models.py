@@ -2427,6 +2427,168 @@ class SessionReminderLog(models.Model):
 
 
 # =============================================================================
+# MONATLICHE PAUSCHALEN (EntschVO NRW)
+# =============================================================================
+
+
+class SessionMonthlyRate(models.Model):
+    """
+    Monatliche Pauschale nach EntschVO NRW: Aufwandsentschädigung
+    (Voll-/Teilpauschale) sowie Funktionszulagen (z. B. Fraktionsvorsitz
+    als Vielfaches der Vollpauschale, § 5 EntschVO NRW).
+
+    Die Beträge pflegt die Verwaltung selbst — sie hängen von
+    Gemeindegröße und Hauptsatzung ab und steigen jährlich (+2 % ab 2025).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="monthly_rates",
+        verbose_name="Mandant",
+    )
+    name = models.CharField(
+        max_length=200,
+        verbose_name="Bezeichnung",
+        help_text="z. B. Aufwandsentschädigung (Teilpauschale), Zulage Fraktionsvorsitz",
+    )
+    amount = models.DecimalField(max_digits=8, decimal_places=2, verbose_name="Betrag/Monat")
+    legal_basis = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name="Rechtsgrundlage",
+        help_text="z. B. § 2 Abs. 1 EntschVO NRW",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_monthly_rates"
+        verbose_name = "Monatliche Pauschale"
+        verbose_name_plural = "Monatliche Pauschalen"
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.amount} €)"
+
+
+class SessionPersonMonthlyRate(models.Model):
+    """Zuordnung einer monatlichen Pauschale zu einer Person (mit Zeitraum)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    person = models.ForeignKey(
+        SessionPerson,
+        on_delete=models.CASCADE,
+        related_name="monthly_rates",
+        verbose_name="Person",
+    )
+    rate = models.ForeignKey(
+        SessionMonthlyRate,
+        on_delete=models.CASCADE,
+        related_name="assignments",
+        verbose_name="Pauschale",
+    )
+    start_date = models.DateField(blank=True, null=True, verbose_name="Von")
+    end_date = models.DateField(blank=True, null=True, verbose_name="Bis")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "session_person_monthly_rates"
+        verbose_name = "Pauschalen-Zuordnung"
+        verbose_name_plural = "Pauschalen-Zuordnungen"
+        constraints = [models.UniqueConstraint(fields=["person", "rate"], name="uniq_session_person_monthly_rate")]
+
+    def __str__(self):
+        return f"{self.person.display_name}: {self.rate.name}"
+
+    def active_in_month(self, first_of_month) -> bool:
+        """Gilt die Zuordnung in diesem Monat (Stichtag Monatserster)?"""
+        import calendar as _calendar
+        from datetime import date as _date
+
+        last_of_month = _date(
+            first_of_month.year,
+            first_of_month.month,
+            _calendar.monthrange(first_of_month.year, first_of_month.month)[1],
+        )
+        if self.start_date and self.start_date > last_of_month:
+            return False
+        if self.end_date and self.end_date < first_of_month:
+            return False
+        return True
+
+
+class SessionMonthlyAllowance(models.Model):
+    """Abgerechnete monatliche Pauschale (ein Posten je Person, Pauschale und Monat)."""
+
+    STATUS_CHOICES = [
+        ("pending", "Ausstehend"),
+        ("approved", "Genehmigt"),
+        ("paid", "Ausgezahlt"),
+        ("cancelled", "Storniert"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="monthly_allowances",
+        verbose_name="Mandant",
+    )
+    person = models.ForeignKey(
+        SessionPerson,
+        on_delete=models.CASCADE,
+        related_name="monthly_allowances",
+        verbose_name="Person",
+    )
+    rate = models.ForeignKey(
+        SessionMonthlyRate,
+        on_delete=models.PROTECT,
+        related_name="allowances",
+        verbose_name="Pauschale",
+    )
+    period = models.DateField(verbose_name="Monat", help_text="Jeweils der Monatserste")
+    amount = models.DecimalField(max_digits=8, decimal_places=2, verbose_name="Betrag")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", verbose_name="Status")
+    approved_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="approved_monthly_allowances",
+        verbose_name="Genehmigt von",
+    )
+    approved_at = models.DateTimeField(blank=True, null=True, verbose_name="Genehmigt am")
+    paid_at = models.DateTimeField(blank=True, null=True, verbose_name="Ausgezahlt am")
+    export_reference = models.CharField(max_length=100, blank=True, verbose_name="Export-Referenz")
+    export_date = models.DateTimeField(blank=True, null=True, verbose_name="Export-Datum")
+    created_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="created_monthly_allowances",
+        verbose_name="Erstellt von",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_monthly_allowances"
+        verbose_name = "Monats-Pauschale"
+        verbose_name_plural = "Monats-Pauschalen"
+        constraints = [
+            models.UniqueConstraint(fields=["person", "rate", "period"], name="uniq_session_monthly_allowance")
+        ]
+        ordering = ["-period", "person__family_name"]
+
+    def __str__(self):
+        return f"{self.person.display_name}: {self.rate.name} {self.period:%m/%Y}"
+
+
+# =============================================================================
 # DIGITALE ABSTIMMUNG UND UMLAUFBESCHLÜSSE (Issue #41)
 # =============================================================================
 

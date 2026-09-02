@@ -16,11 +16,18 @@
 <div class="max-w-6xl mx-auto space-y-6">
     <div class="flex items-center justify-between">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Sitzungsgeld-Abrechnung</h1>
-        <a href="{% url 'session:allowance_year' tenant_slug=tenant_slug %}"
-           class="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
-            <i data-lucide="calendar-check" class="w-4 h-4"></i>
-            Jahresübersicht
-        </a>
+        <div class="flex items-center gap-2">
+            <a href="{% url 'session:allowances_monthly' tenant_slug=tenant_slug %}"
+               class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg">
+                <i data-lucide="banknote" class="w-4 h-4"></i>
+                Monatliche Pauschalen
+            </a>
+            <a href="{% url 'session:allowance_year' tenant_slug=tenant_slug %}"
+               class="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+                <i data-lucide="calendar-check" class="w-4 h-4"></i>
+                Jahresübersicht
+            </a>
+        </div>
     </div>
 
     <!-- Zeitraum-Filter -->

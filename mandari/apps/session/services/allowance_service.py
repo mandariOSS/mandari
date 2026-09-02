@@ -248,7 +248,9 @@ def build_sepa_xml(tenant, allowances, *, debtor_name, debtor_iban, debtor_bic="
     # Je Person summieren (Bankdaten über die verschlüsselten Accessoren)
     per_person: dict = {}
     for allowance in allowances:
-        person = allowance.attendance.person
+        # Sitzungsgelder hängen an der Anwesenheit, Monats-Pauschalen
+        # direkt an der Person — beide Typen werden unterstützt.
+        person = getattr(allowance, "person", None) or allowance.attendance.person
         entry = per_person.setdefault(person.pk, {"person": person, "amount": Decimal("0.00"), "count": 0})
         entry["amount"] += allowance.amount
         entry["count"] += 1
@@ -376,7 +378,9 @@ def year_summary(tenant, year) -> list[dict]:
     )
     per_person: dict = {}
     for allowance in allowances:
-        person = allowance.attendance.person
+        # Sitzungsgelder hängen an der Anwesenheit, Monats-Pauschalen
+        # direkt an der Person — beide Typen werden unterstützt.
+        person = getattr(allowance, "person", None) or allowance.attendance.person
         entry = per_person.setdefault(
             person.pk,
             {
@@ -459,3 +463,112 @@ def parse_period(raw_from, raw_to):
     if period_start > period_end:
         return None, None
     return period_start, period_end
+
+
+# =============================================================================
+# Monatliche Pauschalen (EntschVO NRW)
+# =============================================================================
+
+
+def generate_monthly_allowances(tenant, year: int, month: int, *, created_by=None) -> dict:
+    """
+    Monatslauf: Für alle aktiven Pauschalen-Zuordnungen des Mandanten einen
+    Abrechnungsposten für den Monat erzeugen (idempotent — vorhandene
+    Posten bleiben unverändert).
+    """
+    from datetime import date
+
+    from ..models import SessionMonthlyAllowance, SessionPersonMonthlyRate
+
+    period = date(year, month, 1)
+    created = 0
+    skipped = 0
+    assignments = (
+        SessionPersonMonthlyRate.objects.filter(person__tenant=tenant, person__is_active=True, rate__is_active=True)
+        .select_related("person", "rate")
+        .order_by("person__family_name")
+    )
+    for assignment in assignments:
+        if not assignment.active_in_month(period):
+            continue
+        _, was_created = SessionMonthlyAllowance.objects.get_or_create(
+            person=assignment.person,
+            rate=assignment.rate,
+            period=period,
+            defaults={
+                "tenant": tenant,
+                "amount": assignment.rate.amount,
+                "created_by": created_by,
+            },
+        )
+        if was_created:
+            created += 1
+        else:
+            skipped += 1
+    return {"created": created, "skipped": skipped, "period": period}
+
+
+def approve_monthly_allowances(allowances, approver) -> dict:
+    """Monats-Pauschalen genehmigen (nur Status „Ausstehend")."""
+    approved = 0
+    for allowance in allowances:
+        if allowance.status != "pending":
+            continue
+        allowance.status = "approved"
+        allowance.approved_by = approver
+        allowance.approved_at = timezone.now()
+        allowance.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        approved += 1
+    return {"approved": approved}
+
+
+def build_monthly_export_csv(allowances) -> str:
+    """CSV der Monats-Pauschalen fürs Finanzverfahren (analog Sitzungsgeld-CSV)."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    writer.writerow(
+        [
+            "Name",
+            "Pauschale",
+            "Rechtsgrundlage",
+            "Monat",
+            "Betrag",
+            "Status",
+            "Kontoinhaber",
+            "IBAN",
+            "BIC",
+            "Export-Referenz",
+        ]
+    )
+    for allowance in allowances:
+        person = allowance.person
+        writer.writerow(
+            [
+                person.display_name,
+                allowance.rate.name,
+                allowance.rate.legal_basis,
+                allowance.period.strftime("%m/%Y"),
+                f"{allowance.amount:.2f}".replace(".", ","),
+                allowance.get_status_display(),
+                person.get_bank_account_holder_decrypted() or "",
+                person.get_bank_iban_decrypted() or "",
+                person.get_bank_bic_decrypted() or "",
+                allowance.export_reference,
+            ]
+        )
+    return buffer.getvalue()
+
+
+def mark_monthly_exported(allowances, reference, *, mark_paid=True) -> int:
+    """Monats-Pauschalen nach dem Export als ausgezahlt kennzeichnen."""
+    count = 0
+    now = timezone.now()
+    for allowance in allowances:
+        allowance.export_reference = reference
+        allowance.export_date = now
+        if mark_paid:
+            allowance.status = "paid"
+            allowance.paid_at = now
+        allowance.save(update_fields=["export_reference", "export_date", "status", "paid_at", "updated_at"])
+        count += 1
+    return count

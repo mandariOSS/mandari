@@ -91,6 +91,17 @@ from .memberships import (
     MembershipSuccessionView,
     MembershipUpdateView,
 )
+from .monthly_allowances import (
+    MonthlyAllowanceView,
+    MonthlyApproveView,
+    MonthlyAssignmentDeleteView,
+    MonthlyAssignmentSaveView,
+    MonthlyCsvExportView,
+    MonthlyGenerateView,
+    MonthlyRateDeleteView,
+    MonthlyRateSaveView,
+    MonthlySepaExportView,
+)
 from .organizations import (
     OrganizationCreateView,
     OrganizationDeactivateView,
@@ -173,6 +184,15 @@ from .voting import (
 )
 
 __all__ = [
+    "MonthlyAllowanceView",
+    "MonthlyApproveView",
+    "MonthlyAssignmentDeleteView",
+    "MonthlyAssignmentSaveView",
+    "MonthlyCsvExportView",
+    "MonthlyGenerateView",
+    "MonthlyRateDeleteView",
+    "MonthlyRateSaveView",
+    "MonthlySepaExportView",
     "CircularCloseView",
     "CircularCreateView",
     "CircularDetailView",

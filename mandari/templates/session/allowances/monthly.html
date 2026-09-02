@@ -1,0 +1,254 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Monatliche Pauschalen{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:allowances' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Sitzungsgelder
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Monatliche Pauschalen</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-5xl space-y-8">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Monatliche Pauschalen</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+            Aufwandsentschädigung und Funktionszulagen nach EntschVO NRW — Katalog pflegen,
+            Personen zuordnen, Monatslauf erzeugen, genehmigen und exportieren.
+        </p>
+    </div>
+
+    <!-- NRW-Hinweis -->
+    <div class="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4 text-sm text-blue-800 dark:text-blue-300">
+        <p class="font-semibold mb-1 flex items-center gap-2"><i data-lucide="info" class="w-4 h-4"></i> EntschVO NRW (Stand 2025)</p>
+        <p>
+            Die Aufwandsentschädigung wird als <strong>Vollpauschale</strong> oder als
+            <strong>Teilpauschale + Sitzungsgeld</strong> (26,00 €/Sitzung, max. 2/Tag) gezahlt —
+            Beträge nach Gemeindegröße (§ 2). Funktionszulagen sind Vielfache der Vollpauschale
+            (§ 5): z. B. Fraktionsvorsitz 2-fach (ab 8 Mitgliedern 3-fach), Ausschussvorsitz 1-fach,
+            stellv. Bürgermeister:in 3-fach/1,5-fach. Die Sätze steigen seit 2025 jährlich um 2 % —
+            bitte jeweils zum Jahreswechsel im Katalog anpassen.
+        </p>
+    </div>
+
+    <!-- Katalog -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="banknote" class="w-5 h-5 text-emerald-500"></i> Pauschalen-Katalog
+            </h2>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for rate in rates %}
+            <div class="px-6 py-3 flex items-center justify-between gap-3 flex-wrap {% if not rate.is_active %}opacity-50{% endif %}">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">
+                        {{ rate.name }} — {{ rate.amount }} €/Monat
+                        {% if not rate.is_active %}<span class="text-xs text-gray-400">(inaktiv)</span>{% endif %}
+                    </p>
+                    {% if rate.legal_basis %}<p class="text-xs text-gray-500 dark:text-gray-400">{{ rate.legal_basis }}</p>{% endif %}
+                </div>
+                <form method="post" action="{% url 'session:monthly_rate_delete' tenant_slug=tenant_slug %}"
+                      onsubmit="return confirm('Pauschale wirklich löschen?');">
+                    {% csrf_token %}
+                    <input type="hidden" name="rate_id" value="{{ rate.id }}">
+                    <button type="submit" class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30" title="Löschen">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </form>
+            </div>
+            {% empty %}
+            <p class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                Noch keine Pauschalen — lege z. B. „Aufwandsentschädigung (Teilpauschale)" und
+                „Zulage Fraktionsvorsitz" mit den Sätzen eurer Hauptsatzung an.
+            </p>
+            {% endfor %}
+        </div>
+        <form method="post" action="{% url 'session:monthly_rate_save' tenant_slug=tenant_slug %}"
+              class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 flex flex-wrap items-end gap-2">
+            {% csrf_token %}
+            <div class="flex-1 min-w-[220px]">
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Bezeichnung *</label>
+                <input type="text" name="name" required placeholder="z. B. Aufwandsentschädigung (Teilpauschale)"
+                       class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Betrag €/Monat *</label>
+                <input type="text" name="amount" required placeholder="322,50" inputmode="decimal"
+                       class="w-28 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div class="min-w-[180px]">
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Rechtsgrundlage</label>
+                <input type="text" name="legal_basis" placeholder="§ 2 Abs. 1 EntschVO NRW"
+                       class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                <i data-lucide="plus" class="w-4 h-4"></i> Hinzufügen
+            </button>
+        </form>
+    </div>
+
+    <!-- Zuordnungen -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="user-plus" class="w-5 h-5 text-blue-500"></i> Zuordnungen (Person → Pauschale)
+            </h2>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50 max-h-80 overflow-y-auto">
+            {% for assignment in assignments %}
+            <div class="px-6 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                <p class="text-sm text-gray-900 dark:text-white">
+                    <span class="font-medium">{{ assignment.person.display_name }}</span>
+                    <span class="text-gray-500 dark:text-gray-400">→ {{ assignment.rate.name }}</span>
+                    {% if assignment.start_date or assignment.end_date %}
+                    <span class="text-xs text-gray-400">({{ assignment.start_date|date:"d.m.Y"|default:"…" }} – {{ assignment.end_date|date:"d.m.Y"|default:"…" }})</span>
+                    {% endif %}
+                </p>
+                <form method="post" action="{% url 'session:monthly_assignment_delete' tenant_slug=tenant_slug %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="assignment_id" value="{{ assignment.id }}">
+                    <button type="submit" class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30" title="Zuordnung entfernen">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </form>
+            </div>
+            {% empty %}
+            <p class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">Noch keine Zuordnungen.</p>
+            {% endfor %}
+        </div>
+        <form method="post" action="{% url 'session:monthly_assignment_save' tenant_slug=tenant_slug %}"
+              class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 flex flex-wrap items-end gap-2">
+            {% csrf_token %}
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Person *</label>
+                <select name="person" required class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Bitte wählen…</option>
+                    {% for person in persons %}
+                    <option value="{{ person.id }}">{{ person.display_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Pauschale *</label>
+                <select name="rate" required class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Bitte wählen…</option>
+                    {% for rate in rates %}
+                    {% if rate.is_active %}<option value="{{ rate.id }}">{{ rate.name }} ({{ rate.amount }} €)</option>{% endif %}
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Von</label>
+                <input type="date" name="start_date" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Bis</label>
+                <input type="date" name="end_date" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                <i data-lucide="plus" class="w-4 h-4"></i> Zuordnen
+            </button>
+        </form>
+    </div>
+
+    <!-- Monatsabrechnung -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3 flex-wrap">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="calendar-check" class="w-5 h-5 text-primary-500"></i>
+                Abrechnung {{ period|date:"F Y" }}
+            </h2>
+            <form method="get" class="flex items-center gap-2">
+                <select name="month" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    {% for m in months %}<option value="{{ m }}" {% if period.month == m %}selected{% endif %}>{{ m }}</option>{% endfor %}
+                </select>
+                <select name="year" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    {% for y in years %}<option value="{{ y }}" {% if period.year == y %}selected{% endif %}>{{ y }}</option>{% endfor %}
+                </select>
+                <button type="submit" class="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">Anzeigen</button>
+            </form>
+        </div>
+
+        <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700/50 flex flex-wrap items-center gap-2">
+            <form method="post" action="{% url 'session:monthly_generate' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="year" value="{{ period.year }}">
+                <input type="hidden" name="month" value="{{ period.month }}">
+                <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                    <i data-lucide="play" class="w-4 h-4"></i> Monatslauf erzeugen
+                </button>
+            </form>
+            <form method="post" action="{% url 'session:monthly_approve' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="year" value="{{ period.year }}">
+                <input type="hidden" name="month" value="{{ period.month }}">
+                <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg">
+                    <i data-lucide="check" class="w-4 h-4"></i> Alle ausstehenden genehmigen
+                </button>
+            </form>
+            <form method="post" action="{% url 'session:monthly_export_csv' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="year" value="{{ period.year }}">
+                <input type="hidden" name="month" value="{{ period.month }}">
+                <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
+                    <i data-lucide="download" class="w-4 h-4"></i> CSV
+                </button>
+            </form>
+            <form method="post" action="{% url 'session:monthly_export_sepa' tenant_slug=tenant_slug %}"
+                  onsubmit="return confirm('SEPA-Datei erzeugen und genehmigte Posten als ausgezahlt markieren?');">
+                {% csrf_token %}
+                <input type="hidden" name="year" value="{{ period.year }}">
+                <input type="hidden" name="month" value="{{ period.month }}">
+                <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">
+                    <i data-lucide="landmark" class="w-4 h-4"></i> SEPA (genehmigte)
+                </button>
+            </form>
+            <span class="ml-auto text-sm text-gray-500 dark:text-gray-400">
+                Ausstehend: {{ sum_pending }} € · Genehmigt: {{ sum_approved }} € · Ausgezahlt: {{ sum_paid }} €
+            </span>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 dark:text-gray-400 uppercase">
+                    <tr>
+                        <th class="px-4 py-2 text-left">Person</th>
+                        <th class="px-4 py-2 text-left">Pauschale</th>
+                        <th class="px-4 py-2 text-right">Betrag</th>
+                        <th class="px-4 py-2 text-left">Status</th>
+                        <th class="px-4 py-2 text-left">Export</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                    {% for allowance in allowances %}
+                    <tr>
+                        <td class="px-4 py-2 text-gray-900 dark:text-white">{{ allowance.person.display_name }}</td>
+                        <td class="px-4 py-2 text-gray-700 dark:text-gray-300">{{ allowance.rate.name }}</td>
+                        <td class="px-4 py-2 text-right text-gray-700 dark:text-gray-300">{{ allowance.amount }} €</td>
+                        <td class="px-4 py-2">
+                            <span class="px-2 py-0.5 text-xs font-medium rounded-full
+                                {% if allowance.status == 'paid' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                                {% elif allowance.status == 'approved' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
+                                {% elif allowance.status == 'cancelled' %}bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400
+                                {% else %}bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-400{% endif %}">
+                                {{ allowance.get_status_display }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-2 text-xs text-gray-500 dark:text-gray-400">{{ allowance.export_reference|default:"–" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                        Noch keine Posten für {{ period|date:"F Y" }} — Monatslauf erzeugen.
+                    </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

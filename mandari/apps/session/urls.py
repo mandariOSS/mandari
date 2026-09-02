@@ -468,6 +468,52 @@ urlpatterns = [
         views.ReminderSettingsView.as_view(),
         name="settings_reminders",
     ),
+    # Monatliche Pauschalen (EntschVO NRW)
+    path(
+        "<slug:tenant_slug>/allowances/monthly/",
+        views.MonthlyAllowanceView.as_view(),
+        name="allowances_monthly",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/monthly/rate/",
+        views.MonthlyRateSaveView.as_view(),
+        name="monthly_rate_save",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/monthly/rate/delete/",
+        views.MonthlyRateDeleteView.as_view(),
+        name="monthly_rate_delete",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/monthly/assignment/",
+        views.MonthlyAssignmentSaveView.as_view(),
+        name="monthly_assignment_save",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/monthly/assignment/delete/",
+        views.MonthlyAssignmentDeleteView.as_view(),
+        name="monthly_assignment_delete",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/monthly/generate/",
+        views.MonthlyGenerateView.as_view(),
+        name="monthly_generate",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/monthly/approve/",
+        views.MonthlyApproveView.as_view(),
+        name="monthly_approve",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/monthly/export/csv/",
+        views.MonthlyCsvExportView.as_view(),
+        name="monthly_export_csv",
+    ),
+    path(
+        "<slug:tenant_slug>/allowances/monthly/export/sepa/",
+        views.MonthlySepaExportView.as_view(),
+        name="monthly_export_sepa",
+    ),
     # Digitale Abstimmung und Umlaufbeschlüsse (Issue #41)
     path(
         "<slug:tenant_slug>/agenda/<uuid:item_id>/voting/",

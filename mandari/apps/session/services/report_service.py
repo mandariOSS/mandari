@@ -102,7 +102,12 @@ def meeting_stats(tenant, year, *, include_non_public):
 
 
 def allowance_stats(tenant, year):
-    """Sitzungsgeld-Summen je Person (ohne Stornierungen)."""
+    """
+    Entschädigungs-Summen je Person (ohne Stornierungen):
+    Sitzungsgelder + monatliche Pauschalen (EntschVO NRW).
+    """
+    from ..models import SessionMonthlyAllowance
+
     rows = (
         SessionAllowance.objects.filter(
             attendance__meeting__tenant=tenant,
@@ -112,13 +117,16 @@ def allowance_stats(tenant, year):
         .select_related("attendance__person")
     )
     per_person: dict = {}
-    totals = {"count": 0, "amount": 0, "paid": 0}
-    for allowance in rows:
-        person = allowance.attendance.person
-        entry = per_person.setdefault(
+    totals = {"count": 0, "amount": 0, "paid": 0, "monthly": 0}
+
+    def _entry(person):
+        return per_person.setdefault(
             person.pk,
-            {"name": person.display_name, "count": 0, "amount": 0, "paid": 0},
+            {"name": person.display_name, "count": 0, "amount": 0, "paid": 0, "monthly": 0},
         )
+
+    for allowance in rows:
+        entry = _entry(allowance.attendance.person)
         entry["count"] += 1
         entry["amount"] += allowance.amount
         totals["count"] += 1
@@ -126,6 +134,22 @@ def allowance_stats(tenant, year):
         if allowance.status == "paid":
             entry["paid"] += allowance.amount
             totals["paid"] += allowance.amount
+
+    monthly_rows = (
+        SessionMonthlyAllowance.objects.filter(tenant=tenant, period__year=year)
+        .exclude(status="cancelled")
+        .select_related("person")
+    )
+    for allowance in monthly_rows:
+        entry = _entry(allowance.person)
+        entry["monthly"] += allowance.amount
+        entry["amount"] += allowance.amount
+        totals["monthly"] += allowance.amount
+        totals["amount"] += allowance.amount
+        if allowance.status == "paid":
+            entry["paid"] += allowance.amount
+            totals["paid"] += allowance.amount
+
     return sorted(per_person.values(), key=lambda e: e["name"]), totals
 
 
