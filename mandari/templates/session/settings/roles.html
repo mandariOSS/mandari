@@ -1,0 +1,134 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Rollen & Rechte{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Einstellungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Rollen & Rechte</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-5xl space-y-8">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Rollen & Rechte</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+            Eigene Rollen anlegen und Rechte frei kombinieren — z. B. „Kämmerei" nur mit
+            Sitzungsgeldern oder „Geräteverwaltung" nur mit Endgeräten. Die Zuweisung an
+            Benutzer erfolgt unter
+            <a href="{% url 'session:users' tenant_slug=tenant_slug %}" class="text-primary-600 dark:text-primary-400 hover:underline">Benutzer</a>.
+        </p>
+    </div>
+
+    <!-- Rollenliste -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for role in roles %}
+            <div class="px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">
+                        {{ role.name }}
+                        {% if role.is_admin %}
+                        <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-400">Administrator</span>
+                        {% endif %}
+                        <span class="ml-1 text-xs text-gray-400">{{ role.member_count }} Benutzer</span>
+                    </p>
+                    {% if role.description %}<p class="text-xs text-gray-500 dark:text-gray-400">{{ role.description|truncatechars:120 }}</p>{% endif %}
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <a href="?edit={{ role.id }}#rollen-formular"
+                       class="px-2.5 py-1 text-xs font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg">
+                        Bearbeiten
+                    </a>
+                    <form method="post" action="{% url 'session:role_delete' tenant_slug=tenant_slug %}"
+                          onsubmit="return confirm('Rolle „{{ role.name }}“ wirklich löschen?');">
+                        {% csrf_token %}
+                        <input type="hidden" name="role_id" value="{{ role.id }}">
+                        <button type="submit" class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30" title="Löschen">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Formular: Rolle anlegen/bearbeiten -->
+    <div id="rollen-formular" class="bg-white dark:bg-gray-800 rounded-xl border {% if edit_role %}border-primary-300 dark:border-primary-700{% else %}border-gray-200 dark:border-gray-700{% endif %} overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-2">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="shield-plus" class="w-5 h-5 text-primary-500"></i>
+                {% if edit_role %}Rolle „{{ edit_role.name }}“ bearbeiten{% else %}Neue Rolle anlegen{% endif %}
+            </h2>
+            {% if edit_role %}
+            <a href="{% url 'session:settings_roles' tenant_slug=tenant_slug %}" class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Abbrechen</a>
+            {% endif %}
+        </div>
+        <form method="post" action="{% url 'session:role_save' tenant_slug=tenant_slug %}" class="p-6 space-y-5">
+            {% csrf_token %}
+            {% if edit_role %}<input type="hidden" name="role_id" value="{{ edit_role.id }}">{% endif %}
+            <div class="grid sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rollenname *</label>
+                    <input type="text" name="name" required value="{{ edit_role.name|default:'' }}" placeholder="z. B. Kämmerei"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                    <input type="text" name="description" value="{{ edit_role.description|default:'' }}"
+                           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+            </div>
+
+            <label class="flex items-start gap-2 p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-sm">
+                <input type="checkbox" name="is_admin" value="1" {% if edit_role.is_admin %}checked{% endif %}
+                       class="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-purple-500">
+                <span class="text-purple-800 dark:text-purple-300">
+                    <span class="font-medium">Administrator</span> — volle Rechte, unabhängig von der Matrix unten.
+                    Die letzte Admin-Rolle des Mandanten ist gegen Entmachtung und Löschung geschützt.
+                </span>
+            </label>
+
+            <div class="space-y-4">
+                {% for group_name, entries in permission_groups %}
+                <div>
+                    <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">{{ group_name }}</p>
+                    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1.5">
+                        {% for field_name, label in entries %}
+                        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                            <input type="checkbox" name="{{ field_name }}" value="1"
+                                   data-perm="{{ field_name }}"
+                                   class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                            {{ label }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                <i data-lucide="save" class="w-4 h-4"></i> Rolle speichern
+            </button>
+        </form>
+    </div>
+</div>
+
+{% if edit_role %}
+<script>
+// Bestehende Rechte der bearbeiteten Rolle in der Matrix ankreuzen
+(function () {
+    var granted = {{ edit_role_permissions|default:"[]"|safe }};
+    granted.forEach(function (name) {
+        var box = document.querySelector('input[data-perm="' + name + '"]');
+        if (box) box.checked = true;
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

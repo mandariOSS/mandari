@@ -159,6 +159,11 @@ from .resolutions import (
     ResolutionRegisterView,
     ResolutionTrackingUpdateView,
 )
+from .roles import (
+    RoleDeleteView,
+    RoleListView,
+    RoleSaveView,
+)
 from .search import SessionSearchView
 from .settings import (
     InsightPublishView,
@@ -193,6 +198,9 @@ from .voting import (
 )
 
 __all__ = [
+    "RoleDeleteView",
+    "RoleListView",
+    "RoleSaveView",
     "DeviceActionView",
     "DeviceGrantActionView",
     "DeviceGrantCsvExportView",

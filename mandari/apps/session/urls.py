@@ -607,6 +607,22 @@ urlpatterns = [
         views.DepartmentAssignmentView.as_view(),
         name="department_assignment",
     ),
+    # Rollen- und Rechteverwaltung
+    path(
+        "<slug:tenant_slug>/settings/roles/",
+        views.RoleListView.as_view(),
+        name="settings_roles",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/roles/save/",
+        views.RoleSaveView.as_view(),
+        name="role_save",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/roles/delete/",
+        views.RoleDeleteView.as_view(),
+        name="role_delete",
+    ),
     # Textbausteine und Standard-TOPs (Issue #85)
     path(
         "<slug:tenant_slug>/settings/textblocks/",
