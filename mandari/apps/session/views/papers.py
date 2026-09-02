@@ -37,6 +37,7 @@ from ..models import (
     SessionUser,
 )
 from ..permissions import SessionViewMixin
+from .nexturl import safe_next_url
 
 logger = logging.getLogger(__name__)
 
@@ -389,8 +390,8 @@ class PaperWorkflowView(SessionViewMixin, View):
         return self._redirect(paper)
 
     def _redirect(self, paper):
-        next_url = self.request.POST.get("next", "")
-        if next_url.startswith(f"/session/{self.session_tenant.slug}/"):
+        next_url = safe_next_url(self.request, self.session_tenant.slug)
+        if next_url:
             return redirect(next_url)
         return redirect(
             "session:paper_detail",

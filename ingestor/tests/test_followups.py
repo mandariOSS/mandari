@@ -124,7 +124,7 @@ class TestOrchestratorCapabilityPersistence:
 
         await orchestrator._seed_modified_since_cache()
 
-        assert "ris.example.org" in OParlClient.get_modified_since_unsupported()
+        assert {"ris.example.org"} <= OParlClient.get_modified_since_unsupported()
 
     @pytest.mark.asyncio
     async def test_seed_survives_storage_errors(self):

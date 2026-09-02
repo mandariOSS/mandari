@@ -26,6 +26,7 @@ from .. import audit
 from ..models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionResolutionForwarding
 from ..permissions import SessionViewMixin
 from ..services import resolution_service
+from .nexturl import safe_next_url
 
 
 def _get_meeting(view, meeting_id):
@@ -138,8 +139,8 @@ class ResolutionBatchView(SessionViewMixin, View):
             messages.success(request, f"Beschlussausfertigung: {assigned} Beschlussnummer(n) vergeben.")
         else:
             messages.info(request, "Alle gefassten Beschlüsse dieser Sitzung haben bereits Beschlussnummern.")
-        next_url = request.POST.get("next", "")
-        if next_url.startswith(f"/session/{self.session_tenant.slug}/"):
+        next_url = safe_next_url(request, self.session_tenant.slug)
+        if next_url:
             return redirect(next_url)
         return redirect(
             "session:meeting_detail",
@@ -240,8 +241,8 @@ class ResolutionForwardingCreateView(SessionViewMixin, View):
             },
         )
         messages.success(request, f"Übergabe an „{recipient}“ wurde dokumentiert.")
-        next_url = request.POST.get("next", "")
-        if next_url.startswith(f"/session/{self.session_tenant.slug}/"):
+        next_url = safe_next_url(request, self.session_tenant.slug)
+        if next_url:
             return redirect(next_url)
         return redirect("session:resolutions", tenant_slug=self.session_tenant.slug)
 
@@ -322,8 +323,8 @@ class ResolutionTrackingUpdateView(SessionViewMixin, View):
         return self._redirect(request)
 
     def _redirect(self, request):
-        next_url = request.POST.get("next", "")
-        if next_url.startswith(f"/session/{self.session_tenant.slug}/"):
+        next_url = safe_next_url(request, self.session_tenant.slug)
+        if next_url:
             return redirect(next_url)
         return redirect("session:resolutions", tenant_slug=self.session_tenant.slug)
 

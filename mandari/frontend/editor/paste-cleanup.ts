@@ -39,8 +39,17 @@ interface WordListItem {
 
 /** Entities/Tags aus einem HTML-Schnipsel entfernen (für Marker-Erkennung). */
 function toPlainText(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, '')
+  // Bis zum Fixpunkt wiederholen, damit auch verschachtelte Reste wie
+  // "<<span>span>" keine Tag-Fragmente übrig lassen
+  let out = html
+  let prev = ''
+  let guard = 0
+  while (out !== prev && guard < 10) {
+    prev = out
+    out = out.replace(/<[^>]*>/g, '')
+    guard++
+  }
+  return out
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .trim()
@@ -237,14 +246,24 @@ function unwrapPlainSpans(html: string): string {
 
 /** Leere Absätze am Ende des Inhalts entfernen. */
 function stripTrailingEmptyParagraphs(html: string): string {
-  let out = html
-  const emptyPara = /<p\b[^>]*>(?:\s|&nbsp;|<br\s*\/?\s*>|<span\b[^>]*>\s*<\/span\s*>)*<\/p\s*>\s*$/i
+  // Bewusst ohne verschachtelte Quantifizierer über Alternativen (ReDoS):
+  // letzten <p>…</p>-Block per Index suchen und dessen Inhalt separat prüfen.
+  let out = html.replace(/\s+$/, '')
   let guard = 0
-  while (emptyPara.test(out) && guard < 50) {
-    out = out.replace(emptyPara, '')
+  while (guard < 50) {
+    const start = out.toLowerCase().lastIndexOf('<p')
+    if (start === -1) break
+    const tail = /^<p\b[^>]*>([\s\S]*)<\/p\s*>$/i.exec(out.slice(start))
+    if (!tail) break
+    const inner = tail[1]
+      .replace(/<br\s*\/?\s*>/gi, '')
+      .replace(/<span\b[^>]*>\s*<\/span\s*>/gi, '')
+      .replace(/&nbsp;/gi, ' ')
+    if (inner.trim() !== '') break
+    out = out.slice(0, start).replace(/\s+$/, '')
     guard++
   }
-  return out.replace(/\s+$/, '')
+  return out
 }
 
 /**
@@ -259,16 +278,23 @@ export function cleanPastedHtml(html: string): string {
   const bodyMatch = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(out)
   if (bodyMatch) out = bodyMatch[1]
 
-  // Word-XML/Metadaten-Blöcke entfernen
-  out = out
-    .replace(/<(script|style|xml|head|title)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '')
-    .replace(/<(?:meta|link)\b[^>]*\/?>/gi, '')
-
-  // Kommentare & Conditional Comments (<!--[if …]>, <![if …]>, <![endif]>)
-  out = out
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<!\[if\s[^\]]*\]>/gi, '')
-    .replace(/<!\[endif\]>/gi, '')
+  // Word-XML/Metadaten-Blöcke, Kommentare & Conditional Comments entfernen.
+  // Bis zum Fixpunkt wiederholen, damit durch das Entfernen keine neuen
+  // "<script"/"<!--"-Fragmente aus verschachtelten Resten entstehen.
+  {
+    let prev = ''
+    let guard = 0
+    while (out !== prev && guard < 10) {
+      prev = out
+      out = out
+        .replace(/<(script|style|xml|head|title)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '')
+        .replace(/<(?:meta|link)\b[^>]*\/?>/gi, '')
+        .replace(/<!--[\s\S]*?-->/g, '')
+        .replace(/<!\[if\s[^\]]*\]>/gi, '')
+        .replace(/<!\[endif\]>/gi, '')
+      guard++
+    }
+  }
 
   // Google-Docs-Wrapper: <b style="font-weight:normal" id="docs-internal-guid-…">…</b>
   const gdocsWrapper = /^\s*<b\b[^>]*docs-internal-guid[^>]*>([\s\S]*)<\/b>\s*$/i.exec(out)

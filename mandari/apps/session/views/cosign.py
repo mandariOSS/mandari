@@ -25,6 +25,7 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import cosign_service
+from .nexturl import safe_next_url
 
 
 class CosignatureActionView(SessionViewMixin, View):
@@ -104,8 +105,8 @@ class CosignatureActionView(SessionViewMixin, View):
         return self._redirect(request, paper)
 
     def _redirect(self, request, paper):
-        next_url = request.POST.get("next", "")
-        if next_url.startswith(f"/session/{self.session_tenant.slug}/"):
+        next_url = safe_next_url(request, self.session_tenant.slug)
+        if next_url:
             return redirect(next_url)
         return redirect("session:paper_detail", tenant_slug=self.session_tenant.slug, paper_id=paper.id)
 

@@ -233,7 +233,7 @@ SessionPaper.objects.create(tenant=tenant_b, reference="V/9", name="FREMD-VORLAG
 
 BASE = f"/session/{tenant.slug}/api/oparl/"
 
-SECRET_MARKERS = [
+NON_PUBLIC_MARKERS = [
     "GEHEIME-SONDERSITZUNG",
     "GEHEIMER-TOP-PERSONALIE",
     "GEHEIME-GRUNDSTUECKSVORLAGE",
@@ -479,7 +479,7 @@ check(
 )
 
 surface = "\n".join(all_payloads)
-leaks = [marker for marker in SECRET_MARKERS if marker in surface]
+leaks = [marker for marker in NON_PUBLIC_MARKERS if marker in surface]
 check(
     "Ö/NÖ-BEWEIS: keine NÖ-/verschlüsselten/fremden Inhalte in der gesamten API-Oberfläche", not leaks, ", ".join(leaks)
 )

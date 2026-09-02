@@ -27,6 +27,7 @@ from ..models import (
 )
 from ..permissions import SessionViewMixin
 from ..services import voting_service
+from .nexturl import safe_next_url
 
 
 def _get_item(view, item_id):
@@ -118,8 +119,8 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
             f"Abstimmung zu TOP {item.number} erfasst "
             f"(Ja {item.votes_yes} / Nein {item.votes_no} / Enthaltung {item.votes_abstain}).",
         )
-        next_url = request.POST.get("next", "")
-        if next_url.startswith(f"/session/{self.session_tenant.slug}/"):
+        next_url = safe_next_url(request, self.session_tenant.slug)
+        if next_url:
             return redirect(next_url)
         return redirect("session:voting_capture", tenant_slug=tenant_slug, item_id=item.id)
 

@@ -308,7 +308,7 @@ check("Insight: Quelle last_sync gesetzt", OParlSource.objects.get(pk=local_sour
 print()
 print("=== Phase 4: NÖ-Beweis im Insight-Datenbestand ===")
 
-SECRET_MARKERS = [
+NON_PUBLIC_MARKERS = [
     "GEHEIME-DURCHSTICH-SITZUNG",
     "GEHEIMER-DURCHSTICH-TOP",
     "GEHEIME-DURCHSTICH-VORLAGE",
@@ -335,7 +335,7 @@ for model in (
         dump_parts.append(json.dumps(raw, ensure_ascii=False, default=str))
         dump_parts.append(str(getattr(obj, "name", "")))
 insight_dump = "\n".join(dump_parts)
-leaks = [marker for marker in SECRET_MARKERS if marker in insight_dump]
+leaks = [marker for marker in NON_PUBLIC_MARKERS if marker in insight_dump]
 check("NÖ-BEWEIS: keine NÖ-/verschlüsselten Inhalte im Insight-Bestand", not leaks, ", ".join(leaks))
 check("Gegenprobe: öffentliche Inhalte im Insight-Bestand", "DURCHSTICH-VORLAGE-RADWEG" in insight_dump)
 
@@ -415,7 +415,7 @@ final_dump = "\n".join(
     for model in (OParlMeeting, OParlPaper, OParlAgendaItem, OParlFile, OParlPerson)
     for obj in model.objects.all()
 )
-leaks = [marker for marker in SECRET_MARKERS if marker in final_dump]
+leaks = [marker for marker in NON_PUBLIC_MARKERS if marker in final_dump]
 check("NÖ-BEWEIS nach allen Sync-Zyklen weiterhin bestanden", not leaks, ", ".join(leaks))
 
 server.terminate()

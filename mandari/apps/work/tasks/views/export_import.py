@@ -25,6 +25,8 @@ import uuid
 import xml.etree.ElementTree as ET
 from datetime import date, datetime
 
+from defusedxml import DefusedXmlException
+from defusedxml.ElementTree import fromstring as defused_fromstring
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
@@ -469,7 +471,7 @@ def _rows_from_json(text: str) -> tuple[list[dict], list[str]]:
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
-        return [], [f"Ungültiges JSON: {exc}"]
+        return [], [f"Ungültiges JSON (Zeile {exc.lineno}, Spalte {exc.colno})."]
     if not isinstance(data, dict):
         return [], ["Unbekanntes JSON-Format (Objekt erwartet)."]
     if isinstance(data.get("tasks"), list):
@@ -481,9 +483,13 @@ def _rows_from_json(text: str) -> tuple[list[dict], list[str]]:
 
 def _rows_from_xml(text: str) -> tuple[list[dict], list[str]]:
     try:
-        root = ET.fromstring(text)
+        root = defused_fromstring(text)
     except ET.ParseError as exc:
-        return [], [f"Ungültiges XML: {exc}"]
+        position = getattr(exc, "position", None)
+        detail = f" (Zeile {position[0]}, Spalte {position[1]})" if position else ""
+        return [], [f"Ungültiges XML{detail}."]
+    except DefusedXmlException:
+        return [], ["Unzulässiges XML: DTDs, Entitäten und externe Referenzen sind nicht erlaubt."]
 
     task_elements = root.findall(".//task")
     if not task_elements:

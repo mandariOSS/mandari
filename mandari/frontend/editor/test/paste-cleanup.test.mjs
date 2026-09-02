@@ -110,7 +110,12 @@ test('Word-Nummerierung: MsoListParagraph wird zu <ol>/<li>', () => {
   assert.ok(/<ol>/.test(out), 'Es muss eine <ol> erzeugt werden')
   assert.ok(/<li>Antrag stellen/.test(out), 'Erster Eintrag muss ein <li> sein')
   assert.ok(/<li>Begründung anfügen/.test(out), 'Zweiter Eintrag muss ein <li> sein')
-  assert.ok(!/1\./.test(out.replace(/<[^>]*>/g, '')), 'Nummern-Marker darf nicht im Text landen')
+  let plain = out
+  for (let prev = ''; plain !== prev; ) {
+    prev = plain
+    plain = plain.replace(/<[^>]*>/g, '')
+  }
+  assert.ok(!/1\./.test(plain), 'Nummern-Marker darf nicht im Text landen')
 })
 
 // ---------------------------------------------------------------------------

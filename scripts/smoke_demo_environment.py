@@ -190,7 +190,7 @@ check("Session: 3 Anwesenheiten (vergangene Sitzung)", counts_second["session_at
 check("Session: 1 genehmigtes Protokoll", counts_second["session_protocols"] == 1)
 
 passwords = parse_passwords(output_second)
-check("Passwörter im Output (7 Nutzer)", len(passwords) == 7, detail=str(list(passwords)))
+check("Passwörter im Output (7 Nutzer)", len(passwords) == 7, detail=f"{len(passwords)} gefunden")
 
 # PDF-Dateien physisch vorhanden + text_content gesetzt
 pdf_ok = all(

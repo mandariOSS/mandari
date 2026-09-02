@@ -184,7 +184,7 @@ for label, raw_value, plain in [
     check(
         f"DB-Rohwert {label} ist nicht der Klartext",
         raw_bytes and plain.encode("utf-8") not in raw_bytes,
-        f"raw={raw_bytes[:40]!r}",
+        f"len={len(raw_bytes)}",
     )
     check(
         f"DB-Rohwert {label} hat GCM-Mindestlänge (Nonce+Tag)",
@@ -216,7 +216,7 @@ with connection.cursor() as cur:
 check(
     "Neuer Datensatz: DB-Rohwert IBAN ist Ciphertext",
     b"DE02120300000000202051" not in raw_iban and len(raw_iban) >= 28,
-    f"raw={raw_iban[:40]!r}",
+    f"len={len(raw_iban)}",
 )
 
 # Leeren Wert setzen -> Feld wird None
