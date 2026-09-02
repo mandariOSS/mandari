@@ -1,0 +1,153 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}API — {{ organization.name }}{% endblock %}
+{% block header_title %}Organisationseinstellungen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Öffentliche API für Ihre Fraktions-Webseite</p>
+{% endblock %}
+
+{% block work_content %}
+{% include "work/organization/_tabs.html" %}
+
+<div class="max-w-3xl space-y-6">
+    <!-- Status + Statistik -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">Öffentliche API (v1)</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Read-only-JSON für Ihre Webseite: öffentliche Sitzungstermine und Tagesordnungen.
+                    Nicht-öffentliche Inhalte, Protokolle und Teilnehmer werden niemals ausgeliefert.
+                </p>
+            </div>
+            <span class="px-3 py-1 text-sm font-medium rounded-full
+                {% if api_access.is_enabled %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400{% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                {% if api_access.is_enabled %}Aktiv{% else %}Deaktiviert{% endif %}
+            </span>
+        </div>
+        <div class="mt-4 grid grid-cols-2 gap-4">
+            <div class="rounded-lg bg-gray-50 dark:bg-gray-700/40 p-3 text-center">
+                <p class="text-xl font-bold text-gray-900 dark:text-white">{{ api_access.request_count }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Abrufe gesamt</p>
+            </div>
+            <div class="rounded-lg bg-gray-50 dark:bg-gray-700/40 p-3 text-center">
+                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                    {% if api_access.last_request_at %}{{ api_access.last_request_at|date:"d.m.Y H:i" }}{% else %}–{% endif %}
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Letzter Abruf</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Optionen -->
+    <form method="post" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-5">
+        {% csrf_token %}
+        <input type="hidden" name="section" value="api_save">
+
+        <label class="flex items-center gap-3">
+            <input type="checkbox" name="api_enabled" {% if api_access.is_enabled %}checked{% endif %}
+                   class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+            <span class="text-sm font-medium text-gray-900 dark:text-white">Öffentliche API aktivieren</span>
+        </label>
+
+        <div class="grid sm:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Vergangenheit (Tage)</label>
+                <input type="number" name="api_past_days" min="0" max="3650" value="{{ api_access.past_days }}"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <p class="mt-1 text-xs text-gray-400">Wie weit zurück Sitzungen erscheinen</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Zukunft (Tage)</label>
+                <input type="number" name="api_future_days" min="1" max="3650" value="{{ api_access.future_days }}"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <p class="mt-1 text-xs text-gray-400">Wie weit voraus Termine erscheinen</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cache (Sekunden)</label>
+                <input type="number" name="api_cache_seconds" min="0" max="86400" value="{{ api_access.cache_seconds }}"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <p class="mt-1 text-xs text-gray-400">Cache-Control max-age der Antworten</p>
+            </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4">
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input type="checkbox" name="api_show_location" {% if api_access.show_location %}checked{% endif %}
+                       class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                Sitzungsort ausliefern
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input type="checkbox" name="api_show_agenda" {% if api_access.show_agenda %}checked{% endif %}
+                       class="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                Tagesordnung ausliefern (nur öffentliche TOPs)
+            </label>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Erlaubte Origins (CORS)</label>
+            <textarea name="api_allowed_origins" rows="2"
+                      placeholder="Leer = alle Webseiten. Sonst z. B.&#10;https://fraktion-beispiel.de, https://www.fraktion-beispiel.de"
+                      class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono">{{ api_access.allowed_origins }}</textarea>
+            <p class="mt-1 text-xs text-gray-400">
+                Einschränkung, von welchen Webseiten der Browser die API einbinden darf (kommagetrennt, mit https://).
+            </p>
+        </div>
+
+        <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+            API-Einstellungen speichern
+        </button>
+    </form>
+
+    <!-- Zugang -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white">Zugang & Einbindung</h3>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Basis-URL Ihres API-Zugangs</label>
+            <input type="text" readonly value="{{ api_base_url }}" onclick="this.select()"
+                   class="mt-1 w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-mono">
+            <p class="mt-1 text-xs text-gray-400">
+                Schema: <a href="{{ api_openapi_url }}" class="text-primary-600 hover:underline" target="_blank" rel="noopener">OpenAPI (JSON)</a>
+                · <a href="{{ docs_url }}" class="text-primary-600 hover:underline" target="_blank" rel="noopener">Dokumentation & Tutorial</a>
+            </p>
+        </div>
+
+        <!-- Fertiges Einbindungs-Snippet -->
+        <div x-data="{ copied: false }">
+            <div class="flex items-center justify-between gap-2 mb-1">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Einbindungs-Snippet für Ihre Webseite</label>
+                <button type="button"
+                        @click="navigator.clipboard.writeText($refs.snippet.textContent).then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
+                        class="text-xs text-primary-600 dark:text-primary-400 hover:underline">
+                    <span x-show="!copied">Kopieren</span>
+                    <span x-show="copied" x-cloak>Kopiert ✓</span>
+                </button>
+            </div>
+            <pre x-ref="snippet" class="text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 overflow-x-auto text-gray-700 dark:text-gray-300"><code>&lt;div id="fraktions-termine"&gt;Termine werden geladen…&lt;/div&gt;
+&lt;script&gt;
+fetch("{{ api_meetings_url }}")
+  .then(r =&gt; r.json())
+  .then(data =&gt; {
+    const el = document.getElementById("fraktions-termine");
+    const kommende = data.meetings.filter(m =&gt; new Date(m.start) &gt;= new Date() &amp;&amp; !m.cancelled);
+    if (!kommende.length) { el.textContent = "Aktuell keine öffentlichen Termine."; return; }
+    el.innerHTML = kommende.map(m =&gt;
+      "&lt;p&gt;&lt;strong&gt;" + new Date(m.start).toLocaleString("de-DE", {dateStyle: "medium", timeStyle: "short"}) +
+      "&lt;/strong&gt; — " + m.title + (m.location ? " (" + m.location + ")" : "") + "&lt;/p&gt;"
+    ).join("");
+  })
+  .catch(() =&gt; { document.getElementById("fraktions-termine").textContent = "Termine derzeit nicht verfügbar."; });
+&lt;/script&gt;</code></pre>
+        </div>
+
+        <form method="post"
+              onsubmit="return confirm('API-Token wirklich erneuern? Bestehende Einbindungen auf Ihrer Webseite funktionieren dann nicht mehr, bis die neue URL eingetragen ist.');">
+            {% csrf_token %}
+            <input type="hidden" name="section" value="api_regenerate">
+            <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg">
+                API-Token erneuern
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

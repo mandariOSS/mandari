@@ -8,7 +8,7 @@ Webseite anzeigen können (Issue #71).
 
 - **Opt-in je Organisation**: Die API ist standardmäßig **deaktiviert** und
   wird je Organisation bewusst eingeschaltet
-  (Work-Portal → Organisation → Fraktionssitzungen → „Öffentliche API (v1)").
+  (Work-Portal → Organisation → Reiter **„API"**).
 - **Opakes Token statt Organisations-Slug**: Der Zugriff läuft über ein
   zufälliges Token in der URL. Organisationen sind dadurch nicht
   enumerierbar. Das Token kann jederzeit in den Einstellungen erneuert
@@ -19,10 +19,18 @@ Webseite anzeigen können (Issue #71).
   nicht-öffentliche TOPs (auch nicht als Platzhalter), Protokollinhalte,
   Beschlüsse, Teilnehmerdaten, Video-Links oder Sitzungs-Entwürfe.
 - **Read-only**: nur `GET` (plus `OPTIONS` für CORS-Preflight).
-- **CORS**: Alle Antworten tragen `Access-Control-Allow-Origin: *` und
-  können direkt per `fetch()` von der Fraktions-Webseite eingebunden werden.
-- **Caching**: Antworten tragen `Cache-Control: public, max-age=300`
-  (Schema: 1 h). Bitte clientseitig nicht häufiger als nötig abrufen.
+- **CORS**: Standardmäßig `Access-Control-Allow-Origin: *`. Optional kann
+  die Organisation die erlaubten Origins auf konkrete Webseiten
+  einschränken — dann wird nur ein gelisteter Origin gespiegelt.
+- **Caching**: `Cache-Control: public, max-age=<konfigurierbar>`
+  (Standard 300 s, Schema: 1 h). Bitte clientseitig nicht häufiger als
+  nötig abrufen.
+- **Konfigurierbar je Organisation** (Reiter „API"): Zeitfenster für
+  vergangene (Standard 90 Tage) und kommende Sitzungen (Standard 365 Tage),
+  Inhaltsumfang (Sitzungsort und Tagesordnung einzeln abschaltbar),
+  CORS-Origins, Cache-Dauer. Der Reiter zeigt zudem eine
+  Nutzungsstatistik (Abrufe gesamt, letzter Abruf — keine IPs) und ein
+  fertiges Einbindungs-Snippet zum Kopieren.
 - **Versionierung**: Alle Pfade liegen stabil unter `/api/public/v1/…`.
   Inkompatible Änderungen erscheinen nur unter einer neuen Version
   (`/api/public/v2/…`).

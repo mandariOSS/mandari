@@ -48,23 +48,39 @@ PUBLIC_STATUSES = ("planned", "invited", "ongoing", "completed", "cancelled")
 # =============================================================================
 
 
-def _apply_cors(response):
-    """CORS-Header für die Browser-Einbindung auf Fraktions-Webseiten."""
-    response["Access-Control-Allow-Origin"] = "*"
+def _apply_cors(response, *, access=None, request=None):
+    """
+    CORS-Header für die Browser-Einbindung auf Fraktions-Webseiten.
+
+    Ohne konfigurierte Origins gilt "*"; sonst wird der anfragende Origin
+    nur zurückgegeben, wenn er auf der erlaubten Liste steht.
+    """
+    allowed = access.origin_list() if access else []
+    if not allowed:
+        response["Access-Control-Allow-Origin"] = "*"
+    else:
+        origin = (request.headers.get("Origin", "") if request else "").rstrip("/")
+        if origin in allowed:
+            response["Access-Control-Allow-Origin"] = origin
+            response["Vary"] = "Origin"
     response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
     response["Access-Control-Allow-Headers"] = "Content-Type"
     response["Access-Control-Max-Age"] = "86400"
     return response
 
 
-def _json_response(data: dict, status: int = 200, cache_seconds: int = 300) -> JsonResponse:
+def _json_response(
+    data: dict, status: int = 200, cache_seconds: int = 300, *, access=None, request=None
+) -> JsonResponse:
+    if access is not None and status == 200:
+        cache_seconds = max(0, min(access.cache_seconds, 86400))
     response = JsonResponse(data, status=status, json_dumps_params={"ensure_ascii": False})
     if status == 200 and cache_seconds:
         response["Cache-Control"] = f"public, max-age={cache_seconds}"
     else:
         response["Cache-Control"] = "no-store"
     response["X-Content-Type-Options"] = "nosniff"
-    return _apply_cors(response)
+    return _apply_cors(response, access=access, request=request)
 
 
 def _not_found() -> JsonResponse:
@@ -80,11 +96,19 @@ def _resolve_access(token: str):
     """Aktivierten API-Zugang zum Token auflösen (None bei unbekannt/deaktiviert)."""
     if not token:
         return None
-    return (
+    access = (
         FactionPublicApiAccess.objects.select_related("organization")
         .filter(token=token, is_enabled=True, organization__is_active=True)
         .first()
     )
+    if access is not None:
+        # Nutzungsstatistik (nur Zähler + Zeitpunkt, keine IPs)
+        from django.db.models import F
+
+        FactionPublicApiAccess.objects.filter(pk=access.pk).update(
+            request_count=F("request_count") + 1, last_request_at=timezone.now()
+        )
+    return access
 
 
 # =============================================================================
@@ -92,7 +116,7 @@ def _resolve_access(token: str):
 # =============================================================================
 
 
-def _serialize_meeting(meeting, *, include_agenda: bool = False) -> dict:
+def _serialize_meeting(meeting, *, include_agenda: bool = False, access=None) -> dict:
     """
     Sitzung als öffentliches JSON.
 
@@ -105,12 +129,14 @@ def _serialize_meeting(meeting, *, include_agenda: bool = False) -> dict:
         "number": meeting.meeting_number or None,
         "start": meeting.start.isoformat() if meeting.start else None,
         "end": meeting.end.isoformat() if meeting.end else None,
-        "location": meeting.location or ("Online" if meeting.is_virtual else ""),
+        "location": (meeting.location or ("Online" if meeting.is_virtual else ""))
+        if (access is None or access.show_location)
+        else "",
         "is_virtual": meeting.is_virtual,
         "status": meeting.status,
         "cancelled": meeting.status == "cancelled",
     }
-    if include_agenda:
+    if include_agenda and (access is None or access.show_agenda):
         items = meeting.agenda_items.filter(
             visibility="public", proposal_status="active", parent__isnull=True
         ).order_by("order", "number")
@@ -126,9 +152,9 @@ def _serialize_meeting(meeting, *, include_agenda: bool = False) -> dict:
 
 
 def _meeting_window(access):
-    """Zeitfenster: konfigurierte Vergangenheit bis ~13 Monate Zukunft."""
+    """Zeitfenster: konfigurierte Vergangenheit und Zukunft je Zugang."""
     now = timezone.now()
-    return now - timedelta(days=access.past_days), now + timedelta(days=400)
+    return now - timedelta(days=access.past_days), now + timedelta(days=access.future_days)
 
 
 # =============================================================================
@@ -160,7 +186,9 @@ class PublicApiRootView(PublicApiBaseView):
                     "meeting_detail": f"{base}/sitzungen/{{id}}/",
                     "openapi": "/api/public/v1/openapi.json",
                 },
-            }
+            },
+            access=access,
+            request=request,
         )
 
 
@@ -184,8 +212,10 @@ class PublicMeetingListView(PublicApiBaseView):
                 "api_version": API_VERSION,
                 "organization": {"name": access.organization.name},
                 "count": meetings.count(),
-                "meetings": [_serialize_meeting(m) for m in meetings],
-            }
+                "meetings": [_serialize_meeting(m, access=access) for m in meetings],
+            },
+            access=access,
+            request=request,
         )
 
 
@@ -205,10 +235,10 @@ class PublicMeetingDetailView(PublicApiBaseView):
         if meeting is None:
             return _json_response({"error": "not_found", "detail": "Unbekannte Sitzung."}, status=404, cache_seconds=0)
 
-        data = _serialize_meeting(meeting, include_agenda=True)
+        data = _serialize_meeting(meeting, include_agenda=True, access=access)
         data["api_version"] = API_VERSION
         data["organization"] = {"name": access.organization.name}
-        return _json_response(data)
+        return _json_response(data, access=access, request=request)
 
 
 class OpenApiSchemaView(PublicApiBaseView):

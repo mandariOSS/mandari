@@ -1316,6 +1316,26 @@ class FactionPublicApiAccess(models.Model):
 
     # Konfigurierbarer Zeitraum für vergangene Sitzungen (in Tagen)
     past_days = models.PositiveIntegerField(default=90, verbose_name="Vergangene Sitzungen (Tage)")
+    # Zeitraum für zukünftige Sitzungen (in Tagen)
+    future_days = models.PositiveIntegerField(default=365, verbose_name="Kommende Sitzungen (Tage)")
+
+    # Inhaltsumfang der Antworten
+    show_location = models.BooleanField(default=True, verbose_name="Sitzungsort ausliefern")
+    show_agenda = models.BooleanField(default=True, verbose_name="Tagesordnung ausliefern")
+
+    # CORS: leer = alle Ursprünge (*); sonst kommagetrennte erlaubte Origins
+    allowed_origins = models.TextField(
+        blank=True,
+        verbose_name="Erlaubte Origins (CORS)",
+        help_text="Leer = alle. Sonst z. B. https://fraktion-beispiel.de, https://www.fraktion-beispiel.de",
+    )
+
+    # Client-Caching (Cache-Control max-age in Sekunden)
+    cache_seconds = models.PositiveIntegerField(default=300, verbose_name="Cache-Dauer (Sekunden)")
+
+    # Nutzungsstatistik (nur Zähler + Zeitpunkt, keine IPs)
+    request_count = models.PositiveBigIntegerField(default=0, verbose_name="Abrufe gesamt")
+    last_request_at = models.DateTimeField(blank=True, null=True, verbose_name="Letzter Abruf")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1343,6 +1363,11 @@ class FactionPublicApiAccess(models.Model):
         self.token = generate_opaque_token()
         self.save(update_fields=["token", "updated_at"])
         return self
+
+    def origin_list(self) -> list[str]:
+        """Erlaubte CORS-Origins als bereinigte Liste (leer = alle)."""
+        normalized = self.allowed_origins.replace("\n", ",")
+        return [origin.strip().rstrip("/") for origin in normalized.split(",") if origin.strip()]
 
 
 class FactionAgendaItemAttachment(models.Model):

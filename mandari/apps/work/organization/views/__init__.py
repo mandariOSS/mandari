@@ -10,6 +10,7 @@ unverändert funktionieren.
 from .activity import (
     ProfileActivityView,
 )
+from .api_settings import OrganizationApiSettingsView
 from .change_requests import (
     ProfileChangeRequestsView,
 )
@@ -85,6 +86,7 @@ __all__ = [
     "MemberRejectView",
     "OrganizationDocumentsView",
     "OrganizationEmailSettingsView",
+    "OrganizationApiSettingsView",
     "OrganizationFactionSettingsView",
     "OrganizationSettingsView",
     "ProfileAbsenceView",

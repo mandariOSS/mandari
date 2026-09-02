@@ -2009,13 +2009,13 @@ resp = anon_r.get("/api/public/v1/fraktionen/voellig-unbekanntes-token/sitzungen
 check("Unbekanntes Token -> 404", resp.status_code == 404, f"got {resp.status_code}")
 
 # Aktivierung nur mit faction.manage
-resp = unsworn.post(f"{base}/organization/faction-settings/", {"section": "api_save", "api_enabled": "on"})
+resp = unsworn.post(f"{base}/organization/api/", {"section": "api_save", "api_enabled": "on"})
 access.refresh_from_db()
 check("Aktivierung ohne faction.manage -> 403", resp.status_code == 403 and access.is_enabled is False)
 
 resp = chair.post(
-    f"{base}/organization/faction-settings/",
-    {"section": "api_save", "api_enabled": "on", "api_past_days": "365"},
+    f"{base}/organization/api/",
+    {"section": "api_save", "api_enabled": "on", "api_past_days": "365", "api_show_agenda": "on", "api_show_location": "on"},
 )
 access.refresh_from_db()
 check("Opt-in gespeichert (aktiv, 365 Tage)", access.is_enabled is True and access.past_days == 365)
@@ -2085,7 +2085,7 @@ check(
 
 # Token-Erneuerung: alte URL sofort ungültig
 old_api_token = access.token
-resp = chair.post(f"{base}/organization/faction-settings/", {"section": "api_regenerate"})
+resp = chair.post(f"{base}/organization/api/", {"section": "api_regenerate"})
 access.refresh_from_db()
 check("API-Token erneuert", access.token != old_api_token)
 resp = anon_r.get(f"/api/public/v1/fraktionen/{old_api_token}/sitzungen/")
@@ -2094,7 +2094,7 @@ resp = anon_r.get(f"/api/public/v1/fraktionen/{access.token}/sitzungen/")
 check("Neues API-Token -> 200", resp.status_code == 200, f"got {resp.status_code}")
 
 # Deaktivierung wirkt sofort
-resp = chair.post(f"{base}/organization/faction-settings/", {"section": "api_save", "api_past_days": "365"})
+resp = chair.post(f"{base}/organization/api/", {"section": "api_save", "api_past_days": "365"})
 access.refresh_from_db()
 check("Deaktivierung gespeichert", access.is_enabled is False)
 resp = anon_r.get(f"/api/public/v1/fraktionen/{access.token}/sitzungen/")

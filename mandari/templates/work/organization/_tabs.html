@@ -1,6 +1,6 @@
 {% comment %}
 Shared organization settings tab navigation. Expects `active_tab` in context.
-Values: "general", "faction", "documents", "parties", "members", "roles"
+Values: "general", "faction", "api", "documents", "parties", "members", "roles"
 {% endcomment %}
 <div class="mb-8 border-b border-gray-200 dark:border-gray-700">
     <nav class="flex gap-1 overflow-x-auto">
@@ -19,6 +19,12 @@ Values: "general", "faction", "documents", "parties", "members", "roles"
            class="{% if active_tab == 'documents' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
             Anträge & Vorgänge
         </a>
+        {% if can_manage_faction %}
+        <a href="{% url 'work:organization_api_settings' org_slug=organization.slug %}"
+           class="{% if active_tab == 'api' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            API
+        </a>
+        {% endif %}
         <a href="{% url 'work:organization_email_settings' org_slug=organization.slug %}"
            class="{% if active_tab == 'email' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
             E-Mail

@@ -565,6 +565,11 @@ urlpatterns = [
         name="organization_faction_settings",
     ),
     path(
+        "<slug:org_slug>/organization/api/",
+        organization_views.OrganizationApiSettingsView.as_view(),
+        name="organization_api_settings",
+    ),
+    path(
         "<slug:org_slug>/organization/documents-settings/",
         organization_views.OrganizationDocumentsView.as_view(),
         name="organization_documents",
