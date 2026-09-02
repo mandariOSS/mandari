@@ -137,6 +137,16 @@
 <div class="session-nav-section"><span class="nav-label">Verwaltung</span></div>
 {% endif %}
 
+{% if "manage_devices" in permission_checker.permissions %}
+<!-- Endgeräte (digitale Ratsarbeit) -->
+<a href="{% url 'session:devices' tenant_slug=tenant_slug %}"
+   class="session-nav-item {% if 'device' in current_url %}active{% endif %}"
+   :title="sidebarCollapsed ? 'Endgeräte' : ''">
+    <i data-lucide="tablet"></i>
+    <span class="nav-label">Endgeräte</span>
+</a>
+{% endif %}
+
 {% if "manage_allowances" in permission_checker.permissions %}
 <!-- Sitzungsgelder (Issue #38) -->
 <a href="{% url 'session:allowances' tenant_slug=tenant_slug %}"

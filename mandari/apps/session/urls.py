@@ -468,6 +468,42 @@ urlpatterns = [
         views.ReminderSettingsView.as_view(),
         name="settings_reminders",
     ),
+    # Endgeräte für die digitale Ratsarbeit
+    path(
+        "<slug:tenant_slug>/devices/",
+        views.DeviceListView.as_view(),
+        name="devices",
+    ),
+    path(
+        "<slug:tenant_slug>/devices/add/",
+        views.DeviceSaveView.as_view(),
+        name="device_save",
+    ),
+    path(
+        "<slug:tenant_slug>/devices/<uuid:device_id>/<slug:action>/",
+        views.DeviceActionView.as_view(),
+        name="device_action",
+    ),
+    path(
+        "<slug:tenant_slug>/devices/<uuid:device_id>/protokoll.pdf",
+        views.DeviceHandoverPdfView.as_view(),
+        name="device_handover_pdf",
+    ),
+    path(
+        "<slug:tenant_slug>/device-grants/add/",
+        views.DeviceGrantSaveView.as_view(),
+        name="device_grant_save",
+    ),
+    path(
+        "<slug:tenant_slug>/device-grants/<uuid:grant_id>/<slug:action>/",
+        views.DeviceGrantActionView.as_view(),
+        name="device_grant_action",
+    ),
+    path(
+        "<slug:tenant_slug>/device-grants/export/csv/",
+        views.DeviceGrantCsvExportView.as_view(),
+        name="device_grants_csv",
+    ),
     # Monatliche Pauschalen (EntschVO NRW)
     path(
         "<slug:tenant_slug>/allowances/monthly/",

@@ -1,0 +1,229 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Endgeräte{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:dashboard' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Dashboard
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Endgeräte</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-5xl space-y-8">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Endgeräte für die digitale Ratsarbeit</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+            Geräte ausgeben und zurücknehmen (mit Übergabeprotokoll) oder alternativ einmalige
+            Endgeräte-Zuschüsse auszahlen — je nach Ratsbeschluss eurer Kommune.
+        </p>
+    </div>
+
+    <!-- Kennzahlen -->
+    <div class="grid grid-cols-3 gap-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+            <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ devices_stock }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">Im Bestand</p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+            <p class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ devices_issued }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">Ausgegeben</p>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+            <p class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{{ grants_sum }} €</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">Zuschüsse gesamt</p>
+        </div>
+    </div>
+
+    <!-- Gerätebestand -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="tablet" class="w-5 h-5 text-blue-500"></i> Gerätebestand
+            </h2>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for device in devices %}
+            <div class="px-6 py-3" x-data="{ open: false }">
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                    <div class="min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white">
+                            {{ device.label }}
+                            <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded
+                                {% if device.status == 'issued' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
+                                {% elif device.status == 'in_stock' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                                {% elif device.status == 'defect' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400
+                                {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                                {{ device.get_status_display }}
+                            </span>
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            {% if device.inventory_number %}Inv. {{ device.inventory_number }}{% endif %}
+                            {% if device.serial_number %} · SN {{ device.serial_number }}{% endif %}
+                            {% if device.accessories %} · {{ device.accessories }}{% endif %}
+                            {% if device.issued_to %} · <span class="font-medium text-gray-700 dark:text-gray-300">{{ device.issued_to.display_name }}</span> seit {{ device.issued_at|date:"d.m.Y" }}{% endif %}
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        {% if device.status == 'in_stock' %}
+                        <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='issue' %}" class="flex items-center gap-1.5">
+                            {% csrf_token %}
+                            <select name="person" required class="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white max-w-[180px]">
+                                <option value="">Person wählen…</option>
+                                {% for person in persons %}<option value="{{ person.id }}">{{ person.display_name }}</option>{% endfor %}
+                            </select>
+                            <button type="submit" class="px-2.5 py-1 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">Ausgeben</button>
+                        </form>
+                        {% elif device.status == 'issued' %}
+                        <a href="{% url 'session:device_handover_pdf' tenant_slug=tenant_slug device_id=device.id %}"
+                           class="px-2.5 py-1 text-xs font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg inline-flex items-center gap-1">
+                            <i data-lucide="file-down" class="w-3.5 h-3.5"></i> Protokoll
+                        </a>
+                        <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='return' %}">
+                            {% csrf_token %}
+                            <button type="submit" class="px-2.5 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg">Zurücknehmen</button>
+                        </form>
+                        {% endif %}
+                        {% if device.status == 'in_stock' or device.status == 'issued' %}
+                        <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='defect' %}">
+                            {% csrf_token %}
+                            <button type="submit" class="px-2 py-1 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg" title="Defekt melden">Defekt</button>
+                        </form>
+                        {% endif %}
+                        {% if device.status != 'retired' %}
+                        <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='retire' %}"
+                              onsubmit="return confirm('Gerät wirklich ausmustern?');">
+                            {% csrf_token %}
+                            <button type="submit" class="px-2 py-1 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg" title="Ausmustern">Ausmustern</button>
+                        </form>
+                        {% endif %}
+                        <button type="button" @click="open = !open" class="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title="Historie">
+                            <i data-lucide="history" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                <div x-show="open" x-cloak x-transition class="mt-2 pl-2 border-l-2 border-gray-100 dark:border-gray-700 space-y-1">
+                    {% for log in device.logs.all %}
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ log.created_at|date:"d.m.Y H:i" }} — {{ log.get_action_display }}{% if log.person %} ({{ log.person.display_name }}){% endif %}{% if log.note %}: {{ log.note }}{% endif %}{% if log.created_by %} · {{ log.created_by.user.email }}{% endif %}
+                    </p>
+                    {% endfor %}
+                </div>
+            </div>
+            {% empty %}
+            <p class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">Noch keine Geräte erfasst.</p>
+            {% endfor %}
+        </div>
+        <form method="post" action="{% url 'session:device_save' tenant_slug=tenant_slug %}"
+              class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 flex flex-wrap items-end gap-2">
+            {% csrf_token %}
+            <div class="flex-1 min-w-[180px]">
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Bezeichnung *</label>
+                <input type="text" name="label" required placeholder="z. B. iPad 10. Gen, 64 GB"
+                       class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Seriennummer</label>
+                <input type="text" name="serial_number" class="w-36 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Inventarnummer</label>
+                <input type="text" name="inventory_number" class="w-32 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div class="min-w-[160px]">
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Zubehör</label>
+                <input type="text" name="accessories" placeholder="Hülle, Tastatur, Netzteil"
+                       class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                <i data-lucide="plus" class="w-4 h-4"></i> Gerät aufnehmen
+            </button>
+        </form>
+    </div>
+
+    <!-- Zuschüsse -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-2">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="hand-coins" class="w-5 h-5 text-emerald-500"></i> Einmalige Endgeräte-Zuschüsse
+            </h2>
+            <form method="post" action="{% url 'session:device_grants_csv' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <button type="submit" class="text-sm text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1">
+                    <i data-lucide="download" class="w-4 h-4"></i> CSV
+                </button>
+            </form>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for grant in grants %}
+            <div class="px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">
+                        {{ grant.person.display_name }} — {{ grant.amount }} €
+                        <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded
+                            {% if grant.status == 'paid' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400
+                            {% elif grant.status == 'approved' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
+                            {% elif grant.status == 'cancelled' %}bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400
+                            {% else %}bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-400{% endif %}">
+                            {{ grant.get_status_display }}
+                        </span>
+                    </p>
+                    {% if grant.note %}<p class="text-xs text-gray-500 dark:text-gray-400">{{ grant.note|truncatechars:120 }}</p>{% endif %}
+                </div>
+                <div class="flex items-center gap-1.5">
+                    {% if grant.status == 'pending' %}
+                    <form method="post" action="{% url 'session:device_grant_action' tenant_slug=tenant_slug grant_id=grant.id action='approve' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="px-2.5 py-1 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg">Genehmigen</button>
+                    </form>
+                    {% elif grant.status == 'approved' %}
+                    <form method="post" action="{% url 'session:device_grant_action' tenant_slug=tenant_slug grant_id=grant.id action='pay' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="px-2.5 py-1 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">Als ausgezahlt markieren</button>
+                    </form>
+                    {% endif %}
+                    {% if grant.status == 'pending' or grant.status == 'approved' %}
+                    <form method="post" action="{% url 'session:device_grant_action' tenant_slug=tenant_slug grant_id=grant.id action='cancel' %}"
+                          onsubmit="return confirm('Zuschuss wirklich stornieren?');">
+                        {% csrf_token %}
+                        <button type="submit" class="px-2 py-1 text-xs text-gray-400 hover:text-red-600 rounded-lg">Stornieren</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% empty %}
+            <p class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                Noch keine Zuschüsse — üblich sind je nach Ratsbeschluss einmalig 300–500 € pro Mandatsträger.
+            </p>
+            {% endfor %}
+        </div>
+        <form method="post" action="{% url 'session:device_grant_save' tenant_slug=tenant_slug %}"
+              class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 flex flex-wrap items-end gap-2">
+            {% csrf_token %}
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Person *</label>
+                <select name="person" required class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <option value="">Bitte wählen…</option>
+                    {% for person in persons %}<option value="{{ person.id }}">{{ person.display_name }}</option>{% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Betrag € *</label>
+                <input type="text" name="amount" required placeholder="300,00" inputmode="decimal"
+                       class="w-28 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div class="flex-1 min-w-[200px]">
+                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Vermerk</label>
+                <input type="text" name="note" placeholder="z. B. Ratsbeschluss vom …, Beleg liegt vor"
+                       class="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
+                <i data-lucide="plus" class="w-4 h-4"></i> Zuschuss erfassen
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

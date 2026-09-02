@@ -74,6 +74,7 @@ class SessionPermissionChecker:
                     "approve_protocols",
                     "manage_attendance",
                     "manage_allowances",
+                    "manage_devices",
                     "manage_users",
                     "manage_organizations",
                     "manage_settings",

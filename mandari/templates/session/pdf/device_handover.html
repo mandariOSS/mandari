@@ -1,0 +1,45 @@
+{% extends "session/pdf/base_pdf.html" %}
+{% comment %}Übergabe-/Geräteprotokoll für Endgeräte der digitalen Ratsarbeit.{% endcomment %}
+
+{% block content %}
+<h1>{{ variant }} — Endgerät für die digitale Ratsarbeit</h1>
+
+<table class="meta-table">
+    <tr><td><strong>Gerät:</strong></td><td>{{ device.label }}</td></tr>
+    {% if device.serial_number %}<tr><td><strong>Seriennummer:</strong></td><td>{{ device.serial_number }}</td></tr>{% endif %}
+    {% if device.inventory_number %}<tr><td><strong>Inventarnummer:</strong></td><td>{{ device.inventory_number }}</td></tr>{% endif %}
+    {% if device.accessories %}<tr><td><strong>Zubehör:</strong></td><td>{{ device.accessories }}</td></tr>{% endif %}
+    <tr><td><strong>Status:</strong></td><td>{{ device.get_status_display }}</td></tr>
+    {% if person %}
+    <tr><td><strong>Ausgegeben an:</strong></td><td>{{ person.display_name }}</td></tr>
+    <tr><td><strong>Ausgegeben am:</strong></td><td>{{ device.issued_at|date:"d.m.Y" }}</td></tr>
+    {% endif %}
+</table>
+
+<h2>Nutzungsbedingungen</h2>
+<p>
+    Das Endgerät wird für die Dauer des kommunalpolitischen Mandats zur dienstlichen
+    Nutzung im Rahmen der digitalen Gremienarbeit überlassen. Es bleibt Eigentum der
+    Kommune und ist bei Mandatsende, Defekt oder auf Anforderung unverzüglich
+    zurückzugeben. Verlust oder Beschädigung sind dem Sitzungsdienst umgehend zu melden.
+</p>
+
+<h2>Historie</h2>
+<table class="agenda">
+    {% for log in device.logs.all|slice:":10" %}
+    <tr>
+        <td style="width: 32mm;">{{ log.created_at|date:"d.m.Y H:i" }}</td>
+        <td style="width: 35mm;">{{ log.get_action_display }}</td>
+        <td>{% if log.person %}{{ log.person.display_name }}{% endif %}{% if log.note %} — {{ log.note }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<div class="signature">
+    <p>
+        {{ tenant.name }}, den {{ generated_at|date:"d.m.Y" }}<br><br><br>
+        ____________________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;____________________________<br>
+        <span class="muted">Für die Verwaltung&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{% if person %}{{ person.display_name }}{% else %}Empfänger:in{% endif %}</span>
+    </p>
+</div>
+{% endblock %}

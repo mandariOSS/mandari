@@ -218,6 +218,7 @@ class SessionRole(models.Model):
     can_manage_users = models.BooleanField(default=False, verbose_name="Benutzer verwalten")
     can_manage_organizations = models.BooleanField(default=False, verbose_name="Gremien verwalten")
     can_manage_settings = models.BooleanField(default=False, verbose_name="Einstellungen verwalten")
+    can_manage_devices = models.BooleanField(default=False, verbose_name="Endgeräte verwalten")
     can_view_audit_log = models.BooleanField(default=False, verbose_name="Audit-Log anzeigen")
 
     # API Access
@@ -2586,6 +2587,172 @@ class SessionMonthlyAllowance(models.Model):
 
     def __str__(self):
         return f"{self.person.display_name}: {self.rate.name} {self.period:%m/%Y}"
+
+
+# =============================================================================
+# ENDGERÄTE FÜR DIE DIGITALE RATSARBEIT
+# =============================================================================
+
+
+class SessionDevice(models.Model):
+    """
+    Endgerät für die digitale Ratsarbeit (z. B. iPad), das die Verwaltung
+    an Mandatsträger ausgibt. Ausgabe/Rückgabe werden dokumentiert
+    (Übergabeprotokoll als PDF, Historie in SessionDeviceLog).
+    """
+
+    STATUS_CHOICES = [
+        ("in_stock", "Im Bestand"),
+        ("issued", "Ausgegeben"),
+        ("defect", "Defekt"),
+        ("retired", "Ausgemustert"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="devices",
+        verbose_name="Mandant",
+    )
+    label = models.CharField(max_length=200, verbose_name="Bezeichnung", help_text="z. B. iPad 10. Gen, 64 GB")
+    serial_number = models.CharField(max_length=100, blank=True, verbose_name="Seriennummer")
+    inventory_number = models.CharField(max_length=100, blank=True, verbose_name="Inventarnummer")
+    accessories = models.CharField(
+        max_length=300, blank=True, verbose_name="Zubehör", help_text="z. B. Hülle, Tastatur, Netzteil"
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="in_stock", verbose_name="Status")
+    issued_to = models.ForeignKey(
+        SessionPerson,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="devices",
+        verbose_name="Ausgegeben an",
+    )
+    issued_at = models.DateTimeField(blank=True, null=True, verbose_name="Ausgegeben am")
+    note = models.TextField(blank=True, verbose_name="Notiz")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_devices"
+        verbose_name = "Endgerät"
+        verbose_name_plural = "Endgeräte"
+        ordering = ["label", "inventory_number"]
+
+    def __str__(self):
+        return f"{self.label} ({self.inventory_number or self.serial_number or 'ohne Nr.'})"
+
+
+class SessionDeviceLog(models.Model):
+    """Historie eines Endgeräts (Ausgabe, Rückgabe, Defekt, Vermerke)."""
+
+    ACTION_CHOICES = [
+        ("created", "Angelegt"),
+        ("issued", "Ausgegeben"),
+        ("returned", "Zurückgenommen"),
+        ("defect", "Defekt gemeldet"),
+        ("retired", "Ausgemustert"),
+        ("note", "Vermerk"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    device = models.ForeignKey(
+        SessionDevice,
+        on_delete=models.CASCADE,
+        related_name="logs",
+        verbose_name="Endgerät",
+    )
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES, verbose_name="Aktion")
+    person = models.ForeignKey(
+        SessionPerson,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="device_logs",
+        verbose_name="Person",
+    )
+    note = models.TextField(blank=True, verbose_name="Vermerk")
+    created_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="device_logs",
+        verbose_name="Erfasst von",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Zeitpunkt")
+
+    class Meta:
+        db_table = "session_device_logs"
+        verbose_name = "Geräte-Historie"
+        verbose_name_plural = "Geräte-Historien"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.device}: {self.get_action_display()}"
+
+
+class SessionDeviceGrant(models.Model):
+    """
+    Einmaliger Endgeräte-Zuschuss für die digitale Ratsarbeit
+    (Alternative zur Geräteausgabe, z. B. 300–500 € je Mandatsträger
+    laut Ratsbeschluss).
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Ausstehend"),
+        ("approved", "Genehmigt"),
+        ("paid", "Ausgezahlt"),
+        ("cancelled", "Storniert"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="device_grants",
+        verbose_name="Mandant",
+    )
+    person = models.ForeignKey(
+        SessionPerson,
+        on_delete=models.CASCADE,
+        related_name="device_grants",
+        verbose_name="Person",
+    )
+    amount = models.DecimalField(max_digits=8, decimal_places=2, verbose_name="Betrag")
+    note = models.TextField(blank=True, verbose_name="Vermerk", help_text="z. B. Ratsbeschluss, Beleg")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", verbose_name="Status")
+    approved_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="approved_device_grants",
+        verbose_name="Genehmigt von",
+    )
+    approved_at = models.DateTimeField(blank=True, null=True, verbose_name="Genehmigt am")
+    paid_at = models.DateTimeField(blank=True, null=True, verbose_name="Ausgezahlt am")
+    created_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="created_device_grants",
+        verbose_name="Erstellt von",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_device_grants"
+        verbose_name = "Endgeräte-Zuschuss"
+        verbose_name_plural = "Endgeräte-Zuschüsse"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.person.display_name}: {self.amount} €"
 
 
 # =============================================================================

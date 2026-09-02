@@ -67,6 +67,15 @@ from .cosign import (
 from .dashboard import (
     DashboardView,
 )
+from .devices import (
+    DeviceActionView,
+    DeviceGrantActionView,
+    DeviceGrantCsvExportView,
+    DeviceGrantSaveView,
+    DeviceHandoverPdfView,
+    DeviceListView,
+    DeviceSaveView,
+)
 from .files import (
     FileDeleteView,
     FileDownloadView,
@@ -184,6 +193,13 @@ from .voting import (
 )
 
 __all__ = [
+    "DeviceActionView",
+    "DeviceGrantActionView",
+    "DeviceGrantCsvExportView",
+    "DeviceGrantSaveView",
+    "DeviceHandoverPdfView",
+    "DeviceListView",
+    "DeviceSaveView",
     "MonthlyAllowanceView",
     "MonthlyApproveView",
     "MonthlyAssignmentDeleteView",
