@@ -223,7 +223,7 @@ class AllowanceGenerateView(SessionViewMixin, View):
             f"({stats['skipped_existing']} bereits abgerechnet, {stats['skipped_zero']} ohne Satz).",
         )
         return redirect(
-            f"/session/{tenant_slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
+            f"/session/{self.session_tenant.slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
         )
 
 
@@ -257,7 +257,7 @@ class AllowanceApproveView(SessionViewMixin, View):
         elif not stats["blocked_four_eyes"]:
             messages.info(request, "Keine ausstehenden Positionen im Zeitraum.")
         return redirect(
-            f"/session/{tenant_slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
+            f"/session/{self.session_tenant.slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
         )
 
 
@@ -335,7 +335,7 @@ class AllowanceSepaExportView(SessionViewMixin, View):
         if not allowances:
             messages.warning(request, "Keine genehmigten Positionen im Zeitraum — nichts zu exportieren.")
             return redirect(
-                f"/session/{tenant_slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
+                f"/session/{self.session_tenant.slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
             )
 
         reference = allowance_service.next_export_reference(self.session_tenant)
@@ -354,7 +354,7 @@ class AllowanceSepaExportView(SessionViewMixin, View):
                 "SEPA-Export nicht möglich — für keine der Personen ist eine IBAN hinterlegt: " + ", ".join(skipped),
             )
             return redirect(
-                f"/session/{tenant_slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
+                f"/session/{self.session_tenant.slug}/allowances/?from={period_start.isoformat()}&to={period_end.isoformat()}"
             )
 
         # Nur Positionen von Personen MIT IBAN als exportiert/ausgezahlt markieren

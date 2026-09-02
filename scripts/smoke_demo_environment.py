@@ -143,13 +143,13 @@ def demo_counts() -> dict:
     }
 
 
-def parse_passwords(output: str) -> dict:
-    passwords = {}
+def parse_demo_logins(output: str) -> dict:
+    demo_logins = {}
     for line in output.splitlines():
         match = re.match(r"\s+(\S+@demo\.mandari\.de)\s+->\s+(\S+)", line)
         if match:
-            passwords[match.group(1)] = match.group(2)
-    return passwords
+            demo_logins[match.group(1)] = match.group(2)
+    return demo_logins
 
 
 def login_client(email: str, password: str) -> tuple[Client, object]:
@@ -189,8 +189,8 @@ check("Session: 4 Verwaltungsnutzer (je Rolle)", counts_second["session_users"] 
 check("Session: 3 Anwesenheiten (vergangene Sitzung)", counts_second["session_attendances"] == 3)
 check("Session: 1 genehmigtes Protokoll", counts_second["session_protocols"] == 1)
 
-passwords = parse_passwords(output_second)
-check("Passwörter im Output (7 Nutzer)", len(passwords) == 7, detail=f"{len(passwords)} gefunden")
+demo_logins = parse_demo_logins(output_second)
+check("Passwörter im Output (7 Nutzer)", len(demo_logins) == 7, detail=f"{len(demo_logins)} gefunden")
 
 # PDF-Dateien physisch vorhanden + text_content gesetzt
 pdf_ok = all(
@@ -211,8 +211,8 @@ check("Motion: verschlüsselter Inhalt lesbar", motion is not None and "Trinkwas
 # ---------------------------------------------------------------------------
 print("\n=== 2. Demo-Logins ===")
 sessions = {}
-for email in sorted(passwords):
-    client, response = login_client(email, passwords[email])
+for email in sorted(demo_logins):
+    client, response = login_client(email, demo_logins[email])
     ok = response.status_code == 302
     check(f"Login {email} -> 302", ok, detail=f"status={response.status_code}")
     sessions[email] = client

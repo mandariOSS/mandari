@@ -61,7 +61,7 @@
     <!-- Mobil: Ordner als Dropdown oberhalb der Liste -->
     <div class="lg:hidden mb-4">
         <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Ordner</label>
-        <select onchange="if (this.value.startsWith('?') || (this.value.startsWith('/') && !this.value.startsWith('//'))) window.location.href = this.value"
+        <select onchange="const v = this.value; if (v.startsWith('?') || (v.startsWith('/') && !v.startsWith('//'))) window.location.href = v"
                 class="w-full px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 outline-none">
             <option value="{% url 'work:documents' org_slug=organization.slug %}{% if filter_query %}?{{ filter_query }}{% endif %}" {% if not current_folder %}selected{% endif %}>Alle Dokumente ({{ root_document_count }})</option>
             {% for entry in folder_entries %}

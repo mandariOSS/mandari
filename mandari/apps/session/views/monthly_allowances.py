@@ -275,7 +275,9 @@ class MonthlyGenerateView(SessionViewMixin, View):
             request,
             f"Monatslauf {period:%m/%Y}: {result['created']} Posten erzeugt, {result['skipped']} bereits vorhanden.",
         )
-        return redirect(f"/session/{tenant_slug}/allowances/monthly/?year={period.year}&month={period.month}")
+        return redirect(
+            f"/session/{self.session_tenant.slug}/allowances/monthly/?year={period.year}&month={period.month}"
+        )
 
 
 class MonthlyApproveView(SessionViewMixin, View):
@@ -297,7 +299,9 @@ class MonthlyApproveView(SessionViewMixin, View):
             changes={"monat": period.strftime("%m/%Y"), "genehmigt": result["approved"]},
         )
         messages.success(request, f"{result['approved']} Posten für {period:%m/%Y} genehmigt.")
-        return redirect(f"/session/{tenant_slug}/allowances/monthly/?year={period.year}&month={period.month}")
+        return redirect(
+            f"/session/{self.session_tenant.slug}/allowances/monthly/?year={period.year}&month={period.month}"
+        )
 
 
 class MonthlyCsvExportView(SessionViewMixin, View):

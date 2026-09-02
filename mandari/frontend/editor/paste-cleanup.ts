@@ -278,22 +278,24 @@ export function cleanPastedHtml(html: string): string {
   const bodyMatch = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(out)
   if (bodyMatch) out = bodyMatch[1]
 
-  // Word-XML/Metadaten-Blöcke, Kommentare & Conditional Comments entfernen.
-  // Bis zum Fixpunkt wiederholen, damit durch das Entfernen keine neuen
+  // Word-XML/Metadaten-Blöcke und Kommentare entfernen. Je Muster bis zum
+  // Fixpunkt wiederholen, damit durch das Entfernen keine neuen
   // "<script"/"<!--"-Fragmente aus verschachtelten Resten entstehen.
   {
     let prev = ''
-    let guard = 0
-    while (out !== prev && guard < 10) {
+    while (out !== prev) {
       prev = out
-      out = out
-        .replace(/<(script|style|xml|head|title)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '')
-        .replace(/<(?:meta|link)\b[^>]*\/?>/gi, '')
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(/<!\[if\s[^\]]*\]>/gi, '')
-        .replace(/<!\[endif\]>/gi, '')
-      guard++
+      out = out.replace(/<(script|style|xml|head|title)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '')
     }
+    out = out.replace(/<(?:meta|link)\b[^>]*\/?>/gi, '')
+    prev = ''
+    while (out !== prev) {
+      prev = out
+      out = out.replace(/<!--[\s\S]*?-->/g, '')
+    }
+    out = out.replace(/<!\[if\s[^\]]*\]>/gi, '').replace(/<!\[endif\]>/gi, '')
+    // Verbliebene Fragmente entschärfen: einzelne '<' können nichts Neues bilden
+    out = out.replace(/<(?=!--|\/?(?:script|style)\b)/gi, '&lt;')
   }
 
   // Google-Docs-Wrapper: <b style="font-weight:normal" id="docs-internal-guid-…">…</b>
