@@ -28,6 +28,7 @@ class PublicQuestionForm(forms.ModelForm):
             "questioner_name",
             "questioner_email",
             "questioner_city",
+            "topic",
             "subject",
             "question_text",
             "privacy_accepted",
@@ -36,6 +37,7 @@ class PublicQuestionForm(forms.ModelForm):
             "questioner_name": "Ihr Name",
             "questioner_email": "Ihre E-Mail-Adresse",
             "questioner_city": "Wohnort (optional)",
+            "topic": "Themenbereich",
             "subject": "Betreff",
             "question_text": "Ihre Frage",
         }

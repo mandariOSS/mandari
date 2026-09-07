@@ -131,6 +131,12 @@ def body_sitemap(request, body_slug):
             0.4,
         )
 
+    # Ratsfragen (öffentlich, mit eigener URL)
+    from ..models import PublicQuestion
+
+    for question in PublicQuestion.objects.filter(body=body, status="published").order_by("-published_at")[:5000]:
+        add_url(f"/insight/fragen/{question.id}/", question.updated_at, "weekly", 0.5)
+
     xml_parts.append("</urlset>")
 
     response = HttpResponse("\n".join(xml_parts), content_type="application/xml; charset=utf-8")

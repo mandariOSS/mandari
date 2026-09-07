@@ -325,6 +325,8 @@ TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", 
 INSIGHT_DIGEST_ENABLED = os.environ.get("INSIGHT_DIGEST_ENABLED", "True").lower() in ("true", "1", "yes")
 INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL = int(os.environ.get("INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL", "20"))
 INSIGHT_DIGEST_FROM_EMAIL = os.environ.get("INSIGHT_DIGEST_FROM_EMAIL", "")  # Falls leer → DEFAULT_FROM_EMAIL
+# Ratsfragen: Empfänger für Moderations-Hinweise (kommagetrennt); leer → aktive Superuser
+INSIGHT_MODERATION_EMAILS = [e.strip() for e in os.environ.get("INSIGHT_MODERATION_EMAILS", "").split(",") if e.strip()]
 
 # Georeferenzierung
 GEOREF_ENABLED = os.environ.get("GEOREF_ENABLED", "True").lower() in ("true", "1", "yes")

@@ -21,6 +21,7 @@ from mandari import pwa
 #: Medien, die ohne Anmeldung ausgeliefert werden (Logos, Hero-Bilder, Demo).
 PUBLIC_MEDIA_PREFIXES = (
     "bodies/",
+    "persons/photos/",
     "organizations/logos/",
     "parties/logos/",
     "session/tenants/logos/",

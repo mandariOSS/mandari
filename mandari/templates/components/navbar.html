@@ -35,6 +35,10 @@
                    class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors">
                     Personen
                 </a>
+                <a href="{% url 'insight_core:insight:question_portal' %}"
+                   class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors">
+                    Fragen
+                </a>
                 <a href="{% url 'insight_core:insight:search' %}"
                    class="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors flex items-center gap-1">
                     <i data-lucide="search" class="w-4 h-4" aria-hidden="true"></i>
@@ -145,6 +149,12 @@
                    class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
                     <i data-lucide="user" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
                     <span>Personen</span>
+                </a>
+                <a href="{% url 'insight_core:insight:question_portal' %}"
+                   @click="mobileMenuOpen = false"
+                   class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors touch-target">
+                    <i data-lucide="message-circle-question" class="w-5 h-5 text-primary-500" aria-hidden="true"></i>
+                    <span>Fragen</span>
                 </a>
                 <a href="{% url 'insight_core:insight:search' %}"
                    @click="mobileMenuOpen = false"

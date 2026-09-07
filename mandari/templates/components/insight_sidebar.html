@@ -74,6 +74,14 @@
             <i data-lucide="users" class="w-[18px] h-[18px] {% if nav != 'person_list' and nav != 'person_detail' %}opacity-50{% endif %}"></i> Personen
         </a>
 
+        {% with qnav=nav|default:'' %}
+        <a href="{% url 'insight_core:insight:question_portal' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if qnav == 'question_portal' or qnav == 'question_detail' or qnav == 'question_start' or qnav == 'ask_question' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if qnav == 'question_portal' or qnav == 'question_detail' or qnav == 'question_start' or qnav == 'ask_question' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="message-circle-question" class="w-[18px] h-[18px] {% if qnav != 'question_portal' and qnav != 'question_detail' and qnav != 'question_start' and qnav != 'ask_question' %}opacity-50{% endif %}"></i> Ratsfragen
+        </a>
+        {% endwith %}
+
         <a href="{% url 'insight_core:insight:file_list' %}"
             class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'file_list' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
             {% if nav == 'file_list' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>

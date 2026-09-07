@@ -245,14 +245,14 @@
     <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Was m&ouml;chtest du wissen?</h2>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-        <a href="{% url 'insight_core:insight:person_list' %}"
+        <a href="{% url 'insight_core:insight:question_portal' %}"
             class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-md transition-all flex items-start gap-4">
             <div class="w-11 h-11 rounded-xl bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center flex-shrink-0 mt-0.5">
                 <i data-lucide="message-circle-question" class="w-5 h-5 text-primary-500"></i>
             </div>
             <div class="min-w-0">
                 <div class="text-base font-semibold text-gray-900 dark:text-white mb-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">Frag deine Ratsmitglieder</div>
-                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">Stelle &ouml;ffentliche Fragen an die Menschen, die Entscheidungen treffen.</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{% if stats.public_questions %}{{ stats.public_questions }} &ouml;ffentliche Fragen und Antworten &ndash; stelle deine eigene.{% else %}Stelle &ouml;ffentliche Fragen an die Menschen, die Entscheidungen treffen.{% endif %}</p>
             </div>
         </a>
 

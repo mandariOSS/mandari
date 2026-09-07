@@ -36,10 +36,13 @@ insight_patterns = [
     path("personen/<uuid:pk>/", views.PersonDetailView.as_view(), name="person_detail"),
     path("personen/<uuid:pk>/frage-stellen/", views.AskQuestionView.as_view(), name="ask_question"),
     path("personen/partials/list/", views.PersonListPartial.as_view(), name="person_list_partial"),
-    # Öffentliche Fragen
+    # Öffentliche Fragen (Ratsfragen-Portal)
+    path("fragen/", views.QuestionPortalView.as_view(), name="question_portal"),
+    path("fragen/stellen/", views.AskQuestionStartView.as_view(), name="question_start"),
     path("fragen/verifizieren/<uuid:token>/", views.VerifyQuestionView.as_view(), name="verify_question"),
     path("fragen/antworten/<uuid:token>/", views.AnswerQuestionView.as_view(), name="answer_question"),
     path("fragen/gesendet/", views.QuestionSubmittedView.as_view(), name="question_submitted"),
+    path("fragen/<uuid:pk>/", views.QuestionDetailView.as_view(), name="question_detail"),
     # Vorgänge (Papers)
     path("vorgaenge/", views.PaperListView.as_view(), name="paper_list"),
     path("vorgaenge/<uuid:pk>/", views.PaperDetailView.as_view(), name="paper_detail"),

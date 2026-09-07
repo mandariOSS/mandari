@@ -9,6 +9,7 @@ import uuid
 
 from django.core.validators import FileExtensionValidator
 from django.db import models
+from django.utils import timezone
 
 
 class SourceDeletionModel(models.Model):
@@ -219,7 +220,7 @@ class OParlBody(SourceDeletionModel):
         null=True,
         help_text=(
             "URL-Template für Personenfotos. Verwende {id} als Platzhalter für die Person-ID. "
-            "Beispiel: https://www.stadt-muenster.de/sessionnet/sessionnetbi/im/pe{id}.jpg"
+            "Beispiel SessionNet: https://www.stadt-muenster.de/sessionnet/sessionnetbi/im/pe{id}.jpg"
         ),
     )
     person_photo_id_pattern = models.CharField(
@@ -326,6 +327,21 @@ class OParlPerson(SourceDeletionModel):
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=100, blank=True, null=True)
 
+    # Lokal zwischengespeichertes Foto (Django-managed, vom Ingestor nie
+    # überschrieben — siehe ENRICHMENT_FIELDS im Ingestor). Wird per
+    # `fetch_person_photos` aus dem RIS geladen oder im Admin hochgeladen.
+    PHOTO_STATUS_CHOICES = [
+        ("unknown", "Noch nicht geprüft"),
+        ("ok", "Foto vorhanden"),
+        ("missing", "Kein Foto im RIS"),
+        ("error", "Fehler beim Abruf"),
+        ("manual", "Manuell hochgeladen"),
+    ]
+    photo = models.FileField(upload_to="persons/photos/", blank=True, null=True, verbose_name="Foto")
+    photo_status = models.CharField(max_length=20, choices=PHOTO_STATUS_CHOICES, default="unknown")
+    photo_fetched_at = models.DateTimeField(blank=True, null=True)
+    photo_error = models.CharField(max_length=255, blank=True, default="")
+
     # OParl-Zeitstempel
     oparl_created = models.DateTimeField(blank=True, null=True)
     oparl_modified = models.DateTimeField(blank=True, null=True)
@@ -369,18 +385,40 @@ class OParlPerson(SourceDeletionModel):
 
     @property
     def photo_url(self):
-        """Bild-URL basierend auf Body-Konfiguration, oder None."""
+        """Entfernte Bild-URL im RIS (Body-Konfiguration oder OParl-Feld), oder None."""
         import re
+
+        # Manche RIS liefern ein (nicht standardisiertes) Bildfeld direkt mit
+        raw = self.raw_json if isinstance(self.raw_json, dict) else {}
+        for key in ("image", "photo", "picture"):
+            value = raw.get(key)
+            if isinstance(value, str) and value.startswith("http"):
+                return value
 
         template = self.body.person_photo_url_template
         pattern = self.body.person_photo_id_pattern
         if not template or not pattern:
             return None
-        match = re.search(pattern, self.external_id)
-        if not match:
+        try:
+            match = re.search(pattern, self.external_id)
+        except re.error:
             return None
-        person_id = match.group(1)
-        return template.replace("{id}", person_id)
+        if not match or not match.groups():
+            return None
+        return template.replace("{id}", match.group(1))
+
+    @property
+    def photo_src(self):
+        """
+        Anzeige-URL für Templates: lokal gecachtes Foto zuerst, sonst die
+        RIS-URL (Hotlink). Ist im RIS nachweislich kein Foto vorhanden,
+        wird gar nichts geliefert (Initialen-Fallback statt kaputtem Bild).
+        """
+        if self.photo:
+            return self.photo.url
+        if self.photo_status == "missing":
+            return None
+        return self.photo_url
 
     @property
     def initials(self):
@@ -1232,9 +1270,24 @@ class PublicQuestion(models.Model):
         ("published", "Antwort veröffentlicht"),
     ]
 
+    TOPIC_CHOICES = [
+        ("verkehr", "Verkehr & Mobilität"),
+        ("bauen", "Bauen, Wohnen & Stadtentwicklung"),
+        ("umwelt", "Umwelt & Klima"),
+        ("bildung", "Bildung, Kinder & Jugend"),
+        ("soziales", "Soziales & Gesundheit"),
+        ("kultur", "Kultur, Sport & Freizeit"),
+        ("finanzen", "Finanzen & Haushalt"),
+        ("wirtschaft", "Wirtschaft & Arbeit"),
+        ("sicherheit", "Sicherheit & Ordnung"),
+        ("digitales", "Digitalisierung & Verwaltung"),
+        ("sonstiges", "Sonstiges"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     body = models.ForeignKey(OParlBody, on_delete=models.CASCADE, related_name="public_questions")
     recipient = models.ForeignKey(OParlPerson, on_delete=models.CASCADE, related_name="public_questions")
+    topic = models.CharField(max_length=30, choices=TOPIC_CHOICES, default="sonstiges", verbose_name="Themenbereich")
 
     # Fragesteller:in (kein Account nötig)
     questioner_name = models.CharField(max_length=200, verbose_name="Name")
@@ -1256,6 +1309,7 @@ class PublicQuestion(models.Model):
     )
     moderated_at = models.DateTimeField(null=True, blank=True)
     rejection_reason = models.TextField(blank=True, verbose_name="Ablehnungsgrund")
+    published_at = models.DateTimeField(null=True, blank=True, verbose_name="Veröffentlicht am")
 
     # Antwort
     answer_text = models.TextField(blank=True, verbose_name="Antwort")
@@ -1286,12 +1340,36 @@ class PublicQuestion(models.Model):
         indexes = [
             models.Index(fields=["recipient", "status"]),
             models.Index(fields=["body", "status", "-created_at"]),
+            models.Index(fields=["body", "topic"]),
             models.Index(fields=["verification_token"]),
             models.Index(fields=["answer_token"]),
         ]
 
     def __str__(self):
         return f"{self.subject} (von {self.questioner_name})"
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+
+        return reverse("insight_core:insight:question_detail", kwargs={"pk": self.id})
+
+    @property
+    def is_answered(self) -> bool:
+        return self.answer_status == "published" and bool(self.answer_text)
+
+    @property
+    def days_open(self) -> int:
+        """Tage seit Veröffentlichung ohne veröffentlichte Antwort (0 wenn beantwortet)."""
+        if self.is_answered or not self.published_at:
+            return 0
+        return max(0, (timezone.now() - self.published_at).days)
+
+    @property
+    def response_days(self) -> int | None:
+        """Antwortdauer in Tagen (Veröffentlichung -> Antwort), sonst None."""
+        if not self.is_answered or not self.published_at or not self.answered_at:
+            return None
+        return max(0, (self.answered_at - self.published_at).days)
 
 
 # =============================================================================

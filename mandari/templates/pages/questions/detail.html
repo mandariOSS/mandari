@@ -1,0 +1,131 @@
+{% extends "base_insight.html" %}
+
+{% block title %}{{ question.subject }} – Frage an {{ person.display_name }}{% endblock %}
+
+{% block content %}
+<div x-data="{ copied: false }">
+    {# Breadcrumb #}
+    <nav class="mb-6">
+        <ol class="flex items-center gap-2 text-sm flex-wrap">
+            <li><a href="{% url 'insight_core:insight:question_portal' %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Ratsfragen</a></li>
+            <li class="text-gray-400">/</li>
+            <li><a href="{% url 'insight_core:insight:person_detail' person.id %}?tab=fragen" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">{{ person.display_name }}</a></li>
+            <li class="text-gray-400">/</li>
+            <li class="text-gray-900 dark:text-white font-medium truncate max-w-xs">{{ question.subject|truncatechars:60 }}</li>
+        </ol>
+    </nav>
+
+    <div class="lg:grid lg:grid-cols-[1fr_320px] lg:gap-8">
+        <div class="space-y-4">
+            {# ── Frage ── #}
+            <article class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex flex-wrap items-center gap-2 mb-3">
+                    <a href="{% url 'insight_core:insight:question_portal' %}?thema={{ question.topic }}" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600">
+                        {{ question.get_topic_display }}
+                    </a>
+                    {% if question.is_answered %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"><i data-lucide="check" class="w-3 h-3"></i> Beantwortet</span>
+                    {% else %}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium {% if question.days_open > 14 %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400{% else %}bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400{% endif %}"><i data-lucide="clock" class="w-3 h-3"></i> Offen seit {{ question.days_open }} Tag{{ question.days_open|pluralize:"en" }}</span>
+                    {% endif %}
+                </div>
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-white leading-tight">{{ question.subject }}</h1>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                    Frage von <strong class="text-gray-700 dark:text-gray-300">{{ question.questioner_name }}</strong>{% if question.questioner_city %} aus {{ question.questioner_city }}{% endif %}
+                    &middot; {{ question.published_at|default:question.created_at|date:"d.m.Y" }}
+                    &middot; an <a href="{% url 'insight_core:insight:person_detail' person.id %}" class="font-medium text-primary-600 dark:text-primary-400 hover:underline">{{ person.display_name }}</a>
+                </p>
+                <div class="mt-4 text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">{{ question.question_text }}</div>
+            </article>
+
+            {# ── Antwort ── #}
+            {% if question.is_answered %}
+            <section class="bg-green-50 dark:bg-green-900/10 rounded-xl border border-green-200 dark:border-green-800 p-6">
+                <div class="flex items-center gap-3 mb-3">
+                    {% include "components/person_avatar.html" with person=person size="md" %}
+                    <div>
+                        <p class="font-semibold text-gray-900 dark:text-white">Antwort von {{ person.display_name }}</p>
+                        <p class="text-xs text-green-700 dark:text-green-400">
+                            {{ question.answered_at|date:"d.m.Y" }}{% if question.response_days is not None %} &middot; nach {{ question.response_days }} Tag{{ question.response_days|pluralize:"en" }}{% endif %}
+                        </p>
+                    </div>
+                </div>
+                <div class="text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">{{ question.answer_text }}</div>
+            </section>
+            {% else %}
+            <section class="bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 p-6 text-center">
+                <i data-lucide="clock" class="w-8 h-8 mx-auto text-gray-300 dark:text-gray-600 mb-2"></i>
+                <p class="font-medium text-gray-700 dark:text-gray-300">Noch keine Antwort</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    {{ person.display_name }} wurde per E-Mail über diese Frage informiert und erhält bei ausbleibender Antwort automatische Erinnerungen.
+                </p>
+            </section>
+            {% endif %}
+
+            {# ── Teilen ── #}
+            <div class="flex flex-wrap items-center gap-2 text-sm">
+                <span class="text-gray-500 dark:text-gray-400">Teilen:</span>
+                <button type="button"
+                        @click="navigator.clipboard.writeText(window.location.href).then(() => { copied = true; setTimeout(() => copied = false, 2000) })"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <i data-lucide="link" class="w-4 h-4"></i>
+                    <span x-show="!copied">Link kopieren</span>
+                    <span x-show="copied" x-cloak>Kopiert ✓</span>
+                </button>
+                <a href="mailto:?subject={{ question.subject|urlencode }}&body={{ seo.canonical_url|urlencode }}"
+                   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <i data-lucide="mail" class="w-4 h-4"></i> Per E-Mail
+                </a>
+            </div>
+        </div>
+
+        {# ── Sidebar: Person ── #}
+        <aside class="mt-8 lg:mt-0 space-y-4">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+                <div class="flex items-center gap-3">
+                    {% include "components/person_avatar.html" with person=person size="lg" %}
+                    <div class="min-w-0">
+                        <a href="{% url 'insight_core:insight:person_detail' person.id %}" class="font-semibold text-gray-900 dark:text-white hover:text-primary-600 block truncate">{{ person.display_name }}</a>
+                        {% if council_role %}<p class="text-xs text-gray-500 dark:text-gray-400">{{ council_role }}</p>{% endif %}
+                        {% if faction %}<p class="text-xs text-primary-700 dark:text-primary-300 truncate">{{ faction.short_name|default:faction.name }}</p>{% endif %}
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                        <span>{{ answer_stats.answered }} von {{ answer_stats.total }} Frage{{ answer_stats.total|pluralize:"n" }} beantwortet</span>
+                        <span class="font-semibold text-gray-700 dark:text-gray-200">{{ answer_stats.rate }} %</span>
+                    </div>
+                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div class="bg-green-500 h-2 rounded-full" style="width: {{ answer_stats.rate }}%"></div>
+                    </div>
+                    {% if answer_stats.avg_response_days is not None %}
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-1.5">Antwortet im Schnitt nach {{ answer_stats.avg_response_days }} Tagen</p>
+                    {% endif %}
+                </div>
+                {% if can_ask %}
+                <a href="{% url 'insight_core:insight:ask_question' person.id %}"
+                   class="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors">
+                    <i data-lucide="message-circle-question" class="w-4 h-4"></i>
+                    Weitere Frage stellen
+                </a>
+                {% endif %}
+            </div>
+
+            {% if related_questions %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+                <h2 class="font-semibold text-gray-900 dark:text-white mb-3">Weitere Fragen an {{ person.display_name }}</h2>
+                <ul class="space-y-2.5">
+                    {% for r in related_questions %}
+                    <li>
+                        <a href="{{ r.get_absolute_url }}" class="text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary-600 line-clamp-2">{{ r.subject }}</a>
+                        <p class="text-xs {% if r.is_answered %}text-green-600 dark:text-green-400{% else %}text-amber-600 dark:text-amber-400{% endif %}">{% if r.is_answered %}Beantwortet{% else %}Offen{% endif %} &middot; {{ r.published_at|default:r.created_at|date:"d.m.Y" }}</p>
+                    </li>
+                    {% endfor %}
+                </ul>
+                <a href="{% url 'insight_core:insight:person_detail' person.id %}?tab=fragen" class="mt-3 inline-block text-sm text-primary-600 dark:text-primary-400 hover:underline">Alle Fragen ansehen</a>
+            </div>
+            {% endif %}
+        </aside>
+    </div>
+</div>
+{% endblock %}

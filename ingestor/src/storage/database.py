@@ -102,6 +102,11 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset({
     # OParlBody: person photo scraping configuration (Django-managed)
     "person_photo_url_template",
     "person_photo_id_pattern",
+    # OParlPerson: lokal gecachte Fotos (Django-managed, fetch_person_photos)
+    "photo",
+    "photo_status",
+    "photo_fetched_at",
+    "photo_error",
 })
 
 

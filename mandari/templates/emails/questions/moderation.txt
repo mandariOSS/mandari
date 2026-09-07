@@ -1,0 +1,21 @@
+{% if kind == "answer" %}Antwort wartet auf Freigabe{% else %}Neue Ratsfrage wartet auf Freigabe{% endif %}
+==================================================
+
+{% if kind == "answer" %}{{ question.recipient.display_name }} hat eine Antwort eingereicht.{% else %}{{ question.questioner_name }}{% if question.questioner_city %} aus {{ question.questioner_city }}{% endif %} hat eine Frage an {{ question.recipient.display_name }} gestellt und die E-Mail-Adresse bestätigt.{% endif %}
+
+Kommune: {{ question.body.name }}
+Themenbereich: {{ question.get_topic_display }}
+Betreff: {{ question.subject }}
+
+{% if kind == "answer" %}Antwort:
+{{ question.answer_text }}{% else %}Frage:
+{{ question.question_text }}{% endif %}
+
+---
+
+Zur Moderation im Admin:
+{{ admin_url }}
+
+--
+Mandari - Kommunalpolitische Transparenz
+{{ site_url }}

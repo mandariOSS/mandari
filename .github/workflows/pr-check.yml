@@ -190,6 +190,15 @@ jobs:
           python scripts/smoke_document_folders.py
           python scripts/smoke_document_sharing.py
           python scripts/smoke_demo_environment.py
+          python scripts/smoke_work_public_api.py
+          python scripts/smoke_session_roles.py
+          python scripts/smoke_session_devices.py
+          python scripts/smoke_session_monthly_allowances.py
+          python scripts/smoke_session_allowances.py
+          python scripts/smoke_session_encryption.py
+          python scripts/smoke_tasks_import_export.py
+          python scripts/smoke_motions_access.py
+          python scripts/smoke_insight_questions.py
 
   # ===========================================================================
   # Docker Build Validation

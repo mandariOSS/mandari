@@ -122,20 +122,17 @@ class PersonDetailView(DetailView):
         )
         context["council_role"] = council_membership.role if council_membership else None
 
-        # Öffentliche Fragen (nur bei Ratsmitgliedern)
-        if council_membership:
-            published_questions = PublicQuestion.objects.filter(
+        # Öffentliche Fragen (bei allen Mandatsträger:innen: Rat/Hauptorgan oder Fraktion)
+        from ..services import question_service
+
+        context["can_ask"] = bool(council_membership) or question_service.is_mandate_holder(person)
+        context["faction"] = question_service.get_faction(person)
+        if context["can_ask"]:
+            context["published_questions"] = PublicQuestion.objects.filter(
                 recipient=person,
                 status="published",
-            ).order_by("-created_at")[:20]
-            context["published_questions"] = published_questions
-
-            total = published_questions.count()
-            answered = sum(1 for q in published_questions if q.answer_status == "published")
-            context["answer_stats"] = {
-                "total": total,
-                "answered": answered,
-            }
+            ).order_by("-published_at", "-created_at")[:50]
+            context["answer_stats"] = question_service.get_answer_stats(person)
 
         # SEO-Kontext
         from ..seo import get_person_seo

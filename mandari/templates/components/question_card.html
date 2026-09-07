@@ -1,0 +1,44 @@
+{# Usage: {% include "components/question_card.html" with q=question show_recipient=True %} #}
+<article class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-600 transition-colors">
+    <div class="flex flex-wrap items-center gap-2 mb-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+            {{ q.get_topic_display }}
+        </span>
+        {% if q.is_answered %}
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400">
+            <i data-lucide="check" class="w-3 h-3"></i> Beantwortet
+        </span>
+        {% else %}
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium {% if q.days_open > 14 %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400{% else %}bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400{% endif %}">
+            <i data-lucide="clock" class="w-3 h-3"></i> Offen seit {{ q.days_open }} Tag{{ q.days_open|pluralize:"en" }}
+        </span>
+        {% endif %}
+        <span class="ml-auto text-xs text-gray-400 dark:text-gray-500">{{ q.published_at|default:q.created_at|date:"d.m.Y" }}</span>
+    </div>
+
+    <h3 class="font-semibold text-gray-900 dark:text-white leading-snug">
+        <a href="{{ q.get_absolute_url }}" class="hover:text-primary-600 dark:hover:text-primary-400 transition-colors">{{ q.subject }}</a>
+    </h3>
+    <p class="text-sm text-gray-600 dark:text-gray-300 mt-1.5 line-clamp-3">{{ q.question_text|truncatechars:280 }}</p>
+
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-3 text-xs text-gray-500 dark:text-gray-400">
+        <span>{{ q.questioner_name }}{% if q.questioner_city %} aus {{ q.questioner_city }}{% endif %}</span>
+        {% if show_recipient %}
+        <span class="text-gray-300 dark:text-gray-600">&rarr;</span>
+        <a href="{% url 'insight_core:insight:person_detail' q.recipient.id %}?tab=fragen" class="inline-flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-200 hover:text-primary-600 dark:hover:text-primary-400">
+            {% include "components/person_avatar.html" with person=q.recipient size="xs" %}
+            {{ q.recipient.display_name }}
+        </a>
+        {% if q.recipient_faction %}
+        <span class="px-1.5 py-0.5 rounded bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">{{ q.recipient_faction.short_name|default:q.recipient_faction.name }}</span>
+        {% endif %}
+        {% endif %}
+    </div>
+
+    {% if q.is_answered %}
+    <div class="mt-3 pl-3 border-l-2 border-green-300 dark:border-green-700">
+        <p class="text-xs font-medium text-green-700 dark:text-green-400 mb-0.5">Antwort · {{ q.answered_at|date:"d.m.Y" }}</p>
+        <p class="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">{{ q.answer_text|truncatechars:220 }}</p>
+    </div>
+    {% endif %}
+</article>

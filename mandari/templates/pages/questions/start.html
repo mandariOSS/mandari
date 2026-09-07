@@ -1,0 +1,58 @@
+{% extends "base_insight.html" %}
+
+{% block title %}Frage stellen{% endblock %}
+
+{% block content %}
+<div>
+    <nav class="mb-6">
+        <ol class="flex items-center gap-2 text-sm">
+            <li><a href="{% url 'insight_core:insight:question_portal' %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Ratsfragen</a></li>
+            <li class="text-gray-400">/</li>
+            <li class="text-gray-900 dark:text-white font-medium">Frage stellen</li>
+        </ol>
+    </nav>
+
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Wem möchten Sie eine Frage stellen?</h1>
+        <p class="text-gray-600 dark:text-gray-400 max-w-2xl">
+            Alle aktuellen Mandatsträger:innen {% if active_body %}der {{ active_body.get_display_name }}{% endif %}. Die Antwortquote zeigt,
+            wie zuverlässig jemand bisher auf öffentliche Fragen reagiert hat.
+        </p>
+    </div>
+
+    <form method="get" class="mb-6">
+        <div class="relative max-w-md">
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
+            <input type="search" name="q" value="{{ filter_q }}" placeholder="Name oder Fraktion suchen…"
+                   class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+        </div>
+    </form>
+
+    {% if persons %}
+    <div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        {% for p in persons %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex items-center gap-3">
+            {% include "components/person_avatar.html" with person=p size="md" %}
+            <div class="min-w-0 flex-1">
+                <a href="{% url 'insight_core:insight:person_detail' p.id %}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600 block truncate">{{ p.display_name }}</a>
+                <p class="text-xs text-gray-500 dark:text-gray-400 truncate">{% if p.faction %}{{ p.faction.short_name|default:p.faction.name }}{% else %}Mandatsträger:in{% endif %}</p>
+                <p class="text-xs mt-0.5 {% if p.question_count %}text-gray-600 dark:text-gray-300{% else %}text-gray-400 dark:text-gray-500{% endif %}">
+                    {% if p.question_count %}{{ p.answered_count }} von {{ p.question_count }} beantwortet{% else %}Noch keine Fragen{% endif %}
+                </p>
+            </div>
+            <a href="{% url 'insight_core:insight:ask_question' p.id %}"
+               class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors">
+                <i data-lucide="message-circle-question" class="w-3.5 h-3.5"></i> Fragen
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-6 py-10 text-center">
+        <i data-lucide="users" class="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
+        <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">{% if filter_q %}Keine Treffer{% else %}Keine Mandatsträger:innen gefunden{% endif %}</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">{% if filter_q %}Versuchen Sie einen anderen Suchbegriff.{% else %}Für diese Kommune liegen noch keine Rats- oder Fraktionsmitgliedschaften vor.{% endif %}</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

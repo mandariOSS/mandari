@@ -286,6 +286,40 @@ def get_person_seo(person, request: HttpRequest) -> SEOContext:
     )
 
 
+def get_question_seo(question, request: HttpRequest) -> SEOContext:
+    """SEO-Kontext für eine öffentliche Ratsfrage (schema.org QAPage)."""
+    person = question.recipient
+    body_name = question.body.get_display_name() if question.body else ""
+    title = f"{question.subject} – Frage an {person.display_name}"[:60]
+    description = question.question_text[:157].rstrip() + ("…" if len(question.question_text) > 157 else "")
+
+    question_ld = {
+        "@type": "Question",
+        "name": question.subject,
+        "text": question.question_text,
+        "dateCreated": (question.published_at or question.created_at).isoformat(),
+        "author": {"@type": "Person", "name": question.questioner_name},
+        "answerCount": 1 if question.is_answered else 0,
+    }
+    if question.is_answered:
+        question_ld["acceptedAnswer"] = {
+            "@type": "Answer",
+            "text": question.answer_text,
+            "dateCreated": question.answered_at.isoformat() if question.answered_at else None,
+            "author": {"@type": "Person", "name": person.display_name},
+        }
+    json_ld = {"@context": "https://schema.org", "@type": "QAPage", "mainEntity": question_ld}
+
+    return SEOContext(
+        title=title,
+        description=description[:160],
+        canonical_url=build_canonical_url(request),
+        og_type="article",
+        json_ld=json_ld,
+        keywords=["Ratsfrage", person.display_name, body_name, question.get_topic_display()],
+    )
+
+
 def get_page_seo(
     request: HttpRequest,
     title: str,

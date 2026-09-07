@@ -382,10 +382,29 @@ class OParlOrganizationAdmin(ModelAdmin):
 
 @admin.register(OParlPerson)
 class OParlPersonAdmin(ModelAdmin):
-    list_display = ["display_name", "email", "body", "created_at"]
-    list_filter = ["body", "deleted"]
+    list_display = ["display_name", "email", "body", "photo_status", "created_at"]
+    list_filter = ["body", "deleted", "photo_status"]
     search_fields = ["name", "family_name", "given_name", "email"]
-    readonly_fields = ["id", "external_id", "created_at", "updated_at"]
+    readonly_fields = ["id", "external_id", "photo_fetched_at", "photo_error", "created_at", "updated_at"]
+    actions = ["refetch_photos"]
+
+    def save_model(self, request, obj, form, change):
+        # Manuell hochgeladene Fotos nie durch den RIS-Abruf überschreiben
+        if "photo" in form.changed_data and obj.photo:
+            obj.photo_status = "manual"
+            obj.photo_error = ""
+        super().save_model(request, obj, form, change)
+
+    @admin.action(description="Fotos aus dem RIS neu laden")
+    def refetch_photos(self, request, queryset):
+        from .services.person_photos import fetch_person_photo
+
+        results = {}
+        for person in queryset.select_related("body"):
+            status = fetch_person_photo(person)
+            results[status] = results.get(status, 0) + 1
+        summary = ", ".join(f"{k}: {v}" for k, v in sorted(results.items()))
+        messages.success(request, f"Foto-Abruf abgeschlossen ({summary}).")
 
 
 @admin.register(OParlMeeting)
@@ -723,11 +742,13 @@ class PublicQuestionAdmin(ModelAdmin):
         "subject",
         "questioner_name",
         "recipient_display",
+        "topic",
         "status_badge",
         "answer_status_badge",
         "created_at",
+        "published_at",
     ]
-    list_filter = ["status", "answer_status", "body", "created_at"]
+    list_filter = ["status", "answer_status", "topic", "body", "created_at"]
     search_fields = ["subject", "question_text", "questioner_name", "questioner_email"]
     readonly_fields = [
         "id",
@@ -737,6 +758,7 @@ class PublicQuestionAdmin(ModelAdmin):
         "updated_at",
         "moderated_at",
         "moderated_by",
+        "published_at",
         "answered_at",
     ]
     date_hierarchy = "created_at"
@@ -749,7 +771,7 @@ class PublicQuestionAdmin(ModelAdmin):
         (
             "Frage",
             {
-                "fields": ("recipient", "body", "subject", "question_text"),
+                "fields": ("recipient", "body", "topic", "subject", "question_text"),
             },
         ),
         (
@@ -761,7 +783,7 @@ class PublicQuestionAdmin(ModelAdmin):
         (
             "Moderation",
             {
-                "fields": ("status", "rejection_reason", "moderated_by", "moderated_at"),
+                "fields": ("status", "rejection_reason", "moderated_by", "moderated_at", "published_at"),
             },
         ),
         (
@@ -806,37 +828,25 @@ class PublicQuestionAdmin(ModelAdmin):
 
     @admin.action(description="Fragen freischalten")
     def approve_questions(self, request, queryset):
-        from .services.question_service import send_question_notification_to_recipient
+        from .services.question_service import publish_question
 
-        count = 0
-        for q in queryset.filter(status="pending"):
-            q.status = "published"
-            q.moderated_by = request.user
-            q.moderated_at = timezone.now()
-            q.save(update_fields=["status", "moderated_by", "moderated_at", "updated_at"])
-            send_question_notification_to_recipient(q)
-            count += 1
-        messages.success(request, f"{count} Frage(n) freigeschaltet.")
+        count = sum(1 for q in queryset.filter(status="pending") if publish_question(q, request.user))
+        messages.success(
+            request, f"{count} Frage(n) freigeschaltet – Ratsmitglied und Fragesteller:in wurden informiert."
+        )
 
     @admin.action(description="Fragen ablehnen")
     def reject_questions(self, request, queryset):
-        count = queryset.filter(status="pending").update(
-            status="rejected",
-            moderated_by=request.user,
-            moderated_at=timezone.now(),
-        )
+        from .services.question_service import reject_question
+
+        count = sum(1 for q in queryset.filter(status="pending") if reject_question(q, request.user))
         messages.success(request, f"{count} Frage(n) abgelehnt.")
 
     @admin.action(description="Antworten freischalten")
     def approve_answers(self, request, queryset):
-        from .services.question_service import send_answer_notification_to_questioner
+        from .services.question_service import publish_answer
 
-        count = 0
-        for q in queryset.filter(answer_status="pending"):
-            q.answer_status = "published"
-            q.save(update_fields=["answer_status", "updated_at"])
-            send_answer_notification_to_questioner(q)
-            count += 1
+        count = sum(1 for q in queryset.filter(answer_status="pending") if publish_answer(q))
         messages.success(request, f"{count} Antwort(en) freigeschaltet.")
 
     @admin.action(description="Erinnerung senden")

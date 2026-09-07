@@ -78,7 +78,10 @@ from .protocols import (
 )
 from .questions import (
     AnswerQuestionView,
+    AskQuestionStartView,
     AskQuestionView,
+    QuestionDetailView,
+    QuestionPortalView,
     QuestionSubmittedView,
     VerifyQuestionView,
 )
@@ -101,6 +104,7 @@ from .subscriptions import (
 
 __all__ = [
     "AnswerQuestionView",
+    "AskQuestionStartView",
     "AskQuestionView",
     "COUNCIL_ROLES",
     "ChatView",
@@ -124,6 +128,8 @@ __all__ = [
     "PortalHomeView",
     "PublicProtocolDetailView",
     "PublicProtocolListView",
+    "QuestionDetailView",
+    "QuestionPortalView",
     "QuestionSubmittedView",
     "SearchView",
     "SubscribeView",
