@@ -275,6 +275,7 @@ class SyncOrchestrator:
 
                 if not bodies_data:
                     result.errors.append(f"No bodies found at {url}")
+                    await self._record_source_failure(url, "Keine Kommunen (Bodies) am Endpunkt gefunden")
                     return result
 
                 # Use first body name as source name
@@ -368,6 +369,7 @@ class SyncOrchestrator:
         except Exception as e:
             result.errors.append(str(e))
             console.print(f"[red]Sync failed: {e}[/red]")
+            await self._record_source_failure(url, str(e))
 
             if self._event_emitter:
                 await self._event_emitter.emit_sync_failed(
