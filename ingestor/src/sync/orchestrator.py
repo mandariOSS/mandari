@@ -416,6 +416,13 @@ class SyncOrchestrator:
         except Exception as e:
             console.print(f"[yellow]Capability-Cache konnte nicht gespeichert werden: {e}[/yellow]")
 
+    async def _record_source_failure(self, url: str, error: str) -> None:
+        """Fehlerstatus für den Betriebsmonitor speichern — darf den Sync nie gefährden."""
+        try:
+            await self.storage.record_source_failure(url, error)
+        except Exception as exc:
+            console.print(f"[yellow]Warning: Quellen-Fehlerstatus nicht gespeichert: {exc}[/yellow]")
+
     async def sync_source(
         self,
         url: str,
@@ -449,10 +456,15 @@ class SyncOrchestrator:
             ) as client:
                 # Fetch system
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
-                system_data = await client.fetch_system(url)
+                system_result = await client.fetch(url, use_cache=False, skip_wait=True)
+                system_data = system_result.data
 
                 if not system_data:
-                    result.errors.append(f"Failed to fetch system from {url}")
+                    reason = system_result.error or (
+                        f"HTTP {system_result.status_code}" if system_result.status_code else "keine Antwort"
+                    )
+                    result.errors.append(f"Failed to fetch system from {url} ({reason})")
+                    await self._record_source_failure(url, reason)
                     return result
 
                 result.source_name = system_data.get("name", "Unknown")
@@ -601,6 +613,7 @@ class SyncOrchestrator:
         except Exception as e:
             result.errors.append(str(e))
             console.print(f"[red]Sync failed: {e}[/red]")
+            await self._record_source_failure(url, str(e))
 
             # Sync log is written by the scheduler (one per cycle, not per source)
 

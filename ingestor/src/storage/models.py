@@ -50,6 +50,11 @@ class OParlSource(Base):
     last_full_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sync_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
+    # Betriebsmonitor (Django-Admin): Fehlerstatus, bei Erfolg zurückgesetzt
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 

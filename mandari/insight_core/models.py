@@ -74,6 +74,12 @@ class OParlSource(models.Model):
     last_full_sync = models.DateTimeField(blank=True, null=True)
     sync_config = models.JSONField(default=dict, blank=True)
 
+    # Betriebsmonitor: vom Ingestor bei jedem Fehlversuch gesetzt, bei Erfolg zurückgesetzt
+    last_error = models.TextField(blank=True, null=True, verbose_name="Letzter Fehler")
+    last_error_at = models.DateTimeField(blank=True, null=True, verbose_name="Letzter Fehler am")
+    consecutive_failures = models.PositiveIntegerField(default=0, verbose_name="Fehlversuche in Folge")
+    health_alert_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Alarm gesendet am")
+
     # Rohe OParl-Daten
     raw_json = models.JSONField(default=dict, blank=True)
 

@@ -72,9 +72,22 @@ def active_body(request):
             body=body, start__gte=timezone.now(), cancelled=False, deleted=False
         ).count()
 
+    # Datenstand-Hinweis: Quelle der Kommune seit der kritischen Schwelle nicht synchronisiert
+    stale_days = None
+    if body and body.last_sync:
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        critical_days = int(getattr(settings, "INSIGHT_SOURCE_STALE_CRITICAL_DAYS", 7))
+        age = timezone.now() - body.last_sync
+        if age > timedelta(days=critical_days):
+            stale_days = age.days
+
     return {
         "active_body": body,
         "available_bodies": bodies,
         "show_all_bodies": show_all_bodies,
         "upcoming_meeting_count": upcoming_count,
+        "active_body_stale_days": stale_days,
     }

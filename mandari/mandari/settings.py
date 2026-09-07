@@ -325,6 +325,10 @@ TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", 
 INSIGHT_DIGEST_ENABLED = os.environ.get("INSIGHT_DIGEST_ENABLED", "True").lower() in ("true", "1", "yes")
 INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL = int(os.environ.get("INSIGHT_DIGEST_MAX_ALERTS_PER_MAIL", "20"))
 INSIGHT_DIGEST_FROM_EMAIL = os.environ.get("INSIGHT_DIGEST_FROM_EMAIL", "")  # Falls leer → DEFAULT_FROM_EMAIL
+# Betriebsmonitor: Alarm-Empfänger (kommagetrennt; leer → Moderations-Empfänger bzw. Superuser) und Schwellen
+INSIGHT_ALERT_EMAILS = [e.strip() for e in os.environ.get("INSIGHT_ALERT_EMAILS", "").split(",") if e.strip()]
+INSIGHT_SOURCE_STALE_WARNING_HOURS = int(os.environ.get("INSIGHT_SOURCE_STALE_WARNING_HOURS", "48"))
+INSIGHT_SOURCE_STALE_CRITICAL_DAYS = int(os.environ.get("INSIGHT_SOURCE_STALE_CRITICAL_DAYS", "7"))
 # Ratsfragen: Empfänger für Moderations-Hinweise (kommagetrennt); leer → aktive Superuser
 INSIGHT_MODERATION_EMAILS = [e.strip() for e in os.environ.get("INSIGHT_MODERATION_EMAILS", "").split(",") if e.strip()]
 
@@ -653,6 +657,11 @@ UNFOLD = {
                 "separator": True,
                 "collapsible": True,
                 "items": [
+                    {
+                        "title": _("Betriebsmonitor"),
+                        "icon": "monitor_heart",
+                        "link": reverse_lazy("admin_monitoring"),
+                    },
                     {
                         "title": _("OParl Quellen"),
                         "icon": "database",

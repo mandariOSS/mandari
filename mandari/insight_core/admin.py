@@ -81,6 +81,30 @@ class SourceTypeListFilter(admin.SimpleListFilter):
         return queryset
 
 
+class SourceHealthListFilter(admin.SimpleListFilter):
+    """Filter nach Bewertung des Betriebsmonitors (ok / Warnung / kritisch …)."""
+
+    title = "Gesundheit"
+    parameter_name = "health"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("ok", "OK"),
+            ("warning", "Warnung"),
+            ("critical", "Kritisch"),
+            ("never", "Noch kein Sync"),
+            ("inactive", "Inaktiv"),
+        ]
+
+    def queryset(self, request, queryset):
+        if not self.value():
+            return queryset
+        from .services.source_health import evaluate_source
+
+        ids = [s.id for s in queryset if evaluate_source(s)["status"] == self.value()]
+        return queryset.filter(id__in=ids)
+
+
 @admin.register(OParlSource)
 class OParlSourceAdmin(ModelAdmin):
     list_display = [
@@ -88,11 +112,12 @@ class OParlSourceAdmin(ModelAdmin):
         "url",
         "source_type_display",
         "is_active",
+        "health_display",
         "sync_status_display",
         "last_sync_ago",
         "body_count",
     ]
-    list_filter = ["is_active", SourceTypeListFilter]
+    list_filter = ["is_active", SourceHealthListFilter, SourceTypeListFilter]
     search_fields = ["name", "url"]
     readonly_fields = [
         "id",
@@ -101,9 +126,29 @@ class OParlSourceAdmin(ModelAdmin):
         "last_sync",
         "last_full_sync",
         "scraper_status_display",
+        "last_error",
+        "last_error_at",
+        "consecutive_failures",
+        "health_alert_sent_at",
     ]
     actions_detail = ["sync_incremental_action", "sync_full_action"]
-    actions = ["sync_all_incremental", "sync_all_full"]
+    actions = ["sync_all_incremental", "sync_all_full", "reset_health"]
+
+    @admin.display(description="Gesundheit")
+    def health_display(self, obj):
+        from .services.source_health import evaluate_source
+
+        item = evaluate_source(obj)
+        colors = {"green": "#16a34a", "amber": "#d97706", "red": "#dc2626", "gray": "#64748b"}
+        title = "; ".join(item["reasons"])
+        return mark_safe(
+            f'<span title="{title}" style="color: {colors[item["color"]]}; font-weight: 600;">{item["label"]}</span>'
+        )
+
+    @admin.action(description="Fehlerzähler und Alarm zurücksetzen")
+    def reset_health(self, request, queryset):
+        count = queryset.update(last_error=None, last_error_at=None, consecutive_failures=0, health_alert_sent_at=None)
+        messages.success(request, f"Gesundheitsstatus von {count} Quelle(n) zurückgesetzt.")
 
     @admin.display(description="Art")
     def source_type_display(self, obj):

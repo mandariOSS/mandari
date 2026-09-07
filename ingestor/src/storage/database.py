@@ -328,7 +328,27 @@ class DatabaseStorage:
                 source.last_sync = now
                 if full_sync:
                     source.last_full_sync = now
+                # Erfolg setzt den Fehlerstatus des Betriebsmonitors zurück
+                source.last_error = None
+                source.last_error_at = None
+                source.consecutive_failures = 0
                 await session.commit()
+
+    async def record_source_failure(self, url: str, error: str) -> None:
+        """
+        Fehlgeschlagenen Sync-Versuch an der Quelle festhalten (Betriebsmonitor
+        im Django-Admin). Die Quelle wird über ihre URL gefunden, weil bei einem
+        Verbindungsfehler noch keine Source-ID vorliegt.
+        """
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlSource).where(OParlSource.url == url))
+            source = result.scalar_one_or_none()
+            if source is None:
+                return
+            source.last_error = (error or "Unbekannter Fehler")[:2000]
+            source.last_error_at = datetime.now(UTC)
+            source.consecutive_failures = (source.consecutive_failures or 0) + 1
+            await session.commit()
 
     # Schlüssel in OParlSource.sync_config für den persistierten
     # Capability-Cache (Hosts, die modified_since ablehnen, Issue #22).

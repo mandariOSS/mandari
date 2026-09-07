@@ -16,6 +16,7 @@ from django.views.static import serve as static_serve
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
 from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
+from insight_core.admin_monitoring import monitoring_view
 from mandari import pwa
 
 #: Medien, die ohne Anmeldung ausgeliefert werden (Logos, Hero-Bilder, Demo).
@@ -98,6 +99,7 @@ urlpatterns = [
     path("feedback/<str:reference>/danke/", ProblemReportDoneView.as_view(), name="problem_report_done"),
     # Admin custom endpoints (must come before admin.site.urls)
     path("admin/insight_sync/trigger-sync/", include("insight_sync.admin_urls")),
+    path("admin/monitoring/", monitoring_view, name="admin_monitoring"),
     # Redirect admin logout to custom logout (Django 5+ admin only accepts POST)
     path("admin/logout/", lambda request: redirect("accounts:logout")),
     # Admin

@@ -52,6 +52,14 @@ def dashboard_callback(request, context):
         "memberships": OParlMembership.objects.count(),
     }
 
+    # Betriebsstatus (Quellen-Gesundheit, Systemchecks, Handlungsbedarf)
+    try:
+        from insight_core.services.source_health import collect_health
+
+        context["health"] = collect_health()
+    except Exception:
+        context["health"] = None
+
     # Letzte Sync-Aktivität mit Stunden-Berechnung
     sources = OParlSource.objects.filter(is_active=True).order_by("-last_sync")[:5]
     for source in sources:
