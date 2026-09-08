@@ -342,6 +342,7 @@ def serialize_meeting(meeting, ctx):
 
 def serialize_agenda_item(item, ctx):
     consultation_ids = ctx.consultations_by_agenda_ext.get(item.external_id, [])
+    raw = item.raw_json or {}
     return _clean(
         {
             "id": obj_url("agendaitem", item.id),
@@ -356,6 +357,10 @@ def serialize_agenda_item(item, ctx):
             "resolutionText": item.resolution_text,
             **_timestamps(item),
             "mandari:originalId": item.external_id,
+            # Abstimmungsergebnis aus dem Quell-RIS (mandari Session, Issue #41): Summen immer,
+            # Einzelstimmen nur, wenn die Quelle sie bei namentlicher Abstimmung liefert.
+            "mandari:vote": raw.get("mandari:vote") or None,
+            "mandari:rollCall": raw.get("mandari:rollCall") or None,
         }
     )
 

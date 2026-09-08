@@ -266,6 +266,46 @@ def serialize_meeting(api, meeting):
     )
 
 
+def _vote_extension(item):
+    """Abstimmungsergebnis als Summen (Issue #41). Nie für offene TOPs ohne Ergebnis."""
+    if item.vote_result == "pending":
+        return None
+    return _clean(
+        {
+            "method": item.voting_method,
+            "methodLabel": item.get_voting_method_display(),
+            "result": item.vote_result,
+            "resultLabel": item.get_vote_result_display(),
+            "yes": item.votes_yes,
+            "no": item.votes_no,
+            "abstain": item.votes_abstain,
+        }
+    )
+
+
+def _roll_call(item):
+    """
+    Einzelstimmen ausschließlich bei namentlicher Abstimmung (Issue #41).
+    Offen erfasste, geheime oder nur summierte Abstimmungen liefern nie Namen;
+    Befangenheit (Mitwirkungsverbot) wird wie in der Niederschrift ausgewiesen.
+    """
+    if item.voting_method != "roll_call" or item.vote_result == "pending":
+        return None
+    entries = []
+    for vote in item.votes.all():
+        if vote.vote not in ("yes", "no", "abstain", "excluded"):
+            continue
+        entries.append(
+            {
+                "name": vote.person.display_name,
+                "vote": vote.vote,
+                "voteLabel": vote.get_vote_display(),
+            }
+        )
+    entries.sort(key=lambda e: (e["vote"] != "yes", e["vote"] != "no", e["vote"] != "abstain", e["name"]))
+    return entries or None
+
+
 def serialize_agenda_item(api, item):
     consultation = _visible_consultation(item)
     files = [f for f in item.files.all() if f.is_public]
@@ -285,6 +325,8 @@ def serialize_agenda_item(api, item):
             "auxiliaryFile": [serialize_file(api, f) for f in files],
             **_timestamps(item),
             "mandari:resolutionNumber": item.resolution_number or None,
+            "mandari:vote": _vote_extension(item),
+            "mandari:rollCall": _roll_call(item),
         }
     )
 
@@ -412,6 +454,7 @@ def _prepare_meetings(qs, tenant):
             queryset=pub.visible_agenda_items(tenant).select_related("consultation__paper").order_by("order", "number"),
         ),
         Prefetch("agenda_items__files", queryset=_public_files_qs()),
+        "agenda_items__votes__person",
         Prefetch("files", queryset=_public_files_qs()),
     )
 
@@ -437,6 +480,7 @@ def _prepare_organizations(qs, tenant):
 def _prepare_agenda_items(qs, tenant):
     return qs.select_related("meeting", "consultation__paper").prefetch_related(
         Prefetch("files", queryset=_public_files_qs()),
+        "votes__person",
     )
 
 

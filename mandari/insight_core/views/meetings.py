@@ -292,6 +292,12 @@ class MeetingDetailView(DetailView):
             # An jedes AgendaItem anhängen
             for item in agenda_items:
                 item._prefetched_papers = papers_by_agenda.get(item.external_id, [])
+        # Abstimmungsergebnisse aus dem Quell-RIS (Issue #41): Summen + namentliche Stimmen
+        for item in agenda_items:
+            raw = item.raw_json or {}
+            item.vote_info = raw.get("mandari:vote") if isinstance(raw.get("mandari:vote"), dict) else None
+            roll_call = raw.get("mandari:rollCall")
+            item.roll_call = roll_call if isinstance(roll_call, list) and roll_call else None
         context["agenda_items"] = agenda_items
 
         # Location Koordinaten für Karte (body kann fehlen bei verwaisten Meetings)

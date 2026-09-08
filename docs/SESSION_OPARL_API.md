@@ -56,6 +56,15 @@ Objekttypen für `<typ>`: `organization`, `person`, `membership`, `meeting`,
 `Paper.mainFile` ist die älteste öffentliche Anlage der Vorlage, alle
 weiteren erscheinen unter `auxiliaryFile`.
 
+## Abstimmungsergebnisse (Erweiterung, Issue #41)
+
+Öffentliche TOPs mit Ergebnis tragen zusätzlich zu `result`/`resolutionText` die Vendor-Felder
+`mandari:vote` (Summen: `method`, `methodLabel`, `result`, `resultLabel`, `yes`, `no`, `abstain`) und —
+**nur bei namentlicher Abstimmung** (`voting_method = roll_call`) — `mandari:rollCall`
+(Liste aus `name`, `vote`, `voteLabel`, inklusive Befangenheit als `excluded`). Offen erfasste, geheime
+oder nur summierte Abstimmungen liefern nie Einzelstimmen. Die Insight-OParl-API reicht beide Felder
+durch, die Insight-Sitzungsseite zeigt Summen und (aufklappbar) die namentlichen Stimmen.
+
 ## Beratungsfolge (Consultation)
 
 Die Beratungsfolge aus Issue #34 (`SessionConsultation`) wird spec-konform

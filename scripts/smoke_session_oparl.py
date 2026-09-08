@@ -78,6 +78,7 @@ from apps.session.models import (  # noqa: E402
     SessionPaper,
     SessionPerson,
     SessionTenant,
+    SessionVote,
 )
 
 PASS = 0
@@ -173,6 +174,28 @@ top_pub = SessionAgendaItem.objects.create(
     vote_result="approved",
     resolution_number="B/2026/0001",
 )
+# Abstimmungsergebnisse (Issue #41): namentlich vs. geheim
+top_pub.voting_method = "roll_call"
+top_pub.votes_yes = 1
+top_pub.votes_no = 0
+top_pub.votes_abstain = 0
+top_pub.save(update_fields=["voting_method", "votes_yes", "votes_no", "votes_abstain"])
+person_b = SessionPerson.objects.create(tenant=tenant, given_name="Bernd", family_name="Befangen")
+SessionVote.objects.create(agenda_item=top_pub, person=person, vote="yes")
+SessionVote.objects.create(agenda_item=top_pub, person=person_b, vote="excluded")
+top_secret = SessionAgendaItem.objects.create(
+    meeting=meeting_pub,
+    number="3",
+    order=3,
+    name="GEHEIME-WAHL-TOP",
+    is_public=True,
+    vote_result="approved",
+    voting_method="secret",
+    votes_yes=5,
+    votes_no=2,
+    votes_abstain=1,
+)
+SessionVote.objects.create(agenda_item=top_secret, person=person, vote="yes")
 top_np = SessionAgendaItem.objects.create(
     meeting=meeting_pub, number="N1", order=2, name="GEHEIMER-TOP-PERSONALIE", is_public=False
 )
@@ -383,9 +406,11 @@ check(
 
 status, meeting_obj = get_json(f"{BASE}meeting/{meeting_pub.id}/")
 embedded_items = meeting_obj.get("agendaItem", []) if meeting_obj else []
+embedded_items.sort(key=lambda e: e.get("order", 0))
 check(
-    "Meeting: nur Ö-TOP eingebettet",
-    len(embedded_items) == 1 and embedded_items[0]["name"] == "OEFFENTLICHER-TOP-SPIELPLATZ",
+    "Meeting: nur Ö-TOPs eingebettet",
+    [e["name"] for e in embedded_items] == ["OEFFENTLICHER-TOP-SPIELPLATZ", "GEHEIME-WAHL-TOP"],
+    str([e.get("name") for e in embedded_items]),
 )
 check(
     "AgendaItem: result + resolutionText (öffentlich)",
@@ -585,5 +610,31 @@ check("Tombstone ohne Inhalte (kein Name/Referenz)", "ZWEITE-VORLAGE" not in tom
 
 # =============================================================================
 print()
+# =============================================================================
+print()
+print("=== Phase G: Abstimmungsergebnisse (Issue #41) ===")
+status, ai = get_json(f"{BASE}agendaitem/{top_pub.id}/")
+check(
+    "Namentlicher TOP: mandari:vote mit Summen",
+    ai is not None and ai.get("mandari:vote", {}).get("yes") == 1 and ai["mandari:vote"]["method"] == "roll_call",
+)
+roll = (ai or {}).get("mandari:rollCall") or []
+check(
+    "Namentlicher TOP: Einzelstimmen inkl. Befangenheit",
+    [(e["name"], e["vote"]) for e in roll] == [("Dr. Anna Beispiel", "yes"), ("Bernd Befangen", "excluded")],
+    str(roll),
+)
+status, ai_secret = get_json(f"{BASE}agendaitem/{top_secret.id}/")
+check(
+    "Geheimer TOP: nur Summen, keine Einzelstimmen",
+    ai_secret is not None and ai_secret.get("mandari:vote", {}).get("yes") == 5 and "mandari:rollCall" not in ai_secret,
+)
+status, listing = get_json(f"{BASE}agendaitems/")
+names_in_list = [e.get("name") for e in (listing or {}).get("data", [])]
+check(
+    "Listen-Endpunkt liefert beide Ö-TOPs mit Abstimmung",
+    "OEFFENTLICHER-TOP-SPIELPLATZ" in names_in_list and "GEHEIME-WAHL-TOP" in names_in_list,
+)
+
 print(f"=== Ergebnis: {PASS} OK, {FAIL} FAIL ===")
 sys.exit(1 if FAIL else 0)

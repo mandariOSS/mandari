@@ -275,6 +275,10 @@ a1 = OParlAgendaItem.objects.create(
     name="Haushaltssatzung 2024",
     public=True,
     result="beschlossen",
+    raw_json={
+        "mandari:vote": {"method": "roll_call", "methodLabel": "Namentlich", "yes": 21, "no": 4, "abstain": 2},
+        "mandari:rollCall": [{"name": "Erika Musterfrau", "vote": "yes", "voteLabel": "Ja"}],
+    },
     oparl_created=ts(0),
     oparl_modified=ts(0),
 )
@@ -627,6 +631,33 @@ check(
 resp_429 = client.get("/oparl/v1/system", REMOTE_ADDR="203.0.113.7")
 # Ohne Override gilt wieder das hohe Limit -> Fenster-Zähler bleibt, aber Limit hoch
 check("Rate-Limit: nach Override wieder frei", resp_429.status_code == 200)
+
+# =============================================================================
+# Abstimmungsergebnisse aus dem Quell-RIS (Issue #41)
+# =============================================================================
+resp, ai_json = get_json(f"/oparl/v1/agendaitem/{a1.id}")
+check(
+    "AgendaItem: mandari:vote + mandari:rollCall durchgereicht",
+    ai_json is not None
+    and ai_json.get("mandari:vote", {}).get("yes") == 21
+    and ai_json.get("mandari:rollCall", [{}])[0].get("name") == "Erika Musterfrau",
+    str(ai_json)[:300],
+)
+page_client = Client()
+sess = page_client.session
+sess["active_body_id"] = str(body_a.id)
+sess.save()
+resp = page_client.get(f"/insight/termine/{meeting1.id}/")
+page = resp.content.decode("utf-8", errors="replace")
+check(
+    "Insight-Sitzungsseite zeigt Summen + namentliche Stimmen",
+    resp.status_code == 200
+    and "Ja 21" in page
+    and "Nein 4" in page
+    and "Namentliche Stimmen anzeigen" in page
+    and "Erika Musterfrau" in page,
+    f"status={resp.status_code}",
+)
 
 # =============================================================================
 # Ergebnis
