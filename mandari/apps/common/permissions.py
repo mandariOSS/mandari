@@ -111,8 +111,8 @@ PERMISSIONS = {
     "organization.audit_log": "Audit-Log anzeigen",
     "organization.admin": "Vollständige Administration",
     # === GÄSTE & ÖFFENTLICHKEIT ===
-    "guests.invite": "Gäste zu Sitzungen einladen",
-    "guests.manage": "Gästeliste verwalten",
+    "guests.invite": "Gastzugänge einladen (Dokument-Freigaben)",
+    "guests.manage": "Gastzugänge und Freigaben verwalten",
     # === SUPPORT ===
     "support.view": "Support anzeigen",
     "support.create": "Support-Tickets erstellen",
@@ -272,7 +272,7 @@ PERMISSION_CATEGORIES = {
         ],
     },
     "guests": {
-        "name": "Gäste",
+        "name": "Gastzugänge (Dokumente)",
         "icon": "person_add",
         "permissions": ["guests.invite", "guests.manage"],
     },
