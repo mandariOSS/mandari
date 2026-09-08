@@ -7,92 +7,80 @@
 {% block title %}Betriebsmonitor | Mandari Admin{% endblock %}
 
 {% block content %}
-<div class="flex flex-col gap-8">
-    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+{% include "admin/_monitor_styles.html" %}
+<div class="mon-stack" style="gap:2rem">
+    <div class="mon-head">
         <div>
-            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Betriebsmonitor</h1>
-            <p class="text-gray-500 dark:text-gray-400 mt-1">
-                Gesundheit der OParl-Quellen und Systemdienste · Stand {{ health.generated_at|date:"d.m.Y H:i" }}
-            </p>
+            <h1 class="mon-title">Betriebsmonitor</h1>
+            <p class="mon-subtitle">Gesundheit der OParl-Quellen und Systemdienste · Stand {{ health.generated_at|date:"d.m.Y H:i" }}</p>
         </div>
-        <div class="flex items-center gap-3">
-            <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold
-                {% if health.overall == 'ok' %}bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300
-                {% elif health.overall == 'warning' %}bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300
-                {% else %}bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300{% endif %}">
-                <span class="w-2.5 h-2.5 rounded-full {% if health.overall == 'ok' %}bg-green-500{% elif health.overall == 'warning' %}bg-amber-500{% else %}bg-red-500 animate-pulse{% endif %}"></span>
+        <div class="mon-chips">
+            <span class="mon-badge mon-badge-lg mon-badge-{{ health.overall }}">
+                <span class="mon-dot mon-dot-{{ health.overall }}" style="margin-top:0"></span>
                 Gesamt: {{ health.overall_meta.label }}
             </span>
-            <a href="{% url 'admin:index' %}" class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400">Dashboard →</a>
+            <a href="{% url 'admin:index' %}" class="mon-link">Dashboard →</a>
         </div>
     </div>
 
     {# ── Systemdienste ── #}
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+    <div class="mon-grid">
         {% for check in health.system %}
-        {% component "unfold/components/card.html" %}
-            <div class="flex items-start gap-3">
-                <span class="mt-1 w-3 h-3 rounded-full flex-shrink-0
-                    {% if check.status == 'ok' %}bg-green-500{% elif check.status == 'warning' %}bg-amber-500{% elif check.status == 'critical' %}bg-red-500{% else %}bg-gray-400{% endif %}"></span>
-                <div class="min-w-0">
-                    <div class="font-semibold text-gray-900 dark:text-white">{{ check.name }}</div>
-                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 break-words">{{ check.detail }}</div>
-                </div>
+        <div class="mon-card">
+            <span class="mon-dot mon-dot-{{ check.status }}"></span>
+            <div style="min-width:0">
+                <div class="mon-card-title">{{ check.name }}</div>
+                <div class="mon-card-detail">{{ check.detail }}</div>
             </div>
-        {% endcomponent %}
+        </div>
         {% endfor %}
     </div>
 
-    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div class="mon-main">
         {# ── Quellen ── #}
-        <div class="xl:col-span-2">
+        <div>
             {% component "unfold/components/card.html" %}
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">OParl-Quellen</h2>
-                    <div class="text-xs text-gray-500 dark:text-gray-400">
+                <div class="mon-head" style="margin-bottom:1rem">
+                    <h2 class="mon-h2">OParl-Quellen</h2>
+                    <div class="mon-muted">
                         Warnung ab {{ health.thresholds.warning_hours }} h ohne Sync · kritisch ab {{ health.thresholds.critical_days }} Tagen oder 3 Fehlversuchen
                     </div>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
+                <div style="overflow-x:auto">
+                    <table class="mon-table">
                         <thead>
-                            <tr class="text-left text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                                <th class="py-2 pr-3">Status</th>
-                                <th class="py-2 pr-3">Quelle</th>
-                                <th class="py-2 pr-3">Kommunen</th>
-                                <th class="py-2 pr-3">Letzter Sync</th>
-                                <th class="py-2 pr-3">Fehlversuche</th>
-                                <th class="py-2">Details</th>
+                            <tr>
+                                <th>Status</th>
+                                <th>Quelle</th>
+                                <th>Kommunen</th>
+                                <th>Letzter Sync</th>
+                                <th style="text-align:center">Fehlversuche</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                        <tbody>
                             {% for item in health.sources.items %}
-                            <tr class="{% if item.status == 'critical' %}bg-red-50/60 dark:bg-red-900/10{% elif item.status == 'warning' %}bg-amber-50/60 dark:bg-amber-900/10{% endif %}">
-                                <td class="py-2 pr-3 whitespace-nowrap">
-                                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium
-                                        {% if item.status == 'ok' %}bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300
-                                        {% elif item.status == 'warning' %}bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300
-                                        {% elif item.status == 'critical' %}bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300
-                                        {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300{% endif %}">
-                                        {{ item.label }}
-                                    </span>
+                            <tr class="mon-row-{{ item.status }}">
+                                <td class="mon-nowrap"><span class="mon-badge mon-badge-{{ item.status }}">{{ item.label }}</span></td>
+                                <td>
+                                    <a href="{% url 'admin:insight_core_oparlsource_change' item.source.pk %}" class="mon-strong">{{ item.source.name }}</a>
+                                    <div class="mon-url" title="{{ item.source.url }}">{{ item.source.url }}</div>
                                 </td>
-                                <td class="py-2 pr-3">
-                                    <a href="{% url 'admin:insight_core_oparlsource_change' item.source.pk %}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">{{ item.source.name }}</a>
-                                    <div class="text-xs text-gray-400 dark:text-gray-500 truncate max-w-xs">{{ item.source.url }}</div>
+                                <td class="mon-bodies">{{ item.bodies|join:", "|default:"–" }}</td>
+                                <td class="mon-nowrap">
+                                    {% if item.source.last_sync %}{{ item.source.last_sync|date:"d.m.Y H:i" }}<div class="mon-muted">vor {{ item.source.last_sync|timesince }}</div>{% else %}–{% endif %}
                                 </td>
-                                <td class="py-2 pr-3 text-gray-600 dark:text-gray-300">{{ item.bodies|join:", "|default:"–" }}</td>
-                                <td class="py-2 pr-3 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                                    {% if item.source.last_sync %}{{ item.source.last_sync|date:"d.m.Y H:i" }}<div class="text-xs text-gray-400">vor {{ item.source.last_sync|timesince }}</div>{% else %}–{% endif %}
-                                </td>
-                                <td class="py-2 pr-3 text-center {% if item.consecutive_failures >= 3 %}text-red-600 font-semibold{% elif item.consecutive_failures %}text-amber-600{% else %}text-gray-400{% endif %}">{{ item.consecutive_failures }}</td>
-                                <td class="py-2 text-xs text-gray-600 dark:text-gray-300">
-                                    {% for reason in item.reasons %}<div>{{ reason }}</div>{% empty %}<span class="text-gray-400">–</span>{% endfor %}
-                                    {% if item.source.health_alert_sent_at %}<div class="text-gray-400 mt-0.5">Alarm gesendet {{ item.source.health_alert_sent_at|date:"d.m.Y H:i" }}</div>{% endif %}
+                                <td class="{% if item.consecutive_failures >= 3 %}mon-count-critical{% elif item.consecutive_failures %}mon-count-warning{% else %}mon-count-zero{% endif %}">{{ item.consecutive_failures }}</td>
+                            </tr>
+                            {% if item.reasons or item.source.health_alert_sent_at %}
+                            <tr class="mon-row-{{ item.status }} mon-reasons">
+                                <td colspan="5" class="mon-small mon-details">
+                                    {% for reason in item.reasons %}<div>{{ reason }}</div>{% endfor %}
+                                    {% if item.source.health_alert_sent_at %}<div class="mon-muted" style="margin-top:.2rem">Alarm gesendet {{ item.source.health_alert_sent_at|date:"d.m.Y H:i" }}</div>{% endif %}
                                 </td>
                             </tr>
+                            {% endif %}
                             {% empty %}
-                            <tr><td colspan="6" class="py-6 text-center text-gray-400">Keine Quellen angelegt</td></tr>
+                            <tr><td colspan="5" style="text-align:center;padding:1.5rem 0" class="mon-muted">Keine Quellen angelegt</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -101,31 +89,31 @@
         </div>
 
         {# ── Handlungsbedarf ── #}
-        <div class="flex flex-col gap-6">
+        <div class="mon-stack">
             {% component "unfold/components/card.html" %}
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Handlungsbedarf</h2>
+                <h2 class="mon-h2" style="margin-bottom:1rem">Handlungsbedarf</h2>
                 {% if health.actions %}
-                <ul class="space-y-2">
+                <ul class="mon-list">
                     {% for action in health.actions %}
                     <li>
-                        <a href="{{ action.url }}" class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                            <span class="text-sm text-gray-700 dark:text-gray-200">{{ action.label }}</span>
-                            <span class="px-2 py-0.5 rounded-full text-xs font-semibold {% if action.level == 'warning' %}bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300{% else %}bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200{% endif %}">{{ action.count }}</span>
+                        <a href="{{ action.url }}" class="mon-action">
+                            <span>{{ action.label }}</span>
+                            <span class="mon-badge {% if action.level == 'warning' %}mon-badge-warning{% else %}mon-badge-gray{% endif %}">{{ action.count }}</span>
                         </a>
                     </li>
                     {% endfor %}
                 </ul>
                 {% else %}
-                <p class="text-sm text-gray-500 dark:text-gray-400">Nichts offen – alles erledigt.</p>
+                <p class="mon-text">Nichts offen – alles erledigt.</p>
                 {% endif %}
             {% endcomponent %}
 
             {% component "unfold/components/card.html" %}
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Alarmierung</h2>
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                    <code class="text-xs">check_source_health</code> läuft per Cron und schickt bei kritischen Quellen eine E-Mail
+                <h2 class="mon-h2" style="margin-bottom:.5rem">Alarmierung</h2>
+                <p class="mon-text">
+                    <code class="mon-code">check_source_health</code> läuft per Cron und schickt bei kritischen Quellen eine E-Mail
                     (Wiederholung nach 7 Tagen) sowie eine Entwarnung, sobald die Quelle wieder synchronisiert.
-                    Empfänger: <code class="text-xs">INSIGHT_ALERT_EMAILS</code>, sonst Superuser.
+                    Empfänger: <code class="mon-code">INSIGHT_ALERT_EMAILS</code>, sonst Superuser.
                 </p>
             {% endcomponent %}
         </div>
@@ -133,38 +121,36 @@
 
     {# ── Letzte Sync-Läufe ── #}
     {% component "unfold/components/card.html" %}
-        <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Letzte Sync-Läufe</h2>
-            <a href="{% url 'admin:insight_sync_synclog_changelist' %}" class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400">Alle Logs →</a>
+        <div class="mon-head" style="margin-bottom:1rem">
+            <h2 class="mon-h2">Letzte Sync-Läufe</h2>
+            <a href="{% url 'admin:insight_sync_synclog_changelist' %}" class="mon-link">Alle Logs →</a>
         </div>
         {% if recent_logs %}
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+        <div style="overflow-x:auto">
+            <table class="mon-table">
                 <thead>
-                    <tr class="text-left text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                        <th class="py-2 pr-3">Start</th>
-                        <th class="py-2 pr-3">Typ</th>
-                        <th class="py-2 pr-3">Status</th>
-                        <th class="py-2 pr-3">Dauer</th>
-                        <th class="py-2 pr-3">Entitäten</th>
-                        <th class="py-2">Fehler</th>
+                    <tr>
+                        <th>Start</th>
+                        <th>Typ</th>
+                        <th>Status</th>
+                        <th>Dauer</th>
+                        <th>Entitäten</th>
+                        <th>Fehler</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                <tbody>
                     {% for log in recent_logs %}
                     <tr>
-                        <td class="py-2 pr-3 whitespace-nowrap text-gray-600 dark:text-gray-300">{{ log.started_at|date:"d.m.Y H:i" }}</td>
-                        <td class="py-2 pr-3 text-gray-600 dark:text-gray-300">{{ log.get_sync_type_display }}{% if log.source %} · {{ log.source.name }}{% endif %}</td>
-                        <td class="py-2 pr-3">
-                            <span class="inline-flex items-center gap-1.5 text-xs font-medium {% if log.status == 'success' %}text-green-700 dark:text-green-400{% elif log.status == 'running' %}text-blue-700 dark:text-blue-400{% else %}text-red-700 dark:text-red-400{% endif %}">
-                                <span class="w-2 h-2 rounded-full {% if log.status == 'success' %}bg-green-500{% elif log.status == 'running' %}bg-blue-500 animate-pulse{% else %}bg-red-500{% endif %}"></span>{{ log.get_status_display }}
-                            </span>
+                        <td class="mon-nowrap">{{ log.started_at|date:"d.m.Y H:i" }}</td>
+                        <td>{{ log.get_sync_type_display }}{% if log.source %} · {{ log.source.name }}{% endif %}</td>
+                        <td class="mon-nowrap">
+                            <span class="mon-badge {% if log.status == 'success' %}mon-badge-ok{% elif log.status == 'running' %}mon-badge-gray{% else %}mon-badge-critical{% endif %}">{{ log.get_status_display }}</span>
                         </td>
-                        <td class="py-2 pr-3 text-gray-600 dark:text-gray-300">{% if log.duration_seconds %}{{ log.duration_seconds|floatformat:0 }} s{% else %}–{% endif %}</td>
-                        <td class="py-2 pr-3 text-gray-600 dark:text-gray-300">{{ log.entities_synced }}</td>
-                        <td class="py-2 text-xs text-gray-600 dark:text-gray-300">
-                            {% for err in log.errors|slice:":3" %}<div class="truncate max-w-md" title="{{ err }}">{{ err }}</div>{% endfor %}
-                            {% if log.errors|length > 3 %}<div class="text-gray-400">… {{ log.errors|length|add:"-3" }} weitere</div>{% endif %}
+                        <td class="mon-nowrap">{% if log.duration_seconds %}{{ log.duration_seconds|floatformat:0 }} s{% else %}–{% endif %}</td>
+                        <td>{{ log.entities_synced }}</td>
+                        <td class="mon-small">
+                            {% for err in log.errors|slice:":3" %}<div class="mon-url" style="max-width:28rem" title="{{ err }}">{{ err }}</div>{% endfor %}
+                            {% if log.errors|length > 3 %}<div class="mon-muted">… {{ log.errors|length|add:"-3" }} weitere</div>{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -172,7 +158,7 @@
             </table>
         </div>
         {% else %}
-        <p class="text-sm text-gray-500 dark:text-gray-400">Noch keine Sync-Läufe protokolliert.</p>
+        <p class="mon-text">Noch keine Sync-Läufe protokolliert.</p>
         {% endif %}
     {% endcomponent %}
 </div>

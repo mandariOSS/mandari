@@ -22,44 +22,39 @@
         </div>
     </div>
 
-    <!-- Betriebsstatus -->
+    <!-- Betriebsstatus (eigene Styles, siehe admin/_monitor_styles.html) -->
     {% if health %}
-    <div class="rounded-xl border p-5
-        {% if health.overall == 'ok' %}border-green-200 bg-green-50/60 dark:border-green-800 dark:bg-green-900/10
-        {% elif health.overall == 'warning' %}border-amber-200 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-900/10
-        {% else %}border-red-200 bg-red-50/60 dark:border-red-800 dark:bg-red-900/10{% endif %}">
-        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3">
-            <div class="flex items-center gap-3">
-                <span class="w-3 h-3 rounded-full {% if health.overall == 'ok' %}bg-green-500{% elif health.overall == 'warning' %}bg-amber-500{% else %}bg-red-500 animate-pulse{% endif %}"></span>
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Betriebsstatus: {{ health.overall_meta.label }}</h2>
-                <span class="text-sm text-gray-500 dark:text-gray-400">
+    {% include "admin/_monitor_styles.html" %}
+    <div class="mon-panel mon-panel-{{ health.overall }}">
+        <div class="mon-head" style="margin-bottom:.75rem">
+            <div class="mon-chips" style="gap:.75rem">
+                <span class="mon-dot mon-dot-{{ health.overall }}" style="margin-top:0"></span>
+                <h2 class="mon-h2">Betriebsstatus: {{ health.overall_meta.label }}</h2>
+                <span class="mon-text">
                     {{ health.sources.counts.ok|default:0 }} Quellen OK
                     {% if health.sources.counts.warning %}· {{ health.sources.counts.warning }} Warnung{% endif %}
                     {% if health.sources.counts.critical %}· {{ health.sources.counts.critical }} kritisch{% endif %}
                 </span>
             </div>
-            <a href="{% url 'admin_monitoring' %}" class="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400">Betriebsmonitor öffnen →</a>
+            <a href="{% url 'admin_monitoring' %}" class="mon-link">Betriebsmonitor öffnen →</a>
         </div>
         {% if health.sources.problems %}
-        <ul class="space-y-1.5 mb-3">
+        <ul class="mon-list" style="gap:.4rem;margin-bottom:.75rem">
             {% for item in health.sources.problems|slice:":5" %}
-            <li class="flex flex-wrap items-center gap-2 text-sm">
-                <span class="px-2 py-0.5 rounded-full text-xs font-semibold
-                    {% if item.status == 'critical' %}bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300{% else %}bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300{% endif %}">{{ item.label }}</span>
-                <a href="{% url 'admin:insight_core_oparlsource_change' item.source.pk %}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">{{ item.source.name }}</a>
-                <span class="text-gray-500 dark:text-gray-400">{{ item.reasons|join:" · " }}</span>
+            <li class="mon-chips" style="font-size:.875rem">
+                <span class="mon-badge mon-badge-{{ item.status }}">{{ item.label }}</span>
+                <a href="{% url 'admin:insight_core_oparlsource_change' item.source.pk %}" class="mon-strong">{{ item.source.name }}</a>
+                <span class="mon-text">{{ item.reasons|join:" · " }}</span>
             </li>
             {% endfor %}
         </ul>
         {% endif %}
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="mon-chips">
             {% for check in health.system %}{% if check.status != 'ok' and check.status != 'inactive' %}
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium {% if check.status == 'critical' %}bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300{% else %}bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300{% endif %}">{{ check.name }}: {{ check.detail }}</span>
+            <span class="mon-badge mon-badge-{{ check.status }}" style="white-space:normal;border-radius:.5rem">{{ check.name }}: {{ check.detail }}</span>
             {% endif %}{% endfor %}
             {% for action in health.actions %}
-            <a href="{{ action.url }}" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-primary-400">
-                <span class="font-bold">{{ action.count }}</span> {{ action.label }}
-            </a>
+            <a href="{{ action.url }}" class="mon-chip"><strong>{{ action.count }}</strong> {{ action.label }}</a>
             {% endfor %}
         </div>
     </div>
