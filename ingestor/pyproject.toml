@@ -11,7 +11,7 @@ dependencies = [
     "mandari-oparl",
     "httpx>=0.28.0",
     "pydantic>=2.10.0",
-    "pydantic-settings>=2.6.0",
+    "pydantic-settings>=2.14.2",  # Security: Symlink-Lesen außerhalb secrets_dir
     "sqlalchemy>=2.0.36",
     "asyncpg>=0.30.0",
     "redis>=5.2.0",
@@ -27,11 +27,14 @@ dependencies = [
     "pypdf>=4.0.0",
     "pytesseract>=0.3.10",
     "pdf2image>=1.17.0",
+    # Security-Floors für transitive Pakete (Dependabot)
+    "idna>=3.15",
+    "python-dotenv>=1.2.2",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.3.0",
+    "pytest>=9.0.3",  # Security: tmpdir-Handling
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.8.0",
@@ -62,3 +65,7 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
+
+[tool.uv.sources]
+# Lokales Shared-Paket (OParl-Typen) — nur für uv lock/sync; Docker installiert /tmp/shared direkt
+mandari-oparl = { path = "../shared", editable = true }
