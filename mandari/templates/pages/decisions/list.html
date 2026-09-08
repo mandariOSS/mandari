@@ -1,0 +1,116 @@
+{% extends "base_insight.html" %}
+
+{% block title %}Beschlüsse und Umsetzung{% endblock %}
+
+{% block content %}
+<div>
+    {% if messages %}
+    <div class="mb-4 space-y-2">
+        {% for message in messages %}
+        <div class="px-4 py-3 rounded-xl text-sm {% if message.tags == "error" %}bg-red-50 text-red-800 border border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800{% elif message.tags == "success" %}bg-green-50 text-green-800 border border-green-200 dark:bg-green-900/30 dark:text-green-200 dark:border-green-800{% else %}bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800{% endif %}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Was wurde aus …?</h1>
+            <p class="text-gray-600 dark:text-gray-400 max-w-2xl">
+                Beschlüsse {% if active_body %}der {{ active_body.get_display_name }}{% endif %} und ihr Umsetzungsstand,
+                gemeldet von der Verwaltung. Abonnieren Sie einzelne Beschlüsse, um bei Änderungen informiert zu werden.
+            </p>
+        </div>
+    </div>
+
+    {% if not publishing %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
+        <i data-lucide="gavel" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-4"></i>
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Noch keine Beschlusskontrolle veröffentlicht</h2>
+        <p class="text-gray-600 dark:text-gray-400 max-w-xl mx-auto">
+            Die Verwaltung {% if active_body %}der {{ active_body.get_display_name }}{% endif %} veröffentlicht den Umsetzungsstand
+            ihrer Beschlüsse hier noch nicht. Kommunen mit mandari Session können das mit einem Klick freischalten.
+        </p>
+    </div>
+    {% else %}
+
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <a href="?status=open" class="bg-white dark:bg-gray-800 rounded-xl border px-4 py-3 hover:border-primary-300 {% if filter_status == 'open' %}border-primary-400{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+            <p class="text-xs text-gray-500 dark:text-gray-400">Umsetzung steht an</p>
+            <p class="text-2xl font-bold text-amber-600 dark:text-amber-400">{{ stats.open }}</p>
+        </a>
+        <a href="?status=in_progress" class="bg-white dark:bg-gray-800 rounded-xl border px-4 py-3 hover:border-primary-300 {% if filter_status == 'in_progress' %}border-primary-400{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+            <p class="text-xs text-gray-500 dark:text-gray-400">In Umsetzung</p>
+            <p class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ stats.in_progress }}</p>
+        </a>
+        <a href="?status=done" class="bg-white dark:bg-gray-800 rounded-xl border px-4 py-3 hover:border-primary-300 {% if filter_status == 'done' %}border-primary-400{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+            <p class="text-xs text-gray-500 dark:text-gray-400">Umgesetzt</p>
+            <p class="text-2xl font-bold text-green-600 dark:text-green-400">{{ stats.done }}</p>
+        </a>
+        <a href="?status=deferred" class="bg-white dark:bg-gray-800 rounded-xl border px-4 py-3 hover:border-primary-300 {% if filter_status == 'deferred' %}border-primary-400{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+            <p class="text-xs text-gray-500 dark:text-gray-400">Zurückgestellt</p>
+            <p class="text-2xl font-bold text-gray-700 dark:text-gray-200">{{ stats.deferred }}</p>
+        </a>
+    </div>
+
+    <form method="get" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-4 flex flex-wrap items-center gap-2">
+        <div class="relative flex-1 min-w-[200px]">
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+            <input type="search" name="q" value="{{ search_query }}" placeholder="Beschluss suchen…" aria-label="Beschlüsse durchsuchen"
+                   class="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+        </div>
+        <select name="gremium" class="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+            <option value="">Alle Gremien</option>
+            {% for org in organizations %}<option value="{{ org.id }}" {% if filter_organization == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
+        </select>
+        <select name="jahr" class="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+            <option value="">Alle Jahre</option>
+            {% for y in years %}<option value="{{ y }}" {% if filter_year == y|stringformat:"s" %}selected{% endif %}>{{ y }}</option>{% endfor %}
+        </select>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" name="offen" value="1" {% if filter_open %}checked{% endif %} class="rounded border-gray-300"> nur offene Beschlüsse</label>
+        <button type="submit" class="px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700">Filtern</button>
+        {% if has_filter %}<a href="{% url 'insight_core:insight:decision_list' %}" class="text-sm text-gray-500 hover:text-gray-900 dark:hover:text-white">Zurücksetzen</a>{% endif %}
+    </form>
+
+    {% if items %}
+    <ul class="space-y-3">
+        {% for item in items %}
+        <li class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:border-primary-300 dark:hover:border-primary-700 transition-colors">
+            <a href="{% url 'insight_core:insight:decision_detail' pk=item.id %}" class="block">
+                <div class="flex flex-wrap items-center gap-2 mb-1.5">
+                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-full
+                        {% if item.implementation_status == 'done' %}bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300
+                        {% elif item.implementation_status == 'in_progress' %}bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300
+                        {% elif item.implementation_status == 'deferred' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300
+                        {% else %}bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300{% endif %}">
+                        <span class="w-1.5 h-1.5 rounded-full bg-current"></span>{{ item.public_label }}
+                    </span>
+                    {% if item.resolution_number %}<span class="text-xs font-mono text-gray-500 dark:text-gray-400">{{ item.resolution_number }}</span>{% endif %}
+                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ item.meeting.organization.name }} · {{ item.meeting.start|date:"d.m.Y" }}</span>
+                </div>
+                <h3 class="font-semibold text-gray-900 dark:text-white">{{ item.name }}</h3>
+                {% if item.implementation_public_note %}
+                <p class="text-sm text-gray-700 dark:text-gray-300 mt-1.5 line-clamp-2"><span class="text-gray-500">Stand:</span> {{ item.implementation_public_note }}</p>
+                {% elif item.resolution_text %}
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1.5 line-clamp-2">{{ item.resolution_text }}</p>
+                {% endif %}
+                {% if item.implementation_deadline and item.implementation_status != 'done' %}
+                <p class="text-xs mt-2 {% if item.implementation_deadline < today %}text-red-600 dark:text-red-400 font-medium{% else %}text-gray-500 dark:text-gray-400{% endif %}">Geplante Umsetzung bis {{ item.implementation_deadline|date:"d.m.Y" }}</p>
+                {% endif %}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% if page_obj.has_other_pages %}
+    <nav class="mt-6 flex items-center justify-center gap-2 text-sm">
+        {% if page_obj.has_previous %}<a href="?{{ request.GET.urlencode }}&page={{ page_obj.previous_page_number }}" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700">Zurück</a>{% endif %}
+        <span class="text-gray-500">Seite {{ page_obj.number }} von {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?{{ request.GET.urlencode }}&page={{ page_obj.next_page_number }}" class="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700">Weiter</a>{% endif %}
+    </nav>
+    {% endif %}
+    {% else %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center text-gray-500 dark:text-gray-400">
+        Keine Beschlüsse für diese Auswahl.
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

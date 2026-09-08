@@ -24,6 +24,12 @@ from .chat import (
     _get_client_ip,
     chat_message,
 )
+from .decisions import (  # noqa: F401
+    DecisionDetailView,
+    DecisionListView,
+    confirm_decision_subscription,
+    unsubscribe_decision,
+)
 from .files import (
     FileListView,
     _annotate_files_with_context,

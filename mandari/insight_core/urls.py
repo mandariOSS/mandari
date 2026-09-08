@@ -37,6 +37,11 @@ insight_patterns = [
     path("personen/<uuid:pk>/frage-stellen/", views.AskQuestionView.as_view(), name="ask_question"),
     path("personen/partials/list/", views.PersonListPartial.as_view(), name="person_list_partial"),
     # Öffentliche Fragen (Ratsfragen-Portal)
+    # Öffentliches Beschluss-Tracking „Was wurde aus …?“ (Issue #48)
+    path("beschluesse/", views.DecisionListView.as_view(), name="decision_list"),
+    path("beschluesse/<uuid:pk>/", views.DecisionDetailView.as_view(), name="decision_detail"),
+    path("beschluesse/abo/bestaetigen/<uuid:token>/", views.confirm_decision_subscription, name="decision_confirm"),
+    path("beschluesse/abo/abmelden/<uuid:token>/", views.unsubscribe_decision, name="decision_unsubscribe"),
     path("fragen/", views.QuestionPortalView.as_view(), name="question_portal"),
     path("fragen/stellen/", views.AskQuestionStartView.as_view(), name="question_start"),
     path("fragen/verifizieren/<uuid:token>/", views.VerifyQuestionView.as_view(), name="verify_question"),

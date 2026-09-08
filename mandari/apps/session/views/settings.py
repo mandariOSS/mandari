@@ -86,6 +86,40 @@ class ReminderSettingsView(SessionViewMixin, View):
         return redirect("session:settings", tenant_slug=tenant_slug)
 
 
+class ImplementationPublishView(SessionViewMixin, View):
+    """Öffentliches Beschluss-Tracking ein-/ausschalten (Issue #48)."""
+
+    permission_required = "manage_settings"
+    http_method_names = ["post"]
+
+    def post(self, request, tenant_slug):
+        from .. import audit
+
+        publish = request.POST.get("publish") == "1"
+        tenant = self.session_tenant
+        if tenant.implementation_publish != publish:
+            old_value = tenant.implementation_publish
+            tenant.implementation_publish = publish
+            tenant.save(update_fields=["implementation_publish", "updated_at"])
+            audit.log_event(
+                "publish" if publish else "update",
+                tenant,
+                tenant=tenant,
+                user=self.session_user,
+                request=request,
+                changes={"implementation_publish": {"alt": old_value, "neu": publish}},
+            )
+            if publish:
+                messages.success(
+                    request,
+                    "Umsetzungsstand wird veröffentlicht: Angenommene öffentliche Beschlüsse erscheinen mit "
+                    "Status-Zeitleiste und öffentlicher Statusmeldung im Bürgerportal.",
+                )
+            else:
+                messages.success(request, "Der Umsetzungsstand wird nicht mehr im Bürgerportal gezeigt.")
+        return redirect("session:settings", tenant_slug=tenant_slug)
+
+
 class InsightPublishView(SessionViewMixin, View):
     """
     Veröffentlichungs-Schalter für das Bürgerportal (Issue #36).

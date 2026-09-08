@@ -251,6 +251,26 @@
                     </button>
                     {% endif %}
                 </form>
+                {% if session_tenant.insight_publish %}
+                <div class="pt-3 mt-2 border-t border-gray-200 dark:border-gray-700">
+                    <p class="font-medium text-gray-900 dark:text-white">Beschluss-Tracking „Was wurde aus …?“</p>
+                    {% if session_tenant.implementation_publish %}
+                    <p class="inline-flex items-center gap-2 text-green-700 dark:text-green-400 text-xs mt-1"><i data-lucide="check-circle" class="w-4 h-4"></i> Umsetzungsstand angenommener öffentlicher Beschlüsse ist im Bürgerportal sichtbar.</p>
+                    {% else %}
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Zeigt Bürgerinnen und Bürgern, was aus einem Beschluss geworden ist — mit Status-Zeitleiste und Ihrer öffentlichen Statusmeldung. Interne Erledigungsvermerke bleiben intern.</p>
+                    {% endif %}
+                    <form method="post" action="{% url 'session:implementation_publish' tenant_slug=tenant_slug %}" class="mt-2">
+                        {% csrf_token %}
+                        {% if session_tenant.implementation_publish %}
+                        <input type="hidden" name="publish" value="0">
+                        <button type="submit" class="text-xs font-medium text-red-700 dark:text-red-400 hover:underline">Beschluss-Tracking beenden</button>
+                        {% else %}
+                        <input type="hidden" name="publish" value="1">
+                        <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-lg">Umsetzungsstand veröffentlichen</button>
+                        {% endif %}
+                    </form>
+                </div>
+                {% endif %}
             </div>
         </div>
 

@@ -1586,6 +1586,37 @@ class SubscriptionAlert(models.Model):
         return f"{self.get_alert_type_display()}: {self.entity_title}"
 
 
+class DecisionSubscription(models.Model):
+    """
+    Abo eines einzelnen Beschlusses im öffentlichen Beschluss-Tracking (Issue #48).
+    Double-Opt-In wie beim Insight-Digest; keine Anmeldung nötig.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(db_index=True)
+    agenda_item = models.ForeignKey(
+        "session.SessionAgendaItem", on_delete=models.CASCADE, related_name="insight_subscriptions"
+    )
+    token = models.UUIDField(unique=True, default=uuid.uuid4)
+    confirmed = models.BooleanField(default=False)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    unsubscribed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "insight_decision_subscriptions"
+        verbose_name = "Beschluss-Abo"
+        verbose_name_plural = "Beschluss-Abos"
+        constraints = [models.UniqueConstraint(fields=["agenda_item", "email"], name="uniq_decision_subscription")]
+
+    def __str__(self):
+        return f"{self.email} → {self.agenda_item_id}"
+
+    @property
+    def is_active(self):
+        return self.confirmed and self.unsubscribed_at is None
+
+
 class DigestLog(models.Model):
     """Protokoll verschickter Digest-E-Mails."""
 

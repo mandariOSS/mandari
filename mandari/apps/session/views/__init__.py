@@ -166,6 +166,7 @@ from .roles import (
 )
 from .search import SessionSearchView
 from .settings import (
+    ImplementationPublishView,
     InsightPublishView,
     InvitationAcceptView,
     InvitationCancelView,
@@ -280,6 +281,7 @@ __all__ = [
     "FileReplaceView",
     "FileUpdateView",
     "FileUploadView",
+    "ImplementationPublishView",
     "InsightPublishView",
     "InvitationAcceptView",
     "InvitationCancelView",

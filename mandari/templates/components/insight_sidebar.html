@@ -82,6 +82,12 @@
         </a>
         {% endwith %}
 
+        <a href="{% url 'insight_core:insight:decision_list' %}"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'decision_list' or nav == 'decision_detail' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
+            {% if nav == 'decision_list' or nav == 'decision_detail' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>
+            <i data-lucide="gavel" class="w-[18px] h-[18px] {% if nav != 'decision_list' and nav != 'decision_detail' %}opacity-50{% endif %}"></i> Beschlüsse
+        </a>
+
         <a href="{% url 'insight_core:insight:file_list' %}"
             class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 {% if nav == 'file_list' %}font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors{% endif %}"
             {% if nav == 'file_list' %}style="box-shadow:inset 3px 0 0 #4f46e5;"{% endif %}>

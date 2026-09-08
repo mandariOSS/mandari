@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 from django.conf import settings
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
 from .models import (
@@ -192,3 +192,46 @@ def index_file(sender, instance, **kwargs):
 def delete_file(sender, instance, **kwargs):
     """Löscht eine Datei aus dem Index."""
     _delete_document("files", str(instance.id))
+
+
+# =============================================================================
+# Öffentliches Beschluss-Tracking (Issue #48): Abonnent:innen benachrichtigen
+# =============================================================================
+
+
+def _decision_pre_save(sender, instance, **kwargs):
+    if instance.pk:
+        previous = (
+            sender.objects.filter(pk=instance.pk).values("implementation_status", "implementation_public_note").first()
+        )
+    else:
+        previous = None
+    instance._tracking_previous = previous
+
+
+def _decision_post_save(sender, instance, created, **kwargs):
+    previous = getattr(instance, "_tracking_previous", None)
+    if created or not previous:
+        return
+    from .services import decision_tracking
+
+    try:
+        decision_tracking.notify_status_change(
+            instance, previous.get("implementation_status"), previous.get("implementation_public_note")
+        )
+    except Exception:  # Benachrichtigung darf das Speichern nie verhindern
+        logger.exception("Beschluss-Abo-Benachrichtigung fehlgeschlagen (%s)", instance.pk)
+
+
+def _connect_decision_tracking():
+    from django.apps import apps as django_apps
+
+    try:
+        agenda_item_model = django_apps.get_model("session", "SessionAgendaItem")
+    except LookupError:
+        return
+    pre_save.connect(_decision_pre_save, sender=agenda_item_model, dispatch_uid="insight_decision_tracking_pre")
+    post_save.connect(_decision_post_save, sender=agenda_item_model, dispatch_uid="insight_decision_tracking_post")
+
+
+_connect_decision_tracking()

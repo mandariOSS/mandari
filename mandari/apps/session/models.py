@@ -96,6 +96,12 @@ class SessionTenant(models.Model):
         verbose_name="Im Bürgerportal veröffentlichen",
         help_text="Registriert die OParl-API dieses Mandanten als Quelle für das Insight-Bürgerportal",
     )
+    # Öffentliches Beschluss-Tracking (Issue #48): Opt-in der Verwaltung.
+    implementation_publish = models.BooleanField(
+        default=False,
+        verbose_name="Umsetzungsstand im Bürgerportal veröffentlichen",
+        help_text="Zeigt den Umsetzungsstand öffentlicher, angenommener Beschlüsse in Insight („Was wurde aus …?“)",
+    )
 
     # Fristen-Erinnerungen (Issue #83): Vorlaufzeiten und An/Aus je Typ.
     # Nur abweichende Werte werden gespeichert; Defaults siehe
@@ -1165,6 +1171,17 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
     )
     implementation_deadline = models.DateField(blank=True, null=True, verbose_name="Erledigungsfrist")
     implementation_note = models.TextField(blank=True, verbose_name="Erledigungsvermerk")
+    # Öffentliches Beschluss-Tracking (Issue #48): getrennt vom internen Vermerk.
+    implementation_public = models.BooleanField(
+        default=True,
+        verbose_name="Umsetzungsstand öffentlich zeigen",
+        help_text="Nur wirksam, wenn der Mandant die Veröffentlichung eingeschaltet hat",
+    )
+    implementation_public_note = models.TextField(
+        blank=True,
+        verbose_name="Öffentliche Statusmeldung",
+        help_text="Kurzer Stand für Bürgerinnen und Bürger — ohne interne Details",
+    )
     implementation_updated_at = models.DateTimeField(blank=True, null=True, verbose_name="Umsetzung aktualisiert am")
     implementation_updated_by = models.ForeignKey(
         SessionUser,

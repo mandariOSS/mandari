@@ -1,0 +1,18 @@
+{% extends "base_insight.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
+    <i data-lucide="{% if unsubscribe_token %}bell-ring{% else %}bell-off{% endif %}" class="w-12 h-12 mx-auto text-primary-500 mb-4"></i>
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">{{ title }}</h1>
+    <p class="text-gray-600 dark:text-gray-400">{{ message }}</p>
+    <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">Beschluss: <strong class="text-gray-800 dark:text-gray-200">{{ item.name }}</strong></p>
+    <div class="mt-6 flex flex-wrap justify-center gap-3">
+        <a href="{% url 'insight_core:insight:decision_detail' pk=item.id %}" class="px-4 py-2 text-sm font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700">Zum Beschluss</a>
+        {% if unsubscribe_token %}
+        <a href="{% url 'insight_core:insight:decision_unsubscribe' token=unsubscribe_token %}" class="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200">Abmelden</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

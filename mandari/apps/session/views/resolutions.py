@@ -288,6 +288,8 @@ class ResolutionTrackingUpdateView(SessionViewMixin, View):
         item.implementation_recipient = request.POST.get("recipient", "").strip()[:255]
         item.implementation_deadline = deadline
         item.implementation_note = request.POST.get("note", "").strip()
+        item.implementation_public_note = request.POST.get("public_note", "").strip()[:2000]
+        item.implementation_public = request.POST.get("public") != "0"
         item.implementation_updated_at = timezone.now()
         item.implementation_updated_by = self.session_user
         item.save(
@@ -296,6 +298,8 @@ class ResolutionTrackingUpdateView(SessionViewMixin, View):
                 "implementation_recipient",
                 "implementation_deadline",
                 "implementation_note",
+                "implementation_public_note",
+                "implementation_public",
                 "implementation_updated_at",
                 "implementation_updated_by",
                 "updated_at",
