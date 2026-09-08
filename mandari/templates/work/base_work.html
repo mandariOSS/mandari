@@ -568,6 +568,13 @@
                     <span class="nav-label">Vorgänge</span>
                 </a>
 
+                <a href="{% url 'work:ris_decisions' org_slug=organization.slug %}"
+                   class="work-nav-item {% if active_subnav == 'ris_decisions' %}active{% endif %}"
+                   :title="sidebarCollapsed ? 'Beschlüsse' : ''">
+                    <i data-lucide="gavel"></i>
+                    <span class="nav-label">Beschlüsse</span>
+                </a>
+
                 <a href="{% url 'work:ris_organizations' org_slug=organization.slug %}"
                    class="work-nav-item {% if active_subnav == 'ris_organizations' %}active{% endif %}"
                    :title="sidebarCollapsed ? 'Gremien' : ''">

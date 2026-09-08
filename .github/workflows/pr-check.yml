@@ -193,6 +193,7 @@ jobs:
           python scripts/smoke_work_public_api.py
           python scripts/smoke_session_roles.py
           python scripts/smoke_ris_submission.py
+          python scripts/smoke_work_decisions.py
           python scripts/smoke_session_devices.py
           python scripts/smoke_session_monthly_allowances.py
           python scripts/smoke_session_allowances.py

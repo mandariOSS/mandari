@@ -1,0 +1,172 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Beschlusskontrolle{% endblock %}
+
+{% block header_title %}Beschlusskontrolle{% endblock %}
+{% block header_subtitle %}
+{% if body %}
+<p class="work-page-subtitle">{{ body.get_display_name }}{% if tracking_stats %} · {{ tracking_stats.total }} Beschlüsse{% endif %}</p>
+{% else %}
+<p class="work-page-subtitle">Umsetzungsstand der Beschlüsse eurer Kommune</p>
+{% endif %}
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center">
+    <i data-lucide="alert-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4"></i>
+    <h3 class="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Keine Kommune verknüpft</h3>
+    <p class="text-amber-700 dark:text-amber-300">Dieser Organisation ist noch keine Kommune zugewiesen.</p>
+</div>
+{% elif no_session_tenant %}
+<div class="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
+    <i data-lucide="gavel" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Noch keine Beschlusskontrolle verfügbar</h3>
+    <p class="text-gray-600 dark:text-gray-400 max-w-xl mx-auto">
+        Die Verwaltung eurer Kommune führt ihr Ratsinformationssystem noch nicht mit mandari Session.
+        Sobald sie Beschlüsse dort dokumentiert, seht ihr hier Umsetzungsstand, Zuständigkeit und Fristen.
+    </p>
+</div>
+{% else %}
+
+<!-- Ampel -->
+<div class="fade-up grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <a href="?status=open" class="bg-white dark:bg-gray-800 rounded-xl border p-4 transition-colors hover:border-gray-300 dark:hover:border-gray-600 {% if filter_status == 'open' %}border-primary-400 dark:border-primary-500{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+        <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ tracking_stats.open }}</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Offen</p>
+    </a>
+    <a href="?status=in_progress" class="bg-white dark:bg-gray-800 rounded-xl border p-4 transition-colors hover:border-gray-300 dark:hover:border-gray-600 {% if filter_status == 'in_progress' %}border-primary-400 dark:border-primary-500{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+        <p class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ tracking_stats.in_progress }}</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">In Umsetzung</p>
+    </a>
+    <a href="?overdue=1" class="bg-white dark:bg-gray-800 rounded-xl border p-4 transition-colors hover:border-red-300 dark:hover:border-red-700 {% if filter_overdue %}border-red-400 dark:border-red-600{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+        <p class="text-2xl font-bold {% if tracking_stats.overdue %}text-red-600 dark:text-red-400{% else %}text-gray-900 dark:text-white{% endif %}">{{ tracking_stats.overdue }}</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Überfällig</p>
+    </a>
+    <a href="?status=done" class="bg-white dark:bg-gray-800 rounded-xl border p-4 transition-colors hover:border-gray-300 dark:hover:border-gray-600 {% if filter_status == 'done' %}border-primary-400 dark:border-primary-500{% else %}border-gray-200 dark:border-gray-700{% endif %}">
+        <p class="text-2xl font-bold text-green-600 dark:text-green-400">{{ tracking_stats.done }}</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Erledigt</p>
+    </a>
+</div>
+
+<!-- Filter -->
+<div class="fade-up flex flex-wrap items-center gap-4 mb-6">
+    <form method="get" class="flex flex-wrap items-center gap-3 w-full">
+        <div class="relative flex-1 min-w-[220px]">
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+            <input type="search" name="q" value="{{ search_query }}" placeholder="Betreff, Beschlusstext, Nummer, Amt…"
+                   class="w-full pl-9 pr-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
+        </div>
+        <select name="organization" class="px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white">
+            <option value="">Alle Gremien</option>
+            {% for org in organizations %}
+            <option value="{{ org.id }}" {% if filter_organization == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>
+            {% endfor %}
+        </select>
+        <select name="year" class="px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white">
+            <option value="">Alle Jahre</option>
+            {% for y in years %}
+            <option value="{{ y }}" {% if filter_year == y|stringformat:"s" %}selected{% endif %}>{{ y }}</option>
+            {% endfor %}
+        </select>
+        <select name="status" class="px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white">
+            <option value="">Jeder Umsetzungsstand</option>
+            {% for value, label in implementation_choices %}
+            <option value="{{ value }}" {% if filter_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input type="checkbox" name="overdue" value="1" {% if filter_overdue %}checked{% endif %} class="rounded border-gray-300"> nur überfällig
+        </label>
+        <button type="submit" class="px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 shadow-sm transition-colors text-sm">
+            <i data-lucide="filter" class="w-4 h-4"></i>
+        </button>
+        {% if has_filter %}
+        <a href="{% url 'work:ris_decisions' org_slug=organization.slug %}" class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">Zurücksetzen</a>
+        {% endif %}
+    </form>
+</div>
+
+{% if items %}
+<div class="fade-up d1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="overflow-x-auto">
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Beschluss</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-md:hidden">Gremium / Sitzung</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Umsetzung</th>
+                <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 max-lg:hidden">Zuständig / Frist</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for item in items %}
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors align-top">
+                <td class="px-6 py-3">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        {% if item.resolution_number %}<span class="font-mono text-xs text-gray-500 dark:text-gray-400">{{ item.resolution_number }}</span>{% endif %}
+                        <span class="px-2 py-0.5 text-[11px] font-semibold rounded
+                            {% if item.vote_result == 'approved' %}bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300
+                            {% elif item.vote_result == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300
+                            {% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300{% endif %}">{{ item.get_vote_result_display }}</span>
+                    </div>
+                    <p class="font-medium text-gray-900 dark:text-white mt-1">TOP {{ item.number }} · {{ item.name }}</p>
+                    {% if item.resolution_text %}<p class="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{{ item.resolution_text }}</p>{% endif %}
+                    <div class="md:hidden text-xs text-gray-500 dark:text-gray-400 mt-1">{{ item.meeting.organization.name }} · {{ item.meeting.start|date:"d.m.Y" }}</div>
+                    {% if item.meeting.oparl_meeting_id %}
+                    <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=item.meeting.oparl_meeting_id %}" class="inline-flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline mt-1">
+                        <i data-lucide="calendar" class="w-3 h-3"></i> Sitzung im RIS
+                    </a>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200 max-md:hidden">
+                    <p>{{ item.meeting.organization.name|default:"—" }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ item.meeting.start|date:"d.m.Y" }}{% if tenants|length > 1 %} · {{ item.meeting.tenant.name }}{% endif %}</p>
+                </td>
+                <td class="px-4 py-3 text-sm">
+                    {% if item.vote_result == 'approved' %}
+                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium rounded-full
+                        {% if item.implementation_overdue %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300
+                        {% elif item.implementation_status == 'done' %}bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300
+                        {% elif item.implementation_status == 'in_progress' %}bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300
+                        {% elif item.implementation_status == 'deferred' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300
+                        {% else %}bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300{% endif %}">
+                        <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
+                        {% if item.implementation_overdue %}Überfällig{% else %}{{ item.get_implementation_status_display }}{% endif %}
+                    </span>
+                    {% if item.implementation_note %}<p class="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{{ item.implementation_note }}</p>{% endif %}
+                    {% if item.implementation_updated_at %}<p class="text-[11px] text-gray-400 mt-0.5">Stand {{ item.implementation_updated_at|date:"d.m.Y" }}</p>{% endif %}
+                    {% else %}
+                    <span class="text-xs text-gray-400">keine Umsetzung</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200 max-lg:hidden">
+                    {% if item.vote_result == 'approved' %}
+                    <p>{{ item.implementation_recipient|default:"—" }}</p>
+                    {% if item.implementation_deadline %}
+                    <p class="text-xs {% if item.implementation_overdue %}text-red-600 dark:text-red-400 font-semibold{% else %}text-gray-500 dark:text-gray-400{% endif %}">Frist {{ item.implementation_deadline|date:"d.m.Y" }}</p>
+                    {% endif %}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+{% if page_obj.has_other_pages %}
+<nav class="fade-up d2 mt-6 flex justify-center gap-2 text-sm">
+    {% if page_obj.has_previous %}<a href="?{{ request.GET.urlencode }}&page={{ page_obj.previous_page_number }}" class="px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">Zurück</a>{% endif %}
+    <span class="px-3 py-1.5 text-gray-500">Seite {{ page_obj.number }} von {{ paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?{{ request.GET.urlencode }}&page={{ page_obj.next_page_number }}" class="px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">Weiter</a>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+<div class="fade-up d1 text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+    <i data-lucide="gavel" class="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
+    <p class="text-gray-600 dark:text-gray-300">Keine Beschlüsse für diese Auswahl.</p>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

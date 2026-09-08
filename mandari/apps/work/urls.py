@@ -557,6 +557,8 @@ urlpatterns = [
         name="ris_person_detail",
     ),
     path("<slug:org_slug>/ris/files/", ris_views.RISFilesView.as_view(), name="ris_files"),
+    # Beschlusskontrolle für Mandatsträger (Issue #37)
+    path("<slug:org_slug>/ris/decisions/", ris_views.RISDecisionsView.as_view(), name="ris_decisions"),
     path("<slug:org_slug>/ris/map/", ris_views.RISMapView.as_view(), name="ris_map"),
     path("<slug:org_slug>/ris/map/data/", ris_views.RISMapDataView.as_view(), name="ris_map_data"),
     # Organization settings
