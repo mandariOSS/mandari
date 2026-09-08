@@ -226,6 +226,42 @@ check(
     str(pending),
 )
 
+# Quellen-Schonung (Issue #89): gesperrte Quelle wird weder nachgeladen noch live geholt
+blocked_src = OParlSource.objects.create(
+    name="Gesperrt", url="https://blocked.example/oparl/system", consecutive_failures=3
+)
+blocked_body = OParlBody.objects.create(
+    external_id="https://blocked.example/oparl/body/1", source=blocked_src, name="Sperrstadt"
+)
+f_blocked = OParlFile.objects.create(
+    external_id="https://blocked.example/oparl/file/1",
+    body=blocked_body,
+    name="Gesperrtes Dokument",
+    file_name="sperre.pdf",
+    mime_type="application/pdf",
+    access_url="https://blocked.example/getfile/1.pdf",
+    file_date=now,
+)
+check("Quelle in Schonung erkannt", file_cache.source_paused(blocked_body) and not file_cache.source_paused(body))
+check(
+    "Offen: Dateien gesperrter Quellen ausgelassen",
+    f_blocked.id not in set(file_cache.pending_queryset().values_list("id", flat=True)),
+)
+FakeClient.calls.clear()
+check(
+    "Abruf einer gesperrten Quelle -> paused ohne Request",
+    file_cache.fetch_and_cache(f_blocked, client=FakeClient()) == "paused" and FakeClient.calls == [],
+)
+check("Statistik zählt wartende Dateien", file_cache.cache_stats()["paused"] == 1)
+blocked_src.consecutive_failures = 0
+blocked_src.save(update_fields=["consecutive_failures"])
+check(
+    "Nach Erholung wieder in der Warteschlange",
+    f_blocked.id in set(file_cache.pending_queryset().values_list("id", flat=True)),
+)
+blocked_src.consecutive_failures = 3
+blocked_src.save(update_fields=["consecutive_failures"])
+
 import httpx  # noqa: E402
 
 _real_client = httpx.Client
@@ -261,7 +297,7 @@ finally:
 stats = file_cache.cache_stats()
 check(
     "Statistik: Abdeckung + Belegung",
-    stats["ok"] == 3 and stats["total"] == 7 and stats["cached_bytes"] > 0 and stats["per_body"][0]["files"] == 7,
+    stats["ok"] == 3 and stats["total"] == 8 and stats["cached_bytes"] > 0 and stats["per_body"][0]["files"] == 7,
     str(stats),
 )
 
@@ -316,6 +352,13 @@ try:
     check(
         "RIS nicht erreichbar -> Fehlerseite mit Cache-Hinweis",
         "nicht erreichbar" in page and "Zwischenspeicher" in page,
+    )
+    FakeClient.calls.clear()
+    resp = client.get(f"/insight/dokumente/{f_blocked.id}/preview/")
+    check(
+        "Proxy: Quelle in Schonung -> 503 mit Hinweis, kein RIS-Zugriff",
+        resp.status_code == 503 and "schonen" in resp.content.decode() and resp["Retry-After"] == "3600",
+        f"{resp.status_code}",
     )
     f_html2 = make_file(10, url="https://ris.example/getfile/html.pdf")
     resp = client.get(f"/insight/dokumente/{f_html2.id}/preview/")

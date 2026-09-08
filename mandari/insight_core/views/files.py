@@ -269,6 +269,19 @@ def file_proxy(request, file_id):
     if not url:
         raise Http404("Keine Download-URL verfügbar")
 
+    # Quellen-Schonung (Issue #89): eine mehrfach unerreichbare Quelle wird nicht bei jedem
+    # Vorschau-Aufruf erneut angefragt — das hält Ratenlimits/Sperren nur am Leben.
+    if file_cache.source_paused(file_obj.body):
+        response = _file_proxy_error(
+            "Ratsinformationssystem derzeit nicht erreichbar",
+            "Das Ratsinformationssystem dieser Kommune antwortet seit mehreren Abrufen nicht. "
+            "Wir schonen die Quelle und holen das Dokument automatisch nach, sobald sie wieder "
+            "erreichbar ist. Es lag noch nicht in unserem Zwischenspeicher.",
+        )
+        response.status_code = 503
+        response["Retry-After"] = "3600"
+        return response
+
     read_timeout = float(getattr(settings, "FILE_PROXY_TIMEOUT_SECONDS", 15))
     try:
         upstream = httpx.get(

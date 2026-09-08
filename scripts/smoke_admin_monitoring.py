@@ -135,6 +135,10 @@ check(
     str(crit["reasons"]),
 )
 check("Frisch, aber 1 Fehlversuch -> warning", ev(fail_src)["status"] == "warning")
+check(
+    "5 Fehlversuche -> Quellen-Schonung im Monitor",
+    crit["paused"] and any("Quellen-Schonung" in r for r in crit["reasons"]) and not ev(fail_src)["paused"],
+)
 check("Neu angelegt ohne Sync -> never", ev(never_src)["status"] == "never")
 check("30 Tage angelegt ohne Sync -> critical", ev(old_never)["status"] == "critical")
 check("Inaktiv -> inactive (auch wenn alt)", ev(inactive_src)["status"] == "inactive")

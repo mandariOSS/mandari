@@ -196,7 +196,7 @@ class TextExtractor:
     async def _download(self, url: str) -> bytes:
         """Download a file via httpx async."""
         headers = {
-            "User-Agent": "Mandari/2.0 (https://mandari.dev; contact@mandari.dev)",
+            "User-Agent": "Mandari/2.0 (+https://mandari.de; support@mandari.de)",
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.get(url, headers=headers, follow_redirects=True)

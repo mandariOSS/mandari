@@ -28,6 +28,10 @@ Der **Ingestor** schreibt bei jedem fehlgeschlagenen Versuch `last_error`, `last
 zählt `consecutive_failures` hoch (`storage.record_source_failure`); ein erfolgreicher Sync setzt
 die Werte zurück. So ist der konkrete Grund (z. B. `HTTP 403`) direkt im Admin sichtbar.
 
+Ab `INSIGHT_SOURCE_BACKOFF_FAILURES` (Standard 3) Fehlversuchen greift die **Quellen-Schonung**:
+Dokument-Cache und Datei-Proxy pausieren für diese Quelle, der Ingestor verdoppelt den Abstand
+zwischen den Versuchen bis auf 6 Stunden (siehe `docs/FILE_CACHE.md`).
+
 ## Alarmierung
 
 ```cron

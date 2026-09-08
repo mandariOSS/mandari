@@ -31,10 +31,8 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/128.0 Safari/537.36 mandari-file-cache/1.0"
-)
+# Ehrliche Kennung mit Kontakt — Kommunen sollen uns zuordnen (und freischalten) können.
+USER_AGENT = "mandari-file-cache/1.0 (+https://mandari.de; support@mandari.de)"
 STATUS_CHOICES = [
     ("none", "Nicht zwischengespeichert"),
     ("ok", "Lokal vorhanden"),
@@ -55,6 +53,22 @@ def max_bytes() -> int:
 
 def min_free_bytes() -> int:
     return int(getattr(settings, "FILE_CACHE_MIN_FREE_GB", 15)) * 1024**3
+
+
+def backoff_failures() -> int:
+    return int(getattr(settings, "INSIGHT_SOURCE_BACKOFF_FAILURES", 3))
+
+
+def source_paused(body) -> bool:
+    """
+    Quellen-Schonung: Hat der Ingestor die Quelle mehrfach in Folge nicht erreicht
+    (Ratenlimit, IP-Sperre, Bot-Schutz), fragen Cache und Proxy sie nicht weiter an.
+    Sobald ein Sync wieder gelingt, setzt der Ingestor den Zähler zurück.
+    """
+    source = getattr(body, "source", None) if body is not None else None
+    if source is None:
+        return False
+    return (source.consecutive_failures or 0) >= backoff_failures()
 
 
 def http_timeout():
@@ -169,7 +183,7 @@ def fetch_and_cache(file_obj, client=None) -> str:
     """
     Datei aus dem RIS laden und lokal ablegen.
 
-    Rückgabe: "ok", "missing", "error", "too_large", "disk_full", "skipped".
+    Rückgabe: "ok", "missing", "error", "too_large", "disk_full", "skipped", "paused".
     """
     import httpx
 
@@ -177,6 +191,8 @@ def fetch_and_cache(file_obj, client=None) -> str:
         if file_obj.local_status != "ok":
             _mark(file_obj, "ok")
         return "skipped"
+    if source_paused(file_obj.body):
+        return "paused"
     url = file_obj.download_url or file_obj.access_url
     if not url:
         return _mark(file_obj, "error", "Keine Download-URL")
@@ -227,9 +243,12 @@ def pending_queryset(body=None, retry_errors: bool = False):
     statuses = ["none"] + (["error"] if retry_errors else [])
     # text_content/raw_json sind riesig (extrahierter Volltext) — nie mitladen,
     # sonst frisst ein Lauf über zehntausende Dateien den gesamten RAM.
+    # Quellen in Schonung (mehrfach nicht erreichbar) werden ausgelassen — Nachladen
+    # würde die Sperre nur verlängern (Issue #89).
     qs = (
         OParlFile.objects.filter(deleted=False, local_status__in=statuses)
-        .select_related("body")
+        .exclude(body__source__consecutive_failures__gte=backoff_failures())
+        .select_related("body", "body__source")
         .defer("text_content", "raw_json", "body__raw_json")
     )
     if body is not None:
@@ -270,6 +289,7 @@ def cache_stats() -> dict:
     by_status = dict(Counter(qs.values_list("local_status", flat=True)))
     cached_bytes = qs.filter(local_status="ok").aggregate(s=Sum("size"))["s"] or 0
     ok = by_status.get("ok", 0)
+    paused = qs.filter(local_status="none", body__source__consecutive_failures__gte=backoff_failures()).count()
     per_body = []
     for row in (
         qs.values("body__name").annotate(n=Sum(1), cached=Sum("size", filter=Q(local_status="ok"))).order_by("-n")
@@ -283,6 +303,7 @@ def cache_stats() -> dict:
         "missing": by_status.get("missing", 0),
         "error": by_status.get("error", 0),
         "too_large": by_status.get("too_large", 0),
+        "paused": paused,
         "coverage": round(ok / total * 100, 1) if total else 0.0,
         "cached_bytes": cached_bytes,
         "cached_gb": round(cached_bytes / 1024**3, 2),

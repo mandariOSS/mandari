@@ -56,7 +56,8 @@ class Command(BaseCommand):
             f"Cache {stats['root']}: {stats['ok']} von {stats['total']} Dokumenten lokal ({stats['coverage']} %), "
             f"{stats['cached_gb']} GB belegt, {stats['disk_free_bytes'] / 1024**3:.1f} GB frei "
             f"(Schutzgrenze {stats['min_free_gb']} GB); offen={stats['pending']}, 404={stats['missing']}, "
-            f"Fehler={stats['error']}, zu groß={stats['too_large']}"
+            f"Fehler={stats['error']}, zu groß={stats['too_large']}, "
+            f"wartend auf Quellen in Schonung={stats['paused']}"
         )
         for row in stats["per_body"]:
             self.stdout.write(

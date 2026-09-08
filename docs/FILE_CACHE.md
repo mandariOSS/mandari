@@ -38,6 +38,7 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `FILE_CACHE_MAX_MB` | 80 | Größere Dateien werden nicht gecacht, aber weiter durchgereicht |
 | `FILE_CACHE_MIN_FREE_GB` | 15 | Unter dieser Grenze wird nichts mehr geschrieben (Schutz des Systemlaufwerks) |
 | `FILE_PROXY_TIMEOUT_SECONDS` | 15 | Lese-Timeout des Proxys für Live-Abrufe |
+| `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
 
 ```cron
 40 * * * * docker exec mandari python manage.py cache_files --limit 400 >> /var/log/mandari-file-cache.log 2>&1
@@ -48,6 +49,15 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 - `cache_files --stats` zeigt Abdeckung, Belegung und freien Speicher; der Betriebsmonitor hat
   dafür den Check „Dokument-Cache“.
 - `purge_deleted` entfernt lokale Kopien getilgter Dateien.
+
+### Quellen-Schonung
+
+Ratsinformationssysteme sperren IP-Adressen, die zu viele Verbindungen aufbauen (Köln, Issue #89).
+Sobald der Ingestor eine Quelle `INSIGHT_SOURCE_BACKOFF_FAILURES`-mal in Folge nicht erreicht hat,
+lassen `cache_files` und der Vorschau-Proxy diese Quelle in Ruhe (Proxy antwortet mit 503 und
+`Retry-After`). Der Ingestor selbst verdoppelt den Abstand zwischen den Versuchen (10, 20, 40 …
+Minuten, höchstens 6 Stunden). Ein erfolgreicher Sync setzt den Zähler zurück, danach läuft alles
+automatisch weiter. Der Betriebsmonitor zeigt die Schonung als Grund an der Quelle.
 
 ## Storage Box je Kommune mounten (Beispiel CIFS)
 

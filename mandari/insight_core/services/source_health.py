@@ -47,6 +47,12 @@ def _site_url() -> str:
 # =============================================================================
 
 
+def backoff_failures() -> int:
+    from .file_cache import backoff_failures as _backoff
+
+    return _backoff()
+
+
 def evaluate_source(source, now=None) -> dict:
     """Bewertet eine Quelle anhand von letztem Erfolg, Fehlversuchen und Aktivität."""
     now = now or timezone.now()
@@ -58,6 +64,7 @@ def evaluate_source(source, now=None) -> dict:
         "age_days": None,
         "last_error": source.last_error or "",
         "consecutive_failures": source.consecutive_failures or 0,
+        "paused": False,
         "reasons": [],
     }
 
@@ -87,6 +94,12 @@ def evaluate_source(source, now=None) -> dict:
         if failures >= 3:
             info["status"] = "critical"
             info["reasons"].append(f"{failures} Fehlversuche in Folge")
+            if failures >= backoff_failures():
+                info["paused"] = True
+                info["reasons"].append(
+                    "Quellen-Schonung aktiv: Dokument-Cache und Datei-Proxy pausieren, "
+                    "der Ingestor probiert mit wachsendem Abstand (höchstens alle 6 Stunden)"
+                )
         elif failures >= 1 and info["status"] in ("ok", "never"):
             info["status"] = "warning"
             info["reasons"].append("Letzter Sync-Versuch fehlgeschlagen")
@@ -214,7 +227,8 @@ def collect_system_health() -> list[dict]:
                 "Dokument-Cache",
                 status,
                 f"{stats['ok']} von {stats['total']} Dokumenten lokal ({stats['coverage']} %), "
-                f"{stats['cached_gb']} GB belegt, {free_gb:.0f} GB frei",
+                f"{stats['cached_gb']} GB belegt, {free_gb:.0f} GB frei"
+                + (f", {stats['paused']} warten auf Quellen in Schonung" if stats.get("paused") else ""),
             )
         )
     except Exception as exc:
