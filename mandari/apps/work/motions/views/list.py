@@ -14,6 +14,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import TemplateView, View
 
 logger = logging.getLogger("apps.work.motions")
@@ -398,6 +399,11 @@ class FolderGuestShareRemoveView(WorkViewMixin, View):
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse({"success": True})
         messages.success(request, f"Ordner-Freigabe für '{folder.name}' entfernt.")
+        next_url = request.POST.get("next", "")
+        if next_url.startswith(f"/work/{self.organization.slug}/") and url_has_allowed_host_and_scheme(
+            next_url, allowed_hosts=None
+        ):
+            return redirect(next_url)
         list_url = reverse("work:documents", kwargs={"org_slug": self.organization.slug})
         return redirect(f"{list_url}?ordner={folder.id}")
 

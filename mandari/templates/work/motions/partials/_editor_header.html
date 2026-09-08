@@ -14,7 +14,7 @@
                     <h1 class="text-lg font-semibold text-gray-900 dark:text-white">{{ motion.title }}</h1>
                     {% endif %}
                     <div class="flex items-center gap-2 text-sm text-gray-500">
-                        {% if can_edit %}
+                        {% if can_edit and not is_guest %}
                         <!-- Dokumenttyp-Dropdown -->
                         <div x-data="{ open: false }" class="relative">
                             <button @click="open = !open" type="button"
@@ -162,6 +162,7 @@
                 {% endif %}
 
                 {% if can_edit %}
+                {% if not is_guest %}
                 <!-- Status Dropdown -->
                 <div x-data="{ open: false }" class="relative">
                     <button @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Status ändern">
@@ -194,6 +195,8 @@
                         </button>
                     </div>
                 </div>
+
+                {% endif %}
 
                 <!-- Save Button -->
                 <button type="button" @click="save()"

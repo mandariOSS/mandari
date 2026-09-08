@@ -12,6 +12,7 @@ from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import TemplateView, View
 
 logger = logging.getLogger("apps.work.motions")
@@ -814,11 +815,30 @@ class MotionShareRemoveView(WorkViewMixin, View):
 
         # Check if user can manage this share
         motion = share.motion
-        if motion.author != self.membership and not self.membership.has_permission("motions.edit_all"):
+        # Gast-Verwalter:innen dürfen persönliche Gast-Freigaben entziehen (Issue #77)
+        from apps.tenants.models import Membership
+
+        manages_guest_share = (
+            share.scope == "user"
+            and share.user_id
+            and self.membership.has_permission("guests.manage")
+            and Membership.objects.filter(user_id=share.user_id, organization=self.organization, is_guest=True).exists()
+        )
+        if (
+            motion.author != self.membership
+            and not self.membership.has_permission("motions.edit_all")
+            and not manages_guest_share
+        ):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         share.delete()
 
         from django.http import HttpResponse
 
+        next_url = request.POST.get("next", "")
+        if next_url.startswith(f"/work/{self.organization.slug}/") and url_has_allowed_host_and_scheme(
+            next_url, allowed_hosts=None
+        ):
+            messages.success(request, "Freigabe entzogen.")
+            return redirect(next_url)
         return HttpResponse(status=204, headers={"HX-Refresh": "true"})

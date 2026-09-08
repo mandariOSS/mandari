@@ -200,6 +200,10 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         context["is_author"] = motion.author == self.membership
         context["can_edit"] = access_level in ("edit", "admin")
         context["can_comment"] = access_level in ("comment", "edit", "admin")
+        # Gäste dürfen inhaltlich bearbeiten (Stufe „Bearbeiten“), aber keine
+        # Verwaltungsaktionen: Status, Dokumenttyp, KI, Zuständigkeit, Themen,
+        # Frist, Freigaben, Papierkorb — die Views sind nicht guest_allowed (Issue #76)
+        context["is_guest"] = bool(getattr(self.membership, "is_guest", False))
 
         # Comments
         comments = (

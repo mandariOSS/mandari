@@ -13,7 +13,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
             <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
             Zuständigkeit
         </h4>
-        {% if can_edit %}
+        {% if can_edit and not membership.is_guest %}
         <form onsubmit="return mandariMotionMeta(event)" action="{% url 'work:document_meta' org_slug=organization.slug motion_id=motion.id %}" class="mb-3">
             <input type="hidden" name="action" value="set_responsible">
             <label class="block text-[11px] font-medium text-gray-400 mb-1">Federführung</label>
@@ -58,7 +58,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
             <i data-lucide="tags" class="w-3.5 h-3.5"></i>
             Themen
         </h4>
-        {% if can_edit and org_topics %}
+        {% if can_edit and org_topics and not membership.is_guest %}
         <form onsubmit="return mandariMotionMeta(event)" action="{% url 'work:document_meta' org_slug=organization.slug motion_id=motion.id %}">
             <input type="hidden" name="action" value="set_topics">
             <div class="max-h-36 overflow-y-auto space-y-1 border border-gray-200 dark:border-gray-700 rounded-lg p-2">
@@ -142,7 +142,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
             <i data-lucide="calendar-clock" class="w-3.5 h-3.5"></i>
             Frist
         </h4>
-        {% if can_edit %}
+        {% if can_edit and not membership.is_guest %}
         <form onsubmit="return mandariMotionMeta(event)" action="{% url 'work:document_meta' org_slug=organization.slug motion_id=motion.id %}">
             <input type="hidden" name="action" value="set_due_date">
             <input type="date" name="due_date" value="{{ motion.due_date|date:'Y-m-d' }}"
@@ -208,7 +208,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
             {% endfor %}
         </div>
 
-        {% if can_edit and motion.status == 'internal_review' %}
+        {% if can_edit and motion.status == 'internal_review' and not membership.is_guest %}
         <!-- Freigabe anfordern (nur im Status "Interne Absprache") -->
         <form onsubmit="return mandariApprovalRequest(event)" action="{% url 'work:document_approval_request' org_slug=organization.slug motion_id=motion.id %}" class="space-y-2">
             <select name="approver" required
@@ -228,8 +228,32 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
             </select>
             <button type="submit" class="w-full px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">Freigabe anfordern</button>
         </form>
-        {% elif can_edit %}
+        {% elif can_edit and not membership.is_guest %}
         <p class="text-[11px] text-gray-400">Freigaben können im Status „Interne Absprache“ angefragt werden.</p>
+        {% endif %}
+    </div>
+
+    <!-- Anhänge -->
+    <div>
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
+            Anhänge{% if documents %} ({{ documents|length }}){% endif %}
+        </h4>
+        {% if documents %}
+        <ul class="space-y-1.5">
+            {% for attachment in documents %}
+            <li>
+                <a href="{% url 'work:document_file_download' org_slug=organization.slug motion_id=motion.id document_id=attachment.id %}"
+                   class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
+                    <i data-lucide="file" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                    <span class="truncate flex-1">{{ attachment.filename }}</span>
+                    <span class="text-[11px] text-gray-400 flex-shrink-0">{{ attachment.file_size|filesizeformat }}</span>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-xs text-gray-400 px-1">Keine Anhänge.</p>
         {% endif %}
     </div>
 </div>

@@ -53,8 +53,33 @@ class MemberListView(WorkViewMixin, TemplateView):
             .select_related("user")
             .order_by("user__first_name", "user__last_name")
         )
+        from django.db.models import Count
+
+        from apps.work.motions.models import FolderGuestShare, MotionShare
+
+        doc_counts = dict(
+            MotionShare.objects.filter(
+                motion__organization=self.organization, scope="user", user__in=[g.user_id for g in guests]
+            )
+            .exclude(motion__status="deleted")
+            .values_list("user_id")
+            .annotate(n=Count("id"))
+            .values_list("user_id", "n")
+        )
+        folder_counts = dict(
+            FolderGuestShare.objects.filter(
+                folder__organization=self.organization, user__in=[g.user_id for g in guests]
+            )
+            .values_list("user_id")
+            .annotate(n=Count("id"))
+            .values_list("user_id", "n")
+        )
+        guests = list(guests)
+        for guest in guests:
+            guest.shared_document_count = doc_counts.get(guest.user_id, 0)
+            guest.shared_folder_count = folder_counts.get(guest.user_id, 0)
         context["guests"] = guests
-        context["guest_count"] = guests.count()
+        context["guest_count"] = len(guests)
         context["guest_limit"] = self.organization.guest_limit
         context["can_invite_guests"] = checker.has_permission("guests.invite")
 
@@ -134,6 +159,41 @@ class MemberDetailView(WorkViewMixin, TemplateView):
 
         return [m.organization for m in memberships if m.organization.is_active]
 
+    def _guest_share_context(self, member, checker) -> dict:
+        """
+        „Was sieht dieser Gast?“ (Issue #77): alle wirksamen Freigaben —
+        persönliche Dokument-Freigaben und Ordner-Freigaben (rekursiv, inkl.
+        Anzahl der aktuell abgedeckten Dokumente) — mit Entzugs-Möglichkeit.
+        """
+        from apps.work.motions.models import FolderGuestShare, Motion, MotionShare
+
+        document_shares = list(
+            MotionShare.objects.filter(motion__organization=self.organization, scope="user", user=member.user)
+            .exclude(motion__status="deleted")
+            .select_related("motion", "created_by")
+            .order_by("-created_at")
+        )
+        folder_shares = list(
+            FolderGuestShare.objects.filter(folder__organization=self.organization, user=member.user)
+            .select_related("folder", "created_by")
+            .order_by("-created_at")
+        )
+        for share in folder_shares:
+            descendants = share.folder.get_descendants()
+            share.subfolder_count = len(descendants)
+            share.document_count = (
+                Motion.objects.filter(organization=self.organization, folder__in=[share.folder, *descendants])
+                .exclude(status="deleted")
+                .count()
+            )
+        return {
+            "guest_document_shares": document_shares,
+            "guest_folder_shares": folder_shares,
+            "can_manage_guest_shares": (
+                checker.has_permission("guests.manage") or checker.has_permission("motions.share") or checker.is_admin()
+            ),
+        }
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
@@ -156,6 +216,7 @@ class MemberDetailView(WorkViewMixin, TemplateView):
         context["can_invite_guests"] = checker.has_permission("guests.invite") or checker.is_admin()
         if member.is_guest:
             context["guest_has_password"] = member.user.has_usable_password()
+            context.update(self._guest_share_context(member, checker))
 
         # === Effektive Berechtigungen (Matrix mit Herkunft) ===
         # Drei Zustände je Berechtigung: aus Rollen (read-only, mit Herkunft),

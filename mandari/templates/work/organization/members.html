@@ -223,7 +223,13 @@
                         </span>
                     </p>
                     <p class="text-sm text-gray-500 truncate">{{ guest.user.email }}</p>
-                    <p class="text-xs text-gray-400 mt-1">Sieht nur explizit freigegebene Dokumente</p>
+                    <p class="text-xs text-gray-400 mt-1">
+                        {% if guest.shared_document_count or guest.shared_folder_count %}
+                            {{ guest.shared_document_count }} Dokument{{ guest.shared_document_count|pluralize:"e" }} &middot; {{ guest.shared_folder_count }} Ordner freigegeben
+                        {% else %}
+                            Noch keine Freigaben
+                        {% endif %}
+                    </p>
                 </div>
             </div>
             <div class="flex items-center gap-3 text-gray-400">
