@@ -51,6 +51,8 @@ insight_patterns = [
     # Termine (Meetings)
     path("termine/", views.MeetingListView.as_view(), name="meeting_list"),
     path("termine/kalender/", views.MeetingCalendarView.as_view(), name="meeting_calendar"),
+    path("termine/kalender.ics", views.calendar_feed, name="calendar_feed"),
+    path("termine/jahresplan/", views.MeetingYearPlanView.as_view(), name="meeting_year_plan"),
     path("termine/<uuid:pk>/", views.MeetingDetailView.as_view(), name="meeting_detail"),
     path("termine/partials/list/", views.MeetingListPartial.as_view(), name="meeting_list_partial"),
     path("termine/partials/calendar-events/", views.calendar_events, name="calendar_events"),

@@ -21,11 +21,34 @@
                 {% endif %}
             </p>
         </div>
-        <a href="{% url 'insight_core:insight:meeting_list' %}"
-           class="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-medium rounded-xl transition-colors">
-            <i data-lucide="list" class="w-5 h-5"></i>
-            Liste
-        </a>
+        <div class="flex flex-wrap items-center gap-2" x-data="{ feedOrg: '' }">
+            <a href="{% url 'insight_core:insight:meeting_year_plan' %}"
+               class="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-medium rounded-xl transition-colors">
+                <i data-lucide="calendar-range" class="w-5 h-5"></i>
+                Jahresplan
+            </a>
+            <a href="{% url 'insight_core:insight:meeting_list' %}"
+               class="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-medium rounded-xl transition-colors">
+                <i data-lucide="list" class="w-5 h-5"></i>
+                Liste
+            </a>
+            {% if feed_organizations %}
+            <select x-model="feedOrg" aria-label="Gremium für Kalender-Abo"
+                    class="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-700 dark:text-gray-200">
+                <option value="">Alle Gremien</option>
+                {% for org in feed_organizations %}
+                <option value="{{ org.id }}">{{ org.get_display_name }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+            <a :href="'{% url 'insight_core:insight:calendar_feed' %}' + (feedOrg ? '?gremium=' + feedOrg : '')"
+               href="{% url 'insight_core:insight:calendar_feed' %}"
+               class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl transition-colors"
+               title="Kalender-Abo (ICS) – in Outlook, Apple Kalender oder Google Kalender abonnieren">
+                <i data-lucide="rss" class="w-5 h-5"></i>
+                Abonnieren
+            </a>
+        </div>
     </div>
 
     <!-- Calendar Container -->

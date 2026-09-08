@@ -5,8 +5,10 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db.models import Q
-from django.http import JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 from django.views.generic import DetailView, ListView, TemplateView
@@ -15,6 +17,7 @@ from ..models import (
     OParlBody,
     OParlConsultation,
     OParlMeeting,
+    OParlOrganization,
 )
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
@@ -75,22 +78,180 @@ class MeetingListView(ActiveBodyRequiredMixin, ListView):
         return qs.order_by("-start")
 
 
+MONTH_NAMES = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
+
+
+def _select_body_from_query(request):
+    """?kommune=<uuid> wählt die Kommune (Deep-Link, z. B. aus dem Session-RIS)."""
+    body_id = request.GET.get("kommune")
+    if not body_id:
+        return
+    try:
+        body = OParlBody.objects.get(id=body_id, deleted=False)
+    except (OParlBody.DoesNotExist, ValueError, ValidationError):
+        return
+    request.session["active_body_id"] = str(body.id)
+    request.session.modified = True
+
+
+def _organizations_with_meetings(body):
+    """Gremien der Kommune, die Sitzungen haben (für Abo-Auswahl und Jahresplan)."""
+    from django.db.models import Count
+
+    return (
+        OParlOrganization.objects.filter(body=body, deleted=False)
+        .annotate(meeting_count=Count("meetings", filter=Q(meetings__deleted=False)))
+        .filter(meeting_count__gt=0)
+        .order_by("name")
+    )
+
+
 class MeetingCalendarView(ActiveBodyRequiredMixin, TemplateView):
     """Kalenderansicht der Sitzungen."""
 
     template_name = "pages/meetings/calendar.html"
 
+    def dispatch(self, request, *args, **kwargs):
+        _select_body_from_query(request)
+        return super().dispatch(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         from ..seo import get_page_seo
 
+        body = get_active_body(self.request)
+        context["feed_organizations"] = _organizations_with_meetings(body)[:200] if body else []
         context["seo"] = get_page_seo(
             self.request,
             title="Sitzungskalender",
             description="Alle Sitzungen der kommunalen Gremien im Kalender: Monats- und Wochenansicht mit Details.",
-            body=get_active_body(self.request),
+            body=body,
         ).to_dict()
         return context
+
+
+class MeetingYearPlanView(ActiveBodyRequiredMixin, TemplateView):
+    """
+    Öffentlicher Sitzungsplan (Issue #82): Jahresübersicht Gremium × Monat.
+
+    Zeigt alle öffentlichen Sitzungen eines Jahres, wie sie das RIS bzw. das
+    Session-Modul veröffentlicht — druckbar und je Gremium abonnierbar.
+    """
+
+    template_name = "pages/meetings/year_plan.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        _select_body_from_query(request)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        body = get_active_body(self.request)
+        today = timezone.localdate()
+        try:
+            year = int(self.request.GET.get("year", today.year))
+            if not 2000 <= year <= 2100:
+                raise ValueError
+        except (TypeError, ValueError):
+            year = today.year
+
+        meetings = (
+            OParlMeeting.objects.filter(body=body, deleted=False, start__year=year)
+            .prefetch_related("organizations")
+            .order_by("start")
+        )
+        rows_by_org: dict = {}
+        for meeting in meetings:
+            month_index = timezone.localtime(meeting.start).month - 1
+            orgs = [org for org in meeting.organizations.all() if not org.deleted] or [None]
+            for org in orgs:
+                key = org.id if org else None
+                row = rows_by_org.setdefault(
+                    key, {"organization": org, "months": [[] for _ in range(12)], "count": 0, "cancelled": 0}
+                )
+                row["months"][month_index].append(meeting)
+                row["count"] += 1
+                if meeting.cancelled:
+                    row["cancelled"] += 1
+        rows = sorted(
+            rows_by_org.values(),
+            key=lambda r: (
+                r["organization"] is None,
+                (r["organization"].get_display_name() if r["organization"] else ""),
+            ),
+        )
+
+        context.update(
+            {
+                "year": year,
+                "rows": rows,
+                "month_names": MONTH_NAMES,
+                "total_meetings": meetings.count(),
+                "cancelled_meetings": meetings.filter(cancelled=True).count(),
+            }
+        )
+        from ..seo import get_page_seo
+
+        context["seo"] = get_page_seo(
+            self.request,
+            title=f"Sitzungsplan {year}",
+            description=f"Jahresübersicht aller öffentlichen Sitzungen {year} nach Gremium – druckbar und als Kalender abonnierbar.",
+            body=body,
+            keywords=["Sitzungsplan", "Sitzungskalender", "Gremien", "Termine"],
+        ).to_dict()
+        return context
+
+
+@require_GET
+def calendar_feed(request):
+    """
+    Abonnierbarer ICS-Feed der öffentlichen Sitzungen (Issue #82):
+    ganze Kommune oder ein Gremium (?gremium=<uuid>), 3 Monate zurück, 13 Monate voraus.
+    Kein Login — die Daten sind ohnehin öffentlich.
+    """
+    from datetime import timedelta
+
+    from apps.common.ical import build_ics_feed
+
+    _select_body_from_query(request)
+    body = get_active_body(request)
+    if not body:
+        raise Http404("Keine Kommune gewählt")
+
+    organization = None
+    org_id = request.GET.get("gremium")
+    if org_id:
+        try:
+            organization = OParlOrganization.objects.get(id=org_id, body=body, deleted=False)
+        except (OParlOrganization.DoesNotExist, ValueError, ValidationError):
+            raise Http404("Gremium nicht gefunden")
+
+    now = timezone.now()
+    qs = OParlMeeting.objects.filter(
+        body=body, deleted=False, start__gte=now - timedelta(days=90), start__lte=now + timedelta(days=400)
+    ).order_by("start")
+    if organization is not None:
+        qs = qs.filter(organizations=organization)
+
+    site_url = getattr(settings, "SITE_URL", "https://mandari.de").rstrip("/")
+    events = [
+        {
+            "uid": f"meeting-{meeting.id}@mandari.de",
+            "summary": meeting.get_display_name() + (" (abgesagt)" if meeting.cancelled else ""),
+            "start": meeting.start,
+            "end": meeting.end,
+            "location": meeting.location_name or "",
+            "description": f"{site_url}/insight/termine/{meeting.id}/",
+            "status": "CANCELLED" if meeting.cancelled else "CONFIRMED",
+        }
+        for meeting in qs
+        if meeting.start
+    ]
+    name = f"{body.get_display_name()} – {organization.get_display_name() if organization else 'Sitzungen'}"
+    response = HttpResponse(build_ics_feed(events, name=name), content_type="text/calendar; charset=utf-8")
+    response["Content-Disposition"] = 'inline; filename="sitzungen.ics"'
+    response["Cache-Control"] = "public, max-age=3600"
+    return response
 
 
 class MeetingDetailView(DetailView):
@@ -187,6 +348,14 @@ def calendar_events(request):
     end_str = request.GET.get("end")
 
     qs = OParlMeeting.objects.filter(body=body, cancelled=False, deleted=False).prefetch_related("organizations")
+
+    # Optional: nur ein Gremium (Issue #82)
+    org_id = request.GET.get("gremium")
+    if org_id:
+        try:
+            qs = qs.filter(organizations__id=org_id)
+        except (ValueError, ValidationError):
+            pass
 
     if start_str:
         from datetime import datetime

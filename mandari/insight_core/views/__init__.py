@@ -48,7 +48,9 @@ from .meetings import (
     MeetingDetailView,
     MeetingListPartial,
     MeetingListView,
+    MeetingYearPlanView,
     calendar_events,
+    calendar_feed,
 )
 from .neighborhood import (
     NeighborhoodView,
@@ -111,6 +113,7 @@ __all__ = [
     "FileListView",
     "MapView",
     "MeetingCalendarView",
+    "MeetingYearPlanView",
     "MeetingDetailView",
     "MeetingListPartial",
     "MeetingListView",
@@ -146,6 +149,7 @@ __all__ = [
     "bookmark_ids",
     "bookmark_toggle",
     "calendar_events",
+    "calendar_feed",
     "chat_message",
     "clear_body",
     "confirm_subscription",

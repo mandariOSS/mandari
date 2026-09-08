@@ -1,0 +1,87 @@
+{% extends "base_insight.html" %}
+
+{% block title %}Sitzungsplan {{ year }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    @media print {
+        .no-print { display: none !important; }
+        .year-plan-table { font-size: 10px; }
+        body { background: white; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div>
+    <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Sitzungsplan {{ year }}</h1>
+            <p class="text-gray-600 dark:text-gray-400">
+                Jahresübersicht aller öffentlichen Sitzungen{% if active_body %} der {{ active_body.get_display_name }}{% endif %} –
+                {{ total_meetings }} Termin{{ total_meetings|pluralize:"e" }}{% if cancelled_meetings %}, davon {{ cancelled_meetings }} abgesagt{% endif %}.
+            </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 no-print">
+            <a href="?year={{ year|add:"-1" }}" class="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-medium"><i data-lucide="chevron-left" class="w-4 h-4"></i>{{ year|add:"-1" }}</a>
+            <a href="?year={{ year|add:"1" }}" class="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-medium">{{ year|add:"1" }}<i data-lucide="chevron-right" class="w-4 h-4"></i></a>
+            <a href="{% url 'insight_core:insight:meeting_calendar' %}" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-medium"><i data-lucide="calendar" class="w-4 h-4"></i>Kalender</a>
+            <a href="{% url 'insight_core:insight:calendar_feed' %}" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-medium" title="Alle öffentlichen Sitzungen als Kalender-Abo (ICS)"><i data-lucide="rss" class="w-4 h-4"></i>Abonnieren</a>
+            <button type="button" onclick="window.print()" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium"><i data-lucide="printer" class="w-4 h-4"></i>Drucken</button>
+        </div>
+    </div>
+
+    {% if rows %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto">
+        <table class="year-plan-table w-full text-sm">
+            <thead>
+                <tr class="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                    <th class="sticky left-0 bg-gray-50 dark:bg-gray-900/50 text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 min-w-[200px]">Gremium</th>
+                    {% for month in month_names %}
+                    <th class="px-2 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 min-w-[64px]">{{ month }}</th>
+                    {% endfor %}
+                    <th class="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 no-print">Abo</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for row in rows %}
+                <tr class="align-top">
+                    <td class="sticky left-0 bg-white dark:bg-gray-800 px-4 py-3">
+                        {% if row.organization %}
+                        <a href="{% url 'insight_core:insight:organization_detail' row.organization.id %}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">{{ row.organization.get_display_name }}</a>
+                        {% else %}
+                        <span class="font-medium text-gray-700 dark:text-gray-300">Sonstige Sitzungen</span>
+                        {% endif %}
+                        <p class="text-xs text-gray-400 mt-0.5">{{ row.count }} Termin{{ row.count|pluralize:"e" }}{% if row.cancelled %} · {{ row.cancelled }} abgesagt{% endif %}</p>
+                    </td>
+                    {% for cell in row.months %}
+                    <td class="px-1.5 py-3 text-center">
+                        <div class="flex flex-wrap justify-center gap-1">
+                            {% for meeting in cell %}
+                            <a href="{% url 'insight_core:insight:meeting_detail' meeting.id %}"
+                               title="{{ meeting.get_display_name }} · {{ meeting.start|date:'d.m.Y H:i' }}{% if meeting.cancelled %} · abgesagt{% endif %}"
+                               class="inline-flex items-center justify-center min-w-[26px] px-1 py-0.5 rounded text-xs font-medium {% if meeting.cancelled %}line-through bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400{% else %}bg-primary-50 text-primary-700 hover:bg-primary-100 dark:bg-primary-900/30 dark:text-primary-300{% endif %}">{{ meeting.start|date:"j" }}.</a>
+                            {% endfor %}
+                        </div>
+                    </td>
+                    {% endfor %}
+                    <td class="px-3 py-3 text-right no-print">
+                        {% if row.organization %}
+                        <a href="{% url 'insight_core:insight:calendar_feed' %}?gremium={{ row.organization.id }}" class="text-gray-400 hover:text-primary-600" title="Sitzungen dieses Gremiums abonnieren (ICS)"><i data-lucide="rss" class="w-4 h-4 inline-block"></i></a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="mt-3 text-xs text-gray-400 dark:text-gray-500">Zahlen sind Kalendertage; durchgestrichen = abgesagt. Klick öffnet die Sitzung. Datenstand gemäß Ratsinformationssystem.</p>
+    {% else %}
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-6 py-10 text-center">
+        <i data-lucide="calendar-x" class="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
+        <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">Für {{ year }} liegen noch keine Sitzungstermine vor</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Sobald die Verwaltung den Sitzungsplan veröffentlicht, erscheint er hier automatisch.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

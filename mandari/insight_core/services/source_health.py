@@ -153,6 +153,24 @@ def collect_system_health() -> list[dict]:
     except Exception as exc:
         checks.append(_check("Datenbank", "critical", f"Keine Verbindung: {exc}"))
 
+    # Datenbank-Verbindungen (Issue #86): pg_stat_activity gegen max_connections
+    try:
+        from django.db import connection
+
+        if connection.vendor == "postgresql":
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend'")
+                used = cursor.fetchone()[0]
+                cursor.execute("SHOW max_connections")
+                limit = int(cursor.fetchone()[0])
+            ratio = used / limit if limit else 0
+            status = "critical" if ratio >= 0.9 else "warning" if ratio >= 0.7 else "ok"
+            checks.append(_check("DB-Verbindungen", status, f"{used} von {limit} belegt ({ratio:.0%})"))
+        else:
+            checks.append(_check("DB-Verbindungen", "inactive", "Nur für PostgreSQL"))
+    except Exception as exc:
+        checks.append(_check("DB-Verbindungen", "warning", f"Nicht ermittelbar: {exc}"))
+
     # Cache / Redis
     try:
         cache.set("monitoring-probe", "1", 10)

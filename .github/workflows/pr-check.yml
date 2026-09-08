@@ -203,6 +203,7 @@ jobs:
           python scripts/smoke_file_cache.py
           python scripts/smoke_guest_notifications.py
           python scripts/smoke_guest_overview.py
+          python scripts/smoke_insight_calendar.py
 
   # ===========================================================================
   # Docker Build Validation

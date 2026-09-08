@@ -305,6 +305,10 @@ class OParlOrganization(SourceDeletionModel):
     def __str__(self):
         return self.name or f"Gremium {self.id}"
 
+    def get_display_name(self) -> str:
+        """Anzeigename (voller Name; Kurzname nur als Fallback)."""
+        return self.name or self.short_name or str(self.id)
+
     @property
     def is_active(self):
         """Prüft ob das Gremium noch aktiv ist."""

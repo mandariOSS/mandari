@@ -163,6 +163,10 @@ check(
 )
 check("Datenbank ok", next(c for c in system if c["name"] == "Datenbank")["status"] == "ok")
 check(
+    "DB-Verbindungs-Check vorhanden (SQLite: inaktiv)",
+    next(c for c in system if c["name"] == "DB-Verbindungen")["status"] == "inactive",
+)
+check(
     "Elasticsearch unkonfiguriert -> inaktiv",
     next(c for c in system if c["name"] == "Elasticsearch")["status"] == "inactive",
 )
