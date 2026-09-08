@@ -49,6 +49,9 @@ jobs:
         working-directory: mandari
         run: ruff format --check .
 
+      - name: Template-Kommentare prüfen (kein mehrzeiliges {# … #})
+        run: python scripts/check_template_comments.py mandari/templates
+
   # ===========================================================================
   # Django System Checks & Tests
   # ===========================================================================
