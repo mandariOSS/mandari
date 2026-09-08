@@ -196,8 +196,13 @@ class FileListView(ActiveBodyRequiredMixin, TemplateView):
 # File Proxy (DSGVO-konform - PDFs im iframe anzeigbar)
 # =============================================================================
 
+import logging
+
 import httpx
+from django.conf import settings
 from django.views.decorators.clickjacking import xframe_options_exempt
+
+logger = logging.getLogger(__name__)
 
 
 def _file_proxy_error(title, message):
@@ -230,55 +235,52 @@ a{{color:#4f46e5;text-decoration:underline}}
 @xframe_options_exempt
 def file_proxy(request, file_id):
     """
-    Streaming-Proxy für OParl-Dateien (PDFs etc.) — ermöglicht iframe-Embedding.
+    Datei-Auslieferung für OParl-Dokumente (PDFs) — iframe-fähig und DSGVO-konform.
 
-    Externe Server setzen X-Frame-Options, wodurch PDFs nicht im iframe
-    angezeigt werden können. Dieser Proxy streamt die Datei durch, ohne sie
-    komplett im RAM zu halten (konstanter Speicherverbrauch).
-
-    Auch DSGVO-konform: Browser verbindet sich nicht direkt mit dem RIS-Server.
+    Reihenfolge (Issues #87/#86):
+    1. Lokale Kopie aus dem Dokument-Cache (FileResponse, kein RIS-Zugriff)
+    2. Live-Abruf mit kurzen Timeouts; erfolgreiche Antworten werden
+       direkt in den Cache geschrieben (Write-Through)
+    3. Freundliche Fehlerseite, wenn die Quelle nicht erreichbar ist
     """
-    file_obj = get_object_or_404(OParlFile, id=file_id)
+    from django.http import FileResponse
+
+    from ..services import file_cache
+
+    file_obj = get_object_or_404(OParlFile.objects.select_related("body"), id=file_id)
+    force_download = request.GET.get("download") == "1"
+    filename = file_obj.file_name or file_obj.name or "dokument.pdf"
+
+    local = file_cache.local_file(file_obj)
+    if local is not None:
+        response = FileResponse(
+            open(local, "rb"),
+            content_type=file_cache.content_type_for(file_obj, "application/pdf"),
+            as_attachment=force_download,
+            filename=filename,
+        )
+        response["Cache-Control"] = "public, max-age=86400"
+        response["X-Mandari-Cache"] = "hit"
+        return response
 
     url = file_obj.download_url or file_obj.access_url
     if not url:
         raise Http404("Keine Download-URL verfügbar")
 
-    # ?download=1 → Direkter Download statt Inline-Anzeige
-    force_download = request.GET.get("download") == "1"
-
+    read_timeout = float(getattr(settings, "FILE_PROXY_TIMEOUT_SECONDS", 15))
     try:
-        # Datei komplett laden (httpx.stream + with-Block ist inkompatibel mit
-        # Django's StreamingHttpResponse — der with-Block schließt den Stream
-        # bevor Django die Chunks liest).
-        # Für PDFs < 50 MB ist das vertretbar.
         upstream = httpx.get(
             url,
-            timeout=60.0,
+            timeout=httpx.Timeout(connect=5.0, read=read_timeout, write=5.0, pool=5.0),
             follow_redirects=True,
-            headers={"User-Agent": "Mandari/1.0 (https://mandari.de)"},
+            headers={"User-Agent": file_cache.USER_AGENT},
         )
         upstream.raise_for_status()
-
-        content_type = file_obj.mime_type or upstream.headers.get("content-type", "application/octet-stream")
-
-        response = HttpResponse(
-            upstream.content,
-            content_type=content_type,
-        )
-
-        if force_download:
-            filename = file_obj.file_name or file_obj.name or "dokument.pdf"
-            response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        else:
-            response["Content-Disposition"] = "inline"
-
-        response["Content-Length"] = len(upstream.content)
-        response["Cache-Control"] = "public, max-age=86400"  # 1 Tag
-        # Kein X-Frame-Options → iframe-Embedding erlaubt
-        return response
-
     except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404 and file_obj.local_status == "none":
+            file_obj.local_status = "missing"
+            file_obj.local_error = "HTTP 404"
+            file_obj.save(update_fields=["local_status", "local_error"])
         return _file_proxy_error(
             "Datei nicht gefunden" if e.response.status_code == 404 else f"Fehler {e.response.status_code}",
             "Die Datei konnte auf dem OParl-Server nicht gefunden werden. "
@@ -290,5 +292,35 @@ def file_proxy(request, file_id):
     except httpx.RequestError:
         return _file_proxy_error(
             "Server nicht erreichbar",
-            "Der OParl-Server ist momentan nicht erreichbar. Bitte versuche es später erneut.",
+            "Das Ratsinformationssystem ist momentan nicht erreichbar und dieses Dokument lag noch nicht "
+            "in unserem Zwischenspeicher. Wir speichern Dokumente laufend zwischengespeichert ab — "
+            "bitte versuche es später erneut.",
         )
+
+    data = upstream.content
+    content_type = file_cache.content_type_for(
+        file_obj, upstream.headers.get("content-type", "application/octet-stream").split(";")[0]
+    )
+    if file_cache.looks_like_html(data) and "html" not in (file_obj.mime_type or "").lower():
+        return _file_proxy_error(
+            "Quelle liefert derzeit keine Datei",
+            "Das Ratsinformationssystem antwortet mit einer Hinweisseite statt mit dem Dokument "
+            "(z. B. Wartung). Bitte versuche es später erneut.",
+        )
+
+    # Write-Through: beim nächsten Aufruf kommt die Datei von der Platte
+    try:
+        if len(data) <= file_cache.max_bytes() and file_cache.has_room_for(len(data)):
+            file_cache.store_bytes(file_obj, data, content_type=content_type)
+    except Exception as exc:  # Cache-Fehler dürfen die Auslieferung nie verhindern
+        logger.warning("Dokument %s konnte nicht zwischengespeichert werden: %s", file_obj.id, exc)
+
+    response = HttpResponse(data, content_type=content_type)
+    if force_download:
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    else:
+        response["Content-Disposition"] = "inline"
+    response["Content-Length"] = len(data)
+    response["Cache-Control"] = "public, max-age=86400"
+    response["X-Mandari-Cache"] = "miss"
+    return response

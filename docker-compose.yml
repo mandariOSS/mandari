@@ -169,6 +169,8 @@ services:
       ALLOWED_HOSTS: ${DOMAIN:-localhost}
       CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
       SITE_URL: https://${DOMAIN:-localhost}
+      # Dokument-Cache (siehe docs/FILE_CACHE.md)
+      OPARL_FILES_ROOT: /app/files
       # AI (optional)
       NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
       # Sync Daemon
@@ -177,6 +179,7 @@ services:
       TZ: ${TZ:-Europe/Berlin}
     volumes:
       - mandari_media:/app/media
+      - mandari_files:/app/files
     depends_on:
       postgres:
         condition: service_healthy
@@ -272,6 +275,9 @@ volumes:
     name: mandari_elasticsearch_data
   mandari_media:
     name: mandari_media_data
+  # Lokaler Dokument-Cache (PDFs) — kann pro Kommune auf eine Storage Box zeigen
+  mandari_files:
+    name: mandari_files_data
   ingestor_data:
     name: mandari_ingestor_data
   caddy_data:

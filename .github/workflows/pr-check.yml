@@ -200,6 +200,7 @@ jobs:
           python scripts/smoke_motions_access.py
           python scripts/smoke_insight_questions.py
           python scripts/smoke_admin_monitoring.py
+          python scripts/smoke_file_cache.py
 
   # ===========================================================================
   # Docker Build Validation

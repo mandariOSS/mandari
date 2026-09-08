@@ -690,6 +690,20 @@ class OParlFile(SourceDeletionModel):
     text_content = models.TextField(blank=True, null=True)
     sha256_hash = models.CharField(max_length=64, blank=True, null=True)
 
+    # Lokaler Dokument-Cache (Django-managed, siehe services/file_cache.py)
+    LOCAL_STATUS_CHOICES = [
+        ("none", "Nicht zwischengespeichert"),
+        ("ok", "Lokal vorhanden"),
+        ("missing", "Quelle liefert 404"),
+        ("error", "Fehler beim Abruf"),
+        ("too_large", "Zu groß für den Cache"),
+    ]
+    local_status = models.CharField(
+        max_length=20, choices=LOCAL_STATUS_CHOICES, default="none", db_index=True, verbose_name="Lokale Kopie"
+    )
+    local_cached_at = models.DateTimeField(blank=True, null=True, verbose_name="Lokal gespeichert am")
+    local_error = models.CharField(max_length=500, blank=True, default="", verbose_name="Cache-Fehler")
+
     # Text extraction tracking
     text_extraction_status = models.CharField(
         max_length=20,

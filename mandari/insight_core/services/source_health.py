@@ -179,6 +179,29 @@ def collect_system_health() -> list[dict]:
     else:
         checks.append(_check("Elasticsearch", "inactive", "Nicht konfiguriert"))
 
+    # Dokument-Cache (Issue #87): Abdeckung + freier Speicher am Cache-Verzeichnis
+    try:
+        from .file_cache import cache_stats
+
+        stats = cache_stats()
+        free_gb = stats["disk_free_bytes"] / 1024**3
+        if free_gb < 2:
+            status = "critical"
+        elif free_gb < stats["min_free_gb"]:
+            status = "warning"
+        else:
+            status = "ok"
+        checks.append(
+            _check(
+                "Dokument-Cache",
+                status,
+                f"{stats['ok']} von {stats['total']} Dokumenten lokal ({stats['coverage']} %), "
+                f"{stats['cached_gb']} GB belegt, {free_gb:.0f} GB frei",
+            )
+        )
+    except Exception as exc:
+        checks.append(_check("Dokument-Cache", "warning", f"Status nicht ermittelbar: {exc}"))
+
     # Ingestor-Daemon + Sync-Läufe
     try:
         from insight_sync import daemon
@@ -264,6 +287,12 @@ def collect_action_items() -> list[dict]:
         "Dateien mit fehlgeschlagener Textextraktion",
         OParlFile.objects.filter(text_extraction_status="failed").count(),
         reverse("admin:insight_core_oparlfile_changelist") + "?text_extraction_status__exact=failed",
+        level="ok",
+    )
+    add(
+        "Dokumente mit Cache-Fehler",
+        OParlFile.objects.filter(deleted=False, local_status="error").count(),
+        reverse("admin:insight_core_oparlfile_changelist") + "?local_status__exact=error",
         level="ok",
     )
     add(

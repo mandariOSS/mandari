@@ -279,6 +279,13 @@ if not DEBUG:
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# Lokaler Dokument-Cache für OParl-Dateien (Issue #87): je Kommune ein Verzeichnis,
+# damit sich pro Stadt eine Storage Box mounten lässt. Schutzgrenze verhindert volle Platte.
+OPARL_FILES_ROOT = Path(os.environ.get("OPARL_FILES_ROOT", str(MEDIA_ROOT / "oparl_files")))
+FILE_CACHE_MAX_MB = int(os.environ.get("FILE_CACHE_MAX_MB", "80"))
+FILE_CACHE_MIN_FREE_GB = int(os.environ.get("FILE_CACHE_MIN_FREE_GB", "15"))
+FILE_PROXY_TIMEOUT_SECONDS = int(os.environ.get("FILE_PROXY_TIMEOUT_SECONDS", "15"))
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field

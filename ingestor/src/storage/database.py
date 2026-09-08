@@ -83,6 +83,9 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset({
     "page_count",
     "sha256_hash",
     "local_path",
+    "local_status",
+    "local_cached_at",
+    "local_error",
     # OParlPaper: AI enrichment + georeferencing (Django-managed)
     "summary",
     "locations",

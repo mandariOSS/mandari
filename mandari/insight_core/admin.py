@@ -543,10 +543,32 @@ class OParlAgendaItemAdmin(ModelAdmin):
 
 @admin.register(OParlFile)
 class OParlFileAdmin(ModelAdmin):
-    list_display = ["name", "file_name", "mime_type", "size_human", "paper"]
-    list_filter = ["mime_type", "deleted"]
+    list_display = ["name", "file_name", "mime_type", "size_human", "local_status", "paper"]
+    list_filter = ["local_status", "mime_type", "deleted"]
     search_fields = ["name", "file_name"]
-    readonly_fields = ["id", "external_id", "created_at", "updated_at"]
+    readonly_fields = [
+        "id",
+        "external_id",
+        "local_path",
+        "local_status",
+        "local_cached_at",
+        "local_error",
+        "sha256_hash",
+        "created_at",
+        "updated_at",
+    ]
+    actions = ["cache_locally"]
+
+    @admin.action(description="Lokal zwischenspeichern (max. 50)")
+    def cache_locally(self, request, queryset):
+        from .services.file_cache import fetch_and_cache
+
+        results = {}
+        for file_obj in queryset.select_related("body")[:50]:
+            status = fetch_and_cache(file_obj)
+            results[status] = results.get(status, 0) + 1
+        summary = ", ".join(f"{k}: {v}" for k, v in sorted(results.items()))
+        messages.success(request, f"Dokument-Cache: {summary}.")
 
 
 @admin.register(OParlMembership)
