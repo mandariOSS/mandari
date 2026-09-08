@@ -101,16 +101,23 @@ nano .env  # Konfiguration anpassen
 docker compose up -d
 ```
 
-Detaillierte Anleitung: [docs/installation.md](docs/installation.md)
+Detaillierte Anleitung: <https://docs.mandari.de/betrieb/>
 
 ## Dokumentation
 
-| Dokument | Beschreibung |
-|----------|--------------|
-| [Installation](docs/installation.md) | Server-Setup und Deployment |
-| [Konfiguration](docs/configuration.md) | Einstellungen und Optionen |
-| [Updates](docs/upgrading.md) | Auf neue Version aktualisieren |
-| [Backup](docs/backup-restore.md) | Datensicherung |
+Die vollständige Dokumentation lebt unter **<https://docs.mandari.de>**
+(Quelltext: [mandariOSS/docs](https://github.com/mandariOSS/docs)):
+
+| Bereich | Inhalt |
+|---------|--------|
+| [Betrieb](https://docs.mandari.de/betrieb/) | Self-Hosting mit Docker, Konfiguration, Cron, Quellen anbinden, Monitoring, Updates und Backups |
+| [Insight](https://docs.mandari.de/insight/) | Bürgerportal und OParl-Aggregations-API |
+| [Work](https://docs.mandari.de/work/) | Fraktionsarbeit, Fraktions-API, Antragseinreichung |
+| [Session](https://docs.mandari.de/session/) | Verwaltungs-RIS, OParl-API je Kommune, Beschlusskontrolle |
+| [Datenschutz](https://docs.mandari.de/datenschutz/) | TOM, Löschkonzept, Muster-AVV, Crawler und Opt-out |
+
+Das Verzeichnis [`docs/`](docs/) in diesem Repository enthält ergänzende
+Implementierungsnotizen für Entwickler:innen.
 
 ## Technologie
 
