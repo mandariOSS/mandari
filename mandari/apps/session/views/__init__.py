@@ -333,3 +333,5 @@ __all__ = [
     "UserListView",
     "UserRolesUpdateView",
 ]
+
+from .api_tokens import APITokenCreateView, APITokenListView, APITokenRevokeView  # noqa: E402,F401

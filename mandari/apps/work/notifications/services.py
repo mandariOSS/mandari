@@ -591,6 +591,18 @@ class NotificationHub:
         )
 
     @classmethod
+    def notify_motion_ris_status(cls, motion, recipient, title: str, message: str):
+        """Rückmeldung der Verwaltung zu einem eingereichten Antrag (Issue #40)."""
+        return cls.send(
+            recipient=recipient,
+            notification_type=NotificationType.MOTION_STATUS,
+            title=title,
+            message=message,
+            link=f"/work/{motion.organization.slug}/documents/{motion.id}/submit-ris/",
+            metadata={"motion_id": str(motion.id), "source": "session"},
+        )
+
+    @classmethod
     def notify_motion_due_soon(
         cls,
         motion,

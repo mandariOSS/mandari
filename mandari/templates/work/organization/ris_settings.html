@@ -1,0 +1,96 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Verwaltung — {{ organization.name }}{% endblock %}
+{% block header_title %}Organisationseinstellungen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">Anträge digital bei der Verwaltung einreichen</p>
+{% endblock %}
+
+{% block work_content %}
+{% include "work/organization/_tabs.html" %}
+
+<div class="max-w-3xl space-y-6">
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">Verbindung zur Verwaltung</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Mit einem Einreichungs-Token der Verwaltung reicht ihr Anträge direkt aus dem Dokument-Editor ein
+                    und seht Eingangsnummer, Status und Beratungstermine ohne Rückfrage.
+                </p>
+            </div>
+            <span class="px-3 py-1 text-sm font-medium rounded-full
+                {% if connection_usable %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400{% elif connection %}bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300{% else %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400{% endif %}">
+                {% if connection_usable %}Verbunden{% elif connection %}Gestört{% else %}Nicht verbunden{% endif %}
+            </span>
+        </div>
+
+        {% if connection %}
+        <dl class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            <div>
+                <dt class="text-gray-500 dark:text-gray-400">Verwaltung</dt>
+                <dd class="font-medium text-gray-900 dark:text-white">{{ connection.tenant.name }}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500 dark:text-gray-400">Token</dt>
+                <dd class="font-mono text-gray-900 dark:text-white">{{ connection.token_prefix }}…</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500 dark:text-gray-400">Verbunden am</dt>
+                <dd class="text-gray-900 dark:text-white">{{ connection.connected_at|date:"d.m.Y H:i" }}{% if connection.connected_by %} von {{ connection.connected_by.user.get_display_name }}{% endif %}</dd>
+            </div>
+            <div>
+                <dt class="text-gray-500 dark:text-gray-400">Letzte Einreichung</dt>
+                <dd class="text-gray-900 dark:text-white">{% if connection.last_used_at %}{{ connection.last_used_at|date:"d.m.Y H:i" }}{% else %}noch keine{% endif %}</dd>
+            </div>
+        </dl>
+        {% if not connection_usable %}
+        <p class="mt-4 text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2"><i data-lucide="alert-triangle" class="w-4 h-4"></i> {{ connection_reason }}</p>
+        {% endif %}
+        <form method="post" class="mt-5" onsubmit="return confirm('Verbindung zur Verwaltung wirklich trennen? Bereits eingereichte Anträge bleiben erhalten.')">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="disconnect">
+            <button type="submit" class="text-sm text-red-600 hover:text-red-700 dark:text-red-400">Verbindung trennen</button>
+        </form>
+        {% endif %}
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="font-medium text-gray-900 dark:text-white">{% if connection %}Token erneuern oder Verwaltung wechseln{% else %}Token hinterlegen{% endif %}</h3>
+        <ol class="mt-2 text-sm text-gray-600 dark:text-gray-300 list-decimal ml-5 space-y-1">
+            <li>Die Verwaltung erstellt im Session-RIS unter <em>Einstellungen → Einreichungs-Zugänge</em> einen Token für eure Fraktion.</li>
+            <li>Ihr fügt den Token (64 Zeichen) hier ein. Er wird geprüft und nur verschlüsselt als Prüfsumme gespeichert.</li>
+            <li>Danach erscheint im Dokument-Editor die Aktion „Bei Verwaltung einreichen“ für alle mit dem Recht „Anträge ans RIS übermitteln“.</li>
+        </ol>
+        <form method="post" class="mt-4 flex flex-col sm:flex-row gap-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="connect">
+            <input type="text" name="token" required minlength="64" maxlength="64" autocomplete="off" spellcheck="false"
+                   placeholder="Einreichungs-Token der Verwaltung"
+                   class="flex-1 px-3 py-2 text-sm font-mono rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+            <button type="submit" class="px-4 py-2 text-sm font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700">Verbinden</button>
+        </form>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="font-medium text-gray-900 dark:text-white mb-3">Eingereichte Anträge</h3>
+        {% if submitted_applications %}
+        <ul class="divide-y divide-gray-200 dark:divide-gray-700">
+            {% for app in submitted_applications %}
+            <li class="py-2.5 flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                        {% if app.work_motion %}<a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=app.work_motion.id %}" class="hover:text-primary-600">{{ app.title }}</a>{% else %}{{ app.title }}{% endif %}
+                    </p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ app.reference }} · {{ app.tenant.name }} · {{ app.submitted_at|date:"d.m.Y" }}</p>
+                </div>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 whitespace-nowrap">{{ app.get_status_display }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-gray-500 dark:text-gray-400">Noch keine Anträge eingereicht.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

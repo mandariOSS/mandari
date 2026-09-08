@@ -146,3 +146,5 @@ __all__ = [
     "_generated_letterhead_defaults",
     "_get_org_folder_or_404",
 ]
+
+from .ris import MotionSubmitToAdministrationView  # noqa: E402,F401

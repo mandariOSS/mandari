@@ -278,6 +278,12 @@ urlpatterns = [
         motions_views.MotionExportView.as_view(),
         name="document_export",
     ),
+    # Antrag digital bei der Verwaltung einreichen (Issue #40)
+    path(
+        "<slug:org_slug>/documents/<uuid:motion_id>/submit-ris/",
+        motions_views.MotionSubmitToAdministrationView.as_view(),
+        name="document_submit_ris",
+    ),
     # Briefkopf-Vorschau im Editor (generierter Briefkopf)
     path(
         "<slug:org_slug>/documents/letterheads/<uuid:letterhead_id>/preview/",
@@ -568,6 +574,11 @@ urlpatterns = [
         "<slug:org_slug>/organization/api/",
         organization_views.OrganizationApiSettingsView.as_view(),
         name="organization_api_settings",
+    ),
+    path(
+        "<slug:org_slug>/organization/verwaltung/",
+        organization_views.OrganizationRisSettingsView.as_view(),
+        name="organization_ris_settings",
     ),
     path(
         "<slug:org_slug>/organization/documents-settings/",

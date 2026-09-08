@@ -297,6 +297,15 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
         approvals = motion.approvals.select_related("approver__user").order_by("created_at")
         context["approvals"] = approvals
+
+        # Digitale Einreichung bei der Verwaltung (Issue #40)
+        from .. import ris_submission
+
+        context["ris_application"] = motion.session_application
+        context["ris_timeline"] = ris_submission.consultation_timeline(motion.session_application)
+        context["can_submit_ris"] = (
+            not context["is_guest"] and context["can_edit"] and self.membership.has_permission("motions.submit_to_ris")
+        )
         context["approval_summary"] = motion.approval_summary
         context["my_pending_approval"] = next(
             (a for a in approvals if a.approver_id == self.membership.id and a.approved is None), None

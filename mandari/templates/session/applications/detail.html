@@ -194,6 +194,12 @@
                     <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ application.submitting_organization.name }}</dd>
                 </div>
                 {% endif %}
+                {% if application.work_motion %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Eingereicht über</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">mandari Work (digital) · Statusänderungen werden der Fraktion automatisch gemeldet</dd>
+                </div>
+                {% endif %}
                 {% if application.target_organization %}
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400">Zuständiges Gremium</dt>

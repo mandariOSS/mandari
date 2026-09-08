@@ -133,6 +133,22 @@
                     <i data-lucide="panel-right" class="w-5 h-5"></i>
                 </button>
 
+                {% if can_submit_ris %}
+                {% if ris_application %}
+                <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
+                   class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-100"
+                   title="Status bei der Verwaltung">
+                    <i data-lucide="landmark" class="w-4 h-4"></i>
+                    {{ ris_application.reference|default:"Eingereicht" }}
+                </a>
+                {% elif motion.is_submittable %}
+                <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
+                   class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Bei Verwaltung einreichen">
+                    <i data-lucide="send" class="w-5 h-5"></i>
+                </a>
+                {% endif %}
+                {% endif %}
+
                 <!-- Export Dropdown -->
                 <div x-data="{ open: false }" class="relative">
                     <button @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Exportieren">

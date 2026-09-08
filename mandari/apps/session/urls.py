@@ -468,6 +468,22 @@ urlpatterns = [
         views.ReminderSettingsView.as_view(),
         name="settings_reminders",
     ),
+    # Einreichungs-Zugänge für Fraktionen (Issue #40)
+    path(
+        "<slug:tenant_slug>/settings/api-tokens/",
+        views.APITokenListView.as_view(),
+        name="settings_api_tokens",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/api-tokens/create/",
+        views.APITokenCreateView.as_view(),
+        name="settings_api_tokens_create",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/api-tokens/<uuid:token_id>/revoke/",
+        views.APITokenRevokeView.as_view(),
+        name="settings_api_tokens_revoke",
+    ),
     # Endgeräte für die digitale Ratsarbeit
     path(
         "<slug:tenant_slug>/devices/",

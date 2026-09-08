@@ -1,0 +1,232 @@
+{% extends "work/base_work.html" %}
+
+{% block page_title %}Bei Verwaltung einreichen — {{ motion.title }}{% endblock %}
+{% block header_title %}Bei der Verwaltung einreichen{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{{ motion.title }}</p>
+{% endblock %}
+
+{% block work_content %}
+<div class="mb-4">
+    <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}"
+       class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-primary-600">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i> Zurück zum Dokument
+    </a>
+</div>
+
+{% if application %}
+{# ---------------------------------------------------------------- Statusseite #}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 space-y-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Eingangsnummer</p>
+                    <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ application.reference|default:"wird vergeben" }}</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Eingereicht am {{ application.submitted_at|date:"d.m.Y H:i" }} bei <strong>{{ application.tenant.name }}</strong>
+                    </p>
+                </div>
+                <span class="px-3 py-1.5 text-sm font-semibold rounded-full
+                    {% if application.status == 'rejected' %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300
+                    {% elif application.status == 'converted' or application.status == 'accepted' %}bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300
+                    {% elif application.status == 'submitted' %}bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300
+                    {% else %}bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300{% endif %}">
+                    {{ application.get_status_display }}
+                </span>
+            </div>
+            <dl class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Antragsart</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ application.get_application_type_display }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Zuständiges Gremium</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ application.target_organization.name|default:"wird von der Verwaltung zugeordnet" }}</dd>
+                </div>
+                {% if application.received_at %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Eingegangen</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ application.received_at|date:"d.m.Y H:i" }}</dd>
+                </div>
+                {% endif %}
+                {% if application.processing_notes %}
+                <div class="sm:col-span-2">
+                    <dt class="text-gray-500 dark:text-gray-400">Hinweis der Verwaltung</dt>
+                    <dd class="text-gray-900 dark:text-white whitespace-pre-line">{{ application.processing_notes }}</dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+                <i data-lucide="route" class="w-5 h-5 text-primary-500"></i> Beratungsfolge
+            </h3>
+            {% if timeline %}
+            <ol class="relative border-l border-gray-200 dark:border-gray-700 ml-2 space-y-5">
+                {% for entry in timeline %}
+                <li class="ml-5">
+                    <span class="absolute -left-1.5 mt-1.5 w-3 h-3 rounded-full {% if entry.authoritative %}bg-primary-600{% else %}bg-primary-300 dark:bg-primary-700{% endif %}"></span>
+                    <p class="font-medium text-gray-900 dark:text-white">{{ entry.organization }}{% if entry.role %} <span class="text-xs font-normal text-gray-500">· {{ entry.role }}</span>{% endif %}</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                        {% if entry.start %}{{ entry.start|date:"l, d.m.Y H:i" }} Uhr{% else %}Termin noch offen{% endif %}
+                        {% if entry.result %} · Ergebnis: {{ entry.result }}{% endif %}
+                    </p>
+                </li>
+                {% endfor %}
+            </ol>
+            {% else %}
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+                Noch keine Beratung terminiert. Sobald die Verwaltung den Antrag einer Sitzung zuordnet, erscheint hier
+                Gremium und Termin, und ihr werdet benachrichtigt.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+    <aside class="space-y-4">
+        <div class="bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-gray-200 dark:border-gray-700 p-5 text-sm text-gray-600 dark:text-gray-300">
+            <p class="font-semibold text-gray-900 dark:text-white mb-2">Übermittelter Inhalt</p>
+            <p class="text-xs uppercase tracking-wider text-gray-500 mt-3">Beschlussvorschlag</p>
+            <p class="whitespace-pre-line mt-1">{{ application.resolution_proposal }}</p>
+            <p class="text-xs uppercase tracking-wider text-gray-500 mt-4">Begründung</p>
+            <p class="whitespace-pre-line mt-1">{{ application.justification }}</p>
+            {% if application.financial_impact %}
+            <p class="text-xs uppercase tracking-wider text-gray-500 mt-4">Finanzielle Auswirkungen</p>
+            <p class="whitespace-pre-line mt-1">{{ application.financial_impact }}</p>
+            {% endif %}
+        </div>
+    </aside>
+</div>
+
+{% else %}
+{# ---------------------------------------------------------------- Einreichen #}
+{% if not connection_usable %}
+<div class="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-5 mb-6">
+    <p class="font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-2">
+        <i data-lucide="plug-zap" class="w-5 h-5"></i> Keine nutzbare Verbindung zur Verwaltung
+    </p>
+    <p class="text-sm text-amber-800 dark:text-amber-200 mt-1">{{ connection_reason }}</p>
+    {% if can_manage_connection %}
+    <a href="{% url 'work:organization_ris_settings' org_slug=organization.slug %}"
+       class="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700">
+        Verbindung einrichten <i data-lucide="arrow-right" class="w-4 h-4"></i>
+    </a>
+    {% else %}
+    <p class="text-xs text-amber-700 dark:text-amber-300 mt-2">Bitte die Fraktionsleitung, in den Organisationseinstellungen den Einreichungs-Token der Verwaltung zu hinterlegen.</p>
+    {% endif %}
+</div>
+{% elif block_reason %}
+<div class="rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 p-5 mb-6 text-sm text-gray-700 dark:text-gray-200">
+    <i data-lucide="info" class="w-4 h-4 inline"></i> {{ block_reason }}
+</div>
+{% endif %}
+
+<form method="post" class="grid grid-cols-1 lg:grid-cols-5 gap-6" x-data="{ urgent: {{ form.is_urgent|yesno:'true,false' }} }">
+    {% csrf_token %}
+    <div class="lg:col-span-3 space-y-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-5">
+            <div class="flex items-center justify-between gap-3">
+                <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <i data-lucide="send" class="w-5 h-5 text-primary-500"></i> Antrag an {{ connection.tenant.name|default:"die Verwaltung" }}
+                </h3>
+                {% if form.structured %}
+                <span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">Abschnitte aus dem Dokument übernommen</span>
+                {% else %}
+                <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">Bitte Abschnitte prüfen</span>
+                {% endif %}
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1" for="title">Titel</label>
+                <input id="title" name="title" type="text" required maxlength="500" value="{{ form.title }}"
+                       class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1" for="application_type">Antragsart</label>
+                    <select id="application_type" name="application_type" class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                        {% for value, label in application_type_choices %}
+                        <option value="{{ value }}" {% if form.application_type == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1" for="target_organization">Zielgremium <span class="text-gray-400">(optional)</span></label>
+                    <select id="target_organization" name="target_organization" class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                        <option value="">Verwaltung entscheidet</option>
+                        {% for org in target_organizations %}
+                        <option value="{{ org.id }}" {% if form.target_organization_id == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1" for="resolution_proposal">Beschlussvorschlag</label>
+                <textarea id="resolution_proposal" name="resolution_proposal" rows="7" required
+                          class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">{{ form.resolution_proposal }}</textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1" for="justification">Begründung</label>
+                <textarea id="justification" name="justification" rows="7" required
+                          class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">{{ form.justification }}</textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1" for="financial_impact">Finanzielle Auswirkungen <span class="text-gray-400">(optional)</span></label>
+                <textarea id="financial_impact" name="financial_impact" rows="3"
+                          class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">{{ form.financial_impact }}</textarea>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1" for="co_signers">Mitunterzeichnende <span class="text-gray-400">(eine Person pro Zeile)</span></label>
+                    <textarea id="co_signers" name="co_signers" rows="3"
+                              class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">{{ form.co_signers }}</textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1" for="deadline">Gewünschter Beratungstermin <span class="text-gray-400">(optional)</span></label>
+                    <input id="deadline" name="deadline" type="date" value="{{ form.deadline_raw }}"
+                           class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                    <label class="flex items-center gap-2 mt-3 text-sm text-gray-700 dark:text-gray-200">
+                        <input type="checkbox" name="is_urgent" x-model="urgent" class="rounded border-gray-300"> Dringlichkeitsantrag
+                    </label>
+                    <textarea name="urgency_reason" rows="2" x-show="urgent" x-cloak placeholder="Warum ist der Antrag dringend?"
+                              class="mt-2 w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">{{ form.urgency_reason }}</textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-200">
+                <input type="checkbox" name="confirm" class="mt-0.5 rounded border-gray-300" {% if not can_submit_now %}disabled{% endif %}>
+                <span>
+                    Ich reiche diesen Antrag im Namen von <strong>{{ organization.name }}</strong> verbindlich bei
+                    <strong>{{ connection.tenant.name|default:"der Verwaltung" }}</strong> ein. Übermittelt werden Titel, Antragsart,
+                    Beschlussvorschlag, Begründung, finanzielle Auswirkungen, Mitunterzeichnende sowie mein Name und meine E-Mail-Adresse
+                    als Ansprechperson. Das Dokument wechselt in den Status „Eingereicht“.
+                </span>
+            </label>
+            <div class="mt-4 flex items-center gap-3">
+                <button type="submit" {% if not can_submit_now %}disabled{% endif %}
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i data-lucide="send" class="w-4 h-4"></i> Jetzt einreichen
+                </button>
+                <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}" class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Abbrechen</a>
+            </div>
+        </div>
+    </div>
+
+    <aside class="lg:col-span-2">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 sticky top-4">
+            <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-3">
+                <i data-lucide="eye" class="w-5 h-5 text-gray-400"></i> Vorschau des Dokuments
+            </h3>
+            <div class="prose prose-sm dark:prose-invert max-h-[70vh] overflow-y-auto pr-2">
+                {{ motion_content|safe }}
+            </div>
+        </div>
+    </aside>
+</form>
+{% endif %}
+{% endblock %}

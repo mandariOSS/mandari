@@ -24,6 +24,10 @@ Values: "general", "faction", "api", "documents", "parties", "members", "roles"
            class="{% if active_tab == 'api' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
             API
         </a>
+        <a href="{% url 'work:organization_ris_settings' org_slug=organization.slug %}"
+           class="{% if active_tab == 'ris' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
+            Verwaltung
+        </a>
         {% endif %}
         <a href="{% url 'work:organization_email_settings' org_slug=organization.slug %}"
            class="{% if active_tab == 'email' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">

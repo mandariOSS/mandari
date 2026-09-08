@@ -233,6 +233,37 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
         {% endif %}
     </div>
 
+    <!-- Verwaltung (digitale Einreichung, Issue #40) -->
+    {% if ris_application or can_submit_ris %}
+    <div>
+        <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <i data-lucide="landmark" class="w-3.5 h-3.5"></i>
+            Verwaltung
+        </h4>
+        {% if ris_application %}
+        <div class="rounded-lg bg-gray-50 dark:bg-gray-700/40 p-3 text-sm space-y-1.5">
+            <p class="font-semibold text-gray-900 dark:text-white">{{ ris_application.reference|default:"Eingereicht" }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ ris_application.tenant.name }} · {{ ris_application.get_status_display }}</p>
+            {% for entry in ris_timeline %}
+            <p class="text-xs text-gray-700 dark:text-gray-200 flex items-start gap-1.5">
+                <i data-lucide="calendar" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-primary-500"></i>
+                <span>{{ entry.organization }}{% if entry.start %}, {{ entry.start|date:"d.m.Y H:i" }} Uhr{% else %}, Termin offen{% endif %}</span>
+            </p>
+            {% endfor %}
+            <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
+               class="inline-flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline">Details &amp; Beratungsfolge</a>
+        </div>
+        {% elif motion.is_submittable %}
+        <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
+           class="w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
+            <i data-lucide="send" class="w-3.5 h-3.5"></i> Bei Verwaltung einreichen
+        </a>
+        {% else %}
+        <p class="text-xs text-gray-400 px-1">Dieser Dokumenttyp wird nicht eingereicht.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Anhänge -->
     <div>
         <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">

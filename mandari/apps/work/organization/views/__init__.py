@@ -110,3 +110,5 @@ __all__ = [
     "TeamDirectoryView",
     "TeamMemberProfileView",
 ]
+
+from .ris_settings import OrganizationRisSettingsView  # noqa: E402,F401
