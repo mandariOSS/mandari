@@ -43,7 +43,7 @@
                 <div class="mon-head" style="margin-bottom:1rem">
                     <h2 class="mon-h2">OParl-Quellen</h2>
                     <div class="mon-muted">
-                        Warnung ab {{ health.thresholds.warning_hours }} h ohne Sync · kritisch ab {{ health.thresholds.critical_days }} Tagen oder 3 Fehlversuchen
+                        Warnung ab {{ health.thresholds.warning_hours }} h ohne Sync · kritisch ab {{ health.thresholds.critical_days }} Tagen oder 3 Fehlversuchen{% if health.sources.inactive_count %} · {{ health.sources.inactive_count }} deaktivierte Quelle{{ health.sources.inactive_count|pluralize:"n" }} ausgeblendet{% endif %}
                     </div>
                 </div>
                 <div style="overflow-x:auto">

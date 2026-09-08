@@ -22,7 +22,7 @@ OParl-Quelle, die ab Februar 2026 nur noch HTTP 403 lieferte, ohne dass es jeman
 | OK | letzter erfolgreicher Sync jünger als `INSIGHT_SOURCE_STALE_WARNING_HOURS` (Standard 48 h) |
 | Warnung | älter als Warnschwelle **oder** letzter Versuch fehlgeschlagen |
 | Kritisch | älter als `INSIGHT_SOURCE_STALE_CRITICAL_DAYS` (Standard 7 Tage) **oder** ≥ 3 Fehlversuche in Folge **oder** seit > 7 Tagen angelegt und nie synchronisiert |
-| Inaktiv | `is_active = false` |
+| Inaktiv | `is_active = false` — erscheint nur im Admin-Filter der Quellenliste, nicht im Betriebsmonitor |
 
 Der **Ingestor** schreibt bei jedem fehlgeschlagenen Versuch `last_error`, `last_error_at` und
 zählt `consecutive_failures` hoch (`storage.record_source_failure`); ein erfolgreicher Sync setzt

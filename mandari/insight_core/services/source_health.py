@@ -120,8 +120,10 @@ def collect_source_health(now=None) -> dict:
     for body in OParlBody.objects.filter(deleted=False).exclude(source__isnull=True).values("source_id", "name"):
         body_names.setdefault(body["source_id"], []).append(body["name"])
 
+    # Deaktivierte Quellen (z. B. verworfene Duplikate) gehören nicht in den Monitor:
+    # sie werden nicht synchronisiert und würden die Übersicht nur verwässern.
     items = []
-    for source in OParlSource.objects.all().order_by("name"):
+    for source in OParlSource.objects.filter(is_active=True).order_by("name"):
         item = evaluate_source(source, now)
         item["bodies"] = body_names.get(source.id, [])
         items.append(item)
@@ -138,6 +140,7 @@ def collect_source_health(now=None) -> dict:
         "items": items,
         "problems": [i for i in items if i["status"] in ("critical", "warning", "never")],
         "counts": dict(counts),
+        "inactive_count": OParlSource.objects.filter(is_active=False).count(),
         "overall": overall,
         "overall_meta": STATUS_META[overall],
     }

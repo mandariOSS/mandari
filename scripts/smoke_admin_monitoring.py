@@ -146,8 +146,8 @@ check("Inaktiv -> inactive (auch wenn alt)", ev(inactive_src)["status"] == "inac
 health = source_health.collect_source_health()
 order = [i["source"].name for i in health["items"]]
 check(
-    "Kritische zuerst, inaktive zuletzt",
-    order[0] in ("Blockstadt", "Vergessenstadt") and order[-1] == "Altstadt",
+    "Kritische zuerst, inaktive Quellen ausgeblendet",
+    order[0] in ("Blockstadt", "Vergessenstadt") and "Altstadt" not in order and health["inactive_count"] == 1,
     str(order),
 )
 check(
@@ -225,7 +225,10 @@ resp = admin.get("/admin/monitoring/")
 page = html(resp)
 check("Betriebsmonitor -> 200", resp.status_code == 200, f"got {resp.status_code}")
 check(
-    "Alle Quellen gelistet", all(n in page for n in ["Frischstadt", "Wartestadt", "Blockstadt", "Neustadt", "Altstadt"])
+    "Aktive Quellen gelistet, inaktive ausgeblendet",
+    all(n in page for n in ["Frischstadt", "Wartestadt", "Blockstadt", "Neustadt"])
+    and "Altstadt" not in page
+    and "1 deaktivierte Quelle ausgeblendet" in page,
 )
 check(
     "Systemchecks + Sync-Läufe sichtbar",
