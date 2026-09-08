@@ -247,7 +247,9 @@ def file_proxy(request, file_id):
 
     from ..services import file_cache
 
-    file_obj = get_object_or_404(OParlFile.objects.select_related("body"), id=file_id)
+    file_obj = get_object_or_404(
+        OParlFile.objects.select_related("body").defer("text_content", "raw_json", "body__raw_json"), id=file_id
+    )
     force_download = request.GET.get("download") == "1"
     filename = file_obj.file_name or file_obj.name or "dokument.pdf"
 
@@ -293,7 +295,7 @@ def file_proxy(request, file_id):
         return _file_proxy_error(
             "Server nicht erreichbar",
             "Das Ratsinformationssystem ist momentan nicht erreichbar und dieses Dokument lag noch nicht "
-            "in unserem Zwischenspeicher. Wir speichern Dokumente laufend zwischengespeichert ab — "
+            "in unserem Zwischenspeicher. Wir legen Dokumente laufend im Zwischenspeicher ab — "
             "bitte versuche es später erneut.",
         )
 

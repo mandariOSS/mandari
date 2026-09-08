@@ -315,7 +315,7 @@ try:
     page = resp.content.decode()
     check(
         "RIS nicht erreichbar -> Fehlerseite mit Cache-Hinweis",
-        "nicht erreichbar" in page and "zwischengespeichert" in page,
+        "nicht erreichbar" in page and "Zwischenspeicher" in page,
     )
     f_html2 = make_file(10, url="https://ris.example/getfile/html.pdf")
     resp = client.get(f"/insight/dokumente/{f_html2.id}/preview/")

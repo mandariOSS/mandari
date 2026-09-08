@@ -225,7 +225,13 @@ def pending_queryset(body=None, retry_errors: bool = False):
     from ..models import OParlFile
 
     statuses = ["none"] + (["error"] if retry_errors else [])
-    qs = OParlFile.objects.filter(deleted=False, local_status__in=statuses).select_related("body")
+    # text_content/raw_json sind riesig (extrahierter Volltext) — nie mitladen,
+    # sonst frisst ein Lauf über zehntausende Dateien den gesamten RAM.
+    qs = (
+        OParlFile.objects.filter(deleted=False, local_status__in=statuses)
+        .select_related("body")
+        .defer("text_content", "raw_json", "body__raw_json")
+    )
     if body is not None:
         qs = qs.filter(body=body)
     return qs.order_by("-file_date", "-oparl_created", "-created_at")
@@ -241,7 +247,7 @@ def cache_pending(body=None, *, limit: int = 500, retry_errors: bool = False, sl
         return results
 
     with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=http_timeout(), follow_redirects=True) as client:
-        for file_obj in pending_queryset(body, retry_errors)[:limit]:
+        for file_obj in pending_queryset(body, retry_errors)[:limit].iterator(chunk_size=200):
             status = fetch_and_cache(file_obj, client)
             results[status] += 1
             if status == "disk_full":
