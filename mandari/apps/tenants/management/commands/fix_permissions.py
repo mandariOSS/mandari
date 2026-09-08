@@ -84,8 +84,10 @@ class Command(BaseCommand):
         if extra:
             self.stdout.write(self.style.WARNING(f"  EXTRA (in DB but not in code): {len(extra)}"))
 
-        if missing and fix_mode:
-            self.stdout.write(self.style.SUCCESS("  -> Syncing permissions..."))
+        if fix_mode:
+            # Immer synchronisieren: legt fehlende an UND aktualisiert Namen/Kategorien
+            # (z. B. nach Umbenennungen im Katalog, Issue #78)
+            self.stdout.write(self.style.SUCCESS("  -> Syncing permissions (names, categories, missing)..."))
             Permission.sync_permissions()
             self.stdout.write(self.style.SUCCESS(f"  -> Done! Now {Permission.objects.count()} permissions."))
         elif not missing:
