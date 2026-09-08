@@ -22,7 +22,9 @@ RUN uv pip install --system /tmp/shared/
 COPY ingestor/pyproject.toml ingestor/README.md ./
 
 # Install dependencies (without editable mode for faster install)
-RUN uv pip install --system .
+# --no-sources: [tool.uv.sources] (lokales ../shared für uv lock) hier ignorieren,
+# das Shared-Paket ist bereits aus /tmp/shared installiert
+RUN uv pip install --system --no-sources .
 
 # --- Final stage ---
 FROM python:3.12-slim
