@@ -254,6 +254,54 @@ check(
     f"got {resp.status_code}",
 )
 
+# =============================================================================
+print()
+print("=== 3. Gast-Übersicht: Suche, Sortierung, neu/geändert (Issue #79) ===")
+from datetime import timedelta  # noqa: E402
+
+from django.utils import timezone  # noqa: E402
+
+now = timezone.now()
+user_guest.last_login = now - timedelta(days=3)
+user_guest.save(update_fields=["last_login"])
+old_doc = Motion.objects.create(organization=org, author=m_admin, title="Altes Protokoll", visibility="private")
+MotionShare.objects.create(motion=old_doc, scope="user", user=user_guest, level="view", created_by=user_admin)
+MotionShare.objects.filter(motion=old_doc).update(created_at=now - timedelta(days=10))
+Motion.objects.filter(id=old_doc.id).update(updated_at=now - timedelta(days=10))
+changed_doc = Motion.objects.create(organization=org, author=m_admin, title="Bebauungsplan", visibility="private")
+MotionShare.objects.create(motion=changed_doc, scope="user", user=user_guest, level="view", created_by=user_admin)
+MotionShare.objects.filter(motion=changed_doc).update(created_at=now - timedelta(days=10))
+Motion.objects.filter(id=changed_doc.id).update(updated_at=now - timedelta(hours=1))
+new_doc = Motion.objects.create(organization=org, author=m_admin, title="Zebrastreifen-Antrag", visibility="private")
+MotionShare.objects.create(motion=new_doc, scope="user", user=user_guest, level="comment", created_by=user_admin)
+FolderGuestShare.objects.create(folder=folder, user=user_guest, level="view", created_by=user_admin)
+
+page = html(c_guest.get(f"{BASE}/freigaben/"))
+check(
+    "Übersicht -> Suche + Sortierung vorhanden",
+    'x-model="q"' in page and "sort=name" in page and 'data-search="zebrastreifen-antrag"' in page,
+)
+check(
+    "Neu-Badge für frische Freigabe",
+    page.index("Zebrastreifen-Antrag") < page.index("Neu</span>") and page.count("Neu</span>") == 1,
+)
+check("Geändert-Badge für aktualisiertes Dokument", "Geändert</span>" in page and page.count("Geändert</span>") == 1)
+check("Zähler seit letztem Login", "1 neu" in page and "1 geändert" in page)
+check(
+    "Standard-Sortierung: neueste Freigabe zuerst", page.index("Zebrastreifen-Antrag") < page.index("Altes Protokoll")
+)
+page_name = html(c_guest.get(f"{BASE}/freigaben/?sort=name"))
+check(
+    "Sortierung nach Name",
+    page_name.index("Altes Protokoll") < page_name.index("Bebauungsplan") < page_name.index("Zebrastreifen-Antrag"),
+)
+page_folder = html(c_guest.get(f"{BASE}/freigaben/?ordner={folder.id}&sort=name"))
+check("Ordneransicht mit Suche/Sortierung", 'x-model="q"' in page_folder and "Ordnerdoku" in page_folder)
+user_guest.last_login = None
+user_guest.save(update_fields=["last_login"])
+page_first = html(c_guest.get(f"{BASE}/freigaben/"))
+check("Ohne vorherigen Login keine Badges", "Neu</span>" not in page_first and "Geändert</span>" not in page_first)
+
 print()
 print(f"=== Ergebnis: {PASS} OK, {FAIL} FAIL ===")
 sys.exit(1 if FAIL else 0)

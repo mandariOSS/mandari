@@ -8,6 +8,26 @@
 {% endblock %}
 
 {% block work_content %}
+<div x-data="{ q: '' }">
+{# Werkzeugleiste: Sofort-Suche + Sortierung + Hinweis „neu/geändert“ (Issue #79) #}
+<div class="mb-4 flex flex-col sm:flex-row sm:items-center gap-3 fade-up">
+    <div class="relative flex-1 max-w-md">
+        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+        <input type="search" x-model="q" placeholder="Dokumente und Ordner durchsuchen…" aria-label="Freigaben durchsuchen"
+               class="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+    </div>
+    <div class="flex items-center gap-1 text-sm">
+        <span class="text-gray-500 dark:text-gray-400 mr-1">Sortierung:</span>
+        <a href="?{% if current_folder %}ordner={{ current_folder.id }}&{% endif %}sort=date" class="px-3 py-1.5 rounded-lg {% if sort == 'date' %}bg-primary-600 text-white{% else %}bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600{% endif %}">Datum</a>
+        <a href="?{% if current_folder %}ordner={{ current_folder.id }}&{% endif %}sort=name" class="px-3 py-1.5 rounded-lg {% if sort == 'name' %}bg-primary-600 text-white{% else %}bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600{% endif %}">Name</a>
+    </div>
+    {% if new_count or updated_count %}
+    <p class="text-xs text-gray-500 dark:text-gray-400 sm:ml-auto">
+        Seit Ihrem letzten Login: {% if new_count %}<span class="font-semibold text-green-700 dark:text-green-400">{{ new_count }} neu</span>{% endif %}{% if new_count and updated_count %} · {% endif %}{% if updated_count %}<span class="font-semibold text-amber-700 dark:text-amber-400">{{ updated_count }} geändert</span>{% endif %}
+    </p>
+    {% endif %}
+</div>
+
 {% if current_folder or shared_folders %}
 <!-- Freigegebene Ordner (navigierbarer Baum) -->
 <div class="mb-6 fade-up">
@@ -31,6 +51,7 @@
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700">
         {% for entry in shared_folders %}
         <a href="{% url 'work:guest_documents' org_slug=organization.slug %}?ordner={{ entry.folder.id }}"
+           data-search="{{ entry.folder.name|lower }}" x-show="!q || $el.dataset.search.includes(q.toLowerCase())"
            class="px-6 py-3.5 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
             <div class="flex items-center gap-3 min-w-0">
                 <i data-lucide="folder" class="w-5 h-5 text-amber-500 shrink-0"></i>
@@ -52,11 +73,15 @@
 
         {% for doc in folder_documents %}
         <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=doc.id %}"
+           data-search="{{ doc.title|lower }}" x-show="!q || $el.dataset.search.includes(q.toLowerCase())"
            class="px-6 py-3.5 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
             <div class="flex items-center gap-3 min-w-0">
                 <i data-lucide="file-text" class="w-5 h-5 text-primary-500 shrink-0"></i>
                 <div class="min-w-0">
-                    <span class="font-medium text-gray-900 dark:text-white truncate block">{{ doc.title }}</span>
+                    <span class="font-medium text-gray-900 dark:text-white truncate block">
+                        {{ doc.title }}
+                        {% if doc.is_new %}<span class="ml-1 px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">Neu</span>{% elif doc.is_updated %}<span class="ml-1 px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Geändert</span>{% endif %}
+                    </span>
                     <span class="text-sm text-gray-500">Zuletzt geändert {{ doc.updated_at|date:"d.m.Y" }}</span>
                 </div>
             </div>
@@ -79,13 +104,17 @@
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
         {% for entry in shared_entries %}
         <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=entry.motion.id %}"
+           data-search="{{ entry.motion.title|lower }}" x-show="!q || $el.dataset.search.includes(q.toLowerCase())"
            class="px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
             <div class="flex items-center gap-4 min-w-0">
                 <div class="w-10 h-10 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 shrink-0">
                     <i data-lucide="file-text" class="w-5 h-5"></i>
                 </div>
                 <div class="min-w-0">
-                    <p class="font-medium text-gray-900 dark:text-white truncate">{{ entry.motion.title }}</p>
+                    <p class="font-medium text-gray-900 dark:text-white truncate">
+                        {{ entry.motion.title }}
+                        {% if entry.is_new %}<span class="ml-1 px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">Neu</span>{% elif entry.is_updated %}<span class="ml-1 px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Geändert</span>{% endif %}
+                    </p>
                     <p class="text-sm text-gray-500">
                         Freigegeben am {{ entry.shared_at|date:"d.m.Y" }}
                         {% if entry.shared_by %}von {{ entry.shared_by.get_full_name|default:entry.shared_by.email }}{% endif %}
@@ -119,4 +148,5 @@
     {% endif %}
 </div>
 {% endif %}
+</div>
 {% endblock %}

@@ -506,6 +506,22 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
             if current_folder.id not in folder_levels:
                 raise Http404("Ordner nicht freigegeben")
 
+        # Sortierung (Name/Datum) und „neu/geändert“ seit dem letzten Login (Issue #79)
+        sort = self.request.GET.get("sort", "date")
+        if sort not in ("date", "name"):
+            sort = "date"
+        context["sort"] = sort
+        last_visit = self.request.user.last_login
+        context["last_visit"] = last_visit
+
+        def _flags(obj, since):
+            """(is_new, is_updated) relativ zum letzten Login des Gastes."""
+            if last_visit is None:
+                return False, False
+            is_new = since is not None and since > last_visit
+            is_updated = (not is_new) and getattr(obj, "updated_at", None) is not None and obj.updated_at > last_visit
+            return is_new, is_updated
+
         context["current_folder"] = current_folder
         context["folder_level_label"] = (
             level_labels.get(folder_levels.get(current_folder.id)) if current_folder else None
@@ -517,12 +533,14 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
         if current_folder is not None:
             # Innerhalb eines Ordners: Unterordner + enthaltene Dokumente
             subfolders = current_folder.children.all()
-            folder_documents = (
+            folder_documents = list(
                 Motion.objects.filter(organization=self.organization, folder=current_folder)
                 .exclude(status="deleted")
                 .select_related("author__user")
-                .order_by("-updated_at")
+                .order_by("title" if sort == "name" else "-updated_at")
             )
+            for doc in folder_documents:
+                doc.is_new, doc.is_updated = _flags(doc, doc.created_at)
         else:
             # Übersicht: nur direkt freigegebene Wurzeln des Teilbaums
             # (Ordner, deren Parent nicht ebenfalls freigegeben ist)
@@ -533,7 +551,7 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
             ]
             folder_documents = Motion.objects.none()
 
-        context["shared_folders"] = [
+        shared_folders = [
             {
                 "folder": folder,
                 "level": folder_levels.get(folder.id),
@@ -541,6 +559,8 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
             }
             for folder in subfolders
         ]
+        shared_folders.sort(key=lambda e: e["folder"].name.lower())
+        context["shared_folders"] = shared_folders
         context["folder_documents"] = folder_documents
 
         # === Dokument-Freigaben (nur auf der Übersichtsseite) ===
@@ -572,5 +592,18 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
                     entry["level"] = share.level
                     entry["level_label"] = level_labels.get(share.level, share.level)
 
-        context["shared_entries"] = list(entries.values())
+        shared_entries = list(entries.values())
+        for entry in shared_entries:
+            entry["is_new"], entry["is_updated"] = _flags(entry["motion"], entry["shared_at"])
+        if sort == "name":
+            shared_entries.sort(key=lambda e: (e["motion"].title or "").lower())
+        else:
+            shared_entries.sort(key=lambda e: e["shared_at"], reverse=True)
+        context["shared_entries"] = shared_entries
+        context["new_count"] = sum(1 for e in shared_entries if e["is_new"]) + sum(
+            1 for d in folder_documents if getattr(d, "is_new", False)
+        )
+        context["updated_count"] = sum(1 for e in shared_entries if e["is_updated"]) + sum(
+            1 for d in folder_documents if getattr(d, "is_updated", False)
+        )
         return context
