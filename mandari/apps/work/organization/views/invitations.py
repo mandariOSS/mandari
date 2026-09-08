@@ -274,15 +274,17 @@ class GuestInviteView(WorkViewMixin, TemplateView):
                     )
                 return redirect("work:members", org_slug=self.organization.slug)
 
-        Membership.objects.create(
+        guest_membership = Membership.objects.create(
             user=user,
             organization=self.organization,
             is_guest=True,
             invited_by=request.user,
         )
 
+        from apps.work.notifications.services import NotificationHub
+
         # Ausgewählte Dokumente sofort freigeben
-        shared_count = 0
+        shared_docs = []
         if document_ids:
             motions = self._shareable_documents().filter(id__in=document_ids)
             for motion in motions:
@@ -292,10 +294,15 @@ class GuestInviteView(WorkViewMixin, TemplateView):
                     user=user,
                     defaults={"level": share_level, "created_by": request.user, "message": note},
                 )
-                shared_count += 1
+                shared_docs.append(motion)
+                # In-App-Hinweis; die E-Mail bündelt alle Freigaben (keine Mail-Flut)
+                NotificationHub.notify_document_shared(
+                    motion, guest_membership, share_level, self.membership, send_email=False
+                )
+        shared_count = len(shared_docs)
 
         # Ausgewählte Ordner sofort freigeben (rekursiv inkl. Unterordner)
-        shared_folder_count = 0
+        shared_folders = []
         if folder_ids:
             shareable_folders = {str(folder.id): folder for folder, _depth in self._shareable_folders()}
             for folder_id in folder_ids:
@@ -307,9 +314,22 @@ class GuestInviteView(WorkViewMixin, TemplateView):
                     user=user,
                     defaults={"level": share_level, "created_by": request.user},
                 )
-                shared_folder_count += 1
+                shared_folders.append(folder)
+                NotificationHub.notify_folder_shared(
+                    folder, guest_membership, share_level, self.membership, send_email=False
+                )
+        shared_folder_count = len(shared_folders)
 
-        self._send_guest_invitation_email(user, note, user_created)
+        send_guest_access_email(
+            request,
+            self.organization,
+            user,
+            note=note,
+            user_created=user_created,
+            shared_docs=shared_docs,
+            shared_folders=shared_folders,
+            share_level=share_level,
+        )
 
         success_text = f"Gastzugang für {email} wurde eingerichtet."
         if shared_count:
@@ -323,46 +343,104 @@ class GuestInviteView(WorkViewMixin, TemplateView):
         )
         return redirect("work:members", org_slug=self.organization.slug)
 
-    def _send_guest_invitation_email(self, user, note: str, user_created: bool):
-        """Gast-Mail: Passwort-Setz-Link (bestehender Reset-Mechanismus) bzw. Direktlink."""
-        from django.conf import settings as django_settings
-        from django.contrib.auth.tokens import default_token_generator
-        from django.utils.encoding import force_bytes
-        from django.utils.http import urlsafe_base64_encode
 
-        base_url = getattr(django_settings, "SITE_URL", "https://mandari.de").rstrip("/")
+def send_guest_access_email(
+    request,
+    organization,
+    user,
+    *,
+    note: str = "",
+    user_created: bool = False,
+    shared_docs=(),
+    shared_folders=(),
+    share_level: str = "view",
+) -> bool:
+    """
+    Gast-Mail: Passwort-Setz-Link (bestehender Reset-Mechanismus) bzw. Direktlink
+    zu den freigegebenen Dokumenten — auch zum erneuten Versand (Issue #75).
+    """
+    from django.conf import settings as django_settings
+    from django.contrib.auth.tokens import default_token_generator
+    from django.utils.encoding import force_bytes
+    from django.utils.http import urlsafe_base64_encode
 
-        if user_created or not user.has_usable_password():
-            uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
-            token = default_token_generator.make_token(user)
-            target_url = base_url + reverse(
-                "accounts:password_reset_confirm", kwargs={"uidb64": uidb64, "token": token}
-            )
-            action_hint = "Über den folgenden Link legen Sie Ihr Passwort fest und aktivieren Ihren Zugang:"
-        else:
-            target_url = base_url + reverse("work:guest_documents", kwargs={"org_slug": self.organization.slug})
-            action_hint = "Ihre freigegebenen Dokumente finden Sie hier:"
+    base_url = getattr(django_settings, "SITE_URL", "https://mandari.de").rstrip("/")
 
-        inviter = self.request.user.get_full_name() or self.request.user.email
-        subject = f"Gastzugang für {self.organization.name}"
-        plain_message = (
-            f"Hallo,\n\n"
-            f"{inviter} hat Ihnen einen Gastzugang zur Organisation "
-            f"{self.organization.name} auf Mandari Work eingerichtet.\n\n"
-            f"Als Gast sehen Sie ausschließlich die Dokumente, die für Sie freigegeben wurden.\n\n"
-            f"{f'Nachricht: {note}' + chr(10) + chr(10) if note else ''}"
-            f"{action_hint}\n{target_url}\n\n"
-            f"Falls Sie diese E-Mail nicht erwartet haben, können Sie sie ignorieren.\n"
+    if user_created or not user.has_usable_password():
+        uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        target_url = base_url + reverse("accounts:password_reset_confirm", kwargs={"uidb64": uidb64, "token": token})
+        action_hint = "Über den folgenden Link legen Sie Ihr Passwort fest und aktivieren Ihren Zugang:"
+    else:
+        target_url = base_url + reverse("work:guest_documents", kwargs={"org_slug": organization.slug})
+        action_hint = "Ihre freigegebenen Dokumente finden Sie hier:"
+
+    level_label = {"view": "Lesen", "comment": "Kommentieren", "edit": "Bearbeiten"}.get(share_level, share_level)
+    share_lines = ""
+    if shared_docs or shared_folders:
+        items = [f"- Dokument: {motion.title}" for motion in shared_docs]
+        items += [f"- Ordner: {folder.name} (inkl. Unterordner)" for folder in shared_folders]
+        share_lines = f"Für Sie freigegeben (Stufe: {level_label}):\n" + "\n".join(items) + "\n\n"
+
+    inviter = request.user.get_full_name() or request.user.email
+    subject = f"Gastzugang für {organization.name}"
+    plain_message = (
+        f"Hallo,\n\n"
+        f"{inviter} hat Ihnen einen Gastzugang zur Organisation "
+        f"{organization.name} auf Mandari Work eingerichtet.\n\n"
+        f"Als Gast sehen Sie ausschließlich die Dokumente, die für Sie freigegeben wurden.\n\n"
+        f"{f'Nachricht: {note}' + chr(10) + chr(10) if note else ''}"
+        f"{share_lines}"
+        f"{action_hint}\n{target_url}\n\n"
+        f"Falls Sie diese E-Mail nicht erwartet haben, können Sie sie ignorieren.\n"
+    )
+
+    success = send_email(subject=subject, body=plain_message, to=[user.email], fail_silently=True)
+    if not success:
+        logger.error(f"Failed to send guest invitation email to {user.email}")
+    return success
+
+
+class GuestAccessResendView(WorkViewMixin, View):
+    """
+    Zugang eines Gastes erneut senden (Issue #75): Der Passwort-Setz-Link läuft
+    nach PASSWORD_RESET_TIMEOUT ab; hier wird ein frischer Link bzw. der
+    Direktlink zu den freigegebenen Dokumenten verschickt.
+    """
+
+    permission_required = "guests.invite"
+
+    def post(self, request, *args, **kwargs):
+        from apps.tenants.models import Membership
+        from apps.work.motions.models import FolderGuestShare, MotionShare
+
+        member = get_object_or_404(
+            Membership, id=kwargs.get("member_id"), organization=self.organization, is_guest=True, is_active=True
         )
-
-        success = send_email(
-            subject=subject,
-            body=plain_message,
-            to=[user.email],
-            fail_silently=True,
+        shared_docs = [
+            share.motion
+            for share in MotionShare.objects.filter(
+                motion__organization=self.organization, scope="user", user=member.user
+            ).select_related("motion")
+        ]
+        shared_folders = [
+            share.folder
+            for share in FolderGuestShare.objects.filter(
+                folder__organization=self.organization, user=member.user
+            ).select_related("folder")
+        ]
+        send_guest_access_email(
+            request,
+            self.organization,
+            member.user,
+            note=request.POST.get("message", "").strip()[:500],
+            user_created=not member.user.has_usable_password(),
+            shared_docs=shared_docs,
+            shared_folders=shared_folders,
         )
-        if not success:
-            logger.error(f"Failed to send guest invitation email to {user.email}")
+        messages.success(request, f"Zugangs-E-Mail an {member.user.email} wurde erneut versendet.")
+        logger.info(f"[Guests] Zugang erneut gesendet an {member.user.email} in '{self.organization.slug}'")
+        return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
 
 
 class InvitationResendView(WorkViewMixin, View):

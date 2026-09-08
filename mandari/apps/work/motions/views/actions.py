@@ -17,6 +17,7 @@ from django.views.generic import TemplateView, View
 logger = logging.getLogger("apps.work.motions")
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.notifications.services import NotificationHub
 
 from ..forms import (
     AIAssistantForm,
@@ -178,6 +179,8 @@ class MotionCommentView(WorkViewMixin, View):
                 else:
                     comment.mark_id = uuid.uuid4()
             comment.save()
+            # Beteiligte informieren (Autor:in + bisherige Kommentator:innen), Issue #75
+            NotificationHub.notify_motion_comment(comment, self.membership)
 
             if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                 return JsonResponse(
@@ -780,12 +783,20 @@ class MotionShareUpdateView(WorkViewMixin, View):
                         {"error": f"'{add_user_email}' ist kein Mitglied bzw. Gast dieser Organisation."},
                         status=400,
                     )
+                previous = MotionShare.objects.filter(motion=motion, scope="user", user=user).first()
                 MotionShare.objects.update_or_create(
                     motion=motion,
                     scope="user",
                     user=user,
                     defaults={"level": level, "created_by": request.user},
                 )
+                # Benachrichtigung bei neuer Freigabe oder geänderter Stufe (Issue #75)
+                if previous is None or previous.level != level:
+                    target = Membership.objects.filter(
+                        user=user, organization=self.organization, is_active=True
+                    ).first()
+                    if target is not None:
+                        NotificationHub.notify_document_shared(motion, target, level, self.membership)
 
         # Return success for HTMX
         from django.http import HttpResponse

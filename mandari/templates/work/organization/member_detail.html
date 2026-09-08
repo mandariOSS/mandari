@@ -83,6 +83,20 @@
             Work-Portal ausschließlich die Dokumente, die explizit für sie freigegeben wurden
             (Teilen-Dialog am Dokument). Der Zugang zählt gegen das Gast-Limit der Organisation.
         </p>
+        {% if can_invite_guests %}
+        <form method="post" action="{% url 'work:guest_access_resend' org_slug=organization.slug member_id=member.id %}"
+              class="mt-4 flex flex-wrap items-center gap-3">
+            {% csrf_token %}
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-white dark:bg-gray-800 border border-teal-300 dark:border-teal-700 text-teal-800 dark:text-teal-200 hover:bg-teal-100 dark:hover:bg-teal-900/40">
+                <i data-lucide="mail" class="w-4 h-4"></i>
+                Zugang erneut senden
+            </button>
+            <span class="text-xs text-teal-700/80 dark:text-teal-300/80">
+                {% if guest_has_password %}Schickt den Link zu den freigegebenen Dokumenten.{% else %}Der Gast hat noch kein Passwort gesetzt – schickt einen neuen Passwort-Link (der alte läuft nach kurzer Zeit ab).{% endif %}
+            </span>
+        </form>
+        {% endif %}
     </div>
     {% endif %}
 

@@ -153,6 +153,9 @@ class MemberDetailView(WorkViewMixin, TemplateView):
 
         checker = PermissionChecker(self.membership)
         context["can_edit"] = checker.has_permission("members.edit") or checker.is_admin()
+        context["can_invite_guests"] = checker.has_permission("guests.invite") or checker.is_admin()
+        if member.is_guest:
+            context["guest_has_password"] = member.user.has_usable_password()
 
         # === Effektive Berechtigungen (Matrix mit Herkunft) ===
         # Drei Zustände je Berechtigung: aus Rollen (read-only, mit Herkunft),

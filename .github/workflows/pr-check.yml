@@ -201,6 +201,7 @@ jobs:
           python scripts/smoke_insight_questions.py
           python scripts/smoke_admin_monitoring.py
           python scripts/smoke_file_cache.py
+          python scripts/smoke_guest_notifications.py
 
   # ===========================================================================
   # Docker Build Validation

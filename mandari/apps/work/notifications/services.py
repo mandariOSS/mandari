@@ -474,23 +474,103 @@ class NotificationHub:
             },
         )
 
+    LEVEL_LABELS = {"view": "Lesen", "comment": "Kommentieren", "edit": "Bearbeiten", "admin": "Verwalten"}
+
     @classmethod
-    def notify_motion_shared(
-        cls,
-        motion,
-        share,  # MotionShare instance
-        sharer,  # Membership
-    ):
-        """Notify user when a motion is shared with them."""
+    def notify_document_shared(cls, motion, recipient, level: str, sharer, send_email: bool = True):
+        """
+        Dokument wurde für ein Mitglied oder einen Gast freigegeben (Issue #75).
+
+        Gäste haben keinen Zugriff auf die Benachrichtigungsseite — für sie ist
+        die E-Mail der einzige Kanal, deshalb läuft sie über den normalen
+        E-Mail-Pfad (Präferenz „sofort“ ist Standard).
+        """
+        label = cls.LEVEL_LABELS.get(level, level)
         return cls.send(
-            recipient=share.shared_with,
+            recipient=recipient,
             notification_type=NotificationType.MOTION_SHARED,
-            title="Antrag mit dir geteilt",
-            message=f'Der Antrag "{motion.title}" wurde mit dir geteilt.',
-            link=f"/work/{motion.organization.slug}/motions/{motion.id}/",
+            title="Dokument für dich freigegeben",
+            message=f"„{motion.title}“ wurde für dich freigegeben (Stufe: {label}).",
+            link=f"/work/{motion.organization.slug}/documents/{motion.id}/",
             actor=sharer,
-            metadata={"motion_id": str(motion.id)},
+            metadata={"motion_id": str(motion.id), "level": level},
+            send_email=send_email,
         )
+
+    @classmethod
+    def notify_motion_shared(cls, motion, share, sharer):
+        """Kompatibilitäts-Wrapper: Freigabe aus einer MotionShare (scope=user) melden."""
+        from apps.tenants.models import Membership
+
+        if share.scope != "user" or not share.user_id:
+            return None
+        recipient = Membership.objects.filter(user=share.user, organization=motion.organization, is_active=True).first()
+        if recipient is None:
+            return None
+        return cls.notify_document_shared(motion, recipient, share.level, sharer)
+
+    @classmethod
+    def notify_folder_shared(cls, folder, recipient, level: str, sharer, send_email: bool = True):
+        """Ordner (inkl. Unterordner) wurde für einen Gast freigegeben (Issue #75)."""
+        from django.urls import reverse
+
+        label = cls.LEVEL_LABELS.get(level, level)
+        slug = folder.organization.slug
+        if recipient.is_guest:
+            link = reverse("work:guest_documents", kwargs={"org_slug": slug})
+        else:
+            link = f"/work/{slug}/documents/?ordner={folder.id}"
+        return cls.send(
+            recipient=recipient,
+            notification_type=NotificationType.MOTION_SHARED,
+            title="Ordner für dich freigegeben",
+            message=f"Der Ordner „{folder.name}“ (inkl. Unterordner) wurde für dich freigegeben (Stufe: {label}).",
+            link=link,
+            actor=sharer,
+            metadata={"folder_id": str(folder.id), "level": level},
+            send_email=send_email,
+        )
+
+    @classmethod
+    def notify_motion_comment(cls, comment, actor):
+        """
+        Neuer Kommentar: Autor:in des Dokuments und alle bisherigen
+        Kommentator:innen informieren (ohne die kommentierende Person selbst).
+        Gäste erhalten die Nachricht per E-Mail.
+        """
+        from apps.work.motions.models import MotionComment
+
+        motion = comment.motion
+        recipients = {}
+        if motion.author_id and motion.author_id != actor.id:
+            recipients[motion.author_id] = motion.author
+        previous = (
+            MotionComment.objects.filter(motion=motion)
+            .exclude(author=actor)
+            .exclude(id=comment.id)
+            .select_related("author__user")
+        )
+        for prev in previous:
+            recipients.setdefault(prev.author_id, prev.author)
+
+        excerpt = " ".join((comment.content or "").split())[:140]
+        actor_name = actor.user.get_display_name() if hasattr(actor.user, "get_display_name") else actor.user.email
+        sent = []
+        for recipient in recipients.values():
+            if not recipient.is_active:
+                continue
+            notification = cls.send(
+                recipient=recipient,
+                notification_type=NotificationType.MOTION_COMMENT,
+                title="Neuer Kommentar",
+                message=f"{actor_name} hat „{motion.title}“ kommentiert: „{excerpt}“",
+                link=f"/work/{motion.organization.slug}/documents/{motion.id}/",
+                actor=actor,
+                metadata={"motion_id": str(motion.id), "comment_id": str(comment.id)},
+            )
+            if notification:
+                sent.append(notification)
+        return sent
 
     @classmethod
     def notify_motion_assigned(

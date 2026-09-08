@@ -22,6 +22,7 @@ from .email_settings import (
 )
 from .invitations import (
     AcceptInvitationView,
+    GuestAccessResendView,
     GuestInviteView,
     InvitationCancelView,
     InvitationResendView,
@@ -76,6 +77,7 @@ __all__ = [
     "DataExportDeleteView",
     "DataExportDownloadView",
     "DataExportStatusView",
+    "GuestAccessResendView",
     "GuestInviteView",
     "InvitationCancelView",
     "InvitationResendView",

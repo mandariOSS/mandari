@@ -359,11 +359,16 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
                 status=400,
             )
 
+        previous = FolderGuestShare.objects.filter(folder=folder, user=user).first()
         FolderGuestShare.objects.update_or_create(
             folder=folder,
             user=user,
             defaults={"level": level, "created_by": request.user},
         )
+        if previous is None or previous.level != level:
+            from apps.work.notifications.services import NotificationHub
+
+            NotificationHub.notify_folder_shared(folder, target, level, self.membership)
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse({"success": True})

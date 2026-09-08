@@ -600,6 +600,11 @@ urlpatterns = [
         name="member_detail",
     ),
     path(
+        "<slug:org_slug>/organization/members/<uuid:member_id>/resend-access/",
+        organization_views.GuestAccessResendView.as_view(),
+        name="guest_access_resend",
+    ),
+    path(
         "<slug:org_slug>/organization/invitations/<uuid:invitation_id>/resend/",
         organization_views.InvitationResendView.as_view(),
         name="invitation_resend",
