@@ -118,6 +118,7 @@ async function loadPdfJs(): Promise<any> {
 
     // For ESM module, we need a different approach
     // Use dynamic import instead
+    // @ts-expect-error Laufzeitpfad, wird nicht gebündelt
     import(/* webpackIgnore: true */ '/static/vendor/pdfjs/pdf.min.mjs')
       .then((pdfjsLib) => {
         pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/vendor/pdfjs/pdf.worker.min.mjs'

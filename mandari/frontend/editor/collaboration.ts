@@ -11,7 +11,7 @@ import * as syncProtocol from 'y-protocols/sync'
 import * as encoding from 'lib0/encoding'
 import * as decoding from 'lib0/decoding'
 import Collaboration from '@tiptap/extension-collaboration'
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
+import CollaborationCaret from '@tiptap/extension-collaboration-caret'
 import { IndexeddbPersistence } from 'y-indexeddb'
 
 export interface CollabOptions {
@@ -27,7 +27,7 @@ export interface CollabOptions {
   /** Called when presence list changes */
   onPresenceChange?: (users: CollabUser[]) => void
   /** Called on connection status change */
-  onStatusChange?: (status: 'connecting' | 'connected' | 'disconnected') => void
+  onStatusChange?: (status: CollabStatus) => void
   /**
    * Called when the server sends the initial Yjs state.
    * `hasState` is true if the server had a saved Yjs state, false if empty.
@@ -77,6 +77,8 @@ const MSG_AWARENESS = 1
  * y-websocket compatible server), this sends binary Yjs sync messages
  * encoded as base64 JSON to the Django consumer.
  */
+export type CollabStatus = 'connecting' | 'connected' | 'disconnected'
+
 class DjangoYjsProvider {
   private ws: WebSocket | null = null
   private ydoc: Y.Doc
@@ -88,7 +90,7 @@ class DjangoYjsProvider {
   private saveTimer: any = null
   private destroyed = false
   private initialStateReceived = false
-  private onStatusChange?: (status: string) => void
+  private onStatusChange?: (status: CollabStatus) => void
   private onInitialState?: (hasState: boolean) => void
   private getHtml?: () => string
   private onReloadRequired?: () => void
@@ -99,7 +101,7 @@ class DjangoYjsProvider {
     wsUrl: string,
     ydoc: Y.Doc,
     awareness: awarenessProtocol.Awareness,
-    onStatusChange?: (status: string) => void,
+    onStatusChange?: (status: CollabStatus) => void,
     onInitialState?: (hasState: boolean) => void,
     getHtml?: () => string,
     onReloadRequired?: () => void
@@ -421,7 +423,7 @@ export function initCollaboration(options: CollabOptions): CollabResult {
     Collaboration.configure({
       document: ydoc,
     }),
-    CollaborationCursor.configure({
+    CollaborationCaret.configure({
       provider: { awareness } as any,
       user: {
         name: options.user.name,

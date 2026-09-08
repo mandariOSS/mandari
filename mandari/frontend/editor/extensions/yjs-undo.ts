@@ -6,14 +6,15 @@ export const YjsUndo = Extension.create({
 
   addCommands() {
     return {
+      // y-tiptap 3: undo/redo dispatchen selbst über den Yjs-UndoManager
       undo:
         () =>
-        ({ state, dispatch }) =>
-          undo(state, dispatch),
+        ({ state }) =>
+          undo(state),
       redo:
         () =>
-        ({ state, dispatch }) =>
-          redo(state, dispatch),
+        ({ state }) =>
+          redo(state),
     }
   },
 })

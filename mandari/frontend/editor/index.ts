@@ -7,19 +7,13 @@
 import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
-import Placeholder from '@tiptap/extension-placeholder'
-import CharacterCount from '@tiptap/extension-character-count'
+import { CharacterCount, Placeholder } from '@tiptap/extensions'
 import Link from '@tiptap/extension-link'
 import TextAlign from '@tiptap/extension-text-align'
 import Highlight from '@tiptap/extension-highlight'
-import Table from '@tiptap/extension-table'
-import TableRow from '@tiptap/extension-table-row'
-import TableHeader from '@tiptap/extension-table-header'
-import TableCell from '@tiptap/extension-table-cell'
-import TaskList from '@tiptap/extension-task-list'
-import TaskItem from '@tiptap/extension-task-item'
-import Color from '@tiptap/extension-color'
-import TextStyle from '@tiptap/extension-text-style'
+import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table'
+import { TaskItem, TaskList } from '@tiptap/extension-list'
+import { Color, TextStyle } from '@tiptap/extension-text-style'
 import Image from '@tiptap/extension-image'
 import { CommentMark } from './extensions/comment-mark'
 import { Indent } from './extensions/indent'
@@ -190,6 +184,11 @@ export function createEditor(options: EditorOptions): Editor {
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
+        // Link und Underline konfigurieren wir selbst (siehe getBaseExtensions);
+        // TrailingNode würde das Dokumentende verändern (Briefkopf/Seitenzählung).
+        link: false,
+        underline: false,
+        trailingNode: false,
       }),
       ...getBaseExtensions(options),
     ],
@@ -258,8 +257,11 @@ export function createCollaborativeEditor(
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
+        link: false,
+        underline: false,
+        trailingNode: false,
         // Disable built-in history in collab mode — Yjs handles undo/redo
-        history: false,
+        undoRedo: false,
       }),
       ...getBaseExtensions(options),
       ...collab.extensions,
