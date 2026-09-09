@@ -39,3 +39,11 @@ DJANGO_VITE = {"default": {**DJANGO_VITE["default"], "dev_mode": os.environ.get(
 
 # Komponentenvorschau /dev/ui/ auch ohne DEBUG (Rendering- und E2E-Tests)
 UI_KIT_PREVIEW = True
+
+# Statische Dateien ohne Manifest: Tests (auch E2E mit DEBUG=false) brauchen kein collectstatic; der
+# Live-Server liefert über die Finder. Fehlende Referenzen prüft apps/common/tests/test_static_references.py.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    **globals().get("STORAGES", {}),  # bei DEBUG=false definiert settings.py WhiteNoise-Storages
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
