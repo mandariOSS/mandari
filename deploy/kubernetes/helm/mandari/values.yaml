@@ -1,0 +1,224 @@
+# =============================================================================
+# mandari – Standardwerte
+# =============================================================================
+# Vollständige Beschreibung: deploy/kubernetes/README.md
+# Beispiele: values-minimal.yaml (ein Knoten), values-production.yaml (mehrere Knoten)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Pflichtangabe: unter welcher Adresse ist die Installation erreichbar?
+# -----------------------------------------------------------------------------
+domain: mandari.example.com
+
+image:
+  registry: ghcr.io
+  repository: mandarioss
+  # Ein Tag für alle drei Anwendungs-Images (mandari, website, ingestor).
+  # "latest" = jeweils neuester Stand; für Produktion eine feste Version setzen.
+  tag: latest
+  pullPolicy: IfNotPresent
+  # Für private Registries: Name eines vorhandenen imagePullSecret
+  pullSecrets: []
+
+# -----------------------------------------------------------------------------
+# Zugangsdaten
+# -----------------------------------------------------------------------------
+# Werden beim ersten Installieren zufällig erzeugt und bei Upgrades beibehalten.
+# WICHTIG: encryptionKey verschlüsselt Fachdaten. Geht er verloren, sind die
+# verschlüsselten Inhalte unwiederbringlich unlesbar – nach der Installation sichern:
+#   kubectl -n <namespace> get secret <release>-secrets -o yaml > mandari-secrets.yaml
+secrets:
+  # Vorhandenes Secret verwenden statt eines erzeugten (Schlüssel siehe README)
+  existingSecret: ""
+  secretKey: ""
+  encryptionKey: ""
+  websiteSecretKey: ""
+
+# Admin-Konto, das der Migrations-Job anlegt (leer = kein Konto anlegen)
+adminUser:
+  email: ""
+  password: ""
+
+# -----------------------------------------------------------------------------
+# Anwendung (Django)
+# -----------------------------------------------------------------------------
+app:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+  # Zusätzliche Umgebungsvariablen, z. B. SMTP oder MISTRAL_API_KEY
+  extraEnv: {}
+  # Beispiel:
+  #   EMAIL_HOST: smtp.example.org
+  #   EMAIL_PORT: "587"
+  extraEnvFromSecret: ""
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Marketing-Website (Wagtail) – optional
+website:
+  enabled: false
+  replicas: 1
+  # Eigener Hostname; leer = derselbe Host unter /website
+  host: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+# OParl-Synchronisation (Hintergrunddienst, kein Port)
+ingestor:
+  enabled: true
+  # Intervall der inkrementellen Synchronisation in Minuten
+  syncInterval: 15
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+# -----------------------------------------------------------------------------
+# Datenhaltung
+# -----------------------------------------------------------------------------
+# Mitgelieferte Dienste sind für kleine Installationen gedacht. Für Produktion
+# empfehlen wir verwaltete Dienste: enabled=false und external* setzen.
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  database: mandari
+  username: mandari
+  password: ""          # leer = wird erzeugt
+  storage:
+    size: 20Gi
+    className: ""       # leer = Standardklasse des Clusters
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+externalDatabase:
+  # Vollständige URL, z. B. postgresql://benutzer:passwort@host:5432/mandari
+  url: ""
+  # Getrennte Datenbank der Website (nur nötig, wenn website.enabled=true)
+  websiteUrl: ""
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  password: ""          # leer = wird erzeugt
+  maxmemory: 256mb
+  storage:
+    size: 2Gi
+    className: ""
+
+externalRedis:
+  url: ""               # z. B. redis://:passwort@host:6379
+
+elasticsearch:
+  # Volltextsuche. Aus: die Suche fällt auf die Datenbank zurück (langsamer,
+  # aber funktionsfähig) – sinnvoll für kleine Installationen.
+  enabled: true
+  image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+  javaOpts: "-Xms512m -Xmx1g"
+  storage:
+    size: 10Gi
+    className: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1536Mi
+    limits:
+      memory: 2Gi
+
+externalElasticsearch:
+  url: ""
+
+# Medien (Logos, Uploads) und heruntergeladene RIS-Dokumente
+persistence:
+  # ReadWriteMany erlaubt mehrere Anwendungs-Repliken. Kann die Speicherklasse das
+  # nicht, muss app.replicas auf 1 bleiben.
+  accessMode: ReadWriteOnce
+  media:
+    size: 10Gi
+    className: ""
+  files:
+    size: 50Gi
+    className: ""
+
+# -----------------------------------------------------------------------------
+# Erreichbarkeit
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  # TLS über cert-manager. Ohne cert-manager: tls.enabled=false und eigenes
+  # Zertifikat als Secret hinterlegen (tls.secretName).
+  tls:
+    enabled: true
+    clusterIssuer: letsencrypt-prod
+    secretName: ""
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+
+service:
+  type: ClusterIP
+  port: 80
+
+# -----------------------------------------------------------------------------
+# Betrieb
+# -----------------------------------------------------------------------------
+# Migrationen und Rolleneinrichtung laufen als Job vor jedem Upgrade
+migrationJob:
+  enabled: true
+  backoffLimit: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+logging:
+  # json (empfohlen im Betrieb) oder text
+  format: json
+  level: INFO
+
+tracing:
+  # OpenTelemetry: leer = aus
+  otlpEndpoint: ""
+
+timezone: Europe/Berlin
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# Netzwerkrichtlinie: schränkt ein, wer die Datenbank erreichen darf
+networkPolicy:
+  enabled: false
+
+commonLabels: {}
+commonAnnotations: {}

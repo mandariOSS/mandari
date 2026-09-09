@@ -1,0 +1,212 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mandari.fullname" . }}
+  labels:
+    {{- include "mandari.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "mandari.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mandari.fullname" . }}
+  labels:
+    {{- include "mandari.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  replicas: {{ .Values.app.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mandari.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "mandari.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: app
+      annotations:
+        # Neustart, wenn sich Zugangsdaten ändern
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "mandari.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: mandari
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/mandari:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            {{- include "mandari.commonEnv" . | nindent 12 }}
+            - name: SYNC_DAEMON_AUTOSTART
+              value: "false"   # Synchronisation läuft im eigenen Ingestor-Pod
+            {{- range $key, $value := .Values.app.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if .Values.app.extraEnvFromSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.app.extraEnvFromSecret }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          volumeMounts:
+            - name: media
+              mountPath: /app/media
+            - name: files
+              mountPath: /app/files
+          startupProbe:
+            # Erster Start kann dauern (Datenbankverbindung, Caches)
+            httpGet:
+              path: /health/
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health/
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: {{ include "mandari.fullname" . }}-media
+        - name: files
+          persistentVolumeClaim:
+            claimName: {{ include "mandari.fullname" . }}-files
+      {{- with .Values.app.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.app.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.app.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.website.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mandari.fullname" . }}-website
+  labels:
+    {{- include "mandari.labels" . | nindent 4 }}
+    app.kubernetes.io/component: website
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: http
+      name: http
+  selector:
+    {{- include "mandari.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: website
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mandari.fullname" . }}-website
+  labels:
+    {{- include "mandari.labels" . | nindent 4 }}
+    app.kubernetes.io/component: website
+spec:
+  replicas: {{ .Values.website.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mandari.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: website
+  template:
+    metadata:
+      labels:
+        {{- include "mandari.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: website
+    spec:
+      serviceAccountName: {{ include "mandari.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: website
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/website:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: ALLOWED_HOSTS
+              value: {{ default .Values.domain .Values.website.host | quote }}
+            - name: CSRF_TRUSTED_ORIGINS
+              value: {{ printf "https://%s" (default .Values.domain .Values.website.host) | quote }}
+            - name: SITE_URL
+              value: {{ printf "https://%s" (default .Values.domain .Values.website.host) | quote }}
+            - name: TZ
+              value: {{ .Values.timezone | quote }}
+            - name: MANDARI_API_URL
+              value: {{ printf "http://%s/api" (include "mandari.fullname" .) | quote }}
+            - name: WEBSITE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mandari.secretName" . }}
+                  key: website-database-url
+            - name: WEBSITE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mandari.secretName" . }}
+                  key: website-secret-key
+          ports:
+            - name: http
+              containerPort: 8000
+          startupProbe:
+            httpGet:
+              path: /health/
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health/
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.website.resources | nindent 12 }}
+{{- end }}

@@ -1,0 +1,123 @@
+{{- if .Values.migrationJob.enabled }}
+{{- /*
+Läuft vor jeder Installation und jedem Upgrade: Datenbankschema, Rollen, Suchindex
+und – falls konfiguriert – das Admin-Konto. Die Anwendung startet erst danach.
+*/ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mandari.fullname" . }}-migrate
+  labels:
+    {{- include "mandari.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: post-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrationJob.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "mandari.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "mandari.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: wait-for-database
+          image: {{ .Values.postgres.image | quote }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "Warte auf die Datenbank..."
+              for i in $(seq 1 60); do
+                if pg_isready -d "$DATABASE_URL" >/dev/null 2>&1; then
+                  echo "Datenbank erreichbar."
+                  exit 0
+                fi
+                sleep 3
+              done
+              echo "Datenbank nach 180 Sekunden nicht erreichbar." >&2
+              exit 1
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mandari.secretName" . }}
+                  key: database-url
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/mandari:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "== Datenbank-Migrationen"
+              python manage.py migrate --noinput
+              echo "== Rollen und Berechtigungen"
+              python manage.py setup_roles
+              python manage.py fix_permissions || true
+              {{- if .Values.elasticsearch.enabled }}
+              echo "== Suchindex"
+              python manage.py setup_elasticsearch || echo "Suchindex übersprungen (Elasticsearch noch nicht bereit)"
+              {{- end }}
+              {{- if .Values.adminUser.email }}
+              echo "== Admin-Konto"
+              python manage.py shell -c "
+              import os
+              from django.contrib.auth import get_user_model
+              User = get_user_model()
+              email = os.environ['ADMIN_EMAIL']
+              if not User.objects.filter(email=email).exists():
+                  User.objects.create_superuser(email=email, password=os.environ['ADMIN_PASSWORD'])
+                  print('Admin-Konto angelegt:', email)
+              else:
+                  print('Admin-Konto existiert bereits:', email)
+              "
+              {{- end }}
+              echo "== Fertig"
+          env:
+            {{- include "mandari.commonEnv" . | nindent 12 }}
+            {{- if .Values.adminUser.email }}
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mandari.secretName" . }}
+                  key: admin-email
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mandari.secretName" . }}
+                  key: admin-password
+            {{- end }}
+            {{- range $key, $value := .Values.app.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: media
+              mountPath: /app/media
+            - name: files
+              mountPath: /app/files
+          resources:
+            {{- toYaml .Values.migrationJob.resources | nindent 12 }}
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: {{ include "mandari.fullname" . }}-media
+        - name: files
+          persistentVolumeClaim:
+            claimName: {{ include "mandari.fullname" . }}-files
+{{- end }}

@@ -1,177 +1,188 @@
-# Mitwirken bei Mandari
+# Mitwirken bei mandari
 
-Danke, dass du zu Mandari beitragen möchtest! Dieses Dokument erklärt, wie du helfen kannst.
+Danke für das Interesse. Beiträge sind willkommen — Fehlermeldungen, Dokumentation,
+Übersetzungen und Code gleichermaßen.
 
-## Code of Conduct
+Mit der Teilnahme gilt der [Verhaltenskodex](CODE_OF_CONDUCT.md).
 
-Mit deiner Teilnahme an diesem Projekt stimmst du zu, unseren [Code of Conduct](CODE_OF_CONDUCT.md) einzuhalten.
+## Wo anfangen
 
-## Wie kann ich helfen?
+| Anliegen | Weg |
+|----------|-----|
+| Fehler gefunden | Zuerst die [Issues](https://github.com/mandariOSS/mandari/issues) durchsehen, dann ein neues mit der Vorlage „Bug Report“ anlegen |
+| Funktion vorschlagen | Erst in den [Diskussionen](https://github.com/mandariOSS/mandari/discussions) ansprechen, dann Issue mit der Vorlage „Feature Request“ |
+| Sicherheitslücke | **Nicht** öffentlich: siehe [SECURITY.md](SECURITY.md) |
+| Frage | [Diskussionen](https://github.com/mandariOSS/mandari/discussions) |
+| Erster Beitrag | Issues mit der Markierung [`good first issue`](https://github.com/mandariOSS/mandari/labels/good%20first%20issue) |
 
-### Bug melden
-
-1. Prüfe, ob der Bug bereits als [Issue](https://github.com/mandariOSS/mandari/issues) gemeldet wurde
-2. Erstelle ein neues Issue mit dem **Bug Report** Template
-3. Beschreibe das Problem so genau wie möglich
-4. Füge Schritte zur Reproduktion hinzu
-
-### Feature vorschlagen
-
-1. Prüfe die [Discussions](https://github.com/mandariOSS/mandari/discussions), ob die Idee schon diskutiert wird
-2. Erstelle ein Issue mit dem **Feature Request** Template
-3. Beschreibe den Anwendungsfall und warum das Feature nützlich wäre
-
-### Code beitragen
-
-1. **Fork** das Repository
-2. Erstelle einen **Feature Branch**: `git checkout -b feature/mein-feature`
-3. **Committe** deine Änderungen: `git commit -m 'feat: Beschreibung'`
-4. **Push** zum Branch: `git push origin feature/mein-feature`
-5. Erstelle einen **Pull Request**
+Bei größeren Änderungen lohnt sich ein Issue vorab — das erspart Arbeit, die am Ende nicht
+zum Projekt passt.
 
 ## Entwicklungsumgebung
 
-### Voraussetzungen
-
-- Python 3.12+
-- Docker & Docker Compose
-- [uv](https://github.com/astral-sh/uv) (Python Package Manager)
-
-### Setup
+Voraussetzungen: Python 3.12 oder neuer, Node.js 20, Docker (für PostgreSQL, Redis und
+Elasticsearch), [uv](https://github.com/astral-sh/uv).
 
 ```bash
-# Repository klonen
 git clone https://github.com/mandariOSS/mandari.git
 cd mandari
 
-# Infrastruktur starten
-docker compose -f infrastructure/docker/docker-compose.dev.yml up -d
+# Datenbank, Cache und Suche starten
+docker compose up -d postgres redis elasticsearch
 
-# Backend setup
 cd mandari
-cp .env.example .env
-uv sync
+cp ../.env.example .env          # SECRET_KEY und ENCRYPTION_MASTER_KEY eintragen
+uv sync                          # Python-Abhängigkeiten
+npm ci && npm run build          # Frontend bauen
+
 uv run python manage.py migrate
+uv run python manage.py setup_roles
+uv run python manage.py createsuperuser
 uv run python manage.py runserver
 ```
 
-### Frontend (Vite)
+Die Anwendung läuft dann unter <http://localhost:8000>.
+
+Für die Frontend-Entwicklung mit Hot Reload:
+
+```bash
+npm run watch                    # Tailwind-Watch und Vite-Dev-Server
+DJANGO_VITE_DEV_MODE=1 uv run python manage.py runserver
+```
+
+Ohne laufenden Dev-Server genügt `npm run build`; Django lädt die Dateien dann über das
+Vite-Manifest.
+
+### Vollständiger Stack
+
+Wer die Installation als Ganzes braucht (mit Caddy, Website und Ingestor), nutzt den
+Installer:
+
+```bash
+COMPOSE_PROJECT_NAME=mandari-dev ./install.sh
+```
+
+Der Projektname trennt diese Installation von anderen auf demselben Rechner.
+
+## Tests und Prüfungen
+
+Alle Prüfungen laufen auch in der CI und müssen grün sein.
 
 ```bash
 cd mandari
-npm ci
-npm run build          # Tailwind-CSS + Vite-Bundles nach static/dist/ (einmalig oder vor DEBUG=False)
-npm run watch          # Entwicklung: Tailwind-Watch + Vite-Dev-Server mit HMR
+uv run pytest                                    # rund 1.500 Tests, etwa 90 Sekunden
+uv run pytest apps/work/tasks -q                 # einzelne App
 ```
 
-Mit laufendem Dev-Server `DJANGO_VITE_DEV_MODE=1` setzen, damit Django die Module vom Vite-Server lädt.
-Ohne Dev-Server reicht `npm run build`; Django nutzt dann das Manifest.
+**End-to-End im Browser** (Playwright mit axe-core für Barrierefreiheit):
 
 ```bash
-npm run typecheck      # tsc --noEmit
-npm run lint           # Biome (Lint + Format)
-npm run lint:fix
+pip install pytest-playwright && python -m playwright install chromium
+npm run build
+MANDARI_E2E=1 pytest tests_e2e -q
 ```
 
-### Tests ausführen
+Ohne `MANDARI_E2E=1` werden diese Tests übersprungen. Screenshots landen unter
+`tests_e2e/screenshots/`, in der CI als Artefakt.
+
+**E-Mail-Vorlagen** werden gegen Snapshots geprüft. Nach einer gewollten Änderung:
 
 ```bash
-cd mandari
-uv run pytest
-```
-
-E-Mail-Templates werden in `apps/common/tests/test_emails.py` gegen Snapshots
-(`apps/common/tests/snapshots/emails/*.html|*.txt`) geprüft. Nach einer gewollten Änderung an einer Mail
-oder am Basis-Layout die Snapshots neu schreiben und mit committen:
-
-```bash
-cd mandari
 UPDATE_SNAPSHOTS=1 uv run pytest apps/common/tests/test_emails.py
 ```
 
-### End-to-End-Tests (Playwright)
+**Statische Prüfungen:**
 
 ```bash
 cd mandari
-pip install pytest-playwright && python -m playwright install chromium
-npm run build                         # gebaute Assets, die der Live-Server ausliefert
-MANDARI_E2E=1 pytest tests_e2e -q     # Kernpfade, axe-core, Screenshots unter tests_e2e/screenshots/
+ruff check . && ruff format --check .            # Python
+djlint templates --lint                          # Django-Templates
+npm run typecheck && npm run lint                # TypeScript und Biome
+
+cd ..
+python scripts/mypy_allowlist.py                 # Typen (strict, schrumpfende Ausnahmeliste)
+python scripts/check_frontend_ratchet.py         # Inline-Code und Template-Größe
+python scripts/check_view_orm_ratio.py           # Datenbankzugriffe in Views
+python scripts/check_schema_contract.py          # Anwendung gegen Ingestor-Schema
 ```
 
-Ohne `MANDARI_E2E=1` werden die E2E-Tests übersprungen. Im CI laufen sie im Job „E2E“; die
-Screenshots (hell/dunkel, Komponentenvorschau, Kernpfade) liegen dort als Artefakt.
-
-### Coverage
-
-Die CI verlangt mindestens 38 % Zeilenabdeckung (`--cov-fail-under`, Stand 09/2026: 40 %). Die
-Schwelle wird mit wachsender Testbasis angehoben, nie gesenkt.
-
-### Code-Style
-
-Verbindlich ist [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md). Werkzeuge:
-
-- **Ruff** für Linting und Formatierung (Python)
-- **djlint** für Django-Templates
-- **mypy** (strict) für neuen und angefassten Python-Code
-- **pre-commit** führt alles vor jedem Commit aus
+Am bequemsten übernimmt das pre-commit:
 
 ```bash
-# einmalig
 pip install pre-commit && pre-commit install
-
-# manuell
-cd mandari
-ruff check . && ruff format --check .
-djlint templates --lint
-python ../scripts/check_frontend_ratchet.py
-python ../scripts/mypy_allowlist.py
 ```
 
-### UI-Komponenten
+Die Coverage-Schwelle liegt bei 38 Prozent (Stand: 40 Prozent erreicht). Sie wird mit
+wachsender Testbasis angehoben, nie gesenkt.
 
-Wiederkehrendes Markup kommt aus der Komponentenbibliothek `mandari/templates/cotton/` (django-cotton).
-Die Vorschau aller Komponenten läuft im Entwicklungsmodus unter `http://localhost:8000/dev/ui/`.
-Neue Komponenten bekommen einen Kopfkommentar mit den Parametern, einen Eintrag in der Vorschau und
-einen Test in `apps/common/tests/test_components.py`.
+## Konventionen
 
-## Commit-Konventionen
+Verbindlich ist [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md);
+Architekturentscheidungen stehen unter [`docs/adr/`](docs/adr/). Das Wichtigste:
+
+**Python.** Neuer und angefasster Code ist typisiert. Datenzugriff gehört in `selectors.py`,
+schreibende Fachlogik in `services.py` — Views bleiben dünn. Jede Abfrage im
+Arbeitsbereich filtert nach Organisation. Schreibende Pfade über mehrere Tabellen laufen in
+`transaction.atomic`.
+
+**Templates.** Struktur, kein Programm: höchstens 300 Zeilen, kein `<script>` oder `<style>`
+in Seiten-Templates. Wiederkehrendes Markup kommt aus der Komponentenbibliothek
+`templates/cotton/`; die Vorschau läuft unter `/dev/ui/`. Neue Komponenten brauchen einen
+Kopfkommentar mit den Parametern, einen Eintrag in der Vorschau und einen Test in
+`apps/common/tests/test_components.py`.
+
+**JavaScript.** Liegt als TypeScript unter `frontend/` und wird mit Vite gebaut.
+Alpine-Komponenten werden mit `Alpine.data()` registriert und im Template nur per
+`x-data="name"` referenziert. Server-Daten kommen per `json_script` zum Client, nicht als
+interpolierter String.
+
+**Barrierefreiheit.** Tastaturbedienung, sichtbarer Fokus, ARIA und Zielgrößen gehören zu
+jeder Komponente. Die E2E-Tests prüfen das mit axe-core.
+
+**Deutsch.** Kommentare, Commit-Nachrichten und Dokumentation auf Deutsch; Bezeichner im Code
+auf Englisch.
+
+## Commits und Pull Requests
 
 Wir folgen [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-<type>: <beschreibung>
+<typ>(<bereich>): <beschreibung>
 
-[optionaler body]
+<optionaler Fließtext>
 ```
 
-**Types:**
-- `feat`: Neues Feature
-- `fix`: Bugfix
-- `docs`: Dokumentation
-- `style`: Formatierung (kein Code-Änderung)
-- `refactor`: Code-Umstrukturierung
-- `test`: Tests hinzufügen/ändern
-- `chore`: Build, Dependencies, etc.
+Typen: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`.
 
-**Beispiele:**
 ```
-feat: Volltextsuche für Vorlagen hinzufügen
-fix: Login-Fehler bei 2FA beheben
-docs: Installation-Guide aktualisieren
+feat(session): Vorlagen als PDF exportieren
+fix(work): Anmeldung bei aktiver Zwei-Faktor-Prüfung repariert
+docs: Installationsanleitung für Kubernetes ergänzt
 ```
 
-## Pull Request Prozess
+Für einen Pull Request:
 
-1. Stelle sicher, dass alle Tests passieren
-2. Aktualisiere die Dokumentation wenn nötig
-3. Der PR wird von einem Maintainer reviewed
-4. Nach Approval wird der PR gemergt
+1. Repository abspalten, Branch von `dev` anlegen (`git checkout -b feat/mein-thema`)
+2. Änderungen mit Tests versehen
+3. Alle Prüfungen lokal laufen lassen
+4. Pull Request gegen `dev` öffnen und beschreiben, **was** sich ändert und **warum**
+5. Bezug zum Issue herstellen (`Fixes #123`)
 
-## Fragen?
+Entwicklung findet auf `dev` statt; `main` ist der Produktionsstand.
 
-- [GitHub Discussions](https://github.com/mandariOSS/mandari/discussions) für allgemeine Fragen
-- [Issues](https://github.com/mandariOSS/mandari/issues) für Bugs und Feature Requests
+## Lizenz und Urheberrecht
 
----
+Beiträge stehen unter [AGPL-3.0-or-later](LICENSE). Neue Dateien brauchen einen
+SPDX-Kopf, damit das Repository [REUSE](https://reuse.software)-konform bleibt:
 
-Danke für deinen Beitrag! 🎉
+```python
+# SPDX-License-Identifier: AGPL-3.0-or-later
+```
+
+Dateien ohne Kopf (Bilder, Daten) werden in `REUSE.toml` zugeordnet. Prüfen mit
+`reuse lint`.
+
+## Fragen
+
+[Diskussionen](https://github.com/mandariOSS/mandari/discussions) für alles Allgemeine,
+[Issues](https://github.com/mandariOSS/mandari/issues) für Fehler und Vorschläge.

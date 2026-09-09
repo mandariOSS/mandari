@@ -14,6 +14,14 @@
 
 set -euo pipefail
 
+# Container-Namen folgen dem Compose-Projektnamen (siehe docker-compose.yml)
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-mandari}"
+export COMPOSE_PROJECT_NAME
+APP_CONTAINER="${COMPOSE_PROJECT_NAME}"
+DB_CONTAINER="${COMPOSE_PROJECT_NAME}-postgres"
+WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
+
+
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -359,7 +367,7 @@ if [ "$RESTORE_MODE" = true ]; then
     sleep 3
     verify_installation
 
-    run_step "Suchindex neu aufbauen" docker exec mandari python manage.py rebuild_search_index || \
+    run_step "Suchindex neu aufbauen" docker exec "$APP_CONTAINER" python manage.py rebuild_search_index || \
         warn "Suchindex-Rebuild ggf. manuell nötig"
 
     echo ""
@@ -410,7 +418,7 @@ run_step "Konfiguration sichern" cp .env "$BACKUP_PATH/.env"
 # Backup PostgreSQL
 # =============================================================================
 if run_step_to_file "Mandari-DB sichern" "$BACKUP_PATH/postgres.sql" \
-    docker exec mandari-postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"; then
+    docker exec "$DB_CONTAINER" pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"; then
     if [ "$QUIET" = false ]; then
         DB_SIZE=$(du -h "$BACKUP_PATH/postgres.sql" | cut -f1)
         info "  Mandari-DB: $DB_SIZE"
@@ -420,9 +428,9 @@ else
 fi
 
 # Website-Datenbank (Wagtail) — falls vorhanden
-if docker exec mandari-postgres psql -U "$POSTGRES_USER" -lqt 2>/dev/null | grep -q "$WEBSITE_DB"; then
+if docker exec "$DB_CONTAINER" psql -U "$POSTGRES_USER" -lqt 2>/dev/null | grep -q "$WEBSITE_DB"; then
     if run_step_to_file "Website-DB sichern" "$BACKUP_PATH/postgres_website.sql" \
-        docker exec mandari-postgres pg_dump -U "$POSTGRES_USER" "$WEBSITE_DB"; then
+        docker exec "$DB_CONTAINER" pg_dump -U "$POSTGRES_USER" "$WEBSITE_DB"; then
         if [ "$QUIET" = false ]; then
             WDB_SIZE=$(du -h "$BACKUP_PATH/postgres_website.sql" | cut -f1)
             info "  Website-DB: $WDB_SIZE"
@@ -442,7 +450,7 @@ fi
 # =============================================================================
 # Backup Docker Volumes Info
 # =============================================================================
-run_step "Volume-Informationen" docker volume ls --filter name=mandari > "$BACKUP_PATH/volumes.txt" 2>/dev/null || true
+run_step "Volume-Informationen" docker volume ls --filter name="$COMPOSE_PROJECT_NAME" > "$BACKUP_PATH/volumes.txt" 2>/dev/null || true
 
 # =============================================================================
 # Backup Metadata

@@ -1,0 +1,77 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "mandari.fullname" . }}
+  labels:
+    {{- include "mandari.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if and .Values.ingress.tls.enabled .Values.ingress.tls.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.clusterIssuer | quote }}
+    {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.domain | quote }}
+        {{- if and .Values.website.enabled .Values.website.host }}
+        - {{ .Values.website.host | quote }}
+        {{- end }}
+      secretName: {{ default (printf "%s-tls" (include "mandari.fullname" .)) .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.domain | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "mandari.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+    {{- if and .Values.website.enabled .Values.website.host }}
+    - host: {{ .Values.website.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "mandari.fullname" . }}-website
+                port:
+                  number: 80
+    {{- end }}
+{{- end }}
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mandari.fullname" . }}-data
+  labels:
+    {{- include "mandari.labels" . | nindent 4 }}
+spec:
+  # Datenbank, Cache und Suchindex nehmen nur Verbindungen aus dieser Installation an.
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [postgres, redis, elasticsearch]
+      - key: app.kubernetes.io/instance
+        operator: In
+        values: [{{ .Release.Name }}]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "mandari.selectorLabels" . | nindent 14 }}
+{{- end }}

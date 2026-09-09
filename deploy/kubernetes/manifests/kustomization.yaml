@@ -1,0 +1,37 @@
+# =============================================================================
+# mandari ohne Helm – mit Kustomize anpassen
+# =============================================================================
+#   kubectl create namespace mandari
+#   kubectl kustomize deploy/kubernetes/manifests | kubectl apply -f -
+#   kubectl -n mandari apply -f deploy/kubernetes/manifests/job-migrate.yaml
+#
+# Eigene Anpassungen gehören in ein Overlay, damit sie ein Update dieser Datei
+# überstehen:
+#   mkdir -p meine-installation && cd meine-installation
+#   kustomize create --resources ../deploy/kubernetes/manifests
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: mandari
+
+resources:
+  - mandari.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: mandari
+
+# Beispiel: Domain an mehreren Stellen ersetzen. Nach dem Kopieren in ein Overlay
+# die Werte anpassen und die Auskommentierung entfernen.
+#
+# replacements:
+#   - source:
+#       kind: ConfigMap
+#       name: mandari-domain
+#       fieldPath: data.domain
+#     targets:
+#       - select:
+#           kind: Ingress
+#         fieldPaths:
+#           - spec.rules.0.host
+#           - spec.tls.0.hosts.0

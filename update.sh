@@ -20,6 +20,14 @@
 
 set -euo pipefail
 
+# Container-Namen folgen dem Compose-Projektnamen (siehe docker-compose.yml)
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-mandari}"
+export COMPOSE_PROJECT_NAME
+APP_CONTAINER="${COMPOSE_PROJECT_NAME}"
+DB_CONTAINER="${COMPOSE_PROJECT_NAME}-postgres"
+WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
+
+
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -524,12 +532,12 @@ if ! swap_container mandari mandari 45; then
         fi
     fi
 
-    error "Update fehlgeschlagen. Mandari auf vorherige Version zurückgesetzt. Prüfe: docker logs mandari"
+    error "Update fehlgeschlagen. Mandari auf vorherige Version zurückgesetzt. Prüfe: docker logs $APP_CONTAINER"
 fi
 
 # Website (Wagtail)
 if ! swap_container website mandari-website 30; then
-    warn "Website-Container unhealthy — prüfe Logs: docker logs mandari-website"
+    warn "Website-Container unhealthy — prüfe Logs: docker logs $WEBSITE_CONTAINER"
 fi
 
 # Ingestor (kein User-Impact)
@@ -542,8 +550,8 @@ printf "  %-30s ${GREEN}✓${NC}\n" "ingestor"
 echo ""
 log "Phase 4: Post-Deploy Migrationen"
 
-run_step "Post-Deploy Migrationen" docker exec mandari python manage.py migrate --noinput || \
-    warn "  Post-Deploy Migrationen fehlgeschlagen — prüfe: docker logs mandari"
+run_step "Post-Deploy Migrationen" docker exec "$APP_CONTAINER" python manage.py migrate --noinput || \
+    warn "  Post-Deploy Migrationen fehlgeschlagen — prüfe: docker logs $APP_CONTAINER"
 
 # =============================================================================
 # Phase 5: Caddy reload (falls Caddyfile geändert)
@@ -551,7 +559,7 @@ run_step "Post-Deploy Migrationen" docker exec mandari python manage.py migrate 
 echo ""
 log "Phase 5: Caddy-Konfiguration"
 
-run_step "Caddy reload" docker exec mandari-caddy caddy reload --config /etc/caddy/Caddyfile || \
+run_step "Caddy reload" docker exec "${COMPOSE_PROJECT_NAME}-caddy" caddy reload --config /etc/caddy/Caddyfile || \
     info "  Caddy-Reload übersprungen (kein Reload nötig oder Caddy nicht verfügbar)"
 
 # =============================================================================

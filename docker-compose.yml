@@ -20,7 +20,9 @@
 # Docker Images: ghcr.io/mandarioss/mandari (GitHub Container Registry)
 # =============================================================================
 
-name: mandari
+# Projektname bestimmt Container- und Volume-Namen. Für eine zweite Installation auf
+# demselben Host: COMPOSE_PROJECT_NAME=mandari-zweit docker compose up -d
+name: ${COMPOSE_PROJECT_NAME:-mandari}
 
 # =============================================================================
 # Logging defaults (all services)
@@ -37,7 +39,7 @@ services:
   # ===========================================================================
   caddy:
     image: caddy:2-alpine
-    container_name: mandari-caddy
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-caddy
     restart: unless-stopped
     ports:
       - "80:80"
@@ -70,7 +72,7 @@ services:
   # ===========================================================================
   postgres:
     image: postgres:16-alpine
-    container_name: mandari-postgres
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mandari}
@@ -96,7 +98,7 @@ services:
   # ===========================================================================
   redis:
     image: redis:7-alpine
-    container_name: mandari-redis
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-redis
     restart: unless-stopped
     command: >
       redis-server
@@ -123,7 +125,7 @@ services:
   # ===========================================================================
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
-    container_name: mandari-elasticsearch
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-elasticsearch
     restart: unless-stopped
     environment:
       discovery.type: single-node
@@ -152,7 +154,7 @@ services:
   # ===========================================================================
   mandari:
     image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
-    container_name: mandari
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}
     restart: unless-stopped
     environment:
       # Database
@@ -205,7 +207,7 @@ services:
   # ===========================================================================
   website:
     image: ghcr.io/mandarioss/website:${IMAGE_TAG:-latest}
-    container_name: mandari-website
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-website
     restart: unless-stopped
     environment:
       WEBSITE_DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${WEBSITE_DB:-mandari_website}
@@ -237,7 +239,7 @@ services:
   # ===========================================================================
   ingestor:
     image: ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest}
-    container_name: mandari-ingestor
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-ingestor
     restart: unless-stopped
     command: >
       python -m src.main daemon

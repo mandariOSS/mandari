@@ -1,0 +1,678 @@
+# =============================================================================
+# mandari – Kubernetes-Manifeste (ohne Helm)
+# =============================================================================
+# Erzeugt aus dem Helm-Chart unter deploy/kubernetes/helm/mandari.
+# Vor dem Einspielen anpassen:
+#   1. Alle Werte "BITTE-ERSETZEN-*" im Secret durch eigene ersetzen
+#      (z. B. openssl rand -base64 32)
+#   2. mandari.example.com durch die eigene Domain ersetzen
+#   3. Bei Bedarf Speicherklassen und Größen anpassen
+#
+# Einspielen:
+#   kubectl create namespace mandari
+#   kubectl -n mandari apply -f mandari.yaml
+#   kubectl -n mandari apply -f job-migrate.yaml     # Migrationen, einmalig
+#
+# Empfehlung: Für Updates und Konfiguration ist das Helm-Chart komfortabler.
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mandari
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mandari-secrets
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    # Bleibt beim Deinstallieren erhalten, damit verschlüsselte Daten in behaltenen
+    # Volumes lesbar bleiben. Bewusst entfernen: kubectl delete secret <name>
+    helm.sh/resource-policy: keep
+type: Opaque
+data:
+  secret-key: QklUVEUtRVJTRVRaRU4tc2VjcmV0LWtleQ==
+  encryption-key: QklUVEUtRVJTRVRaRU4tZW5jcnlwdGlvbg==
+  website-secret-key: QklUVEUtRVJTRVRaRU4td2Vic2l0ZQ==
+  postgres-password: QklUVEUtRVJTRVRaRU4tZGI=
+  redis-password: QklUVEUtRVJTRVRaRU4tcmVkaXM=
+  database-url: cG9zdGdyZXNxbDovL21hbmRhcmk6QklUVEUtRVJTRVRaRU4tZGJAbWFuZGFyaS1wb3N0Z3Jlczo1NDMyL21hbmRhcmk=
+  website-database-url: cG9zdGdyZXNxbDovL21hbmRhcmk6QklUVEUtRVJTRVRaRU4tZGJAbWFuZGFyaS1wb3N0Z3Jlczo1NDMyL21hbmRhcmlfd2Vic2l0ZQ==
+  redis-url: cmVkaXM6Ly86QklUVEUtRVJTRVRaRU4tcmVkaXNAbWFuZGFyaS1yZWRpczo2Mzc5LzA=
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mandari-media
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mandari-files
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mandari
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: app
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/component: app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mandari-elasticsearch
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: elasticsearch
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9200
+      targetPort: http
+      name: http
+  selector:
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/component: elasticsearch
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mandari-postgres
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: postgres
+      name: postgres
+  selector:
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/component: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mandari-redis
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: redis
+      name: redis
+  selector:
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/component: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mandari
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mandari
+      app.kubernetes.io/instance: mandari
+      app.kubernetes.io/component: app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mandari
+        app.kubernetes.io/instance: mandari
+        app.kubernetes.io/component: app
+      annotations:
+        # Neustart, wenn sich Zugangsdaten ändern
+        checksum/secret: a4082f145ad9a5a7e5fa32bf35a2d925b80d242d84f48d651bea09056bc0c42e
+    spec:
+      serviceAccountName: mandari
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: mandari
+          image: "ghcr.io/mandarioss/mandari:latest"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: ALLOWED_HOSTS
+              value: "mandari.example.com,localhost,127.0.0.1"
+            - name: CSRF_TRUSTED_ORIGINS
+              value: "https://mandari.example.com"
+            - name: SITE_URL
+              value: "https://mandari.example.com"
+            - name: TZ
+              value: "Europe/Berlin"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: redis-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: secret-key
+            - name: ENCRYPTION_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key
+            - name: ELASTICSEARCH_URL
+              value: "http://mandari-elasticsearch:9200"
+            - name: ELASTICSEARCH_AUTO_INDEX
+              value: "True"
+            - name: OPARL_FILES_ROOT
+              value: /app/files
+            - name: SYNC_DAEMON_AUTOSTART
+              value: "false"   # Synchronisation läuft im eigenen Ingestor-Pod
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          volumeMounts:
+            - name: media
+              mountPath: /app/media
+            - name: files
+              mountPath: /app/files
+          startupProbe:
+            # Erster Start kann dauern (Datenbankverbindung, Caches)
+            httpGet:
+              path: /health/
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health/
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              memory: 2Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: mandari-media
+        - name: files
+          persistentVolumeClaim:
+            claimName: mandari-files
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mandari-ingestor
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: ingestor
+spec:
+  # Genau eine Instanz: mehrere Sync-Läufe würden dieselben Quellen doppelt abrufen.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mandari
+      app.kubernetes.io/instance: mandari
+      app.kubernetes.io/component: ingestor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mandari
+        app.kubernetes.io/instance: mandari
+        app.kubernetes.io/component: ingestor
+      annotations:
+        checksum/secret: a4082f145ad9a5a7e5fa32bf35a2d925b80d242d84f48d651bea09056bc0c42e
+    spec:
+      serviceAccountName: mandari
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: ingestor
+          image: "ghcr.io/mandarioss/ingestor:latest"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: ALLOWED_HOSTS
+              value: "mandari.example.com,localhost,127.0.0.1"
+            - name: CSRF_TRUSTED_ORIGINS
+              value: "https://mandari.example.com"
+            - name: SITE_URL
+              value: "https://mandari.example.com"
+            - name: TZ
+              value: "Europe/Berlin"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: redis-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: secret-key
+            - name: ENCRYPTION_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key
+            - name: ELASTICSEARCH_URL
+              value: "http://mandari-elasticsearch:9200"
+            - name: ELASTICSEARCH_AUTO_INDEX
+              value: "True"
+            - name: OPARL_FILES_ROOT
+              value: /app/files
+            - name: SYNC_INTERVAL_MINUTES
+              value: "15"
+          volumeMounts:
+            - name: files
+              mountPath: /app/files
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+      volumes:
+        - name: files
+          persistentVolumeClaim:
+            claimName: mandari-files
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mandari-elasticsearch
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: elasticsearch
+spec:
+  serviceName: mandari-elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mandari
+      app.kubernetes.io/instance: mandari
+      app.kubernetes.io/component: elasticsearch
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mandari
+        app.kubernetes.io/instance: mandari
+        app.kubernetes.io/component: elasticsearch
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: elasticsearch
+          image: "docker.elastic.co/elasticsearch/elasticsearch:8.17.0"
+          imagePullPolicy: IfNotPresent
+          env:
+            # Ein-Knoten-Betrieb ohne Authentifizierung; nur clusterintern erreichbar.
+            - name: discovery.type
+              value: single-node
+            - name: xpack.security.enabled
+              value: "false"
+            - name: ES_JAVA_OPTS
+              value: "-Xms512m -Xmx1g"
+            - name: bootstrap.memory_lock
+              value: "false"
+          ports:
+            - name: http
+              containerPort: 9200
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health?local=true
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /_cluster/health?local=true
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 20
+          resources:
+            limits:
+              memory: 2Gi
+            requests:
+              cpu: 250m
+              memory: 1536Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mandari-postgres
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: mandari-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mandari
+      app.kubernetes.io/instance: mandari
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mandari
+        app.kubernetes.io/instance: mandari
+        app.kubernetes.io/component: postgres
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: "postgres:16-alpine"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "mandari"
+            - name: POSTGRES_USER
+              value: "mandari"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: postgres-password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "mandari"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "mandari"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            limits:
+              memory: 2Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mandari-redis
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: redis
+spec:
+  serviceName: mandari-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mandari
+      app.kubernetes.io/instance: mandari
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mandari
+        app.kubernetes.io/instance: mandari
+        app.kubernetes.io/component: redis
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: "redis:7-alpine"
+          imagePullPolicy: IfNotPresent
+          command:
+            - redis-server
+            - --requirepass
+            - $(REDIS_PASSWORD)
+            - --maxmemory
+            - "256mb"
+            - --maxmemory-policy
+            - allkeys-lru
+            - --appendonly
+            - "yes"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: redis-password
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" ping"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mandari
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 100m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - "mandari.example.com"
+      secretName: mandari-tls
+  rules:
+    - host: "mandari.example.com"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mandari
+                port:
+                  number: 80

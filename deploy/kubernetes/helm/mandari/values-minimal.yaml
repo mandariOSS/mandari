@@ -1,0 +1,58 @@
+# =============================================================================
+# Kleine Installation: ein Knoten, wenig Arbeitsspeicher (ab etwa 4 GB)
+# =============================================================================
+#   helm upgrade --install mandari deploy/kubernetes/helm/mandari \
+#     -n mandari --create-namespace \
+#     -f deploy/kubernetes/helm/mandari/values-minimal.yaml \
+#     --set domain=ris.meine-kommune.de
+# =============================================================================
+
+# Volltextsuche aus: spart rund 2 GB Arbeitsspeicher. Die Suche nutzt dann die
+# Datenbank – für einzelne Kommunen ausreichend.
+elasticsearch:
+  enabled: false
+
+website:
+  enabled: false
+
+app:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1500Mi
+
+ingestor:
+  syncInterval: 60
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 768Mi
+
+postgres:
+  storage:
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+redis:
+  maxmemory: 128mb
+  storage:
+    size: 1Gi
+
+persistence:
+  media:
+    size: 5Gi
+  files:
+    size: 20Gi
+
+logging:
+  format: text

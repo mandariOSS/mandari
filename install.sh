@@ -20,6 +20,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Compose-Projektname: bestimmt Container- und Volume-Namen. Mehrere Installationen auf
+# einem Host brauchen unterschiedliche Namen.
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-mandari}"
+export COMPOSE_PROJECT_NAME
+
+# Container-Namen leiten sich aus dem Projektnamen ab (siehe docker-compose.yml)
+APP_CONTAINER="${COMPOSE_PROJECT_NAME}"
+DB_CONTAINER="${COMPOSE_PROJECT_NAME}-postgres"
+REDIS_CONTAINER="${COMPOSE_PROJECT_NAME}-redis"
+SEARCH_CONTAINER="${COMPOSE_PROJECT_NAME}-elasticsearch"
+WEBSITE_CONTAINER="${COMPOSE_PROJECT_NAME}-website"
+PROXY_CONTAINER="${COMPOSE_PROJECT_NAME}-caddy"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -125,50 +138,44 @@ EOF
 # Prerequisites Check
 # =============================================================================
 check_prerequisites() {
-    log "Checking prerequisites..."
+    log "Voraussetzungen prüfen..."
 
-    # Check if running as root (warn, don't require)
-    if [ "$EUID" -eq 0 ]; then
-        warn "Running as root. Consider using a non-root user with Docker group access."
+    # sudo nur verwenden, wenn wir nicht ohnehin root sind
+    SUDO=""
+    if [ "$EUID" -ne 0 ]; then
+        if command -v sudo &>/dev/null; then
+            SUDO="sudo"
+        else
+            warn "Weder root noch sudo verfügbar – Systemänderungen können fehlschlagen."
+        fi
     fi
 
-    # System update
-    log "Updating system packages..."
-    if command -v apt-get &>/dev/null; then
-        sudo apt-get update -qq
-        sudo apt-get upgrade -y -qq
-        log "System packages updated"
-    elif command -v dnf &>/dev/null; then
-        sudo dnf upgrade -y --quiet
-        log "System packages updated"
-    elif command -v yum &>/dev/null; then
-        sudo yum update -y --quiet
-        log "System packages updated"
-    else
-        info "Package manager not detected, skipping system update"
-    fi
-
-    # Install Docker if not present
+    # Docker installieren, falls nicht vorhanden. Das System selbst wird bewusst NICHT
+    # aktualisiert – ein Installer darf keine unerwarteten Paket-Upgrades auslösen.
     if ! command -v docker &>/dev/null; then
-        log "Docker nicht gefunden — wird automatisch installiert..."
+        log "Docker nicht gefunden – wird installiert (https://get.docker.com)"
+        if [ "$UNATTENDED" != "true" ]; then
+            read -r -p "  Docker jetzt installieren? [J/n]: " install_docker
+            if [[ "$install_docker" =~ ^[Nn]$ ]]; then
+                error "Docker wird benötigt. Anleitung: https://docs.docker.com/engine/install/"
+            fi
+        fi
         if command -v curl &>/dev/null; then
-            curl -fsSL https://get.docker.com | sh
+            curl -fsSL https://get.docker.com | $SUDO sh
         elif command -v wget &>/dev/null; then
-            wget -qO- https://get.docker.com | sh
+            wget -qO- https://get.docker.com | $SUDO sh
         else
             error "Weder curl noch wget verfügbar. Bitte Docker manuell installieren: https://docs.docker.com/engine/install/"
         fi
 
-        # Enable and start Docker
         if command -v systemctl &>/dev/null; then
-            systemctl enable docker
-            systemctl start docker
+            $SUDO systemctl enable --now docker || true
         fi
 
         if ! command -v docker &>/dev/null; then
-            error "Docker-Installation fehlgeschlagen. Bitte manuell installieren: https://docs.docker.com/engine/install/"
+            error "Docker-Installation fehlgeschlagen. Anleitung: https://docs.docker.com/engine/install/"
         fi
-        log "Docker erfolgreich installiert"
+        log "Docker installiert"
     fi
 
     # Check Docker Compose (included in modern Docker)
@@ -182,7 +189,7 @@ check_prerequisites() {
     if ! docker info &>/dev/null; then
         if command -v systemctl &>/dev/null; then
             log "Docker-Daemon wird gestartet..."
-            systemctl start docker
+            $SUDO systemctl start docker
             sleep 2
         fi
         if ! docker info &>/dev/null; then
@@ -193,6 +200,47 @@ check_prerequisites() {
     local docker_version
     docker_version=$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "unknown")
     log "Docker version: $docker_version"
+
+    # Läuft dieses Compose-Projekt bereits aus einem ANDEREN Verzeichnis? Container- und
+    # Volume-Namen sind projektweit eindeutig; zwei Installationen würden sich sonst
+    # gegenseitig die Daten überschreiben.
+    local other_dir
+    other_dir=$(docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" \
+        --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | grep -v '^$' | head -1 || true)
+    if [ -n "$other_dir" ] && [ "$other_dir" != "$SCRIPT_DIR" ]; then
+        error "Es existiert bereits eine Installation „${COMPOSE_PROJECT_NAME}“ in: $other_dir
+  Zwei Installationen mit demselben Projektnamen teilen sich Container und Daten.
+  Entweder dort weiterarbeiten (cd \"$other_dir\" && ./update.sh) oder hier einen
+  eigenen Namen setzen:  COMPOSE_PROJECT_NAME=mandari-zweit ./install.sh"
+    fi
+
+    # Datenbank-Volume ohne passende .env: Die Zugangsdaten im Volume stammen aus einer
+    # früheren Installation, neu erzeugte Passwörter passen nicht dazu (Anmeldefehler).
+    if [ ! -f ".env" ] && docker volume inspect "${COMPOSE_PROJECT_NAME}_postgres_data" &>/dev/null; then
+        warn "Es existiert bereits ein Datenbank-Volume „${COMPOSE_PROJECT_NAME}_postgres_data“,"
+        warn "aber keine zugehörige .env mit den Zugangsdaten."
+        echo ""
+        echo "  Ein neues Passwort passt nicht zur bestehenden Datenbank – die Anwendung"
+        echo "  käme mit „password authentication failed“ nicht hoch."
+        echo ""
+        echo "  Optionen:"
+        echo "    1) Datenbank-Volume löschen und neu beginnen (ALLE DATEN GEHEN VERLOREN)"
+        echo "    2) Abbrechen und die alte .env wiederherstellen"
+        echo "    3) Anderen Projektnamen verwenden: COMPOSE_PROJECT_NAME=… ./install.sh"
+        echo ""
+        if [ "$UNATTENDED" = "true" ]; then
+            error "Abbruch (unattended). Vorhandenes Volume: ${COMPOSE_PROJECT_NAME}_postgres_data"
+        fi
+        read -r -p "  Auswahl [2]: " volume_choice
+        if [ "$volume_choice" = "1" ]; then
+            log "Entferne alte Volumes..."
+            docker compose down -v --remove-orphans 2>/dev/null || true
+            docker volume rm "${COMPOSE_PROJECT_NAME}_postgres_data" 2>/dev/null || true
+        else
+            log "Installation abgebrochen."
+            exit 0
+        fi
+    fi
 
     # Check for existing installation
     if [ -f ".env" ]; then
@@ -459,20 +507,20 @@ start_services() {
     docker compose up -d postgres redis elasticsearch >> "$INSTALL_LOG" 2>&1
 
     printf "  %-30s " "PostgreSQL"
-    if wait_for_healthy mandari-postgres 30; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
+    if wait_for_healthy "$DB_CONTAINER" 30; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     printf "  %-30s " "Redis"
-    if wait_for_healthy mandari-redis 30; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
+    if wait_for_healthy "$REDIS_CONTAINER" 30; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     printf "  %-30s " "Elasticsearch"
-    if wait_for_healthy mandari-elasticsearch 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
+    if wait_for_healthy "$SEARCH_CONTAINER" 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     # --- Phase 2: Mandari (Django) ---
     log "Starte Mandari..."
     docker compose up -d mandari >> "$INSTALL_LOG" 2>&1
 
     printf "  %-30s " "Mandari"
-    if wait_for_healthy mandari 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
+    if wait_for_healthy "$APP_CONTAINER" 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     run_migrations
     configure_oparl_sources
@@ -482,7 +530,7 @@ start_services() {
     docker compose up -d website >> "$INSTALL_LOG" 2>&1
 
     printf "  %-30s " "Website"
-    if wait_for_healthy mandari-website 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
+    if wait_for_healthy "$WEBSITE_CONTAINER" 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     run_website_migrations
 
@@ -491,7 +539,7 @@ start_services() {
     docker compose up -d >> "$INSTALL_LOG" 2>&1
 
     printf "  %-30s " "Caddy (SSL)"
-    if wait_for_healthy mandari-caddy 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
+    if wait_for_healthy "$PROXY_CONTAINER" 60; then echo -e "${GREEN}✓${NC}"; else echo -e "${YELLOW}⏳${NC}"; fi
 
     log "Alle Services gestartet"
 
@@ -502,9 +550,20 @@ start_services() {
 # Run Migrations
 # =============================================================================
 run_migrations() {
-    run_step "Datenbank-Migrationen" docker exec mandari python manage.py migrate --noinput
-    run_step "Rollen einrichten" docker exec mandari python manage.py setup_roles || true
-    run_step "Suchindex konfigurieren" docker exec mandari python manage.py setup_elasticsearch
+    # Wenn die Anwendung nicht gesund wurde, ist die Ursache fast immer die Datenbank-
+    # verbindung. Dann hier abbrechen statt in einen Folgefehler zu laufen.
+    if ! docker exec "$APP_CONTAINER" python -c "import django" &>/dev/null; then
+        echo ""
+        error "Die Anwendung ist nicht startbereit. Letzte Meldungen:
+$(docker logs "$APP_CONTAINER" --tail 15 2>&1 | sed 's/^/    /')
+
+  Häufigste Ursache: Das Datenbank-Volume stammt aus einer früheren Installation und
+  das Passwort in .env passt nicht dazu. Vollständiges Log: $INSTALL_LOG"
+    fi
+
+    run_step "Datenbank-Migrationen" docker exec "$APP_CONTAINER" python manage.py migrate --noinput
+    run_step "Rollen einrichten" docker exec "$APP_CONTAINER" python manage.py setup_roles || true
+    run_step "Suchindex konfigurieren" docker exec "$APP_CONTAINER" python manage.py setup_elasticsearch
     create_superuser
 }
 
@@ -559,7 +618,7 @@ create_superuser() {
 # Run Website Migrations
 # =============================================================================
 run_website_migrations() {
-    run_step "Website-Migrationen" docker exec mandari-website python manage.py migrate --noinput
+    run_step "Website-Migrationen" docker exec "$WEBSITE_CONTAINER" python manage.py migrate --noinput
 }
 
 # =============================================================================
@@ -567,7 +626,7 @@ run_website_migrations() {
 # =============================================================================
 configure_oparl_sources() {
     if [ "$UNATTENDED" = "true" ]; then
-        run_step "OParl-Quellen importieren" docker exec mandari python manage.py import_oparl_sources
+        run_step "OParl-Quellen importieren" docker exec "$APP_CONTAINER" python manage.py import_oparl_sources
         info "OParl-Quellen importiert (inaktiv). Im Admin aktivieren."
         return
     fi
@@ -587,18 +646,18 @@ configure_oparl_sources() {
     read -p "  Auswahl [4]: " oparl_choice
 
     # Import all sources (inactive by default)
-    run_step "OParl-Quellen importieren" docker exec mandari python manage.py import_oparl_sources
+    run_step "OParl-Quellen importieren" docker exec "$APP_CONTAINER" python manage.py import_oparl_sources
 
     case "${oparl_choice:-4}" in
         1)
-            run_step "Alle Quellen aktivieren" docker exec mandari python manage.py shell -c "
+            run_step "Alle Quellen aktivieren" docker exec "$APP_CONTAINER" python manage.py shell -c "
 from insight_core.models import OParlSource
 n = OParlSource.objects.all().update(is_active=True)
 print(f'{n} Quellen aktiviert')
 "
             ;;
         2)
-            run_step "Großstädte aktivieren" docker exec mandari python manage.py shell -c "
+            run_step "Großstädte aktivieren" docker exec "$APP_CONTAINER" python manage.py shell -c "
 from insight_core.models import OParlSource
 names = [
     'Stadt Köln', 'Landeshauptstadt Düsseldorf', 'Stadt Dresden',
@@ -629,7 +688,7 @@ select_individual_sources() {
     echo "  ─────────────────────────────────────────"
 
     # Display numbered list from database
-    docker exec mandari python manage.py shell -c "
+    docker exec "$APP_CONTAINER" python manage.py shell -c "
 from insight_core.models import OParlSource
 for i, s in enumerate(OParlSource.objects.order_by('name'), 1):
     print(f'  {i:3d}) {s.name}')

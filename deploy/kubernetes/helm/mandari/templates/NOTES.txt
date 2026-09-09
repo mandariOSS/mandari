@@ -1,0 +1,52 @@
+mandari ist installiert.
+
+  Release:    {{ .Release.Name }}
+  Namespace:  {{ .Release.Namespace }}
+  Version:    {{ .Values.image.tag }}
+  Adresse:    https://{{ .Values.domain }}
+
+1. Warten, bis alles läuft:
+
+     kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "mandari.fullname" . }} --timeout=10m
+
+2. DNS: {{ .Values.domain }} muss auf den Ingress-Controller zeigen.
+
+     kubectl -n {{ .Release.Namespace }} get ingress {{ include "mandari.fullname" . }}
+
+{{- if not .Values.adminUser.email }}
+
+3. Admin-Konto anlegen (es wurde keines konfiguriert):
+
+     kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "mandari.fullname" . }} -- \
+       python manage.py createsuperuser
+{{- else }}
+
+3. Anmelden unter https://{{ .Values.domain }}/accounts/login/ mit {{ .Values.adminUser.email }}
+{{- end }}
+
+{{- if not .Values.secrets.existingSecret }}
+
+WICHTIG – Schlüssel sichern:
+
+     kubectl -n {{ .Release.Namespace }} get secret {{ include "mandari.fullname" . }}-secrets \
+       -o yaml > mandari-secrets-backup.yaml
+
+Der Schlüssel „encryption-key“ verschlüsselt Fachdaten. Ohne ihn sind diese nach einem
+Neuaufbau unwiederbringlich unlesbar. Die Datei gehört in einen sicheren Speicher, nicht
+in die Versionsverwaltung.
+{{- end }}
+
+{{- if not .Values.elasticsearch.enabled }}
+
+Hinweis: Elasticsearch ist abgeschaltet. Die Volltextsuche nutzt die Datenbank und ist
+bei großen Datenmengen deutlich langsamer.
+{{- end }}
+
+{{- if and .Values.postgres.enabled (gt (.Values.app.replicas | int) 1) }}
+
+Hinweis: Bei mehr als einer Anwendungs-Replik muss die Speicherklasse ReadWriteMany
+unterstützen (persistence.accessMode).
+{{- end }}
+
+Weitere Schritte, Backup und Betrieb: deploy/kubernetes/README.md
+Dokumentation: https://docs.mandari.de

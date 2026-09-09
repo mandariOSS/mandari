@@ -1,0 +1,56 @@
+{{- if .Values.ingestor.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mandari.fullname" . }}-ingestor
+  labels:
+    {{- include "mandari.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingestor
+spec:
+  # Genau eine Instanz: mehrere Sync-Läufe würden dieselben Quellen doppelt abrufen.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "mandari.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ingestor
+  template:
+    metadata:
+      labels:
+        {{- include "mandari.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: ingestor
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "mandari.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: ingestor
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/ingestor:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            {{- include "mandari.commonEnv" . | nindent 12 }}
+            - name: SYNC_INTERVAL_MINUTES
+              value: {{ .Values.ingestor.syncInterval | quote }}
+            {{- if .Values.tracing.otlpEndpoint }}
+            - name: OTEL_SERVICE_NAME
+              value: mandari-ingestor
+            {{- end }}
+          volumeMounts:
+            - name: files
+              mountPath: /app/files
+          resources:
+            {{- toYaml .Values.ingestor.resources | nindent 12 }}
+      volumes:
+        - name: files
+          persistentVolumeClaim:
+            claimName: {{ include "mandari.fullname" . }}-files
+{{- end }}

@@ -1,0 +1,133 @@
+# Migrations-Job: einmalig nach dem ersten Apply und nach jedem Update ausführen.
+# Vorher ggf. löschen: kubectl -n mandari delete job mandari-migrate
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mandari-migrate
+  labels:
+    helm.sh/chart: mandari-1.0.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: migrate
+  annotations:
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mandari
+        app.kubernetes.io/instance: mandari
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: mandari
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      initContainers:
+        - name: wait-for-database
+          image: "postgres:16-alpine"
+          command:
+            - sh
+            - -c
+            - |
+              echo "Warte auf die Datenbank..."
+              for i in $(seq 1 60); do
+                if pg_isready -d "$DATABASE_URL" >/dev/null 2>&1; then
+                  echo "Datenbank erreichbar."
+                  exit 0
+                fi
+                sleep 3
+              done
+              echo "Datenbank nach 180 Sekunden nicht erreichbar." >&2
+              exit 1
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: database-url
+      containers:
+        - name: migrate
+          image: "ghcr.io/mandarioss/mandari:latest"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "== Datenbank-Migrationen"
+              python manage.py migrate --noinput
+              echo "== Rollen und Berechtigungen"
+              python manage.py setup_roles
+              python manage.py fix_permissions || true
+              echo "== Suchindex"
+              python manage.py setup_elasticsearch || echo "Suchindex übersprungen (Elasticsearch noch nicht bereit)"
+              echo "== Fertig"
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: ALLOWED_HOSTS
+              value: "mandari.example.com,localhost,127.0.0.1"
+            - name: CSRF_TRUSTED_ORIGINS
+              value: "https://mandari.example.com"
+            - name: SITE_URL
+              value: "https://mandari.example.com"
+            - name: TZ
+              value: "Europe/Berlin"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: redis-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: secret-key
+            - name: ENCRYPTION_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key
+            - name: ELASTICSEARCH_URL
+              value: "http://mandari-elasticsearch:9200"
+            - name: ELASTICSEARCH_AUTO_INDEX
+              value: "True"
+            - name: OPARL_FILES_ROOT
+              value: /app/files
+          volumeMounts:
+            - name: media
+              mountPath: /app/media
+            - name: files
+              mountPath: /app/files
+          resources:
+            limits:
+              memory: 2Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: mandari-media
+        - name: files
+          persistentVolumeClaim:
+            claimName: mandari-files

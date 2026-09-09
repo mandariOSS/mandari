@@ -1,0 +1,100 @@
+# =============================================================================
+# Produktionsbetrieb: mehrere Repliken, verwaltete Datenbank, feste Version
+# =============================================================================
+#   helm upgrade --install mandari deploy/kubernetes/helm/mandari \
+#     -n mandari --create-namespace \
+#     -f deploy/kubernetes/helm/mandari/values-production.yaml \
+#     --set domain=ris.meine-kommune.de \
+#     --set externalDatabase.url="postgresql://..." \
+#     --set externalRedis.url="redis://..."
+# =============================================================================
+
+image:
+  # In Produktion keine gleitenden Tags: feste Version eintragen und bewusst anheben.
+  tag: latest
+
+# Datenbank und Cache als verwaltete Dienste (Backup, Hochverfügbarkeit, Updates
+# liegen dann beim Anbieter). URLs beim Aufruf setzen, nicht hier hinterlegen.
+postgres:
+  enabled: false
+redis:
+  enabled: false
+
+externalDatabase:
+  url: ""          # postgresql://benutzer:passwort@host:5432/mandari
+  websiteUrl: ""   # nur nötig bei website.enabled=true
+
+externalRedis:
+  url: ""          # redis://:passwort@host:6379/0
+
+elasticsearch:
+  enabled: true
+  javaOpts: "-Xms2g -Xmx2g"
+  storage:
+    size: 50Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 3Gi
+    limits:
+      memory: 4Gi
+
+app:
+  # Mehrere Repliken brauchen eine Speicherklasse mit ReadWriteMany (siehe unten).
+  replicas: 3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 3Gi
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: mandari
+                app.kubernetes.io/component: app
+
+website:
+  enabled: true
+  replicas: 2
+  host: ""   # z. B. www.meine-kommune.de
+
+ingestor:
+  syncInterval: 15
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+persistence:
+  # Ohne ReadWriteMany bleibt app.replicas bei 1.
+  accessMode: ReadWriteMany
+  media:
+    size: 50Gi
+  files:
+    size: 500Gi
+
+logging:
+  format: json
+  level: INFO
+
+networkPolicy:
+  enabled: true
+
+ingress:
+  className: nginx
+  tls:
+    enabled: true
+    clusterIssuer: letsencrypt-prod
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    # Websocket-Verbindungen für die gemeinsame Antragsbearbeitung
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"

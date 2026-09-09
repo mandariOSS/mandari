@@ -1,0 +1,23 @@
+apiVersion: v2
+name: mandari
+description: mandari – Open-Source-Plattform für kommunalpolitische Transparenz (Bürgerportal, Fraktions-Arbeitsbereich, Verwaltungs-RIS)
+type: application
+# Version des Charts (bei Chart-Änderungen erhöhen)
+version: 1.0.0
+# Version der Anwendung; entspricht dem Standard-Image-Tag in values.yaml
+appVersion: "latest"
+home: https://mandari.de
+sources:
+  - https://github.com/mandariOSS/mandari
+keywords:
+  - oparl
+  - ratsinformationssystem
+  - transparenz
+  - kommune
+  - django
+maintainers:
+  - name: mandari Contributors
+    url: https://github.com/mandariOSS
+annotations:
+  category: Government
+  licenses: AGPL-3.0-or-later
