@@ -43,6 +43,15 @@ app = typer.Typer(
 console = Console()
 
 
+@app.callback()
+def _startup() -> None:
+    """Logging (LOG_FORMAT/LOG_LEVEL) und Tracing (OTEL_EXPORTER_OTLP_ENDPOINT) vor jedem Kommando."""
+    from src.observability import setup_logging, setup_opentelemetry
+
+    setup_logging()
+    setup_opentelemetry()
+
+
 def print_banner() -> None:
     """Print the application banner."""
     console.print(

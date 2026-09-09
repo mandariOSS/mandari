@@ -17,6 +17,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from src.config import settings
+from src.observability import trigger_context
 from src.sync.orchestrator import SyncOrchestrator
 
 logger = logging.getLogger(__name__)
@@ -239,20 +240,20 @@ class SyncScheduler:
                     data = json.loads(message["data"])
                     full = data.get("full", False)
                     # Korrelation mit der auslösenden Django-Anfrage (X-Request-ID / OTel trace_id)
-                    request_id = data.get("request_id") or "-"
-                    trace_id = data.get("trace_id") or "-"
+                    request_id = data.get("request_id") or None
+                    trace_id = data.get("trace_id") or None
+                    span_id = data.get("span_id") or None
                     console.print(
                         f"\n[bold yellow]Sync-Trigger empfangen (full={full}, "
-                        f"request_id={request_id}, trace_id={trace_id})[/bold yellow]"
+                        f"request_id={request_id or '-'}, trace_id={trace_id or '-'})[/bold yellow]"
                     )
-                    logger.info(
-                        "Sync-Trigger empfangen",
-                        extra={"full": full, "request_id": request_id, "trace_id": trace_id},
-                    )
-                    if full:
-                        await self._run_full_sync()
-                    else:
-                        await self._run_incremental_sync()
+                    # Log-Kennungen und Trace-Kontext der auslösenden Django-Anfrage übernehmen
+                    with trigger_context("sync.trigger", request_id, trace_id, span_id):
+                        logger.info("Sync-Trigger empfangen", extra={"full": full})
+                        if full:
+                            await self._run_full_sync()
+                        else:
+                            await self._run_incremental_sync()
                 except Exception as e:
                     logger.warning(f"Fehler bei Trigger-Verarbeitung: {e}")
         except Exception as e:
