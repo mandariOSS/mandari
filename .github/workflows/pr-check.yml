@@ -343,7 +343,11 @@ jobs:
           MANDARI_E2E: '1'
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
           DEBUG: 'false'
-        run: cd mandari && pytest tests_e2e -q --browser chromium
+        run: |
+          cd mandari
+          # Manifest-Storage (DEBUG=false) braucht die gesammelten, gehashten Dateien
+          DJANGO_SETTINGS_MODULE=mandari.settings_test python manage.py collectstatic --noinput --clear -v 0
+          pytest tests_e2e -q --browser chromium
       - name: Screenshots als Artefakt (hell/dunkel, Komponentenvorschau, Kernpfade)
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
