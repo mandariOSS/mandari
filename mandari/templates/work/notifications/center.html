@@ -15,7 +15,7 @@
     Einstellungen
 </a>
 {% if unread_count > 0 %}
-<button hx-post="{% url 'work:notifications_mark_all_read' org_slug=organization.slug %}"
+<button type="button" hx-post="{% url 'work:notifications_mark_all_read' org_slug=organization.slug %}"
         hx-swap="none"
         hx-on::after-request="window.location.reload()"
         class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
@@ -98,7 +98,7 @@
                                 </a>
                                 {% endif %}
                                 {% if not notification.is_read %}
-                                <button hx-post="{% url 'work:notification_mark_read' org_slug=organization.slug notification_id=notification.id %}"
+                                <button type="button" hx-post="{% url 'work:notification_mark_read' org_slug=organization.slug notification_id=notification.id %}"
                                         hx-swap="none"
                                         hx-on::after-request="this.closest('.p-4').classList.remove('bg-primary-50/50', 'dark:bg-primary-900/10'); this.remove(); this.closest('.p-4').querySelector('.inline-block.w-2.h-2')?.remove();"
                                         class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"

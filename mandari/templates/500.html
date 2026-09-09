@@ -27,19 +27,19 @@ Problem auf unserer Seite. Unser Team wurde automatisch benachrichtigt.
 {% endblock %}
 
 {% block error_actions %}
-<button onclick="location.reload()"
+<button type="button" onclick="location.reload()"
         class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors">
     <i data-lucide="refresh-cw" class="w-4 h-4"></i> Seite neu laden
 </button>
-<a href="/feedback/?error_id={{ request_id|urlencode }}&url={{ request.build_absolute_uri|urlencode }}"
+{# djlint:off D018 #}<a href="/feedback/?error_id={{ request_id|urlencode }}&url={{ request.build_absolute_uri|urlencode }}"
    class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium transition-colors">
     <i data-lucide="megaphone" class="w-4 h-4"></i> Problem melden
-</a>
+</a>{# djlint:on D018 #}
 {% endblock %}
 
 {% block help_text %}
 Fehler-ID: <code class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-mono text-xs">{{ request_id|default:"unbekannt" }}</code>
 &middot;
-<a href="/feedback/?error_id={{ request_id|urlencode }}&url={{ request.build_absolute_uri|urlencode }}"
-   class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Problem melden</a>
+{# djlint:off D018 #}<a href="/feedback/?error_id={{ request_id|urlencode }}&url={{ request.build_absolute_uri|urlencode }}"
+   class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Problem melden</a>{# djlint:on D018 #}
 {% endblock %}

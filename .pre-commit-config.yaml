@@ -1,0 +1,39 @@
+# Lokale Qualitätsprüfungen vor jedem Commit. Einrichtung: pip install pre-commit && pre-commit install
+# Dieselben Prüfungen laufen blockierend in der CI (pr-check.yml).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/djlint/djLint
+    rev: v1.36.4
+    hooks:
+      - id: djlint-django
+        files: ^mandari/templates/.*\.html$
+  - repo: local
+    hooks:
+      - id: template-comments
+        name: Mehrzeilige {# #}-Kommentare verbieten
+        entry: python scripts/check_template_comments.py
+        language: system
+        pass_filenames: false
+        files: \.html$
+      - id: frontend-ratchet
+        name: Frontend-Ratchet (Inline-Code, Template-Größe)
+        entry: python scripts/check_frontend_ratchet.py
+        language: system
+        pass_filenames: false
+        files: \.html$
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+        exclude: \.(min\.js|min\.css|svg)$
+      - id: trailing-whitespace
+        exclude: \.(min\.js|min\.css|md)$
+      - id: check-merge-conflict
+      - id: detect-private-key

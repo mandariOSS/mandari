@@ -109,7 +109,7 @@
                 <!-- Zeitraum-Filter -->
                 <div class="flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
                     <template x-for="opt in timeOptions" :key="opt.value">
-                        <button
+                        <button type="button"
                             @click="setTimeRange(opt.value)"
                             :class="timeRange === opt.value
                                 ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'

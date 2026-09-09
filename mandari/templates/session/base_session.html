@@ -396,7 +396,7 @@
             <div class="session-topbar">
                 <div class="flex items-center gap-1 min-w-0 flex-1">
                     <!-- Mobile menu button -->
-                    <button @click="sidebarOpen = !sidebarOpen"
+                    <button type="button" @click="sidebarOpen = !sidebarOpen"
                             class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
                             title="Menü">
                         <i data-lucide="menu" class="w-5 h-5"></i>
@@ -404,7 +404,7 @@
                     </button>
 
                     <!-- Desktop: Sidebar-Toggle -->
-                    <button @click="sidebarCollapsed = !sidebarCollapsed; localStorage.setItem('sessionSidebarCollapsed', sidebarCollapsed)"
+                    <button type="button" @click="sidebarCollapsed = !sidebarCollapsed; localStorage.setItem('sessionSidebarCollapsed', sidebarCollapsed)"
                             class="hidden lg:flex p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                             :title="sidebarCollapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'">
                         <i x-show="!sidebarCollapsed" data-lucide="panel-left-close" class="w-5 h-5"></i>
@@ -428,7 +428,7 @@
                     </form>
 
                     <!-- Dark Mode Toggle -->
-                    <button @click="darkMode = !darkMode"
+                    <button type="button" @click="darkMode = !darkMode"
                             class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
                             title="Dunkelmodus umschalten">
                         <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
@@ -438,7 +438,7 @@
                     <!-- User Menu -->
                     {% if request.user.is_authenticated %}
                     <div class="relative" x-data="{ open: false }">
-                        <button @click="open = !open"
+                        <button type="button" @click="open = !open"
                                 class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
                             <div class="w-8 h-8 rounded-full flex items-center justify-center font-medium text-sm"
                                  style="background: var(--tenant-color-light); color: var(--tenant-color);">
@@ -521,7 +521,7 @@
                     <div class="flex-1 min-w-0">
                         <p class="text-sm font-medium text-gray-900 dark:text-white" x-text="toast.message"></p>
                     </div>
-                    <button @click="removeToast(toast.id)"
+                    <button type="button" @click="removeToast(toast.id)"
                             class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                         <i data-lucide="x" class="w-4 h-4"></i>
                     </button>

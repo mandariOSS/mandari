@@ -32,7 +32,7 @@
         {% if can_manage_attendance and meeting.status == 'ongoing' %}
             {% if attendance.status == 'present' %}
             {# Teilnahmeart umschalten (Issue #67): vor Ort <-> online #}
-            <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+            <button type="button" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                     hx-vals='{"action": "set_participation", "attendance_id": "{{ attendance.id }}", "participation_type": "{% if attendance.participation_type == 'online' %}onsite{% else %}online{% endif %}"}'
                     hx-target="#attendance-list"
                     hx-swap="innerHTML"
@@ -42,7 +42,7 @@
             </button>
             {% endif %}
             {% if attendance.status != 'present' %}
-            <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+            <button type="button" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                     hx-vals='{"action": "check_in", "attendance_id": "{{ attendance.id }}"}'
                     hx-target="#attendance-list"
                     hx-swap="innerHTML"
@@ -51,7 +51,7 @@
                 <i data-lucide="log-in" class="w-3 h-3"></i>
             </button>
             {% else %}
-            <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+            <button type="button" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                     hx-vals='{"action": "check_out", "attendance_id": "{{ attendance.id }}"}'
                     hx-target="#attendance-list"
                     hx-swap="innerHTML"

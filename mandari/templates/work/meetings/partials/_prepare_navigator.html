@@ -11,7 +11,7 @@
             </div>
             <div class="flex-1 overflow-y-auto p-2 max-h-[60vh] xl:max-h-none" role="list">
                 <template x-for="item in filteredItems" :key="item.id">
-                    <button :id="'nav-item-' + item.id" role="listitem"
+                    <button type="button" :id="'nav-item-' + item.id" role="listitem"
                             @click="selectItem(item.id); mobileTab = 'main'"
                             :aria-current="selectedItemId === item.id ? 'true' : 'false'"
                             :class="selectedItemId === item.id

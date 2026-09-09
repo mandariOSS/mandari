@@ -112,15 +112,15 @@
                 {% for cat_code, cat in permission_categories.items %}
                 <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                     <!-- Category header -->
-                    <button type="button"
+                    <div
                             class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                            @click="toggleCategory('{{ cat_code }}')">
-                        <div class="flex items-center gap-3">
+                            role="group">
+                        <button type="button" class="flex items-center gap-3 flex-1 text-left" @click="toggleCategory('{{ cat_code }}')" :aria-expanded="openCategories.includes('{{ cat_code }}').toString()">
                             <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400 transition-transform duration-200"
                                :class="{ 'rotate-90': openCategories.includes('{{ cat_code }}') }"></i>
                             <span class="font-medium text-gray-900 dark:text-white text-sm">{{ cat.name }}</span>
                             <span class="text-xs text-gray-500">({{ cat.permissions|length }})</span>
-                        </div>
+                        </button>
                         <label class="flex items-center gap-2" @click.stop>
                             <span class="text-xs text-gray-500">Alle</span>
                             <input type="checkbox"
@@ -129,7 +129,7 @@
                                    @change="toggleAll('{{ cat_code }}', $event.target.checked)"
                                    class="w-4 h-4 text-primary-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500">
                         </label>
-                    </button>
+                    </div>
 
                     <!-- Category permissions -->
                     <div x-show="openCategories.includes('{{ cat_code }}')" x-transition class="px-4 py-3 space-y-2 border-t border-gray-200 dark:border-gray-700">

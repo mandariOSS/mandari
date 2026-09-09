@@ -1,6 +1,6 @@
 <!-- Body/Kommune Dropdown -->
 <div class="relative" x-data="{ isOpen: false }">
-    <button @click="isOpen = !isOpen"
+    <button type="button" @click="isOpen = !isOpen"
             @click.outside="isOpen = false"
             @keydown.escape.prevent="isOpen = false"
             class="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm touch-target"

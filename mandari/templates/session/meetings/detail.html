@@ -86,7 +86,7 @@
                     Tagesordnung
                 </h2>
                 {% if "edit_meetings" in permission_checker.permissions %}
-                <button hx-get="{% url 'session:agenda_item_create' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                <button type="button" hx-get="{% url 'session:agenda_item_create' tenant_slug=tenant_slug meeting_id=meeting.id %}"
                         hx-target="#agenda-form"
                         hx-swap="innerHTML"
                         class="text-sm text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1">

@@ -94,13 +94,13 @@
             <div class="text-center" x-show="!submitted">
                 <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-3">War dieser Artikel hilfreich?</h3>
                 <div class="flex items-center justify-center gap-3">
-                    <button @click="submitFeedback(true)"
+                    <button type="button" @click="submitFeedback(true)"
                             :class="{ 'bg-green-100 dark:bg-green-900/30 border-green-500': selected === true }"
                             class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors">
                         <i data-lucide="thumbs-up" class="w-4 h-4"></i>
                         Ja
                     </button>
-                    <button @click="submitFeedback(false)"
+                    <button type="button" @click="submitFeedback(false)"
                             :class="{ 'bg-red-100 dark:bg-red-900/30 border-red-500': selected === false }"
                             class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
                         <i data-lucide="thumbs-down" class="w-4 h-4"></i>
@@ -144,12 +144,12 @@
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
             <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Aktionen</h3>
             <div class="space-y-2">
-                <button onclick="window.print()"
+                <button type="button" onclick="window.print()"
                         class="flex items-center gap-2 w-full text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 py-1">
                     <i data-lucide="printer" class="w-4 h-4"></i>
                     Drucken
                 </button>
-                <button onclick="navigator.share?.({title: '{{ article.title }}', url: window.location.href}) || navigator.clipboard.writeText(window.location.href)"
+                <button type="button" onclick="navigator.share?.({title: '{{ article.title }}', url: window.location.href}) || navigator.clipboard.writeText(window.location.href)"
                         class="flex items-center gap-2 w-full text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 py-1">
                     <i data-lucide="share-2" class="w-4 h-4"></i>
                     Teilen

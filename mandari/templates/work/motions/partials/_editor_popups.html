@@ -7,7 +7,7 @@
 
         <!-- Collapsed: comment button -->
         <template x-if="!commentPopupExpanded">
-            <button @click.stop="expandCommentPopup()"
+            <button type="button" @click.stop="expandCommentPopup()"
                     class="comment-popup-btn">
                 <i data-lucide="message-square-plus" class="w-4 h-4 text-amber-500"></i>
                 Kommentieren
@@ -33,11 +33,11 @@
                               @keydown.ctrl.enter="submitInlineComment()"
                               class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none"></textarea>
                     <div class="flex items-center justify-between mt-2">
-                        <button @click="hideCommentPopup()"
+                        <button type="button" @click="hideCommentPopup()"
                                 class="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                             Abbrechen
                         </button>
-                        <button @click="submitInlineComment()"
+                        <button type="button" @click="submitInlineComment()"
                                 :disabled="!inlineCommentText.trim() || commentSubmitting"
                                 class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">
                             <svg x-show="commentSubmitting" class="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -122,7 +122,7 @@
                                placeholder="Antworten..."
                                @keydown.enter="submitMarkReply()"
                                class="flex-1 px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent">
-                        <button @click="submitMarkReply()"
+                        <button type="button" @click="submitMarkReply()"
                                 :disabled="!markReplyText.trim() || markReplySubmitting"
                                 class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0">
                             <i data-lucide="send" class="w-3.5 h-3.5"></i>
@@ -134,12 +134,12 @@
             <!-- Actions -->
             <template x-if="markCommentData && !markCommentData.is_resolved">
                 <div class="px-4 py-2 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50 rounded-b-xl">
-                    <button @click="resolveMarkComment()"
+                    <button type="button" @click="resolveMarkComment()"
                             class="text-xs font-medium text-green-600 dark:text-green-400 hover:text-green-700 flex items-center gap-1.5">
                         <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
                         Erledigen
                     </button>
-                    <button @click="hideMarkPopup()"
+                    <button type="button" @click="hideMarkPopup()"
                             class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                         Schliessen
                     </button>
@@ -147,7 +147,7 @@
             </template>
             <template x-if="markCommentData && markCommentData.is_resolved">
                 <div class="px-4 py-2 border-t border-gray-100 dark:border-gray-700 flex items-center justify-end bg-gray-50/50 dark:bg-gray-800/50 rounded-b-xl">
-                    <button @click="hideMarkPopup()"
+                    <button type="button" @click="hideMarkPopup()"
                             class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                         Schliessen
                     </button>

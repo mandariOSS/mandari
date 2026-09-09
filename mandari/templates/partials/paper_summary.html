@@ -15,7 +15,7 @@
             <p class="text-sm text-red-700 dark:text-red-400 mt-1">{{ error }}</p>
         </div>
     </div>
-    <button hx-get="{% url 'insight_core:insight:paper_summary' paper.id %}"
+    <button type="button" hx-get="{% url 'insight_core:insight:paper_summary' paper.id %}"
             hx-target="#paper-summary"
             hx-swap="innerHTML"
             hx-request="timeout:300000"

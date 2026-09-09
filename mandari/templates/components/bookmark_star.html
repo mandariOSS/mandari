@@ -4,7 +4,7 @@
 
 {% if size == "lg" %}
 {# Large: Button with label for detail pages #}
-<button x-data x-cloak
+<button type="button" x-data x-cloak
     @click.stop.prevent="$store.bookmarks.toggle('{{ entity_type }}', '{{ entity_id }}')"
     class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors"
     :class="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}')
@@ -24,7 +24,7 @@
 
 {% else %}
 {# Small: Icon only for list rows #}
-<button x-data x-cloak
+<button type="button" x-data x-cloak
     @click.stop.prevent="$store.bookmarks.toggle('{{ entity_type }}', '{{ entity_id }}')"
     class="p-1 rounded transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
     :title="$store.bookmarks.has('{{ entity_type }}', '{{ entity_id }}') ? 'Von Merkliste entfernen' : 'Auf Merkliste setzen'">

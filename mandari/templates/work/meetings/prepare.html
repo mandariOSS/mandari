@@ -161,17 +161,17 @@
 
     <!-- ================= Mobile Tabs (<1280px) ================= -->
     <div class="xl:hidden flex mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-        <button @click="mobileTab = 'tops'"
+        <button type="button" @click="mobileTab = 'tops'"
                 :class="mobileTab === 'tops' ? 'text-primary-600 dark:text-primary-400 border-primary-500' : 'text-gray-500 border-transparent'"
                 class="flex-1 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors">
             <i data-lucide="list" class="w-4 h-4 inline mr-1"></i> TOPs
         </button>
-        <button @click="mobileTab = 'main'"
+        <button type="button" @click="mobileTab = 'main'"
                 :class="mobileTab === 'main' ? 'text-primary-600 dark:text-primary-400 border-primary-500' : 'text-gray-500 border-transparent'"
                 class="flex-1 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors">
             <i data-lucide="pen-line" class="w-4 h-4 inline mr-1"></i> Vorbereitung
         </button>
-        <button @click="mobileTab = 'discussion'"
+        <button type="button" @click="mobileTab = 'discussion'"
                 :class="mobileTab === 'discussion' ? 'text-primary-600 dark:text-primary-400 border-primary-500' : 'text-gray-500 border-transparent'"
                 class="flex-1 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors">
             <i data-lucide="messages-square" class="w-4 h-4 inline mr-1"></i> Diskussion

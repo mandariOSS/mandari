@@ -15,7 +15,7 @@ deine Anmeldung abgelaufen ist.
 {% endblock %}
 
 {% block error_actions %}
-<a href="/accounts/login/?next={{ request.get_full_path|urlencode }}"
+<a href="{% url 'accounts:login' %}?next={{ request.get_full_path|urlencode }}"
    class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors">
     <i data-lucide="log-in" class="w-4 h-4"></i> Anmelden
 </a>

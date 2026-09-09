@@ -10,7 +10,7 @@
     style="width:260px;">
 
     {# Brand #}
-    <a href="/insight/" class="flex items-center h-16 px-4 border-b border-gray-200 dark:border-gray-700">
+    <a href="{% url 'insight_core:insight:portal_home' %}" class="flex items-center h-16 px-4 border-b border-gray-200 dark:border-gray-700">
         <span class="flex items-baseline">
             <span class="text-[17px] font-bold text-gray-900 dark:text-white tracking-tight leading-none">mandari</span><span class="text-[17px] font-bold leading-none text-primary-600 dark:text-primary-400" aria-hidden="true">.</span>
             <span class="ml-1.5 text-[10px] font-bold uppercase tracking-widest text-primary-500 dark:text-primary-400">Insight</span>
@@ -18,7 +18,7 @@
     </a>
 
     {# Kommune-Switcher #}
-    <button @click="cityModalOpen=true; $nextTick(() => $refs.citySearchInput.focus())"
+    <button type="button" @click="cityModalOpen=true; $nextTick(() => $refs.citySearchInput.focus())"
         class="w-full flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left">
         <div class="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden">
             {% if active_body and active_body.logo %}

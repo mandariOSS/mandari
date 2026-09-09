@@ -240,6 +240,10 @@ jobs:
           python-version: '3.12'
       - name: Ratchet (Inline-Skripte/-Styles, Template-Größe dürfen nicht zunehmen)
         run: python scripts/check_frontend_ratchet.py
+      - name: djlint (Template-Linting, Profil Django)
+        run: |
+          pip install djlint==1.36.4
+          cd mandari && djlint templates --lint
 
   docker-build:
     name: Docker Build

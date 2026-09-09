@@ -39,7 +39,7 @@
                     <!-- History Mode Header Bar -->
                     <div class="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
                         <div class="flex items-center gap-3">
-                            <button @click="exitHistoryMode()"
+                            <button type="button" @click="exitHistoryMode()"
                                     class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
                                 <i data-lucide="arrow-left" class="w-4 h-4"></i>
                                 Zurück zum Editor
@@ -56,15 +56,15 @@
                         </div>
                         <div class="flex items-center gap-2">
                             <div class="flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                                <button @click="revisionViewMode = 'diff'"
+                                <button type="button" @click="revisionViewMode = 'diff'"
                                         :class="revisionViewMode === 'diff' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'text-gray-600 dark:text-gray-400'"
                                         class="px-3 py-1.5 text-xs font-medium">Vergleich</button>
-                                <button @click="revisionViewMode = 'original'"
+                                <button type="button" @click="revisionViewMode = 'original'"
                                         :class="revisionViewMode === 'original' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'text-gray-600 dark:text-gray-400'"
                                         class="px-3 py-1.5 text-xs font-medium">Original</button>
                             </div>
                             {% if can_edit %}
-                            <button @click="restoreRevision(selectedRevision)"
+                            <button type="button" @click="restoreRevision(selectedRevision)"
                                     class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
                                 <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
                                 Wiederherstellen
@@ -188,25 +188,25 @@
         <div class="editor-sidebar" :class="{ 'mobile-open': showMobileSidebar }">
             <!-- Sidebar Tabs -->
             <div class="flex items-center border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0 overflow-x-auto">
-                <button @click="sidebarTab = 'comments'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'comments' }">
+                <button type="button" @click="sidebarTab = 'comments'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'comments' }">
                     <i data-lucide="message-square" class="w-3.5 h-3.5 inline-block mr-1"></i>
                     Kommentare
                 </button>
-                <button @click="sidebarTab = 'details'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'details' }">
+                <button type="button" @click="sidebarTab = 'details'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'details' }">
                     <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 inline-block mr-1"></i>
                     Details
                 </button>
-                <button @click="sidebarTab = 'tasks'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'tasks' }">
+                <button type="button" @click="sidebarTab = 'tasks'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'tasks' }">
                     <i data-lucide="list-checks" class="w-3.5 h-3.5 inline-block mr-1"></i>
                     Aufgaben
                 </button>
                 {% if can_edit and not is_guest %}
-                <button @click="sidebarTab = 'ai'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'ai' }">
+                <button type="button" @click="sidebarTab = 'ai'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'ai' }">
                     <i data-lucide="sparkles" class="w-3.5 h-3.5 inline-block mr-1"></i>
                     KI
                 </button>
                 {% endif %}
-                <button @click="sidebarTab = 'history'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'history' }">
+                <button type="button" @click="sidebarTab = 'history'" class="sidebar-tab" :class="{ 'active': sidebarTab === 'history' }">
                     <i data-lucide="history" class="w-3.5 h-3.5 inline-block mr-1"></i>
                     Verlauf
                 </button>
@@ -393,7 +393,7 @@
 
                     <!-- Revision List -->
                     <template x-for="rev in revisions" :key="rev.id">
-                        <button @click="viewRevision(rev)"
+                        <button type="button" @click="viewRevision(rev)"
                                 class="w-full text-left p-3 rounded-lg border-2 transition-colors"
                                 :class="selectedRevision && selectedRevision.id === rev.id
                                     ? 'border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20'

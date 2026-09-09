@@ -150,7 +150,7 @@
     {% if pages > 1 and page < pages %}
     <!-- Load More: replaces itself with new items + next button -->
     <div id="load-more-area" class="text-center pt-4">
-        <button hx-get="{% url 'insight_core:insight:search_results' %}?q={{ query|urlencode }}&page={{ page|add:1 }}{% if search_type %}&type={{ search_type }}{% endif %}"
+        <button type="button" hx-get="{% url 'insight_core:insight:search_results' %}?q={{ query|urlencode }}&page={{ page|add:1 }}{% if search_type %}&type={{ search_type }}{% endif %}"
                 hx-target="#load-more-area"
                 hx-swap="outerHTML"
                 hx-indicator="#search-loading"

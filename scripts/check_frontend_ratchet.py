@@ -42,6 +42,9 @@ SCRIPT_RE = re.compile(
 STYLE_RE = re.compile(r"<style\b[^>]*>", re.I)
 ONHANDLER_RE = re.compile(r"\son[a-z]+=\"", re.I)
 STYLE_ATTR_RE = re.compile(r"\sstyle=\"", re.I)
+CLASS_RE = re.compile(r"\sclass=\"([^\"{}]+)\"")
+DUP_MIN_TOKENS = 4
+DUP_MIN_COUNT = 10
 
 
 def allowed(rel: str) -> bool:
@@ -49,8 +52,16 @@ def allowed(rel: str) -> bool:
 
 
 def measure(verbose: bool = False) -> dict[str, int]:
-    counts = {"inline_scripts": 0, "inline_styles": 0, "templates_over_300": 0, "on_handlers": 0, "style_attrs": 0}
+    counts = {
+        "inline_scripts": 0,
+        "inline_styles": 0,
+        "templates_over_300": 0,
+        "on_handlers": 0,
+        "style_attrs": 0,
+        "duplicate_class_chains": 0,
+    }
     big: list[tuple[int, str]] = []
+    chains: dict[str, int] = {}
     for path in sorted(TEMPLATES.rglob("*.html")):
         rel = path.relative_to(TEMPLATES).as_posix()
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -60,12 +71,20 @@ def measure(verbose: bool = False) -> dict[str, int]:
             big.append((lines, rel))
         counts["on_handlers"] += len(ONHANDLER_RE.findall(text))
         counts["style_attrs"] += len(STYLE_ATTR_RE.findall(text))
+        for chain in CLASS_RE.findall(text):
+            key = " ".join(sorted(chain.split()))
+            if len(chain.split()) >= DUP_MIN_TOKENS:
+                chains[key] = chains.get(key, 0) + 1
         if not allowed(rel):
             counts["inline_scripts"] += len(SCRIPT_RE.findall(text))
             counts["inline_styles"] += len(STYLE_RE.findall(text))
+    counts["duplicate_class_chains"] = sum(1 for n in chains.values() if n >= DUP_MIN_COUNT)
     if verbose:
         for lines, rel in sorted(big, reverse=True):
             print(f"  {lines:5d}  {rel}")
+        for key, n in sorted(chains.items(), key=lambda kv: -kv[1])[:15]:
+            if n >= DUP_MIN_COUNT:
+                print(f"  {n:4d}x  {key[:100]}")
     return counts
 
 

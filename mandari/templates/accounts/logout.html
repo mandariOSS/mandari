@@ -25,10 +25,10 @@
         Ja, abmelden
     </button>
 
-    <a href="javascript:history.back()"
+    <button type="button" @click="window.history.back()"
        class="block w-full py-3 px-4 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium text-center transition-colors">
         Abbrechen
-    </a>
+    </button>
 </form>
 {% endblock %}
 

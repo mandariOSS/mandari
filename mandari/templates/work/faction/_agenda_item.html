@@ -12,7 +12,7 @@
         {# Move buttons #}
         {% if can_edit and not item.is_approval_item %}
         <div class="flex flex-col gap-0.5 flex-shrink-0" @click.stop>
-            <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+            <button type="button" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                     hx-vals='{"action": "move_item", "item_id": "{{ item.id }}", "direction": "up"}'
                     hx-target="#agenda-container"
                     hx-swap="innerHTML"
@@ -21,7 +21,7 @@
                     title="Nach oben">
                 <i data-lucide="chevron-up" class="w-4 h-4"></i>
             </button>
-            <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+            <button type="button" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                     hx-vals='{"action": "move_item", "item_id": "{{ item.id }}", "direction": "down"}'
                     hx-target="#agenda-container"
                     hx-swap="innerHTML"
@@ -114,11 +114,11 @@
                 </div>
                 {% if can_edit %}
                 <div class="flex items-center gap-1 flex-shrink-0" @click.stop>
-                    <button @click="$dispatch('open-edit-item', { id: '{{ child.id }}', title: '{{ child.title|escapejs }}', description: '{{ child.get_description_decrypted|default:""|escapejs }}' })"
+                    <button type="button" @click="$dispatch('open-edit-item', { id: '{{ child.id }}', title: '{{ child.title|escapejs }}', description: '{{ child.get_description_decrypted|default:""|escapejs }}' })"
                             class="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Bearbeiten">
                         <i data-lucide="edit-2" class="w-3 h-3"></i>
                     </button>
-                    <button @click="$dispatch('open-delete-item', { id: '{{ child.id }}', title: '{{ child.title|escapejs }}' })"
+                    <button type="button" @click="$dispatch('open-delete-item', { id: '{{ child.id }}', title: '{{ child.title|escapejs }}' })"
                             class="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Löschen">
                         <i data-lucide="trash-2" class="w-3 h-3"></i>
                     </button>
@@ -143,7 +143,7 @@
             </div>
             {% if can_edit or can_protocol or entry.created_by == membership and not meeting.protocol_approved %}
             <div class="flex items-center gap-1 flex-shrink-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100" @click.stop>
-                <button hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+                <button type="button" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
                         hx-vals='{"action": "delete_entry", "entry_id": "{{ entry.id }}"}'
                         hx-target="#agenda-container"
                         hx-swap="innerHTML"
@@ -202,22 +202,22 @@
         {# Item action buttons #}
         {% if can_edit and not item.is_approval_item %}
         <div class="px-4 py-3 border-t {% if is_internal %}border-amber-200 dark:border-amber-700{% else %}border-gray-200 dark:border-gray-700{% endif %} flex items-center justify-between" @click.stop>
-            <button @click="$dispatch('open-add-sub', { parent_id: '{{ item.id }}', visibility: '{% if is_internal %}internal{% else %}public{% endif %}' })"
+            <button type="button" @click="$dispatch('open-add-sub', { parent_id: '{{ item.id }}', visibility: '{% if is_internal %}internal{% else %}public{% endif %}' })"
                     class="px-3 py-1.5 text-xs text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg flex items-center gap-1.5">
                 <i data-lucide="plus" class="w-3 h-3"></i> Unterpunkt
             </button>
             <div class="flex gap-2">
-                <button @click="$dispatch('open-edit-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}', description: '{{ item.get_description_decrypted|default:""|escapejs }}' })"
+                <button type="button" @click="$dispatch('open-edit-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}', description: '{{ item.get_description_decrypted|default:""|escapejs }}' })"
                         class="px-3 py-1.5 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1.5">
                     <i data-lucide="edit" class="w-3 h-3"></i> Bearbeiten
                 </button>
                 {% if can_protocol %}
-                <button @click="$dispatch('open-decision', { item_id: '{{ item.id }}', title: '{{ item.title|escapejs }}' })"
+                <button type="button" @click="$dispatch('open-decision', { item_id: '{{ item.id }}', title: '{{ item.title|escapejs }}' })"
                         class="px-3 py-1.5 text-xs text-green-600 hover:bg-green-50 rounded-lg flex items-center gap-1.5">
                     <i data-lucide="vote" class="w-3 h-3"></i> Abstimmung
                 </button>
                 {% endif %}
-                <button @click="$dispatch('open-delete-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}' })"
+                <button type="button" @click="$dispatch('open-delete-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}' })"
                         class="px-3 py-1.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-1.5">
                     <i data-lucide="trash-2" class="w-3 h-3"></i> Löschen
                 </button>
@@ -226,7 +226,7 @@
         {% elif can_protocol and not item.is_approval_item %}
         {# Protokollphase nach Sitzungsende: Abstimmung bleibt möglich, auch wenn die TO nicht mehr bearbeitbar ist #}
         <div class="px-4 py-3 border-t {% if is_internal %}border-amber-200 dark:border-amber-700{% else %}border-gray-200 dark:border-gray-700{% endif %} flex items-center justify-end" @click.stop>
-            <button @click="$dispatch('open-decision', { item_id: '{{ item.id }}', title: '{{ item.title|escapejs }}' })"
+            <button type="button" @click="$dispatch('open-decision', { item_id: '{{ item.id }}', title: '{{ item.title|escapejs }}' })"
                     class="px-3 py-1.5 text-xs text-green-600 hover:bg-green-50 rounded-lg flex items-center gap-1.5">
                 <i data-lucide="vote" class="w-3 h-3"></i> Abstimmung
             </button>

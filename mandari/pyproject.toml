@@ -94,3 +94,14 @@ strict = true
 
 [tool.django-stubs]
 django_settings_module = "mandari.settings"
+
+[tool.djlint]
+# Template-Linting (Profil Django). Regeln, die der Frontend-Ratchet bzw. spätere Phasen abdecken,
+# sind bewusst ausgenommen: H021 Inline-Styles, H023 Entitäten, H014 Leerzeilen, H036 br-Abstände,
+# H005/H016/H030 (Seitenkopf-Regeln, treffen Partials fälschlich).
+profile = "django"
+max_line_length = 120
+ignore = "H005,H014,H016,H021,H023,H030,H036"
+custom_blocks = "partialdef"
+format_css = false
+format_js = false

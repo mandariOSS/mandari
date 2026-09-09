@@ -69,20 +69,18 @@
     </div>
 
     <!-- Navigation -->
-    <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center justify-between gap-4 mb-6">
         {% if previous_meeting %}
         <a href="{% url 'insight_core:public_protocol_detail' body_slug=body.slug meeting_id=previous_meeting.id %}"
            class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
             <i data-lucide="chevron-left" class="w-4 h-4"></i>
             Vorheriges Protokoll
         </a>
-        {% else %}
-        <div></div>
         {% endif %}
 
         {% if next_meeting %}
         <a href="{% url 'insight_core:public_protocol_detail' body_slug=body.slug meeting_id=next_meeting.id %}"
-           class="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+           class="ml-auto inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
             Nächstes Protokoll
             <i data-lucide="chevron-right" class="w-4 h-4"></i>
         </a>

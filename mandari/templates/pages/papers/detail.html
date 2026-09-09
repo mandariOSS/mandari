@@ -92,7 +92,7 @@
                                      clearInterval(interval);
                                  }
                              })">
-                            <button hx-get="{% url 'insight_core:insight:paper_summary' paper.id %}"
+                            <button type="button" hx-get="{% url 'insight_core:insight:paper_summary' paper.id %}"
                                     hx-target="#paper-summary"
                                     hx-swap="innerHTML"
                                     hx-request="timeout:300000"
@@ -145,14 +145,14 @@
                  x-data="{ activeTab: 'files' }">
                 <!-- Tab Navigation -->
                 <div class="flex border-b border-gray-200 dark:border-gray-700">
-                    <button @click="activeTab = 'files'"
+                    <button type="button" @click="activeTab = 'files'"
                             :class="activeTab === 'files' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'"
                             class="px-6 py-4 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2">
                         <i data-lucide="files" class="w-4 h-4"></i>
                         Dokumente ({{ files|length }})
                     </button>
                     {% if files_with_text %}
-                    <button @click="activeTab = 'text'"
+                    <button type="button" @click="activeTab = 'text'"
                             :class="activeTab === 'text' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'"
                             class="px-6 py-4 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2">
                         <i data-lucide="file-text" class="w-4 h-4"></i>
@@ -236,7 +236,7 @@
                                     </p>
                                 </div>
                             </div>
-                            <button @click="expanded = !expanded"
+                            <button type="button" @click="expanded = !expanded"
                                     class="text-sm text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1">
                                 <span x-text="expanded ? 'Einklappen' : 'Anzeigen'"></span>
                                 <i data-lucide="chevron-down" class="w-4 h-4 transition-transform" :class="expanded && 'rotate-180'"></i>

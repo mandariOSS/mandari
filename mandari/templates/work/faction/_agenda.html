@@ -67,13 +67,13 @@
     {# Add TOP buttons #}
     {% if can_edit %}
     <div class="p-4 border-t border-gray-200 dark:border-gray-700 grid grid-cols-2 gap-3">
-        <button @click="$dispatch('open-add-item', { visibility: 'public' })"
+        <button type="button" @click="$dispatch('open-add-item', { visibility: 'public' })"
                 class="py-3 text-sm font-medium text-primary-600 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 rounded-lg flex items-center justify-center gap-2">
             <i data-lucide="plus" class="w-4 h-4"></i>
             Öffentlicher TOP
         </button>
         {% if can_view_internal %}
-        <button @click="$dispatch('open-add-item', { visibility: 'internal' })"
+        <button type="button" @click="$dispatch('open-add-item', { visibility: 'internal' })"
                 class="py-3 text-sm font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 rounded-lg flex items-center justify-center gap-2">
             <i data-lucide="plus" class="w-4 h-4"></i>
             Nicht-öffentlicher TOP
@@ -99,7 +99,7 @@
             </h4>
             <p class="text-xs text-gray-500 mt-0.5">Als sachkundige/r Bürger*in können Sie Themen zur Beratung vorschlagen.</p>
         </div>
-        <button @click="$dispatch('open-proposal')"
+        <button type="button" @click="$dispatch('open-proposal')"
                 class="px-4 py-2 text-sm font-medium text-white bg-primary-600 shadow-sm rounded-lg hover:bg-primary-700 flex items-center gap-2">
             <i data-lucide="plus" class="w-4 h-4"></i>
             Vorschlagen

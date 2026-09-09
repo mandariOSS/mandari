@@ -262,7 +262,7 @@
         <!-- Top bar (mobile menu + dark mode) -->
         <div class="sticky top-0 z-30 bg-[#faf9f7]/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 lg:px-8"
             style="height:52px;">
-            <button @click="sidebarOpen=true" class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" aria-label="Menü öffnen">
+            <button type="button" @click="sidebarOpen=true" class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" aria-label="Menü öffnen">
                 <i data-lucide="menu" class="w-5 h-5 text-gray-600 dark:text-gray-400"></i>
             </button>
             <div class="lg:hidden text-sm font-bold text-gray-900 dark:text-white truncate">
@@ -270,7 +270,7 @@
             </div>
             <div class="hidden lg:block"></div>
             <!-- Dark mode toggle -->
-            <button @click="darkMode=!darkMode"
+            <button type="button" @click="darkMode=!darkMode"
                 class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 :aria-label="darkMode ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'"
                 :aria-pressed="darkMode.toString()">
