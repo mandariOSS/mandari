@@ -223,11 +223,12 @@ jobs:
         with:
           enable-cache: true
       - name: Abhängigkeiten
-        run: cd ingestor && uv sync --frozen
+        run: cd ingestor && uv sync --frozen --extra dev
       - name: pytest
         run: cd ingestor && uv run pytest -q
       - name: mypy (Ingestor ist bereits strikt typisiert)
-        run: cd ingestor && uv run --with mypy mypy src --ignore-missing-imports || true
+        # Informativ, bis die Allowlist steht (Issue zu mypy im Epic Code-Qualität)
+        run: cd ingestor && uv run mypy src --ignore-missing-imports || true
 
   frontend-gates:
     name: Frontend-Qualitätsgates
