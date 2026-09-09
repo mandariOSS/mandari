@@ -32,3 +32,6 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 ELASTICSEARCH_AUTO_INDEX = False
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # schnelle Hashes nur im Test
 TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}}
+
+# Tests brauchen kein gebautes Manifest: Dev-URLs erzeugen, ohne Vite-Server zu benötigen
+DJANGO_VITE = {"default": {**DJANGO_VITE["default"], "dev_mode": True}}  # noqa: F405

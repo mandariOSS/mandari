@@ -1,0 +1,5 @@
+# Frontend-Quellen immer mit LF (Biome-Formatter, CI auf Linux)
+mandari/frontend/**/*.ts text eol=lf
+mandari/frontend/**/*.mjs text eol=lf
+mandari/*.ts text eol=lf
+mandari/biome.json text eol=lf

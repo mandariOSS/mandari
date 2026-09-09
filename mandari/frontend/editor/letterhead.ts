@@ -102,32 +102,23 @@ export async function renderLetterhead(options: LetterheadOptions): Promise<() =
 }
 
 /**
- * Dynamically load PDF.js library.
- * Uses a script tag approach to avoid bundling the large PDF.js library.
+ * PDF.js bei Bedarf laden (eigener Vite-Chunk, nur auf Editor-Seiten mit Briefkopf-PDF).
+ * Der Worker kommt als gehashte Datei aus dem Manifest.
  */
-async function loadPdfJs(): Promise<any> {
-  // Check if already loaded
-  if ((window as any).pdfjsLib) {
-    return (window as any).pdfjsLib
-  }
+type PdfJsModule = typeof import('pdfjs-dist')
+let pdfjsPromise: Promise<PdfJsModule | null> | null = null
 
-  return new Promise((resolve) => {
-    const script = document.createElement('script')
-    script.src = '/static/vendor/pdfjs/pdf.min.mjs'
-    script.type = 'module'
-
-    // For ESM module, we need a different approach
-    // Use dynamic import instead
-    // @ts-expect-error Laufzeitpfad, wird nicht gebündelt
-    import(/* webpackIgnore: true */ '/static/vendor/pdfjs/pdf.min.mjs')
-      .then((pdfjsLib) => {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/vendor/pdfjs/pdf.worker.min.mjs'
-        ;(window as any).pdfjsLib = pdfjsLib
-        resolve(pdfjsLib)
+function loadPdfJs(): Promise<PdfJsModule | null> {
+  if (!pdfjsPromise) {
+    pdfjsPromise = Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')])
+      .then(([pdfjsLib, worker]) => {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default
+        return pdfjsLib
       })
       .catch((err) => {
-        console.warn('Failed to load PDF.js:', err)
-        resolve(null)
+        console.warn('PDF.js konnte nicht geladen werden:', err)
+        return null
       })
-  })
+  }
+  return pdfjsPromise
 }

@@ -3,11 +3,11 @@
 Reiter (WAI-ARIA Tabs, automatische Aktivierung, Pfeiltasten).
   <c-ui.tabs default="allgemein">
       <c-slot name="list">
-          <c-ui.tab id="allgemein" icon="settings">Allgemein</c-ui.tab>
-          <c-ui.tab id="rechte">Rechte</c-ui.tab>
+          <c-ui.tab name="allgemein" icon="settings">Allgemein</c-ui.tab>
+          <c-ui.tab name="rechte">Rechte</c-ui.tab>
       </c-slot>
-      <c-ui.tab-panel id="allgemein">…</c-ui.tab-panel>
-      <c-ui.tab-panel id="rechte">…</c-ui.tab-panel>
+      <c-ui.tab-panel name="allgemein">…</c-ui.tab-panel>
+      <c-ui.tab-panel name="rechte">…</c-ui.tab-panel>
   </c-ui.tabs>
 Der aktive Reiter liegt in der Alpine-Variable `tab` und kann von außen gesetzt werden (`x-init="tab = 'rechte'"`).
 {% endcomment %}

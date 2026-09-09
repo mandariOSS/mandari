@@ -7,7 +7,7 @@
 
 import { Extension } from '@tiptap/core'
 import Suggestion from '@tiptap/suggestion'
-import type { SuggestionOptions, SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion'
+import type { SuggestionKeyDownProps, SuggestionOptions, SuggestionProps } from '@tiptap/suggestion'
 
 interface SlashCommandItem {
   title: string
@@ -249,9 +249,7 @@ export const SlashCommands = Extension.create({
         items: ({ query }: { query: string }) => {
           const q = query.toLowerCase()
           return getCommandItems().filter(
-            (item) =>
-              item.title.toLowerCase().includes(q) ||
-              item.description.toLowerCase().includes(q)
+            (item) => item.title.toLowerCase().includes(q) || item.description.toLowerCase().includes(q),
           )
         },
         render: createPopupRenderer,

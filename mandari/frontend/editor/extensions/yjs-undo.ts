@@ -1,5 +1,5 @@
 import { Extension } from '@tiptap/core'
-import { undo, redo } from '@tiptap/y-tiptap'
+import { redo, undo } from '@tiptap/y-tiptap'
 
 export const YjsUndo = Extension.create({
   name: 'yjsUndo',

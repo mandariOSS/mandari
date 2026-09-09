@@ -598,7 +598,7 @@ function securitySettings() {
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' },
                     body: 'action=setup_2fa'
                 });
-                if (res.ok) { this.setupData = await res.json(); this.$nextTick(() => lucide.createIcons()); }
+                if (res.ok) { this.setupData = await res.json(); }
             } catch (err) { console.error('2FA setup error:', err); showToast('Fehler beim Einrichten von 2FA', 'error'); }
         }
     }

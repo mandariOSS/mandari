@@ -10,7 +10,7 @@
 
     <!-- DSGVO Consent Card -->
     <template x-if="!hasConsent">
-        <div class="max-w-2xl mx-auto w-full fade-up" x-init="$nextTick(() => lucide.createIcons())">
+        <div class="max-w-2xl mx-auto w-full fade-up">
             <!-- Header -->
             <div class="mb-8 text-center">
                 <div class="relative w-16 h-16 mx-auto mb-5">
@@ -66,7 +66,7 @@
 
     <!-- Chat Interface -->
     <template x-if="hasConsent">
-        <div class="flex flex-col flex-1 min-h-0 fade-up" x-init="$nextTick(() => lucide.createIcons())">
+        <div class="flex flex-col flex-1 min-h-0 fade-up">
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm flex flex-col flex-1 min-h-0">
                 <!-- Chat Header -->
                 <div class="px-6 lg:px-8 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center gap-4 flex-shrink-0">

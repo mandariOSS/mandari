@@ -90,6 +90,7 @@ django==6.0.8
     #   django-redis
     #   django-safemigrate
     #   django-unfold
+    #   django-vite
 django-cotton==2.7.2
     # via -r requirements.txt
 django-htmx==1.29.0
@@ -99,6 +100,8 @@ django-redis==7.0.0
 django-safemigrate==6.0
     # via -r requirements.txt
 django-unfold==0.105.0
+    # via -r requirements.txt
+django-vite==3.1.0
     # via -r requirements.txt
 elastic-transport==8.19.0
     # via elasticsearch

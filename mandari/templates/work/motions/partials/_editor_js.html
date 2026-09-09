@@ -268,7 +268,6 @@ function documentEditor() {
             });
 
             this.$nextTick(() => {
-                lucide.createIcons();
             });
         },
 
@@ -332,7 +331,6 @@ function documentEditor() {
                     },
                     onPresenceChange: (users) => {
                         _this.collabUsers = users;
-                        _this.$nextTick(() => lucide.createIcons());
                     },
                     onStatusChange: (status) => {
                         _this.collabStatus = status;
@@ -501,7 +499,6 @@ function documentEditor() {
             this._selectionTo = to;
             this.commentPopupVisible = true;
 
-            this.$nextTick(() => lucide.createIcons());
         },
 
         expandCommentPopup() {
@@ -509,7 +506,6 @@ function documentEditor() {
             this.$nextTick(() => {
                 const input = this.$refs.inlineCommentInput;
                 if (input) input.focus();
-                lucide.createIcons();
             });
         },
 
@@ -558,7 +554,6 @@ function documentEditor() {
             // Switch to comments tab and scroll sidebar to this comment
             this.sidebarTab = 'comments';
             this.$nextTick(() => {
-                lucide.createIcons();
                 const sidebarComment = document.getElementById(`comment-sidebar-${comment.id}`);
                 if (sidebarComment) {
                     sidebarComment.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -603,7 +598,6 @@ function documentEditor() {
                         created_at: data.comment.created_at,
                     });
                     this.markReplyText = '';
-                    this.$nextTick(() => lucide.createIcons());
                 } else {
                     showToast('Fehler beim Speichern der Antwort.', 'error');
                 }
@@ -766,7 +760,6 @@ function documentEditor() {
                 const currentSidebar = document.querySelector(selector);
                 if (nextSidebar && currentSidebar) {
                     currentSidebar.innerHTML = nextSidebar.innerHTML;
-                    this.$nextTick(() => lucide.createIcons());
                 }
             } catch (error) {
                 console.warn('Could not refresh comments sidebar:', error);
@@ -807,7 +800,6 @@ function documentEditor() {
                     this.$refs.searchInput.focus();
                     this.$refs.searchInput.select();
                 }
-                lucide.createIcons();
             });
             if (this.searchTerm) this.runSearch();
         },
@@ -896,7 +888,6 @@ function documentEditor() {
             this.linkPopupTop = rect.bottom + 6;
             this.linkPopupLeft = Math.max(8, rect.left);
             this.linkPopupVisible = true;
-            this.$nextTick(() => lucide.createIcons());
         },
 
         editLinkFromPopup() {
@@ -1348,7 +1339,6 @@ function documentEditor() {
             this.$nextTick(() => {
                 const container = this.$refs.chatMessages;
                 if (container) container.scrollTop = container.scrollHeight;
-                lucide.createIcons();
             });
         },
 
@@ -1358,7 +1348,6 @@ function documentEditor() {
                 this.aiPreviewContent = content;
                 this.previewMode = 'suggested';
                 this.aiPreviewActive = true;
-                this.$nextTick(() => lucide.createIcons());
             }
         },
 
@@ -1374,7 +1363,6 @@ function documentEditor() {
                 this.setContent(this.aiPreviewContent);
                 this.chatMessages.push({ role: 'ai', content: 'Änderungen wurden in den Editor übernommen.' });
                 this.closeAiPreview();
-                this.$nextTick(() => lucide.createIcons());
             }
         },
 
@@ -1397,7 +1385,6 @@ function documentEditor() {
             }
 
             this.revisionsLoading = false;
-            this.$nextTick(() => lucide.createIcons());
         },
 
         async viewRevision(rev) {
@@ -1426,7 +1413,6 @@ function documentEditor() {
             }
 
             this.revisionLoading = false;
-            this.$nextTick(() => lucide.createIcons());
         },
 
         exitHistoryMode() {
@@ -1560,7 +1546,6 @@ function documentEditor() {
                     const wrapper = document.getElementById('checklist-panel-wrapper');
                     if (wrapper) {
                         wrapper.innerHTML = data.html;
-                        if (window.lucide) window.lucide.createIcons();
                     }
                 } else {
                     showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');

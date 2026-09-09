@@ -69,9 +69,7 @@ export const CommentMark = Mark.create<CommentMarkOptions>({
     return [
       'span',
       mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
-        class: resolved
-          ? 'comment-mark comment-mark--resolved'
-          : 'comment-mark',
+        class: resolved ? 'comment-mark comment-mark--resolved' : 'comment-mark',
       }),
       0,
     ]
@@ -92,10 +90,7 @@ export const CommentMark = Mark.create<CommentMarkOptions>({
 
           doc.descendants((node, pos) => {
             node.marks.forEach((mark) => {
-              if (
-                mark.type.name === this.name &&
-                mark.attrs.commentId === commentId
-              ) {
+              if (mark.type.name === this.name && mark.attrs.commentId === commentId) {
                 if (dispatch) {
                   tr.removeMark(pos, pos + node.nodeSize, mark)
                 }

@@ -68,8 +68,7 @@ function extractListMarker(content: string): { content: string; marker: string }
   scanner.lastIndex = start + openMatch[0].length
   let depth = 1
   let end = content.length
-  let m: RegExpExecArray | null
-  while ((m = scanner.exec(content)) !== null) {
+  for (let m = scanner.exec(content); m !== null; m = scanner.exec(content)) {
     depth += m[0][1] === '/' ? -1 : 1
     if (depth === 0) {
       end = m.index + m[0].length
@@ -136,8 +135,7 @@ function convertWordLists(html: string): string {
     pending = []
   }
 
-  let match: RegExpExecArray | null
-  while ((match = pRegex.exec(html)) !== null) {
+  for (let match = pRegex.exec(html); match !== null; match = pRegex.exec(html)) {
     const between = html.slice(lastIndex, match.index)
     if (between.trim()) {
       // Echter Inhalt zwischen Absätzen: offene Liste abschließen
@@ -162,7 +160,7 @@ function convertWordLists(html: string): string {
     }
 
     const levelMatch = /mso-list\s*:[^;"']*\blevel(\d+)/i.exec(attrs)
-    const level = levelMatch ? parseInt(levelMatch[1], 10) : 1
+    const level = levelMatch ? Number.parseInt(levelMatch[1], 10) : 1
     const { content, marker } = extractListMarker(inner)
     pending.push({
       level,
@@ -189,13 +187,13 @@ function filterStyleAttributes(html: string): string {
         const value = decl.slice(colon + 1).trim()
         if (!ALLOWED_STYLE_PROPS.has(prop) || !value) continue
         const noop = NOOP_STYLE_VALUES[prop]
-        if (noop && noop.has(value.toLowerCase())) continue
+        if (noop?.has(value.toLowerCase())) continue
         // Word-Sonderwerte wie "windowtext" überspringen
         if (prop === 'color' && value.toLowerCase() === 'windowtext') continue
         kept.push(`${prop}: ${value}`)
       }
       return kept.length ? ` style="${kept.join('; ')}"` : ''
-    }
+    },
   )
 }
 
@@ -209,12 +207,13 @@ function convertAlignAttributes(html: string): string {
         // vorhandenes style-Attribut ergänzen
         const merged = rest.replace(
           /style\s*=\s*(?:"([^"]*)"|'([^']*)')/i,
-          (_s, d: string | undefined, s2: string | undefined) => `style="${(d ?? s2 ?? '').replace(/;?\s*$/, '')};text-align:${align}"`
+          (_s, d: string | undefined, s2: string | undefined) =>
+            `style="${(d ?? s2 ?? '').replace(/;?\s*$/, '')};text-align:${align}"`,
         )
         return `<${tag}${merged}>`
       }
       return `<${tag}${rest} style="text-align:${align}">`
-    }
+    },
   )
 }
 
@@ -306,9 +305,7 @@ export function cleanPastedHtml(html: string): string {
   out = convertWordLists(out)
 
   // <o:p>-Elemente (samt Inhalt, meist &nbsp;) und andere Namespace-Tags entfernen
-  out = out
-    .replace(/<o:p\b[^>]*>[\s\S]*?<\/o:p\s*>/gi, '')
-    .replace(/<\/?(?:o|w|m|v|st1|st2)\s*:[^>]*>/gi, '')
+  out = out.replace(/<o:p\b[^>]*>[\s\S]*?<\/o:p\s*>/gi, '').replace(/<\/?(?:o|w|m|v|st1|st2)\s*:[^>]*>/gi, '')
 
   // align-Attribute konservieren, dann Styles filtern und Rausch-Attribute entfernen
   out = convertAlignAttributes(out)

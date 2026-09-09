@@ -20,14 +20,10 @@
     <!-- TailwindCSS -->
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
 
-    <!-- HTMX -->
-    <script src="{% static 'vendor/htmx/htmx.min.js' %}"></script>
-
-    <!-- Alpine.js -->
-    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
-
-    <!-- Lucide Icons -->
-    <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <!-- Frontend-Bundle (HTMX, Alpine, Icons, Toasts) über Vite-Manifest -->
+    {% load django_vite %}{% vite_hmr_client %}
+    {% vite_asset 'frontend/js/main.ts' %}
 
     <style>
         [x-cloak] { display: none !important; }
@@ -479,7 +475,7 @@
     </div>
 
     <!-- Toast Notifications (Django messages) -->
-    <div x-data="toastManager()" @show-toast.window="addToast($event.detail.message, $event.detail.type)" class="fixed top-4 right-4 z-[100] space-y-3 pointer-events-none">
+    <div x-data="toastManager" @show-toast.window="addToast($event.detail.message, $event.detail.type)" class="fixed top-4 right-4 z-[100] space-y-3 pointer-events-none">
         <template x-for="toast in toasts" :key="toast.id">
             <div x-show="toast.visible"
                  x-transition:enter="transition ease-out duration-300"
@@ -530,68 +526,7 @@
         </template>
     </div>
 
-    <!-- HTMX Configuration -->
-    <script>
-        document.body.addEventListener('htmx:configRequest', (event) => {
-            event.detail.headers['X-CSRFToken'] = '{{ csrf_token }}';
-        });
-
-        // Initialize Lucide icons
-        lucide.createIcons();
-
-        // Re-initialize icons after HTMX swap
-        document.body.addEventListener('htmx:afterSwap', () => {
-            lucide.createIcons();
-        });
-
-        // Toast Manager
-        function toastManager() {
-            return {
-                toasts: [],
-                nextId: 1,
-
-                init() {
-                    {% if messages %}
-                    {% for message in messages %}
-                    this.addToast('{{ message|escapejs }}', '{{ message.tags|default:"info" }}');
-                    {% endfor %}
-                    {% endif %}
-                    this.$nextTick(() => lucide.createIcons());
-                },
-
-                addToast(message, type = 'info') {
-                    const typeMap = {
-                        'success': 'success',
-                        'error': 'error',
-                        'danger': 'error',
-                        'warning': 'warning',
-                        'info': 'info',
-                        'debug': 'info'
-                    };
-                    type = typeMap[type] || 'info';
-
-                    const id = this.nextId++;
-                    this.toasts.push({ id, message, type, visible: true });
-                    this.$nextTick(() => lucide.createIcons());
-                    setTimeout(() => this.removeToast(id), 5000);
-                },
-
-                removeToast(id) {
-                    const toast = this.toasts.find(t => t.id === id);
-                    if (toast) {
-                        toast.visible = false;
-                        setTimeout(() => {
-                            this.toasts = this.toasts.filter(t => t.id !== id);
-                        }, 300);
-                    }
-                }
-            }
-        }
-
-        window.showToast = function(message, type = 'info') {
-            window.dispatchEvent(new CustomEvent('show-toast', { detail: { message, type } }));
-        };
-    </script>
+    <script type="application/json" id="django-messages">[{% for message in messages %}{"message": "{{ message|escapejs }}", "tags": "{{ message.tags|default:'info'|escapejs }}"}{% if not forloop.last %},{% endif %}{% endfor %}]</script>
 
     {% block extra_scripts %}{% endblock %}
 </body>

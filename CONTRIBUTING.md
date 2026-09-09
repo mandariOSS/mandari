@@ -55,6 +55,24 @@ uv run python manage.py migrate
 uv run python manage.py runserver
 ```
 
+### Frontend (Vite)
+
+```bash
+cd mandari
+npm ci
+npm run build          # Tailwind-CSS + Vite-Bundles nach static/dist/ (einmalig oder vor DEBUG=False)
+npm run watch          # Entwicklung: Tailwind-Watch + Vite-Dev-Server mit HMR
+```
+
+Mit laufendem Dev-Server `DJANGO_VITE_DEV_MODE=1` setzen, damit Django die Module vom Vite-Server lädt.
+Ohne Dev-Server reicht `npm run build`; Django nutzt dann das Manifest.
+
+```bash
+npm run typecheck      # tsc --noEmit
+npm run lint           # Biome (Lint + Format)
+npm run lint:fix
+```
+
 ### Tests ausführen
 
 ```bash

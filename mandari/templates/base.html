@@ -49,14 +49,10 @@
     <!-- TailwindCSS (lokal kompiliert, DSGVO-konform) -->
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
 
-    <!-- HTMX (lokal) -->
-    <script src="{% static 'vendor/htmx/htmx.min.js' %}"></script>
-
-    <!-- Alpine.js (lokal) -->
-    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
-
-    <!-- Lucide Icons (lokal) -->
-    <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <!-- Frontend-Bundle (HTMX, Alpine, Icons) über Vite-Manifest -->
+    {% load django_vite %}{% vite_hmr_client %}
+    {% vite_asset 'frontend/js/main.ts' %}
 
     <!-- Custom Styles -->
     <style>
@@ -166,33 +162,6 @@
     <!-- Chatbot Popup (nur auf bestimmten Seiten) -->
     {% block chatbot %}{% endblock %}
 
-    <!-- HTMX Configuration -->
-    <script>
-        document.body.addEventListener('htmx:configRequest', (event) => {
-            // CSRF Token für POST requests
-            event.detail.headers['X-CSRFToken'] = '{{ csrf_token }}';
-        });
-
-        // Initialize Lucide icons
-        lucide.createIcons();
-
-        // Re-initialize icons after HTMX swap
-        document.body.addEventListener('htmx:afterSwap', () => {
-            lucide.createIcons();
-        });
-
-        // Announce dynamic content changes for screen readers
-        document.body.addEventListener('htmx:afterSwap', (event) => {
-            const announcement = document.createElement('div');
-            announcement.setAttribute('role', 'status');
-            announcement.setAttribute('aria-live', 'polite');
-            announcement.setAttribute('aria-atomic', 'true');
-            announcement.className = 'sr-only';
-            announcement.textContent = 'Inhalt wurde aktualisiert';
-            document.body.appendChild(announcement);
-            setTimeout(() => announcement.remove(), 1000);
-        });
-    </script>
 
     {% block extra_scripts %}{% endblock %}
 </body>

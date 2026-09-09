@@ -15,9 +15,6 @@ const OFFLINE_URL = '{% url "pwa_offline" %}';
 // Kern-Assets fürs App-Shell-Gefühl (gehashte Namen => sicher cachebar).
 const PRECACHE_STATIC = [
     '{% static "css/styles.css" %}',
-    '{% static "vendor/alpine/alpine.min.js" %}',
-    '{% static "vendor/htmx/htmx.min.js" %}',
-    '{% static "vendor/lucide/lucide.min.js" %}',
     '{% static "brand/icon-192.png" %}',
     '{% static "brand/favicon.svg" %}',
 ];

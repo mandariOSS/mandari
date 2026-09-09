@@ -36,16 +36,16 @@ WORKDIR /build
 COPY mandari/package.json mandari/package-lock.json* ./
 RUN npm ci --ignore-scripts 2>/dev/null || npm install
 
-# Tailwind + esbuild sources
-COPY mandari/tailwind.config.js ./
+# Tailwind + Vite sources
+COPY mandari/tailwind.config.js mandari/vite.config.ts mandari/tsconfig.json ./
 COPY mandari/static/ ./static/
 COPY mandari/templates/ ./templates/
 COPY mandari/frontend/ ./frontend/
 
-# Build CSS + Editor bundle
+# Build CSS (Tailwind) + JS-Bundles (Vite, Manifest in static/dist/)
+# Build-Fehler muessen den Image-Build abbrechen (kein stilles Ausliefern alter Bundles)
 RUN npx tailwindcss -i ./static/css/input.css -o ./static/css/styles.css --minify
-# Build-Fehler des Editor-Bundles muessen den Image-Build abbrechen (kein stilles Ausliefern eines alten Bundles)
-RUN npx esbuild frontend/editor/index.ts --bundle --outfile=static/js/editor.bundle.js --format=iife --global-name=MandariEditor --minify --target=es2020
+RUN npx vite build
 
 # =============================================================================
 # Stage 3: Finales Runtime-Image (kein build-essential, kein Node.js)
@@ -94,7 +94,7 @@ COPY --chown=mandari:mandari ingestor/ /ingestor/
 
 # Frontend assets aus Node-Builder-Stage (überschreibt Source-Versionen)
 COPY --from=node-builder /build/static/css/styles.css ./static/css/styles.css
-COPY --from=node-builder /build/static/js/editor.bundle.js ./static/js/editor.bundle.js
+COPY --from=node-builder /build/static/dist/ ./static/dist/
 
 # Verzeichnisse + Berechtigungen
 RUN mkdir -p /app/staticfiles /app/media && \

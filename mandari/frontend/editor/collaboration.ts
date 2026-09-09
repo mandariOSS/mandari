@@ -5,14 +5,14 @@
  * transport that communicates with the Django Channels consumer.
  */
 
-import * as Y from 'yjs'
-import * as awarenessProtocol from 'y-protocols/awareness'
-import * as syncProtocol from 'y-protocols/sync'
-import * as encoding from 'lib0/encoding'
-import * as decoding from 'lib0/decoding'
 import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
+import * as decoding from 'lib0/decoding'
+import * as encoding from 'lib0/encoding'
 import { IndexeddbPersistence } from 'y-indexeddb'
+import * as awarenessProtocol from 'y-protocols/awareness'
+import * as syncProtocol from 'y-protocols/sync'
+import * as Y from 'yjs'
 
 export interface CollabOptions {
   /** WebSocket URL, e.g. ws://localhost:8000/ws/documents/<id>/ */
@@ -104,7 +104,7 @@ class DjangoYjsProvider {
     onStatusChange?: (status: CollabStatus) => void,
     onInitialState?: (hasState: boolean) => void,
     getHtml?: () => string,
-    onReloadRequired?: () => void
+    onReloadRequired?: () => void,
   ) {
     this.wsUrl = wsUrl
     this.ydoc = ydoc
@@ -156,10 +156,7 @@ class DjangoYjsProvider {
         this._sendBinary(encoding.toUint8Array(encoder))
 
         // Send awareness state
-        const awarenessUpdate = awarenessProtocol.encodeAwarenessUpdate(
-          this.awareness,
-          [this.ydoc.clientID]
-        )
+        const awarenessUpdate = awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.ydoc.clientID])
         const aEncoder = encoding.createEncoder()
         encoding.writeVarUint(aEncoder, MSG_AWARENESS)
         encoding.writeVarUint8Array(aEncoder, awarenessUpdate)
@@ -239,12 +236,7 @@ class DjangoYjsProvider {
       if (msgType === MSG_SYNC) {
         const encoder = encoding.createEncoder()
         encoding.writeVarUint(encoder, MSG_SYNC)
-        syncProtocol.readSyncMessage(
-          decoder,
-          encoder,
-          this.ydoc,
-          this
-        )
+        syncProtocol.readSyncMessage(decoder, encoder, this.ydoc, this)
         if (encoding.length(encoder) > 1) {
           this._sendBinary(encoding.toUint8Array(encoder))
         }
@@ -267,7 +259,7 @@ class DjangoYjsProvider {
 
   private _onAwarenessUpdate = (
     { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
-    origin: any
+    origin: any,
   ) => {
     if (origin === this) return
     const changedClients = added.concat(updated).concat(removed)
@@ -281,10 +273,12 @@ class DjangoYjsProvider {
   private _sendBinary(data: Uint8Array) {
     if (this.ws && this.connected && this.ws.readyState === WebSocket.OPEN) {
       // Send as base64 JSON (Django consumer expects JSON)
-      this.ws.send(JSON.stringify({
-        type: 'yjs_sync',
-        data: this._uint8ToB64(data),
-      }))
+      this.ws.send(
+        JSON.stringify({
+          type: 'yjs_sync',
+          data: this._uint8ToB64(data),
+        }),
+      )
     }
   }
 
@@ -333,7 +327,7 @@ class DjangoYjsProvider {
   private _scheduleReconnect() {
     if (this.destroyed) return
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
-    const base = Math.min(30000, 1000 * Math.pow(2, this.reconnectAttempts))
+    const base = Math.min(30000, 1000 * 2 ** this.reconnectAttempts)
     const jitter = Math.floor(Math.random() * 500)
     const delay = base + jitter
     this.reconnectAttempts += 1
@@ -361,7 +355,6 @@ class DjangoYjsProvider {
     }
   }
 }
-
 
 /**
  * Initialize real-time collaboration for a TipTap editor.
@@ -415,7 +408,7 @@ export function initCollaboration(options: CollabOptions): CollabResult {
     options.onStatusChange,
     options.onInitialState,
     options.getHtml,
-    options.onReloadRequired
+    options.onReloadRequired,
   )
 
   // Build TipTap extensions

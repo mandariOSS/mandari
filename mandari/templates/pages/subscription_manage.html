@@ -174,7 +174,6 @@ function manageApp() {
             try {
                 const resp = await fetch(`/insight/nachbarschaft/autocomplete/?q=${encodeURIComponent(this.neighborhoodName)}`);
                 this.suggestions = await resp.json();
-                this.$nextTick(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); });
             } catch (e) {
                 this.suggestions = [];
             }
@@ -185,7 +184,6 @@ function manageApp() {
             this.neighborhoodLat = s.lat;
             this.neighborhoodLon = s.lon;
             this.suggestions = [];
-            this.$nextTick(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); });
         },
 
         clearNeighborhood() {

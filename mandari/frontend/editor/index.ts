@@ -5,28 +5,28 @@
  */
 
 import { Editor } from '@tiptap/core'
-import StarterKit from '@tiptap/starter-kit'
+import Highlight from '@tiptap/extension-highlight'
+import Image from '@tiptap/extension-image'
+import Link from '@tiptap/extension-link'
+import { TaskItem, TaskList } from '@tiptap/extension-list'
+import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table'
+import TextAlign from '@tiptap/extension-text-align'
+import { Color, TextStyle } from '@tiptap/extension-text-style'
 import Underline from '@tiptap/extension-underline'
 import { CharacterCount, Placeholder } from '@tiptap/extensions'
-import Link from '@tiptap/extension-link'
-import TextAlign from '@tiptap/extension-text-align'
-import Highlight from '@tiptap/extension-highlight'
-import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table'
-import { TaskItem, TaskList } from '@tiptap/extension-list'
-import { Color, TextStyle } from '@tiptap/extension-text-style'
-import Image from '@tiptap/extension-image'
-import { CommentMark } from './extensions/comment-mark'
-import { Indent } from './extensions/indent'
-import { PageBreaks } from './extensions/page-breaks'
-import { PageBreakNode } from './extensions/page-break-node'
-import { YjsUndo } from './extensions/yjs-undo'
-import { SlashCommands } from './extensions/slash-commands'
-import { FindReplace } from './extensions/find-replace'
-import { cleanPastedHtml } from './paste-cleanup'
-import { renderDiff } from './diff'
-import { renderLetterhead } from './letterhead'
+import StarterKit from '@tiptap/starter-kit'
 import { initCollaboration } from './collaboration'
-import type { CollabOptions, CollabUser, CollabResult } from './collaboration'
+import type { CollabOptions, CollabResult, CollabUser } from './collaboration'
+import { renderDiff } from './diff'
+import { CommentMark } from './extensions/comment-mark'
+import { FindReplace } from './extensions/find-replace'
+import { Indent } from './extensions/indent'
+import { PageBreakNode } from './extensions/page-break-node'
+import { PageBreaks } from './extensions/page-breaks'
+import { SlashCommands } from './extensions/slash-commands'
+import { YjsUndo } from './extensions/yjs-undo'
+import { renderLetterhead } from './letterhead'
+import { cleanPastedHtml } from './paste-cleanup'
 
 export interface EditorOptions {
   element: HTMLElement
@@ -212,11 +212,13 @@ export function createEditor(options: EditorOptions): Editor {
  *
  * Returns both the editor and a collab object with destroy() for cleanup.
  */
-export function createCollaborativeEditor(
-  options: CollaborativeEditorOptions
-): { editor: Editor; collab: CollabResult } {
+export function createCollaborativeEditor(options: CollaborativeEditorOptions): {
+  editor: Editor
+  collab: CollabResult
+} {
   // editor is declared here so the onInitialState closure can reference it.
   // By the time the async callback fires, editor will be assigned.
+  // biome-ignore lint/style/useConst: wird erst nach initCollaboration() zugewiesen, Closure braucht die Bindung
   let editor: Editor
 
   const collab = initCollaboration({
@@ -294,3 +296,24 @@ export {
   initCollaboration,
 }
 export type { CollabOptions, CollabUser, CollabResult }
+
+// Globales Objekt für die Alpine-Komponenten in den Templates (ES-Modul via Vite)
+const MandariEditor = {
+  createEditor,
+  createCollaborativeEditor,
+  Editor,
+  getFormatState,
+  CommentMark,
+  FindReplace,
+  PageBreakNode,
+  cleanPastedHtml,
+  renderDiff,
+  renderLetterhead,
+  initCollaboration,
+}
+declare global {
+  interface Window {
+    MandariEditor: typeof MandariEditor
+  }
+}
+window.MandariEditor = MandariEditor

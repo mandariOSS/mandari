@@ -6,11 +6,20 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "./dist",
-    "rootDir": "./frontend",
     "declaration": false,
-    "sourceMap": false
+    "sourceMap": false,
+    "types": [
+      "vite/client"
+    ],
+    "noEmit": true
   },
-  "include": ["frontend/**/*.ts"],
-  "exclude": ["node_modules", "dist", "static"]
+  "include": [
+    "frontend/**/*.ts",
+    "vite.config.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "static"
+  ]
 }

@@ -158,7 +158,7 @@ dist/
 out/
 
 # Package lock files (we use pnpm)
-package-lock.json
+# package-lock.json wird versioniert (reproduzierbare npm-ci-Builds, siehe #159)
 yarn.lock
 
 # =============================================================================
@@ -255,3 +255,7 @@ PRN
 
 # Versehentliche pip --prefix Installation unter Windows-Pfad
 mandari/C:/
+
+# Vite-Build (wird im Docker-Build erzeugt)
+mandari/static/dist/
+mandari/static/js/editor.bundle.js

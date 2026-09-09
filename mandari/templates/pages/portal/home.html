@@ -383,7 +383,6 @@ function homeSearchApp() {
                 allLink.innerHTML = '<a href="/insight/nachbarschaft/?lat=' + this.selectedLat + '&lon=' + this.selectedLon + '&name=' + encodeURIComponent(this.selectedName || '') + '&radius=500" class="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors">Alle Ergebnisse auf der Karte ansehen <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>';
                 container.appendChild(allLink);
 
-                if (typeof lucide !== 'undefined') lucide.createIcons();
             } catch (e) {
                 document.getElementById('home-neighborhood-results').innerHTML = '<p class="text-center text-sm text-red-500 py-4">Fehler beim Laden.</p>';
             }

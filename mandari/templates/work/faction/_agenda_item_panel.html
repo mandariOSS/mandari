@@ -173,7 +173,7 @@
                 <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
                       hx-vals='{"action": "record_decision"}'
                       hx-target="#agenda-panel-content" hx-swap="innerHTML"
-                      @htmx:after-request="if($event.detail.successful) showDecisionForm = false; $nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                      @htmx:after-request="if($event.detail.successful) showDecisionForm = false"
                       class="space-y-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl p-3">
                     {% csrf_token %}
                     <div class="grid grid-cols-3 gap-2">
@@ -267,7 +267,7 @@
                 <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
                       hx-vals='{"action": "add_entry"}'
                       hx-target="#agenda-panel-content" hx-swap="innerHTML"
-                      @htmx:after-request="if($event.detail.successful) { showEntryForm = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                      @htmx:after-request="if($event.detail.successful) { showEntryForm = false; }"
                       class="space-y-2 bg-gray-50 dark:bg-gray-900/50 rounded-xl p-3">
                     {% csrf_token %}
                     <input type="hidden" name="entry_type" value="note">
@@ -331,7 +331,7 @@
                 <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
                       hx-vals='{"action": "create_task"}'
                       hx-target="#agenda-panel-content" hx-swap="innerHTML"
-                      @htmx:after-request="if($event.detail.successful) { showTaskForm = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                      @htmx:after-request="if($event.detail.successful) { showTaskForm = false; }"
                       class="space-y-2 bg-gray-50 dark:bg-gray-900/50 rounded-xl p-3">
                     {% csrf_token %}
                     <input type="text" name="title" placeholder="Aufgabentitel..." required
@@ -397,7 +397,7 @@
                   hx-vals='{"action": "upload_attachment"}'
                   hx-target="#agenda-panel-content" hx-swap="innerHTML"
                   hx-encoding="multipart/form-data"
-                  @htmx:after-request="$nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                  @htmx:after-request=""
                   class="mt-2">
                 {% csrf_token %}
                 <label class="flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:border-primary-400 hover:bg-primary-50/50 transition-colors">
@@ -454,7 +454,7 @@
                 <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
                       hx-vals='{"action": "link_motion"}'
                       hx-target="#agenda-panel-content" hx-swap="innerHTML"
-                      @htmx:after-request="if($event.detail.successful) { showMotionSearch = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                      @htmx:after-request="if($event.detail.successful) { showMotionSearch = false; }"
                       class="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-3">
                     {% csrf_token %}
                     <select name="motion_id" class="w-full text-sm px-2 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500 mb-2">
@@ -548,7 +548,7 @@
                             <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
                                   hx-vals='{"action": "link_paper"}'
                                   hx-target="#agenda-panel-content" hx-swap="innerHTML"
-                                  @htmx:after-request="showPaperSearch = false; paperSearchQuery = ''; paperSearchResults = []; $nextTick(() => { if (window.lucide) lucide.createIcons(); })">
+                                  @htmx:after-request="showPaperSearch = false; paperSearchQuery = ''; paperSearchResults = []">
                                 {% csrf_token %}
                                 <input type="hidden" name="paper_id" :value="paper.id">
                                 <button type="submit" class="w-full text-left flex items-center gap-2 p-2 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-sm transition-colors">
@@ -625,7 +625,7 @@
                 <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
                       hx-vals='{"action": "add_link"}'
                       hx-target="#agenda-panel-content" hx-swap="innerHTML"
-                      @htmx:after-request="if($event.detail.successful) { showLinkForm = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })"
+                      @htmx:after-request="if($event.detail.successful) { showLinkForm = false; }"
                       class="space-y-2 bg-gray-50 dark:bg-gray-900/50 rounded-xl p-3">
                     {% csrf_token %}
                     <input type="text" name="link_label" placeholder="Bezeichnung..." required

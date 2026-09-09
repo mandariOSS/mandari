@@ -12,8 +12,8 @@
     <title>UI-Kit | mandari</title>
     <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
-    <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>
+    {% load django_vite %}{% vite_hmr_client %}
+    {% vite_asset 'frontend/js/main.ts' %}
     <style>[x-cloak] { display: none !important; }</style>
 </head>
 <body class="h-full bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100">
@@ -121,13 +121,13 @@
     <c-ui.card title="Reiter" subtitle="c-ui.tabs, c-ui.tab, c-ui.tab-panel – WAI-ARIA Tabs mit Pfeiltasten">
         <c-ui.tabs default="allgemein" label="Beispielreiter">
             <c-slot name="list">
-                <c-ui.tab id="allgemein" icon="settings">Allgemein</c-ui.tab>
-                <c-ui.tab id="rechte" icon="shield">Rechte</c-ui.tab>
-                <c-ui.tab id="verlauf" icon="history">Verlauf</c-ui.tab>
+                <c-ui.tab name="allgemein" icon="settings">Allgemein</c-ui.tab>
+                <c-ui.tab name="rechte" icon="shield">Rechte</c-ui.tab>
+                <c-ui.tab name="verlauf" icon="history">Verlauf</c-ui.tab>
             </c-slot>
-            <c-ui.tab-panel id="allgemein"><p class="text-sm text-gray-600 dark:text-gray-300">Inhalt „Allgemein“.</p></c-ui.tab-panel>
-            <c-ui.tab-panel id="rechte"><p class="text-sm text-gray-600 dark:text-gray-300">Inhalt „Rechte“.</p></c-ui.tab-panel>
-            <c-ui.tab-panel id="verlauf"><p class="text-sm text-gray-600 dark:text-gray-300">Inhalt „Verlauf“.</p></c-ui.tab-panel>
+            <c-ui.tab-panel name="allgemein"><p class="text-sm text-gray-600 dark:text-gray-300">Inhalt „Allgemein“.</p></c-ui.tab-panel>
+            <c-ui.tab-panel name="rechte"><p class="text-sm text-gray-600 dark:text-gray-300">Inhalt „Rechte“.</p></c-ui.tab-panel>
+            <c-ui.tab-panel name="verlauf"><p class="text-sm text-gray-600 dark:text-gray-300">Inhalt „Verlauf“.</p></c-ui.tab-panel>
         </c-ui.tabs>
     </c-ui.card>
 
@@ -139,6 +139,5 @@
         </div>
     </c-ui.card>
 </div>
-<script>document.addEventListener('DOMContentLoaded', function () { if (window.lucide) { lucide.createIcons(); } });</script>
 </body>
 </html>

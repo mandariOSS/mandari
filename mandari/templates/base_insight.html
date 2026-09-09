@@ -1,6 +1,7 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="de" class="scroll-smooth"
+<html lang="de" class="scroll-smooth" data-portal="insight"
+      data-authenticated="{{ request.user.is_authenticated|yesno:"true,false" }}"
       x-data="{
           darkMode: localStorage.getItem('darkMode') === 'true',
           sidebarOpen: false,
@@ -75,80 +76,10 @@
     <!-- TailwindCSS (lokal kompiliert, DSGVO-konform) -->
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
 
-    <!-- HTMX (lokal) -->
-    <script src="{% static 'vendor/htmx/htmx.min.js' %}"></script>
-
-    <!-- Alpine.js (lokal) -->
-    <script defer src="{% static 'vendor/alpine/collapse.min.js' %}"></script>
-    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
-
-    <!-- Bookmarks Store -->
-    <script>
-    window.__isAuthenticated = {{ request.user.is_authenticated|yesno:"true,false" }};
-    window.__csrfToken = '{{ csrf_token }}';
-    document.addEventListener('alpine:init', () => {
-        Alpine.store('bookmarks', {
-            _data: { person: [], paper: [], meeting: [], organization: [] },
-            _loaded: false,
-            init() {
-                if (window.__isAuthenticated) {
-                    fetch('/insight/merkliste/api/ids/')
-                        .then(r => r.json())
-                        .then(data => {
-                            this._data = data;
-                            this._loaded = true;
-                        })
-                        .catch(() => { this._loaded = true; });
-                } else {
-                    try {
-                        const saved = localStorage.getItem('mandari_bookmarks');
-                        if (saved) this._data = JSON.parse(saved);
-                    } catch(e) {}
-                    this._loaded = true;
-                }
-            },
-            has(type, id) {
-                const idStr = String(id);
-                return this._data[type] && this._data[type].indexOf(idStr) !== -1;
-            },
-            toggle(type, id) {
-                const idStr = String(id);
-                if (!this._data[type]) this._data[type] = [];
-                const idx = this._data[type].indexOf(idStr);
-                if (idx !== -1) {
-                    this._data[type].splice(idx, 1);
-                } else {
-                    this._data[type].push(idStr);
-                }
-                if (window.__isAuthenticated) {
-                    fetch('/insight/merkliste/api/toggle/', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': window.__csrfToken
-                        },
-                        body: JSON.stringify({ type: type, id: idStr })
-                    }).catch(() => {});
-                } else {
-                    this._save();
-                }
-            },
-            count() {
-                let c = 0;
-                for (const k in this._data) { c += this._data[k].length; }
-                return c;
-            },
-            _save() {
-                try {
-                    localStorage.setItem('mandari_bookmarks', JSON.stringify(this._data));
-                } catch(e) {}
-            }
-        });
-    });
-    </script>
-
-    <!-- Lucide Icons (lokal) -->
-    <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <!-- Frontend-Bundle (HTMX, Alpine + collapse, Icons, Merkliste-Store) über Vite-Manifest -->
+    {% load django_vite %}{% vite_hmr_client %}
+    {% vite_asset 'frontend/js/main.ts' %}
 
     <!-- Custom Styles -->
     <style>
@@ -303,42 +234,6 @@
     <!-- Chatbot Popup -->
     {% block chatbot %}{% include "components/chatbot_popup.html" %}{% endblock %}
 
-    <!-- HTMX Configuration -->
-    <script>
-        document.body.addEventListener('htmx:configRequest', (event) => {
-            // CSRF Token für POST requests
-            event.detail.headers['X-CSRFToken'] = '{{ csrf_token }}';
-        });
-
-        // Initialize Lucide icons
-        lucide.createIcons();
-
-        // Re-initialize icons after HTMX swap
-        document.body.addEventListener('htmx:afterSwap', () => {
-            lucide.createIcons();
-        });
-
-        // Announce dynamic content changes for screen readers
-        document.body.addEventListener('htmx:afterSwap', (event) => {
-            const announcement = document.createElement('div');
-            announcement.setAttribute('role', 'status');
-            announcement.setAttribute('aria-live', 'polite');
-            announcement.setAttribute('aria-atomic', 'true');
-            announcement.className = 'sr-only';
-            announcement.textContent = 'Inhalt wurde aktualisiert';
-            document.body.appendChild(announcement);
-            setTimeout(() => announcement.remove(), 1000);
-        });
-
-        // Close sidebar on navigation (mobile)
-        document.addEventListener('click', (e) => {
-            const link = e.target.closest('aside a[href]');
-            if (link) {
-                const alpine = document.querySelector('html').__x.$data;
-                if (alpine) alpine.sidebarOpen = false;
-            }
-        });
-    </script>
 
     {% block extra_scripts %}{% endblock %}
 </body>

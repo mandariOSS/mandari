@@ -89,6 +89,7 @@ INSTALLED_APPS = [
     # Third-party apps
     "django_htmx",
     "django_cotton",  # Komponentenbibliothek (templates/cotton/)
+    "django_vite",  # Frontend-Assets über Vite-Manifest (static/dist/)
     "django_safemigrate",
     # Mandari Insight apps (OSS)
     "insight_core",
@@ -249,6 +250,17 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
+
+# Vite (frontend/ → static/dist/, siehe vite.config.ts).
+# Entwicklung: `npm run dev` + DJANGO_VITE_DEV_MODE=1 (HMR), sonst `npm run build`.
+DJANGO_VITE = {
+    "default": {
+        "dev_mode": os.environ.get("DJANGO_VITE_DEV_MODE", "").lower() in ("1", "true", "yes"),
+        "dev_server_port": 5173,
+        "manifest_path": BASE_DIR / "static" / "dist" / "manifest.json",
+        "static_url_prefix": "dist",
+    }
+}
 
 # WhiteNoise for static files (only in production)
 # Django 6.0: Using STORAGES instead of deprecated STATICFILES_STORAGE

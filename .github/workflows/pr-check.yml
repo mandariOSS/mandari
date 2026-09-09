@@ -109,6 +109,14 @@ jobs:
           pip install -r requirements.lock
           pip install pytest pytest-django pytest-cov factory-boy
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mandari/package-lock.json
+      - name: Frontend-Assets bauen (Vite-Manifest für django-vite)
+        run: cd mandari && npm ci --ignore-scripts && npx vite build
+
       - name: Run Django system checks
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
@@ -275,6 +283,21 @@ jobs:
         run: |
           pip install djlint==1.36.4
           cd mandari && djlint templates --lint
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mandari/package-lock.json
+      - name: npm ci
+        run: cd mandari && npm ci --ignore-scripts
+      - name: TypeScript (tsc --noEmit)
+        run: cd mandari && npm run typecheck
+      - name: Biome (Lint + Format)
+        run: cd mandari && npm run lint
+      - name: Vite-Build (Manifest muss entstehen)
+        run: |
+          cd mandari && npx vite build
+          test -f static/dist/manifest.json
 
   docker-build:
     name: Docker Build

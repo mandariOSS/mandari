@@ -165,9 +165,9 @@ class TestOtherComponents:
 
     def test_tabs_are_wai_aria_conform(self) -> None:
         html = render(
-            '<c-ui.tabs default="a" label="Test"><c-slot name="list"><c-ui.tab id="a">A</c-ui.tab>'
-            '<c-ui.tab id="b">B</c-ui.tab></c-slot><c-ui.tab-panel id="a">PA</c-ui.tab-panel>'
-            '<c-ui.tab-panel id="b">PB</c-ui.tab-panel></c-ui.tabs>'
+            '<c-ui.tabs default="a" label="Test"><c-slot name="list"><c-ui.tab name="a">A</c-ui.tab>'
+            '<c-ui.tab name="b">B</c-ui.tab></c-slot><c-ui.tab-panel name="a">PA</c-ui.tab-panel>'
+            '<c-ui.tab-panel name="b">PB</c-ui.tab-panel></c-ui.tabs>'
         )
         assert 'role="tablist" aria-label="Test"' in html
         assert 'role="tab" id="tab-a" aria-controls="panel-a"' in html

@@ -170,7 +170,6 @@ function merklisteController() {
                 .then(r => r.text())
                 .then(html => {
                     container.innerHTML = html;
-                    if (window.lucide) lucide.createIcons();
                 });
         }
     };

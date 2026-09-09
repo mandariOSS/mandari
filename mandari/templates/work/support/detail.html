@@ -265,7 +265,6 @@
     // Reinitialize Lucide icons after HTMX content swap
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         if (evt.detail.target.id === 'message-thread-content') {
-            lucide.createIcons();
         }
     });
 

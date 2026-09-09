@@ -163,8 +163,8 @@ export const PageBreaks = Extension.create<PageBreakOptions>({
 
             // Read actual padding from DOM (adapts to letterhead margins)
             const cs = getComputedStyle(tiptapEl)
-            const padTop = parseFloat(cs.paddingTop) || 0
-            const padBottom = parseFloat(cs.paddingBottom) || 0
+            const padTop = Number.parseFloat(cs.paddingTop) || 0
+            const padBottom = Number.parseFloat(cs.paddingBottom) || 0
             const usableHeight = pagePx - padTop - padBottom
 
             const tiptapRect = tiptapEl.getBoundingClientRect()
@@ -192,8 +192,7 @@ export const PageBreaks = Extension.create<PageBreakOptions>({
               const rect = child.getBoundingClientRect()
               // Edges relative to content start (after padding), minus
               // heights of existing gap widgets → pure content position
-              const contentTop =
-                rect.top - tiptapRect.top - padTop - existingGapCount * extensionOptions.gapHeight
+              const contentTop = rect.top - tiptapRect.top - padTop - existingGapCount * extensionOptions.gapHeight
               const contentBottom =
                 rect.bottom - tiptapRect.top - padTop - existingGapCount * extensionOptions.gapHeight
 
@@ -211,14 +210,10 @@ export const PageBreaks = Extension.create<PageBreakOptions>({
                       : resolvedPos.after(resolvedPos.depth)
 
                   decorations.push(
-                    Decoration.widget(
-                      nodeEnd,
-                      () => createGapWidget(extensionOptions.gapHeight),
-                      {
-                        side: 1,
-                        key: `page-gap-${pageNum}`,
-                      }
-                    )
+                    Decoration.widget(nodeEnd, () => createGapWidget(extensionOptions.gapHeight), {
+                      side: 1,
+                      key: `page-gap-${pageNum}`,
+                    }),
                   )
                   pageNum++
                   pageStart = contentBottom
@@ -239,14 +234,10 @@ export const PageBreaks = Extension.create<PageBreakOptions>({
                   const nodeStart = resolvedPos.before(resolvedPos.depth)
 
                   decorations.push(
-                    Decoration.widget(
-                      nodeStart,
-                      () => createGapWidget(extensionOptions.gapHeight),
-                      {
-                        side: -1,
-                        key: `page-gap-${pageNum}`,
-                      }
-                    )
+                    Decoration.widget(nodeStart, () => createGapWidget(extensionOptions.gapHeight), {
+                      side: -1,
+                      key: `page-gap-${pageNum}`,
+                    }),
                   )
                   pageNum++
                   pageStart = contentTop
@@ -270,7 +261,7 @@ export const PageBreaks = Extension.create<PageBreakOptions>({
             const parentEl = tiptapEl.parentElement
             if (parentEl) {
               const totalGaps = lastTotalPages > 1 ? (lastTotalPages - 1) * extensionOptions.gapHeight : 0
-              parentEl.style.minHeight = (lastTotalPages * pagePx + totalGaps) + 'px'
+              parentEl.style.minHeight = lastTotalPages * pagePx + totalGaps + 'px'
             }
 
             firePageCountCallback(editorView)

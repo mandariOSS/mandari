@@ -56,8 +56,15 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
   Kopfkommentar; die Vorschau liegt unter `/dev/ui/` (nur `DEBUG`) und wird von
   `apps/common/tests/test_components.py` mitgerendert. Neue Komponente = Vorschau-Eintrag + Test.
   Fragmente für HTMX per Django-6-Template-Partials in derselben Datei.
-- JavaScript lebt in `frontend/` (TypeScript, gebündelt), Alpine-Komponenten werden mit `Alpine.data()`
+- JavaScript lebt in `frontend/` (TypeScript) und wird mit Vite gebaut; Layouts laden Assets über
+  `{% vite_asset %}` (django-vite, Manifest in `static/dist/`). Einstiege: `frontend/js/main.ts` (alle
+  Layouts: HTMX-Konfiguration, Alpine-Registry, Icon-Observer, Toasts, Bestätigungsdialog) und
+  `frontend/editor/index.ts` (nur Editor-Seiten). Alpine-Komponenten werden mit `Alpine.data()`
   registriert und im Template nur referenziert. Server-Daten kommen per `json_script`.
+- Icons: `<i data-lucide="name">` genügt, ein MutationObserver ersetzt neue Platzhalter nach HTMX-Swaps
+  und Alpine-Rendering. Kein `lucide.createIcons()` in Templates. Server-Toasts per
+  `HX-Trigger: {"showToast": {"message": "…", "type": "success"}}`.
+- `tsc --noEmit` und Biome (Lint + Format) laufen im CI; Frontend-Quellen sind LF-normalisiert.
 - Styles kommen aus Tailwind-Utilities und `frontend/css`; Design-Tokens (Farben, Radien, Schatten,
   Typografie) sind zentral definiert.
 - Barrierefreiheit ist Teil jeder Komponente: Tastaturbedienung, Fokus sichtbar, ARIA, Zielgröße

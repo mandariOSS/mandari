@@ -15,8 +15,8 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{% static 'brand/apple-touch-icon.png' %}">
 
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
-    <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>
+    {% load django_vite %}{% vite_hmr_client %}
+    {% vite_asset 'frontend/js/main.ts' %}
 
     <style>
         [x-cloak] { display: none !important; }
@@ -90,6 +90,5 @@
             © mandari — Das offene Ratsinformationssystem
         </footer>
     </div>
-    <script>lucide.createIcons();</script>
 </body>
 </html>

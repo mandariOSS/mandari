@@ -28,9 +28,6 @@ def _cache_version() -> str:
         static(path)
         for path in (
             "css/styles.css",
-            "vendor/alpine/alpine.min.js",
-            "vendor/htmx/htmx.min.js",
-            "vendor/lucide/lucide.min.js",
         )
     )
     return hashlib.md5(seed.encode()).hexdigest()[:12]

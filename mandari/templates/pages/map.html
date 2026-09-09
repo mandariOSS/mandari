@@ -250,10 +250,6 @@ function mapApp() {
                 popupAnchor: [0, -11]
             });
 
-            this._map.on('popupopen', () => {
-                if (window.lucide) lucide.createIcons();
-            });
-
             // BBox-Modus: Wenn der Server die Marker-Liste kappt (truncated),
             // werden Marker beim Verschieben für den Ausschnitt nachgeladen.
             this._map.on('moveend', () => {

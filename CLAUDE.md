@@ -461,8 +461,10 @@ Verbindlich: [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md) un
 Kurzfassung: Templates sind Struktur, nicht Programm.
 
 - Kein `<script>`/`<style>` in Seiten-Templates (Allowlist: Layouts, E-Mails, PDF, PWA). JavaScript lebt in
-  `frontend/` und wird gebündelt; Alpine-Komponenten werden mit `Alpine.data()` registriert und im Template
-  nur per `x-data="name"` referenziert. Server-Daten gehen per `{{ data|json_script:"id" }}` an den Client.
+  `frontend/` (TypeScript, Vite → `static/dist/`, Layouts laden per `{% vite_asset %}`); Alpine-Komponenten
+  werden in `frontend/js/main.ts` mit `Alpine.data()` registriert und im Template nur per `x-data="name"`
+  referenziert. Server-Daten gehen per `{{ data|json_script:"id" }}` an den Client. Icons brauchen kein
+  `lucide.createIcons()` mehr (MutationObserver). Entwicklung: `npm run watch` + `DJANGO_VITE_DEV_MODE=1`.
 - Höchstens 300 Zeilen je Template; HTMX-Fragmente als Django-6-Template-Partials (`{% partialdef %}`).
 - Wiederkehrendes Markup (Buttons, Cards, Badges, Formularfelder, Modals) als django-cotton-Komponente aus
   `templates/cotton/` statt kopierter Klassenketten: `<c-ui.button type="submit" full>`, `<c-ui.card title="…">`,

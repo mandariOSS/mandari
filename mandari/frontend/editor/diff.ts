@@ -13,9 +13,9 @@ import { diffWords } from 'diff'
  * Each block retains its tag type so the diff output keeps the original formatting.
  */
 interface TextBlock {
-  tag: string      // 'p', 'h1', 'h2', 'li', 'blockquote', etc.
-  text: string     // Plain text content of the block
-  attrs: string    // Original tag attributes (class, style, etc.)
+  tag: string // 'p', 'h1', 'h2', 'li', 'blockquote', etc.
+  text: string // Plain text content of the block
+  attrs: string // Original tag attributes (class, style, etc.)
 }
 
 function htmlToBlocks(html: string): TextBlock[] {

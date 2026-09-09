@@ -184,7 +184,7 @@
             <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full" @click.stop>
                 <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
                       hx-target="#agenda-container" hx-swap="innerHTML"
-                      @htmx:after-request="if ($event.detail.successful) { showItemModal = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })">
+                      @htmx:after-request="if ($event.detail.successful) { showItemModal = false; }">
                     {% csrf_token %}
                     <input type="hidden" name="action" x-bind:value="itemMode === 'add' ? 'add_item' : 'edit_item'">
                     <input type="hidden" name="visibility" x-bind:value="itemVisibility">
@@ -227,7 +227,7 @@
             <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full" @click.stop>
                 <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
                       hx-target="#agenda-container" hx-swap="innerHTML"
-                      @htmx:after-request="if ($event.detail.successful) { showDeleteModal = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })">
+                      @htmx:after-request="if ($event.detail.successful) { showDeleteModal = false; }">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="delete_item">
                     <input type="hidden" name="item_id" x-bind:value="deleteItemId">
@@ -256,7 +256,7 @@
             <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full" @click.stop>
                 <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
                       hx-target="#agenda-container" hx-swap="innerHTML"
-                      @htmx:after-request="if ($event.detail.successful) { showDecisionModal = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })">
+                      @htmx:after-request="if ($event.detail.successful) { showDecisionModal = false; }">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="record_decision">
                     <input type="hidden" name="agenda_item_id" x-bind:value="decisionItemId">
@@ -363,7 +363,7 @@
                 <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
                       hx-vals='{"action": "add_attendee"}'
                       hx-target="#sidebar-container" hx-swap="innerHTML"
-                      @htmx:after-request="if ($event.detail.successful) { showAddAttendeeModal = false; } $nextTick(() => { if (window.lucide) lucide.createIcons(); })">
+                      @htmx:after-request="if ($event.detail.successful) { showAddAttendeeModal = false; }">
                     {% csrf_token %}
 
                     <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
@@ -518,8 +518,6 @@ function factionDetail() {
             htmx.ajax('GET', url, {
                 target: '#agenda-panel-content',
                 swap: 'innerHTML'
-            }).then(() => {
-                if (window.lucide) lucide.createIcons();
             });
         },
 
@@ -570,10 +568,6 @@ function factionDetail() {
         },
 
         init() {
-            // Re-initialize Lucide icons after HTMX swaps
-            document.body.addEventListener('htmx:afterSwap', () => {
-                if (window.lucide) window.lucide.createIcons();
-            });
 
             // Show error feedback on failed HTMX requests
             document.body.addEventListener('htmx:responseError', (evt) => {

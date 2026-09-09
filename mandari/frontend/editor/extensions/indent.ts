@@ -45,8 +45,8 @@ export const Indent = Extension.create<IndentOptions>({
             parseHTML: (element: HTMLElement) => {
               const marginLeft = element.style.marginLeft
               if (!marginLeft) return 0
-              const px = parseInt(marginLeft, 10)
-              if (isNaN(px) || px <= 0) return 0
+              const px = Number.parseInt(marginLeft, 10)
+              if (Number.isNaN(px) || px <= 0) return 0
               return Math.round(px / this.options.step)
             },
             renderHTML: (attributes: Record<string, any>) => {
