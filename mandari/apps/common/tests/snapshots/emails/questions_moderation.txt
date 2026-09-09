@@ -1,0 +1,22 @@
+Neue Ratsfrage wartet auf Freigabe
+==================================================
+
+Erika Mustermann aus Musterstadt hat eine Frage an Max Beispiel gestellt und die E-Mail-Adresse bestätigt.
+
+Kommune: Stadt Musterstadt
+Themenbereich: Verkehr &amp; Mobilität
+Betreff: Radweg an der Hauptstraße
+
+Frage:
+Wann wird der Radweg an der Hauptstraße fertiggestellt?
+
+Die Baustelle steht seit Monaten.
+
+---
+
+Zur Moderation im Admin:
+https://mandari.example/admin/insight_core/publicquestion/00000000-0000-0000-0000-000000000402/change/
+
+--
+Mandari - Kommunalpolitische Transparenz
+https://mandari.example

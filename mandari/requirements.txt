@@ -39,6 +39,10 @@ pillow>=10.3.0  # Security: fixes heap buffer overflow, DoS, eval injection
 markdown>=3.7
 cryptography>=44.0.0
 
+# E-Mail: CSS-Inliner (Rust-Wheel, keine Systemabhängigkeiten) und Text-Alternative (Issue #175)
+css-inline>=0.14
+html2text>=2024.2.26
+
 # Document extraction (OCR)
 # Note: PyPDF2 is deprecated, using pypdf instead
 pypdf>=6.4.0  # Security: fixes resource exhaustion, data amplification, infinite loop

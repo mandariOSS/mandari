@@ -1,0 +1,20 @@
+Alarm: OParl-Quelle kritisch
+==================================================
+
+Quelle: RIS Musterstadt
+URL: https://ris.musterstadt.example/oparl/v1/system
+Status: kritisch
+Kommunen: Musterstadt, Nachbarstadt
+Letzter erfolgreicher Sync: 14.09.2026 18:30
+Fehlversuche in Folge: 5
+- HTTP 503 seit 3 Tagen
+- Zertifikat der Quelle abgelaufen
+
+---
+
+Betriebsmonitor: https://mandari.example/admin/monitoring/
+Details: https://mandari.example/admin/insight_core/oparlsource/00000000-0000-0000-0000-000000000301/change/
+
+--
+Mandari - Kommunalpolitische Transparenz
+https://mandari.example

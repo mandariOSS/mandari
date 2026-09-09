@@ -1,0 +1,41 @@
+Einladung zur Fraktionssitzung
+==============================
+
+Fraktion Test
+
+Hallo Anna,
+
+du bist herzlich zur folgenden Sitzung eingeladen:
+
+Fraktionssitzung September
+-------------------
+
+Datum:   Montag, 14. September 2026
+Uhrzeit: 18:30 Uhr
+Ort:     Rathaus, Raum 204
+Format:  Online-Sitzung
+
+Video-Link: https://meet.example/fraktion-test
+
+
+Hinweise:
+Bitte die Haushaltsunterlagen mitbringen.
+
+
+Zur Sitzung im Work-Portal:
+https://mandari.example/work/fraktion-test/faction/00000000-0000-0000-0000-000000000501/
+
+TAGESORDNUNG
+TOP 1: Haushalt 2027
+TOP 2: Antrag Radwegkonzept
+
+NICHT-ÖFFENTLICHER TEIL
+TOP NÖ 1: Personalie Geschäftsstelle
+
+Die vollständige Tagesordnung findest du im Anhang (PDF); der Termin liegt als Kalenderdatei (ICS) bei.
+
+Bitte sage direkt in der Sitzungsansicht zu oder ab (Zusagen/Absagen):
+https://mandari.example/work/fraktion-test/faction/00000000-0000-0000-0000-000000000501/
+
+---
+Diese E-Mail wurde automatisch von Fraktion Test versendet.

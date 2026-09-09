@@ -20,7 +20,7 @@ except ImportError:  # Django < 6.0: Tasks laufen synchron
         return func
 
 
-from django.utils.html import strip_tags
+from apps.common.email import render_email
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +67,7 @@ def send_notification_email_task(notification_id: str):
     }
 
     try:
-        html_content = render_to_string("work/notifications/email/notification.html", context)
-        text_content = strip_tags(html_content)
+        html_content, text_content = render_email("work/notifications/email/notification.html", context)
     except Exception as e:
         logger.error(f"Failed to render email template: {e}")
         return
@@ -130,8 +129,7 @@ def send_meeting_invitation_task(meeting_id: str, attendance_id: str):
     }
 
     try:
-        html_content = render_to_string("work/faction/email/invitation.html", context)
-        text_content = strip_tags(html_content)
+        html_content, text_content = render_email("work/faction/email/invitation.html", context)
     except Exception as e:
         logger.error(f"Failed to render invitation email template: {e}")
         return
@@ -195,8 +193,7 @@ def send_meeting_reminder_task(meeting_id: str):
         }
 
         try:
-            html_content = render_to_string("work/faction/email/reminder.html", context)
-            text_content = strip_tags(html_content)
+            html_content, text_content = render_email("work/faction/email/reminder.html", context)
 
             send_mail(
                 subject=f"Erinnerung: {meeting.title}",

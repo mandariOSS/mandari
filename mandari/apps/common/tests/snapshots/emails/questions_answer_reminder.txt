@@ -1,0 +1,26 @@
+Erinnerung: Unbeantwortete Frage
+==================================
+
+Hallo Max Beispiel,
+
+Sie haben noch eine unbeantwortete Frage auf Mandari.
+
+Von: Erika Mustermann aus Musterstadt
+
+Betreff: Radweg an der Hauptstraße
+
+Wann wird der Radweg an der Hauptstraße fertiggestellt?
+
+Die Baustelle steht seit Monaten.
+
+---
+
+Sie können die Frage über folgenden Link beantworten:
+https://mandari.example/insight/fragen/antworten/00000000-0000-0000-0000-000000000404/
+
+Mit freundlichen Grüßen,
+Das Mandari-Team
+
+--
+Mandari - Kommunalpolitische Transparenz
+https://mandari.example

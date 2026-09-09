@@ -13,7 +13,8 @@ import logging
 from django.conf import settings
 from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
-from django.template.loader import render_to_string
+
+from apps.common.email import render_email
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +87,8 @@ class Command(BaseCommand):
                 sent_count += 1
                 continue
 
-            # Render email
-            html_message = render_to_string(
+            # Render email (Inliner + Text-Alternative aus dem HTML)
+            html_message, text_message = render_email(
                 "emails/insight_digest.html",
                 {
                     "subscriber": subscriber,
@@ -105,8 +106,7 @@ class Command(BaseCommand):
             try:
                 send_mail(
                     subject=subject,
-                    message=f"{alert_count} neue Treffer in {subscriber.body.get_display_name()}. "
-                    f"Ansehen: {site_url}/insight/",
+                    message=text_message,
                     from_email=from_email,
                     recipient_list=[subscriber.email],
                     html_message=html_message,

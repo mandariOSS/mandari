@@ -1,0 +1,26 @@
+Neue Kontaktanfrage über mandari.de
+=====================================
+
+Name: Erika Mustermann
+E-Mail: erika@example.org
+Organisation: Fraktion Test
+Betreff: Demo anfragen
+
+Nachricht:
+----------
+Guten Tag,
+
+wir würden mandari gern in unserer Fraktion ausprobieren.
+Gibt es eine Demo?
+
+----------
+
+Erstellt am: 14.09.2026 18:30 Uhr
+IP-Adresse: 203.0.113.7
+
+Diese Anfrage wurde unter folgender ID gespeichert: 00000000-0000-0000-0000-000000000101
+
+
+Anfrage im Admin bearbeiten:
+https://mandari.example/admin/insight_core/contactrequest/00000000-0000-0000-0000-000000000101/change/
+

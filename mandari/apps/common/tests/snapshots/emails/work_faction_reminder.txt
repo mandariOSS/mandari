@@ -1,0 +1,27 @@
+Erinnerung: Fraktionssitzung
+============================
+
+Fraktion Test
+
+Hallo Anna,
+
+zur Erinnerung: die folgende Sitzung beginnt in etwa 24 Stunden.
+
+Fraktionssitzung September
+-------------------
+
+Datum:   Montag, 14. September 2026
+Uhrzeit: 18:30 Uhr
+Ort:     Rathaus, Raum 204
+Format:  Online-Sitzung
+
+Video-Link: https://meet.example/fraktion-test
+
+
+Zur Sitzung im Work-Portal:
+https://mandari.example/work/fraktion-test/faction/00000000-0000-0000-0000-000000000501/
+
+Du hast bisher mit "Vielleicht" geantwortet — bitte bestätige deine Teilnahme in der Sitzungsansicht.
+
+---
+Diese E-Mail wurde automatisch von Fraktion Test versendet.

@@ -8,6 +8,8 @@ Provides forms for:
 - Password change
 """
 
+from typing import Any
+
 from django import forms
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.forms import (
@@ -17,6 +19,10 @@ from django.contrib.auth.forms import (
     SetPasswordForm as DjangoSetPasswordForm,
 )
 from django.core.exceptions import ValidationError
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+
+from apps.common.email import render_email
 
 User = get_user_model()
 
@@ -104,6 +110,30 @@ class PasswordResetForm(DjangoPasswordResetForm):
         ),
         label="E-Mail-Adresse",
     )
+
+    def send_mail(
+        self,
+        subject_template_name: str,
+        email_template_name: str,
+        context: dict[str, Any],
+        from_email: str | None,
+        to_email: str,
+        html_email_template_name: str | None = None,
+    ) -> None:
+        """Wie Django, aber die HTML-Fassung läuft durch das Basis-Layout und den Inliner.
+
+        Die Textfassung kommt weiterhin aus ``email_template_name`` (gepflegtes ``.txt``).
+        """
+        subject = "".join(render_to_string(subject_template_name, context).splitlines())
+        if html_email_template_name:
+            html_body, body = render_email(html_email_template_name, context, text_template_name=email_template_name)
+        else:
+            html_body, body = None, render_to_string(email_template_name, context)
+
+        message = EmailMultiAlternatives(subject, body, from_email, [to_email])
+        if html_body:
+            message.attach_alternative(html_body, "text/html")
+        message.send()
 
 
 class SetPasswordForm(DjangoSetPasswordForm):

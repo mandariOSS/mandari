@@ -1,42 +1,19 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background: #f8fafc; }
-        .container { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 40px 30px; text-align: center; }
-        .header h1 { margin: 0 0 10px 0; font-size: 24px; }
-        .header p { margin: 0; opacity: 0.9; }
-        .icon { width: 60px; height: 60px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 30px; }
-        .content { padding: 30px; }
-        .question-box { background: #f1f5f9; border-left: 3px solid #6366f1; padding: 15px; margin: 20px 0; border-radius: 0 8px 8px 0; }
-        .question-box .subject { font-weight: 600; color: #1e293b; }
-        .cta { text-align: center; margin: 30px 0; }
-        .cta a { display: inline-block; background: #6366f1; color: white !important; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px; }
-        .footer { background: #f8fafc; padding: 25px 30px; text-align: center; border-top: 1px solid #e2e8f0; }
-        .footer p { margin: 5px 0; font-size: 13px; color: #64748b; }
-        .footer a { color: #6366f1; text-decoration: none; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="icon">&#127881;</div>
-            <h1>Ihre Frage ist jetzt öffentlich</h1>
-            <p>Über das Mandari-Portal</p>
-        </div>
-        <div class="content">
-            <p>Hallo {{ question.questioner_name }},</p>
-            <p>Ihre Frage an <strong>{{ question.recipient.display_name }}</strong> wurde geprüft und ist ab sofort öffentlich sichtbar.</p>
-            <div class="question-box"><div class="subject">{{ question.subject }}</div></div>
-            <p>{{ question.recipient.display_name }} wurde per E-Mail informiert und kann die Frage nun öffentlich beantworten. Sobald eine Antwort veröffentlicht ist, erhalten Sie eine weitere E-Mail.</p>
-            <div class="cta"><a href="{{ question_url }}">Frage ansehen</a></div>
-        </div>
-        <div class="footer">
-            <p>Mandari – Kommunalpolitische Transparenz</p>
-            <p><a href="{{ site_url }}">{{ site_url }}</a></p>
-        </div>
-    </div>
-</body>
-</html>
+{% extends "emails/base_email.html" %}
+{% block subject %}Ihre Frage an {{ question.recipient.display_name }} ist jetzt öffentlich{% endblock %}
+{% block preheader %}Ihre Frage wurde geprüft und ist ab sofort öffentlich sichtbar.{% endblock %}
+{% block content %}
+<h1 class="h1">Ihre Frage ist jetzt öffentlich</h1>
+<p class="muted">Über das Mandari-Portal</p>
+<p>Hallo {{ question.questioner_name }},</p>
+<p>Ihre Frage an <strong>{{ question.recipient.display_name }}</strong> wurde geprüft und ist ab sofort öffentlich sichtbar.</p>
+<div class="card card-accent">
+    <p><strong>{{ question.subject }}</strong></p>
+</div>
+<p>{{ question.recipient.display_name }} wurde per E-Mail informiert und kann die Frage nun öffentlich beantworten. Sobald eine Antwort veröffentlicht ist, erhalten Sie eine weitere E-Mail.</p>
+<div class="btn-wrap">
+    <a class="btn" href="{{ question_url }}">Frage ansehen</a>
+</div>
+{% endblock %}
+{% block footer %}
+<p>Mandari – Kommunalpolitische Transparenz · <a href="{{ site_url }}">{{ site_url }}</a></p>
+{% endblock %}

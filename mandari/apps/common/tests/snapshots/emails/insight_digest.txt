@@ -1,0 +1,33 @@
+# Dein Mandari-Digest
+
+Musterstadt — 4 neuen Treffer
+
+## 🏠 Nachbarschaft — Hafenviertel
+
+[Bebauungsplan Hafenviertel Nord](https://mandari.example/insight/vorgaenge/00000000-0000-0000-0000-000000000321/)
+
+120m entfernt Vorlage
+
+[Sanierung Kaistraße](https://mandari.example/insight/vorgaenge/00000000-0000-0000-0000-000000000322/)
+
+Vorlage
+
+## 🔍 Suchbegriff: Radweg
+
+[Radwegkonzept 2030](https://mandari.example/insight/vorgaenge/00000000-0000-0000-0000-000000000323/)
+
+Antrag
+
+## ⭐ Gemerkte Elemente
+
+[Haushaltsplan 2027](https://mandari.example/insight/vorgaenge/00000000-0000-0000-0000-000000000324/)
+
+Vorlage
+
+Mandari - Kommunalpolitische Transparenz
+
+[Abo verwalten](https://mandari.example/insight/abo/verwalten/00000000-0000-0000-0000-000000000304/) · [Abmelden](https://mandari.example/insight/abo/abmelden/00000000-0000-0000-0000-000000000304/)
+
+Diese E-Mail wurde an erika@example.org gesendet, weil Sie ein Abo für Musterstadt erstellt haben.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

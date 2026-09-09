@@ -72,6 +72,8 @@ cryptography==50.0.1
     #   pyhanko-certvalidator
     #   pyopenssl
     #   service-identity
+css-inline==0.21.2
+    # via -r requirements.txt
 cssselect2==0.10.1
     # via svglib
 daphne==4.2.3
@@ -122,6 +124,8 @@ gunicorn==26.2.0
     # via -r requirements.txt
 h11==0.16.0
     # via httpcore
+html2text==2025.4.15
+    # via -r requirements.txt
 html5lib==1.1
     # via xhtml2pdf
 httpcore==1.0.9

@@ -5,7 +5,6 @@ apps.accounts.services
 apps.accounts.views
 apps.common.admin
 apps.common.audit_core
-apps.common.email
 apps.common.email_backend
 apps.common.encryption
 apps.common.ical

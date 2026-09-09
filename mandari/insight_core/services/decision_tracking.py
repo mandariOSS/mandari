@@ -20,8 +20,9 @@ import logging
 
 from django.conf import settings
 from django.core.mail import send_mail
-from django.template.loader import render_to_string
 from django.utils import timezone
+
+from apps.common.email import render_email
 
 logger = logging.getLogger(__name__)
 
@@ -127,12 +128,12 @@ def _from_email() -> str:
     )
 
 
-def _send(subject: str, template: str, context: dict, recipient: str, fallback_text: str) -> bool:
+def _send(subject: str, template: str, context: dict, recipient: str) -> bool:
     try:
-        html_message = render_to_string(template, context)
+        html_message, text_message = render_email(template, context)
         send_mail(
             subject=subject,
-            message=fallback_text,
+            message=text_message,
             from_email=_from_email(),
             recipient_list=[recipient],
             html_message=html_message,
@@ -153,10 +154,6 @@ def send_confirmation(subscription) -> bool:
         template="emails/decisions/confirm.html",
         context={"item": item, "confirm_url": confirm_url, "site_url": site_url, "decision_url": public_url(item)},
         recipient=subscription.email,
-        fallback_text=(
-            f'Bestätigen Sie Ihre Benachrichtigung zum Beschluss "{item.name}": {confirm_url}\n'
-            "Falls Sie das nicht angefordert haben, ignorieren Sie diese Nachricht."
-        ),
     )
 
 
@@ -191,10 +188,6 @@ def notify_status_change(item, old_status: str | None, old_public_note: str | No
                 "site_url": site_url,
             },
             recipient=subscription.email,
-            fallback_text=(
-                f'Der Beschluss "{item.name}" ({item.meeting.tenant.name}) hat einen neuen Stand: {label}.\n'
-                f"{item.implementation_public_note or ''}\n\nDetails: {public_url(item)}"
-            ),
         )
         sent += 1 if ok else 0
     return sent

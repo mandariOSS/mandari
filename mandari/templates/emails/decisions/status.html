@@ -1,39 +1,25 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background: #f8fafc; }
-    .container { background: white; border-radius: 12px; overflow: hidden; }
-    .header { background: #4f46e5; color: white; padding: 32px 30px; }
-    .header h1 { margin: 0 0 6px 0; font-size: 22px; }
-    .header p { margin: 0; opacity: 0.9; }
-    .content { padding: 30px; }
-    .status { display: inline-block; padding: 6px 12px; border-radius: 999px; font-weight: 600; background: #e0e7ff; color: #3730a3; }
-    .box { background: #f1f5f9; border-radius: 8px; padding: 15px; margin: 20px 0; white-space: pre-line; }
-    .cta { text-align: center; margin: 30px 0; }
-    .cta a { display: inline-block; background: #4f46e5; color: white !important; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; }
-    .footer { background: #f8fafc; padding: 20px 30px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b; }
-</style>
-</head>
-<body>
-<div class="container">
-    <div class="header">
-        <h1>Neuer Stand zu Ihrem Beschluss</h1>
-        <p>{{ item.meeting.tenant.name }}</p>
-    </div>
-    <div class="content">
-        <p><strong>{{ item.name }}</strong><br>
-        <span style="color:#64748b;font-size:14px;">Beschlossen am {{ item.meeting.start|date:"d.m.Y" }} · {{ item.meeting.organization.name }}{% if item.resolution_number %} · {{ item.resolution_number }}{% endif %}</span></p>
-        <p>Die Verwaltung meldet: <span class="status">{{ status_label }}</span></p>
-        {% if item.implementation_public_note %}<div class="box">{{ item.implementation_public_note }}</div>{% endif %}
-        {% if item.implementation_deadline and item.implementation_status != 'done' %}<p style="font-size:14px;color:#64748b;">Geplante Umsetzung bis {{ item.implementation_deadline|date:"d.m.Y" }}</p>{% endif %}
-        <div class="cta"><a href="{{ decision_url }}">Zeitleiste ansehen</a></div>
-    </div>
-    <div class="footer">
-        <p>Sie erhalten diese E-Mail, weil Sie diesen Beschluss abonniert haben.</p>
-        <p><a href="{{ unsubscribe_url }}" style="color:#64748b;">Benachrichtigungen zu diesem Beschluss beenden</a></p>
-    </div>
+{% extends "emails/base_email.html" %}
+{% block subject %}Neuer Stand zu Ihrem Beschluss{% endblock %}
+{% block preheader %}{{ status_label }} — {{ item.name }}{% endblock %}
+{% block content %}
+<h1 class="h1">Neuer Stand zu Ihrem Beschluss</h1>
+<p class="muted">{{ item.meeting.tenant.name }}</p>
+<p><strong>{{ item.name }}</strong><br>
+<span class="muted">Beschlossen am {{ item.meeting.start|date:"d.m.Y" }} · {{ item.meeting.organization.name }}{% if item.resolution_number %} · {{ item.resolution_number }}{% endif %}</span></p>
+<p>Die Verwaltung meldet: <span class="badge">{{ status_label }}</span></p>
+{% if item.implementation_public_note %}
+<div class="card">
+    <p class="pre">{{ item.implementation_public_note|linebreaksbr }}</p>
 </div>
-</body>
-</html>
+{% endif %}
+{% if item.implementation_deadline and item.implementation_status != 'done' %}
+<p class="muted">Geplante Umsetzung bis {{ item.implementation_deadline|date:"d.m.Y" }}</p>
+{% endif %}
+<div class="btn-wrap">
+    <a class="btn" href="{{ decision_url }}">Zeitleiste ansehen</a>
+</div>
+{% endblock %}
+{% block footer %}
+<p>Sie erhalten diese E-Mail, weil Sie diesen Beschluss abonniert haben.</p>
+<p><a href="{{ unsubscribe_url }}">Benachrichtigungen zu diesem Beschluss beenden</a></p>
+{% endblock %}

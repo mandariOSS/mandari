@@ -140,14 +140,15 @@ def _send_confirmation_email(subscriber):
     """Sendet Double-Opt-In-Bestätigungsmail."""
     from django.conf import settings as django_settings
     from django.core.mail import send_mail
-    from django.template.loader import render_to_string
+
+    from apps.common.email import render_email
 
     site_url = getattr(django_settings, "SITE_URL", "http://localhost:8000")
     confirm_url = f"{site_url}/insight/abo/bestaetigen/{subscriber.token}/"
 
     subject = "Bitte bestätigen Sie Ihr Mandari-Abo"
 
-    html_message = render_to_string(
+    html_message, text_message = render_email(
         "emails/insight_confirm.html",
         {
             "subscriber": subscriber,
@@ -163,7 +164,7 @@ def _send_confirmation_email(subscriber):
     try:
         send_mail(
             subject=subject,
-            message=f"Bestätigen Sie Ihr Abo: {confirm_url}",
+            message=text_message,
             from_email=from_email,
             recipient_list=[subscriber.email],
             html_message=html_message,

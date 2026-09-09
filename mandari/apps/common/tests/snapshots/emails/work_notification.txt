@@ -1,0 +1,19 @@
+Mandari Work
+
+Aufgabe zugewiesen
+
+# Neue Aufgabe: Haushaltsrede vorbereiten
+
+Bernd Muster hat dir die Aufgabe „Haushaltsrede vorbereiten“ zugewiesen (fällig am 30.09.2026).
+
+BM Bernd Muster
+Fraktion Test
+
+[Details anzeigen](https://mandari.example/work/fraktion-test/tasks/00000000-0000-0000-0000-000000000602/)
+
+Du erhältst diese E-Mail, weil du Benachrichtigungen für Fraktion Test aktiviert hast.
+[Einstellungen anpassen](https://mandari.example/work/fraktion-test/notifications/preferences/)
+
+© Mandari Work | Mandari Open Source
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

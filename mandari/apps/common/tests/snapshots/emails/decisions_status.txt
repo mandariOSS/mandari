@@ -1,0 +1,21 @@
+# Neuer Stand zu Ihrem Beschluss
+
+Stadt Musterstadt
+
+Neubau der Radwegbrücke über den Mühlbach
+Beschlossen am 14.09.2026 · Rat der Stadt Musterstadt · 2026/0815
+
+Die Verwaltung meldet: In Umsetzung
+
+Die Ausführungsplanung läuft.
+Baubeginn ist für Frühjahr 2027 vorgesehen.
+
+Geplante Umsetzung bis 31.03.2027
+
+[Zeitleiste ansehen](https://mandari.example/insight/beschluesse/00000000-0000-0000-0000-000000000201/)
+
+Sie erhalten diese E-Mail, weil Sie diesen Beschluss abonniert haben.
+
+[Benachrichtigungen zu diesem Beschluss beenden](https://mandari.example/insight/beschluesse/abo/abmelden/00000000-0000-0000-0000-000000000203/)
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

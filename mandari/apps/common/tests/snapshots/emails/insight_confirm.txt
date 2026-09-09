@@ -1,0 +1,23 @@
+# Abo bestätigen
+
+Musterstadt
+
+Hallo,
+
+bitte bestätigen Sie Ihr Benachrichtigungs-Abo für Musterstadt.
+
+Ihre Abos
+
+🏠 Nachbarschaft: Hafenviertel (500m)
+🔍 Suchbegriff: Radweg
+🕑 Wöchentlicher Digest
+
+[Abo bestätigen](https://mandari.example/insight/abo/bestaetigen/00000000-0000-0000-0000-000000000304/)
+
+Falls Sie dieses Abo nicht erstellt haben, ignorieren Sie diese E-Mail einfach.
+
+Mandari - Kommunalpolitische Transparenz · <https://mandari.example>
+
+Diese E-Mail wurde automatisch versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

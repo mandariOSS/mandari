@@ -1,0 +1,15 @@
+Alarm: Ingestor-Daemon liefert keine Sync-Läufe
+==================================================
+
+Der Ingestor hat seit längerem keinen Sync-Lauf protokolliert.
+
+Status: Letzter Sync-Lauf vor 26 Stunden
+
+---
+
+Betriebsmonitor: https://mandari.example/admin/monitoring/
+
+
+--
+Mandari - Kommunalpolitische Transparenz
+https://mandari.example

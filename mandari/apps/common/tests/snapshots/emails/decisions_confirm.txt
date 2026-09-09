@@ -1,0 +1,19 @@
+# Benachrichtigung bestätigen
+
+Stadt Musterstadt
+
+Sie möchten informiert werden, wenn sich der Umsetzungsstand dieses Beschlusses ändert:
+
+Neubau der Radwegbrücke über den Mühlbach
+
+Beschlossen am 14.09.2026 · Rat der Stadt Musterstadt
+
+Bitte bestätigen Sie Ihre E-Mail-Adresse mit einem Klick:
+
+[Benachrichtigung aktivieren](https://mandari.example/insight/beschluesse/abo/bestaetigen/00000000-0000-0000-0000-000000000202/)
+
+Falls Sie das nicht angefordert haben, ignorieren Sie diese E-Mail einfach. Ohne Bestätigung wird Ihre Adresse nicht weiter verwendet.
+
+[Beschluss ansehen](https://mandari.example/insight/beschluesse/00000000-0000-0000-0000-000000000201/) · [mandari Insight](https://mandari.example/insight/)
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

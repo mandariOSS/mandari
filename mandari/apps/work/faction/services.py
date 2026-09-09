@@ -15,6 +15,7 @@ from django.conf import settings
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from apps.common.email import render_email
 from apps.common.ical import build_ics_event
 from apps.common.pdf import html_to_pdf
 
@@ -186,8 +187,7 @@ class FactionMeetingEmailService:
         subject = f"Aktualisierte Einladung: {meeting.title}" if update else f"Einladung: {meeting.title}"
 
         try:
-            html_content = render_to_string("work/faction/email/invitation.html", context)
-            text_content = render_to_string("work/faction/email/invitation.txt", context)
+            html_content, text_content = render_email("work/faction/email/invitation.html", context)
         except Exception as e:
             logger.error(f"Failed to render email template: {e}")
             # Fall back to simple text
@@ -349,8 +349,7 @@ class FactionMeetingEmailService:
         subject = f"Erinnerung: {meeting.title} in {hours_before} Stunden"
 
         try:
-            html_content = render_to_string("work/faction/email/reminder.html", context)
-            text_content = render_to_string("work/faction/email/reminder.txt", context)
+            html_content, text_content = render_email("work/faction/email/reminder.html", context)
         except Exception:
             # Fall back to simple text
             html_content = None

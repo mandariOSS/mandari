@@ -69,6 +69,18 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
   Typografie) sind zentral definiert.
 - Barrierefreiheit ist Teil jeder Komponente: Tastaturbedienung, Fokus sichtbar, ARIA, Zielgröße
   mindestens 24 Pixel, Kontraste nach WCAG 2.2 AA.
+- E2E im Browser: `tests_e2e/` (pytest-playwright, Chromium) prüft Kernpfade mit aktivem JavaScript,
+  führt axe-core aus (kritische/schwere Befunde schlagen fehl; `color-contrast` bis #171 informativ)
+  und erzeugt Screenshots hell/dunkel als CI-Artefakt. Neue Kernpfade bekommen dort einen Test.
+- E-Mails: Jede HTML-Mail erweitert `templates/emails/base_email.html` (tabellenbasiertes 600-px-Layout,
+  Blöcke `subject`, `preheader`, `content`, `footer`). Nur das Basis-Layout hat einen `<style>`-Block;
+  Fach-Mails nutzen ausschließlich dessen Klassen (`.h1`, `.card`, `.btn`, `.muted`, `.table`, …) und
+  enthalten weder `<style>` noch `style=`-Attribute. Versandstellen rendern über
+  `apps.common.email.render_email(template, context)` → `(html, text)`: der Inliner (`css-inline`)
+  schreibt die Klassen in `style=`-Attribute, die Text-Alternative kommt aus dem `.txt`-Geschwistertemplate
+  oder per `html2text` aus dem HTML. `apps/common/tests/test_emails.py` rendert jede Mail mit Beispieldaten
+  und vergleicht mit Snapshots unter `apps/common/tests/snapshots/emails/`; nach gewollten Änderungen
+  `UPDATE_SNAPSHOTS=1 pytest apps/common/tests/test_emails.py` ausführen und die Snapshots mit committen.
 
 - Schema-Contract: Django-Modelle und Ingestor-Tabellen (`oparl_*`) müssen zusammenpassen;
   `scripts/check_schema_contract.py` prüft das im CI. Pflichtfelder, die der Ingestor nicht setzt,
