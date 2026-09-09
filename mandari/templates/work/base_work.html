@@ -26,6 +26,7 @@
     <!-- Frontend-Bundle (HTMX, Alpine, Icons, Toasts, Bestätigungsdialog) über Vite-Manifest -->
     {% load django_vite %}{% vite_hmr_client %}
     {% vite_asset 'frontend/js/main.ts' %}
+    {% vite_asset 'frontend/js/work.ts' %}
 
     <!-- Real-time Notifications -->
     <script src="{% static 'js/notifications.js' %}"></script>
