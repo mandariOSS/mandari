@@ -92,9 +92,7 @@ class PoliteFetcher:
         if entry and now - entry.fetched_at < ROBOTS_CACHE_SECONDS:
             return entry
 
-        robots_url = urlunparse(
-            (parsed.scheme or "https", parsed.netloc, "/robots.txt", "", "", "")
-        )
+        robots_url = urlunparse((parsed.scheme or "https", parsed.netloc, "/robots.txt", "", "", ""))
         parser: urllib.robotparser.RobotFileParser | None = None
         try:
             assert self._client is not None

@@ -147,10 +147,10 @@ class ApplicationService:
                     is_active=True,
                 )
             except SessionOrganization.DoesNotExist:
-                raise ValueError("Zielgremium nicht gefunden")
+                raise ValueError("Zielgremium nicht gefunden") from None
 
         # Create application
-        application = SessionApplication.objects.create(
+        return SessionApplication.objects.create(
             tenant=tenant,
             title=title.strip(),
             application_type=application_type,
@@ -168,8 +168,6 @@ class ApplicationService:
             deadline=deadline,
             status="submitted",
         )
-
-        return application
 
     @staticmethod
     def get_application_status(application_id: UUID, tenant: SessionTenant) -> dict:
@@ -195,7 +193,7 @@ class ApplicationService:
                 tenant=tenant,
             )
         except SessionApplication.DoesNotExist:
-            raise ValueError("Antrag nicht gefunden")
+            raise ValueError("Antrag nicht gefunden") from None
 
         return {
             "id": str(app.id),

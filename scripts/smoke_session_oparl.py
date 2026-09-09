@@ -482,7 +482,7 @@ def walk_ids(node, found):
 
 all_payloads = []
 all_ids = set()
-for field, items in collected.items():
+for _field, items in collected.items():
     all_payloads.append(json.dumps(items, ensure_ascii=False))
     walk_ids(items, all_ids)
 

@@ -81,9 +81,7 @@ class ScraperConfig:
         raw = dict((sync_config or {}).get("scraper") or {})
         base_url = raw.get("base_url") or ""
         if not base_url:
-            raise ValueError(
-                "sync_config['scraper']['base_url'] fehlt — ohne Basis-URL kein Crawl."
-            )
+            raise ValueError("sync_config['scraper']['base_url'] fehlt — ohne Basis-URL kein Crawl.")
         window = raw.get("calendar_window_days") or (-60, 210)
         full_window = raw.get("full_window_days") or (-365, 210)
         known = {
@@ -106,9 +104,7 @@ class ScraperConfig:
             max_concurrent=int(raw.get("max_concurrent", 1)),
             calendar_window_days=(int(window[0]), int(window[1])),
             full_window_days=(int(full_window[0]), int(full_window[1])),
-            max_detail_pages=(
-                int(raw["max_detail_pages"]) if raw.get("max_detail_pages") else None
-            ),
+            max_detail_pages=(int(raw["max_detail_pages"]) if raw.get("max_detail_pages") else None),
             members_on_full_only=bool(raw.get("members_on_full_only", True)),
             adapter_schema_version=int(raw.get("adapter_schema_version", 1)),
             extra={k: v for k, v in raw.items() if k not in known},
@@ -132,9 +128,7 @@ class ScraperAdapter(Protocol):
         """Synthetisches OParl-Body-Dict der Quelle."""
         ...
 
-    def iter_entities(
-        self, window: CrawlWindow, full: bool
-    ) -> AsyncIterator[tuple[str, list[dict[str, Any]]]]:
+    def iter_entities(self, window: CrawlWindow, full: bool) -> AsyncIterator[tuple[str, list[dict[str, Any]]]]:
         """Yield (entity_type, Seite von OParl-Dicts) in FK-Reihenfolge."""
         ...
 
@@ -189,9 +183,7 @@ def normalize_external_id(url: str, keep_params: tuple[str, ...]) -> str:
 
 def _strip_volatile(value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            k: _strip_volatile(v) for k, v in value.items() if k not in VOLATILE_HASH_FIELDS
-        }
+        return {k: _strip_volatile(v) for k, v in value.items() if k not in VOLATILE_HASH_FIELDS}
     if isinstance(value, list):
         return [_strip_volatile(v) for v in value]
     return value
@@ -204,9 +196,7 @@ def content_hash(entity: dict[str, Any]) -> str:
     Der Hash landet als "mandari:contentHash" im synthetischen Dict und
     damit im raw_json der DB — der Runner upsertet nur bei Differenz.
     """
-    canonical = json.dumps(
-        _strip_volatile(entity), sort_keys=True, ensure_ascii=False, separators=(",", ":")
-    )
+    canonical = json.dumps(_strip_volatile(entity), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 

@@ -17,6 +17,8 @@ from django.views.generic import TemplateView, View
 
 logger = logging.getLogger("apps.work.motions")
 
+import contextlib
+
 from apps.common.mixins import WorkViewMixin
 from apps.work.notifications.services import NotificationHub
 
@@ -547,7 +549,7 @@ class MotionDocumentDownloadView(WorkViewMixin, View):
         try:
             handle = document.file.open("rb")
         except (FileNotFoundError, ValueError):
-            raise Http404("Datei nicht gefunden.")
+            raise Http404("Datei nicht gefunden.") from None
         response = FileResponse(
             handle,
             as_attachment=True,
@@ -577,9 +579,8 @@ class MotionCommentResolveView(WorkViewMixin, View):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         # Only author or someone with edit permission can resolve
-        if comment.author != self.membership:
-            if not self.membership.has_permission("motions.edit_all"):
-                return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+        if comment.author != self.membership and not self.membership.has_permission("motions.edit_all"):
+            return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         comment.is_resolved = True
         comment.resolved_by = self.membership
@@ -698,10 +699,8 @@ class MotionImportView(WorkViewMixin, TemplateView):
         motion_type = None
         motion_type_id = request.POST.get("document_type")
         if motion_type_id:
-            try:
+            with contextlib.suppress(MotionType.DoesNotExist):
                 motion_type = MotionType.objects.get(id=motion_type_id, organization=self.organization)
-            except MotionType.DoesNotExist:
-                pass
 
         # Get visibility
         visibility = request.POST.get("visibility", "private")
@@ -726,8 +725,7 @@ class MotionImportView(WorkViewMixin, TemplateView):
                 motion = successes[0].motion
                 messages.success(request, f"Dokument '{motion.title}' erfolgreich importiert.")
                 return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
-            else:
-                messages.success(request, f"{len(successes)} Dokumente erfolgreich importiert.")
+            messages.success(request, f"{len(successes)} Dokumente erfolgreich importiert.")
 
         if failures:
             for failure in failures:

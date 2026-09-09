@@ -28,7 +28,7 @@ class DsgvoExportService:
         """
         now = timezone.now()
 
-        data = {
+        return {
             "meta": {
                 "export_date": now.isoformat(),
                 "export_date_display": now.strftime("%d.%m.%Y um %H:%M Uhr"),
@@ -51,8 +51,6 @@ class DsgvoExportService:
             "notifications": self._collect_notifications(membership),
             "support": self._collect_support(membership, organization),
         }
-
-        return data
 
     # -------------------------------------------------------------------------
     # Account & Membership

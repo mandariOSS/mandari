@@ -15,6 +15,8 @@ from django.views.generic import TemplateView
 
 logger = logging.getLogger("apps.work.motions")
 
+import contextlib
+
 from apps.common.mixins import WorkViewMixin
 
 from ..forms import (
@@ -100,10 +102,8 @@ class MotionCreateView(WorkViewMixin, TemplateView):
         # Handle document type (new system)
         document_type_id = request.POST.get("document_type")
         if document_type_id:
-            try:
+            with contextlib.suppress(MotionType.DoesNotExist):
                 motion.document_type = MotionType.objects.get(id=document_type_id, organization=self.organization)
-            except MotionType.DoesNotExist:
-                pass
 
         # Handle legacy type (fallback)
         motion_type = request.POST.get("motion_type", "motion")
@@ -132,10 +132,8 @@ class MotionCreateView(WorkViewMixin, TemplateView):
         # Handle letterhead (overrides template letterhead)
         letterhead_id = request.POST.get("letterhead")
         if letterhead_id:
-            try:
+            with contextlib.suppress(OrganizationLetterhead.DoesNotExist):
                 motion.letterhead = OrganizationLetterhead.objects.get(id=letterhead_id, organization=self.organization)
-            except OrganizationLetterhead.DoesNotExist:
-                pass
 
         motion.save()
 

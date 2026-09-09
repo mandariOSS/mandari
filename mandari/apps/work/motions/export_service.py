@@ -115,9 +115,7 @@ def clean_editor_html(html: str) -> str:
 
     # Remove editor-specific CSS classes
     html = re.sub(r'\s+class="comment-mark[^"]*"', "", html)
-    html = re.sub(r'\s+class="is-editor-empty"', "", html)
-
-    return html
+    return re.sub(r'\s+class="is-editor-empty"', "", html)
 
 
 class MotionExportService:

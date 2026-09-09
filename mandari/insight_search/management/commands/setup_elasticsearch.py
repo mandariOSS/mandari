@@ -9,6 +9,7 @@ Konfiguriert die Elasticsearch-Indizes mit optimalen Einstellungen:
 - Index-Mappings mit optimalen Feldtypen
 """
 
+import contextlib
 import logging
 
 from django.conf import settings
@@ -41,7 +42,9 @@ class Command(BaseCommand):
         try:
             from elasticsearch import Elasticsearch
         except ImportError:
-            raise CommandError("elasticsearch nicht installiert. Bitte 'pip install elasticsearch' ausführen.")
+            raise CommandError(
+                "elasticsearch nicht installiert. Bitte 'pip install elasticsearch' ausführen."
+            ) from None
 
         url = getattr(settings, "ELASTICSEARCH_URL", "http://localhost:9200")
         self.stdout.write(f"Verbinde mit Elasticsearch: {url}")
@@ -53,7 +56,7 @@ class Command(BaseCommand):
             info = client.info()
             self.stdout.write(self.style.SUCCESS(f"Elasticsearch {info['version']['number']} verbunden"))
         except Exception as e:
-            raise CommandError(f"Elasticsearch Verbindungsfehler: {e}")
+            raise CommandError(f"Elasticsearch Verbindungsfehler: {e}") from e
 
         # Synonyme laden
         synonym_list = []
@@ -276,10 +279,8 @@ class Command(BaseCommand):
     def _reset_index(self, client, index_name: str):
         """Löscht und erstellt einen Index neu."""
         self.stdout.write(f"  Lösche Index: {index_name}")
-        try:
+        with contextlib.suppress(Exception):
             client.indices.delete(index=index_name, ignore=[404])
-        except Exception:
-            pass
 
     def _configure_index(self, client, index_name: str, config: dict):
         """Erstellt oder aktualisiert einen Index."""

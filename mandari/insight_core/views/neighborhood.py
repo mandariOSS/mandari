@@ -109,12 +109,16 @@ def neighborhood_autocomplete(request):
             lon, lat = coords[0], coords[1]
 
             # BBox-Filter: Nur Ergebnisse innerhalb Body-Grenzen
-            if body and body.bbox_north and body.bbox_south:
-                if not (
+            if (
+                body
+                and body.bbox_north
+                and body.bbox_south
+                and not (
                     float(body.bbox_south) <= lat <= float(body.bbox_north)
                     and float(body.bbox_west) <= lon <= float(body.bbox_east)
-                ):
-                    continue
+                )
+            ):
+                continue
 
             # Name zusammenbauen
             parts = []

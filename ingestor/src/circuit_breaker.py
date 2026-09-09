@@ -21,9 +21,10 @@ Usage:
 
 import asyncio
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, TypeVar
 
 from rich.console import Console
 
@@ -57,9 +58,7 @@ class CircuitOpenError(Exception):
     def __init__(self, source: str, remaining_seconds: float):
         self.source = source
         self.remaining_seconds = remaining_seconds
-        super().__init__(
-            f"Circuit breaker open for '{source}', retry in {remaining_seconds:.1f}s"
-        )
+        super().__init__(f"Circuit breaker open for '{source}', retry in {remaining_seconds:.1f}s")
 
 
 @dataclass
@@ -176,9 +175,7 @@ class CircuitBreaker:
             self._state.success_count = 0
 
         # Log and record metrics
-        _safe_print(
-            f"[yellow]Circuit breaker '{self.name}': {old_state.value} -> {new_state.value}[/yellow]"
-        )
+        _safe_print(f"[yellow]Circuit breaker '{self.name}': {old_state.value} -> {new_state.value}[/yellow]")
         metrics.record_circuit_breaker_state(self.name, new_state.value)
 
     async def _record_failure(self, exception: Exception) -> None:
@@ -188,9 +185,8 @@ class CircuitBreaker:
             return
 
         # Check if this exception counts as a failure
-        if self.config.failure_exceptions is not None:
-            if not isinstance(exception, self.config.failure_exceptions):
-                return
+        if self.config.failure_exceptions is not None and not isinstance(exception, self.config.failure_exceptions):
+            return
 
         self._state.failure_count += 1
         self._state.last_failure_time = time.time()
@@ -210,9 +206,8 @@ class CircuitBreaker:
         """Record a success and potentially close the circuit."""
         self._state.success_count += 1
 
-        if self._state.state == CircuitState.HALF_OPEN:
-            if self._state.success_count >= self.config.success_threshold:
-                await self._transition_to(CircuitState.CLOSED)
+        if self._state.state == CircuitState.HALF_OPEN and self._state.success_count >= self.config.success_threshold:
+            await self._transition_to(CircuitState.CLOSED)
 
     async def call(
         self,
@@ -269,9 +264,7 @@ class CircuitBreaker:
             "state": self._state.state.value,
             "failure_count": self._state.failure_count,
             "success_count": self._state.success_count,
-            "remaining_timeout": (
-                self._get_remaining_timeout() if self.is_open else None
-            ),
+            "remaining_timeout": (self._get_remaining_timeout() if self.is_open else None),
         }
 
 

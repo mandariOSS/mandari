@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Session app configuration."""
 
+import contextlib
+
 from django.apps import AppConfig
 
 
@@ -15,7 +17,5 @@ class SessionConfig(AppConfig):
     def ready(self):
         """Initialize app when Django starts."""
         # Import signals to register them
-        try:
+        with contextlib.suppress(ImportError):
             from . import signals  # noqa: F401
-        except ImportError:
-            pass

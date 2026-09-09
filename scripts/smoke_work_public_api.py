@@ -85,7 +85,7 @@ body = OParlBody.objects.create(
     source=source, external_id="https://ris.api.example/body/1", name="API-Stadt", slug="api-stadt"
 )
 org = Organization.objects.create(name="Fraktion API-Test", slug="fraktion-api-test", body=body)
-TenantEncryption(org).key
+_ = TenantEncryption(org).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 perm, _ = Permission.objects.get_or_create(
     codename="faction.manage", defaults={"name": "faction.manage", "category": "faction"}
@@ -103,17 +103,29 @@ base = f"/work/{org.slug}"
 
 # Sitzungen: kommend (10 Tage), fern (500 Tage), vergangen (30 Tage), alt (200 Tage)
 m_soon = FactionMeeting.objects.create(
-    organization=org, title="API-SITZUNG-BALD", status="planned",
-    start=now + timedelta(days=10), location="Rathaus, Raum 1",
+    organization=org,
+    title="API-SITZUNG-BALD",
+    status="planned",
+    start=now + timedelta(days=10),
+    location="Rathaus, Raum 1",
 )
 m_far = FactionMeeting.objects.create(
-    organization=org, title="API-SITZUNG-FERN", status="planned", start=now + timedelta(days=500),
+    organization=org,
+    title="API-SITZUNG-FERN",
+    status="planned",
+    start=now + timedelta(days=500),
 )
 m_past = FactionMeeting.objects.create(
-    organization=org, title="API-SITZUNG-VERGANGEN", status="completed", start=now - timedelta(days=30),
+    organization=org,
+    title="API-SITZUNG-VERGANGEN",
+    status="completed",
+    start=now - timedelta(days=30),
 )
 m_old = FactionMeeting.objects.create(
-    organization=org, title="API-SITZUNG-ALT", status="completed", start=now - timedelta(days=200),
+    organization=org,
+    title="API-SITZUNG-ALT",
+    status="completed",
+    start=now - timedelta(days=200),
 )
 
 # =============================================================================
@@ -124,7 +136,9 @@ check("API-Reiter -> 200", resp.status_code == 200, f"got {resp.status_code}")
 check("Optionen sichtbar", "Zukunft (Tage)" in html and "Erlaubte Origins" in html and "Cache (Sekunden)" in html)
 check("Statistik sichtbar", "Abrufe gesamt" in html)
 check("Einbindungs-Snippet vorhanden", "fraktions-termine" in html and "fetch(" in html)
-check("Tab in Navigation", '>API<' in html.replace("\n", "").replace(" ", "").replace(">API<", ">API<") or "API" in html)
+check(
+    "Tab in Navigation", ">API<" in html.replace("\n", "").replace(" ", "").replace(">API<", ">API<") or "API" in html
+)
 
 resp = manager.get(f"{base}/organization/faction-settings/")
 html = resp.content.decode("utf-8")
@@ -145,7 +159,10 @@ resp = manager.post(
     },
 )
 access = FactionPublicApiAccess.objects.get(organization=org)
-check("Optionen gespeichert", access.is_enabled and access.past_days == 60 and access.future_days == 100 and access.cache_seconds == 120)
+check(
+    "Optionen gespeichert",
+    access.is_enabled and access.past_days == 60 and access.future_days == 100 and access.cache_seconds == 120,
+)
 check(
     "Origins bereinigt (nur http/https, ohne Slash)",
     access.origin_list() == ["https://fraktion.example", "http://lokal.test"],
@@ -161,7 +178,10 @@ titles = [m["title"] for m in data["meetings"]]
 check("Terminliste -> 200", resp.status_code == 200, f"got {resp.status_code}")
 check("Kommende Sitzung enthalten", "API-SITZUNG-BALD" in titles)
 check("Zukunfts-Fenster greift (500 Tage raus)", "API-SITZUNG-FERN" not in titles)
-check("Vergangenheit 60 Tage: 30 Tage drin, 200 raus", "API-SITZUNG-VERGANGEN" in titles and "API-SITZUNG-ALT" not in titles)
+check(
+    "Vergangenheit 60 Tage: 30 Tage drin, 200 raus",
+    "API-SITZUNG-VERGANGEN" in titles and "API-SITZUNG-ALT" not in titles,
+)
 check("Ort ausgeliefert", any(m["location"] == "Rathaus, Raum 1" for m in data["meetings"]))
 check("Cache-Dauer konfiguriert", resp["Cache-Control"] == "public, max-age=120", resp["Cache-Control"])
 
@@ -187,13 +207,9 @@ check("Tagesordnung abgeschaltet", "OEFFENTLICHER-TOP" not in resp.content.decod
 # =============================================================================
 print()
 print("=== Phase C: CORS je Origin ===")
-resp = anon.get(
-    f"/api/public/v1/fraktionen/{access.token}/sitzungen/", HTTP_ORIGIN="https://fraktion.example"
-)
+resp = anon.get(f"/api/public/v1/fraktionen/{access.token}/sitzungen/", HTTP_ORIGIN="https://fraktion.example")
 check("Erlaubter Origin gespiegelt", resp.headers.get("Access-Control-Allow-Origin") == "https://fraktion.example")
-resp = anon.get(
-    f"/api/public/v1/fraktionen/{access.token}/sitzungen/", HTTP_ORIGIN="https://boese-seite.example"
-)
+resp = anon.get(f"/api/public/v1/fraktionen/{access.token}/sitzungen/", HTTP_ORIGIN="https://boese-seite.example")
 check("Fremder Origin ohne CORS-Freigabe", "Access-Control-Allow-Origin" not in resp.headers)
 
 # Ohne Einschränkung: *

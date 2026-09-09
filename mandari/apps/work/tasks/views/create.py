@@ -9,6 +9,7 @@ Provides Kanban-style task management with:
 - Checklists, attachments, labels, activity feed
 """
 
+import contextlib
 import logging
 
 from django.contrib import messages
@@ -42,10 +43,8 @@ class TaskCreateView(WorkViewMixin, TemplateView):
         if related_motion_id:
             from apps.work.motions.models import Motion
 
-            try:
+            with contextlib.suppress(Motion.DoesNotExist, ValueError):
                 context["related_motion"] = Motion.objects.get(id=related_motion_id, organization=self.organization)
-            except (Motion.DoesNotExist, ValueError):
-                pass
 
         from_protocol = self.request.GET.get("from_protocol")
         if from_protocol:
@@ -82,10 +81,8 @@ class TaskCreateView(WorkViewMixin, TemplateView):
             if related_motion_id:
                 from apps.work.motions.models import Motion
 
-                try:
+                with contextlib.suppress(Motion.DoesNotExist, ValueError):
                     task.related_motion = Motion.objects.get(id=related_motion_id, organization=self.organization)
-                except (Motion.DoesNotExist, ValueError):
-                    pass
 
             task.position = Task.objects.filter(organization=self.organization, status=task.status).count()
 

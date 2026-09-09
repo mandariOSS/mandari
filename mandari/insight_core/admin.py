@@ -198,12 +198,11 @@ class OParlSourceAdmin(ModelAdmin):
 
         if hours < 0.5:
             return mark_safe('<span style="color: #16a34a;">Aktuell</span>')
-        elif hours < 2:
+        if hours < 2:
             return mark_safe('<span style="color: #65a30d;">OK</span>')
-        elif hours < 24:
+        if hours < 24:
             return mark_safe('<span style="color: #ca8a04;">Veraltet</span>')
-        else:
-            return mark_safe('<span style="color: #dc2626;">Sehr alt</span>')
+        return mark_safe('<span style="color: #dc2626;">Sehr alt</span>')
 
     @admin.display(description="Letzter Sync")
     def last_sync_ago(self, obj):

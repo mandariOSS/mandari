@@ -306,8 +306,7 @@ class NotificationHub:
         # Handle overnight quiet hours (e.g., 22:00 - 07:00)
         if start > end:
             return now >= start or now <= end
-        else:
-            return start <= now <= end
+        return start <= now <= end
 
     @classmethod
     def _send_notification_email(cls, notification: Notification):
@@ -707,7 +706,7 @@ class NotificationHub:
         """
         # For now, just log - staff notifications would go through admin
         logger.info(f"Support ticket created: {ticket.id} by {creator.user.email}")
-        return None
+        return
 
     @classmethod
     def notify_support_ticket_reply(

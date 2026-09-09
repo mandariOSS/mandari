@@ -1081,6 +1081,10 @@ class Street(models.Model):
 # =============================================================================
 
 
+# Standard-Zoomstufen für die Kachelberechnung (unveränderlich, daher als Modulkonstante)
+DEFAULT_TILE_ZOOM_LEVELS = range(10, 17)
+
+
 class TileCache(models.Model):
     """
     Cache für Map-Tiles.
@@ -1140,7 +1144,7 @@ class TileCache(models.Model):
         return tile
 
     @classmethod
-    def tiles_for_bbox(cls, bbox_north, bbox_south, bbox_east, bbox_west, zoom_levels=range(10, 17)):
+    def tiles_for_bbox(cls, bbox_north, bbox_south, bbox_east, bbox_west, zoom_levels=DEFAULT_TILE_ZOOM_LEVELS):
         """
         Berechnet alle Tile-Koordinaten für eine Bounding Box.
 

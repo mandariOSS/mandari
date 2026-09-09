@@ -33,7 +33,7 @@ class SessionTenantMiddleware(MiddlewareMixin):
         if not request.path.startswith("/session/"):
             request.session_tenant = None
             request.session_user = None
-            return None
+            return
 
         # Extract tenant slug from path
         # Format: /session/<tenant_slug>/...
@@ -41,7 +41,7 @@ class SessionTenantMiddleware(MiddlewareMixin):
         if len(parts) < 2:
             request.session_tenant = None
             request.session_user = None
-            return None
+            return
 
         tenant_slug = parts[1]
 
@@ -50,7 +50,7 @@ class SessionTenantMiddleware(MiddlewareMixin):
         if tenant_slug in ("static", "api", "health", "invite"):
             request.session_tenant = None
             request.session_user = None
-            return None
+            return
 
         # Import here to avoid circular imports
         from apps.session.models import SessionTenant, SessionUser
@@ -60,7 +60,7 @@ class SessionTenantMiddleware(MiddlewareMixin):
             tenant = SessionTenant.objects.get(slug=tenant_slug, is_active=True)
             request.session_tenant = tenant
         except SessionTenant.DoesNotExist:
-            raise Http404("Mandant nicht gefunden")
+            raise Http404("Mandant nicht gefunden") from None
 
         # Get session user if authenticated
         request.session_user = None
@@ -86,7 +86,7 @@ class SessionTenantMiddleware(MiddlewareMixin):
         # Request für das Audit-Logging bereitstellen (Thread-Local)
         set_current_request(request)
 
-        return None
+        return
 
     def process_response(self, request, response):
         """Thread-Local-Request nach der Verarbeitung aufräumen."""
@@ -96,7 +96,7 @@ class SessionTenantMiddleware(MiddlewareMixin):
     def process_exception(self, request, exception):
         """Thread-Local-Request auch bei Fehlern aufräumen."""
         clear_current_request()
-        return None
+        return
 
 
 def get_current_tenant(request):

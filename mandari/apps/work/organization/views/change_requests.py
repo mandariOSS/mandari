@@ -104,11 +104,11 @@ class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
 
         if action == "submit_request":
             return self._submit_request(request)
-        elif action == "withdraw_request":
+        if action == "withdraw_request":
             return self._withdraw_request(request)
-        elif action == "approve_request":
+        if action == "approve_request":
             return self._approve_request(request)
-        elif action == "reject_request":
+        if action == "reject_request":
             return self._reject_request(request)
 
         return redirect("work:profile_requests", org_slug=self.organization.slug)

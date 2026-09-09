@@ -228,6 +228,5 @@ def sort_organizations_by_ranking(queryset, include_activity=True):
             .annotate(final_priority=F("ranking_priority") + F("inactivity_penalty"))
             .order_by("final_priority", "name")
         )
-    else:
-        # Simple ranking without activity check
-        return queryset.annotate(ranking_priority=get_ranking_annotation()).order_by("ranking_priority", "name")
+    # Simple ranking without activity check
+    return queryset.annotate(ranking_priority=get_ranking_annotation()).order_by("ranking_priority", "name")

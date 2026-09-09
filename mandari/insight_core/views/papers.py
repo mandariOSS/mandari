@@ -110,12 +110,8 @@ class PaperDetailView(DetailView):
             with_meeting = [item for item in consultations if item.get("meeting") and item.get("date")]
             if with_meeting:
                 future = [item for item in with_meeting if item["date"] >= now]
-                if future:
-                    # Nächste zukünftige (früheste)
-                    best = min(future, key=lambda x: x["date"])
-                else:
-                    # Neueste vergangene
-                    best = max(with_meeting, key=lambda x: x["date"])
+                # Nächste zukünftige (früheste), sonst neueste vergangene
+                best = min(future, key=lambda x: x["date"]) if future else max(with_meeting, key=lambda x: x["date"])
                 context["file_context_summary"] = best
 
         # Ortsbezüge (offizielle OParl-Locations + extrahierte) für Karte/Liste

@@ -7,6 +7,7 @@ Digitale Abstimmung und Umlaufbeschlüsse (Issue #41).
 - Umlaufbeschlüsse: Anlage, Rücklauf-Erfassung, Ergebnisfeststellung
 """
 
+import contextlib
 from datetime import date
 
 from django.contrib import messages
@@ -86,10 +87,8 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         if method == "secret":
             # Geheim: Summen manuell, keine Einzelstimmen
             for field in ("votes_yes", "votes_no", "votes_abstain"):
-                try:
+                with contextlib.suppress(TypeError, ValueError):
                     setattr(item, field, max(0, min(9999, int(request.POST.get(field, 0)))))
-                except (TypeError, ValueError):
-                    pass
         item.save()
 
         votes_by_person = {}

@@ -68,7 +68,7 @@ class ProfileDataPrivacyView(WorkViewMixin, TemplateView):
 
         if action == "export_data":
             return self._export_data(request)
-        elif action == "request_deletion":
+        if action == "request_deletion":
             return self._request_deletion(request)
 
         return redirect("work:profile_data", org_slug=self.organization.slug)

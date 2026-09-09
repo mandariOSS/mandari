@@ -199,13 +199,12 @@ class RegistrationForm(forms.Form):
 
     def save(self):
         """Create the user account."""
-        user = User.objects.create_user(
+        return User.objects.create_user(
             email=self.email,
             password=self.cleaned_data["password1"],
             first_name=self.cleaned_data["first_name"],
             last_name=self.cleaned_data["last_name"],
         )
-        return user
 
 
 class SelfRegistrationForm(forms.Form):

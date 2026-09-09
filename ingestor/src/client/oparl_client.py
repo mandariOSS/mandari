@@ -14,10 +14,11 @@ Features:
 import asyncio
 import hashlib
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone as dt_timezone
-from typing import Any, AsyncIterator
-from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
+from datetime import UTC, datetime
+from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
 from rich.console import Console
@@ -222,10 +223,7 @@ class OParlClient:
             # Try to execute through circuit breaker
             for attempt in range(self.max_retries):
                 try:
-                    result = await circuit_breaker.call(
-                        self._do_fetch, url, use_cache, skip_wait
-                    )
-                    return result
+                    return await circuit_breaker.call(self._do_fetch, url, use_cache, skip_wait)
 
                 except CircuitOpenError as e:
                     # Circuit is open - fail fast
@@ -259,7 +257,7 @@ class OParlClient:
 
                 # Exponential backoff
                 if attempt < self.max_retries - 1:
-                    wait = self.retry_backoff ** attempt
+                    wait = self.retry_backoff**attempt
                     await asyncio.sleep(wait)
 
         except Exception as e:
@@ -379,11 +377,7 @@ class OParlClient:
             # modified_since mit 401/403/400. Dann einmalig ohne den Filter
             # neu ansetzen — die Client-seitige modified-Prüfung plus
             # Early-Stop hält den Mehraufwand klein.
-            if (
-                tried_modified_since
-                and pages_fetched == 0
-                and result.status_code in (400, 401, 403)
-            ):
+            if tried_modified_since and pages_fetched == 0 and result.status_code in (400, 401, 403):
                 console.print(
                     f"[yellow]{url}: modified_since nicht unterstützt "
                     f"(HTTP {result.status_code}) — Fallback auf vollständige Liste[/yellow]"
@@ -453,7 +447,7 @@ class OParlClient:
         # der Zeitzonen-Offset ist Pflicht. Naive datetimes als UTC auszeichnen,
         # sonst ist der Wert spec-widrig und Server dürfen ihn ablehnen.
         if modified_since.tzinfo is None:
-            modified_since = modified_since.replace(tzinfo=dt_timezone.utc)
+            modified_since = modified_since.replace(tzinfo=UTC)
         params["modified_since"] = [modified_since.isoformat(timespec="seconds")]
         new_query = urlencode(params, doseq=True)
         return urlunparse(parsed._replace(query=new_query))

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 @dataclass
 class OParlSource:
     """An OParl source definition."""
+
     name: str
     url: str
     priority: int = 2  # 1=high, 2=medium, 3=low
@@ -57,7 +58,9 @@ MEDIUM_CITIES = [
     OParlSource("Stadt Brühl", "https://ratsinfo.bruehl.de/webservice/oparl/v1.1/system"),
     OParlSource("Stadt Kleve", "https://ris.kleve.de/webservice/oparl/v1.1/system"),  # Volt-Standort NRW
     OParlSource("Stadt Moers", "https://ris.moers.de/webservice/oparl/v1.1/system"),
-    OParlSource("Bezirksregierung Köln", "https://bezreg-koeln.ratsinfomanagement.net/webservice/oparl/v1.1/system", 2, "other"),
+    OParlSource(
+        "Bezirksregierung Köln", "https://bezreg-koeln.ratsinfomanagement.net/webservice/oparl/v1.1/system", 2, "other"
+    ),
     OParlSource("Stadt Lahr/Schwarzwald", "https://lahr.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     OParlSource("Stadt Bad Kreuznach", "https://bad-kreuznach-stadt.gremien.info/oparl/system"),
     OParlSource("Stadt Pirmasens", "https://oparl.stadt-pirmasens.de/oparl/system"),
@@ -73,11 +76,25 @@ MEDIUM_CITIES = [
 # Berlin Marzahn-Hellersdorf wurde entfernt (404)
 # =============================================================================
 BERLIN_DISTRICTS = [
-    OParlSource("Berlin Steglitz-Zehlendorf", "https://www.sitzungsdienst-steglitz-zehlendorf.de/oi/oparl/1.0/system.asp", 2, "district"),
-    OParlSource("Berlin Treptow-Köpenick", "https://www.sitzungsdienst-treptow-koepenick.de/oi/oparl/1.0/system.asp", 2, "district"),
-    OParlSource("Berlin Reinickendorf", "https://www.sitzungsdienst-reinickendorf.de/oi/oparl/1.0/system.asp", 2, "district"),
+    OParlSource(
+        "Berlin Steglitz-Zehlendorf",
+        "https://www.sitzungsdienst-steglitz-zehlendorf.de/oi/oparl/1.0/system.asp",
+        2,
+        "district",
+    ),
+    OParlSource(
+        "Berlin Treptow-Köpenick",
+        "https://www.sitzungsdienst-treptow-koepenick.de/oi/oparl/1.0/system.asp",
+        2,
+        "district",
+    ),
+    OParlSource(
+        "Berlin Reinickendorf", "https://www.sitzungsdienst-reinickendorf.de/oi/oparl/1.0/system.asp", 2, "district"
+    ),
     OParlSource("Berlin Pankow", "https://www.sitzungsdienst-pankow.de/oi/oparl/1.0/system.asp", 2, "district"),
-    OParlSource("Berlin Lichtenberg", "https://www.sitzungsdienst-lichtenberg.de/oi/oparl/1.0/system.asp", 2, "district"),
+    OParlSource(
+        "Berlin Lichtenberg", "https://www.sitzungsdienst-lichtenberg.de/oi/oparl/1.0/system.asp", 2, "district"
+    ),
 ]
 
 # =============================================================================
@@ -85,10 +102,22 @@ BERLIN_DISTRICTS = [
 # Entfernt: Landkreis Ludwigslust-Parchim (DNS fail)
 # =============================================================================
 DISTRICTS = [
-    OParlSource("Landkreis Märkisch-Oderland", "https://ratsinfo-online.net/landkreis-mol-bi/oparl/1.0/system.asp", 2, "district"),
-    OParlSource("Kreis Gütersloh", "https://sdnetrim.kdvz-frechen.de/rim4890/webservice/oparl/v1.1/system", 2, "district"),
+    OParlSource(
+        "Landkreis Märkisch-Oderland",
+        "https://ratsinfo-online.net/landkreis-mol-bi/oparl/1.0/system.asp",
+        2,
+        "district",
+    ),
+    OParlSource(
+        "Kreis Gütersloh", "https://sdnetrim.kdvz-frechen.de/rim4890/webservice/oparl/v1.1/system", 2, "district"
+    ),
     OParlSource("Kreis Viersen", "https://kis.kreis-viersen.de/webservice/oparl/v1.0/system", 2, "district"),
-    OParlSource("Kreisverwaltung Euskirchen", "https://sdnetrim.kdvz-frechen.de/rim4520/webservice/oparl/v1.1/system", 2, "district"),
+    OParlSource(
+        "Kreisverwaltung Euskirchen",
+        "https://sdnetrim.kdvz-frechen.de/rim4520/webservice/oparl/v1.1/system",
+        2,
+        "district",
+    ),
     OParlSource("Regionalverband Ruhr", "https://rvr-online.gremien.info/oparl", 2, "district"),
 ]
 
@@ -115,9 +144,16 @@ VERBANDSGEMEINDEN = [
     OParlSource("Montabaur", "https://montabaur.gremien.info/oparl/system", 3, "verbandsgemeinde"),
     OParlSource("Westerburg", "https://westerburg.gremien.info/oparl/system", 3, "verbandsgemeinde"),
     OParlSource("Enkenbach-Alsenborn", "https://enkenbach-alsenborn.gremien.info/oparl/system", 3, "verbandsgemeinde"),
-    OParlSource("Verbandsgemeinde Hagenbach", "https://www.hagenbach.sitzung-online.de/bi/oparl/1.0/system.asp", 3, "verbandsgemeinde"),
+    OParlSource(
+        "Verbandsgemeinde Hagenbach",
+        "https://www.hagenbach.sitzung-online.de/bi/oparl/1.0/system.asp",
+        3,
+        "verbandsgemeinde",
+    ),
     OParlSource("Verbandsgemeinde Weida-Land", "https://weida-land.gremien.info/oparl/system", 3, "verbandsgemeinde"),
-    OParlSource("Amt Itzstedt", "https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/system.asp", 3, "verbandsgemeinde"),
+    OParlSource(
+        "Amt Itzstedt", "https://www.itzstedt.sitzung-online.de/bi/oparl/1.0/system.asp", 3, "verbandsgemeinde"
+    ),
 ]
 
 # =============================================================================
@@ -130,7 +166,9 @@ SMALL_MUNICIPALITIES = [
     OParlSource("Stadt Vlotho", "https://vlotho.ratsinfomanagement.net/webservice/oparl/v1.1/system", 3),
     OParlSource("Gemeinde Hiddenhausen", "https://hiddenhausen.ratsinfomanagement.net/webservice/oparl/v1.1/system", 3),
     OParlSource("Gemeinde Kirchlengern", "https://kirchlengern.ratsinfomanagement.net/webservice/oparl/v1.1/system", 3),
-    OParlSource("Gemeinde Rödinghausen", "https://roedinghausen.ratsinfomanagement.net/webservice/oparl/v1.1/system", 3),
+    OParlSource(
+        "Gemeinde Rödinghausen", "https://roedinghausen.ratsinfomanagement.net/webservice/oparl/v1.1/system", 3
+    ),
     OParlSource("Gemeinde Schwalmtal", "https://ris.schwalmtal.de/webservice/oparl/v1.1/system", 3),
     OParlSource("Gemeinde Ladbergen", "https://ladbergen.ratsinfomanagement.net/webservice/oparl/v1.1/system", 3),
     OParlSource("Rahden", "https://rahden.ratsinfomanagement.net/webservice/oparl/v1.1/system", 3),
@@ -180,7 +218,9 @@ SMALL_MUNICIPALITIES = [
     OParlSource("Gemeinde Kall", "https://sdnetrim.kdvz-frechen.de/rim4550/webservice/oparl/v1.1/system", 3),
     # Instabil bei Prüfung 2026-03-11
     OParlSource("Eschwege", "https://rim.ekom21.de/eschwege/webservice/oparl/v1.1/system", 3),  # HTTP 400
-    OParlSource("Stadtverwaltung Ortenberg", "https://rim.ekom21.de/ortenberg/webservice/oparl/v1.1/system", 3),  # HTTP 400
+    OParlSource(
+        "Stadtverwaltung Ortenberg", "https://rim.ekom21.de/ortenberg/webservice/oparl/v1.1/system", 3
+    ),  # HTTP 400
     OParlSource("Stadt Großalmerode", "https://rim.ekom21.de/grossalmerode/webservice/oparl/v1.1/system", 3),
     OParlSource("Stadt Bleckede", "https://www.bleckede.sitzung-online.de/bi/oparl/1.0/system.asp", 3),  # HTTP 500
     OParlSource("Gemeinde Harsum", "https://www.harsum.sitzung-online.de/bi/oparl/1.0/system.asp", 3),  # HTTP 500
@@ -198,13 +238,13 @@ AGGREGATORS = [
 def get_all_sources() -> list[OParlSource]:
     """Get all known OParl sources."""
     return (
-        MAJOR_CITIES +
-        MEDIUM_CITIES +
-        BERLIN_DISTRICTS +
-        DISTRICTS +
-        VERBANDSGEMEINDEN +
-        SMALL_MUNICIPALITIES +
-        AGGREGATORS
+        MAJOR_CITIES
+        + MEDIUM_CITIES
+        + BERLIN_DISTRICTS
+        + DISTRICTS
+        + VERBANDSGEMEINDEN
+        + SMALL_MUNICIPALITIES
+        + AGGREGATORS
     )
 
 

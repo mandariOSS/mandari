@@ -167,19 +167,19 @@ class SecurityView(WorkViewMixin, TemplateView):
 
         if action == "change_password":
             return self._change_password(request, user)
-        elif action == "setup_2fa":
+        if action == "setup_2fa":
             return self._setup_2fa(request, user)
-        elif action == "confirm_2fa":
+        if action == "confirm_2fa":
             return self._confirm_2fa(request, user)
-        elif action == "disable_2fa":
+        if action == "disable_2fa":
             return self._disable_2fa(request, user)
-        elif action == "regenerate_backup_codes":
+        if action == "regenerate_backup_codes":
             return self._regenerate_backup_codes(request, user)
-        elif action == "revoke_session":
+        if action == "revoke_session":
             return self._revoke_session(request, user)
-        elif action == "revoke_all_sessions":
+        if action == "revoke_all_sessions":
             return self._revoke_all_sessions(request, user)
-        elif action == "remove_trusted_device":
+        if action == "remove_trusted_device":
             return self._remove_trusted_device(request, user)
 
         return redirect("work:security", org_slug=self.organization.slug)

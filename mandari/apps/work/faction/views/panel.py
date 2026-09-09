@@ -217,8 +217,7 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         # Reload item to get fresh data
         item = FactionAgendaItem.objects.get(id=item.id)
         html = self._render_panel(request, meeting, item)
-        resp = self._success_response(html, message)
-        return resp
+        return self._success_response(html, message)
 
     def _none_response(self, message=None):
         """Return empty response for hx-swap=none (auto-save)."""

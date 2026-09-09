@@ -66,11 +66,12 @@ def check(name, condition, detail=""):
 
 print("=== Setup ===")
 org = Organization.objects.create(name="Fraktion Priv", slug="fraktion-priv")
-TenantEncryption(org).key
+_ = TenantEncryption(org).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 admin_role = Role.objects.filter(organization=org, is_admin=True).first()
 if admin_role is None:
     admin_role = Role.objects.create(organization=org, name="Administrator", is_admin=True)
+
 
 # Nicht-Admin-Manager-Rolle (wie Fraktionsvorsitz): darf Mitglieder/Rollen verwalten
 def perm(code, name, cat):

@@ -100,7 +100,7 @@ class Command(BaseCommand):
 
         # Check roles
         roles = Role.objects.filter(organization=org)
-        expected_roles = set(r["name"] for r in DEFAULT_ROLES.values())
+        expected_roles = {r["name"] for r in DEFAULT_ROLES.values()}
         existing_roles = set(roles.values_list("name", flat=True))
         missing_roles = expected_roles - existing_roles
 

@@ -127,7 +127,7 @@ oparl_paper = OParlPaper.objects.create(
 )
 
 org = Organization.objects.create(name="Fraktion Smoke", slug="fraktion-smoke", body=body)
-TenantEncryption(org).key
+_ = TenantEncryption(org).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 admin_role = Role.objects.filter(organization=org, is_admin=True).first()
 if admin_role is None:
     admin_role = Role.objects.create(organization=org, name="Administrator", is_admin=True)
@@ -236,7 +236,7 @@ def build_url(route, url_name):
 tested = skipped = 0
 status_counts = {}
 resolver = get_resolver()
-for url_name, route, pattern in walk(resolver.url_patterns):
+for url_name, route, _pattern in walk(resolver.url_patterns):
     if any(route.startswith(p) for p in SKIP_PREFIXES) or (url_name and url_name.endswith(SKIP_NAME_SUFFIXES)):
         skipped += 1
         continue
@@ -304,7 +304,7 @@ SESSION_PERMISSIONS = {f.name[len("can_") :] for f in SessionRole._meta.get_fiel
 
 checked_perms = 0
 seen = set()
-for url_name, _route, pattern in walk(resolver.url_patterns):
+for _url_name, _route, pattern in walk(resolver.url_patterns):
     view_class = getattr(pattern.callback, "view_class", None)
     if view_class is None or view_class in seen:
         continue

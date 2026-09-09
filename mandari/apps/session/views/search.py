@@ -8,6 +8,8 @@ die jeweilige Berechtigung und Ö/NÖ-Sichtbarkeit gefiltert. Verschlüsselte
 NÖ-Inhalte (z. B. NÖ-Protokollteile) sind bewusst nicht durchsuchbar.
 """
 
+import contextlib
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.views.generic import TemplateView
@@ -39,12 +41,10 @@ class SessionSearchView(SessionViewMixin, TemplateView):
 
         org_id = request.GET.get("organization")
         if org_id:
-            try:
+            with contextlib.suppress(ValueError, DjangoValidationError):
                 filters["organization"] = SessionOrganization.objects.filter(
                     tenant=self.session_tenant, pk=org_id
                 ).first()
-            except (ValueError, DjangoValidationError):
-                pass
 
         year = request.GET.get("year", "")
         if year.isdigit() and 2000 <= int(year) <= 2100:
@@ -52,10 +52,8 @@ class SessionSearchView(SessionViewMixin, TemplateView):
 
         term_id = request.GET.get("term")
         if term_id:
-            try:
+            with contextlib.suppress(ValueError, DjangoValidationError):
                 filters["term"] = SessionLegislativeTerm.objects.filter(tenant=self.session_tenant, pk=term_id).first()
-            except (ValueError, DjangoValidationError):
-                pass
 
         kind = request.GET.get("kind", "")
         if kind in ("papers", "meetings", "resolutions", "protocols", "files", "applications"):

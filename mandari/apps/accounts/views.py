@@ -7,6 +7,8 @@ Provides views for:
 - Password reset flow
 """
 
+import contextlib
+
 from django.contrib import messages
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
@@ -107,9 +109,8 @@ class LoginView(View):
             messages.success(request, "Erfolgreich angemeldet.")
 
             return redirect(self.get_success_url(request, next_url))
-        else:
-            # Log failed attempt
-            self.log_attempt(request, email, success=False)
+        # Log failed attempt
+        self.log_attempt(request, email, success=False)
 
         return render(
             request,
@@ -177,7 +178,8 @@ class LoginView(View):
 
     def log_attempt(self, request, email, success):
         """Log login attempt for security monitoring."""
-        try:
+        # Login darf nicht scheitern, wenn das Protokollieren fehlschlägt
+        with contextlib.suppress(Exception):
             LoginAttempt.objects.create(
                 email=email,
                 ip_address=self.get_client_ip(request),
@@ -185,8 +187,6 @@ class LoginView(View):
                 was_successful=success,
                 failure_reason="" if success else "invalid_credentials",
             )
-        except Exception:
-            pass  # Don't fail login if logging fails
 
     def _get_pending_invitation(self, request):
         """Get pending invitation from session if any."""
@@ -199,10 +199,7 @@ class LoginView(View):
         from apps.tenants.models import UserInvitation
 
         try:
-            invitation = UserInvitation.objects.get(
-                token=token, accepted_at__isnull=True, expires_at__gt=timezone.now()
-            )
-            return invitation
+            return UserInvitation.objects.get(token=token, accepted_at__isnull=True, expires_at__gt=timezone.now())
         except UserInvitation.DoesNotExist:
             # Clear invalid token
             request.session.pop("pending_invitation_token", None)
@@ -371,10 +368,7 @@ class RegisterView(View):
         from apps.tenants.models import UserInvitation
 
         try:
-            invitation = UserInvitation.objects.get(
-                token=token, accepted_at__isnull=True, expires_at__gt=timezone.now()
-            )
-            return invitation
+            return UserInvitation.objects.get(token=token, accepted_at__isnull=True, expires_at__gt=timezone.now())
         except UserInvitation.DoesNotExist:
             return None
 
@@ -472,7 +466,6 @@ class SelfRegisterView(View):
             if self.org.registration_auto_approve:
                 messages.success(request, f"Willkommen bei {self.org.name}!")
                 return redirect("work:dashboard", org_slug=self.org.slug)
-            else:
-                return render(request, "accounts/registration_pending.html", {"org": self.org})
+            return render(request, "accounts/registration_pending.html", {"org": self.org})
 
         return render(request, self.template_name, {"form": form, "org": self.org})

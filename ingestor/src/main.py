@@ -19,12 +19,13 @@ Usage:
 
 import asyncio
 import sys
-from typing import Optional
 
 # Fix Windows console encoding - prevents UnicodeEncodeError with charmap codec
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+from datetime import UTC
 
 import typer
 from rich.console import Console
@@ -44,36 +45,36 @@ console = Console()
 
 def print_banner() -> None:
     """Print the application banner."""
-    console.print(Panel.fit(
-        "[bold blue]Mandari OParl Ingestor[/bold blue]\n"
-        "[dim]High-performance sync service for municipal data[/dim]",
-        border_style="blue",
-    ))
+    console.print(
+        Panel.fit(
+            "[bold blue]Mandari OParl Ingestor[/bold blue]\n"
+            "[dim]High-performance sync service for municipal data[/dim]",
+            border_style="blue",
+        )
+    )
     console.print()
 
 
 @app.command()
 def sync(
-    body_url: Optional[list[str]] = typer.Option(
-        None, "--body", "-b",
+    body_url: list[str] | None = typer.Option(  # noqa: B008 – Typer-Konvention für Optionen
+        None,
+        "--body",
+        "-b",
         help="Direct OParl Body URL(s). Auto-detects Body, Body-List, or System URLs.",
     ),
-    source_url: Optional[str] = typer.Option(
-        None, "--source", "-s",
+    source_url: str | None = typer.Option(
+        None,
+        "--source",
+        "-s",
         help="Legacy: OParl System URL (prefer --body for direct Body URLs)",
     ),
-    full: bool = typer.Option(
-        False, "--full", "-f", help="Perform full sync (ignore last sync timestamp)"
-    ),
-    all_sources: bool = typer.Option(
-        False, "--all", "-a", help="Sync all registered sources"
-    ),
-    body_filter: Optional[str] = typer.Option(
+    full: bool = typer.Option(False, "--full", "-f", help="Perform full sync (ignore last sync timestamp)"),
+    all_sources: bool = typer.Option(False, "--all", "-a", help="Sync all registered sources"),
+    body_filter: str | None = typer.Option(
         None, "--filter", help="Filter by body name when using --source (partial match)"
     ),
-    max_concurrent: int = typer.Option(
-        10, "--concurrent", "-c", help="Maximum concurrent HTTP requests"
-    ),
+    max_concurrent: int = typer.Option(10, "--concurrent", "-c", help="Maximum concurrent HTTP requests"),
 ) -> None:
     """
     Synchronize OParl data.
@@ -120,9 +121,9 @@ def sync(
     console.print()
 
     async def run_sync() -> None:
-        from datetime import datetime, timezone as tz
+        from datetime import datetime
 
-        start_time = datetime.now(tz.utc)
+        start_time = datetime.now(UTC)
         sync_type = "full" if full else "incremental"
 
         async with SyncOrchestrator(max_concurrent=max_concurrent) as orchestrator:
@@ -155,25 +156,26 @@ def sync(
             # SyncLog in Django's Tabelle schreiben
             if results:
                 await orchestrator.write_results_to_synclog(
-                    results, start_time, sync_type, triggered_by="cli",
+                    results,
+                    start_time,
+                    sync_type,
+                    triggered_by="cli",
                 )
 
     try:
         asyncio.run(run_sync())
     except KeyboardInterrupt:
         console.print("\n[yellow]Sync interrupted by user[/yellow]")
-        raise typer.Exit(130)
+        raise typer.Exit(130) from None
     except Exception as e:
         console.print(f"\n[red]Sync failed: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command("add-source")
 def add_source(
     url: str = typer.Argument(..., help="OParl API URL (system endpoint)"),
-    name: Optional[str] = typer.Option(
-        None, "--name", "-n", help="Display name (auto-detected if not specified)"
-    ),
+    name: str | None = typer.Option(None, "--name", "-n", help="Display name (auto-detected if not specified)"),
 ) -> None:
     """
     Register a new OParl source.
@@ -206,7 +208,7 @@ def add_source(
         asyncio.run(run_add())
     except Exception as e:
         console.print(f"\n[red]Failed to add source: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command("list-sources")
@@ -287,7 +289,9 @@ def status() -> None:
             console.print("  docker compose -f infrastructure/docker/docker-compose.dev.yml up -d")
 
     console.print("[bold]Configuration:[/bold]")
-    console.print(f"  Database: {settings.database_url.split('@')[-1] if '@' in settings.database_url else settings.database_url}")
+    console.print(
+        f"  Database: {settings.database_url.split('@')[-1] if '@' in settings.database_url else settings.database_url}"
+    )
     console.print(f"  Redis: {settings.redis_url}")
     console.print(f"  Elasticsearch: {settings.elasticsearch_url}")
     console.print()
@@ -306,7 +310,7 @@ def init_db() -> None:
     console.print("[blue]Initializing database schema...[/blue]")
 
     async def run_init() -> None:
-        async with SyncOrchestrator() as orchestrator:
+        async with SyncOrchestrator():
             console.print("[green]Database schema initialized successfully![/green]")
 
     try:
@@ -316,23 +320,15 @@ def init_db() -> None:
         console.print()
         console.print("[dim]Make sure PostgreSQL is running:[/dim]")
         console.print("  docker compose -f infrastructure/docker/docker-compose.dev.yml up -d")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
 def daemon(
-    interval: int = typer.Option(
-        10, "--interval", "-i", help="Minutes between incremental syncs"
-    ),
-    full_sync_hour: int = typer.Option(
-        3, "--full-sync-hour", help="Hour of day for full sync (24h format)"
-    ),
-    max_concurrent: int = typer.Option(
-        10, "--concurrent", "-c", help="Maximum concurrent HTTP requests"
-    ),
-    metrics_port: int = typer.Option(
-        9090, "--metrics-port", help="Port for Prometheus metrics server"
-    ),
+    interval: int = typer.Option(10, "--interval", "-i", help="Minutes between incremental syncs"),
+    full_sync_hour: int = typer.Option(3, "--full-sync-hour", help="Hour of day for full sync (24h format)"),
+    max_concurrent: int = typer.Option(10, "--concurrent", "-c", help="Maximum concurrent HTTP requests"),
+    metrics_port: int = typer.Option(9090, "--metrics-port", help="Port for Prometheus metrics server"),
 ) -> None:
     """
     Start the sync scheduler daemon.
@@ -370,22 +366,22 @@ def daemon(
     from src.scheduler import run_scheduler
 
     try:
-        asyncio.run(run_scheduler(
-            sync_interval=interval,
-            full_sync_hour=full_sync_hour,
-            max_concurrent=max_concurrent,
-            metrics_port=metrics_port,
-        ))
+        asyncio.run(
+            run_scheduler(
+                sync_interval=interval,
+                full_sync_hour=full_sync_hour,
+                max_concurrent=max_concurrent,
+                metrics_port=metrics_port,
+            )
+        )
     except KeyboardInterrupt:
         console.print("\n[yellow]Daemon stopped by user[/yellow]")
-        raise typer.Exit(130)
+        raise typer.Exit(130) from None
 
 
 @app.command("extract-daemon")
 def extract_daemon(
-    interval: int = typer.Option(
-        10, "--interval", "-i", help="Minutes to sleep when no files are pending"
-    ),
+    interval: int = typer.Option(10, "--interval", "-i", help="Minutes to sleep when no files are pending"),
 ) -> None:
     """
     Start the standalone text-extraction worker (separate from the sync daemon).
@@ -434,7 +430,7 @@ def extract_daemon(
         asyncio.run(run_worker())
     except KeyboardInterrupt:
         console.print("\n[yellow]Extraction worker stopped by user[/yellow]")
-        raise typer.Exit(130)
+        raise typer.Exit(130) from None
 
 
 @app.command()
@@ -488,7 +484,7 @@ def test_connection(
         asyncio.run(run_test())
     except Exception as e:
         console.print(f"[red]Connection failed: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command("init-sources")
@@ -496,9 +492,7 @@ def init_sources(
     priority: int = typer.Option(
         1, "--priority", "-p", help="Add sources up to this priority level (1=major cities, 2=medium, 3=all)"
     ),
-    default_only: bool = typer.Option(
-        False, "--default", "-d", help="Only add default recommended sources"
-    ),
+    default_only: bool = typer.Option(False, "--default", "-d", help="Only add default recommended sources"),
 ) -> None:
     """
     Initialize all known German OParl sources.
@@ -567,7 +561,7 @@ def init_sources(
         asyncio.run(run_init())
     except Exception as e:
         console.print(f"\n[red]Initialization failed: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command("metrics")

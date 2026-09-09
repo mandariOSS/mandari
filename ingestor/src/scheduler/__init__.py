@@ -59,12 +59,14 @@ class SyncScheduler:
 
     async def start(self) -> None:
         """Start the scheduler and register jobs."""
-        console.print(Panel.fit(
-            "[bold green]Starting Sync Scheduler[/bold green]\n"
-            f"[dim]Incremental: every {self.sync_interval} minutes[/dim]\n"
-            f"[dim]Full sync: daily at {self.full_sync_hour:02d}:00[/dim]",
-            border_style="green",
-        ))
+        console.print(
+            Panel.fit(
+                "[bold green]Starting Sync Scheduler[/bold green]\n"
+                f"[dim]Incremental: every {self.sync_interval} minutes[/dim]\n"
+                f"[dim]Full sync: daily at {self.full_sync_hour:02d}:00[/dim]",
+                border_style="green",
+            )
+        )
 
         # Add incremental sync job
         self.scheduler.add_job(
@@ -124,15 +126,15 @@ class SyncScheduler:
                 for result in results:
                     if result.success:
                         total_synced += (
-                            result.organizations_synced +
-                            result.persons_synced +
-                            result.memberships_synced +
-                            result.meetings_synced +
-                            result.papers_synced +
-                            result.files_synced +
-                            result.locations_synced +
-                            result.agenda_items_synced +
-                            result.consultations_synced
+                            result.organizations_synced
+                            + result.persons_synced
+                            + result.memberships_synced
+                            + result.meetings_synced
+                            + result.papers_synced
+                            + result.files_synced
+                            + result.locations_synced
+                            + result.agenda_items_synced
+                            + result.consultations_synced
                         )
                     orchestrator.print_result(result)
 
@@ -174,15 +176,15 @@ class SyncScheduler:
                 for result in results:
                     if result.success:
                         total_synced += (
-                            result.organizations_synced +
-                            result.persons_synced +
-                            result.memberships_synced +
-                            result.meetings_synced +
-                            result.papers_synced +
-                            result.files_synced +
-                            result.locations_synced +
-                            result.agenda_items_synced +
-                            result.consultations_synced
+                            result.organizations_synced
+                            + result.persons_synced
+                            + result.memberships_synced
+                            + result.meetings_synced
+                            + result.papers_synced
+                            + result.files_synced
+                            + result.locations_synced
+                            + result.agenda_items_synced
+                            + result.consultations_synced
                         )
                     orchestrator.print_result(result)
 
@@ -208,7 +210,10 @@ class SyncScheduler:
     async def _write_cycle_log(self, orchestrator, results, start_time, sync_type):
         """Write a single sync log entry via orchestrator's shared method."""
         await orchestrator.write_results_to_synclog(
-            results, start_time, sync_type, triggered_by="daemon",
+            results,
+            start_time,
+            sync_type,
+            triggered_by="daemon",
         )
 
     async def _listen_for_triggers(self):
@@ -247,11 +252,13 @@ class SyncScheduler:
         """Get current scheduler status."""
         jobs = []
         for job in self.scheduler.get_jobs():
-            jobs.append({
-                "id": job.id,
-                "name": job.name,
-                "next_run": str(job.next_run_time) if job.next_run_time else None,
-            })
+            jobs.append(
+                {
+                    "id": job.id,
+                    "name": job.name,
+                    "next_run": str(job.next_run_time) if job.next_run_time else None,
+                }
+            )
 
         return {
             "running": self.scheduler.running,

@@ -70,7 +70,7 @@ class OrganizationMixin(LoginRequiredMixin):
         try:
             self.organization = Organization.objects.get(slug=org_slug, is_active=True)
         except Organization.DoesNotExist:
-            raise Http404("Organisation nicht gefunden")
+            raise Http404("Organisation nicht gefunden") from None
 
         # Get membership for current user
         try:
@@ -80,7 +80,7 @@ class OrganizationMixin(LoginRequiredMixin):
                 .get(user=request.user, organization=self.organization, is_active=True)
             )
         except Membership.DoesNotExist:
-            raise PermissionDenied("Kein Zugang zu dieser Organisation")
+            raise PermissionDenied("Kein Zugang zu dieser Organisation") from None
 
         # Set on request for easy access
         request.organization = self.organization

@@ -503,13 +503,11 @@ class KnowledgeBaseArticleView(WorkViewMixin, TemplateView):
         text = f'<p class="my-4">{text}</p>'
 
         # Links
-        text = re.sub(
+        return re.sub(
             r"\[(.+?)\]\((.+?)\)",
             r'<a href="\2" class="text-primary-600 hover:underline" target="_blank">\1</a>',
             text,
         )
-
-        return text
 
 
 class ArticleFeedbackView(WorkViewMixin, View):

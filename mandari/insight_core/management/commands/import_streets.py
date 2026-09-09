@@ -79,12 +79,12 @@ class Command(BaseCommand):
             try:
                 bodies = [OParlBody.objects.get(Q(id=body_id) | Q(slug=body_id))]
             except OParlBody.DoesNotExist:
-                raise CommandError(f"Kommune mit ID/Slug '{body_id}' nicht gefunden.")
+                raise CommandError(f"Kommune mit ID/Slug '{body_id}' nicht gefunden.") from None
             except (ValueError, ValidationError):
                 # UUID-Parse-Fehler bei Slug-Angabe
                 body = OParlBody.objects.filter(slug=body_id).first()
                 if not body:
-                    raise CommandError(f"Kommune mit Slug '{body_id}' nicht gefunden.")
+                    raise CommandError(f"Kommune mit Slug '{body_id}' nicht gefunden.") from None
                 bodies = [body]
 
         for i, body in enumerate(bodies):

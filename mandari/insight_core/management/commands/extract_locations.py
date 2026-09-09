@@ -121,7 +121,7 @@ class Command(BaseCommand):
                 queryset = queryset.filter(body=body)
                 self.stdout.write(f"Kommune: {body.name}")
             except OParlBody.DoesNotExist:
-                raise CommandError(f"Kommune mit ID/Slug '{body_id}' nicht gefunden.")
+                raise CommandError(f"Kommune mit ID/Slug '{body_id}' nicht gefunden.") from None
 
         # Order by date (newest first)
         queryset = queryset.order_by("-date", "-oparl_created")

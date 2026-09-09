@@ -297,7 +297,6 @@ _GENERIC_ROAD_TYPES = {
     "gemeindeweg",
     "privatweg",
     "fahrgasse",
-    "feuergasse",
     "gemeindestraße",
     "landestraße",  # variant without 's'
     # Generic phrases captured by regex
@@ -667,10 +666,7 @@ def _result_matches_query(
         result_words.update(w for w in re.split(r"[-\s]+", s) if len(w) >= 4)
     result_words -= generic_words
 
-    if q_words and result_words and (q_words & result_words):
-        return True
-
-    return False
+    return bool(q_words and result_words and q_words & result_words)
 
 
 def _geocode_nominatim(address: str, body) -> dict | None:
@@ -982,10 +978,9 @@ def process_paper_georef(paper, mode: str = "all") -> dict:
             "locations": locations,
             "method": method,
         }
-    elif mode == "regex":
+    if mode == "regex":
         return {"status": "ai_needed", "locations": [], "method": method}
-    else:
-        return {"status": "no_locations", "locations": [], "method": method}
+    return {"status": "no_locations", "locations": [], "method": method}
 
 
 def _split_house_number(address: str) -> tuple[str, str | None]:

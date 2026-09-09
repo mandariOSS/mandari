@@ -146,7 +146,7 @@ class SessionTenantAdmin(ModelAdmin):
                 f"<small>Kopieren Sie diesen Token sofort, er kann nicht erneut angezeigt werden!</small>"
             ),
         )
-        return None
+        return
 
 
 # =============================================================================
@@ -695,7 +695,7 @@ class SessionApplicationAdmin(ModelAdmin):
         app.save()
 
         messages.success(request, f"Vorlage '{paper.reference}' wurde aus dem Antrag erstellt.")
-        return None
+        return
 
 
 # =============================================================================

@@ -206,10 +206,9 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
                     return redirect("work:organization", org_slug=self.organization.slug)
 
             # Logo remove
-            if request.POST.get("remove_logo") == "1":
-                if self.organization.logo:
-                    self.organization.logo.delete(save=False)
-                    self.organization.logo = None
+            if request.POST.get("remove_logo") == "1" and self.organization.logo:
+                self.organization.logo.delete(save=False)
+                self.organization.logo = None
 
             self.organization.save()
             messages.success(request, "Organisationseinstellungen gespeichert.")

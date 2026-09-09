@@ -24,7 +24,7 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
     max_per_file = 5000
     max_total = 25000
 
-    for f in (files or []):
+    for f in files or []:
         if f.file_name:
             file_names.append(f.file_name)
         if f.text_content and total_len < max_total:

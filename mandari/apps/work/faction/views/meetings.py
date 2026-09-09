@@ -70,10 +70,7 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
             context["search_query"] = search
 
         # Order
-        if time_filter == "upcoming":
-            meetings = meetings.order_by("start")
-        else:
-            meetings = meetings.order_by("-start")
+        meetings = meetings.order_by("start") if time_filter == "upcoming" else meetings.order_by("-start")
 
         # Annotate
         meetings = meetings.annotate(

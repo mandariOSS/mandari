@@ -26,14 +26,9 @@ def test_three_failures_pause_ten_minutes():
 
 def test_backoff_doubles_and_caps():
     assert source_backoff_until(src(5, minutes_ago=0), NOW) == NOW + timedelta(minutes=40)
-    assert source_backoff_until(src(20, minutes_ago=0), NOW) == NOW + timedelta(
-        minutes=BACKOFF_MAX_MINUTES
-    )
+    assert source_backoff_until(src(20, minutes_ago=0), NOW) == NOW + timedelta(minutes=BACKOFF_MAX_MINUTES)
 
 
 def test_missing_error_time_or_naive_datetime():
-    assert (
-        source_backoff_until(SimpleNamespace(consecutive_failures=9, last_error_at=None), NOW)
-        is None
-    )
+    assert source_backoff_until(SimpleNamespace(consecutive_failures=9, last_error_at=None), NOW) is None
     assert source_backoff_until(src(3, minutes_ago=5, tz=None), NOW) == NOW + timedelta(minutes=5)

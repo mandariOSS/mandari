@@ -18,11 +18,8 @@ from src.sync.processor import (
     ProcessedFile,
     ProcessedLocation,
     ProcessedMeeting,
-    ProcessedOrganization,
     ProcessedPaper,
-    ProcessedPerson,
 )
-
 
 # Path to sample data
 SAMPLE_DATA_PATH = Path(__file__).parent.parent.parent.parent.parent / "_OParl Muster Data"

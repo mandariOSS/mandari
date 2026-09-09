@@ -120,15 +120,14 @@ class TextExtractor:
             return False
 
         # Check MIME type support
-        if mime_type and mime_type not in SUPPORTED_MIME_TYPES:
-            # Allow unknown MIME types (try anyway), but skip known unsupported
-            if mime_type.startswith(("image/", "video/", "audio/")):
-                await self.storage.update_file_text(
-                    file_id=file_id,
-                    status="skipped",
-                    error=f"Unsupported MIME type: {mime_type}",
-                )
-                return False
+        # Allow unknown MIME types (try anyway), but skip known unsupported
+        if mime_type and mime_type not in SUPPORTED_MIME_TYPES and mime_type.startswith(("image/", "video/", "audio/")):
+            await self.storage.update_file_text(
+                file_id=file_id,
+                status="skipped",
+                error=f"Unsupported MIME type: {mime_type}",
+            )
+            return False
 
         try:
             data = await self._download(download_url)
@@ -154,15 +153,12 @@ class TextExtractor:
         sha256_hash = hashlib.sha256(data).hexdigest()
 
         # Detect MIME type from content if not set
-        if not mime_type:
-            if data[:5] == b"%PDF-":
-                mime_type = "application/pdf"
+        if not mime_type and data[:5] == b"%PDF-":
+            mime_type = "application/pdf"
 
         # Extract text
         try:
-            text, page_count, method = await asyncio.to_thread(
-                self._extract_text, data, mime_type, file_name
-            )
+            text, page_count, method = await asyncio.to_thread(self._extract_text, data, mime_type, file_name)
         except Exception as e:
             logger.warning("Extraction failed for %s: %s", file_name or file_id, e)
             await self.storage.update_file_text(
@@ -183,15 +179,14 @@ class TextExtractor:
                 sha256_hash=sha256_hash,
             )
             return True
-        else:
-            await self.storage.update_file_text(
-                file_id=file_id,
-                method=method or "none",
-                status="completed",
-                page_count=page_count,
-                sha256_hash=sha256_hash,
-            )
-            return False
+        await self.storage.update_file_text(
+            file_id=file_id,
+            method=method or "none",
+            status="completed",
+            page_count=page_count,
+            sha256_hash=sha256_hash,
+        )
+        return False
 
     async def _download(self, url: str) -> bytes:
         """Download a file via httpx async."""
@@ -204,9 +199,7 @@ class TextExtractor:
             return response.content
 
     @staticmethod
-    def _extract_text(
-        data: bytes, mime_type: str, file_name: str
-    ) -> tuple[str, int | None, str]:
+    def _extract_text(data: bytes, mime_type: str, file_name: str) -> tuple[str, int | None, str]:
         """
         Extract text from file data. Runs in a thread (sync).
 

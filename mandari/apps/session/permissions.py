@@ -85,11 +85,10 @@ class SessionPermissionChecker:
 
             # Collect individual permissions from role
             for attr in dir(role):
-                if attr.startswith("can_"):
-                    if getattr(role, attr, False):
-                        # Convert can_view_meetings to view_meetings
-                        perm_name = attr[4:]  # Remove 'can_' prefix
-                        permissions.add(perm_name)
+                if attr.startswith("can_") and getattr(role, attr, False):
+                    # Convert can_view_meetings to view_meetings
+                    perm_name = attr[4:]  # Remove 'can_' prefix
+                    permissions.add(perm_name)
 
         return permissions
 
@@ -142,7 +141,7 @@ class SessionMixin(LoginRequiredMixin):
         try:
             self.session_tenant = SessionTenant.objects.get(slug=tenant_slug, is_active=True)
         except SessionTenant.DoesNotExist:
-            raise Http404("Mandant nicht gefunden")
+            raise Http404("Mandant nicht gefunden") from None
 
         # Set on request
         request.session_tenant = self.session_tenant
@@ -160,7 +159,7 @@ class SessionMixin(LoginRequiredMixin):
                     )
                 )
             except SessionUser.DoesNotExist:
-                raise PermissionDenied("Kein Zugang zu diesem Mandanten")
+                raise PermissionDenied("Kein Zugang zu diesem Mandanten") from None
         else:
             # LoginRequiredMixin will handle redirect
             pass
@@ -177,7 +176,7 @@ class SessionMixin(LoginRequiredMixin):
 
     def check_view_permissions(self):
         """Hook für Berechtigungsprüfungen (Default: keine)."""
-        return None
+        return
 
     def get_context_data(self, **kwargs):
         """Add session context to templates."""

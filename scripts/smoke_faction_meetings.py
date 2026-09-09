@@ -177,7 +177,7 @@ body = OParlBody.objects.create(
 )
 
 org = Organization.objects.create(name="Fraktion Testpartei", slug="fraktion-test", body=body)
-TenantEncryption(org).key
+_ = TenantEncryption(org).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 ALL_PERMS = [
     "faction.view_public",
@@ -613,7 +613,9 @@ meeting_h = FactionMeeting.objects.create(
 top_int_h = FactionAgendaItem.objects.create(
     meeting=meeting_h, title="GEHEIM-TOP-H", number="NÖ 1", visibility="internal"
 )
-entry_h = FactionProtocolEntry(meeting=meeting_h, agenda_item=top_int_h, entry_type="note", created_by=chair_ms, order=1)
+entry_h = FactionProtocolEntry(
+    meeting=meeting_h, agenda_item=top_int_h, entry_type="note", created_by=chair_ms, order=1
+)
 entry_h.set_content_encrypted("GEHEIM-ALT-H")
 entry_h.save()
 entry_h.set_content_encrypted("SUPERGEHEIM-NEU-999")
@@ -662,7 +664,7 @@ check("Historie: Vereidigter sieht NÖ-Titel", "GEHEIM-TOP-OMEGA" in html)
 
 # Kaskadenlösch-Schutz (Muster aus Session-#56): Organisation löschen
 org2 = Organization.objects.create(name="Wegwerf-Fraktion", slug="wegwerf-fraktion", body=body)
-TenantEncryption(org2).key
+_ = TenantEncryption(org2).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 scrap_meeting = FactionMeeting.objects.create(
     organization=org2, title="Wegwerf-Sitzung", start=now + timedelta(days=3), status="planned"
 )
@@ -1820,7 +1822,9 @@ check("faction.manage ersetzt den Vorstand nicht (Export)", resp.status_code == 
 resp = stellv.get(f"{base}/faction/nachweise/export/?from={p_from}&to={p_to}&format=csv")
 check("Sammel-Export CSV (Vorstand) -> 200", resp.status_code == 200, f"got {resp.status_code}")
 csv_text = resp.content.decode("utf-8")
-check("CSV enthält bestätigte Teilnahmen je Person", "Veraxa Eidigmann" in csv_text and "Teilnahme-Sitzung M" in csv_text)
+check(
+    "CSV enthält bestätigte Teilnahmen je Person", "Veraxa Eidigmann" in csv_text and "Teilnahme-Sitzung M" in csv_text
+)
 check("CSV OHNE unbestätigte Sitzungen", "Quorum-Sitzung N" not in csv_text)
 
 resp = stellv.get(f"{base}/faction/nachweise/export/?from={p_from}&to={p_to}&format=pdf")
@@ -1844,9 +1848,7 @@ from apps.work.notifications.models import Notification, NotificationPreference 
 # -- Workflow-Ereignisse der früheren Phasen haben In-App-Benachrichtigungen erzeugt
 check(
     "Einladungsversand erzeugt In-App-Benachrichtigung",
-    Notification.objects.filter(
-        notification_type="faction_invitation", metadata__meeting_id=str(meeting1.id)
-    ).exists(),
+    Notification.objects.filter(notification_type="faction_invitation", metadata__meeting_id=str(meeting1.id)).exists(),
 )
 check(
     "Aktualisierter Versand als eigene Benachrichtigung",
@@ -2015,7 +2017,13 @@ check("Aktivierung ohne faction.manage -> 403", resp.status_code == 403 and acce
 
 resp = chair.post(
     f"{base}/organization/api/",
-    {"section": "api_save", "api_enabled": "on", "api_past_days": "365", "api_show_agenda": "on", "api_show_location": "on"},
+    {
+        "section": "api_save",
+        "api_enabled": "on",
+        "api_past_days": "365",
+        "api_show_agenda": "on",
+        "api_show_location": "on",
+    },
 )
 access.refresh_from_db()
 check("Opt-in gespeichert (aktiv, 365 Tage)", access.is_enabled is True and access.past_days == 365)

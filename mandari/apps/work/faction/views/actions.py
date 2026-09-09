@@ -103,8 +103,7 @@ class FactionActionView(WorkViewMixin, View):
     def _render_agenda(self, request, meeting):
         try:
             ctx = _get_meeting_context(self, meeting)
-            html = _render_partial("work/faction/_agenda.html", ctx, request=request)
-            return html
+            return _render_partial("work/faction/_agenda.html", ctx, request=request)
         except Exception:
             logger.exception("Fehler beim Rendern der Agenda für Meeting %s", meeting.id)
             raise
@@ -112,8 +111,7 @@ class FactionActionView(WorkViewMixin, View):
     def _render_sidebar(self, request, meeting):
         try:
             ctx = _get_meeting_context(self, meeting)
-            html = _render_partial("work/faction/_sidebar.html", ctx, request=request)
-            return html
+            return _render_partial("work/faction/_sidebar.html", ctx, request=request)
         except Exception:
             logger.exception("Fehler beim Rendern der Sidebar für Meeting %s", meeting.id)
             raise
@@ -121,8 +119,7 @@ class FactionActionView(WorkViewMixin, View):
     def _render_attendance(self, request, meeting):
         try:
             ctx = _get_meeting_context(self, meeting)
-            html = _render_partial("work/faction/_attendance_list.html", ctx, request=request)
-            return html
+            return _render_partial("work/faction/_attendance_list.html", ctx, request=request)
         except Exception:
             logger.exception("Fehler beim Rendern der Attendance-Liste für Meeting %s", meeting.id)
             raise

@@ -85,7 +85,7 @@ def body_sitemap(request, body_slug):
     try:
         body = OParlBody.objects.get(slug=body_slug)
     except OParlBody.DoesNotExist:
-        raise Http404("Kommune nicht gefunden")
+        raise Http404("Kommune nicht gefunden") from None
 
     # XML generieren
     xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']

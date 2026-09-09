@@ -409,10 +409,7 @@ class SessionUser(models.Model):
 
     def has_permission(self, permission: str) -> bool:
         """Check if user has a specific permission through any role."""
-        for role in self.roles.all():
-            if role.has_permission(permission):
-                return True
-        return False
+        return any(role.has_permission(permission) for role in self.roles.all())
 
     def is_admin(self) -> bool:
         """Check if user is an administrator."""
@@ -2533,9 +2530,7 @@ class SessionPersonMonthlyRate(models.Model):
         )
         if self.start_date and self.start_date > last_of_month:
             return False
-        if self.end_date and self.end_date < first_of_month:
-            return False
-        return True
+        return not (self.end_date and self.end_date < first_of_month)
 
 
 class SessionMonthlyAllowance(models.Model):
@@ -3284,9 +3279,7 @@ class SessionAPIToken(models.Model):
         """Check if token is valid (active and not expired)."""
         if not self.is_active:
             return False
-        if self.expires_at and self.expires_at < timezone.now():
-            return False
-        return True
+        return not (self.expires_at and self.expires_at < timezone.now())
 
     def check_ip(self, ip_address: str) -> bool:
         """Check if IP address is allowed."""

@@ -431,8 +431,7 @@ def _safe_highlight(text: str | None) -> str:
     text = escape(text)
     # Restore highlight tags
     text = text.replace("\x00MARK_START\x00", HIGHLIGHT_PRE)
-    text = text.replace("\x00MARK_END\x00", HIGHLIGHT_POST)
-    return text
+    return text.replace("\x00MARK_END\x00", HIGHLIGHT_POST)
 
 
 def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
@@ -459,7 +458,7 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
             "highlight": highlighted_text if highlighted_text else None,
         }
 
-    elif result_type == "person":
+    if result_type == "person":
         title = highlighted_name or hit.get("name")
         if not title:
             parts = []
@@ -475,7 +474,7 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
             "url": f"/insight/personen/{hit.get('id')}/",
         }
 
-    elif result_type == "organization":
+    if result_type == "organization":
         return {
             "type": "organization",
             "title": highlighted_name or hit.get("name", "Gremium"),
@@ -483,7 +482,7 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
             "url": f"/insight/gremien/{hit.get('id')}/",
         }
 
-    elif result_type == "meeting":
+    if result_type == "meeting":
         subtitle = None
         if hit.get("start"):
             try:
@@ -500,7 +499,7 @@ def format_search_result(hit: dict[str, Any]) -> dict[str, Any]:
             "url": f"/insight/termine/{hit.get('id')}/",
         }
 
-    elif result_type == "file":
+    if result_type == "file":
         # Build enriched subtitle: V/2025/1234 · Jugendhilfeausschuss · 12.03.2026
         subtitle_parts = []
         if hit.get("paper_reference"):

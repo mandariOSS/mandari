@@ -123,9 +123,7 @@ class ScraperSyncRunner:
                     external_ids = [item["id"] for item in page if item.get("id")]
                     seen.setdefault(entity_type, set()).update(external_ids)
 
-                    stored_hashes = await self.storage.get_entity_content_hashes(
-                        entity_type, external_ids
-                    )
+                    stored_hashes = await self.storage.get_entity_content_hashes(entity_type, external_ids)
                     for item in page:
                         item_hash = item.get("mandari:contentHash")
                         if item_hash and stored_hashes.get(item.get("id", "")) == item_hash:
@@ -149,10 +147,7 @@ class ScraperSyncRunner:
             # Parse-Quote prüfen (Metrik + Log-Warnung bei Einbruch)
             quota = adapter.stats.parse_quota
             metrics.record_scraper_quota(self.source.name, quota)
-            if (
-                adapter.stats.detail_pages_attempted >= 5
-                and quota < settings.scraper_parse_quota_warn
-            ):
+            if adapter.stats.detail_pages_attempted >= 5 and quota < settings.scraper_parse_quota_warn:
                 console.print(
                     f"[bold red]WARNUNG: Parse-Quote {quota:.0%} unter Schwellwert "
                     f"{settings.scraper_parse_quota_warn:.0%} für {self.source.name} — "
@@ -168,9 +163,7 @@ class ScraperSyncRunner:
             # Full-Crawls zählen; Tombstone erst nach N Sichtungs-Ausfällen.
             deleted_count = 0
             if full and crawl_completed and not result.errors:
-                deleted_count = await self._handle_missing(
-                    body_id, window, seen, state, es_deletions
-                )
+                deleted_count = await self._handle_missing(body_id, window, seen, state, es_deletions)
 
             # Zustand persistieren
             snapshots = dict(state.get("list_snapshots") or {})
@@ -205,12 +198,8 @@ class ScraperSyncRunner:
         # Elasticsearch-Indexierung (gleicher Pfad wie OParl-Sync)
         total_synced = sum(stats.values())
         index_stats: dict[str, Any] = {"errors": []}
-        if settings.elasticsearch_indexing_enabled and (
-            total_synced > 0 or es_deletions or full
-        ):
-            await self.orchestrator._index_body_elasticsearch(
-                body_id, index_stats, es_deletions, full
-            )
+        if settings.elasticsearch_indexing_enabled and (total_synced > 0 or es_deletions or full):
+            await self.orchestrator._index_body_elasticsearch(body_id, index_stats, es_deletions, full)
             result.errors.extend(index_stats["errors"])
 
         await self.storage.update_body_sync_time(body_id)
@@ -246,20 +235,14 @@ class ScraperSyncRunner:
         reaktiviert (deleted=False im update_set).
         """
         threshold = max(1, settings.scraper_tombstone_full_crawls)
-        missing_state: dict[str, dict[str, int]] = {
-            k: dict(v) for k, v in (state.get("missing") or {}).items()
-        }
+        missing_state: dict[str, dict[str, int]] = {k: dict(v) for k, v in (state.get("missing") or {}).items()}
         deleted_count = 0
 
         for entity_type in TOMBSTONE_ENTITY_TYPES:
             if entity_type == "meeting":
-                candidates = await self.storage.get_active_meeting_ids_in_window(
-                    body_id, window.start, window.end
-                )
+                candidates = await self.storage.get_active_meeting_ids_in_window(body_id, window.start, window.end)
             else:
-                candidates = await self.storage.get_active_external_ids_for_body(
-                    entity_type, body_id
-                )
+                candidates = await self.storage.get_active_external_ids_for_body(entity_type, body_id)
             seen_ids = seen.get(entity_type, set())
             counters = missing_state.setdefault(entity_type, {})
 
@@ -271,9 +254,7 @@ class ScraperSyncRunner:
             for external_id in candidates - seen_ids:
                 counters[external_id] = counters.get(external_id, 0) + 1
                 if counters[external_id] >= threshold:
-                    marked = await self.orchestrator._mark_deleted(
-                        {"id": external_id}, entity_type, es_deletions
-                    )
+                    marked = await self.orchestrator._mark_deleted({"id": external_id}, entity_type, es_deletions)
                     if marked:
                         deleted_count += 1
                         console.print(

@@ -215,13 +215,13 @@ class TrustedDevice(models.Model):
         # Simple extraction - can be enhanced with user-agents library
         if "Windows" in ua:
             return "Windows PC"
-        elif "Mac" in ua:
+        if "Mac" in ua:
             return "Mac"
-        elif "Linux" in ua:
+        if "Linux" in ua:
             return "Linux PC"
-        elif "iPhone" in ua:
+        if "iPhone" in ua:
             return "iPhone"
-        elif "Android" in ua:
+        if "Android" in ua:
             return "Android"
         return "Unbekanntes Gerät"
 

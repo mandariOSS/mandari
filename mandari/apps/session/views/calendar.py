@@ -130,18 +130,18 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
             weekday = int(request.POST.get("weekday", ""))
             assert 0 <= weekday <= 6
         except (TypeError, ValueError, AssertionError):
-            raise ValueError("Bitte einen Wochentag auswählen.")
+            raise ValueError("Bitte einen Wochentag auswählen.") from None
 
         try:
             start_time = time.fromisoformat(request.POST.get("time", ""))
         except (TypeError, ValueError):
-            raise ValueError("Bitte eine gültige Uhrzeit angeben.")
+            raise ValueError("Bitte eine gültige Uhrzeit angeben.") from None
 
         try:
             date_from = date.fromisoformat(request.POST.get("date_from", ""))
             date_to = date.fromisoformat(request.POST.get("date_to", ""))
         except (TypeError, ValueError):
-            raise ValueError("Bitte einen gültigen Zeitraum angeben.")
+            raise ValueError("Bitte einen gültigen Zeitraum angeben.") from None
         if date_to < date_from:
             raise ValueError("Das Enddatum liegt vor dem Startdatum.")
         if (date_to - date_from).days > 400:

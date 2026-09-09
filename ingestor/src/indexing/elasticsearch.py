@@ -164,7 +164,9 @@ class ElasticsearchIndexer:
                     else:
                         logger.warning(
                             "Failed to update mappings on %s: %d %s",
-                            index_name, resp.status_code, resp.text[:200],
+                            index_name,
+                            resp.status_code,
+                            resp.text[:200],
                         )
                 else:
                     # Neuen Index erstellen
@@ -180,7 +182,9 @@ class ElasticsearchIndexer:
                     else:
                         logger.warning(
                             "Failed to create index %s: %d %s",
-                            index_name, resp.status_code, resp.text[:200],
+                            index_name,
+                            resp.status_code,
+                            resp.text[:200],
                         )
             except Exception as e:
                 logger.warning("Error configuring index '%s': %s", index_name, e)
@@ -213,6 +217,7 @@ class ElasticsearchIndexer:
             for doc in documents:
                 lines.append(f'{{"index":{{"_index":"{index_name}","_id":"{doc["id"]}"}}}}')
                 import json
+
                 lines.append(json.dumps(doc))
             bulk_body = "\n".join(lines) + "\n"
 
@@ -229,13 +234,12 @@ class ElasticsearchIndexer:
                 else:
                     logger.debug("Indexed %d documents in '%s'", len(documents), index_name)
                 return True
-            else:
-                logger.warning(
-                    "Elasticsearch indexing failed: %d %s",
-                    response.status_code,
-                    response.text[:200],
-                )
-                return False
+            logger.warning(
+                "Elasticsearch indexing failed: %d %s",
+                response.status_code,
+                response.text[:200],
+            )
+            return False
         except Exception as e:
             logger.warning("Elasticsearch indexing error: %s", e)
             return False
@@ -266,10 +270,7 @@ class ElasticsearchIndexer:
             return False
 
         try:
-            lines = [
-                f'{{"delete":{{"_index":"{index_name}","_id":"{doc_id}"}}}}'
-                for doc_id in doc_ids
-            ]
+            lines = [f'{{"delete":{{"_index":"{index_name}","_id":"{doc_id}"}}}}' for doc_id in doc_ids]
             bulk_body = "\n".join(lines) + "\n"
 
             response = await self._client.post(

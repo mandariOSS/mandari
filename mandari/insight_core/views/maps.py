@@ -232,10 +232,9 @@ def tile_proxy(request, z, x, y):
                         "X-Tile-Source": "osm",
                     },
                 )
-            else:
-                from django.http import HttpResponseNotFound
+            from django.http import HttpResponseNotFound
 
-                return HttpResponseNotFound()
+            return HttpResponseNotFound()
     except Exception as e:
         from django.http import HttpResponseServerError
 
@@ -263,7 +262,7 @@ def style_proxy(request):
 
                 # Ersetze externe Tile-URLs mit lokalem Proxy
                 if "sources" in style:
-                    for source_name, source in style["sources"].items():
+                    for _source_name, source in style["sources"].items():
                         if "tiles" in source:
                             # Ersetze VersaTiles URL mit lokalem Proxy
                             source["tiles"] = [request.build_absolute_uri("/insight/tiles/{z}/{x}/{y}")]
@@ -279,8 +278,7 @@ def style_proxy(request):
                     style["glyphs"] = request.build_absolute_uri("/insight/map-assets/glyphs/{fontstack}/{range}.pbf")
 
                 return JsonResponse(style, safe=False)
-            else:
-                return JsonResponse({"error": "Style not found"}, status=404)
+            return JsonResponse({"error": "Style not found"}, status=404)
     except Exception as e:
         logging.getLogger(__name__).exception(f"Style proxy error: {e}")
         return JsonResponse({"error": "Style proxy error"}, status=500)

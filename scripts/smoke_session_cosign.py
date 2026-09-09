@@ -96,19 +96,19 @@ tenant = SessionTenant.objects.create(name="Mitzeichnungsstadt", slug="mitzeichn
 tenant_b = SessionTenant.objects.create(name="Fremdstadt", slug="fremdstadt-cs")
 
 committee = SessionOrganization.objects.create(tenant=tenant, name="Hauptausschuss")
-dep_recht = SessionOrganization.objects.create(
-    tenant=tenant, name="AMT-RECHTSAMT", organization_type="department"
-)
-dep_kaemmerei = SessionOrganization.objects.create(
-    tenant=tenant, name="AMT-KAEMMEREI", organization_type="department"
-)
+dep_recht = SessionOrganization.objects.create(tenant=tenant, name="AMT-RECHTSAMT", organization_type="department")
+dep_kaemmerei = SessionOrganization.objects.create(tenant=tenant, name="AMT-KAEMMEREI", organization_type="department")
 
 admin_role = SessionRole.objects.create(tenant=tenant, name="Admin", is_admin=True)
 admin, su_admin = make_user("admin-cs", tenant, admin_role)
 
 editor_role = SessionRole.objects.create(
-    tenant=tenant, name="Sachbearbeitung",
-    can_view_papers=True, can_create_papers=True, can_edit_papers=True, can_view_meetings=True,
+    tenant=tenant,
+    name="Sachbearbeitung",
+    can_view_papers=True,
+    can_create_papers=True,
+    can_edit_papers=True,
+    can_view_meetings=True,
 )
 editor, su_editor = make_user("sachbearbeitung-cs", tenant, editor_role)
 
@@ -147,8 +147,10 @@ resp = admin.post(
     f"{base}/settings/cosign/assignment/",
     {"session_user": str(su_kaem.id), "department": str(dep_kaemmerei.id)},
 )
-check("Amts-Zuordnungen gesetzt",
-      su_recht.departments.filter(pk=dep_recht.id).exists() and su_kaem.departments.filter(pk=dep_kaemmerei.id).exists())
+check(
+    "Amts-Zuordnungen gesetzt",
+    su_recht.departments.filter(pk=dep_recht.id).exists() and su_kaem.departments.filter(pk=dep_kaemmerei.id).exists(),
+)
 
 resp = editor.get(f"{base}/settings/cosign/")
 check("Einstellungen ohne manage_settings -> 403", resp.status_code == 403, f"got {resp.status_code}")
@@ -162,8 +164,11 @@ check("Regel ohne Amt abgelehnt", SessionCosignatureRule.objects.filter(tenant=t
 print()
 print("=== Phase B: Pflichtangabe + Kettenaufbau ===")
 paper_fin = SessionPaper.objects.create(
-    tenant=tenant, reference="V-FIN", name="VORLAGE-MIT-FINANZ",
-    status="draft", created_by=su_editor,
+    tenant=tenant,
+    reference="V-FIN",
+    name="VORLAGE-MIT-FINANZ",
+    status="draft",
+    created_by=su_editor,
 )
 resp = editor.post(f"{base}/papers/{paper_fin.id}/workflow/submit/")
 paper_fin.refresh_from_db()
@@ -176,19 +181,26 @@ resp = editor.post(f"{base}/papers/{paper_fin.id}/workflow/submit/")
 paper_fin.refresh_from_db()
 check("Submit mit Finanzangabe -> In Prüfung", paper_fin.status == "review")
 chain = list(paper_fin.cosignatures.order_by("order"))
-check("Kette: 2 Stationen (Recht, Kämmerei)", len(chain) == 2
-      and chain[0].department_id == dep_recht.id and chain[1].department_id == dep_kaemmerei.id,
-      str([(c.department.name, c.order) for c in chain]))
+check(
+    "Kette: 2 Stationen (Recht, Kämmerei)",
+    len(chain) == 2 and chain[0].department_id == dep_recht.id and chain[1].department_id == dep_kaemmerei.id,
+    str([(c.department.name, c.order) for c in chain]),
+)
 
 paper_nofin = SessionPaper.objects.create(
-    tenant=tenant, reference="V-NOFIN", name="VORLAGE-OHNE-FINANZ",
-    status="draft", has_financial_impact=False, created_by=su_editor,
+    tenant=tenant,
+    reference="V-NOFIN",
+    name="VORLAGE-OHNE-FINANZ",
+    status="draft",
+    has_financial_impact=False,
+    created_by=su_editor,
 )
 resp = editor.post(f"{base}/papers/{paper_nofin.id}/workflow/submit/")
 paper_nofin.refresh_from_db()
-check("Ohne Finanzauswirkungen: nur Rechtsamt in der Kette",
-      paper_nofin.cosignatures.count() == 1
-      and paper_nofin.cosignatures.first().department_id == dep_recht.id)
+check(
+    "Ohne Finanzauswirkungen: nur Rechtsamt in der Kette",
+    paper_nofin.cosignatures.count() == 1 and paper_nofin.cosignatures.first().department_id == dep_recht.id,
+)
 
 # =============================================================================
 print()
@@ -229,8 +241,10 @@ resp = approver.post(f"{base}/papers/{paper_fin.id}/workflow/approve/")
 paper_fin.refresh_from_db()
 check("Freigabe nach vollständiger Mitzeichnung", paper_fin.status == "approved")
 
-check("Audit: Mitzeichnungs-Einträge",
-      SessionAuditLog.objects.filter(tenant=tenant, changes__mitzeichnung="AMT-RECHTSAMT").exists())
+check(
+    "Audit: Mitzeichnungs-Einträge",
+    SessionAuditLog.objects.filter(tenant=tenant, changes__mitzeichnung="AMT-RECHTSAMT").exists(),
+)
 
 # =============================================================================
 print()
@@ -249,10 +263,12 @@ check("Station zurückgewiesen mit Kommentar", cos_nofin.status == "rejected" an
 # Erneut vorlegen -> Kette neu (pending)
 resp = editor.post(f"{base}/papers/{paper_nofin.id}/workflow/submit/")
 paper_nofin.refresh_from_db()
-check("Erneutes Vorlegen baut Kette neu",
-      paper_nofin.status == "review"
-      and paper_nofin.cosignatures.count() == 1
-      and paper_nofin.cosignatures.first().status == "pending")
+check(
+    "Erneutes Vorlegen baut Kette neu",
+    paper_nofin.status == "review"
+    and paper_nofin.cosignatures.count() == 1
+    and paper_nofin.cosignatures.first().status == "pending",
+)
 
 # =============================================================================
 print()

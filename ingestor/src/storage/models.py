@@ -35,9 +35,7 @@ class OParlSource(Base):
 
     __tablename__ = "oparl_sources"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255))
     url: Mapped[str] = mapped_column(Text, unique=True)
     contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -59,17 +57,13 @@ class OParlSource(Base):
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     # Relationships
-    bodies: Mapped[list["OParlBody"]] = relationship(
-        back_populates="source", cascade="all, delete-orphan"
-    )
+    bodies: Mapped[list["OParlBody"]] = relationship(back_populates="source", cascade="all, delete-orphan")
 
 
 class OParlBody(Base):
@@ -77,9 +71,7 @@ class OParlBody(Base):
 
     __tablename__ = "oparl_bodies"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
     source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("oparl_sources.id"))
 
@@ -87,9 +79,7 @@ class OParlBody(Base):
     short_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     website: Mapped[str | None] = mapped_column(Text, nullable=True)
     license: Mapped[str | None] = mapped_column(Text, nullable=True)
-    license_valid_since: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    license_valid_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     classification: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # List URLs for fetching
@@ -107,46 +97,28 @@ class OParlBody(Base):
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
-    oparl_created: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    oparl_modified: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     # Relationships
     source: Mapped["OParlSource"] = relationship(back_populates="bodies")
-    meetings: Mapped[list["OParlMeeting"]] = relationship(
-        back_populates="body", cascade="all, delete-orphan"
-    )
-    papers: Mapped[list["OParlPaper"]] = relationship(
-        back_populates="body", cascade="all, delete-orphan"
-    )
-    persons: Mapped[list["OParlPerson"]] = relationship(
-        back_populates="body", cascade="all, delete-orphan"
-    )
-    organizations: Mapped[list["OParlOrganization"]] = relationship(
-        back_populates="body", cascade="all, delete-orphan"
-    )
-    locations: Mapped[list["OParlLocation"]] = relationship(
-        back_populates="body", cascade="all, delete-orphan"
-    )
+    meetings: Mapped[list["OParlMeeting"]] = relationship(back_populates="body", cascade="all, delete-orphan")
+    papers: Mapped[list["OParlPaper"]] = relationship(back_populates="body", cascade="all, delete-orphan")
+    persons: Mapped[list["OParlPerson"]] = relationship(back_populates="body", cascade="all, delete-orphan")
+    organizations: Mapped[list["OParlOrganization"]] = relationship(back_populates="body", cascade="all, delete-orphan")
+    locations: Mapped[list["OParlLocation"]] = relationship(back_populates="body", cascade="all, delete-orphan")
     legislative_terms: Mapped[list["OParlLegislativeTerm"]] = relationship(
         back_populates="body", cascade="all, delete-orphan"
     )
@@ -157,9 +129,7 @@ class OParlMeeting(Base):
 
     __tablename__ = "oparl_meetings"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
     body_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("oparl_bodies.id"))
 
@@ -176,37 +146,25 @@ class OParlMeeting(Base):
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
-    oparl_created: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    oparl_modified: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     # Relationships
     body: Mapped["OParlBody"] = relationship(back_populates="meetings")
-    agenda_items: Mapped[list["OParlAgendaItem"]] = relationship(
-        back_populates="meeting", cascade="all, delete-orphan"
-    )
-    files: Mapped[list["OParlFile"]] = relationship(
-        back_populates="meeting", cascade="all, delete-orphan"
-    )
+    agenda_items: Mapped[list["OParlAgendaItem"]] = relationship(back_populates="meeting", cascade="all, delete-orphan")
+    files: Mapped[list["OParlFile"]] = relationship(back_populates="meeting", cascade="all, delete-orphan")
 
 
 class OParlPaper(Base):
@@ -214,9 +172,7 @@ class OParlPaper(Base):
 
     __tablename__ = "oparl_papers"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
     body_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("oparl_bodies.id"))
 
@@ -229,17 +185,11 @@ class OParlPaper(Base):
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
-    oparl_created: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    oparl_modified: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
@@ -249,23 +199,17 @@ class OParlPaper(Base):
     locations: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Georeferenzierung (Django verwaltet, Ingestor setzt Default)
-    georef_status: Mapped[str] = mapped_column(
-        String(20), server_default="pending", default="pending"
-    )
+    georef_status: Mapped[str] = mapped_column(String(20), server_default="pending", default="pending")
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     # Relationships
     body: Mapped["OParlBody"] = relationship(back_populates="papers")
-    files: Mapped[list["OParlFile"]] = relationship(
-        back_populates="paper", cascade="all, delete-orphan"
-    )
+    files: Mapped[list["OParlFile"]] = relationship(back_populates="paper", cascade="all, delete-orphan")
     consultations: Mapped[list["OParlConsultation"]] = relationship(
         back_populates="paper", cascade="all, delete-orphan"
     )
@@ -276,9 +220,7 @@ class OParlPerson(Base):
 
     __tablename__ = "oparl_persons"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
     body_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("oparl_bodies.id"))
 
@@ -293,34 +235,24 @@ class OParlPerson(Base):
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
-    oparl_created: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    oparl_modified: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     # Relationships
     body: Mapped["OParlBody"] = relationship(back_populates="persons")
-    memberships: Mapped[list["OParlMembership"]] = relationship(
-        back_populates="person", cascade="all, delete-orphan"
-    )
+    memberships: Mapped[list["OParlMembership"]] = relationship(back_populates="person", cascade="all, delete-orphan")
 
 
 class OParlOrganization(Base):
@@ -328,9 +260,7 @@ class OParlOrganization(Base):
 
     __tablename__ = "oparl_organizations"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
     body_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("oparl_bodies.id"))
 
@@ -345,25 +275,17 @@ class OParlOrganization(Base):
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
-    oparl_created: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    oparl_modified: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -380,9 +302,7 @@ class OParlAgendaItem(Base):
 
     __tablename__ = "oparl_agenda_items"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
     meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("oparl_meetings.id"))
 
@@ -396,25 +316,17 @@ class OParlAgendaItem(Base):
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
-    oparl_created: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    oparl_modified: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -428,19 +340,11 @@ class OParlFile(Base):
 
     __tablename__ = "oparl_files"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
-    body_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("oparl_bodies.id"), nullable=True
-    )
-    paper_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("oparl_papers.id"), nullable=True
-    )
-    meeting_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("oparl_meetings.id"), nullable=True
-    )
+    body_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_bodies.id"), nullable=True)
+    paper_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_papers.id"), nullable=True)
+    meeting_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_meetings.id"), nullable=True)
 
     name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -456,38 +360,26 @@ class OParlFile(Base):
     sha256_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Text extraction tracking (managed by Django, populated here with defaults)
-    text_extraction_status: Mapped[str] = mapped_column(
-        String(20), default="pending", server_default="pending"
-    )
+    text_extraction_status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending")
     text_extraction_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
     text_extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    text_extracted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    text_extracted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
-    oparl_created: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    oparl_modified: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -502,13 +394,9 @@ class OParlLocation(Base):
 
     __tablename__ = "oparl_locations"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
-    body_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("oparl_bodies.id"), nullable=True
-    )
+    body_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_bodies.id"), nullable=True)
 
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     street_address: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -520,25 +408,17 @@ class OParlLocation(Base):
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
-    oparl_created: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    oparl_modified: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -552,16 +432,10 @@ class OParlConsultation(Base):
 
     __tablename__ = "oparl_consultations"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
-    body_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("oparl_bodies.id"), nullable=True
-    )
-    paper_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("oparl_papers.id"), nullable=True
-    )
+    body_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_bodies.id"), nullable=True)
+    paper_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_papers.id"), nullable=True)
 
     paper_external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     meeting_external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -572,25 +446,17 @@ class OParlConsultation(Base):
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
-    oparl_created: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    oparl_modified: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -604,16 +470,10 @@ class OParlMembership(Base):
 
     __tablename__ = "oparl_memberships"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
-    person_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("oparl_persons.id"), nullable=True
-    )
-    organization_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("oparl_organizations.id"), nullable=True
-    )
+    person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_persons.id"), nullable=True)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_organizations.id"), nullable=True)
 
     role: Mapped[str | None] = mapped_column(String(255), nullable=True)
     voting_right: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -623,25 +483,17 @@ class OParlMembership(Base):
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
-    oparl_created: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    oparl_modified: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -656,13 +508,9 @@ class OParlLegislativeTerm(Base):
 
     __tablename__ = "oparl_legislative_terms"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
-    body_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("oparl_bodies.id"), nullable=True
-    )
+    body_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_bodies.id"), nullable=True)
 
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -671,25 +519,17 @@ class OParlLegislativeTerm(Base):
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # OParl timestamps
-    oparl_created: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    oparl_modified: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oparl_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    oparl_modified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

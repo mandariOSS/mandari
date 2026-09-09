@@ -978,7 +978,7 @@ def get_all_permissions() -> list[str]:
 
 def get_permission_choices() -> list[tuple]:
     """Get permission choices for Django model fields."""
-    return [(code, name) for code, name in PERMISSIONS.items()]
+    return list(PERMISSIONS.items())
 
 
 def get_permissions_by_category() -> dict:
@@ -1074,7 +1074,7 @@ class PermissionChecker:
         for role in self.membership.roles.all():
             if role.is_admin:
                 # Admin role grants all permissions
-                for perm_code in PERMISSIONS.keys():
+                for perm_code in PERMISSIONS:
                     if perm_code not in self._denied:
                         self._permissions.add(perm_code)
             else:

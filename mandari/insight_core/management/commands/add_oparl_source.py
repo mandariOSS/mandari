@@ -45,9 +45,8 @@ class Command(BaseCommand):
 
                 if response.status_code == 200:
                     return response.json()
-                else:
-                    self.stdout.write(self.style.ERROR(f"HTTP {response.status_code} from OParl API"))
-                    return None
+                self.stdout.write(self.style.ERROR(f"HTTP {response.status_code} from OParl API"))
+                return None
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Error fetching OParl data: {e}"))
             return None
@@ -62,8 +61,7 @@ class Command(BaseCommand):
 
                 if response.status_code == 200:
                     return response.json()
-                else:
-                    return None
+                return None
         except Exception as e:
             self.stdout.write(self.style.WARNING(f"Error fetching body: {e}"))
             return None

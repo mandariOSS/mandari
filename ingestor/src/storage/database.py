@@ -73,44 +73,46 @@ _ENTITY_MODEL_MAP: dict[str, type] = {
 # Some of these columns only exist in Django's schema (not in the
 # ingestor's SQLAlchemy models) — they are listed anyway so the guard
 # also catches future model additions.
-ENRICHMENT_FIELDS: frozenset[str] = frozenset({
-    # OParlFile: text extraction / OCR pipeline
-    "text_content",
-    "text_extraction_status",
-    "text_extraction_method",
-    "text_extraction_error",
-    "text_extracted_at",
-    "page_count",
-    "sha256_hash",
-    "local_path",
-    "local_status",
-    "local_cached_at",
-    "local_error",
-    # OParlPaper: AI enrichment + georeferencing (Django-managed)
-    "summary",
-    "locations",
-    "georef_status",
-    # OParlBody: Django-managed presentation + geo fields
-    "display_name",
-    "logo",
-    "slug",
-    "latitude",
-    "longitude",
-    "bbox_north",
-    "bbox_south",
-    "bbox_east",
-    "bbox_west",
-    "osm_relation_id",
-    "ags",
-    # OParlBody: person photo scraping configuration (Django-managed)
-    "person_photo_url_template",
-    "person_photo_id_pattern",
-    # OParlPerson: lokal gecachte Fotos (Django-managed, fetch_person_photos)
-    "photo",
-    "photo_status",
-    "photo_fetched_at",
-    "photo_error",
-})
+ENRICHMENT_FIELDS: frozenset[str] = frozenset(
+    {
+        # OParlFile: text extraction / OCR pipeline
+        "text_content",
+        "text_extraction_status",
+        "text_extraction_method",
+        "text_extraction_error",
+        "text_extracted_at",
+        "page_count",
+        "sha256_hash",
+        "local_path",
+        "local_status",
+        "local_cached_at",
+        "local_error",
+        # OParlPaper: AI enrichment + georeferencing (Django-managed)
+        "summary",
+        "locations",
+        "georef_status",
+        # OParlBody: Django-managed presentation + geo fields
+        "display_name",
+        "logo",
+        "slug",
+        "latitude",
+        "longitude",
+        "bbox_north",
+        "bbox_south",
+        "bbox_east",
+        "bbox_west",
+        "osm_relation_id",
+        "ags",
+        # OParlBody: person photo scraping configuration (Django-managed)
+        "person_photo_url_template",
+        "person_photo_id_pattern",
+        # OParlPerson: lokal gecachte Fotos (Django-managed, fetch_person_photos)
+        "photo",
+        "photo_status",
+        "photo_fetched_at",
+        "photo_error",
+    }
+)
 
 
 def _assert_no_enrichment_overwrite(update_set: dict) -> None:
@@ -179,12 +181,9 @@ class DatabaseStorage:
         If tables are missing, raise an error pointing to Django migrate.
         """
         async with self._engine.begin() as conn:
-            result = await conn.execute(text(
-                "SELECT EXISTS ("
-                "  SELECT 1 FROM information_schema.tables "
-                "  WHERE table_name = 'oparl_bodies'"
-                ")"
-            ))
+            result = await conn.execute(
+                text("SELECT EXISTS (  SELECT 1 FROM information_schema.tables   WHERE table_name = 'oparl_bodies')")
+            )
             exists = result.scalar()
             if not exists:
                 raise RuntimeError(
@@ -230,31 +229,30 @@ class DatabaseStorage:
         errors_json = json.dumps(errors or [])
         details_json = json.dumps(details or {})
 
-        async with self.get_session() as session:
-            async with session.begin():
-                await session.execute(
-                    text(
-                        "INSERT INTO insight_sync_synclog"
-                        " (sync_type, status, started_at, finished_at, duration_seconds,"
-                        "  entities_synced, errors, details, triggered_by, source_id)"
-                        " VALUES"
-                        " (:sync_type, :status, :started_at, :finished_at, :duration_seconds,"
-                        "  :entities_synced, cast(:errors as jsonb), cast(:details as jsonb),"
-                        "  :triggered_by, :source_id)"
-                    ),
-                    {
-                        "sync_type": sync_type,
-                        "status": status,
-                        "started_at": started_at,
-                        "finished_at": finished_at,
-                        "duration_seconds": duration_seconds,
-                        "entities_synced": entities_synced,
-                        "errors": errors_json,
-                        "details": details_json,
-                        "triggered_by": triggered_by,
-                        "source_id": source_id,
-                    },
-                )
+        async with self.get_session() as session, session.begin():
+            await session.execute(
+                text(
+                    "INSERT INTO insight_sync_synclog"
+                    " (sync_type, status, started_at, finished_at, duration_seconds,"
+                    "  entities_synced, errors, details, triggered_by, source_id)"
+                    " VALUES"
+                    " (:sync_type, :status, :started_at, :finished_at, :duration_seconds,"
+                    "  :entities_synced, cast(:errors as jsonb), cast(:details as jsonb),"
+                    "  :triggered_by, :source_id)"
+                ),
+                {
+                    "sync_type": sync_type,
+                    "status": status,
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                    "duration_seconds": duration_seconds,
+                    "entities_synced": entities_synced,
+                    "errors": errors_json,
+                    "details": details_json,
+                    "triggered_by": triggered_by,
+                    "source_id": source_id,
+                },
+            )
 
     # ========== Source Operations ==========
 
@@ -313,7 +311,7 @@ class DatabaseStorage:
         async with self.get_session() as session:
             stmt = select(OParlSource)
             if active_only:
-                stmt = stmt.where(OParlSource.is_active == True)
+                stmt = stmt.where(OParlSource.is_active.is_(True))
             stmt = stmt.order_by(OParlSource.name)
             result = await session.execute(stmt)
             return list(result.scalars().all())
@@ -380,9 +378,7 @@ class DatabaseStorage:
         if not hosts:
             return
         async with self.get_session() as session:
-            result = await session.execute(
-                select(OParlSource).where(OParlSource.url == source_url)
-            )
+            result = await session.execute(select(OParlSource).where(OParlSource.url == source_url))
             source = result.scalar_one_or_none()
             if source is None:
                 return
@@ -405,9 +401,7 @@ class DatabaseStorage:
         (Schlüssel "scraper_state"); andere Schlüssel bleiben unberührt.
         """
         async with self.get_session() as session:
-            result = await session.execute(
-                select(OParlSource).where(OParlSource.url == source_url)
-            )
+            result = await session.execute(select(OParlSource).where(OParlSource.url == source_url))
             source = result.scalar_one_or_none()
             if source is None:
                 return
@@ -436,7 +430,7 @@ class DatabaseStorage:
                 model.raw_json["mandari:contentHash"].astext,
             ).where(model.external_id.in_(external_ids))
             result = await session.execute(stmt)
-            hashes: dict[str, str | None] = {eid: None for eid in external_ids}
+            hashes: dict[str, str | None] = dict.fromkeys(external_ids)
             for external_id, stored_hash in result.all():
                 hashes[external_id] = stored_hash
             return hashes
@@ -541,9 +535,7 @@ class DatabaseStorage:
                 "license": stmt.excluded.license,
                 # Manuell gepflegte Klassifikation (z. B. "Kreisfreie Stadt")
                 # nicht mit NULL ueberschreiben, wenn die Quelle keine liefert
-                "classification": func.coalesce(
-                    stmt.excluded.classification, OParlBody.classification
-                ),
+                "classification": func.coalesce(stmt.excluded.classification, OParlBody.classification),
                 "organization_list_url": stmt.excluded.organization_list_url,
                 "person_list_url": stmt.excluded.person_list_url,
                 "meeting_list_url": stmt.excluded.meeting_list_url,
@@ -679,14 +671,12 @@ class DatabaseStorage:
             return {}
 
         async with self.get_session() as session:
-            stmt = select(model.external_id, model.oparl_modified).where(
-                model.external_id.in_(external_ids)
-            )
+            stmt = select(model.external_id, model.oparl_modified).where(model.external_id.in_(external_ids))
             result = await session.execute(stmt)
             rows = result.all()
 
             # Create dict with all IDs defaulting to None
-            result_dict: dict[str, datetime | None] = {eid: None for eid in external_ids}
+            result_dict: dict[str, datetime | None] = dict.fromkeys(external_ids)
             # Update with found entries
             for external_id, modified in rows:
                 result_dict[external_id] = modified
@@ -961,9 +951,7 @@ class DatabaseStorage:
                 await session.commit()
             except Exception as e:  # noqa: BLE001 - table may not exist yet
                 await session.rollback()
-                console.print(
-                    f"[yellow]Paper-Location-Link übersprungen (Tabelle fehlt?): {e}[/yellow]"
-                )
+                console.print(f"[yellow]Paper-Location-Link übersprungen (Tabelle fehlt?): {e}[/yellow]")
 
     async def get_paper_uuid(self, external_id: str) -> UUID | None:
         """Get a paper's UUID by external ID (cached)."""
@@ -1114,9 +1102,7 @@ class DatabaseStorage:
 
         if missing:
             async with self.get_session() as session:
-                stmt = select(OParlPerson.external_id, OParlPerson.id).where(
-                    OParlPerson.external_id.in_(missing)
-                )
+                stmt = select(OParlPerson.external_id, OParlPerson.id).where(OParlPerson.external_id.in_(missing))
                 result = await session.execute(stmt)
                 for ext_id, uuid in result.all():
                     self._person_uuid_cache[ext_id] = uuid
@@ -1146,9 +1132,9 @@ class DatabaseStorage:
 
         if missing:
             async with self.get_session() as session:
-                stmt = select(
-                    OParlOrganization.external_id, OParlOrganization.id
-                ).where(OParlOrganization.external_id.in_(missing))
+                stmt = select(OParlOrganization.external_id, OParlOrganization.id).where(
+                    OParlOrganization.external_id.in_(missing)
+                )
                 result = await session.execute(stmt)
                 for ext_id, uuid in result.all():
                     self._organization_uuid_cache[ext_id] = uuid
@@ -1394,15 +1380,11 @@ class DatabaseStorage:
         organization_id = None
 
         if membership.person_external_id:
-            person_map = await self.get_person_ids_by_external_ids(
-                [membership.person_external_id]
-            )
+            person_map = await self.get_person_ids_by_external_ids([membership.person_external_id])
             person_id = person_map.get(membership.person_external_id)
 
         if membership.organization_external_id:
-            org_map = await self.get_organization_ids_by_external_ids(
-                [membership.organization_external_id]
-            )
+            org_map = await self.get_organization_ids_by_external_ids([membership.organization_external_id])
             organization_id = org_map.get(membership.organization_external_id)
 
         # Both FKs are NOT NULL in Django schema - skip if unresolved
@@ -1515,19 +1497,19 @@ class DatabaseStorage:
         """
         if isinstance(entity, ProcessedMeeting):
             return await self.upsert_meeting(entity, body_id)
-        elif isinstance(entity, ProcessedPaper):
+        if isinstance(entity, ProcessedPaper):
             return await self.upsert_paper(entity, body_id)
-        elif isinstance(entity, ProcessedPerson):
+        if isinstance(entity, ProcessedPerson):
             return await self.upsert_person(entity, body_id)
-        elif isinstance(entity, ProcessedOrganization):
+        if isinstance(entity, ProcessedOrganization):
             return await self.upsert_organization(entity, body_id)
-        elif isinstance(entity, ProcessedFile):
+        if isinstance(entity, ProcessedFile):
             return await self.upsert_file(entity, body_id)
-        elif isinstance(entity, ProcessedLocation):
+        if isinstance(entity, ProcessedLocation):
             return await self.upsert_location(entity, body_id)
-        elif isinstance(entity, ProcessedMembership):
+        if isinstance(entity, ProcessedMembership):
             return await self.upsert_membership(entity, body_id)
-        elif isinstance(entity, ProcessedLegislativeTerm):
+        if isinstance(entity, ProcessedLegislativeTerm):
             return await self.upsert_legislative_term(entity, body_id)
 
         return None
@@ -1590,11 +1572,7 @@ class DatabaseStorage:
     async def get_bodies_for_source(self, source_id: UUID) -> list[OParlBody]:
         """Get all bodies for a source."""
         async with self.get_session() as session:
-            stmt = (
-                select(OParlBody)
-                .where(OParlBody.source_id == source_id)
-                .order_by(OParlBody.name)
-            )
+            stmt = select(OParlBody).where(OParlBody.source_id == source_id).order_by(OParlBody.name)
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
@@ -1632,24 +1610,21 @@ class DatabaseStorage:
         stale_cutoff = datetime.now(UTC) - self.PROCESSING_STALE_AFTER
 
         async with self.get_session() as session:
-            candidates = (
-                select(OParlFile.id)
-                .where(
-                    OParlFile.body_id == body_id,
-                    # Keine Textextraktion fuer von der Quelle geloeschte Dateien
-                    OParlFile.deleted == False,  # noqa: E712
-                    or_(
-                        OParlFile.text_extraction_status == "pending",
-                        and_(
-                            OParlFile.text_extraction_status == "processing",
-                            OParlFile.updated_at < stale_cutoff,
-                        ),
+            candidates = select(OParlFile.id).where(
+                OParlFile.body_id == body_id,
+                # Keine Textextraktion fuer von der Quelle geloeschte Dateien
+                OParlFile.deleted == False,  # noqa: E712
+                or_(
+                    OParlFile.text_extraction_status == "pending",
+                    and_(
+                        OParlFile.text_extraction_status == "processing",
+                        OParlFile.updated_at < stale_cutoff,
                     ),
-                    or_(
-                        OParlFile.download_url.isnot(None),
-                        OParlFile.access_url.isnot(None),
-                    ),
-                )
+                ),
+                or_(
+                    OParlFile.download_url.isnot(None),
+                    OParlFile.access_url.isnot(None),
+                ),
             )
 
             if max_size_bytes is not None:
@@ -1660,11 +1635,7 @@ class DatabaseStorage:
                     )
                 )
 
-            candidates = (
-                candidates.order_by(OParlFile.created_at)
-                .limit(batch_size)
-                .with_for_update(skip_locked=True)
-            )
+            candidates = candidates.order_by(OParlFile.created_at).limit(batch_size).with_for_update(skip_locked=True)
 
             claim_stmt = (
                 update(OParlFile)
@@ -1740,14 +1711,11 @@ class DatabaseStorage:
     async def get_files_with_text(self, body_id: UUID) -> list[OParlFile]:
         """Get files that have extracted text content."""
         async with self.get_session() as session:
-            stmt = (
-                select(OParlFile)
-                .where(
-                    OParlFile.body_id == body_id,
-                    OParlFile.deleted == False,  # noqa: E712
-                    OParlFile.text_content.isnot(None),
-                    OParlFile.text_extraction_status == "completed",
-                )
+            stmt = select(OParlFile).where(
+                OParlFile.body_id == body_id,
+                OParlFile.deleted == False,  # noqa: E712
+                OParlFile.text_content.isnot(None),
+                OParlFile.text_extraction_status == "completed",
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())

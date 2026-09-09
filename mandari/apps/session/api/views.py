@@ -7,6 +7,7 @@ Provides:
 - Extended Session API for non-public data (authenticated)
 """
 
+import contextlib
 import json
 from datetime import datetime
 from typing import Any
@@ -63,7 +64,7 @@ class OParlMixin:
         try:
             return SessionTenant.objects.get(slug=tenant_slug, is_active=True)
         except SessionTenant.DoesNotExist:
-            raise Http404("Mandant nicht gefunden")
+            raise Http404("Mandant nicht gefunden") from None
 
     def json_response(self, data: Any, status: int = 200) -> JsonResponse:
         """Return JSON response with proper headers."""
@@ -163,13 +164,14 @@ class SessionMeetingListAPIView(SessionAPIMixin, View):
             }
 
             # Add non-public fields for authorized users
-            if session_user and self.check_permission(session_user, "view_non_public_meetings"):
-                if not meeting.is_public:
-                    item["internal_notes"] = (
-                        meeting.get_internal_notes_decrypted()
-                        if hasattr(meeting, "get_internal_notes_decrypted")
-                        else None
-                    )
+            if (
+                session_user
+                and self.check_permission(session_user, "view_non_public_meetings")
+                and not meeting.is_public
+            ):
+                item["internal_notes"] = (
+                    meeting.get_internal_notes_decrypted() if hasattr(meeting, "get_internal_notes_decrypted") else None
+                )
 
             data.append(item)
 
@@ -438,13 +440,11 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
         # Get target organization - optional
         target_org = None
         if data.get("target_organization_id"):
-            try:
+            with contextlib.suppress(SessionOrganization.DoesNotExist):
                 target_org = SessionOrganization.objects.get(
                     id=data["target_organization_id"],
                     tenant=tenant,
                 )
-            except SessionOrganization.DoesNotExist:
-                pass
 
         # Create application
         application = SessionApplication.objects.create(

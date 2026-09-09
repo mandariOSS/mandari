@@ -444,9 +444,7 @@ class SessionNetAdapter:
 
     # -------------------- Crawl --------------------
 
-    async def iter_entities(
-        self, window: CrawlWindow, full: bool
-    ) -> AsyncIterator[tuple[str, list[dict[str, Any]]]]:
+    async def iter_entities(self, window: CrawlWindow, full: bool) -> AsyncIterator[tuple[str, list[dict[str, Any]]]]:
         await self.detect_variant()
         body_id = self.urls.body_id()
         detail_budget = self.config.max_detail_pages
@@ -549,18 +547,14 @@ class SessionNetAdapter:
                     f"({detail_budget}) — Crawl endet vor {month:02d}/{year}[/yellow]"
                 )
                 break
-            cal_html = await self._fetch(
-                self.urls.page("si0040", __cjahr=year, __cmonat=month, __canz=1)
-            )
+            cal_html = await self._fetch(self.urls.page("si0040", __cjahr=year, __cmonat=month, __canz=1))
             if not cal_html:
                 self.stats.parse_failures += 1
                 metrics.record_scraper_parse_failure(self.fetcher.source_name, "si0040")
                 continue
             stubs = sorted(parse_calendar(cal_html), key=MeetingStub.sort_key)
             month_key = f"{year:04d}-{month:02d}"
-            snapshot = with_content_hash(
-                {"stubs": [vars(s) for s in stubs]}
-            )["mandari:contentHash"]
+            snapshot = with_content_hash({"stubs": [vars(s) for s in stubs]})["mandari:contentHash"]
             self.list_snapshots[month_key] = snapshot
             if not full and self.previous_snapshots.get(month_key) == snapshot:
                 # Listen-Diffing: Kalendermonat unverändert -> Detailseiten
@@ -604,9 +598,7 @@ class SessionNetAdapter:
         org_by_name: dict[str, str],
     ) -> dict[str, Any] | None:
         external_id = self.urls.external_id("si0057", __ksinr=stub.ksinr)
-        agenda_html = await self._fetch(
-            self.urls.page("si0057", __ksinr=stub.ksinr), is_detail=True
-        )
+        agenda_html = await self._fetch(self.urls.page("si0057", __ksinr=stub.ksinr), is_detail=True)
         if not agenda_html:
             self.stats.parse_failures += 1
             metrics.record_scraper_parse_failure(self.fetcher.source_name, "si0057")
@@ -668,9 +660,7 @@ class SessionNetAdapter:
             lowered = (file_dict.get("name") or "").lower()
             if "einladung" in lowered and "invitation" not in meeting:
                 meeting["invitation"] = file_dict
-            elif ("niederschrift" in lowered or "protokoll" in lowered) and (
-                "resultsProtocol" not in meeting
-            ):
+            elif ("niederschrift" in lowered or "protokoll" in lowered) and ("resultsProtocol" not in meeting):
                 meeting["resultsProtocol"] = file_dict
             else:
                 auxiliary.append(file_dict)
@@ -716,9 +706,7 @@ class SessionNetAdapter:
         # Interner Transport zum Aufrufer (wird vor dem Upsert entfernt)
         meeting["mandari:consultations"] = consultations
 
-        result = with_content_hash(
-            {k: v for k, v in meeting.items() if k != "mandari:consultations"}
-        )
+        result = with_content_hash({k: v for k, v in meeting.items() if k != "mandari:consultations"})
         result["mandari:consultations"] = consultations
         return result
 

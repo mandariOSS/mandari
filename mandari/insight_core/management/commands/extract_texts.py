@@ -105,7 +105,7 @@ class Command(BaseCommand):
                 queryset = queryset.filter(paper__body=body)
                 self.stdout.write(f"Verarbeite nur Dateien für: {body.name}")
             except OParlBody.DoesNotExist:
-                raise CommandError(f"Kommune mit ID {body_id} nicht gefunden.")
+                raise CommandError(f"Kommune mit ID {body_id} nicht gefunden.") from None
 
         # Filter: Nur PDFs
         if pdf_only:
@@ -218,15 +218,12 @@ class Command(BaseCommand):
                     "ocr": result.ocr_performed,
                     "pages": result.page_count,
                 }
-            else:
-                file.text_extraction_status = "ocr_needed"
-                file.text_extraction_error = "Download ok, aber kein Text extrahierbar (KI-OCR benötigt)"
-                file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
-                if verbose:
-                    self.stdout.write(
-                        self.style.WARNING(f"  {file.id}: KI-OCR benötigt (kein Text via pypdf/Tesseract)")
-                    )
-                return {"success": False, "reason": "ocr_needed"}
+            file.text_extraction_status = "ocr_needed"
+            file.text_extraction_error = "Download ok, aber kein Text extrahierbar (KI-OCR benötigt)"
+            file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
+            if verbose:
+                self.stdout.write(self.style.WARNING(f"  {file.id}: KI-OCR benötigt (kein Text via pypdf/Tesseract)"))
+            return {"success": False, "reason": "ocr_needed"}
 
         except DocumentDownloadError as exc:
             file.text_extraction_status = "failed"

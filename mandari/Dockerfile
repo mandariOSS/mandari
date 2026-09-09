@@ -21,8 +21,9 @@ COPY shared/ /tmp/shared/
 RUN pip install --no-cache-dir --prefix=/install /tmp/shared/
 
 # Python dependencies
-COPY mandari/requirements.txt /tmp/
-RUN pip install --no-cache-dir --prefix=/install -r /tmp/requirements.txt
+# Reproduzierbarer Build aus dem Lockfile (uv pip compile requirements.txt -o requirements.lock)
+COPY mandari/requirements.lock /tmp/
+RUN pip install --no-cache-dir --prefix=/install -r /tmp/requirements.lock
 
 # =============================================================================
 # Stage 2: Frontend assets bauen

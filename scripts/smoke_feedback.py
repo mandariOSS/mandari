@@ -119,7 +119,10 @@ resp = anon.post(
 report = ProblemReport.objects.first()
 check("Meldung angelegt -> Redirect", resp.status_code == 302 and report is not None)
 check("Ticket-Nummer vergeben", report.reference.startswith("PM-"), report.reference)
-check("Felder gespeichert", report.error_id == "abc12345" and report.email == "melder@example.org" and "Testclient" in report.browser_info)
+check(
+    "Felder gespeichert",
+    report.error_id == "abc12345" and report.email == "melder@example.org" and "Testclient" in report.browser_info,
+)
 check("IP erfasst", report.ip_address is not None)
 
 resp = anon.get(resp.headers["Location"])
@@ -145,7 +148,10 @@ logged_in = Client(REMOTE_ADDR="10.9.8.7")
 logged_in.force_login(user)
 resp = logged_in.get("/feedback/")
 html = resp.content.decode("utf-8")
-check("Angemeldet: Konto-Hinweis statt E-Mail-Feld", "konto@example.org" in html and "mit deinem Konto anmelden" not in html)
+check(
+    "Angemeldet: Konto-Hinweis statt E-Mail-Feld",
+    "konto@example.org" in html and "mit deinem Konto anmelden" not in html,
+)
 resp = logged_in.post("/feedback/", {"message": "Meldung eines angemeldeten Kontos mit genug Text."})
 report_user = ProblemReport.objects.order_by("-created_at").first()
 check("Konto verknüpft", report_user.user_id == user.id)
@@ -180,8 +186,10 @@ report.refresh_from_db()
 check("Status auf gelöst", report.status == "resolved" and report.resolved_at is not None)
 check("Rückmeldung versandt", len(mail.outbox) == 1 and report.notified_at is not None)
 check("Mail an meldende Person", mail.outbox and mail.outbox[0].to == ["melder@example.org"])
-check("Mail enthält Ticket-Nr. + Anmerkung",
-      mail.outbox and report.reference in mail.outbox[0].body and "Verbindungslimit" in mail.outbox[0].body)
+check(
+    "Mail enthält Ticket-Nr. + Anmerkung",
+    mail.outbox and report.reference in mail.outbox[0].body and "Verbindungslimit" in mail.outbox[0].body,
+)
 
 # Anonyme Meldung ohne Kontakt: keine Mail
 anon_report = ProblemReport.objects.filter(email="", user__isnull=True).first()

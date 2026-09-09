@@ -5,6 +5,8 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
+import contextlib
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db.models import Q
@@ -71,7 +73,7 @@ class MeetingListView(ActiveBodyRequiredMixin, ListView):
         if period == "upcoming":
             qs = qs.filter(start__gte=now, cancelled=False)
             return qs.order_by("start")
-        elif period == "past":
+        if period == "past":
             qs = qs.filter(start__lt=now)
         # "all" zeigt alles
 
@@ -224,7 +226,7 @@ def calendar_feed(request):
         try:
             organization = OParlOrganization.objects.get(id=org_id, body=body, deleted=False)
         except (OParlOrganization.DoesNotExist, ValueError, ValidationError):
-            raise Http404("Gremium nicht gefunden")
+            raise Http404("Gremium nicht gefunden") from None
 
     now = timezone.now()
     qs = OParlMeeting.objects.filter(
@@ -358,10 +360,8 @@ def calendar_events(request):
     # Optional: nur ein Gremium (Issue #82)
     org_id = request.GET.get("gremium")
     if org_id:
-        try:
+        with contextlib.suppress(ValueError, ValidationError):
             qs = qs.filter(organizations__id=org_id)
-        except (ValueError, ValidationError):
-            pass
 
     if start_str:
         from datetime import datetime

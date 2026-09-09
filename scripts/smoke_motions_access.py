@@ -69,7 +69,7 @@ def check(name, condition, detail=""):
 
 print("=== Setup ===")
 org = Organization.objects.create(name="Fraktion MA", slug="fraktion-ma")
-TenantEncryption(org).key
+_ = TenantEncryption(org).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 
 def perm(code, name, cat):

@@ -29,6 +29,8 @@ try:
 except ImportError:
     HAS_QRCODE = False
 
+import contextlib
+
 from .models import (
     SecurityNotification,
     TrustedDevice,
@@ -259,10 +261,7 @@ class TwoFactorService:
             return True
 
         # Try backup codes
-        if self._use_backup_code(device, code):
-            return True
-
-        return False
+        return bool(self._use_backup_code(device, code))
 
     def _use_backup_code(self, device: TwoFactorDevice, code: str) -> bool:
         """Try to use a backup code."""
@@ -382,10 +381,8 @@ class SessionService:
             session = UserSession.objects.get(user=user, session_key=session_key)
 
             # Delete Django session
-            try:
+            with contextlib.suppress(Session.DoesNotExist):
                 Session.objects.get(session_key=session_key).delete()
-            except Session.DoesNotExist:
-                pass
 
             session.delete()
 
@@ -411,10 +408,8 @@ class SessionService:
             sessions = sessions.exclude(session_key=except_current)
 
         for session in sessions:
-            try:
+            with contextlib.suppress(Session.DoesNotExist):
                 Session.objects.get(session_key=session.session_key).delete()
-            except Session.DoesNotExist:
-                pass
 
         count = sessions.count()
         sessions.delete()

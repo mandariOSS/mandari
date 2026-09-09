@@ -32,17 +32,11 @@ class TestNormalizeExternalId:
 
     def test_params_sorted_and_filtered(self):
         url = "https://host.de/getfile.asp?type=do&id=42&session=xyz"
-        assert (
-            normalize_external_id(url, keep_params=("id", "type"))
-            == "https://host.de/getfile.asp?id=42&type=do"
-        )
+        assert normalize_external_id(url, keep_params=("id", "type")) == "https://host.de/getfile.asp?id=42&type=do"
 
     def test_fragment_dropped(self):
         url = "https://host.de/si0057.asp?__ksinr=7#tab"
-        assert (
-            normalize_external_id(url, keep_params=("__ksinr",))
-            == "https://host.de/si0057.asp?__ksinr=7"
-        )
+        assert normalize_external_id(url, keep_params=("__ksinr",)) == "https://host.de/si0057.asp?__ksinr=7"
 
 
 class TestContentHash:
@@ -94,9 +88,7 @@ class TestScraperConfig:
             ScraperConfig.from_sync_config({"scraper": {}})
 
     def test_defaults(self):
-        config = ScraperConfig.from_sync_config(
-            {"scraper": {"base_url": "https://rat.example.de/bi"}}
-        )
+        config = ScraperConfig.from_sync_config({"scraper": {"base_url": "https://rat.example.de/bi"}})
         assert config.base_url == "https://rat.example.de/bi/"
         assert config.rate_limit_seconds == 2.0
         assert config.max_concurrent == 1
@@ -143,24 +135,18 @@ def _make_robots_entry(rules: str) -> _RobotsEntry:
 class TestRobots:
     async def test_disallow_respected(self):
         fetcher = PoliteFetcher()
-        fetcher._robots_cache["rat.example.de"] = _make_robots_entry(
-            "User-agent: *\nDisallow: /bi/"
-        )
+        fetcher._robots_cache["rat.example.de"] = _make_robots_entry("User-agent: *\nDisallow: /bi/")
         assert await fetcher.is_allowed("https://rat.example.de/bi/si0040.asp") is False
         assert await fetcher.is_allowed("https://rat.example.de/andere.html") is True
 
     async def test_no_robots_means_allowed(self):
         fetcher = PoliteFetcher()
-        fetcher._robots_cache["rat.example.de"] = _RobotsEntry(
-            parser=None, fetched_at=time.monotonic()
-        )
+        fetcher._robots_cache["rat.example.de"] = _RobotsEntry(parser=None, fetched_at=time.monotonic())
         assert await fetcher.is_allowed("https://rat.example.de/bi/si0040.asp") is True
 
     async def test_specific_agent_disallow(self):
         fetcher = PoliteFetcher()
-        fetcher._robots_cache["rat.example.de"] = _make_robots_entry(
-            "User-agent: mandari-ingestor\nDisallow: /"
-        )
+        fetcher._robots_cache["rat.example.de"] = _make_robots_entry("User-agent: mandari-ingestor\nDisallow: /")
         assert await fetcher.is_allowed("https://rat.example.de/bi/si0040.asp") is False
 
 

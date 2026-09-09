@@ -20,6 +20,7 @@ Dokumentation: docs/DSGVO_LOESCHKONZEPT.md, docs/DSGVO_AVV_MUSTER.md,
 docs/DSGVO_TOM.md.
 """
 
+import contextlib
 import logging
 from datetime import timedelta
 
@@ -42,10 +43,8 @@ def get_privacy_settings(tenant) -> dict:
     stored = (tenant.settings or {}).get("privacy", {})
     result = dict(PRIVACY_DEFAULTS)
     for key in ("persons_years", "audit_years", "np_content_years"):
-        try:
+        with contextlib.suppress(TypeError, ValueError):
             result[key] = max(0, min(int(stored.get(key, result[key])), 100))
-        except (TypeError, ValueError):
-            pass
     result["notice"] = str(stored.get("notice", "") or "")
     return result
 

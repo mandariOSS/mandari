@@ -171,9 +171,9 @@ class TaskBoardAPIView(WorkViewMixin, View):
             if not self.membership.has_permission("tasks.create"):
                 return JsonResponse({"error": "Keine Berechtigung."}, status=403)
             return self._quick_add(request)
-        elif action == "update_status":
+        if action == "update_status":
             return self._update_status(request)
-        elif action == "toggle_complete":
+        if action == "toggle_complete":
             return self._toggle_complete(request)
 
         return JsonResponse({"error": "Unknown action"}, status=400)

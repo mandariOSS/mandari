@@ -735,7 +735,7 @@ class Role(models.Model):
         """
         created_roles = []
 
-        for role_key, role_config in DEFAULT_ROLES.items():
+        for _role_key, role_config in DEFAULT_ROLES.items():
             # Check if role already exists
             existing = cls.objects.filter(organization=organization, name=role_config["name"]).first()
 

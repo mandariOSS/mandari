@@ -44,7 +44,7 @@ _UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "Ä": 
 
 
 def cache_root() -> Path:
-    return Path(getattr(settings, "OPARL_FILES_ROOT"))
+    return Path(settings.OPARL_FILES_ROOT)
 
 
 def max_bytes() -> int:

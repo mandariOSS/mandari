@@ -8,6 +8,7 @@ Single source of truth for both signal-based indexing and bulk reindex.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 
@@ -87,17 +88,13 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
 def meeting_to_doc(meeting) -> dict[str, Any]:
     """Convert an OParlMeeting to a Elasticsearch document."""
     org_names = []
-    try:
+    with contextlib.suppress(Exception):
         org_names = [org.name for org in meeting.organizations.all() if org.name]
-    except Exception:
-        pass
 
     name = meeting.name or ""
     if not name:
-        try:
+        with contextlib.suppress(Exception):
             name = meeting.get_display_name()
-        except Exception:
-            pass
 
     return {
         "id": str(meeting.id),
@@ -117,10 +114,8 @@ def person_to_doc(person) -> dict[str, Any]:
     """Convert an OParlPerson to a Elasticsearch document."""
     name = person.name or ""
     if not name:
-        try:
+        with contextlib.suppress(Exception):
             name = person.display_name
-        except Exception:
-            pass
 
     return {
         "id": str(person.id),

@@ -140,7 +140,7 @@ resp = anon.get("/insight/beschluesse/")
 check(
     "Liste -> Hinweis, keine Daten",
     resp.status_code == 200 and "noch keine beschlusskontrolle" in html(resp).lower() and "Radweg" not in html(resp),
-    "status=%s radweg=%s hint=%s" % (resp.status_code, "Radweg" in html(resp), "beschlusskontrolle" in html(resp).lower()),
+    f"status={resp.status_code} radweg={'Radweg' in html(resp)} hint={'beschlusskontrolle' in html(resp).lower()}",
 )
 check("Detail -> 404", anon.get(f"/insight/beschluesse/{radweg.id}/").status_code == 404)
 check("Navigation zeigt Beschlüsse", "beschluesse/" in html(resp))

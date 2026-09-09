@@ -92,8 +92,7 @@ base = f"/session/{tenant.slug}"
 print("=== Phase A: Matrix-Vollständigkeit ===")
 all_can_fields = {f.name for f in SessionRole._meta.get_fields() if f.name.startswith("can_")}
 matrix_fields = {n for _g, entries in permission_fields() for n, _l in entries}
-check("Alle Rechte in der Matrix", all_can_fields == matrix_fields,
-      f"fehlend: {all_can_fields - matrix_fields}")
+check("Alle Rechte in der Matrix", all_can_fields == matrix_fields, f"fehlend: {all_can_fields - matrix_fields}")
 check("Neues Endgeräte-Recht enthalten", "can_manage_devices" in matrix_fields)
 
 resp = admin.get(f"{base}/settings/roles/")

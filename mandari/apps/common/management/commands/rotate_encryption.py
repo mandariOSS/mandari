@@ -85,14 +85,14 @@ class Command(BaseCommand):
         try:
             old_master = base64.b64decode(old_master_b64)
         except Exception as e:
-            raise CommandError(f"Alter Master-Key ist kein gültiges base64: {e}")
+            raise CommandError(f"Alter Master-Key ist kein gültiges base64: {e}") from e
         if len(old_master) != 32:
             raise CommandError(f"Alter Master-Key muss 32 Bytes sein, ist {len(old_master)}")
 
         try:
             new_master = base64.b64decode(settings.ENCRYPTION_MASTER_KEY)
         except Exception as e:
-            raise CommandError(f"Neuer Master-Key (aus ENCRYPTION_MASTER_KEY) ist ungültig: {e}")
+            raise CommandError(f"Neuer Master-Key (aus ENCRYPTION_MASTER_KEY) ist ungültig: {e}") from e
         if len(new_master) != 32:
             raise CommandError(f"Neuer Master-Key muss 32 Bytes sein, ist {len(new_master)}")
 
@@ -175,19 +175,20 @@ class Command(BaseCommand):
         """
         # Direkter FK zum Tenant
         for f in model._meta.get_fields():
-            if hasattr(f, "related_model") and f.related_model == tenant_model:
-                if f.many_to_one or f.one_to_one:
-                    return [f.name]
+            if hasattr(f, "related_model") and f.related_model == tenant_model and (f.many_to_one or f.one_to_one):
+                return [f.name]
 
         # Indirekter FK über andere FKs (einfacher Fall: 1 Hop)
         for f in model._meta.get_fields():
-            if hasattr(f, "related_model") and f.related_model is not None:
-                if f.many_to_one or f.one_to_one:
-                    # Prüfe ob das related_model einen FK zum Tenant hat
-                    for rf in f.related_model._meta.get_fields():
-                        if hasattr(rf, "related_model") and rf.related_model == tenant_model:
-                            if rf.many_to_one or rf.one_to_one:
-                                return [f.name, rf.name]
+            if hasattr(f, "related_model") and f.related_model is not None and (f.many_to_one or f.one_to_one):
+                # Prüfe ob das related_model einen FK zum Tenant hat
+                for rf in f.related_model._meta.get_fields():
+                    if (
+                        hasattr(rf, "related_model")
+                        and rf.related_model == tenant_model
+                        and (rf.many_to_one or rf.one_to_one)
+                    ):
+                        return [f.name, rf.name]
 
         return None
 

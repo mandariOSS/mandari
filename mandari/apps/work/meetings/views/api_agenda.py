@@ -10,6 +10,7 @@ Org-weite Sitzungsvorbereitung mit 5 Sektionen pro TOP:
 5. Dokumente (org-weit)
 """
 
+import contextlib
 import json
 
 from django.http import JsonResponse
@@ -312,10 +313,8 @@ class SpeechNoteAPIView(WorkViewMixin, View):
         if "title" in data:
             note.title = data.get("title") or ""
         if "estimated_duration" in data:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 note.estimated_duration = max(0, int(data.get("estimated_duration") or 0))
-            except (TypeError, ValueError):
-                pass
         if "is_shared" in data:
             note.is_shared = data.get("is_shared") in [True, "true", "1", "on"]
         if "linked_document" in data:

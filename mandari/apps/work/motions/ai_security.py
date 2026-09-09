@@ -199,9 +199,7 @@ class AIOutputFilter:
             return ""
 
         # Remove null bytes and other control characters
-        text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
-
-        return text
+        return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
 
 
 class AIRateLimiter:

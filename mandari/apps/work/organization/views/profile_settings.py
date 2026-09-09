@@ -188,7 +188,7 @@ class ProfileAbsenceView(WorkViewMixin, TemplateView):
 
         if action == "create_absence":
             return self._create_absence(request)
-        elif action == "cancel_absence":
+        if action == "cancel_absence":
             return self._cancel_absence(request)
 
         return redirect("work:profile_absence", org_slug=self.organization.slug)

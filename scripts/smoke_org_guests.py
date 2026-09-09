@@ -396,7 +396,9 @@ chair_role.permissions.clear()  # angepasste Rolle darf NICHT überschrieben wer
 
 resp = c_admin.post(f"{BASE_A}/organization/roles/restore-defaults/")
 check("Restore-Defaults: Redirect", resp.status_code == 302, f"got {resp.status_code}")
-check("Fehlende Standard-Rolle wieder angelegt", Role.objects.filter(organization=org_a, name="AG-Sprecher/in").exists())
+check(
+    "Fehlende Standard-Rolle wieder angelegt", Role.objects.filter(organization=org_a, name="AG-Sprecher/in").exists()
+)
 chair_role.refresh_from_db()
 check("Bestehende (angepasste) Rolle unverändert", chair_role.permissions.count() == 0)
 

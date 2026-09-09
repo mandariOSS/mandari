@@ -725,9 +725,9 @@ class AgendaSupplementaryDocument(models.Model):
         """Gibt die anzuzeigende URL zurück, je nach Typ."""
         if self.document_type == "link":
             return self.url
-        elif self.document_type == "file" and self.file:
+        if self.document_type == "file" and self.file:
             return self.file.url
-        elif self.document_type == "oparl" and self.oparl_file:
+        if self.document_type == "oparl" and self.oparl_file:
             return self.oparl_file.access_url
         return ""
 
@@ -928,7 +928,7 @@ class PaperComment(EncryptionMixin, models.Model):
             if not user_committees.exists():
                 return membership.organization == self.organization
 
-            committee_external_ids = set(c.external_id for c in user_committees if c.external_id)
+            committee_external_ids = {c.external_id for c in user_committees if c.external_id}
             consultations = self.paper.consultations.all()
             meeting_external_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]
 

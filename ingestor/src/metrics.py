@@ -43,7 +43,7 @@ try:
         Histogram,
         generate_latest,
     )
-    from prometheus_client.exposition import basic_auth_handler
+    from prometheus_client.exposition import basic_auth_handler  # noqa: F401 – Verfügbarkeitsprüfung des Moduls
 
     PROMETHEUS_AVAILABLE = True
 except ImportError:
@@ -68,9 +68,7 @@ class SimpleMetrics:
         return {
             "http_requests_total": self.http_requests,
             "http_errors_total": self.http_errors,
-            "http_avg_duration_seconds": (
-                self.http_total_duration / max(self.http_requests, 1)
-            ),
+            "http_avg_duration_seconds": (self.http_total_duration / max(self.http_requests, 1)),
             "entities_synced_total": sum(self.entities_synced.values()),
             "entities_by_type": self.entities_synced,
             "sync_runs_total": self.sync_runs,
@@ -269,9 +267,7 @@ class MetricsCollector:
         if not self.enabled:
             return
         if self._prometheus_enabled:
-            self.scraper_parse_failures_total.labels(
-                source=source, page_type=page_type
-            ).inc()
+            self.scraper_parse_failures_total.labels(source=source, page_type=page_type).inc()
 
     def record_scraper_quota(self, source: str, quota: float) -> None:
         """Record the parse quota of the last scraper run (0.0-1.0)."""
@@ -293,9 +289,7 @@ class MetricsCollector:
             return
 
         # Simple metrics
-        self.simple.entities_synced[entity_type] = (
-            self.simple.entities_synced.get(entity_type, 0) + 1
-        )
+        self.simple.entities_synced[entity_type] = self.simple.entities_synced.get(entity_type, 0) + 1
 
         # Prometheus metrics
         if self._prometheus_enabled:
@@ -351,12 +345,8 @@ class MetricsCollector:
 
             if self._prometheus_enabled:
                 self.active_syncs.dec()
-                self.sync_duration.labels(source=source, sync_type=sync_type).observe(
-                    duration
-                )
-                self.sync_runs_total.labels(
-                    source=source, sync_type=sync_type, status=status
-                ).inc()
+                self.sync_duration.labels(source=source, sync_type=sync_type).observe(duration)
+                self.sync_runs_total.labels(source=source, sync_type=sync_type, status=status).inc()
 
     # ========== Circuit Breaker Metrics ==========
 

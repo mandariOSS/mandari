@@ -344,15 +344,14 @@ class MotionImportService:
                 title=title,
                 visibility=visibility,
             )
-        else:
-            return cls.import_pdf(
-                pdf_file=uploaded_file,
-                organization=organization,
-                author=author,
-                motion_type=motion_type,
-                title=title,
-                visibility=visibility,
-            )
+        return cls.import_pdf(
+            pdf_file=uploaded_file,
+            organization=organization,
+            author=author,
+            motion_type=motion_type,
+            title=title,
+            visibility=visibility,
+        )
 
     @classmethod
     def import_multiple_files(

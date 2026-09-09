@@ -529,26 +529,24 @@ class AcceptInvitationView(TemplateView):
         # If not, redirect to login or register depending on whether account exists
         if request.user.is_authenticated:
             return super().get(request, *args, **kwargs)
-        else:
-            # Store token in session
-            request.session["pending_invitation_token"] = token
+        # Store token in session
+        request.session["pending_invitation_token"] = token
 
-            # Check if user with this email already exists
-            from apps.accounts.models import User
+        # Check if user with this email already exists
+        from apps.accounts.models import User
 
-            user_exists = User.objects.filter(email=invitation.email).exists()
+        user_exists = User.objects.filter(email=invitation.email).exists()
 
-            if user_exists:
-                # User exists → redirect to login
-                messages.info(request, "Bitte melden Sie sich an, um die Einladung anzunehmen.")
-                return redirect("accounts:login")
-            else:
-                # No account yet → redirect directly to registration
-                messages.info(
-                    request,
-                    f"Willkommen! Erstellen Sie Ihr Konto, um {invitation.organization.name} beizutreten.",
-                )
-                return redirect("accounts:register")
+        if user_exists:
+            # User exists → redirect to login
+            messages.info(request, "Bitte melden Sie sich an, um die Einladung anzunehmen.")
+            return redirect("accounts:login")
+        # No account yet → redirect directly to registration
+        messages.info(
+            request,
+            f"Willkommen! Erstellen Sie Ihr Konto, um {invitation.organization.name} beizutreten.",
+        )
+        return redirect("accounts:register")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

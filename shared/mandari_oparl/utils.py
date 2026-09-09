@@ -4,8 +4,8 @@ OParl Utility Functions
 Deterministic UUID generation, datetime/date parsing for OParl data.
 """
 
-from datetime import date, datetime, timezone
-from uuid import UUID, NAMESPACE_URL, uuid5
+from datetime import date, datetime
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 
 def generate_uuid(external_id: str) -> UUID:

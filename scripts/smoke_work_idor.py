@@ -89,8 +89,8 @@ def make_member(org, email, perms):
 print("=== Setup ===")
 org_a = Organization.objects.create(name="Org A", slug="org-a")
 org_b = Organization.objects.create(name="Org B", slug="org-b")
-TenantEncryption(org_a).key
-TenantEncryption(org_b).key
+_ = TenantEncryption(org_a).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
+_ = TenantEncryption(org_b).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 now = timezone.now()
 
@@ -100,13 +100,9 @@ attacker_user, attacker_ms, attacker_c = make_member(
     "fac-attacker@example.org",
     [perm("faction.view_public", "Sitzungen sehen", "faction"), perm("protocols.edit", "Protokoll", "protocols")],
 )
-mtg_a = FactionMeeting.objects.create(
-    organization=org_a, title="Sitzung A", start=now, created_by=attacker_ms
-)
+mtg_a = FactionMeeting.objects.create(organization=org_a, title="Sitzung A", start=now, created_by=attacker_ms)
 victim_owner, victim_ms, _ = make_member(org_b, "fac-victim@example.org", [])
-mtg_b = FactionMeeting.objects.create(
-    organization=org_b, title="Sitzung B", start=now, created_by=victim_ms
-)
+mtg_b = FactionMeeting.objects.create(organization=org_b, title="Sitzung B", start=now, created_by=victim_ms)
 foreign_item = FactionAgendaItem.objects.create(
     meeting=mtg_b, title="Fremder TOP", votes_for=1, votes_against=2, votes_abstain=0
 )

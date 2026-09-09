@@ -97,27 +97,44 @@ p1 = SessionPerson.objects.create(tenant=tenant, given_name="Paula", family_name
 p2 = SessionPerson.objects.create(tenant=tenant, given_name="Emil", family_name="ENTSCHULDIGT")
 
 m1 = SessionMeeting.objects.create(
-    tenant=tenant, name="Ratssitzung März", organization=org, start=base_dt,
-    end=base_dt + timedelta(hours=2), is_public=True,
+    tenant=tenant,
+    name="Ratssitzung März",
+    organization=org,
+    start=base_dt,
+    end=base_dt + timedelta(hours=2),
+    is_public=True,
 )
 m2 = SessionMeeting.objects.create(
-    tenant=tenant, name="Ratssitzung April", organization=org, start=base_dt + timedelta(days=30),
+    tenant=tenant,
+    name="Ratssitzung April",
+    organization=org,
+    start=base_dt + timedelta(days=30),
     actual_start=base_dt + timedelta(days=30),
-    actual_end=base_dt + timedelta(days=30, hours=4), is_public=True,
+    actual_end=base_dt + timedelta(days=30, hours=4),
+    is_public=True,
 )
 m_np = SessionMeeting.objects.create(
-    tenant=tenant, name="NOE-SITZUNG", organization=org2, start=base_dt + timedelta(days=2),
+    tenant=tenant,
+    name="NOE-SITZUNG",
+    organization=org2,
+    start=base_dt + timedelta(days=2),
     is_public=False,
 )
 SessionMeeting.objects.create(
-    tenant=tenant, name="Abgesagt", organization=org, start=base_dt + timedelta(days=3),
-    cancelled=True, is_public=True,
+    tenant=tenant,
+    name="Abgesagt",
+    organization=org,
+    start=base_dt + timedelta(days=3),
+    cancelled=True,
+    is_public=True,
 )
 
 SessionAgendaItem.objects.create(meeting=m1, number="1", order=1, name="TOP A", vote_result="approved")
 SessionAgendaItem.objects.create(meeting=m1, number="2", order=2, name="TOP B", vote_result="pending")
 SessionAgendaItem.objects.create(meeting=m2, number="1", order=1, name="TOP C", vote_result="rejected")
-SessionAgendaItem.objects.create(meeting=m_np, number="1", order=1, name="TOP NOE", vote_result="approved", is_public=False)
+SessionAgendaItem.objects.create(
+    meeting=m_np, number="1", order=1, name="TOP NOE", vote_result="approved", is_public=False
+)
 
 a1 = SessionAttendance.objects.create(meeting=m1, person=p1, status="present")
 a2 = SessionAttendance.objects.create(meeting=m2, person=p1, status="joined_late")
@@ -181,8 +198,16 @@ from apps.session.services import report_service  # noqa: E402
 stats = report_service.attendance_stats(tenant, year, include_non_public=True)
 paula = next(r for r in stats if "PRAESENT" in r["name"])
 emil = next(r for r in stats if "ENTSCHULDIGT" in r["name"])
-check("Paula: 3 eingeladen, 3 anwesend, 100 %", paula["invited"] == 3 and paula["present"] == 3 and paula["rate"] == 100, str(paula))
-check("Emil: 2 eingeladen, 1 anwesend, 50 %", emil["invited"] == 2 and emil["present"] == 1 and emil["rate"] == 50, str(emil))
+check(
+    "Paula: 3 eingeladen, 3 anwesend, 100 %",
+    paula["invited"] == 3 and paula["present"] == 3 and paula["rate"] == 100,
+    str(paula),
+)
+check(
+    "Emil: 2 eingeladen, 1 anwesend, 50 %",
+    emil["invited"] == 2 and emil["present"] == 1 and emil["rate"] == 50,
+    str(emil),
+)
 
 stats_pub = report_service.attendance_stats(tenant, year, include_non_public=False)
 paula_pub = next(r for r in stats_pub if "PRAESENT" in r["name"])
@@ -190,12 +215,19 @@ check("Ohne NÖ: Paula nur 2 eingeladen", paula_pub["invited"] == 2, str(paula_p
 
 mstats = report_service.meeting_stats(tenant, year, include_non_public=True)
 rat = next(r for r in mstats if r["organization"].pk == org.pk)
-check("Rat: 2 Sitzungen, 3 TOPs, 2 Beschlüsse", rat["meetings"] == 2 and rat["tops"] == 3 and rat["resolutions"] == 2, str(rat))
+check(
+    "Rat: 2 Sitzungen, 3 TOPs, 2 Beschlüsse",
+    rat["meetings"] == 2 and rat["tops"] == 3 and rat["resolutions"] == 2,
+    str(rat),
+)
 check("Rat: Ø-Dauer 180 min", rat["avg_duration"] == 180, str(rat["avg_duration"]))
 
 allowances, totals = report_service.allowance_stats(tenant, year)
-check("Sitzungsgeld: 2 Posten, 60 € gesamt, 30 € ausgezahlt",
-      totals["count"] == 2 and totals["amount"] == Decimal("60.00") and totals["paid"] == Decimal("30.00"), str(totals))
+check(
+    "Sitzungsgeld: 2 Posten, 60 € gesamt, 30 € ausgezahlt",
+    totals["count"] == 2 and totals["amount"] == Decimal("60.00") and totals["paid"] == Decimal("30.00"),
+    str(totals),
+)
 
 # =============================================================================
 print()

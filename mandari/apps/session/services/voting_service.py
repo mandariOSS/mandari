@@ -59,7 +59,7 @@ def capture_votes(agenda_item: SessionAgendaItem, votes_by_person: dict, *, reco
 
 def recompute_sums(agenda_item: SessionAgendaItem) -> None:
     """Summen (Ja/Nein/Enthaltung) aus den Einzelstimmen ableiten."""
-    counts = {value: 0 for value in SessionVote.COUNTED_VOTES}
+    counts = dict.fromkeys(SessionVote.COUNTED_VOTES, 0)
     for vote in agenda_item.votes.filter(vote__in=SessionVote.COUNTED_VOTES).values_list("vote", flat=True):
         counts[vote] += 1
     agenda_item.votes_yes = counts["yes"]

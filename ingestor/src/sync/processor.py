@@ -150,7 +150,8 @@ class OParlProcessor:
             # Different servers use different field names - support all variants
             location_list_url=data.get("locationList"),  # Münster & Bonn use "locationList"
             agenda_item_list_url=data.get("agendaItem"),  # Both use "agendaItem"
-            consultation_list_url=data.get("consultation") or data.get("consultations"),  # Bonn: "consultation", Münster: "consultations"
+            consultation_list_url=data.get("consultation")
+            or data.get("consultations"),  # Bonn: "consultation", Münster: "consultations"
             file_list_url=data.get("file") or data.get("files"),  # Bonn: "file", Münster: "files"
             legislative_term_list_url=data.get("legislativeTermList"),  # Both use "legislativeTermList"
         )
@@ -201,10 +202,7 @@ class OParlProcessor:
         # Extract organization references
         orgs = data.get("organization", [])
         if orgs:
-            meeting.references["organization"] = [
-                o if isinstance(o, str) else o.get("id", "")
-                for o in orgs
-            ]
+            meeting.references["organization"] = [o if isinstance(o, str) else o.get("id", "") for o in orgs]
 
         # Process nested agenda items
         for ai_data in data.get("agendaItem", []):
@@ -526,7 +524,7 @@ class OParlProcessor:
         body = data.get("body")
         if isinstance(body, str):
             return body
-        elif isinstance(body, dict):
+        if isinstance(body, dict):
             return body.get("id")
         return None
 

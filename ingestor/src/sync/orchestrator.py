@@ -62,9 +62,7 @@ def source_backoff_until(source, now: datetime | None = None) -> datetime | None
         return None
     if last_error_at.tzinfo is None:
         last_error_at = last_error_at.replace(tzinfo=UTC)
-    minutes = min(
-        BACKOFF_BASE_MINUTES * 2 ** (failures - BACKOFF_AFTER_FAILURES), BACKOFF_MAX_MINUTES
-    )
+    minutes = min(BACKOFF_BASE_MINUTES * 2 ** (failures - BACKOFF_AFTER_FAILURES), BACKOFF_MAX_MINUTES)
     until = last_error_at + timedelta(minutes=minutes)
     now = now or datetime.now(UTC)
     return until if until > now else None
@@ -238,16 +236,11 @@ class SyncOrchestrator:
         if isinstance(response, dict) and type_str.endswith("/System"):
             body_list_url = response.get("body")
             if body_list_url:
-                console.print(
-                    f"[green]Detected: System -> fetching bodies from {body_list_url}[/green]"
-                )
+                console.print(f"[green]Detected: System -> fetching bodies from {body_list_url}[/green]")
                 bodies = await client.fetch_list_all(body_list_url)
                 return "system", bodies
 
-        raise ValueError(
-            f"URL is neither Body, Body-List, nor System: {url}\n"
-            f"Response type: {type_str or 'unknown'}"
-        )
+        raise ValueError(f"URL is neither Body, Body-List, nor System: {url}\nResponse type: {type_str or 'unknown'}")
 
     async def sync_body_url(
         self,
@@ -270,8 +263,6 @@ class SyncOrchestrator:
         """
         start_time = datetime.now(UTC)
         result = SyncResult(source_url=url, source_name="", success=False)
-        sync_type = "full" if full else "incremental"
-
         # Scraper-Quellen (sync_config["source_type"] = "scraper:<vendor>")
         # laufen über den ScraperSyncRunner statt über den OParl-Client.
         # "bridge:*"-Quellen (z. B. oparl-bridge vor ALLRIS) sind normale
@@ -302,9 +293,7 @@ class SyncOrchestrator:
 
                 if not bodies_data:
                     result.errors.append(f"No bodies found at {url}")
-                    await self._record_source_failure(
-                        url, "Keine Kommunen (Bodies) am Endpunkt gefunden"
-                    )
+                    await self._record_source_failure(url, "Keine Kommunen (Bodies) am Endpunkt gefunden")
                     return result
 
                 # Use first body name as source name
@@ -323,17 +312,13 @@ class SyncOrchestrator:
                 source_id = await self.storage.upsert_source(
                     url=url,
                     name=result.source_name,
-                    raw_json=bodies_data[0]
-                    if len(bodies_data) == 1
-                    else {"bodies_count": len(bodies_data)},
+                    raw_json=bodies_data[0] if len(bodies_data) == 1 else {"bodies_count": len(bodies_data)},
                 )
 
                 # Sync bodies
                 if len(bodies_data) > 1:
                     self._parallel_mode = True
-                    console.print(
-                        f"[bold green]Starting PARALLEL sync of {len(bodies_data)} bodies...[/bold green]"
-                    )
+                    console.print(f"[bold green]Starting PARALLEL sync of {len(bodies_data)} bodies...[/bold green]")
 
                 # Bound per-body concurrency so multi-body sources don't
                 # multiply peak memory (each body sync holds pages + caches).
@@ -349,9 +334,7 @@ class SyncOrchestrator:
                                 full=full,
                             )
                         except Exception as e:
-                            console.print(
-                                f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]"
-                            )
+                            console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
                             return {"errors": [str(e)]}
 
                 body_results = await asyncio.gather(
@@ -462,9 +445,7 @@ class SyncOrchestrator:
         try:
             await self.storage.record_source_failure(url, error)
         except Exception as exc:
-            console.print(
-                f"[yellow]Warning: Quellen-Fehlerstatus nicht gespeichert: {exc}[/yellow]"
-            )
+            console.print(f"[yellow]Warning: Quellen-Fehlerstatus nicht gespeichert: {exc}[/yellow]")
 
     async def sync_source(
         self,
@@ -485,8 +466,6 @@ class SyncOrchestrator:
         """
         start_time = datetime.now(UTC)
         result = SyncResult(source_url=url, source_name="", success=False)
-        sync_type = "full" if full else "incremental"
-
         # Persistierten Capability-Cache laden (Issue #22): der Befund
         # "modified_since nicht unterstützt" überlebt so Daemon-Neustarts.
         await self._seed_modified_since_cache()
@@ -504,9 +483,7 @@ class SyncOrchestrator:
 
                 if not system_data:
                     reason = system_result.error or (
-                        f"HTTP {system_result.status_code}"
-                        if system_result.status_code
-                        else "keine Antwort"
+                        f"HTTP {system_result.status_code}" if system_result.status_code else "keine Antwort"
                     )
                     result.errors.append(f"Failed to fetch system from {url} ({reason})")
                     await self._record_source_failure(url, reason)
@@ -546,15 +523,12 @@ class SyncOrchestrator:
                     bodies_data = [
                         b
                         for b in bodies_data
-                        if body_filter.lower() in b.get("name", "").lower()
-                        or body_filter in b.get("id", "")
+                        if body_filter.lower() in b.get("name", "").lower() or body_filter in b.get("id", "")
                     ]
                     console.print(f"[dim]Filtered to {len(bodies_data)} bodies[/dim]")
 
                 # Sync all bodies IN PARALLEL for massive speedup
-                console.print(
-                    f"[bold green]Starting PARALLEL sync of {len(bodies_data)} bodies...[/bold green]"
-                )
+                console.print(f"[bold green]Starting PARALLEL sync of {len(bodies_data)} bodies...[/bold green]")
 
                 # Disable Progress bars if syncing multiple bodies in parallel
                 # Rich doesn't support multiple live displays simultaneously
@@ -576,9 +550,7 @@ class SyncOrchestrator:
                                 full=full,
                             )
                         except Exception as e:
-                            console.print(
-                                f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]"
-                            )
+                            console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
                             return {"errors": [str(e)]}
 
                 # Run all body syncs in parallel (bounded by semaphore)
@@ -727,12 +699,8 @@ class SyncOrchestrator:
         if not full:
             from datetime import timedelta
 
-            modified_since = (datetime.now() - timedelta(days=7)).replace(
-                hour=0, minute=0, second=0, microsecond=0
-            )
-            console.print(
-                f"[dim]Incremental sync: modified_since={modified_since.isoformat()}[/dim]"
-            )
+            modified_since = (datetime.now() - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+            console.print(f"[dim]Incremental sync: modified_since={modified_since.isoformat()}[/dim]")
         else:
             console.print("[dim]Full sync: fetching ALL pages[/dim]")
 
@@ -743,17 +711,17 @@ class SyncOrchestrator:
 
         # Helper to build common kwargs for _sync_entity_type
         def sync_kwargs(list_url: str | None, entity_type: str) -> dict:
-            return dict(
-                client=client,
-                list_url=list_url,
-                entity_type=entity_type,
-                body_id=body_id,
-                body_external_id=body_external_id,
-                body_name=body_name,
-                modified_since=modified_since,
-                full=full,
-                es_deletions=es_deletions,
-            )
+            return {
+                "client": client,
+                "list_url": list_url,
+                "entity_type": entity_type,
+                "body_id": body_id,
+                "body_external_id": body_external_id,
+                "body_name": body_name,
+                "modified_since": modified_since,
+                "full": full,
+                "es_deletions": es_deletions,
+            }
 
         # Phase 2 (parallel): Start text extraction as background task
         # Processes already-pending files while entity sync runs concurrently.
@@ -927,9 +895,7 @@ class SyncOrchestrator:
             )
         )
         total_tombstoned = sum(len(ids) for ids in es_deletions.values())
-        if settings.elasticsearch_indexing_enabled and (
-            full or total_synced > 0 or total_tombstoned > 0
-        ):
+        if settings.elasticsearch_indexing_enabled and (full or total_synced > 0 or total_tombstoned > 0):
             await self._index_body_elasticsearch(body_id, stats, es_deletions, full)
         elif settings.elasticsearch_indexing_enabled and not full:
             console.print("[dim]  Elasticsearch indexing skipped (no changes)[/dim]")
@@ -988,9 +954,7 @@ class SyncOrchestrator:
             console.print("\n[bold yellow]Elasticsearch Indexing...[/bold yellow]")
             async with ElasticsearchIndexer() as indexer:
                 if not await indexer.is_healthy():
-                    console.print(
-                        "[yellow]  Elasticsearch not reachable, skipping indexing[/yellow]"
-                    )
+                    console.print("[yellow]  Elasticsearch not reachable, skipping indexing[/yellow]")
                 else:
                     # Ensure index settings before first indexing
                     await indexer.ensure_index_settings()
@@ -1004,8 +968,7 @@ class SyncOrchestrator:
                             await indexer.delete_documents(index_name, doc_ids)
                         stats["es_deleted"] = total_tombstoned
                         console.print(
-                            f"[yellow]  Removed {total_tombstoned} tombstoned "
-                            f"documents from Elasticsearch[/yellow]"
+                            f"[yellow]  Removed {total_tombstoned} tombstoned documents from Elasticsearch[/yellow]"
                         )
 
                     # Index papers (with file contents for paper-boosting)
@@ -1020,8 +983,7 @@ class SyncOrchestrator:
 
                     for i in range(0, len(papers), batch_size):
                         docs = [
-                            paper_to_doc(p, files=files_by_paper.get(str(p.id), []))
-                            for p in papers[i : i + batch_size]
+                            paper_to_doc(p, files=files_by_paper.get(str(p.id), [])) for p in papers[i : i + batch_size]
                         ]
                         await indexer.index_documents("papers", docs)
                         indexed_total += len(docs)
@@ -1055,9 +1017,7 @@ class SyncOrchestrator:
                         indexed_total += len(docs)
 
                     stats["indexed"] = indexed_total
-                    console.print(
-                        f"[green]  Indexed {indexed_total} documents in Elasticsearch[/green]"
-                    )
+                    console.print(f"[green]  Indexed {indexed_total} documents in Elasticsearch[/green]")
 
         except Exception as e:
             console.print(f"[red]  Elasticsearch indexing error: {e}[/red]")
@@ -1088,9 +1048,7 @@ class SyncOrchestrator:
         if not external_id:
             return False
         modified = self.processor.parse_datetime(item.get("modified"))
-        entity_id = await self.storage.mark_entity_deleted(
-            entity_type, external_id, modified=modified
-        )
+        entity_id = await self.storage.mark_entity_deleted(entity_type, external_id, modified=modified)
         if entity_id is None:
             return False
         index_name = self._ES_INDEX_BY_ENTITY_TYPE.get(entity_type)
@@ -1152,16 +1110,8 @@ class SyncOrchestrator:
             # each (WHERE external_id IN (...)) — replaces the former global
             # load_fk_caches() that pulled ALL persons/orgs into memory.
             if entity_type == "membership":
-                person_refs = {
-                    ref
-                    for ref in (item.get("person") for item in page)
-                    if isinstance(ref, str) and ref
-                }
-                org_refs = {
-                    ref
-                    for ref in (item.get("organization") for item in page)
-                    if isinstance(ref, str) and ref
-                }
+                person_refs = {ref for ref in (item.get("person") for item in page) if isinstance(ref, str) and ref}
+                org_refs = {ref for ref in (item.get("organization") for item in page) if isinstance(ref, str) and ref}
                 if person_refs:
                     await self.storage.get_person_ids_by_external_ids(list(person_refs))
                 if org_refs:
@@ -1185,9 +1135,7 @@ class SyncOrchestrator:
                             continue
                         processed = self.processor.process(item, body_external_id)
                         if processed:
-                            stored = await self._store_entity(
-                                processed, body_id, entity_type, body_name
-                            )
+                            stored = await self._store_entity(processed, body_id, entity_type, body_name)
                             if stored:
                                 count += 1
                     except Exception as e:
@@ -1196,9 +1144,7 @@ class SyncOrchestrator:
             else:
                 # Incremental hybrid: server pre-filtered + client-side comparison
                 external_ids = [item.get("id", "") for item in page if item.get("id")]
-                existing_ids = await self.storage.batch_check_entities_exist(
-                    entity_type, external_ids
-                )
+                existing_ids = await self.storage.batch_check_entities_exist(entity_type, external_ids)
 
                 for item in page:
                     try:
@@ -1221,9 +1167,7 @@ class SyncOrchestrator:
                             # New item: save
                             processed = self.processor.process(item, body_external_id)
                             if processed:
-                                stored = await self._store_entity(
-                                    processed, body_id, entity_type, body_name
-                                )
+                                stored = await self._store_entity(processed, body_id, entity_type, body_name)
                                 if stored:
                                     new_on_page += 1
                                     count += 1
@@ -1231,9 +1175,7 @@ class SyncOrchestrator:
                             # Modified item: update (upsert handles ON CONFLICT)
                             processed = self.processor.process(item, body_external_id)
                             if processed:
-                                stored = await self._store_entity(
-                                    processed, body_id, entity_type, body_name
-                                )
+                                stored = await self._store_entity(processed, body_id, entity_type, body_name)
                                 if stored:
                                     updated_on_page += 1
                                     updated_count += 1
@@ -1370,9 +1312,7 @@ class SyncOrchestrator:
                 paper_id = await self.storage.get_paper_uuid(entity.paper_external_ids[0])
             if entity.meeting_external_ids:
                 meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_ids[0])
-            await self.storage.upsert_file(
-                entity, body_id, paper_id=paper_id, meeting_id=meeting_id
-            )
+            await self.storage.upsert_file(entity, body_id, paper_id=paper_id, meeting_id=meeting_id)
             metrics.record_entity_synced("file", body_name or "unknown")
         elif isinstance(entity, ProcessedConsultation):
             # Consultations can belong to papers - try to look it up
@@ -1582,8 +1522,6 @@ class SyncOrchestrator:
                 details=details,
                 triggered_by=triggered_by,
             )
-            console.print(
-                f"[dim]SyncLog geschrieben: {status}, {total_entities} Entitäten, {duration:.1f}s[/dim]"
-            )
+            console.print(f"[dim]SyncLog geschrieben: {status}, {total_entities} Entitäten, {duration:.1f}s[/dim]")
         except Exception as e:
             console.print(f"[yellow]Warning: SyncLog konnte nicht geschrieben werden: {e}[/yellow]")

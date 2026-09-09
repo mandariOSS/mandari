@@ -112,5 +112,4 @@ class ConsoleOrSiteSettingsBackend(SiteSettingsEmailBackend):
 
             console_backend = ConsoleBackend()
             return console_backend.send_messages(email_messages)
-        else:
-            return super().send_messages(email_messages)
+        return super().send_messages(email_messages)

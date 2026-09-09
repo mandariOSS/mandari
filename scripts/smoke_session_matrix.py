@@ -555,7 +555,17 @@ check("OParl-Organizations: keine Fremddaten", b"FREMDGREMIUM" not in resp.conte
 # Alle OParl-Listen anonym erreichbar und frei von NÖ-/Fremd-Markern
 markers = (b"GEHEIM", b"geheime-anlage", b"FREMD", b"fremd-anlage")
 leaks = []
-for segment in ("meetings", "papers", "organizations", "people", "agendaitems", "consultations", "files", "memberships", "legislativeterms"):
+for segment in (
+    "meetings",
+    "papers",
+    "organizations",
+    "people",
+    "agendaitems",
+    "consultations",
+    "files",
+    "memberships",
+    "legislativeterms",
+):
     resp = anon.get(f"{base}/api/oparl/{segment}/")
     if resp.status_code != 200:
         leaks.append(f"{segment}: status {resp.status_code}")

@@ -75,9 +75,9 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "C4", "RET"]
 ignore = [
-    "E501",   # line too long (handled by formatter)
+    "E501",   # line too long – 111 Altfälle, wird mit der Komponenten-Migration abgebaut (Epic Code-Qualität)
     "E402",   # module import not at top (Django settings pattern)
     "N806",   # non-lowercase variable in function (Django patterns)
 ]

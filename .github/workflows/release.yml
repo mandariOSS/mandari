@@ -166,6 +166,14 @@ jobs:
       # =====================================================================
       # Make packages public (required for unauthenticated pulls)
       # =====================================================================
+      - name: SBOM (CycloneDX) für Quellcode und Abhängigkeiten erzeugen
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          artifact-name: mandari-sbom-cyclonedx.json
+          upload-artifact: true
+
       - name: Make container packages public
         continue-on-error: true
         env:

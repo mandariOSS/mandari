@@ -38,7 +38,7 @@ class Command(BaseCommand):
             except (OParlBody.DoesNotExist, ValueError, ValidationError):
                 body = OParlBody.objects.filter(slug=body_id).first()
                 if not body:
-                    raise CommandError(f"Kommune mit ID/Slug '{body_id}' nicht gefunden.")
+                    raise CommandError(f"Kommune mit ID/Slug '{body_id}' nicht gefunden.") from None
             queryset = queryset.filter(body=body)
             self.stdout.write(f"Kommune: {body.name}")
 

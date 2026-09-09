@@ -256,7 +256,7 @@ def file_proxy(request, file_id):
     local = file_cache.local_file(file_obj)
     if local is not None:
         response = FileResponse(
-            open(local, "rb"),
+            open(local, "rb"),  # noqa: SIM115 – FileResponse schließt die Datei nach dem Streaming selbst
             content_type=file_cache.content_type_for(file_obj, "application/pdf"),
             as_attachment=force_download,
             filename=filename,

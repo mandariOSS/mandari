@@ -97,7 +97,7 @@ PNG_BYTES = base64.b64decode(
 
 print("=== Setup ===")
 org = Organization.objects.create(name="Fraktion Logo", slug="fraktion-logo")
-TenantEncryption(org).key
+_ = TenantEncryption(org).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 admin_role = Role.objects.filter(organization=org, is_admin=True).first()
 if admin_role is None:
@@ -168,7 +168,7 @@ print("=== 5. Party-Fallback (effective_logo) ===")
 party = PartyGroup.objects.create(name="Testpartei Logo")
 party.logo.save("party.png", ContentFile(PNG_BYTES), save=True)
 org2 = Organization.objects.create(name="Fraktion Erbe", slug="fraktion-erbe", party_group=party)
-TenantEncryption(org2).key
+_ = TenantEncryption(org2).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 admin_role2 = Role.objects.filter(organization=org2, is_admin=True).first()
 if admin_role2 is None:
     admin_role2 = Role.objects.create(organization=org2, name="Administrator", is_admin=True)

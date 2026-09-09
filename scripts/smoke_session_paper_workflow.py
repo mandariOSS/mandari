@@ -264,7 +264,11 @@ print("=== Phase E: Berechtigungen und Isolation ===")
 
 paper2 = SessionPaper.objects.create(
     has_financial_impact=False,
-    tenant=tenant, reference="V/2026/0102", name="Zweite Vorlage", status="draft", created_by=su_clerk
+    tenant=tenant,
+    reference="V/2026/0102",
+    name="Zweite Vorlage",
+    status="draft",
+    created_by=su_clerk,
 )
 resp = viewer.post(f"{base}/papers/{paper2.id}/workflow/submit/")
 paper2.refresh_from_db()

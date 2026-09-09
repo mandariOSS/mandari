@@ -124,7 +124,9 @@ p_ended = SessionPerson.objects.create(
 
 SessionOrganizationMembership.objects.create(organization=org, person=p_member, role="member")
 SessionOrganizationMembership.objects.create(organization=org, person=p_chair, role="chair")
-SessionOrganizationMembership.objects.create(organization=org, person=p_advisor, role="advisor", has_voting_rights=False)
+SessionOrganizationMembership.objects.create(
+    organization=org, person=p_advisor, role="advisor", has_voting_rights=False
+)
 SessionOrganizationMembership.objects.create(organization=org, person=p_guest, role="guest", has_voting_rights=False)
 SessionOrganizationMembership.objects.create(organization=org, person=p_no_mail, role="member")
 SessionOrganizationMembership.objects.create(
@@ -282,7 +284,8 @@ check(
 resp = client.get(f"{base}/dashboard/")
 check(
     "Fristwarnung nach Versand nur noch für kurzfristige Sitzung",
-    "Sitzung des Hauptausschusses" not in resp.content.decode("utf-8").split("Ladungsfristen im Blick")[-1].split("Stats")[0]
+    "Sitzung des Hauptausschusses"
+    not in resp.content.decode("utf-8").split("Ladungsfristen im Blick")[-1].split("Stats")[0]
     if "Ladungsfristen im Blick" in resp.content.decode("utf-8")
     else True,
 )
@@ -358,7 +361,11 @@ for url in (
     f"{base}/meetings/{meeting_b.id}/sitzung.ics",
 ):
     resp = client.get(url)
-    check(f"Fremde Sitzung {url.rsplit('/', 1)[-1] or 'invitation'} -> 404", resp.status_code == 404, f"got {resp.status_code}")
+    check(
+        f"Fremde Sitzung {url.rsplit('/', 1)[-1] or 'invitation'} -> 404",
+        resp.status_code == 404,
+        f"got {resp.status_code}",
+    )
 
 mail.outbox = []
 resp = client.post(f"{base}/meetings/{meeting_b.id}/invitation/", {"dispatch_type": "invitation"})

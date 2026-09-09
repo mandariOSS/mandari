@@ -95,7 +95,7 @@ if role is None:
 
 from apps.common.encryption import TenantEncryption  # noqa: E402
 
-TenantEncryption(org).key
+_ = TenantEncryption(org).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 user = User.objects.create_user(email="ui@example.org", password="test1234!")
 membership = Membership.objects.create(user=user, organization=org)
@@ -275,7 +275,10 @@ resp = api_post(
 check("Redebeitrag speichern", resp.status_code == 200)
 resp = client.get(speech_url)
 own = resp.json()["own"]
-check("Redebeitrag-Rundlauf (HTML + Dauer)", "<b>Damen und Herren</b>" in own["content"] and own["estimated_duration"] == 90)
+check(
+    "Redebeitrag-Rundlauf (HTML + Dauer)",
+    "<b>Damen und Herren</b>" in own["content"] and own["estimated_duration"] == 90,
+)
 resp = client.get(f"{BASE}/{meeting.id}/teleprompter/{item_paper.id}/")
 tele = resp.content.decode("utf-8")
 check("Teleprompter lädt", resp.status_code == 200)

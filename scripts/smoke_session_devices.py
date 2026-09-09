@@ -130,7 +130,12 @@ print()
 print("=== Phase B: Gerätebestand ===")
 resp = device_client.post(
     f"{base}/devices/add/",
-    {"label": "iPad 10. Gen, 64 GB", "serial_number": "SN-TEST-123", "inventory_number": "INV-001", "accessories": "Hülle, Netzteil"},
+    {
+        "label": "iPad 10. Gen, 64 GB",
+        "serial_number": "SN-TEST-123",
+        "inventory_number": "INV-001",
+        "accessories": "Hülle, Netzteil",
+    },
 )
 device = SessionDevice.objects.filter(tenant=tenant).first()
 check("Gerät aufgenommen", device is not None and device.status == "in_stock")
@@ -140,9 +145,14 @@ resp = device_client.post(f"{base}/devices/add/", {"label": ""})
 check("Ohne Bezeichnung abgelehnt", SessionDevice.objects.filter(tenant=tenant).count() == 1)
 
 # Ausgabe
-resp = device_client.post(f"{base}/devices/{device.id}/issue/", {"person": str(person.id), "note": "Übergabe im Rathaus"})
+resp = device_client.post(
+    f"{base}/devices/{device.id}/issue/", {"person": str(person.id), "note": "Übergabe im Rathaus"}
+)
 device.refresh_from_db()
-check("Ausgegeben an Person", device.status == "issued" and device.issued_to_id == person.id and device.issued_at is not None)
+check(
+    "Ausgegeben an Person",
+    device.status == "issued" and device.issued_to_id == person.id and device.issued_at is not None,
+)
 check("Ausgabe-Log mit Person", device.logs.filter(action="issued", person=person).exists())
 
 # Doppelte Ausgabe blockiert
@@ -199,9 +209,7 @@ grant.refresh_from_db()
 check("Storno nach Auszahlung blockiert", grant.status == "paid")
 
 # Doppel-Warnung (zweiter Zuschuss wird angelegt, aber gewarnt)
-resp = device_client.post(
-    f"{base}/device-grants/add/", {"person": str(person.id), "amount": "200"}, follow=True
-)
+resp = device_client.post(f"{base}/device-grants/add/", {"person": str(person.id), "amount": "200"}, follow=True)
 check("Doppel-Zuschuss mit Warnhinweis", "bereits ein Zuschuss" in resp.content.decode("utf-8"))
 
 # CSV

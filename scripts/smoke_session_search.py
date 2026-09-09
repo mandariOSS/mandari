@@ -93,46 +93,76 @@ org = SessionOrganization.objects.create(tenant=tenant, name="Rat")
 org2 = SessionOrganization.objects.create(tenant=tenant, name="Bauausschuss")
 
 paper = SessionPaper.objects.create(
-    tenant=tenant, reference="SV/1", name="PAPER-ORTSDURCHFAHRT Sanierung",
-    main_text="Die Ortsdurchfahrt wird saniert.", is_public=True,
+    tenant=tenant,
+    reference="SV/1",
+    name="PAPER-ORTSDURCHFAHRT Sanierung",
+    main_text="Die Ortsdurchfahrt wird saniert.",
+    is_public=True,
     main_organization=org,
 )
 paper_np = SessionPaper.objects.create(
-    tenant=tenant, reference="SV/2", name="NP-PAPER-ORTSDURCHFAHRT",
+    tenant=tenant,
+    reference="SV/2",
+    name="NP-PAPER-ORTSDURCHFAHRT",
     is_public=False,
 )
 meeting = SessionMeeting.objects.create(
-    tenant=tenant, name="MEETING-ORTSDURCHFAHRT", organization=org,
-    start=now - timedelta(days=30), is_public=True,
+    tenant=tenant,
+    name="MEETING-ORTSDURCHFAHRT",
+    organization=org,
+    start=now - timedelta(days=30),
+    is_public=True,
 )
 meeting_np = SessionMeeting.objects.create(
-    tenant=tenant, name="NP-MEETING-ORTSDURCHFAHRT", organization=org2,
-    start=now - timedelta(days=20), is_public=False,
+    tenant=tenant,
+    name="NP-MEETING-ORTSDURCHFAHRT",
+    organization=org2,
+    start=now - timedelta(days=20),
+    is_public=False,
 )
 item = SessionAgendaItem.objects.create(
-    meeting=meeting, number="1", order=1, name="TOP-ORTSDURCHFAHRT",
-    vote_result="approved", resolution_number="B/2026/0042",
+    meeting=meeting,
+    number="1",
+    order=1,
+    name="TOP-ORTSDURCHFAHRT",
+    vote_result="approved",
+    resolution_number="B/2026/0042",
     resolution_text="Die Ortsdurchfahrt wird beschlossen.",
 )
 SessionAgendaItem.objects.create(
-    meeting=meeting_np, number="1", order=1, name="NP-TOP-ORTSDURCHFAHRT", is_public=False,
+    meeting=meeting_np,
+    number="1",
+    order=1,
+    name="NP-TOP-ORTSDURCHFAHRT",
+    is_public=False,
 )
 protocol = SessionProtocol.objects.create(
-    meeting=meeting, content="Protokoll zur ORTSDURCHFAHRT ohne Aussprache.",
+    meeting=meeting,
+    content="Protokoll zur ORTSDURCHFAHRT ohne Aussprache.",
 )
 f = SessionFile(
-    tenant=tenant, name="anlage-plan.pdf", is_public=True, paper=paper,
+    tenant=tenant,
+    name="anlage-plan.pdf",
+    is_public=True,
+    paper=paper,
     text_content="Lageplan der ORTSDURCHFAHRT mit Details.",
 )
 f.file.save("anlage-plan.pdf", ContentFile(b"%PDF-1.4 dummy"), save=True)
 f_np = SessionFile(
-    tenant=tenant, name="np-anlage.pdf", is_public=False, meeting=meeting_np,
+    tenant=tenant,
+    name="np-anlage.pdf",
+    is_public=False,
+    meeting=meeting_np,
     text_content="Geheimer Plan ORTSDURCHFAHRT.",
 )
 f_np.file.save("np-anlage.pdf", ContentFile(b"%PDF-1.4 dummy"), save=True)
 application = SessionApplication.objects.create(
-    tenant=tenant, reference="A/1", title="ANTRAG-ORTSDURCHFAHRT Tempo 30",
-    submitter_name="Vera Beispiel", status="submitted", submitted_at=now,
+    tenant=tenant,
+    reference="A/1",
+    title="ANTRAG-ORTSDURCHFAHRT Tempo 30",
+    submitter_name="Vera Beispiel",
+    status="submitted",
+    submitted_at=now,
 )
 
 # Fremd-Mandant
@@ -147,8 +177,11 @@ admin = Client()
 admin.force_login(admin_user)
 
 viewer_role = SessionRole.objects.create(
-    tenant=tenant, name="Leser",
-    can_view_meetings=True, can_view_papers=True, can_view_protocols=True,
+    tenant=tenant,
+    name="Leser",
+    can_view_meetings=True,
+    can_view_papers=True,
+    can_view_protocols=True,
     can_view_applications=False,
 )
 viewer_user = User.objects.create_user(email="leser-such@example.org", password="pw-Smoke-1!")
@@ -195,14 +228,21 @@ print()
 print("=== Phase C: Filter ===")
 resp = admin.get(f"{base}/search/?q=ortsdurchfahrt&kind=papers")
 html = resp.content.decode("utf-8")
-check("Filter Trefferart: nur Vorlagen", "PAPER-ORTSDURCHFAHRT" in html and "MEETING-ORTSDURCHFAHRT (" not in html and "Sitzungen (" not in html)
+check(
+    "Filter Trefferart: nur Vorlagen",
+    "PAPER-ORTSDURCHFAHRT" in html and "MEETING-ORTSDURCHFAHRT (" not in html and "Sitzungen (" not in html,
+)
 
 resp = admin.get(f"{base}/search/?q=ortsdurchfahrt&kind=meetings&organization={org.id}")
 html = resp.content.decode("utf-8")
 check("Filter Gremium: Rat-Sitzung", "MEETING-ORTSDURCHFAHRT" in html)
 resp = admin.get(f"{base}/search/?q=ortsdurchfahrt&kind=meetings&organization={org2.id}")
 html = resp.content.decode("utf-8")
-check("Filter Gremium: NÖ-Sitzung des Bauausschusses", "NP-MEETING-ORTSDURCHFAHRT" in html and "MEETING-ORTSDURCHFAHRT (" not in html.replace("NP-MEETING-ORTSDURCHFAHRT", ""))
+check(
+    "Filter Gremium: NÖ-Sitzung des Bauausschusses",
+    "NP-MEETING-ORTSDURCHFAHRT" in html
+    and "MEETING-ORTSDURCHFAHRT (" not in html.replace("NP-MEETING-ORTSDURCHFAHRT", ""),
+)
 
 year = (now - timedelta(days=30)).year
 resp = admin.get(f"{base}/search/?q=ortsdurchfahrt&kind=meetings&year={year - 3}")

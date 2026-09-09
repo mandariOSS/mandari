@@ -48,7 +48,7 @@ def _get_org_folder_or_404(organization, folder_id):
     try:
         folder_uuid = uuid.UUID(str(folder_id))
     except (ValueError, AttributeError):
-        raise Http404("Ordner nicht gefunden")
+        raise Http404("Ordner nicht gefunden") from None
     return get_object_or_404(DocumentFolder, id=folder_uuid, organization=organization)
 
 

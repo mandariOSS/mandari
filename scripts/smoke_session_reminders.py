@@ -106,17 +106,13 @@ today = timezone.localdate()
 tenant = SessionTenant.objects.create(name="Erinnerungsstadt", slug="erinnerungsstadt")
 tenant_b = SessionTenant.objects.create(name="Fremdstadt", slug="fremdstadt-rem")
 
-org = SessionOrganization.objects.create(
-    tenant=tenant, name="Hauptausschuss", invitation_period_days=7
-)
+org = SessionOrganization.objects.create(tenant=tenant, name="Hauptausschuss", invitation_period_days=7)
 
 # Sitzungsdienst-Benutzer (edit_meetings) + Vorlagen-Benutzer (edit_papers)
 role_meet = SessionRole.objects.create(
     tenant=tenant, name="Sitzungsdienst", can_view_meetings=True, can_edit_meetings=True
 )
-role_paper = SessionRole.objects.create(
-    tenant=tenant, name="Vorlagen", can_edit_papers=True
-)
+role_paper = SessionRole.objects.create(tenant=tenant, name="Vorlagen", can_edit_papers=True)
 u_meet = User.objects.create_user(email="sitzungsdienst@example.org", password="pw-Smoke-1!")
 su_meet = SessionUser.objects.create(user=u_meet, tenant=tenant)
 su_meet.roles.add(role_meet)
@@ -157,16 +153,25 @@ meeting_far = SessionMeeting.objects.create(
 
 # Vorlagen: Frist morgen (offen) / Frist morgen aber freigegeben / Frist fern
 paper_due = SessionPaper.objects.create(
-    tenant=tenant, reference="V-DUE", name="VORLAGE-FRIST-NAH",
-    status="draft", deadline=today + timedelta(days=1),
+    tenant=tenant,
+    reference="V-DUE",
+    name="VORLAGE-FRIST-NAH",
+    status="draft",
+    deadline=today + timedelta(days=1),
 )
 paper_done = SessionPaper.objects.create(
-    tenant=tenant, reference="V-OK", name="VORLAGE-FREIGEGEBEN",
-    status="approved", deadline=today + timedelta(days=1),
+    tenant=tenant,
+    reference="V-OK",
+    name="VORLAGE-FREIGEGEBEN",
+    status="approved",
+    deadline=today + timedelta(days=1),
 )
 paper_far = SessionPaper.objects.create(
-    tenant=tenant, reference="V-FERN", name="VORLAGE-FRIST-FERN",
-    status="draft", deadline=today + timedelta(days=30),
+    tenant=tenant,
+    reference="V-FERN",
+    name="VORLAGE-FRIST-FERN",
+    status="draft",
+    deadline=today + timedelta(days=30),
 )
 
 # Rückmeldung: Sitzung in 3 Tagen, Ladung versandt, Person eingeladen ohne Antwort
@@ -181,28 +186,31 @@ meeting_rsvp = SessionMeeting.objects.create(
 person = SessionPerson.objects.create(
     tenant=tenant, given_name="Rita", family_name="Rückmeldung", email="rita@example.org"
 )
-person_no_mail = SessionPerson.objects.create(
-    tenant=tenant, given_name="Ohne", family_name="Mail"
-)
-att_open = SessionAttendance.objects.create(
-    meeting=meeting_rsvp, person=person, status="invited"
-)
-SessionAttendance.objects.create(
-    meeting=meeting_rsvp, person=person_no_mail, status="invited"
-)
+person_no_mail = SessionPerson.objects.create(tenant=tenant, given_name="Ohne", family_name="Mail")
+att_open = SessionAttendance.objects.create(meeting=meeting_rsvp, person=person, status="invited")
+SessionAttendance.objects.create(meeting=meeting_rsvp, person=person_no_mail, status="invited")
 
 # Beschlusskontrolle: Frist in 2 Tagen (nicht erledigt) + erledigt (keine Mail)
 res_meeting = SessionMeeting.objects.create(
     tenant=tenant, name="Beschluss-Sitzung", organization=org, start=now - timedelta(days=10)
 )
 item_due = SessionAgendaItem.objects.create(
-    meeting=res_meeting, number="1", order=1, name="BESCHLUSS-WIEDERVORLAGE",
-    vote_result="approved", implementation_status="in_progress",
-    implementation_recipient="Bauamt", implementation_deadline=today + timedelta(days=2),
+    meeting=res_meeting,
+    number="1",
+    order=1,
+    name="BESCHLUSS-WIEDERVORLAGE",
+    vote_result="approved",
+    implementation_status="in_progress",
+    implementation_recipient="Bauamt",
+    implementation_deadline=today + timedelta(days=2),
 )
 SessionAgendaItem.objects.create(
-    meeting=res_meeting, number="2", order=2, name="BESCHLUSS-ERLEDIGT",
-    vote_result="approved", implementation_status="done",
+    meeting=res_meeting,
+    number="2",
+    order=2,
+    name="BESCHLUSS-ERLEDIGT",
+    vote_result="approved",
+    implementation_status="done",
     implementation_deadline=today - timedelta(days=2),
 )
 
@@ -265,8 +273,11 @@ tenant.save(update_fields=["reminder_settings"])
 
 # Neues erinnerungswürdiges Objekt, damit ohne Deaktivierung etwas käme
 SessionPaper.objects.create(
-    tenant=tenant, reference="V-NEU", name="VORLAGE-NEU",
-    status="draft", deadline=today,
+    tenant=tenant,
+    reference="V-NEU",
+    name="VORLAGE-NEU",
+    status="draft",
+    deadline=today,
 )
 clear_outbox()
 counts4 = reminder_service.run_for_tenant(tenant)
@@ -291,7 +302,10 @@ admin.force_login(admin_user)
 base = f"/session/{tenant.slug}"
 
 resp = admin.get(f"{base}/settings/")
-check("Settings-Seite zeigt Erinnerungen", resp.status_code == 200 and "Fristen-Erinnerungen" in resp.content.decode("utf-8"))
+check(
+    "Settings-Seite zeigt Erinnerungen",
+    resp.status_code == 200 and "Fristen-Erinnerungen" in resp.content.decode("utf-8"),
+)
 
 resp = admin.post(
     f"{base}/settings/reminders/",

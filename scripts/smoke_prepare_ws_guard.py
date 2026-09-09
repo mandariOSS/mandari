@@ -80,7 +80,7 @@ print("=== Setup ===")
 source = OParlSource.objects.create(name="Q", url="https://oparl.example.org/system")
 body = OParlBody.objects.create(source=source, external_id="https://oparl.example.org/body/1", name="Musterstadt")
 org = Organization.objects.create(name="Fraktion WS", slug="fraktion-ws", body=body)
-TenantEncryption(org).key
+_ = TenantEncryption(org).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 admin_role = Role.objects.filter(organization=org, is_admin=True).first()
 if admin_role is None:

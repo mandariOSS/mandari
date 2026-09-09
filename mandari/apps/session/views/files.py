@@ -198,7 +198,7 @@ class FileDownloadView(SessionMixin, View):
         try:
             handle = session_file.file.open("rb")
         except (FileNotFoundError, ValueError):
-            raise Http404("Datei nicht gefunden")
+            raise Http404("Datei nicht gefunden") from None
 
         response = FileResponse(
             handle,

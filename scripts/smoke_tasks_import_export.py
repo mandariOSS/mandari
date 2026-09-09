@@ -103,8 +103,8 @@ def upload(client, org, content, filename, dry_run=False, content_type="text/pla
 print("=== Setup ===")
 org = Organization.objects.create(name="Org X", slug="org-x")
 org2 = Organization.objects.create(name="Org Y", slug="org-y")
-TenantEncryption(org).key
-TenantEncryption(org2).key
+_ = TenantEncryption(org).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
+_ = TenantEncryption(org2).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 creator_user, creator_ms, creator_c = make_member(
     org, "creator@example.org", ["tasks.view", "tasks.create", "tasks.edit"]

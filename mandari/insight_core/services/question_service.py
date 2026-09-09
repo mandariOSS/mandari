@@ -222,7 +222,7 @@ def get_faction_ranking(body) -> list[dict]:
         grouped[key].append((org, q))
 
     ranking = []
-    for key, entries in grouped.items():
+    for _key, entries in grouped.items():
         org = entries[0][0]
         stats = _stats_from_questions([q for _org, q in entries])
         stats["organization"] = org

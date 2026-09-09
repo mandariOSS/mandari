@@ -335,7 +335,7 @@ def serialize_paper(api, paper):
     files = sorted((f for f in paper.files.all() if f.is_public), key=lambda f: f.created_at)
     main_file = files[0] if files else None
     auxiliary = files[1:]
-    consultations = [c for c in paper.consultations.all()]
+    consultations = list(paper.consultations.all())
     consultations.sort(key=lambda c: (c.order, c.created_at))
     return _clean(
         {

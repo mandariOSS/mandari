@@ -222,7 +222,7 @@ names_3 = {h["name"] for h in hits_3}
 check("Longest-Match: Neubrückenstraße gewinnt", "Neubrückenstraße 3" in names_3, str(names_3))
 check(
     "Kein Teil-Match Brückenstraße",
-    not any("Brückenstraße" == h["name"].split(" ")[0] and h["name"].startswith("Brücken") for h in hits_3),
+    not any(h["name"].split(" ")[0] == "Brückenstraße" and h["name"].startswith("Brücken") for h in hits_3),
     str(names_3),
 )
 

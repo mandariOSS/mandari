@@ -102,7 +102,11 @@ meeting = SessionMeeting.objects.create(
     tenant=tenant, name="Sitzung des Hauptausschusses", organization=org, start=start, is_public=True
 )
 meeting2 = SessionMeeting.objects.create(
-    tenant=tenant, name="Sitzung des Bauausschusses", organization=org2, start=start - timedelta(days=400), is_public=True
+    tenant=tenant,
+    name="Sitzung des Bauausschusses",
+    organization=org2,
+    start=start - timedelta(days=400),
+    is_public=True,
 )
 
 top1 = SessionAgendaItem.objects.create(
@@ -312,7 +316,10 @@ check("Übergabe ohne edit_meetings -> 403", resp.status_code == 403, f"got {res
 resp = admin.get(f"{base}/agenda/{top_b.id}/beschlussauszug.pdf")
 check("Fremder Auszug -> 404", resp.status_code == 404, f"got {resp.status_code}")
 resp = admin.post(f"{base}/agenda/{top_b.id}/forwarding/add/", {"recipient": "Amt"})
-check("Fremde Übergabe -> 404", resp.status_code == 404 and not SessionResolutionForwarding.objects.filter(agenda_item=top_b).exists())
+check(
+    "Fremde Übergabe -> 404",
+    resp.status_code == 404 and not SessionResolutionForwarding.objects.filter(agenda_item=top_b).exists(),
+)
 resp = admin.post(f"{base}/meetings/{meeting_b.id}/resolutions/generate/")
 top_b.refresh_from_db()
 check("Fremde Nummernvergabe -> 404, keine Nummer", resp.status_code == 404 and top_b.resolution_number == "")
@@ -346,7 +353,9 @@ check("Tracking: aktualisiert von", top1.implementation_updated_by_id == su_admi
 check("Tracking: überfällig erkannt", top1.implementation_overdue is True)
 
 audit_entry = SessionAuditLog.objects.filter(
-    tenant=tenant, model_name="SessionAgendaItem", action="update",
+    tenant=tenant,
+    model_name="SessionAgendaItem",
+    action="update",
     changes__umsetzungsstand="In Umsetzung",
 ).first()
 check("Audit: Beschlusskontroll-Eintrag", audit_entry is not None)

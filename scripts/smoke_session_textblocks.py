@@ -207,7 +207,8 @@ resp = admin.post(
 meeting_bau = SessionMeeting.objects.filter(tenant=tenant, name="SITZUNG-BAU").first()
 check(
     "Gremiumsspezifischer TOP nicht im Bauausschuss",
-    meeting_bau is not None and meeting_bau.agenda_items.count() == 3
+    meeting_bau is not None
+    and meeting_bau.agenda_items.count() == 3
     and not meeting_bau.agenda_items.filter(name="STD-NUR-RAT-NOE").exists(),
 )
 

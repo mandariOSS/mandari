@@ -11,6 +11,8 @@ from django.views.generic import TemplateView, View
 
 logger = logging.getLogger("apps.work.motions")
 
+import contextlib
+
 from apps.common.mixins import WorkViewMixin
 
 from ..forms import (
@@ -262,10 +264,8 @@ class TopicUpdateView(WorkViewMixin, View):
         topic.name = name
         if color in dict(Topic.COLOR_CHOICES):
             topic.color = color
-        try:
+        with contextlib.suppress(TypeError, ValueError):
             topic.sort_order = int(request.POST.get("sort_order", topic.sort_order))
-        except (TypeError, ValueError):
-            pass
         topic.save()
 
         messages.success(request, f"Thema '{topic.name}' aktualisiert.")

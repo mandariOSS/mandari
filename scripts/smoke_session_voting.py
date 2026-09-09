@@ -108,13 +108,13 @@ p1 = SessionPerson.objects.create(tenant=tenant, given_name="Jana", family_name=
 p2 = SessionPerson.objects.create(tenant=tenant, given_name="Norbert", family_name="NEINSTIMME")
 p3 = SessionPerson.objects.create(tenant=tenant, given_name="Berta", family_name="BEFANGEN")
 for person in (p1, p2, p3):
-    SessionOrganizationMembership.objects.create(
-        organization=org, person=person, has_voting_rights=True
-    )
+    SessionOrganizationMembership.objects.create(organization=org, person=person, has_voting_rights=True)
 # Ehemaliges Mitglied: zählt nicht zur Besetzung
 p_old = SessionPerson.objects.create(tenant=tenant, given_name="Alt", family_name="AUSGESCHIEDEN")
 SessionOrganizationMembership.objects.create(
-    organization=org, person=p_old, has_voting_rights=True,
+    organization=org,
+    person=p_old,
+    has_voting_rights=True,
     end_date=today - timedelta(days=30),
 )
 
@@ -125,11 +125,17 @@ for person in (p1, p2, p3):
     SessionAttendance.objects.create(meeting=meeting, person=person, status="present")
 
 item_roll = SessionAgendaItem.objects.create(
-    meeting=meeting, number="1", order=1, name="TOP-NAMENTLICH",
+    meeting=meeting,
+    number="1",
+    order=1,
+    name="TOP-NAMENTLICH",
     resolution_text="Der Rat beschließt die Ortsdurchfahrt.",
 )
 item_secret = SessionAgendaItem.objects.create(
-    meeting=meeting, number="2", order=2, name="TOP-GEHEIM",
+    meeting=meeting,
+    number="2",
+    order=2,
+    name="TOP-GEHEIM",
 )
 
 admin_role = SessionRole.objects.create(tenant=tenant, name="Admin", is_admin=True)
@@ -139,9 +145,7 @@ su_admin.roles.add(admin_role)
 admin = Client()
 admin.force_login(admin_user)
 
-viewer_role = SessionRole.objects.create(
-    tenant=tenant, name="Leser", can_view_meetings=True, can_view_protocols=True
-)
+viewer_role = SessionRole.objects.create(tenant=tenant, name="Leser", can_view_meetings=True, can_view_protocols=True)
 viewer_user = User.objects.create_user(email="leser-vote@example.org", password="pw-Smoke-1!")
 su_viewer = SessionUser.objects.create(user=viewer_user, tenant=tenant)
 su_viewer.roles.add(viewer_role)
@@ -171,11 +175,11 @@ item_roll.refresh_from_db()
 check("Speichern -> Redirect", resp.status_code == 302, f"got {resp.status_code}")
 check("Summen aus Einzelstimmen", item_roll.votes_yes == 1 and item_roll.votes_no == 1 and item_roll.votes_abstain == 0)
 check("Befangene zählt nicht mit", item_roll.votes.filter(vote="excluded").count() == 1)
-check("Abstimmungsart + Ergebnis gesetzt", item_roll.voting_method == "roll_call" and item_roll.vote_result == "approved")
+check(
+    "Abstimmungsart + Ergebnis gesetzt", item_roll.voting_method == "roll_call" and item_roll.vote_result == "approved"
+)
 audit_entry = (
-    SessionAuditLog.objects.filter(tenant=tenant, model_name="SessionAgendaItem")
-    .order_by("-created_at")
-    .first()
+    SessionAuditLog.objects.filter(tenant=tenant, model_name="SessionAgendaItem").order_by("-created_at").first()
 )
 check(
     "Audit: Befangene dokumentiert",
@@ -270,7 +274,9 @@ resp = admin.post(
 )
 check("Fortlaufende Nummern", SessionCircularResolution.objects.filter(reference=f"U/{year}/0002").exists())
 
-resp = admin.post(f"{base}/circulars/create/", {"organization": str(org.id), "title": "", "resolution_text": "x", "deadline": ""})
+resp = admin.post(
+    f"{base}/circulars/create/", {"organization": str(org.id), "title": "", "resolution_text": "x", "deadline": ""}
+)
 check("Unvollständige Anlage abgelehnt", SessionCircularResolution.objects.filter(tenant=tenant).count() == 2)
 
 # Detailseite + Besetzung (ohne Ausgeschiedene)
@@ -290,7 +296,9 @@ check("Ausgeschiedene nicht erfassbar", circular.votes.count() == 3)
 
 # Korrektur überschreibt
 resp = admin.post(f"{base}/circulars/{circular.id}/vote/", {"person": str(p3.id), "vote": "abstain"})
-check("Rücklauf-Korrektur ohne Duplikat", circular.votes.count() == 3 and circular.votes.get(person=p3).vote == "abstain")
+check(
+    "Rücklauf-Korrektur ohne Duplikat", circular.votes.count() == 3 and circular.votes.get(person=p3).vote == "abstain"
+)
 
 html = admin.get(f"{base}/circulars/{circular.id}/").content.decode("utf-8")
 check("Auszählung sichtbar", "3/3" in html)
@@ -325,12 +333,19 @@ resp = viewer.get(f"{base}/circulars/")
 html = resp.content.decode("utf-8")
 check("Liste für Leser -> 200", resp.status_code == 200 and "UMLAUF-WINTERDIENST" in html)
 check("Leser ohne Verwaltungs-Formulare", "Umlauf starten" not in html)
-resp = viewer.post(f"{base}/circulars/create/", {"organization": str(org.id), "title": "HACK", "resolution_text": "x", "deadline": today.isoformat()})
+resp = viewer.post(
+    f"{base}/circulars/create/",
+    {"organization": str(org.id), "title": "HACK", "resolution_text": "x", "deadline": today.isoformat()},
+)
 check("Anlage ohne edit_meetings -> 403", resp.status_code == 403, f"got {resp.status_code}")
 
 np_circular = SessionCircularResolution.objects.create(
-    tenant=tenant, organization=org, title="UMLAUF-GEHEIM-NOE",
-    resolution_text="NÖ", deadline=today, is_public=False,
+    tenant=tenant,
+    organization=org,
+    title="UMLAUF-GEHEIM-NOE",
+    resolution_text="NÖ",
+    deadline=today,
+    is_public=False,
 )
 html = viewer.get(f"{base}/circulars/").content.decode("utf-8")
 check("NÖ-Umlauf für Leser unsichtbar", "UMLAUF-GEHEIM-NOE" not in html)
@@ -342,8 +357,11 @@ print()
 print("=== Phase E: Tenant-Isolation ===")
 org_b = SessionOrganization.objects.create(tenant=tenant_b, name="Fremdrat")
 circ_b = SessionCircularResolution.objects.create(
-    tenant=tenant_b, organization=org_b, title="FREMD-UMLAUF",
-    resolution_text="x", deadline=today,
+    tenant=tenant_b,
+    organization=org_b,
+    title="FREMD-UMLAUF",
+    resolution_text="x",
+    deadline=today,
 )
 resp = admin.get(f"{base}/circulars/{circ_b.id}/")
 check("Fremder Umlauf -> 404", resp.status_code == 404, f"got {resp.status_code}")

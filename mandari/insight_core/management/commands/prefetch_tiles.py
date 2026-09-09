@@ -56,7 +56,7 @@ class Command(BaseCommand):
             zoom_min, zoom_max = int(zoom_range[0]), int(zoom_range[1])
             zoom_levels = range(zoom_min, zoom_max + 1)
         except ValueError:
-            raise CommandError("Invalid zoom level values")
+            raise CommandError("Invalid zoom level values") from None
 
         # Clear cache if requested
         if options["clear"]:

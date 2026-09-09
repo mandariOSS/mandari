@@ -59,12 +59,10 @@ class Command(BaseCommand):
                     data = response.json()
                     if data and len(data) > 0:
                         return data[0]
-                    else:
-                        self.stdout.write(self.style.WARNING(f"No data found for OSM relation {osm_relation_id}"))
-                        return None
-                else:
-                    self.stdout.write(self.style.ERROR(f"HTTP {response.status_code} from Nominatim"))
+                    self.stdout.write(self.style.WARNING(f"No data found for OSM relation {osm_relation_id}"))
                     return None
+                self.stdout.write(self.style.ERROR(f"HTTP {response.status_code} from Nominatim"))
+                return None
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Error fetching OSM data: {e}"))
             return None
@@ -124,7 +122,7 @@ class Command(BaseCommand):
             try:
                 body = OParlBody.objects.get(id=options["body_id"])
             except OParlBody.DoesNotExist:
-                raise CommandError(f"Body with ID {options['body_id']} not found")
+                raise CommandError(f"Body with ID {options['body_id']} not found") from None
 
             osm_id = options.get("osm_id") or body.osm_relation_id
 

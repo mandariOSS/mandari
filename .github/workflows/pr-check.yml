@@ -106,7 +106,7 @@ jobs:
         run: |
           pip install shared/
           cd mandari
-          pip install -r requirements.txt
+          pip install -r requirements.lock
           pip install pytest pytest-django pytest-cov
 
       - name: Run Django system checks
@@ -214,6 +214,19 @@ jobs:
   # ===========================================================================
   # Docker Build Validation
   # ===========================================================================
+  dependency-audit:
+    name: Abhängigkeiten prüfen (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: pip-audit (blockierend bei bekannten Schwachstellen)
+        run: |
+          pip install pip-audit
+          pip-audit -r mandari/requirements.lock --no-deps --progress-spinner off
+
   ingestor-tests:
     name: Ingestor Tests
     runs-on: ubuntu-latest

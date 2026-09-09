@@ -15,7 +15,7 @@ Event Types:
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -43,7 +43,7 @@ class SyncEvent:
     """Base event structure for all sync events."""
 
     event_type: str
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     source_url: str | None = None
     source_name: str | None = None
     body_name: str | None = None

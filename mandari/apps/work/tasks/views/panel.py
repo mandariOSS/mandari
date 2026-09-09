@@ -186,27 +186,27 @@ class TaskPanelActionView(WorkViewMixin, View):
 
         if action == "update":
             return self._handle_update(request, task, can_edit)
-        elif action == "save":
+        if action == "save":
             return self._handle_save(request, task, can_edit)
-        elif action == "add_comment":
+        if action == "add_comment":
             return self._handle_add_comment(request, task)
-        elif action == "toggle_complete":
+        if action == "toggle_complete":
             return self._handle_toggle_complete(request, task, can_edit)
-        elif action == "delete":
+        if action == "delete":
             return self._handle_delete(request, task, task_id, can_edit)
-        elif action == "upload_attachment":
+        if action == "upload_attachment":
             return self._handle_upload_attachment(request, task, can_edit)
-        elif action == "delete_attachment":
+        if action == "delete_attachment":
             return self._handle_delete_attachment(request, task, can_edit)
-        elif action == "add_checklist_item":
+        if action == "add_checklist_item":
             return self._handle_add_checklist_item(request, task, can_edit)
-        elif action == "toggle_checklist_item":
+        if action == "toggle_checklist_item":
             return self._handle_toggle_checklist_item(request, task, can_edit)
-        elif action == "delete_checklist_item":
+        if action == "delete_checklist_item":
             return self._handle_delete_checklist_item(request, task, can_edit)
-        elif action == "toggle_label":
+        if action == "toggle_label":
             return self._handle_toggle_label(request, task, can_edit)
-        elif action == "reorder_checklist":
+        if action == "reorder_checklist":
             return self._handle_reorder_checklist(request, task, can_edit)
 
         return HttpResponse(status=400)
@@ -286,17 +286,16 @@ class TaskPanelActionView(WorkViewMixin, View):
             html = self._render_oob_card(task)
             html += self._render_oob_counts()
             return HttpResponse(html)
-        else:
-            # Validation error: re-render full panel
-            task = _task_panel_queryset().get(id=task.id)
-            context = self._panel_context(task)
-            context["form"] = form
-            html = render_to_string("work/tasks/_panel.html", context, request=request)
-            response = HttpResponse(html)
-            response["HX-Reswap"] = "innerHTML"
-            response["HX-Retarget"] = "#task-panel-container"
-            response["HX-Trigger"] = json.dumps({"show-toast": {"message": "Fehler beim Speichern.", "type": "error"}})
-            return response
+        # Validation error: re-render full panel
+        task = _task_panel_queryset().get(id=task.id)
+        context = self._panel_context(task)
+        context["form"] = form
+        html = render_to_string("work/tasks/_panel.html", context, request=request)
+        response = HttpResponse(html)
+        response["HX-Reswap"] = "innerHTML"
+        response["HX-Retarget"] = "#task-panel-container"
+        response["HX-Trigger"] = json.dumps({"show-toast": {"message": "Fehler beim Speichern.", "type": "error"}})
+        return response
 
     def _handle_save(self, request, task, can_edit):
         """Explicit save button: re-render full panel."""
@@ -323,12 +322,11 @@ class TaskPanelActionView(WorkViewMixin, View):
             html += self._render_oob_card(task)
             html += self._render_oob_counts()
             return self._make_response(html, "Gespeichert.")
-        else:
-            task = _task_panel_queryset().get(id=task.id)
-            context = self._panel_context(task)
-            context["form"] = form
-            html = render_to_string("work/tasks/_panel.html", context, request=request)
-            return self._make_response(html, "Fehler beim Speichern.", "error")
+        task = _task_panel_queryset().get(id=task.id)
+        context = self._panel_context(task)
+        context["form"] = form
+        html = render_to_string("work/tasks/_panel.html", context, request=request)
+        return self._make_response(html, "Fehler beim Speichern.", "error")
 
     def _handle_add_comment(self, request, task):
         content = request.POST.get("content", "").strip()

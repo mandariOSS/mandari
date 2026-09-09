@@ -169,7 +169,10 @@ prot_url = f"{base}/meetings/{meeting.id}/protocol"
 print("=== Phase A: Anlegen und Bearbeiten ===")
 
 resp = recorder.get(f"{prot_url}/")
-check("Protokollseite ohne Protokoll -> 200 mit Anlegen-Option", resp.status_code == 200 and b"Protokoll anlegen" in resp.content)
+check(
+    "Protokollseite ohne Protokoll -> 200 mit Anlegen-Option",
+    resp.status_code == 200 and b"Protokoll anlegen" in resp.content,
+)
 
 resp = recorder.post(f"{prot_url}/create/")
 protocol = SessionProtocol.objects.filter(meeting=meeting).first()
@@ -205,9 +208,14 @@ top1.refresh_from_db()
 top_np.refresh_from_db()
 check("Allgemeiner Teil gespeichert", protocol.content == "Allgemeiner Verlauf der Sitzung.")
 check("NÖ-Teil über Accessor lesbar", protocol.get_content_decrypted() == "GEHEIME-ALLGEMEINE-NOTIZ")
-check("Unterschriften-Block gespeichert", protocol.chair_name == "Vera Vorsitz" and protocol.recorder_name == "Petra Protokoll")
+check(
+    "Unterschriften-Block gespeichert",
+    protocol.chair_name == "Vera Vorsitz" and protocol.recorder_name == "Petra Protokoll",
+)
 check("TOP-Protokolltext gespeichert", top1.protocol_note == "Ausführliche Debatte zum Spielplatz.")
-check("TOP-Beschlussergebnis gespeichert", top1.vote_result == "approved" and top1.votes_yes == 7 and top1.votes_no == 2)
+check(
+    "TOP-Beschlussergebnis gespeichert", top1.vote_result == "approved" and top1.votes_yes == 7 and top1.votes_no == 2
+)
 check("NÖ-Protokolltext verschlüsselt gespeichert", top_np.get_protocol_note_decrypted() == "GEHEIMER-WORTBEITRAG-XYZ")
 check("NÖ-Protokolltext nicht im Klartext-Feld", "GEHEIMER-WORTBEITRAG" not in (top_np.protocol_note or ""))
 
@@ -319,7 +327,10 @@ for url in (f"{base}/meetings/{meeting_b.id}/protocol/", f"{base}/meetings/{meet
     resp = recorder.get(url)
     check(f"Fremde Sitzung {url.rsplit('/', 2)[-2:]} -> 404", resp.status_code == 404, f"got {resp.status_code}")
 resp = recorder.post(f"{base}/meetings/{meeting_b.id}/protocol/create/")
-check("Fremdes Protokoll-Create -> 404", resp.status_code == 404 and not SessionProtocol.objects.filter(meeting=meeting_b).exists())
+check(
+    "Fremdes Protokoll-Create -> 404",
+    resp.status_code == 404 and not SessionProtocol.objects.filter(meeting=meeting_b).exists(),
+)
 
 # =============================================================================
 print()

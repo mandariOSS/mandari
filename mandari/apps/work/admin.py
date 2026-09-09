@@ -337,7 +337,7 @@ class SupportTicketAttachmentInline(TabularInline):
     def file_size_display(self, obj):
         if obj.file_size < 1024:
             return f"{obj.file_size} B"
-        elif obj.file_size < 1024 * 1024:
+        if obj.file_size < 1024 * 1024:
             return f"{obj.file_size / 1024:.1f} KB"
         return f"{obj.file_size / (1024 * 1024):.1f} MB"
 
@@ -688,11 +688,10 @@ class SupportTicketAdmin(ModelAdmin):
         age = timezone.now() - obj.created_at
         if age.days > 7:
             return format_html('<span style="color: #ef4444;">{} T</span>', age.days)
-        elif age.days > 0:
+        if age.days > 0:
             return format_html('<span style="color: #f59e0b;">{} T</span>', age.days)
-        else:
-            hours = age.seconds // 3600
-            return format_html('<span style="color: #22c55e;">{} h</span>', hours)
+        hours = age.seconds // 3600
+        return format_html('<span style="color: #22c55e;">{} h</span>', hours)
 
     age_display.short_description = "Alter"
     age_display.admin_order_field = "created_at"
@@ -721,10 +720,9 @@ class SupportTicketAdmin(ModelAdmin):
                     obj.closed_at = now
 
                 # Clear timestamps when reopening
-                if obj.status in ["open", "in_progress"]:
-                    if old_status in ["resolved", "closed"]:
-                        obj.resolved_at = None
-                        obj.closed_at = None
+                if obj.status in ["open", "in_progress"] and old_status in ["resolved", "closed"]:
+                    obj.resolved_at = None
+                    obj.closed_at = None
 
                 # Send notification
                 from apps.work.notifications.services import NotificationHub

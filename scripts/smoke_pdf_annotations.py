@@ -104,13 +104,13 @@ org = Organization.objects.create(name="Fraktion PDF", slug="fraktion-pdf", body
 role = Role.objects.filter(organization=org, is_admin=True).first()
 if role is None:
     role = Role.objects.create(organization=org, name="Administrator", is_admin=True)
-TenantEncryption(org).key
+_ = TenantEncryption(org).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 org2 = Organization.objects.create(name="Fremde Fraktion", slug="fremde-fraktion", body=body2)
 role2 = Role.objects.filter(organization=org2, is_admin=True).first()
 if role2 is None:
     role2 = Role.objects.create(organization=org2, name="Administrator", is_admin=True)
-TenantEncryption(org2).key
+_ = TenantEncryption(org2).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 user = User.objects.create_user(email="ann@example.org", password="test1234!")
 membership = Membership.objects.create(user=user, organization=org)

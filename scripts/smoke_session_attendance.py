@@ -107,7 +107,9 @@ SessionOrganizationMembership.objects.create(organization=org, person=p_chair, r
 SessionOrganizationMembership.objects.create(organization=org, person=p_m1, role="member")
 SessionOrganizationMembership.objects.create(organization=org, person=p_m2, role="member")
 SessionOrganizationMembership.objects.create(organization=org, person=p_sub, role="member", substitute_for=p_m2)
-SessionOrganizationMembership.objects.create(organization=org, person=p_advisor, role="advisor", has_voting_rights=False)
+SessionOrganizationMembership.objects.create(
+    organization=org, person=p_advisor, role="advisor", has_voting_rights=False
+)
 SessionOrganizationMembership.objects.create(
     organization=org, person=p_ended, role="member", end_date=timezone.localdate() - timedelta(days=10)
 )
@@ -229,7 +231,10 @@ check("Gast-Funktion", guest_att is not None and guest_att.role == "guest")
 
 count_before = SessionAttendance.objects.filter(meeting=meeting).count()
 client.post(f"{base}/meetings/{meeting.id}/attendance/add/", {"person": str(p_guest_pool.id), "role": "guest"})
-check("Doppeltes Ergänzen erzeugt kein Duplikat", SessionAttendance.objects.filter(meeting=meeting).count() == count_before)
+check(
+    "Doppeltes Ergänzen erzeugt kein Duplikat",
+    SessionAttendance.objects.filter(meeting=meeting).count() == count_before,
+)
 
 resp = client.get(f"{base}/meetings/{meeting.id}/")
 check("Gast zählt nicht fürs Quorum", "(3/5 stimmberechtigt anwesend" in resp.content.decode("utf-8"))

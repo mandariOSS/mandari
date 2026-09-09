@@ -79,8 +79,9 @@ def check(name, condition, detail=""):
 
 
 def pdf_text(pdf_bytes):
-    from pypdf import PdfReader
     import io
+
+    from pypdf import PdfReader
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
     return "\n".join(page.extract_text() or "" for page in reader.pages)
@@ -102,24 +103,36 @@ org_b = SessionOrganization.objects.create(tenant=tenant_b, name="Fremdausschuss
 # Feste Referenzdaten: Juni 2027 (der 1.6.2027 ist ein Dienstag)
 ref = timezone.make_aware(timezone.datetime(2027, 6, 15, 18, 0), tz)
 m_public = SessionMeeting.objects.create(
-    tenant=tenant, name="KAL-OEFFENTLICH", organization=org, start=ref,
-    is_public=True, room="Ratssaal",
+    tenant=tenant,
+    name="KAL-OEFFENTLICH",
+    organization=org,
+    start=ref,
+    is_public=True,
+    room="Ratssaal",
 )
 m_np = SessionMeeting.objects.create(
-    tenant=tenant, name="KAL-GEHEIM", organization=org2,
-    start=ref + timedelta(days=1), is_public=False,
+    tenant=tenant,
+    name="KAL-GEHEIM",
+    organization=org2,
+    start=ref + timedelta(days=1),
+    is_public=False,
 )
 m_other_month = SessionMeeting.objects.create(
-    tenant=tenant, name="KAL-JULI", organization=org,
-    start=ref + timedelta(days=30), is_public=True,
+    tenant=tenant,
+    name="KAL-JULI",
+    organization=org,
+    start=ref + timedelta(days=30),
+    is_public=True,
 )
 m_cancelled = SessionMeeting.objects.create(
-    tenant=tenant, name="KAL-ABGESAGT", organization=org,
-    start=ref + timedelta(days=2), is_public=True, cancelled=True,
+    tenant=tenant,
+    name="KAL-ABGESAGT",
+    organization=org,
+    start=ref + timedelta(days=2),
+    is_public=True,
+    cancelled=True,
 )
-SessionMeeting.objects.create(
-    tenant=tenant_b, name="KAL-FREMD", organization=org_b, start=ref, is_public=True
-)
+SessionMeeting.objects.create(tenant=tenant_b, name="KAL-FREMD", organization=org_b, start=ref, is_public=True)
 
 admin_role = SessionRole.objects.create(tenant=tenant, name="Admin", is_admin=True)
 admin_user = User.objects.create_user(email="admin-cal@example.org", password="pw-Smoke-1!")
@@ -161,31 +174,44 @@ print()
 print("=== Phase B: Serientermine ===")
 # Monatlich, 2. Dienstag, Juni-Dezember 2027
 starts = calendar_service.generate_series(
-    rhythm="monthly_2", weekday=1, start_time=time(18, 0),
-    date_from=date(2027, 6, 1), date_to=date(2027, 12, 31),
+    rhythm="monthly_2",
+    weekday=1,
+    start_time=time(18, 0),
+    date_from=date(2027, 6, 1),
+    date_to=date(2027, 12, 31),
 )
 check("Monatsserie: 7 Termine", len(starts) == 7, f"got {len(starts)}")
 check("Alle am Dienstag", all(s.weekday() == 1 for s in starts))
 check("2. Dienstag im Juni = 08.06.2027", starts[0].date() == date(2027, 6, 8), str(starts[0]))
 
 weekly = calendar_service.generate_series(
-    rhythm="weekly", weekday=0, start_time=time(17, 0),
-    date_from=date(2027, 6, 1), date_to=date(2027, 6, 30),
+    rhythm="weekly",
+    weekday=0,
+    start_time=time(17, 0),
+    date_from=date(2027, 6, 1),
+    date_to=date(2027, 6, 30),
 )
 check("Wochenserie Juni: 4 Montage", len(weekly) == 4, f"got {len(weekly)}")
 
 biweekly = calendar_service.generate_series(
-    rhythm="biweekly", weekday=0, start_time=time(17, 0),
-    date_from=date(2027, 6, 1), date_to=date(2027, 6, 30),
+    rhythm="biweekly",
+    weekday=0,
+    start_time=time(17, 0),
+    date_from=date(2027, 6, 1),
+    date_to=date(2027, 6, 30),
 )
 check("14-täglich Juni: 2 Termine", len(biweekly) == 2, f"got {len(biweekly)}")
 
 check(
     "Zeitraum > 1 Jahr -> leer",
     calendar_service.generate_series(
-        rhythm="weekly", weekday=0, start_time=time(17, 0),
-        date_from=date(2027, 1, 1), date_to=date(2028, 6, 1),
-    ) == [],
+        rhythm="weekly",
+        weekday=0,
+        start_time=time(17, 0),
+        date_from=date(2027, 1, 1),
+        date_to=date(2028, 6, 1),
+    )
+    == [],
 )
 
 # =============================================================================
@@ -194,9 +220,7 @@ print("=== Phase C: Kollisionsprüfung ===")
 conflicts = calendar_service.find_conflicts(tenant, ref + timedelta(hours=1))
 check("Zeitliche Überschneidung erkannt", any(m.pk == m_public.pk for m in conflicts))
 
-same_room = calendar_service.find_conflicts(
-    tenant, ref.replace(hour=8), room="Ratssaal"
-)
+same_room = calendar_service.find_conflicts(tenant, ref.replace(hour=8), room="Ratssaal")
 check("Raumkollision erkannt (auch ohne Zeitüberschneidung)", any(m.pk == m_public.pk for m in same_room))
 
 free = calendar_service.find_conflicts(tenant, ref + timedelta(days=10))
@@ -229,9 +253,7 @@ check("Anlage -> Redirect", resp.status_code == 302, f"got {resp.status_code}")
 check("3 Entwürfe angelegt", created.count() == 3, f"got {created.count()}")
 check("Serien-Termine als Entwurf", all(m.meeting_state == "draft" for m in created))
 check("Raum übernommen", all(m.room == "Ratssaal" for m in created))
-audit_entry = SessionAuditLog.objects.filter(
-    tenant=tenant, changes__sitzungsserie="SERIE-BAUAUSSCHUSS"
-).first()
+audit_entry = SessionAuditLog.objects.filter(tenant=tenant, changes__sitzungsserie="SERIE-BAUAUSSCHUSS").first()
 check("Audit: Serienanlage protokolliert", audit_entry is not None and audit_entry.changes.get("anzahl") == 3)
 
 resp = admin.post(f"{base}/meetings/plan/", {**plan_data, "organization": "", "action": "preview"})

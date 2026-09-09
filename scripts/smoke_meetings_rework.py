@@ -127,9 +127,7 @@ def client_for(user):
 
 print("=== Setup ===")
 source = OParlSource.objects.create(name="Smoke-Quelle", url="https://oparl.example.org/system")
-body = OParlBody.objects.create(
-    source=source, external_id="https://oparl.example.org/body/1", name="Musterstadt"
-)
+body = OParlBody.objects.create(source=source, external_id="https://oparl.example.org/body/1", name="Musterstadt")
 
 org_a, role_a = make_org("Fraktion A", "fraktion-a", body)
 org_b, role_b = make_org("Fraktion B", "fraktion-b", body)
@@ -140,8 +138,8 @@ org_b, role_b = make_org("Fraktion B", "fraktion-b", body)
 # nutzt, muss der Key VOR dem ersten Request existieren.
 from apps.common.encryption import TenantEncryption  # noqa: E402
 
-TenantEncryption(org_a).key
-TenantEncryption(org_b).key
+_ = TenantEncryption(org_a).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
+_ = TenantEncryption(org_b).key  # Nebeneffekt bewusst (Schlüssel/Objekt wird angelegt)
 
 user_admin, m_admin = make_member(org_a, role_a, "admin@example.org")
 user_member, m_member = make_member(org_a, role_a, "mitglied@example.org")

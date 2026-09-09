@@ -205,8 +205,7 @@ def run_sync_with_logging(
             if source:
                 result = await orchestrator.sync_source(source.url, full=full)
                 return [result]
-            else:
-                return await orchestrator.sync_all(full=full)
+            return await orchestrator.sync_all(full=full)
 
     try:
         results = asyncio.run(_run())

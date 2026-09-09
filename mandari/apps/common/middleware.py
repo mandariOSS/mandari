@@ -29,8 +29,7 @@ class DatabaseErrorMiddleware:
 
     def __call__(self, request):
         try:
-            response = self.get_response(request)
-            return response
+            return self.get_response(request)
         except OperationalError as e:
             error_message = str(e).lower()
 

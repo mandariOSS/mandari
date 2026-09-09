@@ -2,11 +2,11 @@
 Tests for the OParl HTTP Client.
 """
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime
+from unittest.mock import MagicMock, patch
 
-from src.client.oparl_client import OParlClient, FetchResult, SyncStats
+import pytest
+
+from src.client.oparl_client import FetchResult, OParlClient, SyncStats
 
 
 class TestOParlClientInit:
@@ -167,6 +167,7 @@ class TestCacheHeaders:
 # Integration tests would require mocking httpx or a test server
 # These are left as examples of what could be tested
 
+
 class TestFetchIntegration:
     """Integration tests for fetch operations (mocked)."""
 
@@ -206,6 +207,7 @@ class TestFetchIntegration:
                 call_count += 1
                 if call_count < 2:
                     import httpx
+
                     response = MagicMock()
                     response.status_code = 500
                     raise httpx.HTTPStatusError("Server error", request=MagicMock(), response=response)
@@ -215,9 +217,11 @@ class TestFetchIntegration:
                     status_code=200,
                 )
 
-            with patch.object(client, "_do_fetch", side_effect=mock_do_fetch):
-                with patch("asyncio.sleep", return_value=None):
-                    result = await client.fetch("https://example.org/test")
+            with (
+                patch.object(client, "_do_fetch", side_effect=mock_do_fetch),
+                patch("asyncio.sleep", return_value=None),
+            ):
+                result = await client.fetch("https://example.org/test")
 
-                    assert result.status_code == 200
-                    assert call_count == 2
+                assert result.status_code == 200
+                assert call_count == 2

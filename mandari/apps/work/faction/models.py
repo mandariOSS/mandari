@@ -1407,24 +1407,23 @@ class FactionAgendaItemAttachment(models.Model):
         size = self.file_size
         if size < 1024:
             return f"{size} B"
-        elif size < 1024 * 1024:
+        if size < 1024 * 1024:
             return f"{size / 1024:.1f} KB"
-        else:
-            return f"{size / (1024 * 1024):.1f} MB"
+        return f"{size / (1024 * 1024):.1f} MB"
 
     @property
     def icon_name(self) -> str:
         """Lucide Icon-Name basierend auf MIME-Typ."""
         if self.mime_type.startswith("image/"):
             return "image"
-        elif self.mime_type == "application/pdf":
+        if self.mime_type == "application/pdf":
             return "file-text"
-        elif self.mime_type.startswith("video/"):
+        if self.mime_type.startswith("video/"):
             return "film"
-        elif self.mime_type.startswith("audio/"):
+        if self.mime_type.startswith("audio/"):
             return "music"
-        elif "spreadsheet" in self.mime_type or "excel" in self.mime_type:
+        if "spreadsheet" in self.mime_type or "excel" in self.mime_type:
             return "table"
-        elif "presentation" in self.mime_type or "powerpoint" in self.mime_type:
+        if "presentation" in self.mime_type or "powerpoint" in self.mime_type:
             return "presentation"
         return "file"
