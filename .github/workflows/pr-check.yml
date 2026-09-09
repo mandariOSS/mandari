@@ -157,7 +157,8 @@ jobs:
           DEBUG: 'false'
         run: |
           cd mandari
-          pytest -v --cov=apps --cov=insight_core --cov-report=term --cov-report=xml
+          # Coverage-Gate (Issue #157): Stand 09/2026 40 % – Schwelle darf nur steigen
+          pytest -v --cov=apps --cov=insight_core --cov-report=term --cov-report=xml --cov-fail-under=38
 
       - name: Schema-Contract Django ↔ Ingestor (docs/adr/20260909-schema-contract-django-ingestor.md)
         env:
@@ -258,6 +259,8 @@ jobs:
           pip install -r mandari/requirements.lock
           # Versionen wie in pyproject [dev] – mypy-Ergebnisse unterscheiden sich zwischen Versionen
           pip install "mypy==2.3.1" "django-stubs[compatible-mypy]==6.1.0" "sqlalchemy>=2.0"
+          # Test-Abhängigkeiten, damit Fixtures/Decorator in Testmodulen typisiert sind (sonst "untyped decorator")
+          pip install pytest pytest-django factory-boy pytest-playwright
       - name: mypy mit Allowlist
         env:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
@@ -308,6 +311,44 @@ jobs:
         run: |
           cd mandari && npx vite build
           test -f static/dist/manifest.json
+
+  e2e:
+    name: E2E (Playwright, axe-core, Screenshots)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mandari/package-lock.json
+      - name: Frontend-Assets bauen
+        run: cd mandari && npm ci --ignore-scripts && npm run build
+      - name: Python-Abhängigkeiten
+        run: |
+          pip install shared/
+          cd mandari
+          pip install -r requirements.lock
+          pip install pytest pytest-django factory-boy pytest-playwright
+          python -m playwright install --with-deps chromium
+      - name: E2E-Tests (Kernpfade, axe-core)
+        env:
+          MANDARI_E2E: '1'
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+          DEBUG: 'false'
+        run: cd mandari && pytest tests_e2e -q --browser chromium
+      - name: Screenshots als Artefakt (hell/dunkel, Komponentenvorschau, Kernpfade)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: mandari/tests_e2e/screenshots/
+          if-no-files-found: ignore
 
   docker-build:
     name: Docker Build

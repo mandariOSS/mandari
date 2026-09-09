@@ -33,5 +33,9 @@ ELASTICSEARCH_AUTO_INDEX = False
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # schnelle Hashes nur im Test
 TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}}
 
-# Tests brauchen kein gebautes Manifest: Dev-URLs erzeugen, ohne Vite-Server zu benötigen
-DJANGO_VITE = {"default": {**DJANGO_VITE["default"], "dev_mode": True}}  # noqa: F405
+# Tests brauchen kein gebautes Manifest: Dev-URLs erzeugen, ohne Vite-Server zu benötigen.
+# E2E-Tests (MANDARI_E2E=1) laden dagegen die gebauten Assets aus static/dist/ über den Live-Server.
+DJANGO_VITE = {"default": {**DJANGO_VITE["default"], "dev_mode": os.environ.get("MANDARI_E2E") != "1"}}  # noqa: F405
+
+# Komponentenvorschau /dev/ui/ auch ohne DEBUG (Rendering- und E2E-Tests)
+UI_KIT_PREVIEW = True

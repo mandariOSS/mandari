@@ -259,3 +259,6 @@ mandari/C:/
 # Vite-Build (wird im Docker-Build erzeugt)
 mandari/static/dist/
 mandari/static/js/editor.bundle.js
+
+# E2E-Screenshots (CI-Artefakt)
+mandari/tests_e2e/screenshots/

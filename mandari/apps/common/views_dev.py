@@ -2,7 +2,7 @@
 """
 Entwicklungsansichten: Vorschau der Komponentenbibliothek (UI-Kit).
 
-Die Seite wird nur bei ``DEBUG=True`` registriert (siehe ``mandari/urls.py``)
+Die Seite wird nur bei ``DEBUG=True`` (oder ``UI_KIT_PREVIEW=True``, z. B. E2E-Tests) registriert (siehe ``mandari/urls.py``)
 und dient als lebende Dokumentation aller Cotton-Komponenten unter
 ``templates/cotton/``. Der Snapshot-Test in ``apps/common/tests/test_components.py``
 rendert dieselbe Vorlage, damit Komponentenänderungen nicht unbemerkt brechen.
@@ -40,7 +40,7 @@ def ui_kit(request: HttpRequest) -> HttpResponse:
     """Vorschau der Komponentenbibliothek – nur für Entwicklung."""
     from django.conf import settings
 
-    if not settings.DEBUG:
+    if not (settings.DEBUG or getattr(settings, "UI_KIT_PREVIEW", False)):
         raise Http404
     return render(
         request,

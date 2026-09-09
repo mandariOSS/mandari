@@ -143,7 +143,7 @@ urlpatterns = [
 ]
 
 # Komponentenvorschau (UI-Kit) – nur in der Entwicklung, siehe apps/common/views_dev.py
-if settings.DEBUG:
+if settings.DEBUG or getattr(settings, "UI_KIT_PREVIEW", False):
     urlpatterns += [path("dev/ui/", ui_kit, name="dev_ui_kit")]
 
 # Serve media files (logos, uploads) — in production via Caddy → Django.

@@ -115,7 +115,7 @@ Gehen Sie zurück zur Sitzungsvorbereitung und erstellen Sie Redenotizen für di
         Space: Play/Pause | Up/Down: Scroll | +/-: Font Size | Esc: Exit
     </div>
 
-    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
+    {% load django_vite %}{% vite_asset 'frontend/js/main.ts' %}
     <script>
         function teleprompter() {
             return {

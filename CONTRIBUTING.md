@@ -80,6 +80,32 @@ cd mandari
 uv run pytest
 ```
 
+E-Mail-Templates werden in `apps/common/tests/test_emails.py` gegen Snapshots
+(`apps/common/tests/snapshots/emails/*.html|*.txt`) geprüft. Nach einer gewollten Änderung an einer Mail
+oder am Basis-Layout die Snapshots neu schreiben und mit committen:
+
+```bash
+cd mandari
+UPDATE_SNAPSHOTS=1 uv run pytest apps/common/tests/test_emails.py
+```
+
+### End-to-End-Tests (Playwright)
+
+```bash
+cd mandari
+pip install pytest-playwright && python -m playwright install chromium
+npm run build                         # gebaute Assets, die der Live-Server ausliefert
+MANDARI_E2E=1 pytest tests_e2e -q     # Kernpfade, axe-core, Screenshots unter tests_e2e/screenshots/
+```
+
+Ohne `MANDARI_E2E=1` werden die E2E-Tests übersprungen. Im CI laufen sie im Job „E2E“; die
+Screenshots (hell/dunkel, Komponentenvorschau, Kernpfade) liegen dort als Artefakt.
+
+### Coverage
+
+Die CI verlangt mindestens 38 % Zeilenabdeckung (`--cov-fail-under`, Stand 09/2026: 40 %). Die
+Schwelle wird mit wachsender Testbasis angehoben, nie gesenkt.
+
 ### Code-Style
 
 Verbindlich ist [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md). Werkzeuge:
