@@ -33,7 +33,8 @@ markiert sind:
 Nicht-öffentliche Objekte existieren nach außen nicht: Ihre
 Objekt-Endpunkte liefern 404 (sofern sie nie veröffentlicht waren).
 Beweis-Suite: `python scripts/smoke_session_oparl.py` (Ö/NÖ-Beweis über
-die gesamte API-Oberfläche) sowie `scripts/smoke_session_matrix.py`.
+die gesamte API-Oberfläche) sowie die pytest-Suite
+`mandari/apps/session/tests/test_security_matrix.py`.
 
 ## Endpunkte
 
@@ -207,4 +208,5 @@ Die IDs der API werden aus dem Request-Host gebaut (`build_absolute_uri`)
 
 Smoke-Tests: `python scripts/smoke_session_oparl.py` (Spec-Struktur,
 Pagination, Filter, Tombstones, Ö/NÖ-Beweis) und
-`python scripts/smoke_session_matrix.py` (Tenant-Isolation, Ö/NÖ-Matrix).
+`pytest apps/session/tests/test_security_matrix.py` (aus `mandari/`;
+Tenant-Isolation, Ö/NÖ-Matrix, Permission-Matrix).
