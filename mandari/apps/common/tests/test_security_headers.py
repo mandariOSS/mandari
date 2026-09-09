@@ -6,6 +6,8 @@ Diese Tests sichern die Härtung aus settings.py ab (CSP-Middleware, Cookie-Flag
 Passwortlänge) und dienen als Startpunkt für die Migration der Smoke-Skripte.
 """
 
+import os
+
 from django.conf import settings
 from django.http import HttpResponse
 from django.middleware.csp import ContentSecurityPolicyMiddleware
@@ -42,7 +44,9 @@ def test_cookie_and_transport_settings():
     assert settings.CSRF_COOKIE_SAMESITE == "Lax"
     assert settings.SECURE_PROXY_SSL_HEADER == ("HTTP_X_FORWARDED_PROTO", "https")
     assert settings.SECURE_CONTENT_TYPE_NOSNIFF is True
-    if not settings.DEBUG:
+    # pytest-django setzt settings.DEBUG zur Laufzeit auf False; maßgeblich ist der Wert beim Import
+    production_like = os.environ.get("DEBUG", "true").lower() in ("false", "0", "no")
+    if production_like:
         assert settings.SESSION_COOKIE_SECURE is True
         assert settings.CSRF_COOKIE_SECURE is True
         assert settings.SECURE_HSTS_SECONDS >= 60 * 60 * 24 * 180

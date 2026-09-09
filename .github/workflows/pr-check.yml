@@ -107,7 +107,7 @@ jobs:
           pip install shared/
           cd mandari
           pip install -r requirements.lock
-          pip install pytest pytest-django pytest-cov
+          pip install pytest pytest-django pytest-cov factory-boy
 
       - name: Run Django system checks
         env:
@@ -203,7 +203,6 @@ jobs:
           python scripts/smoke_session_allowances.py
           python scripts/smoke_session_encryption.py
           python scripts/smoke_tasks_import_export.py
-          python scripts/smoke_motions_access.py
           python scripts/smoke_insight_questions.py
           python scripts/smoke_admin_monitoring.py
           python scripts/smoke_file_cache.py

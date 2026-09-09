@@ -58,6 +58,7 @@ dev = [
     "pytest>=8.3.0",
     "pytest-django>=4.9.0",
     "pytest-cov>=6.0.0",
+    "factory-boy>=3.3.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "django-stubs>=6.0.0",  # Django 6.0 compatible
@@ -83,7 +84,7 @@ ignore = [
 ]
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "mandari.settings"
+DJANGO_SETTINGS_MODULE = "mandari.settings_test"
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --tb=short"
 
