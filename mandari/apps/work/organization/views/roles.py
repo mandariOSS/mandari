@@ -1,18 +1,32 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Organization settings views for the Work module.
+Rollenverwaltung der Organisation.
 """
 
-import logging
-
 from django.contrib import messages
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import redirect
 from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.common.permissions import get_permissions_by_category
 
-logger = logging.getLogger(__name__)
+from .. import selectors, services
+from ..services import ServiceError
+from ._helpers import flash_error
+
+
+def _role_input(request, color_default: str = "#6b7280", priority_default: str = "50") -> services.RoleInput:
+    """Formularfelder einer Rolle einlesen."""
+    return services.RoleInput(
+        name=request.POST.get("name", "").strip(),
+        description=request.POST.get("description", "").strip(),
+        color=request.POST.get("color", color_default).strip(),
+        priority_raw=request.POST.get("priority", priority_default),
+        is_admin=request.POST.get("is_admin") == "on",
+        require_2fa=request.POST.get("require_2fa") == "on",
+        permission_codes=request.POST.getlist("permissions"),
+    )
 
 
 class RoleListView(WorkViewMixin, TemplateView):
@@ -25,26 +39,8 @@ class RoleListView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
         context["active_tab"] = "roles"
-
-        # Check if user can manage faction settings
-        from apps.common.permissions import PermissionChecker
-
-        checker = PermissionChecker(self.membership)
-        context["can_manage_faction"] = checker.has_permission("faction.manage")
-
-        # Get all roles for this organization with member count
-        from django.db.models import Count
-
-        from apps.tenants.models import Role
-
-        roles = (
-            Role.objects.filter(organization=self.organization)
-            .prefetch_related("permissions")
-            .annotate(member_count=Count("memberships"))
-            .order_by("-priority", "name")
-        )
-
-        context["roles"] = roles
+        context["can_manage_faction"] = selectors.permission_checker(self.membership).has_permission("faction.manage")
+        context["roles"] = selectors.roles_with_member_count(self.organization)
         return context
 
 
@@ -60,49 +56,16 @@ class RoleCreateView(WorkViewMixin, TemplateView):
         context["is_edit"] = False
         context["role"] = None
         context["role_permissions"] = set()
-
-        from apps.common.permissions import get_permissions_by_category
-
         context["permission_categories"] = get_permissions_by_category()
         return context
 
     def post(self, request, *args, **kwargs):
-        from apps.tenants.models import Permission, Role
-
-        name = request.POST.get("name", "").strip()
-        if not name:
-            messages.error(request, "Der Name ist erforderlich.")
+        try:
+            role = services.create_role(self.organization, _role_input(request))
+        except ServiceError as exc:
+            flash_error(request, exc)
             return redirect("work:role_create", org_slug=self.organization.slug)
-
-        # Check unique name per org
-        if Role.objects.filter(organization=self.organization, name=name).exists():
-            messages.error(request, f"Eine Rolle mit dem Namen '{name}' existiert bereits.")
-            return redirect("work:role_create", org_slug=self.organization.slug)
-
-        import re
-
-        color = request.POST.get("color", "#6b7280").strip()
-        if not re.match(r"^#[0-9a-fA-F]{6}$", color):
-            color = "#6b7280"
-
-        role = Role.objects.create(
-            organization=self.organization,
-            name=name,
-            description=request.POST.get("description", "").strip(),
-            color=color,
-            priority=min(max(int(request.POST.get("priority", 50) or 50), 0), 100),
-            is_admin=request.POST.get("is_admin") == "on",
-            require_2fa=request.POST.get("require_2fa") == "on",
-            is_system_role=False,
-        )
-
-        # Set permissions
-        perm_codenames = request.POST.getlist("permissions")
-        if perm_codenames and not role.is_admin:
-            perms = Permission.objects.filter(codename__in=perm_codenames)
-            role.permissions.set(perms)
-
-        messages.success(request, f"Rolle '{name}' wurde erstellt.")
+        messages.success(request, f"Rolle '{role.name}' wurde erstellt.")
         return redirect("work:roles", org_slug=self.organization.slug)
 
 
@@ -116,60 +79,20 @@ class RoleEditView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
         context["is_edit"] = True
-
-        from apps.tenants.models import Role
-
-        role = get_object_or_404(Role, id=kwargs["role_id"], organization=self.organization)
+        role = selectors.get_role_or_404(self.organization, kwargs["role_id"])
         context["role"] = role
-        context["role_permissions"] = set(role.permissions.values_list("codename", flat=True))
-
-        from apps.common.permissions import get_permissions_by_category
-
+        context["role_permissions"] = selectors.role_permission_codes(role)
         context["permission_categories"] = get_permissions_by_category()
         return context
 
     def post(self, request, *args, **kwargs):
-        from apps.tenants.models import Permission, Role
-
-        role = get_object_or_404(Role, id=kwargs["role_id"], organization=self.organization)
-
-        name = request.POST.get("name", "").strip()
-        if not name:
-            messages.error(request, "Der Name ist erforderlich.")
+        role = selectors.get_role_or_404(self.organization, kwargs["role_id"])
+        try:
+            services.update_role(self.organization, role, _role_input(request, role.color, str(role.priority)))
+        except ServiceError as exc:
+            flash_error(request, exc)
             return redirect("work:role_edit", org_slug=self.organization.slug, role_id=role.id)
-
-        # Check unique name per org (excluding self)
-        if Role.objects.filter(organization=self.organization, name=name).exclude(id=role.id).exists():
-            messages.error(request, f"Eine Rolle mit dem Namen '{name}' existiert bereits.")
-            return redirect("work:role_edit", org_slug=self.organization.slug, role_id=role.id)
-
-        import re
-
-        color = request.POST.get("color", role.color).strip()
-        if not re.match(r"^#[0-9a-fA-F]{6}$", color):
-            color = role.color
-
-        role.name = name
-        role.description = request.POST.get("description", "").strip()
-        role.color = color
-        role.require_2fa = request.POST.get("require_2fa") == "on"
-
-        # System roles: is_admin and priority can't be changed
-        if not role.is_system_role:
-            role.is_admin = request.POST.get("is_admin") == "on"
-            role.priority = min(max(int(request.POST.get("priority", role.priority) or role.priority), 0), 100)
-
-        role.save()
-
-        # Update permissions
-        perm_codenames = request.POST.getlist("permissions")
-        if role.is_admin:
-            role.permissions.clear()
-        else:
-            perms = Permission.objects.filter(codename__in=perm_codenames)
-            role.permissions.set(perms)
-
-        messages.success(request, f"Rolle '{name}' wurde aktualisiert.")
+        messages.success(request, f"Rolle '{role.name}' wurde aktualisiert.")
         return redirect("work:roles", org_slug=self.organization.slug)
 
 
@@ -179,26 +102,13 @@ class RoleDeleteView(WorkViewMixin, View):
     permission_required = "organization.manage_roles"
 
     def post(self, request, *args, **kwargs):
-        from apps.tenants.models import Role
-
-        role = get_object_or_404(Role, id=kwargs["role_id"], organization=self.organization)
-
-        if role.is_system_role:
-            messages.error(request, "Systemrollen können nicht gelöscht werden.")
-            return redirect("work:roles", org_slug=self.organization.slug)
-
-        member_count = role.memberships.count()
-        if member_count > 0:
-            messages.error(
-                request,
-                f"Die Rolle '{role.name}' ist noch {member_count} Mitglied(ern) zugewiesen. "
-                "Entfernen Sie zuerst die Zuweisungen.",
-            )
-            return redirect("work:roles", org_slug=self.organization.slug)
-
-        role_name = role.name
-        role.delete()
-        messages.success(request, f"Rolle '{role_name}' wurde gelöscht.")
+        role = selectors.get_role_or_404(self.organization, kwargs["role_id"])
+        try:
+            name = services.delete_role(role)
+        except ServiceError as exc:
+            flash_error(request, exc)
+        else:
+            messages.success(request, f"Rolle '{name}' wurde gelöscht.")
         return redirect("work:roles", org_slug=self.organization.slug)
 
 
@@ -212,11 +122,8 @@ class RoleResetView(WorkViewMixin, View):
     permission_required = "organization.manage_roles"
 
     def post(self, request, *args, **kwargs):
-        from apps.tenants.models import Role
-
-        role = get_object_or_404(Role, id=kwargs["role_id"], organization=self.organization)
-
-        if role.reset_to_default():
+        role = selectors.get_role_or_404(self.organization, kwargs["role_id"])
+        if services.reset_role(role):
             messages.success(request, f"Rolle '{role.name}' wurde auf den Standard zurückgesetzt.")
         else:
             messages.error(request, f"Für '{role.name}' existiert keine Standard-Definition.")
@@ -233,11 +140,7 @@ class RoleRestoreDefaultsView(WorkViewMixin, View):
     permission_required = "organization.manage_roles"
 
     def post(self, request, *args, **kwargs):
-        from apps.tenants.models import Permission, Role
-
-        # Sicherstellen, dass der Berechtigungskatalog aktuell ist
-        Permission.sync_permissions()
-        created = Role.restore_missing_default_roles(self.organization)
+        created = services.restore_default_roles(self.organization)
         if created:
             names = ", ".join(r.name for r in created)
             messages.success(request, f"{len(created)} Standard-Rolle(n) angelegt: {names}.")

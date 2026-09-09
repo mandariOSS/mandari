@@ -117,13 +117,11 @@ apps.work.management.commands.send_task_due_reminders
 apps.work.meetings.consumers
 apps.work.meetings.models
 apps.work.meetings.sanitize
-apps.work.meetings.views._helpers
 apps.work.meetings.views.api_agenda
 apps.work.meetings.views.api_documents
 apps.work.meetings.views.list
 apps.work.meetings.views.paper_comments
 apps.work.meetings.views.prepare
-apps.work.meetings.views.serializers
 apps.work.meetings.views.summary
 apps.work.meetings.views.teleprompter
 apps.work.motions.ai_security
@@ -180,7 +178,6 @@ apps.work.support.views
 apps.work.tasks.activity
 apps.work.tasks.forms
 apps.work.tasks.models
-apps.work.tasks.views._helpers
 apps.work.tasks.views.create
 apps.work.tasks.views.export_import
 apps.work.tasks.views.list

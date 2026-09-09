@@ -8,8 +8,8 @@
     "long_functions": 1
   },
   "meetings": {
-    "orm_calls": 266,
-    "long_functions": 2
+    "orm_calls": 23,
+    "long_functions": 0
   },
   "motions": {
     "orm_calls": 544,
@@ -20,19 +20,19 @@
     "long_functions": 0
   },
   "organization": {
-    "orm_calls": 649,
-    "long_functions": 3
+    "orm_calls": 161,
+    "long_functions": 0
   },
   "ris": {
-    "orm_calls": 252,
-    "long_functions": 1
+    "orm_calls": 42,
+    "long_functions": 0
   },
   "support": {
     "orm_calls": 112,
     "long_functions": 0
   },
   "tasks": {
-    "orm_calls": 294,
-    "long_functions": 1
+    "orm_calls": 46,
+    "long_functions": 0
   }
 }

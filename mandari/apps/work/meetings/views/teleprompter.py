@@ -1,29 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Meeting preparation views for the Work module.
-
-Org-weite Sitzungsvorbereitung mit 5 Sektionen pro TOP:
-1. Position/Beschluss (org-weit)
-2. Private Notizen (pro User)
-3. Redebeitrag (pro User, teilbar)
-4. Fraktionsdiskussion (org-weit)
-5. Dokumente (org-weit)
+Teleprompter-Ansicht für den eigenen Redebeitrag zu einem TOP.
 """
 
-from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
-from insight_core.models import OParlAgendaItem, OParlMeeting
 
-from ..models import (
-    AgendaSpeechNote,
-)
+from .. import selectors
 from ..sanitize import sanitize_speech_html
-
-# =============================================================================
-# TELEPROMPTER
-# =============================================================================
 
 
 class TeleprompterView(WorkViewMixin, TemplateView):
@@ -42,35 +27,18 @@ class TeleprompterView(WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        meeting_id = self.kwargs.get("meeting_id")
-        item_id = self.kwargs.get("item_id")
-        organization = self.organization
-        membership = self.membership
-
-        bodies = organization.get_all_bodies() if organization else None
-        if bodies is None or not bodies.exists() or not membership:
+        bodies = selectors.organization_bodies(self.organization)
+        if bodies is None or not self.membership:
             context["error"] = "Keine OParl-Körperschaft verknüpft"
             return context
 
-        meeting = get_object_or_404(OParlMeeting, id=meeting_id, body__in=bodies)
-        agenda_item = get_object_or_404(OParlAgendaItem, id=item_id, meeting=meeting)
-
-        speech_note = (
-            AgendaSpeechNote.objects.filter(author=membership, agenda_item=agenda_item)
-            .select_related("linked_document")
-            .first()
-        )
-
-        speech_content = ""
-        if speech_note:
-            if speech_note.linked_document_id and speech_note.linked_document.can_access(membership):
-                speech_content = speech_note.linked_document.get_content_decrypted()
-            elif not speech_note.linked_document_id:
-                speech_content = speech_note.get_content_decrypted()
+        meeting = selectors.get_meeting_or_404(bodies, self.kwargs["meeting_id"])
+        agenda_item = selectors.get_agenda_item_or_404(self.kwargs["item_id"], meeting)
+        speech_note = selectors.get_own_speech(self.membership, agenda_item)
 
         context["meeting"] = meeting
         context["agenda_item"] = agenda_item
         context["speech_note"] = speech_note
         # HTML sicher rendern: strikte Whitelist (b/i/u/strong/em/ul/ol/li/p/br/h2/h3)
-        context["speech_content"] = sanitize_speech_html(speech_content)
+        context["speech_content"] = sanitize_speech_html(selectors.speech_content_for(speech_note, self.membership))
         return context

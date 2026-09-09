@@ -4,14 +4,20 @@ Meeting preparation views for the Work module.
 
 Thematisch aufgeteiltes Paket; alle Namen werden hier re-exportiert,
 damit bestehende Imports (``from apps.work.meetings import views``)
-unverändert funktionieren.
+unverändert funktionieren. Helfer und Serializer leben seit Issue #160 in
+``apps.work.meetings.selectors`` bzw. ``apps.work.meetings.serializers``.
 """
 
-from ._helpers import (
+from ..selectors import (
     get_primary_paper_for_item,
-    is_pdf_file,
     natural_sort_key,
     prefetch_papers_for_agenda_items,
+)
+from ..serializers import (
+    is_pdf_file,
+    serialize_agenda_note,
+    serialize_file_annotation,
+    serialize_paper_comment_as_note,
 )
 from .api_agenda import (
     AgendaNotesAPIView,
@@ -35,11 +41,6 @@ from .paper_comments import (
 )
 from .prepare import (
     MeetingPrepareView,
-)
-from .serializers import (
-    serialize_agenda_note,
-    serialize_file_annotation,
-    serialize_paper_comment_as_note,
 )
 from .summary import (
     PreparationSummaryView,

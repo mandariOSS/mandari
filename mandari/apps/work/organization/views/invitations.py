@@ -1,19 +1,20 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Organization settings views for the Work module.
+Einladungen (Mitglieder und Gäste) sowie die öffentliche Annahme per Token.
 """
 
 import logging
 
 from django.contrib import messages
-from django.shortcuts import get_object_or_404, redirect
-from django.urls import reverse
-from django.utils import timezone
+from django.shortcuts import redirect
 from django.views import View
 from django.views.generic import TemplateView
 
-from apps.common.email import send_email
 from apps.common.mixins import WorkViewMixin
+
+from .. import selectors, services
+from ..services import ServiceError
+from ._helpers import flash_error
 
 logger = logging.getLogger(__name__)
 
@@ -27,150 +28,29 @@ class MemberInviteView(WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
-
-        from apps.tenants.models import Role
-
-        context["available_roles"] = Role.objects.filter(organization=self.organization).order_by("name")
-
+        context["available_roles"] = selectors.roles_for_organization(self.organization)
         return context
 
     def post(self, request, *args, **kwargs):
         """Handle invitation creation."""
-        from apps.accounts.models import User
-        from apps.tenants.models import Membership, Role, UserInvitation
-
         email = request.POST.get("email", "").strip().lower()
-        role_ids = request.POST.getlist("roles")
-        message_text = request.POST.get("message", "").strip()
-
-        # Validate email
         if not email:
             messages.error(request, "Bitte geben Sie eine E-Mail-Adresse ein.")
             return redirect("work:member_invite", org_slug=self.organization.slug)
 
-        # Check if user already exists
-        existing_user = User.objects.filter(email=email).first()
-
-        if existing_user:
-            # Check if already a member
-            existing_membership = Membership.objects.filter(user=existing_user, organization=self.organization).first()
-
-            if existing_membership:
-                if existing_membership.is_active:
-                    messages.warning(request, f"{email} ist bereits Mitglied dieser Organisation.")
-                else:
-                    # Reactivate membership
-                    existing_membership.is_active = True
-                    existing_membership.save()
-                    messages.success(request, f"{email} wurde reaktiviert.")
-                return redirect("work:members", org_slug=self.organization.slug)
-
-        # Check for existing pending invitation
-        existing_invitation = UserInvitation.objects.filter(
-            organization=self.organization,
-            email=email,
-            accepted_at__isnull=True,
-            expires_at__gt=timezone.now(),
-        ).first()
-
-        if existing_invitation:
-            messages.warning(request, f"Eine Einladung für {email} ist bereits ausstehend.")
-            return redirect("work:members", org_slug=self.organization.slug)
-
-        # Get selected roles
-        roles = Role.objects.filter(id__in=role_ids, organization=self.organization) if role_ids else None
-
-        # Create invitation
         try:
-            invitation = UserInvitation.create_for_organization(
-                organization=self.organization,
-                email=email,
-                invited_by=request.user,
-                roles=roles,
-                message=message_text,
-                valid_days=7,
+            message = services.invite_member(
+                self.organization,
+                request.user,
+                email,
+                request.POST.getlist("roles"),
+                request.POST.get("message", "").strip(),
             )
-
-            # Send invitation email
-            self._send_invitation_email(invitation)
-
-            messages.success(request, f"Einladung an {email} wurde versendet.")
-
-        except Exception as e:
-            messages.error(request, f"Fehler beim Erstellen der Einladung: {str(e)}")
-
+        except ServiceError as exc:
+            flash_error(request, exc)
+        else:
+            messages.success(request, message)
         return redirect("work:members", org_slug=self.organization.slug)
-
-    def _send_invitation_email(self, invitation):
-        """Send the invitation email."""
-        from django.conf import settings as django_settings
-
-        # Build acceptance URL using SITE_URL (not request host)
-        base_url = getattr(django_settings, "SITE_URL", "https://volt.mandari.de").rstrip("/")
-        accept_path = reverse("work:accept_invitation", kwargs={"token": invitation.token})
-        accept_url = f"{base_url}{accept_path}"
-
-        subject = f"Einladung zu {self.organization.name}"
-
-        # Simple HTML email
-        html_message = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <h2>Einladung zu {self.organization.name}</h2>
-            <p>Hallo,</p>
-            <p>Sie wurden von <strong>{invitation.invited_by.get_full_name() or invitation.invited_by.email}</strong>
-               eingeladen, der Organisation <strong>{self.organization.name}</strong> auf Mandari Work beizutreten.</p>
-
-            {f"<p><em>Nachricht: {invitation.message}</em></p>" if invitation.message else ""}
-
-            <p>
-                <a href="{accept_url}"
-                   style="display: inline-block; padding: 12px 24px; background-color: #4f46e5;
-                          color: white; text-decoration: none; border-radius: 6px;">
-                    Einladung annehmen
-                </a>
-            </p>
-
-            <p style="color: #666; font-size: 14px;">
-                Diese Einladung ist gültig bis zum {invitation.expires_at.strftime("%d.%m.%Y um %H:%M Uhr")}.
-            </p>
-
-            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="color: #999; font-size: 12px;">
-                Falls Sie diese Einladung nicht erwartet haben, können Sie diese E-Mail ignorieren.
-            </p>
-        </body>
-        </html>
-        """
-
-        plain_message = f"""
-Einladung zu {self.organization.name}
-
-Hallo,
-
-Sie wurden von {invitation.invited_by.get_full_name() or invitation.invited_by.email} eingeladen,
-der Organisation {self.organization.name} auf Mandari Work beizutreten.
-
-{f"Nachricht: {invitation.message}" if invitation.message else ""}
-
-Klicken Sie auf folgenden Link, um die Einladung anzunehmen:
-{accept_url}
-
-Diese Einladung ist gültig bis zum {invitation.expires_at.strftime("%d.%m.%Y um %H:%M Uhr")}.
-
-Falls Sie diese Einladung nicht erwartet haben, können Sie diese E-Mail ignorieren.
-        """
-
-        success = send_email(
-            subject=subject,
-            body=plain_message,
-            to=[invitation.email],
-            html_body=html_message,
-            fail_silently=True,  # Don't fail - the invitation is still created
-        )
-
-        if not success:
-            logger.error(f"Failed to send invitation email to {invitation.email}")
 
 
 class GuestInviteView(WorkViewMixin, TemplateView):
@@ -188,36 +68,7 @@ class GuestInviteView(WorkViewMixin, TemplateView):
     template_name = "work/organization/guest_invite.html"
     permission_required = "guests.invite"
 
-    GUEST_SHARE_LEVELS = [("view", "Lesen"), ("comment", "Kommentieren"), ("edit", "Bearbeiten")]
-
-    def _shareable_documents(self):
-        """Dokumente, die der Einladende freigeben darf (eigene + org-sichtbare)."""
-        from django.db.models import Q
-
-        from apps.work.motions.models import Motion
-
-        return (
-            Motion.objects.filter(organization=self.organization)
-            .filter(Q(visibility="organization") | Q(author=self.membership))
-            .exclude(status="deleted")
-            .order_by("-updated_at")
-        )
-
-    def _shareable_folders(self):
-        """
-        Ordner, die der Einladende freigeben darf, als [(folder, depth)].
-
-        Eine Ordner-Freigabe öffnet ALLE enthaltenen Dokumente (rekursiv,
-        auch künftige) — daher nur Ordner, die der Einladende auch
-        verwalten darf (_can_manage_folder).
-        """
-        from apps.work.motions.views import _can_manage_folder, _flatten_folder_tree
-
-        return [
-            (folder, depth)
-            for folder, depth in _flatten_folder_tree(self.organization)
-            if _can_manage_folder(self.membership, folder)
-        ]
+    GUEST_SHARE_LEVELS = services.GUEST_SHARE_LEVELS
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -226,179 +77,31 @@ class GuestInviteView(WorkViewMixin, TemplateView):
         context["guest_limit"] = self.organization.guest_limit
         context["guest_limit_reached"] = not self.organization.has_free_guest_slot()
         context["share_levels"] = self.GUEST_SHARE_LEVELS
-        context["shareable_documents"] = self._shareable_documents()[:200]
-        context["shareable_folders"] = self._shareable_folders()
+        context["shareable_documents"] = selectors.shareable_documents(self.organization, self.membership)[:200]
+        context["shareable_folders"] = selectors.shareable_folders(self.organization, self.membership)
         return context
 
     def post(self, request, *args, **kwargs):
-        from apps.accounts.models import User
-        from apps.tenants.models import Membership
-        from apps.work.motions.models import FolderGuestShare, MotionShare
-
         email = request.POST.get("email", "").strip().lower()
-        note = request.POST.get("message", "").strip()
-        share_level = request.POST.get("share_level", "view")
-        if share_level not in dict(self.GUEST_SHARE_LEVELS):
-            share_level = "view"
-        document_ids = request.POST.getlist("documents")
-        folder_ids = request.POST.getlist("folders")
-
         if not email or "@" not in email:
             messages.error(request, "Bitte geben Sie eine gültige E-Mail-Adresse ein.")
             return redirect("work:guest_invite", org_slug=self.organization.slug)
 
-        # Gast-Limit prüfen (Standard 25, per Addon erweiterbar)
-        if not self.organization.has_free_guest_slot():
-            messages.error(
-                request,
-                f"Gast-Limit erreicht ({self.organization.guest_limit}). Erweiterung als Addon im Kundenportal.",
+        try:
+            result = services.invite_guest(
+                self.organization,
+                self.membership,
+                email=email,
+                note=request.POST.get("message", "").strip(),
+                share_level=request.POST.get("share_level", "view"),
+                document_ids=request.POST.getlist("documents"),
+                folder_ids=request.POST.getlist("folders"),
             )
-            return redirect("work:members", org_slug=self.organization.slug)
-
-        user = User.objects.filter(email=email).first()
-        user_created = False
-        if user is None:
-            # Neuer Account ohne Passwort — Passwort-Setz-Mail folgt
-            user = User.objects.create_user(email=email, password=None)
-            user_created = True
+        except ServiceError as exc:
+            flash_error(request, exc)
         else:
-            existing = Membership.objects.filter(user=user, organization=self.organization).first()
-            if existing:
-                if existing.is_active:
-                    messages.warning(request, f"{email} ist bereits Mitglied dieser Organisation.")
-                else:
-                    messages.warning(
-                        request,
-                        f"{email} hat bereits eine deaktivierte Mitgliedschaft. "
-                        "Reaktivieren Sie diese in der Mitgliederliste.",
-                    )
-                return redirect("work:members", org_slug=self.organization.slug)
-
-        guest_membership = Membership.objects.create(
-            user=user,
-            organization=self.organization,
-            is_guest=True,
-            invited_by=request.user,
-        )
-
-        from apps.work.notifications.services import NotificationHub
-
-        # Ausgewählte Dokumente sofort freigeben
-        shared_docs = []
-        if document_ids:
-            motions = self._shareable_documents().filter(id__in=document_ids)
-            for motion in motions:
-                MotionShare.objects.get_or_create(
-                    motion=motion,
-                    scope="user",
-                    user=user,
-                    defaults={"level": share_level, "created_by": request.user, "message": note},
-                )
-                shared_docs.append(motion)
-                # In-App-Hinweis; die E-Mail bündelt alle Freigaben (keine Mail-Flut)
-                NotificationHub.notify_document_shared(
-                    motion, guest_membership, share_level, self.membership, send_email=False
-                )
-        shared_count = len(shared_docs)
-
-        # Ausgewählte Ordner sofort freigeben (rekursiv inkl. Unterordner)
-        shared_folders = []
-        if folder_ids:
-            shareable_folders = {str(folder.id): folder for folder, _depth in self._shareable_folders()}
-            for folder_id in folder_ids:
-                folder = shareable_folders.get(str(folder_id))
-                if folder is None:
-                    continue
-                FolderGuestShare.objects.update_or_create(
-                    folder=folder,
-                    user=user,
-                    defaults={"level": share_level, "created_by": request.user},
-                )
-                shared_folders.append(folder)
-                NotificationHub.notify_folder_shared(
-                    folder, guest_membership, share_level, self.membership, send_email=False
-                )
-        shared_folder_count = len(shared_folders)
-
-        send_guest_access_email(
-            request,
-            self.organization,
-            user,
-            note=note,
-            user_created=user_created,
-            shared_docs=shared_docs,
-            shared_folders=shared_folders,
-            share_level=share_level,
-        )
-
-        success_text = f"Gastzugang für {email} wurde eingerichtet."
-        if shared_count:
-            success_text += f" {shared_count} Dokument(e) freigegeben."
-        if shared_folder_count:
-            success_text += f" {shared_folder_count} Ordner freigegeben."
-        messages.success(request, success_text)
-        logger.info(
-            f"[Guests] Gastzugang {email} in '{self.organization.slug}' angelegt "
-            f"(von {request.user.email}, {shared_count} Dokument- und {shared_folder_count} Ordner-Freigaben)"
-        )
+            messages.success(request, result.message)
         return redirect("work:members", org_slug=self.organization.slug)
-
-
-def send_guest_access_email(
-    request,
-    organization,
-    user,
-    *,
-    note: str = "",
-    user_created: bool = False,
-    shared_docs=(),
-    shared_folders=(),
-    share_level: str = "view",
-) -> bool:
-    """
-    Gast-Mail: Passwort-Setz-Link (bestehender Reset-Mechanismus) bzw. Direktlink
-    zu den freigegebenen Dokumenten — auch zum erneuten Versand (Issue #75).
-    """
-    from django.conf import settings as django_settings
-    from django.contrib.auth.tokens import default_token_generator
-    from django.utils.encoding import force_bytes
-    from django.utils.http import urlsafe_base64_encode
-
-    base_url = getattr(django_settings, "SITE_URL", "https://mandari.de").rstrip("/")
-
-    if user_created or not user.has_usable_password():
-        uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
-        token = default_token_generator.make_token(user)
-        target_url = base_url + reverse("accounts:password_reset_confirm", kwargs={"uidb64": uidb64, "token": token})
-        action_hint = "Über den folgenden Link legen Sie Ihr Passwort fest und aktivieren Ihren Zugang:"
-    else:
-        target_url = base_url + reverse("work:guest_documents", kwargs={"org_slug": organization.slug})
-        action_hint = "Ihre freigegebenen Dokumente finden Sie hier:"
-
-    level_label = {"view": "Lesen", "comment": "Kommentieren", "edit": "Bearbeiten"}.get(share_level, share_level)
-    share_lines = ""
-    if shared_docs or shared_folders:
-        items = [f"- Dokument: {motion.title}" for motion in shared_docs]
-        items += [f"- Ordner: {folder.name} (inkl. Unterordner)" for folder in shared_folders]
-        share_lines = f"Für Sie freigegeben (Stufe: {level_label}):\n" + "\n".join(items) + "\n\n"
-
-    inviter = request.user.get_full_name() or request.user.email
-    subject = f"Gastzugang für {organization.name}"
-    plain_message = (
-        f"Hallo,\n\n"
-        f"{inviter} hat Ihnen einen Gastzugang zur Organisation "
-        f"{organization.name} auf Mandari Work eingerichtet.\n\n"
-        f"Als Gast sehen Sie ausschließlich die Dokumente, die für Sie freigegeben wurden.\n\n"
-        f"{f'Nachricht: {note}' + chr(10) + chr(10) if note else ''}"
-        f"{share_lines}"
-        f"{action_hint}\n{target_url}\n\n"
-        f"Falls Sie diese E-Mail nicht erwartet haben, können Sie sie ignorieren.\n"
-    )
-
-    success = send_email(subject=subject, body=plain_message, to=[user.email], fail_silently=True)
-    if not success:
-        logger.error(f"Failed to send guest invitation email to {user.email}")
-    return success
 
 
 class GuestAccessResendView(WorkViewMixin, View):
@@ -411,35 +114,11 @@ class GuestAccessResendView(WorkViewMixin, View):
     permission_required = "guests.invite"
 
     def post(self, request, *args, **kwargs):
-        from apps.tenants.models import Membership
-        from apps.work.motions.models import FolderGuestShare, MotionShare
-
-        member = get_object_or_404(
-            Membership, id=kwargs.get("member_id"), organization=self.organization, is_guest=True, is_active=True
-        )
-        shared_docs = [
-            share.motion
-            for share in MotionShare.objects.filter(
-                motion__organization=self.organization, scope="user", user=member.user
-            ).select_related("motion")
-        ]
-        shared_folders = [
-            share.folder
-            for share in FolderGuestShare.objects.filter(
-                folder__organization=self.organization, user=member.user
-            ).select_related("folder")
-        ]
-        send_guest_access_email(
-            request,
-            self.organization,
-            member.user,
-            note=request.POST.get("message", "").strip()[:500],
-            user_created=not member.user.has_usable_password(),
-            shared_docs=shared_docs,
-            shared_folders=shared_folders,
+        member = selectors.get_member_or_404(self.organization, kwargs.get("member_id"), is_guest=True, is_active=True)
+        services.resend_guest_access(
+            self.organization, member, request.user, note=request.POST.get("message", "").strip()[:500]
         )
         messages.success(request, f"Zugangs-E-Mail an {member.user.email} wurde erneut versendet.")
-        logger.info(f"[Guests] Zugang erneut gesendet an {member.user.email} in '{self.organization.slug}'")
         return redirect("work:member_detail", org_slug=self.organization.slug, member_id=member.id)
 
 
@@ -449,28 +128,8 @@ class InvitationResendView(WorkViewMixin, View):
     permission_required = "members.invite"
 
     def post(self, request, *args, **kwargs):
-        from apps.tenants.models import UserInvitation
-
-        invitation_id = kwargs.get("invitation_id")
-        invitation = get_object_or_404(
-            UserInvitation,
-            id=invitation_id,
-            organization=self.organization,
-            accepted_at__isnull=True,
-        )
-
-        # Extend expiration
-        from datetime import timedelta
-
-        invitation.expires_at = timezone.now() + timedelta(days=7)
-        invitation.save()
-
-        # Resend email
-        invite_view = MemberInviteView()
-        invite_view.request = request
-        invite_view.organization = self.organization
-        invite_view._send_invitation_email(invitation)
-
+        invitation = selectors.get_open_invitation_or_404(self.organization, kwargs.get("invitation_id"))
+        services.resend_invitation(self.organization, invitation)
         messages.success(request, f"Einladung an {invitation.email} wurde erneut versendet.")
         return redirect("work:members", org_slug=self.organization.slug)
 
@@ -481,19 +140,8 @@ class InvitationCancelView(WorkViewMixin, View):
     permission_required = "members.invite"
 
     def post(self, request, *args, **kwargs):
-        from apps.tenants.models import UserInvitation
-
-        invitation_id = kwargs.get("invitation_id")
-        invitation = get_object_or_404(
-            UserInvitation,
-            id=invitation_id,
-            organization=self.organization,
-            accepted_at__isnull=True,
-        )
-
-        email = invitation.email
-        invitation.delete()
-
+        invitation = selectors.get_open_invitation_or_404(self.organization, kwargs.get("invitation_id"))
+        email = services.cancel_invitation(invitation)
         messages.success(request, f"Einladung für {email} wurde zurückgezogen.")
         return redirect("work:members", org_slug=self.organization.slug)
 
@@ -504,17 +152,9 @@ class AcceptInvitationView(TemplateView):
     template_name = "work/organization/accept_invitation.html"
 
     def get(self, request, *args, **kwargs):
-        from apps.tenants.models import UserInvitation
-
         token = kwargs.get("token")
-
-        try:
-            invitation = (
-                UserInvitation.objects.select_related("organization", "invited_by")
-                .prefetch_related("roles")
-                .get(token=token)
-            )
-        except UserInvitation.DoesNotExist:
+        invitation = selectors.find_invitation_by_token(token)
+        if invitation is None:
             messages.error(request, "Einladung nicht gefunden oder bereits verwendet.")
             return redirect("accounts:login")
 
@@ -525,23 +165,14 @@ class AcceptInvitationView(TemplateView):
                 messages.error(request, "Diese Einladung ist abgelaufen.")
             return redirect("accounts:login")
 
-        # If user is logged in, show acceptance page
-        # If not, redirect to login or register depending on whether account exists
+        # Eingeloggt: Annahmeseite anzeigen; sonst je nach Konto zu Login oder Registrierung
         if request.user.is_authenticated:
             return super().get(request, *args, **kwargs)
-        # Store token in session
         request.session["pending_invitation_token"] = token
 
-        # Check if user with this email already exists
-        from apps.accounts.models import User
-
-        user_exists = User.objects.filter(email=invitation.email).exists()
-
-        if user_exists:
-            # User exists → redirect to login
+        if selectors.find_user_by_email(invitation.email) is not None:
             messages.info(request, "Bitte melden Sie sich an, um die Einladung anzunehmen.")
             return redirect("accounts:login")
-        # No account yet → redirect directly to registration
         messages.info(
             request,
             f"Willkommen! Erstellen Sie Ihr Konto, um {invitation.organization.name} beizutreten.",
@@ -550,76 +181,29 @@ class AcceptInvitationView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        from apps.tenants.models import UserInvitation
-
-        token = self.kwargs.get("token")
-        invitation = (
-            UserInvitation.objects.select_related("organization", "invited_by")
-            .prefetch_related("roles")
-            .get(token=token)
-        )
-
+        invitation = selectors.find_invitation_by_token(self.kwargs.get("token"))
         context["invitation"] = invitation
-        context["organization"] = invitation.organization
+        context["organization"] = invitation.organization if invitation else None
         return context
 
     def post(self, request, *args, **kwargs):
         """Accept the invitation and create membership."""
-        from apps.tenants.models import Membership, UserInvitation
-
         if not request.user.is_authenticated:
             return redirect("accounts:login")
 
-        token = kwargs.get("token")
-
-        try:
-            invitation = (
-                UserInvitation.objects.select_related("organization").prefetch_related("roles").get(token=token)
-            )
-        except UserInvitation.DoesNotExist:
+        invitation = selectors.find_invitation_by_token(kwargs.get("token"))
+        if invitation is None:
             messages.error(request, "Einladung nicht gefunden.")
             return redirect("accounts:login")
-
         if not invitation.is_valid:
             messages.error(request, "Diese Einladung ist nicht mehr gültig.")
             return redirect("accounts:login")
 
-        # Check if already a member
-        existing = Membership.objects.filter(user=request.user, organization=invitation.organization).first()
-
-        if existing:
-            if existing.is_active:
-                messages.info(request, "Sie sind bereits Mitglied dieser Organisation.")
-            else:
-                existing.is_active = True
-                existing.save()
-                messages.success(request, f"Willkommen zurück bei {invitation.organization.name}!")
+        message = services.accept_invitation(invitation, request.user)
+        if message.startswith("Sie sind bereits"):
+            messages.info(request, message)
         else:
-            # Create membership
-            membership = Membership.objects.create(
-                user=request.user,
-                organization=invitation.organization,
-                invited_by=invitation.invited_by,
-                invitation_accepted_at=timezone.now(),
-            )
+            messages.success(request, message)
 
-            # Add roles from invitation
-            if invitation.roles.exists():
-                membership.roles.set(invitation.roles.all())
-
-            # If no owner, set this user as owner
-            if not invitation.organization.owner:
-                invitation.organization.owner = request.user
-                invitation.organization.save()
-
-            messages.success(request, f"Willkommen bei {invitation.organization.name}!")
-
-        # Mark invitation as accepted
-        invitation.accepted_at = timezone.now()
-        invitation.accepted_by = request.user
-        invitation.save()
-
-        # Clear session token
         request.session.pop("pending_invitation_token", None)
-
         return redirect("work:dashboard", org_slug=invitation.organization.slug)

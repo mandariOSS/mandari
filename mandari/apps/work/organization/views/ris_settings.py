@@ -8,6 +8,8 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 from apps.work.motions import ris_submission
 
+from .. import selectors, services
+
 
 class OrganizationRisSettingsView(WorkViewMixin, TemplateView):
     """Reiter „Verwaltung“: Token hinterlegen, Status sehen, Verbindung trennen."""
@@ -16,8 +18,6 @@ class OrganizationRisSettingsView(WorkViewMixin, TemplateView):
     permission_required = "faction.manage"
 
     def get_context_data(self, **kwargs):
-        from apps.session.models import SessionApplication
-
         context = super().get_context_data(**kwargs)
         connection = ris_submission.get_connection(self.organization)
         usable, reason = ris_submission.connection_state(connection)
@@ -27,20 +27,12 @@ class OrganizationRisSettingsView(WorkViewMixin, TemplateView):
         context["connection"] = connection
         context["connection_usable"] = usable
         context["connection_reason"] = reason
-        context["submitted_applications"] = (
-            SessionApplication.objects.filter(submitting_organization=self.organization)
-            .select_related("tenant", "work_motion")
-            .order_by("-submitted_at")[:20]
-        )
+        context["submitted_applications"] = selectors.submitted_applications(self.organization)
         return context
 
     def post(self, request, *args, **kwargs):
-        action = request.POST.get("action")
-        if action == "disconnect":
-            connection = ris_submission.get_connection(self.organization)
-            if connection is not None:
-                connection.is_active = False
-                connection.save(update_fields=["is_active"])
+        if request.POST.get("action") == "disconnect":
+            if services.disconnect_ris(self.organization):
                 messages.success(request, "Die Verbindung zur Verwaltung wurde getrennt.")
         else:
             try:

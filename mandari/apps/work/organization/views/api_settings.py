@@ -15,8 +15,9 @@ from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
-from apps.work.faction.audit import log_event
 from apps.work.faction.models import FactionPublicApiAccess
+
+from .. import selectors, services
 
 
 class OrganizationApiSettingsView(WorkViewMixin, TemplateView):
@@ -29,11 +30,7 @@ class OrganizationApiSettingsView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
         context["active_tab"] = "api"
-
-        from apps.common.permissions import PermissionChecker
-
-        checker = PermissionChecker(self.membership)
-        context["can_manage_faction"] = checker.has_permission("faction.manage")
+        context["can_manage_faction"] = selectors.permission_checker(self.membership).has_permission("faction.manage")
 
         access = FactionPublicApiAccess.for_organization(self.organization)
         site_url = getattr(django_settings, "SITE_URL", "").rstrip("/")
@@ -63,75 +60,21 @@ class OrganizationApiSettingsView(WorkViewMixin, TemplateView):
 
     def _api_save(self, request):
         """Alle API-Optionen speichern (auditiert)."""
-        access = FactionPublicApiAccess.for_organization(self.organization)
-        access.is_enabled = request.POST.get("api_enabled") == "on"
-        access.show_location = request.POST.get("api_show_location") == "on"
-        access.show_agenda = request.POST.get("api_show_agenda") == "on"
-
-        def _int(name, current, lo, hi):
-            try:
-                return max(lo, min(int(request.POST.get(name, current)), hi))
-            except (TypeError, ValueError):
-                return current
-
-        access.past_days = _int("api_past_days", access.past_days, 0, 3650)
-        access.future_days = _int("api_future_days", access.future_days, 1, 3650)
-        access.cache_seconds = _int("api_cache_seconds", access.cache_seconds, 0, 86400)
-
-        # CORS-Origins: nur http(s)-Ursprünge übernehmen
-        raw_origins = request.POST.get("api_allowed_origins", "")
-        origins = []
-        for candidate in raw_origins.replace("\n", ",").split(","):
-            candidate = candidate.strip().rstrip("/")
-            if candidate.startswith(("https://", "http://")) and " " not in candidate:
-                origins.append(candidate)
-        access.allowed_origins = ", ".join(dict.fromkeys(origins))
-
-        access.save(
-            update_fields=[
-                "is_enabled",
-                "past_days",
-                "future_days",
-                "show_location",
-                "show_agenda",
-                "cache_seconds",
-                "allowed_origins",
-                "updated_at",
-            ]
+        data = services.ApiSettingsInput(
+            is_enabled=request.POST.get("api_enabled") == "on",
+            show_location=request.POST.get("api_show_location") == "on",
+            show_agenda=request.POST.get("api_show_agenda") == "on",
+            past_days=request.POST.get("api_past_days"),
+            future_days=request.POST.get("api_future_days"),
+            cache_seconds=request.POST.get("api_cache_seconds"),
+            allowed_origins_raw=request.POST.get("api_allowed_origins", ""),
         )
-        log_event(
-            "api_settings_changed",
-            access,
-            organization=self.organization,
-            membership=self.membership,
-            is_internal=False,
-            changes={
-                "is_enabled": access.is_enabled,
-                "past_days": access.past_days,
-                "future_days": access.future_days,
-                "show_location": access.show_location,
-                "show_agenda": access.show_agenda,
-                "cache_seconds": access.cache_seconds,
-                "allowed_origins": access.allowed_origins,
-            },
-        )
-        messages.success(
-            request,
-            "API-Einstellungen gespeichert." if access.is_enabled else "Öffentliche API deaktiviert.",
-        )
+        enabled = services.save_api_settings(self.organization, self.membership, data)
+        messages.success(request, "API-Einstellungen gespeichert." if enabled else "Öffentliche API deaktiviert.")
 
     def _api_regenerate(self, request):
         """API-Token erneuern — bisherige URLs werden sofort ungültig (auditiert)."""
-        access = FactionPublicApiAccess.for_organization(self.organization)
-        access.regenerate()
-        log_event(
-            "api_settings_changed",
-            access,
-            organization=self.organization,
-            membership=self.membership,
-            is_internal=False,
-            changes={"token": "erneuert"},
-        )
+        services.regenerate_api_token(self.organization, self.membership)
         messages.success(
             request,
             "API-Token erneuert. Bisherige API-URLs sind ab sofort ungültig — "
