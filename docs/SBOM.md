@@ -148,3 +148,13 @@
 *Dev-Abhängigkeiten (pytest, ruff, mypy u. a.) sind nicht Teil der Auslieferung
 und daher hier nicht aufgeführt. Vollständige, versionsgenaue Auflösung inkl.
 transitiver Pakete: siehe TODO oben (CycloneDX via syft in CI).*
+
+## Lizenzangaben (REUSE)
+
+Jede Quelldatei trägt einen `SPDX-License-Identifier`-Header; alles ohne Header (Bilder, Daten,
+Konfiguration, lokale Kopien von Fremdbibliotheken) ist in `REUSE.toml` zugeordnet. Die Lizenztexte
+liegen unter `LICENSES/`. Die Zuordnung: Quellcode AGPL-3.0-or-later, Dokumentation CC-BY-4.0,
+Konfiguration und Lockfiles CC0-1.0, Markenzeichen `LicenseRef-Mandari-Brand`, Fremdbibliotheken mit
+ihrer jeweiligen Lizenz. Prüfung lokal mit `pip install reuse && reuse lint`; im CI läuft die Prüfung
+im Job „Abhängigkeiten prüfen“ und wird ab 2027 blockierend. `reuse spdx` erzeugt daraus eine
+SPDX-Stückliste der Lizenzen, ergänzend zur CycloneDX-SBOM.

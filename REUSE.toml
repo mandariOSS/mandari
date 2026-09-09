@@ -1,0 +1,90 @@
+# REUSE-Konfiguration (https://reuse.software/spec-3.3/)
+#
+# Quellcode trägt SPDX-Header in den Dateien; hier stehen Lizenz- und
+# Urheberangaben für alles, was keinen Header tragen kann (Bilder, Daten,
+# Konfiguration, Fremdbibliotheken). Prüfung: `reuse lint`.
+
+version = 1
+SPDX-PackageName = "mandari"
+SPDX-PackageSupplier = "mandari Contributors"
+SPDX-PackageDownloadLocation = "https://github.com/mandariOSS/mandari"
+
+# --- Grundregel: alles, was keinen eigenen Header hat, ist AGPL-3.0-or-later ---
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025-2026 mandari Contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# --- Dokumentation ---
+[[annotations]]
+path = ["docs/**", "**/*.md", "**/*.rst"]
+precedence = "override"
+SPDX-FileCopyrightText = "2025-2026 mandari Contributors"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+# --- Konfiguration, Lockfiles, Metadaten, CI ---
+[[annotations]]
+path = [
+  ".github/**",
+  ".gitattributes",
+  ".gitignore",
+  ".dockerignore",
+  ".pre-commit-config.yaml",
+  ".editorconfig",
+  "REUSE.toml",
+  "**/*.json",
+  "**/*.lock",
+  "**/*.toml",
+  "**/*.cfg",
+  "**/*.ini",
+  "**/*.yml",
+  "**/*.yaml",
+  "**/*.txt",
+  "**/*.csv",
+  "**/.gitkeep",
+  "**/.env.example",
+  "**/tsconfig.json",
+  "**/package-lock.json",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2025-2026 mandari Contributors"
+SPDX-License-Identifier = "CC0-1.0"
+
+# --- Marke (Logo, Favicons): urheberrechtlich geschützt, keine freie Lizenz ---
+[[annotations]]
+path = ["mandari/static/brand/**", "mandari/static/images/**", "mandari/static/img/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2025-2026 mandari Contributors"
+SPDX-License-Identifier = "LicenseRef-Mandari-Brand"
+
+# --- Fremdbibliotheken (lokale Kopien, DSGVO-konform ohne CDN) ---
+[[annotations]]
+path = "mandari/static/vendor/leaflet/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2010-2023 Vladimir Agafonkin, 2010-2011 CloudMade"
+SPDX-License-Identifier = "BSD-2-Clause"
+
+[[annotations]]
+path = "mandari/static/vendor/chartjs/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2014-2024 Chart.js Contributors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "mandari/static/vendor/fullcalendar/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2023 Adam Shaw"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "mandari/static/vendor/marked/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2011-2024 Christopher Jeffrey and marked contributors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "mandari/static/vendor/sortablejs/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2019 Lebedev Konstantin and SortableJS contributors"
+SPDX-License-Identifier = "MIT"

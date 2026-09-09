@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: EUPL-1.2
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Backfill: AgendaItemPosition.organization aus der Altlast-Verknüpfung.
 
 Alt-Positionen (vor dem Sitzungsvorbereitungs-Umbau) hängen nur am

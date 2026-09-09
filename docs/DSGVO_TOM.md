@@ -63,7 +63,7 @@ als Anlage zum Auftragsverarbeitungsvertrag ([AVV-Muster](DSGVO_AVV_MUSTER.md)).
 - Prinzip der geringsten Rechte bei Rollenzuweisung (Standard-Rollen mit
   abgestuften Rechten).
 - Einladungsbasierte Konten (keine Selbstregistrierung in Mandanten).
-- Quelloffener Code (AGPL/EUPL) — überprüfbare Sicherheitsmaßnahmen.
+- Quelloffener Code (AGPL-3.0-or-later) — überprüfbare Sicherheitsmaßnahmen.
 - Regelmäßige automatisierte Testläufe (Smoke-Suiten) inkl. Permission- und
   Mandanten-Isolationstests vor jedem Release.
 

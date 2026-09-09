@@ -1,0 +1,15 @@
+mandari-Marke (Wortmarke, Logo, Favicons, Bildmarken)
+
+Die unter dieser Kennung zusammengefassten Dateien sind urheberrechtlich
+geschützte Kennzeichen des mandari-Projekts. Sie unterliegen NICHT der
+AGPL-3.0-or-later des Quellcodes.
+
+Erlaubt ist die unveränderte Verwendung, um auf mandari zu verweisen
+(z. B. „basiert auf mandari“) und der Betrieb einer unveränderten
+mandari-Installation. Nicht erlaubt ist die Verwendung der Marke für
+abgeleitete Produkte, eigene Angebote oder in einer Weise, die eine
+Verbindung mit dem mandari-Projekt suggeriert.
+
+Wer mandari unter eigenem Namen betreibt oder anpasst, ersetzt die
+Markendateien durch eigene (Einstellung „Branding“ bzw. Ordner
+mandari/static/brand/).

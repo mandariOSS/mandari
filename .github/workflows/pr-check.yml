@@ -233,6 +233,11 @@ jobs:
         run: |
           pip install pip-audit
           pip-audit -r mandari/requirements.lock --no-deps --progress-spinner off
+      - name: REUSE-Lizenzkonformität (zunächst informativ, ab 2027 blockierend)
+        continue-on-error: true
+        run: |
+          pip install reuse
+          reuse lint
 
   type-check:
     name: Typprüfung (mypy, Allowlist darf nur schrumpfen)
