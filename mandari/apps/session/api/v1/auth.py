@@ -16,7 +16,7 @@ nie ab; Endpunkte, die Rechte brauchen, werfen selbst 401/403 (RFC 9457).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from django.core.cache import cache
 from django.http import HttpRequest
@@ -67,7 +67,8 @@ class Principal:
             flag = TOKEN_PERMISSIONS.get(permission)
             return bool(flag and getattr(self.token, flag, False))
         if self.session_user is not None:
-            return bool(SessionPermissionChecker(self.session_user).has_permission(permission))
+            checker = cast(Any, SessionPermissionChecker)(self.session_user)  # permissions.py ist noch untypisiert
+            return bool(checker.has_permission(permission))
         return False
 
     def require(self, permission: str, detail: str) -> None:

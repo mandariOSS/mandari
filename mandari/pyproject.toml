@@ -60,8 +60,9 @@ dev = [
     "pytest-cov>=6.0.0",
     "factory-boy>=3.3.0",
     "ruff>=0.8.0",
-    "mypy>=1.13.0",
-    "django-stubs>=6.0.0",  # Django 6.0 compatible
+    "mypy==2.3.1",  # wie CI: Ergebnisse unterscheiden sich zwischen mypy-Versionen
+    "django-stubs[compatible-mypy]==6.1.0",
+    "sqlalchemy>=2.0",  # Schema-Contract gegen die Ingestor-Modelle (insight_core/schema_contract.py)
     "djlint==1.46.1",  # gleiche Version wie CI und pre-commit (Regelsatz weicht zwischen Versionen ab)
 ]
 
