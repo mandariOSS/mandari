@@ -226,6 +226,25 @@ jobs:
           pip install pip-audit
           pip-audit -r mandari/requirements.lock --no-deps --progress-spinner off
 
+  type-check:
+    name: Typprüfung (mypy, Allowlist darf nur schrumpfen)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Abhängigkeiten
+        run: |
+          pip install shared/
+          pip install -r mandari/requirements.lock
+          pip install "mypy>=1.13" "django-stubs[compatible-mypy]"
+      - name: mypy mit Allowlist
+        env:
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+        run: python scripts/mypy_allowlist.py
+
   ingestor-tests:
     name: Ingestor Tests
     runs-on: ubuntu-latest

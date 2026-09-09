@@ -92,6 +92,9 @@ addopts = "-v --tb=short"
 python_version = "3.12"
 plugins = ["mypy_django_plugin.main"]
 strict = true
+ignore_missing_imports = true
+exclude = ["migrations/"]
+# Gate mit schrumpfender Allowlist: scripts/mypy_allowlist.py (Module in scripts/mypy_allowlist.txt werden toleriert)
 
 [tool.django-stubs]
 django_settings_module = "mandari.settings"
