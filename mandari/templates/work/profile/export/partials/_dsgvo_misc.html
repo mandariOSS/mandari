@@ -1,0 +1,119 @@
+{# DSGVO-Datenexport: 8. Abwesenheiten, 9. Änderungsanträge, 10. Benachrichtigungen, 11. Support-Tickets #}
+{# Kontext: data #}
+<!-- 8. Absences -->
+<h2>8. Abwesenheiten</h2>
+{% if data.absences %}
+<table>
+    <tr>
+        <th class="col-date">Von</th>
+        <th class="col-date">Bis</th>
+        <th>Grund</th>
+        <th class="col-22">Stellvertretung</th>
+        <th class="col-narrow">Aktiv</th>
+    </tr>
+    {% for a in data.absences %}
+    <tr>
+        <td>{{ a.start_date }}</td>
+        <td>{{ a.end_date }}</td>
+        <td>{{ a.reason|default:"&mdash;" }}</td>
+        <td>{{ a.deputy|default:"&mdash;" }}</td>
+        <td>{% if a.is_active %}Ja{% else %}Nein{% endif %}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Abwesenheiten vorhanden.</p>
+{% endif %}
+
+
+<!-- 9. Change Requests -->
+<h2>9. &Auml;nderungsantr&auml;ge</h2>
+{% if data.change_requests %}
+<table>
+    <tr>
+        <th class="col-18">Typ</th>
+        <th class="col-status">Status</th>
+        <th>Grund</th>
+        <th class="col-date">Erstellt</th>
+        <th class="col-date">Entschieden</th>
+    </tr>
+    {% for r in data.change_requests %}
+    <tr>
+        <td>{{ r.type }}</td>
+        <td>{{ r.status }}</td>
+        <td>{{ r.reason|default:"&mdash;" }}</td>
+        <td>{{ r.created_at }}</td>
+        <td>{{ r.decided_at|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine &Auml;nderungsantr&auml;ge vorhanden.</p>
+{% endif %}
+
+
+<!-- 10. Notifications -->
+<div class="page-break"></div>
+<h2>10. Benachrichtigungen</h2>
+
+{% if data.notifications.preferences %}
+<h3>Pr&auml;ferenzen</h3>
+<table class="kv-table">
+    <tr><td>E-Mail aktiviert</td><td>{% if data.notifications.preferences.email_enabled %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Push aktiviert</td><td>{% if data.notifications.preferences.push_enabled %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>E-Mail-Zusammenfassung</td><td>{{ data.notifications.preferences.email_digest }}</td></tr>
+    <tr><td>Ruhezeiten</td><td>{% if data.notifications.preferences.quiet_hours_enabled %}{{ data.notifications.preferences.quiet_hours_start }} &ndash; {{ data.notifications.preferences.quiet_hours_end }}{% else %}Aus{% endif %}</td></tr>
+</table>
+{% endif %}
+
+<h3>Benachrichtigungen ({{ data.notifications.notifications|length }})</h3>
+{% if data.notifications.notifications %}
+<table>
+    <tr>
+        <th class="col-date">Datum</th>
+        <th class="col-22">Typ</th>
+        <th>Titel</th>
+        <th class="col-narrow">Gelesen</th>
+    </tr>
+    {% for n in data.notifications.notifications %}
+    <tr>
+        <td>{{ n.created_at }}</td>
+        <td>{{ n.type }}</td>
+        <td>{{ n.title }}</td>
+        <td>{% if n.is_read %}Ja{% else %}Nein{% endif %}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Benachrichtigungen vorhanden.</p>
+{% endif %}
+
+
+<!-- 11. Support -->
+<h2>11. Support-Tickets</h2>
+{% if data.support %}
+{% for t in data.support %}
+<div class="item-header">{{ t.subject }}</div>
+<table class="kv-table">
+    <tr><td>Kategorie</td><td>{{ t.category }}</td></tr>
+    <tr><td>Priorit&auml;t</td><td>{{ t.priority }}</td></tr>
+    <tr><td>Status</td><td>{{ t.status }}</td></tr>
+    <tr><td>Erstellt</td><td>{{ t.created_at }}</td></tr>
+    {% if t.resolved_at %}<tr><td>Gel&ouml;st</td><td>{{ t.resolved_at }}</td></tr>{% endif %}
+</table>
+{% if t.description %}
+<div class="content-block">{{ t.description }}</div>
+{% endif %}
+{% if t.messages %}
+<h3>Nachrichten</h3>
+{% for msg in t.messages %}
+<div class="content-block">
+    <strong>{{ msg.created_at }}{% if msg.is_from_support %} (Support){% endif %}:</strong><br>
+    {{ msg.content }}
+</div>
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Support-Tickets vorhanden.</p>
+{% endif %}

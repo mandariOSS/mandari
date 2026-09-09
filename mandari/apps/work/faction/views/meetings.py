@@ -10,12 +10,14 @@ Simplified architecture: 4 views instead of 13.
 """
 
 import logging
+import uuid
 from datetime import datetime
 
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView
 
@@ -28,6 +30,9 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 from ._helpers import _get_meeting_context
+
+# Platzhalter in der Panel-URL (identisch mit PANEL_ITEM_PLACEHOLDER in frontend/alpine/faction-detail.ts)
+PANEL_ITEM_PLACEHOLDER = uuid.UUID(int=0)
 
 
 class FactionMeetingListView(WorkViewMixin, TemplateView):
@@ -188,6 +193,18 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
         meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
 
         context.update(_get_meeting_context(self, meeting))
+        # Konfiguration der Alpine-Komponente `factionDetail` (frontend/alpine/faction-detail.ts):
+        # Panel-URL mit Platzhalter-UUID, die clientseitig durch die TOP-ID ersetzt wird
+        context["detail_config"] = {
+            "panelUrlTemplate": reverse(
+                "work:faction_item_panel",
+                kwargs={
+                    "org_slug": self.organization.slug,
+                    "meeting_id": meeting.id,
+                    "item_id": PANEL_ITEM_PLACEHOLDER,
+                },
+            ),
+        }
         return context
 
 

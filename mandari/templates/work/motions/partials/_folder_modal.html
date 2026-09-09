@@ -1,0 +1,71 @@
+{% comment %}
+Ordner-Modal (Neu / Bearbeiten / Löschen). Alpine-Scope: documentManager (folderModal).
+Kontext: folder_color_choices, folder_entries
+{% endcomment %}
+<div x-show="folderModal.open" x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     @keydown.escape.window="folderModal.open = false">
+    <div class="absolute inset-0 bg-black/40" @click="folderModal.open = false"></div>
+    <div class="relative bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-xl w-full max-w-md p-5">
+        <h3 class="text-base font-bold text-gray-900 dark:text-white mb-4"
+            x-text="folderModal.mode === 'create' ? 'Neuer Ordner' : 'Ordner bearbeiten'"></h3>
+
+        <form method="post" :action="folderModal.action">
+            {% csrf_token %}
+            <input type="hidden" name="parent" :value="folderModal.parent">
+
+            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Name</label>
+            <input type="text" name="name" x-model="folderModal.name" required maxlength="100"
+                   class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 mb-4">
+
+            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Farbe</label>
+            <input type="hidden" name="color" :value="folderModal.color">
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+                <button type="button" @click="folderModal.color = ''"
+                        :class="folderModal.color === '' ? 'ring-2 ring-offset-1 ring-primary-500' : ''"
+                        class="w-6 h-6 rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+                        title="Keine Farbe"></button>
+                {% for value, label in folder_color_choices %}
+                <button type="button" @click="folderModal.color = '{{ value }}'"
+                        :class="folderModal.color === '{{ value }}' ? 'ring-2 ring-offset-1 ring-primary-500' : ''"
+                        class="w-6 h-6 rounded-full bg-{{ value }}-500" title="{{ label }}"></button>
+                {% endfor %}
+            </div>
+
+            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1"
+                   x-text="folderModal.mode === 'create' ? 'Anlegen in' : 'Verschieben nach'"></label>
+            <select x-model="folderModal.parent"
+                    class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-primary-500 mb-4">
+                <option value="">Alle Dokumente (Wurzel)</option>
+                {% for entry in folder_entries %}
+                <option value="{{ entry.folder.id }}" x-show="folderModal.id !== '{{ entry.folder.id }}'">{% for _ in ''|center:entry.depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ entry.folder.name }}</option>
+                {% endfor %}
+            </select>
+            <p class="text-[11px] text-gray-400 -mt-3 mb-4">Maximal 4 Ebenen. Namen müssen je Ebene eindeutig sein.</p>
+
+            <div class="flex items-center gap-2">
+                <c-ui.button type="submit" x-text="folderModal.mode === 'create' ? 'Ordner anlegen' : 'Speichern'">Speichern</c-ui.button>
+                <c-ui.button variant="ghost" @click="folderModal.open = false">Abbrechen</c-ui.button>
+            </div>
+        </form>
+
+        <!-- Löschen (nur im Bearbeiten-Modus) -->
+        <template x-if="folderModal.mode === 'edit'">
+            <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <form method="post" :action="folderModal.deleteAction"
+                      @submit="if (!confirm('Ordner wirklich löschen?')) $event.preventDefault()">
+                    {% csrf_token %}
+                    <p class="text-xs text-gray-500 mb-2">
+                        Beim Löschen wandern alle Inhalte (Dokumente und Unterordner) nach
+                        „<span x-text="folderModal.parentName"></span>“.
+                    </p>
+                    <button type="submit"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        Ordner löschen
+                    </button>
+                </form>
+            </div>
+        </template>
+    </div>
+</div>

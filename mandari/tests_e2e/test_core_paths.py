@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from playwright.sync_api import expect
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -67,28 +68,30 @@ class TestUiKit:
         goto("/dev/ui/")
         page.click("text=Modal öffnen")
         dialog = page.locator("dialog#demo-modal")
+        expect(dialog).to_be_visible()
         assert dialog.evaluate("el => el.open")
         # Fokus liegt im Dialog (natives <dialog>: Fokusfalle durch den Browser)
         assert page.evaluate("() => document.activeElement.closest('dialog#demo-modal') !== null")
         page.keyboard.press("Escape")
-        assert not dialog.evaluate("el => el.open")
+        expect(dialog).to_be_hidden()
         page.click("text=Modal öffnen")
+        expect(dialog).to_be_visible()
         page.click("dialog#demo-modal button[aria-label='Schließen']")
-        assert not dialog.evaluate("el => el.open")
+        expect(dialog).to_be_hidden()
 
     def test_tabs_keyboard_navigation(self, page: Any, goto: Any) -> None:
         goto("/dev/ui/")
         first = page.locator("[role=tab]#tab-allgemein")
         second = page.locator("[role=tab]#tab-rechte")
-        assert first.get_attribute("aria-selected") == "true"
-        assert page.locator("#panel-allgemein").is_visible()
-        assert not page.locator("#panel-rechte").is_visible()
+        expect(first).to_have_attribute("aria-selected", "true")
+        expect(page.locator("#panel-allgemein")).to_be_visible()
+        expect(page.locator("#panel-rechte")).to_be_hidden()
         first.focus()
         page.keyboard.press("ArrowRight")
-        assert second.get_attribute("aria-selected") == "true"
-        assert page.locator("#panel-rechte").is_visible()
+        expect(second).to_have_attribute("aria-selected", "true")
+        expect(page.locator("#panel-rechte")).to_be_visible()
         page.keyboard.press("Home")
-        assert first.get_attribute("aria-selected") == "true"
+        expect(first).to_have_attribute("aria-selected", "true")
 
 
 class TestWorkPortal:

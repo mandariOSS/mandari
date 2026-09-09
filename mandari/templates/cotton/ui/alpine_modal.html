@@ -1,0 +1,20 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Alpine-gesteuertes Modal (x-show) für Seiten, die ihren Dialogzustand selbst in x-data halten.
+  <c-ui.alpine-modal show="showItemModal" size="sm|md|lg" panel_class="max-h-[90vh] overflow-y-auto">
+      <form …>Kopf, Inhalt und Fuß des Dialogs</form>
+  </c-ui.alpine-modal>
+`show` ist der Name der booleschen Alpine-Variable im umgebenden x-data; ein Klick auf den Hintergrund
+setzt sie auf false. Größen: sm = max-w-md, md = max-w-xl, lg = max-w-2xl. `panel_class` erweitert den
+Dialogkasten, `class` den zentrierenden Wrapper (z. B. py-8). Für einfache Dialoge ohne eigenen
+Zustand ist <c-ui.modal> (natives <dialog>) vorzuziehen.
+{% endcomment %}
+<c-vars show="open" size="sm" panel_class="" class="" />
+<div x-show="{{ show }}" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition {{ attrs }}>
+    <div class="flex items-center justify-center min-h-screen px-4 {{ class }}">
+        <div class="fixed inset-0 bg-black/50" @click="{{ show }} = false"></div>
+        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full {% if size == 'lg' %}max-w-2xl{% elif size == 'md' %}max-w-xl{% else %}max-w-md{% endif %} {{ panel_class }}" @click.stop>
+            {{ slot }}
+        </div>
+    </div>
+</div>

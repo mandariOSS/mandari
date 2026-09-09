@@ -1,0 +1,9 @@
+{% comment %}
+„Link kopieren“ im Panel-Fuß (kanbanBoard.copyTaskLink). Kontext: task, organization
+{% endcomment %}
+<button type="button"
+        @click="copyTaskLink('{% url 'work:tasks' org_slug=organization.slug %}?open={{ task.id }}')"
+        class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+        title="Link kopieren">
+    <i data-lucide="link" class="w-4 h-4"></i>
+</button>

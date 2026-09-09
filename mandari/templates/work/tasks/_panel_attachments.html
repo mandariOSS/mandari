@@ -38,7 +38,7 @@
 
 {% if can_edit %}
 {# Upload-Zone #}
-<div x-data="dropZone()" class="relative">
+<div x-data="dropZone" class="relative">
     <form hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
           hx-target="#panel-attachments"
           hx-swap="innerHTML"

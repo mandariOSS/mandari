@@ -1,0 +1,118 @@
+{# Fraktionssitzung – Modale für Tagesordnungspunkte: anlegen/bearbeiten, löschen, Abstimmung erfassen #}
+{# Kontext: organization, meeting; Zustand aus x-data="factionDetail" (showItemModal, showDeleteModal, showDecisionModal, …) #}
+
+{# TOP anlegen / bearbeiten #}
+<c-ui.alpine-modal show="showItemModal">
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-target="#agenda-container" hx-swap="innerHTML"
+          @htmx:after-request="if ($event.detail.successful) { showItemModal = false; }">
+        {% csrf_token %}
+        <input type="hidden" name="action" x-bind:value="itemMode === 'add' ? 'add_item' : 'edit_item'">
+        <input type="hidden" name="visibility" x-bind:value="itemVisibility">
+        <input type="hidden" name="item_id" x-bind:value="itemId">
+        <input type="hidden" name="parent_id" x-bind:value="parentId">
+
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h3 class="text-lg font-semibold" x-text="itemMode === 'add' ? (parentId ? 'Unterpunkt hinzufügen' : 'TOP hinzufügen') : 'TOP bearbeiten'"></h3>
+            <button type="button" @click="showItemModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="p-4 space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Titel <span class="text-red-500">*</span></label>
+                <input type="text" name="title" x-model="itemTitle" required
+                       class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                <textarea name="description" x-model="itemDescription" rows="3"
+                          class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"></textarea>
+            </div>
+        </div>
+
+        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+            <c-ui.button variant="ghost" @click="showItemModal = false">Abbrechen</c-ui.button>
+            <c-ui.button type="submit">Speichern</c-ui.button>
+        </div>
+    </form>
+</c-ui.alpine-modal>
+
+{# TOP löschen #}
+<c-ui.alpine-modal show="showDeleteModal">
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-target="#agenda-container" hx-swap="innerHTML"
+          @htmx:after-request="if ($event.detail.successful) { showDeleteModal = false; }">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_item">
+        <input type="hidden" name="item_id" x-bind:value="deleteItemId">
+
+        <div class="p-6 text-center">
+            <div class="w-16 h-16 mx-auto mb-4 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                <i data-lucide="trash-2" class="w-8 h-8 text-red-600 dark:text-red-400"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">TOP löschen?</h3>
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-2" x-text="deleteItemTitle"></p>
+        </div>
+
+        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+            <c-ui.button variant="ghost" @click="showDeleteModal = false">Abbrechen</c-ui.button>
+            <c-ui.button type="submit" variant="danger">Löschen</c-ui.button>
+        </div>
+    </form>
+</c-ui.alpine-modal>
+
+{# Abstimmung erfassen #}
+<c-ui.alpine-modal show="showDecisionModal">
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-target="#agenda-container" hx-swap="innerHTML"
+          @htmx:after-request="if ($event.detail.successful) { showDecisionModal = false; }">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="record_decision">
+        <input type="hidden" name="agenda_item_id" x-bind:value="decisionItemId">
+
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h3 class="text-lg font-semibold">Abstimmung erfassen</h3>
+            <button type="button" @click="showDecisionModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="p-4 space-y-4">
+            <p class="text-sm text-gray-500" x-text="decisionItemTitle"></p>
+
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-green-600 mb-1">Ja</label>
+                    <input type="number" name="votes_yes" min="0" value="0"
+                           class="w-full px-3 py-2 text-center border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-green-500 focus:ring-2 focus:ring-green-500/20 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-red-600 mb-1">Nein</label>
+                    <input type="number" name="votes_no" min="0" value="0"
+                           class="w-full px-3 py-2 text-center border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Enthaltung</label>
+                    <input type="number" name="votes_abstain" min="0" value="0"
+                           class="w-full px-3 py-2 text-center border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-gray-400 focus:ring-2 focus:ring-gray-400/20 outline-none">
+                </div>
+            </div>
+
+            <c-form.select name="result" label="Ergebnis">
+                <option value="accepted">Angenommen</option>
+                <option value="rejected">Abgelehnt</option>
+                <option value="postponed">Vertagt</option>
+                <option value="modified">Geändert angenommen</option>
+            </c-form.select>
+
+            <c-form.textarea name="decision_text" label="Beschlusstext (optional)" rows="2" placeholder="Abweichender Beschlusstext..." />
+        </div>
+
+        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+            <c-ui.button variant="ghost" @click="showDecisionModal = false">Abbrechen</c-ui.button>
+            <c-ui.button type="submit">Erfassen</c-ui.button>
+        </div>
+    </form>
+</c-ui.alpine-modal>

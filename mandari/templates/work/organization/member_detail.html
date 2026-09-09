@@ -9,174 +9,59 @@
 {% endblock %}
 
 {% block header_actions %}
-<a href="{% url 'work:members' org_slug=organization.slug %}"
-   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600">
-    <i data-lucide="arrow-left" class="w-4 h-4"></i>
-    Zurück
-</a>
+<c-ui.button variant="secondary" href="{% url 'work:members' org_slug=organization.slug %}" icon="arrow-left">Zurück</c-ui.button>
 {% endblock %}
 
 {% block work_content %}
 <div class="max-w-3xl mx-auto">
-    <!-- Member Info Card -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6 fade-up">
-        <div class="p-6">
-            <div class="flex items-start gap-4">
-                <!-- Avatar -->
-                <div class="w-16 h-16 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-xl">
-                    {% if member.user.avatar %}
-                    <img src="{{ member.user.avatar.url }}" alt="" class="w-16 h-16 rounded-full object-cover">
-                    {% else %}
-                    {{ member.user.first_name|slice:":1"|upper|default:member.user.email|slice:":1"|upper }}
+    {# Mitgliedskarte #}
+    <c-ui.card class="mb-6 fade-up">
+        <div class="flex items-start gap-4">
+            <div class="w-16 h-16 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-xl">
+                {% if member.user.avatar %}
+                <img src="{{ member.user.avatar.url }}" alt="" class="w-16 h-16 rounded-full object-cover">
+                {% else %}
+                {{ member.user.first_name|slice:":1"|upper|default:member.user.email|slice:":1"|upper }}
+                {% endif %}
+            </div>
+
+            <div class="flex-1">
+                <div class="flex items-center gap-3 mb-1">
+                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                        {{ member.user.get_full_name|default:"Kein Name" }}
+                    </h2>
+                    {% if is_owner %}<c-ui.badge color="amber">Eigentümer</c-ui.badge>{% endif %}
+                    {% if member.is_guest %}
+                    <span class="px-2 py-0.5 text-xs bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-full">Gast</span>
+                    {% endif %}
+                    {% if not member.is_active %}<c-ui.badge color="red">Deaktiviert</c-ui.badge>{% endif %}
+                </div>
+                <p class="text-gray-500 dark:text-gray-400">{{ member.user.email }}</p>
+
+                <div class="mt-3 flex flex-wrap gap-4 text-sm text-gray-500">
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="calendar" class="w-4 h-4"></i>
+                        Beigetreten {{ member.joined_at|date:"d.m.Y" }}
+                    </span>
+                    {% if member.invited_by %}
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="user-plus" class="w-4 h-4"></i>
+                        Eingeladen von {{ member.invited_by.get_full_name|default:member.invited_by.email }}
+                    </span>
                     {% endif %}
                 </div>
-
-                <div class="flex-1">
-                    <div class="flex items-center gap-3 mb-1">
-                        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
-                            {{ member.user.get_full_name|default:"Kein Name" }}
-                        </h2>
-                        {% if is_owner %}
-                        <span class="px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">
-                            Eigentümer
-                        </span>
-                        {% endif %}
-                        {% if member.is_guest %}
-                        <span class="px-2 py-0.5 text-xs bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 rounded-full">
-                            Gast
-                        </span>
-                        {% endif %}
-                        {% if not member.is_active %}
-                        <span class="px-2 py-0.5 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-full">
-                            Deaktiviert
-                        </span>
-                        {% endif %}
-                    </div>
-                    <p class="text-gray-500 dark:text-gray-400">{{ member.user.email }}</p>
-
-                    <div class="mt-3 flex flex-wrap gap-4 text-sm text-gray-500">
-                        <span class="flex items-center gap-1">
-                            <i data-lucide="calendar" class="w-4 h-4"></i>
-                            Beigetreten {{ member.joined_at|date:"d.m.Y" }}
-                        </span>
-                        {% if member.invited_by %}
-                        <span class="flex items-center gap-1">
-                            <i data-lucide="user-plus" class="w-4 h-4"></i>
-                            Eingeladen von {{ member.invited_by.get_full_name|default:member.invited_by.email }}
-                        </span>
-                        {% endif %}
-                    </div>
-                </div>
             </div>
         </div>
-    </div>
+    </c-ui.card>
 
+    {# Gast: keine Rollen, keine Berechtigungen – nur Freigaben #}
     {% if member.is_guest %}
-    <!-- Gast: keine Rollen, keine Berechtigungen -->
-    <div class="bg-teal-50 dark:bg-teal-900/20 rounded-xl border border-teal-200 dark:border-teal-800 mb-6 p-6">
-        <h3 class="font-semibold text-teal-800 dark:text-teal-200 flex items-center gap-2 mb-2">
-            <i data-lucide="user-round" class="w-5 h-5"></i>
-            Gast-Zugang
-        </h3>
-        <p class="text-sm text-teal-700 dark:text-teal-300">
-            Diese Person ist Gast: Sie hat keine Rollen und keine Berechtigungen und sieht im
-            Work-Portal ausschließlich die Dokumente, die explizit für sie freigegeben wurden
-            (Teilen-Dialog am Dokument). Der Zugang zählt gegen das Gast-Limit der Organisation.
-        </p>
-        {% if can_invite_guests %}
-        <form method="post" action="{% url 'work:guest_access_resend' org_slug=organization.slug member_id=member.id %}"
-              class="mt-4 flex flex-wrap items-center gap-3">
-            {% csrf_token %}
-            <button type="submit"
-                    class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-white dark:bg-gray-800 border border-teal-300 dark:border-teal-700 text-teal-800 dark:text-teal-200 hover:bg-teal-100 dark:hover:bg-teal-900/40">
-                <i data-lucide="mail" class="w-4 h-4"></i>
-                Zugang erneut senden
-            </button>
-            <span class="text-xs text-teal-700/80 dark:text-teal-300/80">
-                {% if guest_has_password %}Schickt den Link zu den freigegebenen Dokumenten.{% else %}Der Gast hat noch kein Passwort gesetzt – schickt einen neuen Passwort-Link (der alte läuft nach kurzer Zeit ab).{% endif %}
-            </span>
-        </form>
-        {% endif %}
-    </div>
-    {% endif %}
-
-    {% if member.is_guest %}
-    <!-- Was sieht dieser Gast? Freigaben mit Entzug (Issue #77) -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6" id="guest-shares">
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <i data-lucide="eye" class="w-5 h-5 text-gray-400"></i>
-                Was sieht dieser Gast?
-            </h3>
-            <span class="text-sm text-gray-500">{{ guest_document_shares|length }} Dokument{{ guest_document_shares|length|pluralize:"e" }} &middot; {{ guest_folder_shares|length }} Ordner</span>
-        </div>
-        {% if guest_document_shares or guest_folder_shares %}
-        <div class="divide-y divide-gray-200 dark:divide-gray-700">
-            {% for share in guest_folder_shares %}
-            <div class="px-6 py-3 flex items-center justify-between gap-4">
-                <div class="min-w-0 flex items-start gap-3">
-                    <i data-lucide="folder" class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5"></i>
-                    <div class="min-w-0">
-                        <a href="{% url 'work:documents' org_slug=organization.slug %}?ordner={{ share.folder.id }}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">{{ share.folder.name }}</a>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">
-                            Ordner-Freigabe &middot; Stufe {{ share.get_level_display }} &middot; inkl. {{ share.subfolder_count }} Unterordner, aktuell {{ share.document_count }} Dokument{{ share.document_count|pluralize:"e" }}
-                            &middot; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}
-                        </p>
-                    </div>
-                </div>
-                {% if can_manage_guest_shares %}
-                <form method="post" action="{% url 'work:document_folder_share_remove' org_slug=organization.slug share_id=share.id %}"
-                      onsubmit="return confirm('Ordner-Freigabe „{{ share.folder.name|escapejs }}“ entziehen?');">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}#guest-shares">
-                    <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30">
-                        <i data-lucide="x" class="w-3.5 h-3.5"></i> Entziehen
-                    </button>
-                </form>
-                {% endif %}
-            </div>
-            {% endfor %}
-            {% for share in guest_document_shares %}
-            <div class="px-6 py-3 flex items-center justify-between gap-4">
-                <div class="min-w-0 flex items-start gap-3">
-                    <i data-lucide="file-text" class="w-5 h-5 text-primary-500 flex-shrink-0 mt-0.5"></i>
-                    <div class="min-w-0">
-                        <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=share.motion.id %}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">{{ share.motion.title }}</a>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">
-                            Dokument-Freigabe &middot; Stufe {{ share.get_level_display }} &middot; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}
-                        </p>
-                    </div>
-                </div>
-                {% if can_manage_guest_shares %}
-                <form method="post" action="{% url 'work:document_share_remove' org_slug=organization.slug share_id=share.id %}"
-                      onsubmit="return confirm('Freigabe für „{{ share.motion.title|escapejs }}“ entziehen?');">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}#guest-shares">
-                    <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30">
-                        <i data-lucide="x" class="w-3.5 h-3.5"></i> Entziehen
-                    </button>
-                </form>
-                {% endif %}
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">Dieser Gast hat aktuell keine Freigaben und sieht keine Dokumente.</p>
-        {% endif %}
-    </div>
-    {% endif %}
-
-    <!-- Role Management -->
-    {% if member.is_guest %}
+    {% include "work/organization/partials/_member_guest_access.html" %}
     {% elif can_edit %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6">
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="font-semibold text-gray-900 dark:text-white">Rollen verwalten</h3>
-        </div>
-        <form method="post" class="p-6">
+    <c-ui.card title="Rollen verwalten" class="mb-6">
+        <form method="post">
             {% csrf_token %}
             <input type="hidden" name="action" value="update_roles">
-
             <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
                 {% for role in available_roles %}
                 <label class="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors">
@@ -185,165 +70,46 @@
                            class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
                     <div>
                         <span class="block font-medium text-sm text-gray-900 dark:text-white">{{ role.name }}</span>
-                        {% if role.is_admin %}
-                        <span class="text-xs text-amber-600">Administrator</span>
-                        {% endif %}
+                        {% if role.is_admin %}<span class="text-xs text-amber-600">Administrator</span>{% endif %}
                     </div>
                 </label>
                 {% endfor %}
             </div>
-
-            <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
-                <i data-lucide="save" class="w-4 h-4"></i>
-                Rollen speichern
-            </button>
+            <c-ui.button type="submit" icon="save">Rollen speichern</c-ui.button>
         </form>
-    </div>
+    </c-ui.card>
     {% else %}
-    <!-- Read-only role display -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6">
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="font-semibold text-gray-900 dark:text-white">Rollen</h3>
+    <c-ui.card title="Rollen" class="mb-6">
+        {% if member.roles.exists %}
+        <div class="flex flex-wrap gap-2">
+            {% for role in member.roles.all %}
+            <span class="px-3 py-1.5 text-sm rounded-full" style="background-color: {{ role.color }}20; color: {{ role.color }}">
+                {{ role.name }}
+            </span>
+            {% endfor %}
         </div>
-        <div class="p-6">
-            {% if member.roles.exists %}
-            <div class="flex flex-wrap gap-2">
-                {% for role in member.roles.all %}
-                <span class="px-3 py-1.5 text-sm rounded-full" style="background-color: {{ role.color }}20; color: {{ role.color }}">
-                    {{ role.name }}
-                </span>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="text-gray-500">Keine Rollen zugewiesen</p>
-            {% endif %}
-        </div>
-    </div>
+        {% else %}
+        <p class="text-gray-500">Keine Rollen zugewiesen</p>
+        {% endif %}
+    </c-ui.card>
     {% endif %}
 
-    <!-- Effektive Berechtigungen (Matrix mit Herkunft) -->
     {% if not member.is_guest %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6"
-         x-data="{ open: false }">
-        <button type="button" @click="open = !open"
-                class="w-full px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between text-left">
-            <div>
-                <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <i data-lucide="key-round" class="w-5 h-5 text-gray-400"></i>
-                    Effektive Berechtigungen
-                </h3>
-                <p class="text-sm text-gray-500 mt-1">
-                    {{ effective_permission_codes|length }} Berechtigungen aktiv —
-                    aus Rollen, individuell erweitert oder explizit verweigert
-                </p>
-            </div>
-            <i data-lucide="chevron-down" class="w-5 h-5 text-gray-400 transition-transform" :class="open && 'rotate-180'"></i>
-        </button>
-
-        <form method="post" x-show="open" x-cloak>
-            {% csrf_token %}
-            <input type="hidden" name="action" value="update_permissions">
-
-            <div class="px-6 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 text-xs text-gray-500 flex flex-wrap gap-x-6 gap-y-1">
-                <span class="flex items-center gap-1.5">
-                    <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-green-500"></i>
-                    Aus Rolle (read-only, Herkunft angezeigt)
-                </span>
-                <span class="flex items-center gap-1.5">
-                    <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-blue-500"></i>
-                    Individuell = zusätzlich gewährt
-                </span>
-                <span class="flex items-center gap-1.5">
-                    <i data-lucide="minus-circle" class="w-3.5 h-3.5 text-red-500"></i>
-                    Verweigert = überschreibt Rollen (höchste Priorität)
-                </span>
-            </div>
-
-            <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-[32rem] overflow-y-auto">
-                {% for cat_code, cat in permission_categories.items %}
-                <div class="px-6 py-4">
-                    <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{{ cat.name }}</h4>
-                    <div class="space-y-1">
-                        <div class="grid grid-cols-12 gap-x-2 gap-y-1 text-xs text-gray-400 pb-1">
-                            <span class="hidden sm:block sm:col-span-6"></span>
-                            <span class="col-span-6 sm:col-span-3 text-center">Individuell</span>
-                            <span class="col-span-6 sm:col-span-3 text-center">Verweigert</span>
-                        </div>
-                        {% for perm in cat.permissions %}
-                        {% with sources=role_permission_sources|dict_get:perm.code %}
-                        <div class="grid grid-cols-12 gap-x-2 gap-y-1 items-center py-1 rounded {% if perm.code in denied_permission_codes %}bg-red-50 dark:bg-red-900/10{% elif perm.code in effective_permission_codes %}bg-green-50/50 dark:bg-green-900/5{% endif %}">
-                            <div class="col-span-12 sm:col-span-6 flex items-center gap-2 min-w-0">
-                                {% if perm.code in denied_permission_codes %}
-                                <i data-lucide="minus-circle" class="w-4 h-4 text-red-500 shrink-0"></i>
-                                {% elif perm.code in effective_permission_codes %}
-                                <i data-lucide="check-circle-2" class="w-4 h-4 text-green-500 shrink-0"></i>
-                                {% else %}
-                                <span class="w-4 h-4 shrink-0"></span>
-                                {% endif %}
-                                <div class="min-w-0">
-                                    <span class="text-sm text-gray-900 dark:text-white block truncate">{{ perm.name }}</span>
-                                    {% if sources %}
-                                    <span class="text-xs text-gray-400 block truncate" title="{{ sources|join:", " }}">
-                                        aus Rolle: {{ sources|join:", " }}
-                                    </span>
-                                    {% elif perm.code in individual_permission_codes %}
-                                    <span class="text-xs text-blue-500 block">individuell gewährt</span>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            <div class="col-span-6 sm:col-span-3 text-center">
-                                <input type="checkbox" name="individual_permissions" value="{{ perm.code }}"
-                                       {% if perm.code in individual_permission_codes %}checked{% endif %}
-                                       {% if not can_edit %}disabled{% endif %}
-                                       class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500">
-                            </div>
-                            <div class="col-span-6 sm:col-span-3 text-center">
-                                <input type="checkbox" name="denied_permissions" value="{{ perm.code }}"
-                                       {% if perm.code in denied_permission_codes %}checked{% endif %}
-                                       {% if not can_edit %}disabled{% endif %}
-                                       class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-red-600 focus:ring-red-500">
-                            </div>
-                        </div>
-                        {% endwith %}
-                        {% endfor %}
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-
-            {% if can_edit %}
-            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-                <button type="submit"
-                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
-                    <i data-lucide="save" class="w-4 h-4"></i>
-                    Berechtigungen speichern
-                </button>
-                <span class="ml-3 text-xs text-gray-400">
-                    Rollen-Berechtigungen ändern Sie über die Rollen selbst — hier nur individuelle Abweichungen.
-                </span>
-            </div>
-            {% endif %}
-        </form>
-    </div>
+    {% include "work/organization/partials/_member_permissions.html" %}
     {% endif %}
 
-    <!-- Sworn-in Status (Vereidigung) -->
+    {# Vereidigungsstatus #}
     {% if can_edit %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6">
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+    <c-ui.card class="mb-6" subtitle="Berechtigt zum Zugang zu nicht-öffentlichen Inhalten (nach Verpflichtungserklärung)">
+        <c-slot name="title">
+            <span class="flex items-center gap-2">
                 <i data-lucide="shield-check" class="w-5 h-5 text-gray-400"></i>
                 Vereidigungsstatus
-            </h3>
-            <p class="text-sm text-gray-500 mt-1">
-                Berechtigt zum Zugang zu nicht-öffentlichen Inhalten (nach Verpflichtungserklärung)
-            </p>
-        </div>
-        <form method="post" class="p-6">
+            </span>
+        </c-slot>
+        <form method="post" x-data>
             {% csrf_token %}
             <input type="hidden" name="action" value="update_sworn_in">
-
             <label class="flex items-center gap-4 p-4 rounded-lg border cursor-pointer transition-colors
                 {% if member.is_sworn_in %}
                 border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20
@@ -352,7 +118,7 @@
                 {% endif %}">
                 <input type="checkbox" name="is_sworn_in" value="1"
                        {% if member.is_sworn_in %}checked{% endif %}
-                       onchange="this.form.submit()"
+                       @change="$el.form.submit()"
                        class="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500">
                 <div class="flex-1">
                     <span class="block font-medium text-gray-900 dark:text-white">
@@ -378,226 +144,23 @@
                 </div>
             </label>
         </form>
-    </div>
-    {% else %}
-    <!-- Read-only sworn-in status -->
-    {% if member.is_sworn_in %}
-    <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 mb-6 flex items-center gap-3">
-        <i data-lucide="shield-check" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
-        <span class="text-green-700 dark:text-green-300 font-medium">Dieses Mitglied ist vereidigt</span>
-    </div>
-    {% endif %}
+    </c-ui.card>
+    {% elif member.is_sworn_in %}
+    <c-ui.alert variant="success" icon="shield-check" class="mb-6"><span class="font-medium">Dieses Mitglied ist vereidigt</span></c-ui.alert>
     {% endif %}
 
-    <!-- Committee Assignment (OParl Gremien) -->
-    {% if has_body %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6">
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <i data-lucide="building-2" class="w-5 h-5 text-gray-400"></i>
-                Gremien zuweisen
-            </h3>
-            <p class="text-sm text-gray-500 mt-1">
-                Bestimmt, welche Sitzungen in "Meine Sitzungen" angezeigt werden
-            </p>
-        </div>
+    {% include "work/organization/partials/_member_committees.html" %}
 
-        <!-- OParl-Person Verknüpfung -->
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30">
-            {% if oparl_person %}
-            <div class="flex items-center justify-between flex-wrap gap-3">
-                <div class="flex items-center gap-3">
-                    <i data-lucide="user-check" class="w-5 h-5 text-green-500"></i>
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white">Verknüpft mit RIS-Person</p>
-                        <p class="text-sm text-gray-500 dark:text-gray-400">{{ oparl_person.display_name }}</p>
-                    </div>
-                </div>
-                {% if can_edit %}
-                <div class="flex gap-2">
-                    {% if suggested_committee_ids %}
-                    <form method="post">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="apply_suggestions">
-                        <button type="submit"
-                                class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
-                            <i data-lucide="sparkles" class="w-4 h-4"></i>
-                            {{ suggested_committee_ids|length }} Vorschläge übernehmen
-                        </button>
-                    </form>
-                    {% endif %}
-                    <form method="post">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="unlink_oparl_person">
-                        <button type="submit"
-                                class="px-3 py-1.5 text-sm text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400">
-                            Trennen
-                        </button>
-                    </form>
-                </div>
-                {% endif %}
-            </div>
-            {% elif potential_oparl_persons and can_edit %}
-            <div>
-                <p class="font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-                    <i data-lucide="search" class="w-4 h-4 text-amber-500"></i>
-                    Mögliche RIS-Personen gefunden
-                </p>
-                <div class="space-y-1">
-                    {% for person in potential_oparl_persons %}
-                    <form method="post" class="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="link_oparl_person">
-                        <input type="hidden" name="oparl_person_id" value="{{ person.id }}">
-                        <span class="text-sm text-gray-700 dark:text-gray-300">{{ person.display_name }}</span>
-                        <button type="submit"
-                                class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
-                            Verknüpfen
-                        </button>
-                    </form>
-                    {% endfor %}
-                </div>
-            </div>
-            {% else %}
-            <p class="text-gray-500 dark:text-gray-400 text-sm flex items-center gap-2">
-                <i data-lucide="info" class="w-4 h-4"></i>
-                Keine automatische RIS-Verknüpfung gefunden
-            </p>
-            {% endif %}
-        </div>
-
-        {% if can_edit %}
-        <form method="post" class="p-6">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="update_committees">
-
-            <!-- Aktive Gremien -->
-            {% if active_committees %}
-            <div class="mb-6">
-                <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-green-500"></span>
-                    Aktive Gremien ({{ active_committees|length }})
-                </h4>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
-                    {% for committee in active_committees %}
-                    <label class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
-                        {% if committee.id in suggested_committee_ids %}
-                        border-primary-300 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/20 ring-2 ring-primary-200 dark:ring-primary-800
-                        {% else %}
-                        border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50
-                        {% endif %}">
-                        <input type="checkbox" name="committees" value="{{ committee.id }}"
-                               {% if committee.id in member_committees %}checked{% endif %}
-                               class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
-                        <div class="min-w-0 flex-1">
-                            <span class="block font-medium text-sm text-gray-900 dark:text-white truncate">
-                                {{ committee.name }}
-                            </span>
-                            {% if committee.classification %}
-                            <span class="text-xs text-gray-500 dark:text-gray-400">{{ committee.classification }}</span>
-                            {% endif %}
-                        </div>
-                        {% if committee.id in suggested_committee_ids %}
-                        <i data-lucide="sparkles" class="w-3 h-3 text-primary-500 flex-shrink-0"></i>
-                        {% endif %}
-                    </label>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- Vergangene Gremien (aufklappbar) -->
-            {% if inactive_committees %}
-            <div x-data="{ open: false }" class="mb-6">
-                <button type="button" @click="open = !open"
-                        class="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2 hover:text-gray-700 dark:hover:text-gray-300">
-                    <span class="w-2 h-2 rounded-full bg-gray-400"></span>
-                    Vergangene Gremien ({{ inactive_committees|length }})
-                    <i data-lucide="chevron-down" class="w-4 h-4 transition-transform" :class="open && 'rotate-180'"></i>
-                </button>
-                <div x-show="open" x-collapse class="mt-3 opacity-75">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto">
-                        {% for committee in inactive_committees %}
-                        <label class="flex items-center gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer">
-                            <input type="checkbox" name="committees" value="{{ committee.id }}"
-                                   {% if committee.id in member_committees %}checked{% endif %}
-                                   class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
-                            <div class="min-w-0">
-                                <span class="block text-sm text-gray-600 dark:text-gray-400 truncate">{{ committee.name }}</span>
-                                {% if committee.end_date %}
-                                <span class="text-xs text-gray-400 dark:text-gray-500">bis {{ committee.end_date|date:"d.m.Y" }}</span>
-                                {% endif %}
-                            </div>
-                        </label>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-
-            {% if not active_committees and not inactive_committees %}
-            <p class="text-gray-500 dark:text-gray-400 mb-6">Keine Gremien in der verknüpften Kommune gefunden.</p>
-            {% endif %}
-
-            {% if active_committees or inactive_committees %}
-            <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
-                <i data-lucide="save" class="w-4 h-4"></i>
-                Gremien speichern
-            </button>
-            {% endif %}
-        </form>
-        {% else %}
-        <!-- Read-only committee display -->
-        <div class="p-6">
-            {% if member.oparl_committees.exists %}
-            <div class="flex flex-wrap gap-2">
-                {% for committee in member.oparl_committees.all %}
-                <span class="px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg">
-                    {{ committee.name }}
-                </span>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="text-gray-500 dark:text-gray-400">Keine Gremien zugewiesen</p>
-            {% endif %}
-        </div>
-        {% endif %}
-    </div>
-    {% else %}
-    <!-- No OParl body linked -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6">
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <i data-lucide="building-2" class="w-5 h-5 text-gray-400"></i>
-                Gremien
-            </h3>
-        </div>
-        <div class="p-6">
-            <div class="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
-                <i data-lucide="info" class="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"></i>
-                <div>
-                    <p class="font-medium text-amber-800 dark:text-amber-200">Keine Kommune verknüpft</p>
-                    <p class="text-sm text-amber-700 dark:text-amber-300 mt-1">
-                        Um Gremien zuzuweisen, muss die Organisation mit einer Kommune verknüpft werden.
-                    </p>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Fachgebiete -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mb-6">
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+    {# Fachgebiete #}
+    <c-ui.card class="mb-6" subtitle="Themen, in denen dieses Mitglied Fachwissen hat („Kompetenz im Thema“).">
+        <c-slot name="title">
+            <span class="flex items-center gap-2">
                 <i data-lucide="lightbulb" class="w-5 h-5 text-gray-400"></i>
                 Fachgebiete
-            </h3>
-            <p class="text-sm text-gray-500 mt-1">Themen, in denen dieses Mitglied Fachwissen hat („Kompetenz im Thema“).</p>
-        </div>
+            </span>
+        </c-slot>
         {% if can_edit and org_topics %}
-        <form method="post" class="p-6">
+        <form method="post">
             {% csrf_token %}
             <input type="hidden" name="action" value="update_expertise">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto mb-4">
@@ -611,113 +174,25 @@
                 </label>
                 {% endfor %}
             </div>
-            <button type="submit"
-                    class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
-                <i data-lucide="save" class="w-4 h-4"></i>
-                Fachgebiete speichern
-            </button>
+            <c-ui.button type="submit" icon="save">Fachgebiete speichern</c-ui.button>
         </form>
+        {% elif member.expertise_topics.all %}
+        <div class="flex flex-wrap gap-2">
+            {% for topic in member.expertise_topics.all %}
+            <span class="px-3 py-1.5 text-sm bg-{{ topic.color }}-100 dark:bg-{{ topic.color }}-900/30 text-{{ topic.color }}-700 dark:text-{{ topic.color }}-300 rounded-lg">
+                {{ topic.name }}
+            </span>
+            {% endfor %}
+        </div>
+        {% elif org_topics %}
+        <p class="text-gray-500 dark:text-gray-400">Keine Fachgebiete zugewiesen</p>
         {% else %}
-        <div class="p-6">
-            {% if member.expertise_topics.all %}
-            <div class="flex flex-wrap gap-2">
-                {% for topic in member.expertise_topics.all %}
-                <span class="px-3 py-1.5 text-sm bg-{{ topic.color }}-100 dark:bg-{{ topic.color }}-900/30 text-{{ topic.color }}-700 dark:text-{{ topic.color }}-300 rounded-lg">
-                    {{ topic.name }}
-                </span>
-                {% endfor %}
-            </div>
-            {% elif org_topics %}
-            <p class="text-gray-500 dark:text-gray-400">Keine Fachgebiete zugewiesen</p>
-            {% else %}
-            <p class="text-gray-500 dark:text-gray-400">Es sind noch keine Themen im Katalog angelegt.</p>
-            {% endif %}
-        </div>
+        <p class="text-gray-500 dark:text-gray-400">Es sind noch keine Themen im Katalog angelegt.</p>
         {% endif %}
-    </div>
+    </c-ui.card>
 
-    <!-- Actions -->
     {% if can_edit %}
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="font-semibold text-gray-900 dark:text-white">Aktionen</h3>
-        </div>
-        <div class="p-6 space-y-4">
-            {% if not is_self and not is_owner %}
-                {% if member.is_active %}
-                <!-- Deactivate -->
-                <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied deaktivieren', message: 'Das Mitglied kann sich danach nicht mehr anmelden.', confirmText: 'Deaktivieren', variant: 'warning'}).then(ok => ok && $el.submit())">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="deactivate">
-                    <button type="submit"
-                            class="w-full flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left">
-                        <div>
-                            <p class="font-medium text-gray-900 dark:text-white">Mitglied deaktivieren</p>
-                            <p class="text-sm text-gray-500">Das Mitglied kann sich nicht mehr anmelden, bleibt aber in der Liste erhalten.</p>
-                        </div>
-                        <i data-lucide="user-x" class="w-5 h-5 text-gray-400"></i>
-                    </button>
-                </form>
-                {% else %}
-                <!-- Reactivate -->
-                <form method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="reactivate">
-                    <button type="submit"
-                            class="w-full flex items-center justify-between p-4 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-left">
-                        <div>
-                            <p class="font-medium text-green-700 dark:text-green-300">Mitglied reaktivieren</p>
-                            <p class="text-sm text-green-600 dark:text-green-400">Das Mitglied kann sich wieder anmelden.</p>
-                        </div>
-                        <i data-lucide="user-check" class="w-5 h-5 text-green-500"></i>
-                    </button>
-                </form>
-                {% endif %}
-
-                <!-- Remove completely -->
-                <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied entfernen', message: 'Das Mitglied wird komplett aus der Organisation entfernt. Diese Aktion kann nicht rückgängig gemacht werden.', confirmText: 'Entfernen', variant: 'danger'}).then(ok => ok && $el.submit())">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="remove">
-                    <button type="submit"
-                            class="w-full flex items-center justify-between p-4 rounded-lg border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left">
-                        <div>
-                            <p class="font-medium text-red-600 dark:text-red-400">Mitglied entfernen</p>
-                            <p class="text-sm text-red-500 dark:text-red-400">Das Mitglied wird komplett aus der Organisation entfernt.</p>
-                        </div>
-                        <i data-lucide="trash-2" class="w-5 h-5 text-red-400"></i>
-                    </button>
-                </form>
-            {% endif %}
-
-            {% if request.user == organization.owner and not is_self %}
-            <!-- Transfer ownership -->
-            <form method="post" x-data @submit.prevent="confirmAction({title: 'Eigentümerschaft übertragen', message: 'Sind Sie sicher? Sie können diese Aktion nicht selbst rückgängig machen.', confirmText: 'Übertragen', variant: 'danger'}).then(ok => ok && $el.submit())">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="transfer_ownership">
-                <button type="submit"
-                        class="w-full flex items-center justify-between p-4 rounded-lg border border-amber-200 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors text-left">
-                    <div>
-                        <p class="font-medium text-amber-700 dark:text-amber-300">Eigentümerschaft übertragen</p>
-                        <p class="text-sm text-amber-600 dark:text-amber-400">Macht dieses Mitglied zum neuen Eigentümer der Organisation.</p>
-                    </div>
-                    <i data-lucide="crown" class="w-5 h-5 text-amber-500"></i>
-                </button>
-            </form>
-            {% endif %}
-
-            {% if is_self %}
-            <div class="p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400">
-                <p class="text-sm">Sie können Ihr eigenes Konto nicht deaktivieren oder entfernen.</p>
-            </div>
-            {% endif %}
-
-            {% if is_owner and not is_self %}
-            <div class="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300">
-                <p class="text-sm">Der Eigentümer der Organisation kann nicht deaktiviert oder entfernt werden. Übertragen Sie zuerst die Eigentümerschaft.</p>
-            </div>
-            {% endif %}
-        </div>
-    </div>
+    {% include "work/organization/partials/_member_actions.html" %}
     {% endif %}
 </div>
 {% endblock %}

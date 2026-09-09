@@ -1,0 +1,149 @@
+{# DSGVO-Datenexport: Deckblatt, 1. Kontodaten, 2. Mitgliedschaft, 3. Sicherheit & Geräte #}
+{# Kontext: organization, user, export_date, data #}
+<div class="cover">
+    <div class="cover-org">{{ organization.name }}</div>
+    <div class="cover-title">Datenauskunft gem. DSGVO Art. 15/20</div>
+    <div class="cover-subtitle">{{ user.get_full_name }} &mdash; {{ user.email }}</div>
+    <div class="cover-subtitle">Erstellt am {{ export_date|date:"d.m.Y" }} um {{ export_date|time:"H:i" }} Uhr</div>
+</div>
+
+
+<!-- 1. Account -->
+<h2>1. Kontodaten</h2>
+<table class="kv-table">
+    <tr><td>E-Mail</td><td>{{ data.account.email }}</td></tr>
+    <tr><td>Vorname</td><td>{{ data.account.first_name|default:"&mdash;" }}</td></tr>
+    <tr><td>Nachname</td><td>{{ data.account.last_name|default:"&mdash;" }}</td></tr>
+    <tr><td>Telefon</td><td>{{ data.account.phone|default:"&mdash;" }}</td></tr>
+    <tr><td>Profilbild</td><td>{{ data.account.avatar }}</td></tr>
+    <tr><td>Registriert seit</td><td>{{ data.account.date_joined|default:"&mdash;" }}</td></tr>
+    <tr><td>Letzter Login</td><td>{{ data.account.last_login|default:"&mdash;" }}</td></tr>
+    <tr><td>E-Mail verifiziert</td><td>{% if data.account.email_verified %}Ja{% else %}Nein{% endif %}</td></tr>
+</table>
+
+
+<!-- 2. Membership -->
+<h2>2. Mitgliedschaft</h2>
+<table class="kv-table">
+    <tr><td>Organisation</td><td>{{ data.meta.organization }}</td></tr>
+    <tr><td>Beigetreten</td><td>{{ data.membership.joined_at|default:"&mdash;" }}</td></tr>
+    <tr><td>Vereidigt</td><td>{% if data.membership.is_sworn_in %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Aktiv</td><td>{% if data.membership.is_active %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Rollen</td><td>{% for r in data.membership.roles %}{{ r }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</td></tr>
+    <tr><td>Gremien</td><td>{% for c in data.membership.committees %}{{ c }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</td></tr>
+    {% if data.membership.individual_permissions %}
+    <tr><td>Individuelle Berechtigungen</td><td>{% for p in data.membership.individual_permissions %}{{ p }}{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
+    {% endif %}
+    {% if data.membership.denied_permissions %}
+    <tr><td>Verweigerte Berechtigungen</td><td>{% for p in data.membership.denied_permissions %}{{ p }}{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
+    {% endif %}
+</table>
+
+
+<!-- 3. Security -->
+<h2>3. Sicherheit &amp; Ger&auml;te</h2>
+
+<h3>Aktive Sitzungen</h3>
+{% if data.security_sessions %}
+<table>
+    <tr>
+        <th class="col-wide">Ger&auml;t</th>
+        <th class="col-ip">IP-Adresse</th>
+        <th class="col-date">Erstellt</th>
+        <th class="col-date">Letzte Aktivit&auml;t</th>
+    </tr>
+    {% for s in data.security_sessions %}
+    <tr>
+        <td>{{ s.device_name|default:"&mdash;" }}{% if s.location %} ({{ s.location }}){% endif %}</td>
+        <td>{{ s.ip_address|default:"&mdash;" }}</td>
+        <td>{{ s.created_at|default:"&mdash;" }}</td>
+        <td>{{ s.last_activity|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Sitzungsdaten vorhanden.</p>
+{% endif %}
+
+<h3>Login-Versuche</h3>
+{% if data.security_logins %}
+<table>
+    <tr>
+        <th class="col-date">Zeitpunkt</th>
+        <th class="col-ip">IP-Adresse</th>
+        <th class="col-narrow">Erfolg</th>
+        <th>Grund</th>
+    </tr>
+    {% for a in data.security_logins %}
+    <tr>
+        <td>{{ a.timestamp|default:"&mdash;" }}</td>
+        <td>{{ a.ip_address|default:"&mdash;" }}</td>
+        <td>{% if a.was_successful %}Ja{% else %}Nein{% endif %}</td>
+        <td>{{ a.failure_reason|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Login-Versuche gespeichert.</p>
+{% endif %}
+
+<h3>Zwei-Faktor-Authentifizierung</h3>
+{% if data.security_2fa %}
+<table class="kv-table">
+    <tr><td>Best&auml;tigt</td><td>{% if data.security_2fa.is_confirmed %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Aktiv</td><td>{% if data.security_2fa.is_active %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Eingerichtet</td><td>{{ data.security_2fa.created_at|default:"&mdash;" }}</td></tr>
+    <tr><td>Best&auml;tigt am</td><td>{{ data.security_2fa.confirmed_at|default:"&mdash;" }}</td></tr>
+    <tr><td>Zuletzt verwendet</td><td>{{ data.security_2fa.last_used_at|default:"&mdash;" }}</td></tr>
+    <tr><td>Backup-Codes</td><td>{% if data.security_2fa.has_backup_codes %}Vorhanden{% else %}Nicht eingerichtet{% endif %}</td></tr>
+</table>
+<p class="note">Hinweis: TOTP-Secrets und Backup-Codes werden aus Sicherheitsgr&uuml;nden nicht im Export aufgef&uuml;hrt.</p>
+{% else %}
+<p class="empty">Keine Zwei-Faktor-Authentifizierung eingerichtet.</p>
+{% endif %}
+
+<h3>Vertrauensw&uuml;rdige Ger&auml;te</h3>
+{% if data.security_trusted %}
+<table>
+    <tr>
+        <th class="col-wide">Ger&auml;t</th>
+        <th class="col-ip">IP-Adresse</th>
+        <th class="col-date">Erstellt</th>
+        <th class="col-date">Zuletzt verwendet</th>
+        <th class="col-narrow">G&uuml;ltig</th>
+    </tr>
+    {% for d in data.security_trusted %}
+    <tr>
+        <td>{{ d.device_name|default:"&mdash;" }}</td>
+        <td>{{ d.ip_address|default:"&mdash;" }}</td>
+        <td>{{ d.created_at|default:"&mdash;" }}</td>
+        <td>{{ d.last_used_at|default:"&mdash;" }}</td>
+        <td>{% if d.is_valid %}Ja{% else %}Nein{% endif %}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine vertrauensw&uuml;rdigen Ger&auml;te gespeichert.</p>
+{% endif %}
+
+<h3>Sicherheitswarnungen</h3>
+{% if data.security_alerts %}
+<table>
+    <tr>
+        <th class="col-date">Datum</th>
+        <th class="col-18">Typ</th>
+        <th>Titel</th>
+        <th class="col-ip">IP</th>
+    </tr>
+    {% for a in data.security_alerts %}
+    <tr>
+        <td>{{ a.created_at|default:"&mdash;" }}</td>
+        <td>{{ a.type }}</td>
+        <td>{{ a.title }}{% if a.location %} ({{ a.location }}){% endif %}</td>
+        <td>{{ a.ip_address|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Sicherheitswarnungen vorhanden.</p>
+{% endif %}

@@ -1,0 +1,19 @@
+{% comment %}
+Aktionsleiste bei Mehrfachauswahl: ausgewählte Dokumente in einen Ordner verschieben.
+Alpine-Scope: documentManager (selectedIds, bulkTargetFolder, moveDocuments). Kontext: folder_entries
+{% endcomment %}
+<div x-show="selectedIds.length > 0" x-cloak
+     class="flex items-center gap-3 mb-3 px-4 py-2.5 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl">
+    <span class="text-sm font-semibold text-primary-700 dark:text-primary-300" x-text="selectedIds.length + ' ausgewählt'"></span>
+    <span class="text-sm text-gray-500">→ Verschieben nach…</span>
+    <select x-model="bulkTargetFolder"
+            class="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none">
+        <option value="">Alle Dokumente (Wurzel)</option>
+        {% for entry in folder_entries %}
+        <option value="{{ entry.folder.id }}">{% for _ in ''|center:entry.depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ entry.folder.name }}</option>
+        {% endfor %}
+    </select>
+    <c-ui.button size="sm" @click="moveDocuments(selectedIds, bulkTargetFolder)">Verschieben</c-ui.button>
+    <button type="button" @click="selectedIds = []"
+            class="ml-auto text-sm text-gray-500 hover:underline">Auswahl aufheben</button>
+</div>

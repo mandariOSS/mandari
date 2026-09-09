@@ -1,0 +1,99 @@
+{# DSGVO-Datenexport: 6. Fraktionssitzungen (Teilnahme), 7. Sitzungsvorbereitung (Vorbereitungen, TOP-Notizen, Redebeiträge, Vorlagen-Kommentare) #}
+{# Kontext: data #}
+<!-- 6. Faction Attendance -->
+<div class="page-break"></div>
+<h2>6. Fraktionssitzungen</h2>
+{% if data.faction_attendance %}
+<table>
+    <tr>
+        <th class="col-28">Sitzung</th>
+        <th class="col-date">Datum</th>
+        <th class="col-status">Status</th>
+        <th class="col-date">Check-in</th>
+        <th class="col-date">Check-out</th>
+    </tr>
+    {% for a in data.faction_attendance %}
+    <tr>
+        <td>{{ a.meeting }}{% if a.response_message %}<br><em class="note-small">{{ a.response_message }}</em>{% endif %}</td>
+        <td>{{ a.date|default:"&mdash;" }}</td>
+        <td>{{ a.status }}</td>
+        <td>{{ a.checked_in_at|default:"&mdash;" }}</td>
+        <td>{{ a.checked_out_at|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p class="empty">Keine Teilnahmedaten vorhanden.</p>
+{% endif %}
+
+
+<!-- 7. Meeting Data -->
+<h2>7. Sitzungsvorbereitung</h2>
+
+<h3>Vorbereitungen</h3>
+{% if data.meetings.preparations %}
+{% for p in data.meetings.preparations %}
+<div class="item-header">{{ p.meeting }}</div>
+<table class="kv-table">
+    <tr><td>Vorbereitet</td><td>{% if p.is_prepared %}Ja{% else %}Nein{% endif %}</td></tr>
+    <tr><td>Erstellt</td><td>{{ p.created_at }}</td></tr>
+</table>
+{% if p.notes %}
+<div class="content-block">{{ p.notes }}</div>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Vorbereitungen vorhanden.</p>
+{% endif %}
+
+<h3>TOP-Notizen</h3>
+{% if data.meetings.agenda_notes %}
+{% for n in data.meetings.agenda_notes %}
+<div class="item-header">{{ n.agenda_item }}</div>
+<table class="kv-table">
+    <tr><td>Sichtbarkeit</td><td>{{ n.visibility }}</td></tr>
+    {% if n.is_decision %}<tr><td>Beschluss</td><td>Ja</td></tr>{% endif %}
+    <tr><td>Erstellt</td><td>{{ n.created_at }}</td></tr>
+</table>
+{% if n.content %}
+<div class="content-block">{{ n.content }}</div>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine TOP-Notizen vorhanden.</p>
+{% endif %}
+
+<h3>Redebeitr&auml;ge</h3>
+{% if data.meetings.speech_notes %}
+{% for s in data.meetings.speech_notes %}
+<div class="item-header">{{ s.title|default:s.agenda_item }}</div>
+<table class="kv-table">
+    <tr><td>Sitzung</td><td>{{ s.meeting }}</td></tr>
+    <tr><td>TOP</td><td>{{ s.agenda_item }}</td></tr>
+    <tr><td>Gesch. Dauer</td><td>{{ s.estimated_duration }}s</td></tr>
+    <tr><td>Erstellt</td><td>{{ s.created_at }}</td></tr>
+</table>
+{% if s.content %}
+<div class="content-block">{{ s.content }}</div>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Redebeitr&auml;ge vorhanden.</p>
+{% endif %}
+
+<h3>Vorlagen-Kommentare</h3>
+{% if data.meetings.paper_comments %}
+{% for c in data.meetings.paper_comments %}
+<div class="item-header">{{ c.paper }}</div>
+<table class="kv-table">
+    <tr><td>Sichtbarkeit</td><td>{{ c.visibility }}</td></tr>
+    {% if c.is_recommendation %}<tr><td>Empfehlung</td><td>Ja</td></tr>{% endif %}
+    <tr><td>Erstellt</td><td>{{ c.created_at }}</td></tr>
+</table>
+{% if c.content %}
+<div class="content-block">{{ c.content }}</div>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Vorlagen-Kommentare vorhanden.</p>
+{% endif %}

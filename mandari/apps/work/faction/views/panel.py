@@ -16,6 +16,7 @@ from django.db import models
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
@@ -130,6 +131,13 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
                 "organization": self.organization,
                 "org_slug": self.organization.slug,
                 "membership": self.membership,
+                # Konfiguration der Alpine-Komponente `agendaItemPanel` (frontend/alpine/agenda-item-panel.ts)
+                "panel_config": {
+                    "actionUrl": reverse(
+                        "work:faction_item_panel_action",
+                        kwargs={"org_slug": self.organization.slug, "meeting_id": meeting.id, "item_id": item.id},
+                    ),
+                },
             }
         )
         return context

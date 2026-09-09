@@ -1,0 +1,16 @@
+{% comment %}
+Mobil: Ordnerauswahl als Dropdown oberhalb der Dokumentenliste.
+Kontext: folder_entries, current_folder, root_document_count, filter_query
+{% endcomment %}
+<div class="lg:hidden mb-4">
+    <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Ordner</label>
+    <select @change="window.location.search = $el.value"
+            class="w-full px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 outline-none">
+        <option value="?{% if filter_query %}{{ filter_query }}{% endif %}" {% if not current_folder %}selected{% endif %}>Alle Dokumente ({{ root_document_count }})</option>
+        {% for entry in folder_entries %}
+        <option value="?ordner={{ entry.folder.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}" {% if current_folder and current_folder.id == entry.folder.id %}selected{% endif %}>
+            {% for _ in ''|center:entry.depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ entry.folder.name }} ({{ entry.count }})
+        </option>
+        {% endfor %}
+    </select>
+</div>

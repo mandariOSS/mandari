@@ -1,0 +1,92 @@
+{# Mitglied-Detail: Gast-Hinweis und „Was sieht dieser Gast?“ (Freigaben mit Entzug, Issue #77) #}
+{# Kontext: member, organization, can_invite_guests, guest_has_password, guest_document_shares, guest_folder_shares, can_manage_guest_shares #}
+<div class="bg-teal-50 dark:bg-teal-900/20 rounded-xl border border-teal-200 dark:border-teal-800 mb-6 p-6">
+    <h3 class="font-semibold text-teal-800 dark:text-teal-200 flex items-center gap-2 mb-2">
+        <i data-lucide="user-round" class="w-5 h-5"></i>
+        Gast-Zugang
+    </h3>
+    <p class="text-sm text-teal-700 dark:text-teal-300">
+        Diese Person ist Gast: Sie hat keine Rollen und keine Berechtigungen und sieht im
+        Work-Portal ausschließlich die Dokumente, die explizit für sie freigegeben wurden
+        (Teilen-Dialog am Dokument). Der Zugang zählt gegen das Gast-Limit der Organisation.
+    </p>
+    {% if can_invite_guests %}
+    <form method="post" action="{% url 'work:guest_access_resend' org_slug=organization.slug member_id=member.id %}"
+          class="mt-4 flex flex-wrap items-center gap-3">
+        {% csrf_token %}
+        <button type="submit"
+                class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-white dark:bg-gray-800 border border-teal-300 dark:border-teal-700 text-teal-800 dark:text-teal-200 hover:bg-teal-100 dark:hover:bg-teal-900/40">
+            <i data-lucide="mail" class="w-4 h-4"></i>
+            Zugang erneut senden
+        </button>
+        <span class="text-xs text-teal-700/80 dark:text-teal-300/80">
+            {% if guest_has_password %}Schickt den Link zu den freigegebenen Dokumenten.{% else %}Der Gast hat noch kein Passwort gesetzt – schickt einen neuen Passwort-Link (der alte läuft nach kurzer Zeit ab).{% endif %}
+        </span>
+    </form>
+    {% endif %}
+</div>
+
+<c-ui.card id="guest-shares" class="mb-6" padding="none">
+    <c-slot name="title">
+        <span class="flex items-center gap-2">
+            <i data-lucide="eye" class="w-5 h-5 text-gray-400"></i>
+            Was sieht dieser Gast?
+        </span>
+    </c-slot>
+    <c-slot name="actions">
+        <span class="text-sm text-gray-500">{{ guest_document_shares|length }} Dokument{{ guest_document_shares|length|pluralize:"e" }} &middot; {{ guest_folder_shares|length }} Ordner</span>
+    </c-slot>
+    {% if guest_document_shares or guest_folder_shares %}
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for share in guest_folder_shares %}
+        <div class="px-6 py-3 flex items-center justify-between gap-4">
+            <div class="min-w-0 flex items-start gap-3">
+                <i data-lucide="folder" class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5"></i>
+                <div class="min-w-0">
+                    <a href="{% url 'work:documents' org_slug=organization.slug %}?ordner={{ share.folder.id }}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">{{ share.folder.name }}</a>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        Ordner-Freigabe &middot; Stufe {{ share.get_level_display }} &middot; inkl. {{ share.subfolder_count }} Unterordner, aktuell {{ share.document_count }} Dokument{{ share.document_count|pluralize:"e" }}
+                        &middot; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}
+                    </p>
+                </div>
+            </div>
+            {% if can_manage_guest_shares %}
+            <form method="post" action="{% url 'work:document_folder_share_remove' org_slug=organization.slug share_id=share.id %}"
+                  x-data @submit.prevent="confirmAction({title: 'Ordner-Freigabe entziehen', message: 'Ordner-Freigabe „{{ share.folder.name|escapejs }}“ entziehen?', confirmText: 'Entziehen', variant: 'danger'}).then(ok => ok && $el.submit())">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}#guest-shares">
+                <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30">
+                    <i data-lucide="x" class="w-3.5 h-3.5"></i> Entziehen
+                </button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% for share in guest_document_shares %}
+        <div class="px-6 py-3 flex items-center justify-between gap-4">
+            <div class="min-w-0 flex items-start gap-3">
+                <i data-lucide="file-text" class="w-5 h-5 text-primary-500 flex-shrink-0 mt-0.5"></i>
+                <div class="min-w-0">
+                    <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=share.motion.id %}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">{{ share.motion.title }}</a>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        Dokument-Freigabe &middot; Stufe {{ share.get_level_display }} &middot; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}
+                    </p>
+                </div>
+            </div>
+            {% if can_manage_guest_shares %}
+            <form method="post" action="{% url 'work:document_share_remove' org_slug=organization.slug share_id=share.id %}"
+                  x-data @submit.prevent="confirmAction({title: 'Freigabe entziehen', message: 'Freigabe für „{{ share.motion.title|escapejs }}“ entziehen?', confirmText: 'Entziehen', variant: 'danger'}).then(ok => ok && $el.submit())">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}#guest-shares">
+                <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30">
+                    <i data-lucide="x" class="w-3.5 h-3.5"></i> Entziehen
+                </button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">Dieser Gast hat aktuell keine Freigaben und sieht keine Dokumente.</p>
+    {% endif %}
+</c-ui.card>

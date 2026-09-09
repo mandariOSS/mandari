@@ -17,7 +17,7 @@
     <style>[x-cloak] { display: none !important; }</style>
 </head>
 <body class="h-full bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-<div class="max-w-5xl mx-auto px-6 py-10 space-y-12">
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-12">
     <c-layout.page-header title="UI-Kit" subtitle="Komponentenbibliothek (templates/cotton/) – nur in der Entwicklung erreichbar">
         <c-ui.button variant="secondary" icon="moon" @click="darkMode = !darkMode">Dunkelmodus</c-ui.button>
     </c-layout.page-header>
@@ -131,6 +131,15 @@
         </c-ui.tabs>
     </c-ui.card>
 
+    <c-ui.card title="Kennzahl-Kacheln" subtitle="c-ui.kpi-tile – label, value, tone (default|muted|blue|indigo|red|purple|green|amber)">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <c-ui.kpi-tile label="Gesamt" value="128" />
+            <c-ui.kpi-tile label="Entwürfe" value="12" tone="muted" />
+            <c-ui.kpi-tile label="Eingereicht" value="7" tone="blue" />
+            <c-ui.kpi-tile label="Überfällig" value="3" tone="red" />
+        </div>
+    </c-ui.card>
+
     <c-ui.card title="Icons" subtitle="c-ui.icon – name, size, label">
         <div class="flex items-center gap-4 text-gray-600 dark:text-gray-300">
             <c-ui.icon name="check" />
@@ -138,6 +147,33 @@
             <c-ui.icon name="file-text" size="8" label="Dokument" class="text-primary-600" />
         </div>
     </c-ui.card>
-</div>
+
+    <c-ui.card title="Alpine-Modal" subtitle="c-ui.alpine-modal – show (Alpine-Variable), size, panel_class; für Seiten mit eigenem Dialogzustand">
+        <div x-data="{ demoOpen: false }">
+            <c-ui.button variant="secondary" icon="layers" @click="demoOpen = true">Alpine-Modal öffnen</c-ui.button>
+            <c-ui.alpine-modal show="demoOpen">
+                <div class="p-4 border-b border-gray-200 dark:border-gray-700"><h3 class="text-lg font-semibold">Beispiel-Dialog</h3></div>
+                <div class="p-4 text-sm text-gray-600 dark:text-gray-300">Ein Klick auf den Hintergrund setzt <code>demoOpen</code> auf false.</div>
+                <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                    <c-ui.button variant="ghost" @click="demoOpen = false">Abbrechen</c-ui.button>
+                    <c-ui.button @click="demoOpen = false">Bestätigen</c-ui.button>
+                </div>
+            </c-ui.alpine-modal>
+        </div>
+    </c-ui.card>
+
+    <c-ui.card title="Panel-Abschnitt und Textbutton" subtitle="c-ui.panel-section – title, count, action-Slot; c-ui.text-button – variant (primary|danger|muted), icon" padding="none">
+        <c-ui.panel-section title="Aufgaben" count="2">
+            <c-slot name="action"><c-ui.text-button icon="plus">Aufgabe</c-ui.text-button></c-slot>
+            <p class="text-sm text-gray-600 dark:text-gray-300">Inhalt des Abschnitts (z. B. Liste im Slide-over-Panel).</p>
+        </c-ui.panel-section>
+        <c-ui.panel-section title="Beschluss">
+            <div class="flex items-center gap-4">
+                <c-ui.text-button variant="danger" icon="trash-2">Entfernen</c-ui.text-button>
+                <c-ui.text-button variant="muted" icon="plus">Unterpunkt</c-ui.text-button>
+            </div>
+        </c-ui.panel-section>
+    </c-ui.card>
+</main>
 </body>
 </html>

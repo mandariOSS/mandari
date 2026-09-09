@@ -1,0 +1,44 @@
+{% comment %}
+Dialog „Aufgaben aus Protokollen importieren“ (natives <dialog>, Alpine-Komponente importManager).
+Öffnen: document.getElementById('import-modal').showModal()
+{% endcomment %}
+<c-ui.modal id="import-modal" title="Aufgaben aus Protokollen importieren" size="lg">
+    <div x-data="importManager">
+        <div x-show="loading" class="py-8 text-center text-gray-500">
+            <i data-lucide="loader-2" class="w-6 h-6 mx-auto mb-2 animate-spin"></i>
+            Lade Protokoll-Aufgaben...
+        </div>
+
+        <div x-show="!loading && items.length === 0" class="py-8 text-center text-gray-500">
+            <i data-lucide="check-circle" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+            Keine offenen Protokoll-Aufgaben gefunden.
+        </div>
+
+        <div x-show="!loading && items.length > 0" class="space-y-3 max-h-96 overflow-y-auto">
+            <template x-for="item in items" :key="item.id">
+                <label class="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800">
+                    <input type="checkbox" x-model="selected" :value="item.id"
+                           class="mt-1 w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                    <div class="flex-1">
+                        <p class="text-sm text-gray-900 dark:text-white" x-text="item.content"></p>
+                        <p class="text-xs text-gray-500 mt-1">
+                            <span x-text="item.meeting"></span> ·
+                            <span x-text="item.meeting_date"></span>
+                            <template x-if="item.assignee">
+                                <span> · <span x-text="item.assignee"></span></span>
+                            </template>
+                        </p>
+                    </div>
+                </label>
+            </template>
+        </div>
+
+        <div x-show="!loading && items.length > 0" class="mt-4 flex justify-between items-center pt-4 border-t border-gray-200 dark:border-gray-700">
+            <span class="text-sm text-gray-500" x-text="`${selected.length} ausgewählt`"></span>
+            <div class="flex gap-3">
+                <c-ui.button variant="ghost" data-close-modal>Abbrechen</c-ui.button>
+                <c-ui.button @click="importSelected()" ::disabled="selected.length === 0">Importieren</c-ui.button>
+            </div>
+        </div>
+    </div>
+</c-ui.modal>

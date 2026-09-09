@@ -1,0 +1,104 @@
+{# Fraktionssitzung – Modale rund um die Sitzung: TOP vorschlagen, Teilnehmer hinzufügen, Sitzung bearbeiten #}
+{# Kontext: organization, meeting, available_members; Zustand aus x-data="factionDetail" (showProposalModal, showAddAttendeeModal, showEditModal) #}
+
+{# TOP vorschlagen #}
+<c-ui.alpine-modal show="showProposalModal">
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "propose"}'
+          @htmx:after-request="if ($event.detail.successful) { showProposalModal = false; }">
+        {% csrf_token %}
+
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-lg font-semibold">TOP vorschlagen</h3>
+            <p class="text-sm text-gray-500 mt-1">Ihr Vorschlag wird dem Vorsitz zur Prüfung vorgelegt.</p>
+        </div>
+
+        <div class="p-4 space-y-4">
+            <c-form.field name="title" label="Titel" placeholder="Thema Ihres Vorschlags" required />
+            <c-form.textarea name="description" label="Begründung" rows="3" placeholder="Warum sollte dies besprochen werden?" />
+        </div>
+
+        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+            <c-ui.button variant="ghost" @click="showProposalModal = false">Abbrechen</c-ui.button>
+            <c-ui.button type="submit">Einreichen</c-ui.button>
+        </div>
+    </form>
+</c-ui.alpine-modal>
+
+{# Teilnehmer hinzufügen #}
+<c-ui.alpine-modal show="showAddAttendeeModal">
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "add_attendee"}'
+          hx-target="#sidebar-container" hx-swap="innerHTML"
+          @htmx:after-request="if ($event.detail.successful) { showAddAttendeeModal = false; }">
+        {% csrf_token %}
+
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h3 class="text-lg font-semibold">Teilnehmer hinzufügen</h3>
+            <button type="button" @click="showAddAttendeeModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="p-4 space-y-4" x-data="{ type: 'guest' }">
+            <div class="flex gap-2">
+                <button type="button" @click="type = 'guest'" :class="type === 'guest' ? 'bg-primary-100 border-primary-500 text-primary-700' : 'bg-gray-50 border-gray-200'"
+                        class="flex-1 py-2 text-sm font-medium border rounded-lg">Gast</button>
+                <button type="button" @click="type = 'member'" :class="type === 'member' ? 'bg-primary-100 border-primary-500 text-primary-700' : 'bg-gray-50 border-gray-200'"
+                        class="flex-1 py-2 text-sm font-medium border rounded-lg">Mitglied</button>
+            </div>
+            <input type="hidden" name="attendee_type" x-bind:value="type">
+
+            <c-form.field name="guest_name" label="Name" placeholder="Name des Gastes" x-show="type === 'guest'" />
+
+            <c-form.select name="membership_id" label="Mitglied" placeholder="Auswählen..." x-show="type === 'member'">
+                {% for member in available_members %}
+                <option value="{{ member.id }}">{{ member.user.get_display_name }}</option>
+                {% endfor %}
+            </c-form.select>
+        </div>
+
+        <div class="p-4 border-t flex justify-end gap-2">
+            <c-ui.button variant="ghost" @click="showAddAttendeeModal = false">Abbrechen</c-ui.button>
+            <c-ui.button type="submit">Hinzufügen</c-ui.button>
+        </div>
+    </form>
+</c-ui.alpine-modal>
+
+{# Sitzung bearbeiten #}
+<c-ui.alpine-modal show="showEditModal" size="lg" class="py-8" panel_class="max-h-[90vh] overflow-y-auto">
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "update"}'>
+        {% csrf_token %}
+
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Sitzung bearbeiten</h3>
+            <button type="button" @click="showEditModal = false" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="p-4 space-y-4">
+            <c-form.field name="title" label="Titel" :value="meeting.title" required />
+            <div class="grid grid-cols-2 gap-4">
+                <c-form.field name="start_date" label="Datum" type="date" value="{{ meeting.start|date:'Y-m-d' }}" required />
+                <c-form.field name="start_time" label="Uhrzeit" type="time" value="{{ meeting.start|time:'H:i' }}" required />
+            </div>
+            <c-form.field name="location" label="Ort" :value="meeting.location" />
+            <div class="space-y-3" x-data="{ isVirtual: {{ meeting.is_virtual|yesno:'true,false' }} }">
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" name="is_virtual" x-model="isVirtual" class="w-4 h-4 text-primary-600 rounded">
+                    <label class="text-sm text-gray-700 dark:text-gray-300">Online-Teilnahme möglich</label>
+                </div>
+                <c-form.field name="video_link" label="Video-Link" type="url" :value="meeting.video_link"
+                              placeholder="https://meet.example.com/..." x-show="isVirtual" x-transition />
+            </div>
+            <c-form.textarea name="description" label="Beschreibung" rows="3" :value="meeting.description" />
+        </div>
+
+        <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+            <c-ui.button variant="ghost" @click="showEditModal = false">Abbrechen</c-ui.button>
+            <c-ui.button type="submit">Speichern</c-ui.button>
+        </div>
+    </form>
+</c-ui.alpine-modal>

@@ -13,3 +13,26 @@ import Alpine from 'alpinejs'
 // Alpine.data('taskBoard', taskBoard)
 
 export { Alpine }
+
+// ---- Satz A (#174): Dokumentenliste, Aufgaben-Kanban, Konto-Sicherheit ----------
+import { documentManager } from '../alpine/document-manager'
+import { securitySettings } from '../alpine/security-settings'
+import { dropZone, kanbanBoard, labelPicker } from '../alpine/task-board'
+import { fileImportManager, importManager } from '../alpine/task-import'
+
+Alpine.data('documentManager', documentManager)
+Alpine.data('kanbanBoard', kanbanBoard)
+Alpine.data('dropZone', dropZone)
+Alpine.data('labelPicker', labelPicker)
+Alpine.data('importManager', importManager)
+Alpine.data('fileImportManager', fileImportManager)
+Alpine.data('securitySettings', securitySettings)
+
+// ---- Satz B (#174): Fraktionssitzung, TOP-Panel, Fraktions-Einstellungen ----------
+import { agendaItemPanel } from '../alpine/agenda-item-panel'
+import { factionDetail } from '../alpine/faction-detail'
+import { factionTitlePreview } from '../alpine/faction-title-preview'
+
+Alpine.data('agendaItemPanel', agendaItemPanel)
+Alpine.data('factionDetail', factionDetail)
+Alpine.data('factionTitlePreview', factionTitlePreview)

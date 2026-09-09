@@ -1,0 +1,30 @@
+{% comment %}
+Verknüpfungen der Aufgabe (RIS-Sitzung, Dokument, Fraktionssitzung). Kontext: task, organization
+{% endcomment %}
+{% if task.related_meeting or task.related_motion or task.related_faction_meeting %}
+<div class="px-6 pb-3">
+    <div class="flex flex-wrap gap-1.5">
+        {% if task.related_meeting %}
+        <a href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=task.related_meeting.id %}"
+           class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors ring-1 ring-primary-200/50 dark:ring-primary-700/30" target="_blank">
+            <i data-lucide="calendar" class="w-3 h-3"></i>
+            {{ task.related_meeting.name|truncatechars:30 }}
+        </a>
+        {% endif %}
+        {% if task.related_motion %}
+        <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=task.related_motion.id %}"
+           class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors ring-1 ring-primary-200/50 dark:ring-primary-700/30" target="_blank">
+            <i data-lucide="file-text" class="w-3 h-3"></i>
+            {{ task.related_motion.title|truncatechars:30 }}
+        </a>
+        {% endif %}
+        {% if task.related_faction_meeting %}
+        <a href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=task.related_faction_meeting.id %}"
+           class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors ring-1 ring-primary-200/50 dark:ring-primary-700/30" target="_blank">
+            <i data-lucide="users" class="w-3 h-3"></i>
+            {{ task.related_faction_meeting.title|truncatechars:30 }}
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

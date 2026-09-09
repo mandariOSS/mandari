@@ -1,0 +1,92 @@
+{% comment %}
+Kartenansicht der Dokumentenliste (viewMode === 'grid'). Alpine-Scope: documentManager.
+Kontext: motion_rows, folder_entries, organization sowie die Filtervariablen für den Leerzustand
+{% endcomment %}
+<div x-show="viewMode === 'grid'" x-cloak class="fade-up d1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    {% for row in motion_rows %}
+    {% with motion=row.motion %}
+    <div class="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md transition-all cursor-pointer {% if row.is_amendment %}border-l-4 border-l-primary-300 dark:border-l-primary-700{% endif %}"
+         @click="window.location.href='{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}'">
+        <div class="flex items-start gap-2 mb-2">
+            <input type="checkbox" value="{{ motion.id }}" x-model="selectedIds" @click.stop
+                   class="mt-1 rounded border-gray-300 text-primary-600 focus:ring-primary-500 flex-shrink-0"
+                   title="Für Verschieben auswählen">
+            <i data-lucide="{{ motion.get_type_icon }}" class="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5"></i>
+            <div class="flex-1 min-w-0">
+                {% if row.is_amendment %}
+                <p class="text-[10px] text-gray-400 flex items-center gap-1 mb-0.5">
+                    <i data-lucide="corner-down-right" class="w-3 h-3"></i>
+                    Änderungsantrag zu „{{ motion.parent_motion.title|truncatechars:40 }}“
+                </p>
+                {% endif %}
+                <h3 class="font-medium text-gray-900 dark:text-white text-sm truncate group-hover:text-primary-600">{{ motion.title }}</h3>
+                <p class="text-xs text-gray-500 mt-0.5">{{ motion.get_type_display }}{% if motion.folder %} · <i data-lucide="folder" class="w-3 h-3 inline-block"></i> {{ motion.folder.name }}{% endif %}</p>
+            </div>
+            <div class="flex items-center gap-1 flex-shrink-0">
+                {% include "work/motions/partials/_folder_move_menu.html" %}
+                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full {{ motion.get_visibility_badge_class }}">
+                    <i data-lucide="{{ motion.get_visibility_icon }}" class="w-3 h-3"></i>
+                </span>
+            </div>
+        </div>
+
+        <!-- Status-Tracker -->
+        {% include "work/motions/partials/_status_tracker.html" %}
+
+        <!-- Themen-Chips -->
+        {% if motion.topics.all %}
+        <div class="flex flex-wrap gap-1 mt-2">
+            {% for topic in motion.topics.all|slice:":3" %}
+            <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-{{ topic.color }}-100 dark:bg-{{ topic.color }}-900/30 text-{{ topic.color }}-700 dark:text-{{ topic.color }}-300">{{ topic.name }}</span>
+            {% endfor %}
+            {% if motion.topics.all|length > 3 %}
+            <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">+{{ motion.topics.all|length|add:"-3" }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
+            <span class="flex items-center gap-1.5 min-w-0">
+                {% if motion.responsible %}
+                <span class="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center flex-shrink-0">
+                    <span class="text-[9px] font-bold text-primary-700 dark:text-primary-300">{{ motion.responsible.user.get_initials }}</span>
+                </span>
+                <span class="truncate">{{ motion.responsible.user.get_display_name }}</span>
+                {% else %}
+                <span class="text-gray-400">–</span>
+                {% endif %}
+            </span>
+            {% if motion.due_date %}
+            <span class="flex items-center gap-1 flex-shrink-0 {% if motion.is_overdue %}text-red-600 dark:text-red-400 font-semibold{% endif %}">
+                <i data-lucide="calendar-clock" class="w-3 h-3"></i>
+                {{ motion.due_date|date:"d.m.y" }}
+            </span>
+            {% endif %}
+        </div>
+
+        {% with progress=motion.checklist_progress %}
+        {% if progress.total %}
+        <div class="flex items-center gap-2 mt-2">
+            <div class="flex-1 h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div class="h-full bg-primary-500 rounded-full" style="width: {{ progress.percent }}%"></div>
+            </div>
+            <span class="text-[10px] text-gray-400">{{ progress.done }}/{{ progress.total }}</span>
+        </div>
+        {% endif %}
+        {% endwith %}
+    </div>
+    {% endwith %}
+    {% empty %}
+    <div class="col-span-full">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-8 text-center">
+            <p class="text-sm text-gray-400 dark:text-gray-500">
+                {% if search_query or selected_status or selected_type or filter_mine or selected_topic or selected_responsible or current_folder %}
+                Keine Dokumente mit diesen Filterkriterien gefunden.
+                {% else %}
+                Noch keine Dokumente vorhanden.
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    {% endfor %}
+</div>

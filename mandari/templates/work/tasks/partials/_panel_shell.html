@@ -1,0 +1,36 @@
+{% comment %}
+Slide-Over-Rahmen für das Aufgaben-Panel; der Inhalt wird per HTMX in #task-panel-container geladen.
+Alpine-Scope: kanbanBoard (panelOpen, closePanel)
+{% endcomment %}
+<div x-show="panelOpen" x-cloak
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-150"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     @keydown.escape.window="closePanel()"
+     @click.self="closePanel()"
+     class="fixed inset-0 z-[55] bg-black/40">
+    <!-- Slide-Over Panel -->
+    <div x-show="panelOpen"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="translate-x-full"
+         x-transition:enter-end="translate-x-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="translate-x-0"
+         x-transition:leave-end="translate-x-full"
+         class="absolute right-0 top-0 bottom-0 w-full max-w-2xl bg-white dark:bg-gray-800
+                border-l border-gray-200 dark:border-gray-700 shadow-2xl flex flex-col overflow-hidden"
+         @click.stop>
+        <div id="task-panel-container" class="flex-1 flex flex-col overflow-hidden">
+            <!-- Loading state -->
+            <div class="flex-1 flex items-center justify-center">
+                <div class="text-center text-gray-400">
+                    <i data-lucide="loader-2" class="w-6 h-6 mx-auto mb-2 animate-spin"></i>
+                    <p class="text-sm">Lade...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,89 @@
+{% comment %}
+Filterleiste der Dokumentenliste (Suche, Typ, Status, Thema, Verantwortliche, „Nur meine“, Ansicht).
+Alpine-Scope: documentManager. Kontext: current_folder, search_query, document_types, type_choices,
+selected_type, status_choices, selected_status, org_topics, selected_topic, org_members, selected_responsible, filter_mine
+{% endcomment %}
+<div class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-4">
+    <form method="get" class="flex flex-wrap items-center gap-4">
+        {% if current_folder %}
+        <!-- Ordnerauswahl bei Filter/Suche beibehalten -->
+        <input type="hidden" name="ordner" value="{{ current_folder.id }}">
+        {% endif %}
+        <!-- Search -->
+        <div class="flex-1 min-w-[200px]">
+            <div class="relative">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+                <input type="text" name="q" value="{{ search_query|default:'' }}"
+                       placeholder="Dokument suchen..."
+                       class="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            </div>
+        </div>
+
+        <!-- Type Filter -->
+        <select name="type" @change="$el.form.submit()"
+                class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            <option value="">Alle Typen</option>
+            {% for doc_type in document_types %}
+            <option value="{{ doc_type.id }}" {% if selected_type == doc_type.id|stringformat:"s" %}selected{% endif %}>{{ doc_type.name }}</option>
+            {% endfor %}
+            <option disabled>---</option>
+            {% for value, label in type_choices %}
+            <option value="{{ value }}" {% if selected_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <!-- Status Filter -->
+        <select name="status" @change="$el.form.submit()"
+                class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            <option value="">Alle Status</option>
+            {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <!-- Topic Filter -->
+        {% if org_topics %}
+        <select name="thema" @change="$el.form.submit()"
+                class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            <option value="">Alle Themen</option>
+            {% for topic in org_topics %}
+            <option value="{{ topic.id }}" {% if selected_topic == topic.id|stringformat:"s" %}selected{% endif %}>{{ topic.name }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+
+        <!-- Responsible Filter -->
+        <select name="verantwortlich" @change="$el.form.submit()"
+                class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            <option value="">Alle Verantwortlichen</option>
+            <option value="me" {% if selected_responsible == "me" %}selected{% endif %}>Meine Federführung</option>
+            {% for member in org_members %}
+            <option value="{{ member.id }}" {% if selected_responsible == member.id|stringformat:"s" %}selected{% endif %}>{{ member.user.get_display_name }}</option>
+            {% endfor %}
+        </select>
+
+        <!-- My Motions -->
+        <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" name="mine" value="1" {% if filter_mine %}checked{% endif %}
+                   @change="$el.form.submit()"
+                   class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+            <span class="text-sm text-gray-600 dark:text-gray-400">Nur meine</span>
+        </label>
+
+        <!-- View Toggle -->
+        <div class="flex items-center gap-1 bg-gray-100 dark:bg-gray-900 rounded-lg p-1">
+            <button type="button"
+                    @click="setViewMode('grid')"
+                    :class="viewMode === 'grid' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'hover:bg-white/50 dark:hover:bg-gray-700/50'"
+                    class="p-2 rounded-md transition-colors">
+                <i data-lucide="grid-3x3" class="w-4 h-4" :class="viewMode === 'grid' ? 'text-primary-600' : 'text-gray-500'"></i>
+            </button>
+            <button type="button"
+                    @click="setViewMode('list')"
+                    :class="viewMode === 'list' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'hover:bg-white/50 dark:hover:bg-gray-700/50'"
+                    class="p-2 rounded-md transition-colors">
+                <i data-lucide="list" class="w-4 h-4" :class="viewMode === 'list' ? 'text-primary-600' : 'text-gray-500'"></i>
+            </button>
+        </div>
+    </form>
+</div>

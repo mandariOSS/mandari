@@ -1,0 +1,53 @@
+{% comment %}
+Dialog „Aufgaben aus Datei importieren“ (CSV, JSON, XML; natives <dialog>, Alpine-Komponente fileImportManager).
+Öffnen: document.getElementById('file-import-modal').showModal()
+{% endcomment %}
+<c-ui.modal id="file-import-modal" title="Aufgaben aus Datei importieren" size="lg">
+    <div x-data="fileImportManager">
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Unterstützte Formate: CSV (Spalten wie im Export, z.&nbsp;B. Titel, Status, Priorität, Fällig am),
+            JSON (Mandari-Export oder Trello-Board-Export) und XML (Mandari-Export).
+            Bereits vorhandene Aufgaben (gleiche ID oder gleicher Titel) werden nicht doppelt angelegt.
+        </p>
+
+        <input type="file" x-ref="fileInput" accept=".csv,.json,.xml,text/csv,application/json,application/xml,text/xml"
+               @change="report = null; error = ''"
+               class="block w-full text-sm text-gray-700 dark:text-gray-200 file:mr-3 file:px-4 file:py-2 file:text-sm file:font-medium file:text-gray-700 dark:file:text-gray-200 file:bg-gray-100 dark:file:bg-gray-700 file:border-0 file:rounded-lg file:cursor-pointer">
+
+        <div x-show="error" x-cloak class="mt-4 p-3 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 rounded-lg" x-text="error"></div>
+
+        <template x-if="report">
+            <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg text-sm">
+                <p class="font-medium text-gray-900 dark:text-white mb-2" x-text="reportHeadline()"></p>
+                <ul class="space-y-1 text-gray-600 dark:text-gray-300">
+                    <li><span x-text="report.created"></span> neu<span x-show="report.dry_run_flag"> (Vorschau)</span></li>
+                    <li x-show="report.updated > 0"><span x-text="report.updated"></span> aktualisiert</li>
+                    <li x-show="report.skipped > 0"><span x-text="report.skipped"></span> übersprungen (Duplikate/ohne Berechtigung)</li>
+                    <li x-show="report.failed > 0" class="text-red-600 dark:text-red-400"><span x-text="report.failed"></span> fehlerhaft</li>
+                </ul>
+                <template x-if="report.errors.length > 0">
+                    <div class="mt-2">
+                        <p class="font-medium text-red-600 dark:text-red-400">Fehler:</p>
+                        <ul class="list-disc ml-5 text-red-600 dark:text-red-400">
+                            <template x-for="err in report.errors"><li x-text="err"></li></template>
+                        </ul>
+                    </div>
+                </template>
+                <template x-if="report.warnings.length > 0">
+                    <div class="mt-2">
+                        <p class="font-medium text-amber-600 dark:text-amber-400">Hinweise:</p>
+                        <ul class="list-disc ml-5 text-amber-600 dark:text-amber-400">
+                            <template x-for="warn in report.warnings"><li x-text="warn"></li></template>
+                        </ul>
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <div class="mt-4 flex justify-end items-center gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <c-ui.button variant="ghost" data-close-modal>Abbrechen</c-ui.button>
+            <c-ui.button variant="secondary" @click="upload(true)" ::disabled="busy">Vorschau prüfen</c-ui.button>
+            <c-ui.button @click="upload(false)" ::disabled="busy">Importieren</c-ui.button>
+        </div>
+    </div>
+</c-ui.modal>

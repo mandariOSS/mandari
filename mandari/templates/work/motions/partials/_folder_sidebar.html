@@ -1,0 +1,62 @@
+{% comment %}
+Ordner-Spalte (Desktop, einklappbar) der Dokumentenliste. Alpine-Scope: documentManager.
+Kontext: folder_entries, current_folder, root_document_count, filter_query, can_create_folder, organization
+{% endcomment %}
+<aside class="hidden lg:block flex-shrink-0" :class="folderPanelOpen ? 'w-60' : 'w-auto'">
+    <!-- Eingeklappt: schmale Leiste -->
+    <button x-show="!folderPanelOpen" x-cloak type="button" @click="toggleFolderPanel()"
+            title="Ordner einblenden"
+            class="p-2.5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+        <i data-lucide="folder-tree" class="w-4 h-4 text-gray-500"></i>
+    </button>
+
+    <div x-show="folderPanelOpen" class="fade-up bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
+        <div class="flex items-center justify-between mb-2 px-1">
+            <h3 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ordner</h3>
+            <div class="flex items-center gap-1">
+                {% if can_create_folder %}
+                <button type="button" title="Neuer Ordner{% if current_folder %} in „{{ current_folder.name }}“{% endif %}"
+                        @click="openFolderCreate()"
+                        class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500">
+                    <i data-lucide="folder-plus" class="w-4 h-4"></i>
+                </button>
+                {% endif %}
+                <button type="button" title="Ordner ausblenden" @click="toggleFolderPanel()"
+                        class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500">
+                    <i data-lucide="panel-left-close" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+
+        <nav class="space-y-0.5">
+            <!-- Wurzel: Alle Dokumente -->
+            <a href="{% url 'work:documents' org_slug=organization.slug %}{% if filter_query %}?{{ filter_query }}{% endif %}"
+               class="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm {% if not current_folder %}bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 font-semibold{% else %}text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50{% endif %}">
+                <i data-lucide="inbox" class="w-4 h-4 flex-shrink-0 {% if not current_folder %}text-primary-500{% else %}text-gray-400{% endif %}"></i>
+                <span class="flex-1 truncate">Alle Dokumente</span>
+                <span class="text-[11px] text-gray-400 flex-shrink-0">{{ root_document_count }}</span>
+            </a>
+
+            {% for entry in folder_entries %}
+            <div class="group/folder flex items-center rounded-lg {% if current_folder and current_folder.id == entry.folder.id %}bg-primary-50 dark:bg-primary-900/20{% else %}hover:bg-gray-50 dark:hover:bg-gray-700/50{% endif %}"
+                 style="padding-left: {{ entry.indent }}px">
+                <a href="?ordner={{ entry.folder.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}"
+                   class="flex-1 flex items-center gap-2 px-2 py-1.5 min-w-0 text-sm {% if current_folder and current_folder.id == entry.folder.id %}text-primary-700 dark:text-primary-300 font-semibold{% else %}text-gray-700 dark:text-gray-300{% endif %}">
+                    <i data-lucide="folder" class="w-4 h-4 flex-shrink-0 {% if entry.folder.color %}text-{{ entry.folder.color }}-500{% else %}text-gray-400{% endif %}"></i>
+                    <span class="flex-1 truncate">{{ entry.folder.name }}</span>
+                    <span class="text-[11px] text-gray-400 flex-shrink-0">{{ entry.count }}</span>
+                </a>
+                {% if entry.can_manage %}
+                <button type="button" title="Ordner bearbeiten"
+                        @click.stop="openFolderEdit('{{ entry.folder.id }}', '{{ entry.folder.name|escapejs }}', '{{ entry.folder.color }}', '{{ entry.folder.parent_id|default_if_none:'' }}', '{% if entry.folder.parent %}{{ entry.folder.parent.name|escapejs }}{% else %}Alle Dokumente{% endif %}')"
+                        class="p-1 mr-1 rounded opacity-0 group-hover/folder:opacity-100 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-400 flex-shrink-0">
+                    <i data-lucide="more-horizontal" class="w-3.5 h-3.5"></i>
+                </button>
+                {% endif %}
+            </div>
+            {% empty %}
+            <p class="px-2 py-1 text-xs text-gray-400">Noch keine Ordner.</p>
+            {% endfor %}
+        </nav>
+    </div>
+</aside>

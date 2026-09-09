@@ -1,0 +1,109 @@
+{# Fraktions-Einstellungen: öffentliche Protokolle, Titelvorlagen für den ersten TOP, Platzhalter und Live-Vorschau #}
+{# Kontext: organization, can_publish_protocols, faction_settings, placeholders #}
+{# Die Vorschau treibt die Alpine-Komponente `factionTitlePreview` (frontend/alpine/faction-title-preview.ts). #}
+<c-ui.card>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Öffentliche Protokolle</h3>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+        Genehmigte Protokolle können im Bürgerportal veröffentlicht werden — es erscheinen
+        ausschließlich öffentliche Tagesordnungspunkte und deren Protokolleinträge.
+    </p>
+
+    <div class="flex items-start gap-4">
+        <div class="flex items-center h-6">
+            <input type="checkbox" id="publish_protocols" name="publish_protocols"
+                   {% if organization.publish_protocols %}checked{% endif %}
+                   {% if not can_publish_protocols %}disabled{% endif %}
+                   class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 disabled:opacity-50">
+        </div>
+        <div class="flex-1">
+            <label for="publish_protocols" class="block text-sm font-medium text-gray-900 dark:text-white">
+                Genehmigte Protokolle im Bürgerportal veröffentlichen
+            </label>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                Standardmäßig deaktiviert. Solange die Veröffentlichung ausgeschaltet ist,
+                sind Fraktionsprotokolle ausschließlich intern sichtbar.
+            </p>
+            {% if not can_publish_protocols %}
+            <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                Zum Ändern dieser Einstellung ist die Berechtigung „Protokolle veröffentlichen" erforderlich.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+</c-ui.card>
+
+<div x-data="factionTitlePreview" class="space-y-6">
+    <c-ui.card>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Titel für den ersten TOP</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+            Legen Sie fest, wie der automatisch erstellte erste Tagesordnungspunkt benannt wird.
+        </p>
+
+        <div class="space-y-4">
+            <div>
+                <label for="id_first_agenda_title_with_previous" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Titel mit vorheriger Sitzung
+                </label>
+                <input type="text" name="first_agenda_title_with_previous" id="id_first_agenda_title_with_previous"
+                       value="{{ faction_settings.first_agenda_title_with_previous }}"
+                       x-ref="titleInput" @input="title = $event.target.value"
+                       class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none"
+                       placeholder="Tagesordnung festlegen und letztes Protokoll genehmigen">
+                <p class="text-xs text-gray-500 mt-1">
+                    Wird verwendet, wenn eine vorherige Sitzung existiert.
+                </p>
+            </div>
+
+            <c-form.field name="first_agenda_title_no_previous" label="Titel ohne vorherige Sitzung"
+                          :value="faction_settings.first_agenda_title_no_previous"
+                          placeholder="Tagesordnung festlegen"
+                          help="Wird verwendet, wenn es die erste Sitzung ist oder keine vorherige existiert." />
+
+            <c-form.textarea name="first_agenda_description" label="Beschreibung (optional)" rows="2"
+                             :value="faction_settings.first_agenda_description"
+                             placeholder="Optionale Beschreibung für den ersten TOP..." />
+        </div>
+    </c-ui.card>
+
+    {# Platzhalter-Referenz #}
+    <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-6">
+        <h3 class="text-base font-medium text-blue-800 dark:text-blue-300 mb-3 flex items-center gap-2">
+            <i data-lucide="info" class="w-5 h-5"></i>
+            Verfügbare Platzhalter
+        </h3>
+        <p class="text-sm text-blue-700 dark:text-blue-400 mb-3">
+            Sie können folgende Platzhalter im Titel und in der Beschreibung verwenden:
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {% for placeholder, description in placeholders %}
+            <div class="flex items-start gap-2 text-sm">
+                <code class="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 rounded font-mono text-xs flex-shrink-0">{{ placeholder }}</code>
+                <span class="text-blue-700 dark:text-blue-400">{{ description }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    {# Beispiel-Vorschau #}
+    <div class="bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-base font-medium text-gray-900 dark:text-white mb-3">Vorschau</h3>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+            So würde der erste TOP bei einer Sitzung am 15.02.2026 aussehen (mit vorheriger Sitzung am 01.02.2026):
+        </p>
+        <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div class="flex items-start gap-3">
+                <span class="flex-shrink-0 w-8 h-8 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center text-sm font-medium text-primary-600 dark:text-primary-400">
+                    1
+                </span>
+                <div>
+                    <p class="font-medium text-gray-900 dark:text-white" id="preview-title" x-text="preview">
+                        {{ faction_settings.first_agenda_title_with_previous|default:"Tagesordnung festlegen und letztes Protokoll genehmigen" }}
+                    </p>
+                    {% if faction_settings.first_agenda_description %}
+                    <p class="text-sm text-gray-500 mt-1">{{ faction_settings.first_agenda_description }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,40 @@
+{% comment %}
+Karte „Vertrauenswürdige Geräte“ (überspringen die 2FA-Abfrage) mit Entfernen per confirmAction.
+Kontext: trusted_devices – wird nur gerendert, wenn Geräte vorhanden sind
+{% endcomment %}
+{% if trusted_devices %}
+<c-ui.card title="Vertrauenswürdige Geräte" subtitle="Überspringen die 2FA-Abfrage" padding="none" class="fade-up" style="animation-delay: 100ms">
+    <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+        {% for device in trusted_devices %}
+        <div class="px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="smartphone" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">
+                        {{ device.device_name|default:"Unbekanntes Gerät" }}
+                    </p>
+                    <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        <span>Seit {{ device.created_at|date:"d.m.Y" }}</span>
+                        <span class="text-gray-300 dark:text-gray-600">·</span>
+                        <span>Bis {{ device.expires_at|date:"d.m.Y" }}</span>
+                    </div>
+                </div>
+            </div>
+            <form method="post" class="flex-shrink-0" x-data
+                  @submit.prevent="confirmAction({ title: 'Gerät entfernen', message: '„{{ device.device_name|default:'Unbekanntes Gerät'|escapejs }}“ wird entfernt.', confirmText: 'Entfernen', variant: 'danger' }).then(ok => ok && $el.submit())">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="remove_trusted_device">
+                <input type="hidden" name="device_id" value="{{ device.id }}">
+                <button type="submit"
+                        class="p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        title="Gerät entfernen">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+</c-ui.card>
+{% endif %}

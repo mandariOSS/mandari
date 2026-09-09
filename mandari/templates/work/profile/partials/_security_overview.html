@@ -1,0 +1,94 @@
+{% comment %}
+Linke Spalte der Sicherheitsseite: Sicherheitsübersicht (2FA, E-Mail, Sitzungen, Geräte) und Tipps.
+Kontext: is_2fa_enabled, request.user, sessions, trusted_devices
+{% endcomment %}
+<div class="space-y-4">
+    <c-ui.card title="Sicherheitsübersicht" padding="none" class="fade-up">
+        <div class="px-6 py-4 space-y-3">
+            <!-- 2FA -->
+            <div class="flex items-center gap-3">
+                {% if is_2fa_enabled %}
+                <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="check" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
+                </div>
+                <span class="text-sm text-gray-700 dark:text-gray-300">2FA aktiv</span>
+                {% else %}
+                <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                </div>
+                <span class="text-sm text-amber-700 dark:text-amber-400 font-medium">2FA nicht aktiviert</span>
+                {% endif %}
+            </div>
+
+            <!-- Email Verified -->
+            <div class="flex items-center gap-3">
+                {% if request.user.email_verified %}
+                <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="check" class="w-4 h-4 text-green-600 dark:text-green-400"></i>
+                </div>
+                <span class="text-sm text-gray-700 dark:text-gray-300">E-Mail verifiziert</span>
+                {% else %}
+                <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                </div>
+                <span class="text-sm text-amber-700 dark:text-amber-400 font-medium">E-Mail nicht verifiziert</span>
+                {% endif %}
+            </div>
+
+            <!-- Sessions -->
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="monitor" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <span class="text-sm text-gray-700 dark:text-gray-300">{{ sessions|length }} aktive Sitzung{{ sessions|length|pluralize:"en" }}</span>
+            </div>
+
+            {% if trusted_devices %}
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="smartphone" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <span class="text-sm text-gray-700 dark:text-gray-300">{{ trusted_devices|length }} vertr. Gerät{{ trusted_devices|length|pluralize:"e" }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </c-ui.card>
+
+    <c-ui.card title="Sicherheitstipps" padding="none" class="fade-up" style="animation-delay: 50ms">
+        <div class="px-6 py-4 space-y-3">
+            {% if not is_2fa_enabled %}
+            <div class="flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-lg">
+                <i data-lucide="shield-alert" class="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"></i>
+                <div>
+                    <p class="text-sm font-medium text-amber-800 dark:text-amber-300">2FA aktivieren</p>
+                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5 leading-relaxed">Zweiter Faktor schützt auch bei kompromittiertem Passwort.</p>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="flex items-start gap-3 p-3 rounded-lg">
+                <i data-lucide="key" class="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0 mt-0.5"></i>
+                <div>
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Starkes Passwort</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">Mind. 12 Zeichen, Groß-/Kleinbuchstaben, Zahlen, Sonderzeichen.</p>
+                </div>
+            </div>
+
+            <div class="flex items-start gap-3 p-3 rounded-lg">
+                <i data-lucide="vault" class="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0 mt-0.5"></i>
+                <div>
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Passwort-Manager nutzen</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">Einzigartiges Passwort pro Dienst, sicher verwahrt.</p>
+                </div>
+            </div>
+
+            <div class="flex items-start gap-3 p-3 rounded-lg">
+                <i data-lucide="log-out" class="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0 mt-0.5"></i>
+                <div>
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Sitzungen prüfen</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">Unbekannte Geräte sofort beenden.</p>
+                </div>
+            </div>
+        </div>
+    </c-ui.card>
+</div>

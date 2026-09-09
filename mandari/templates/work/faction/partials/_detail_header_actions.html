@@ -1,0 +1,64 @@
+{% load permission_tags %}
+{# Fraktionssitzung – Kopfaktionen: Status-Aktion, Einladen, Bearbeiten, Video-Link, Zurück #}
+{# Kontext: meeting, organization, membership, can_start, can_edit #}
+<div class="flex items-center gap-2 flex-wrap" x-data>
+    {# Status-Aktion #}
+    {% if meeting.status == 'ongoing' %}
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "end"}' hx-confirm="Sitzung wirklich beenden?">
+        {% csrf_token %}
+        <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100">
+            <i data-lucide="square" class="w-4 h-4"></i> Sitzung beenden
+        </button>
+    </form>
+    {% elif can_start %}
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "start"}'>
+        {% csrf_token %}
+        <c-ui.button type="submit" variant="success" icon="play">Sitzung starten</c-ui.button>
+    </form>
+    {% elif meeting.status == 'draft' and can_edit %}
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "update_status", "status": "planned"}'>
+        {% csrf_token %}
+        <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+            <i data-lucide="calendar-check" class="w-4 h-4"></i> Sitzung planen
+        </button>
+    </form>
+    {% endif %}
+
+    {# Einladen (geplant, noch nicht versendet) bzw. Aktualisierung nach TO-Änderungen (Issue #59) #}
+    {% if not meeting.invitation_sent and meeting.status == 'planned' and membership|has_perm:"faction.invite" %}
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "invite"}' hx-confirm="Einladungen an alle Mitglieder versenden?">
+        {% csrf_token %}
+        <button type="submit" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100">
+            <i data-lucide="send" class="w-4 h-4"></i> Einladen
+        </button>
+    </form>
+    {% elif meeting.invitation_sent and meeting.status in 'planned,invited' and membership|has_perm:"faction.invite" %}
+    <form hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+          hx-vals='{"action": "invite"}' hx-confirm="Aktualisierte Einladung (neue Tagesordnung) an alle versenden?">
+        {% csrf_token %}
+        <button type="submit" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i> Aktualisierung senden
+        </button>
+    </form>
+    {% endif %}
+
+    {% if can_edit %}
+    <c-ui.button variant="secondary" icon="edit" @click="$dispatch('open-edit-meeting')">Bearbeiten</c-ui.button>
+    {% endif %}
+
+    {% if meeting.is_virtual and meeting.video_link %}
+    <a href="{{ meeting.video_link }}" target="_blank"
+       class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100">
+        <i data-lucide="video" class="w-4 h-4"></i> Beitreten
+    </a>
+    {% endif %}
+
+    <a href="{% url 'work:faction' org_slug=organization.slug %}"
+       class="inline-flex items-center gap-1 px-3 py-2 text-sm text-gray-500 hover:text-gray-700">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i> Zurück
+    </a>
+</div>

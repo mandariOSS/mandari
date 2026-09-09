@@ -1,0 +1,11 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Kennzahl-Kachel für Statistikzeilen.  <c-ui.kpi-tile label="Gesamt" value="12" tone="default|muted|blue|indigo|red|purple|green|amber" />
+`tone` färbt den Wert; Text im Slot wird hinter dem Wert ausgegeben. class/attrs gehen an das Wurzelelement.
+{% endcomment %}
+<c-vars label="" value="" tone="default" class="" />
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3 {{ class }}" {{ attrs }}>
+    <p class="text-xs text-gray-500 dark:text-gray-400">{{ label }}</p>
+    <p class="text-xl font-bold
+        {% if tone == 'muted' %}text-gray-600 dark:text-gray-300{% elif tone == 'blue' %}text-blue-600 dark:text-blue-400{% elif tone == 'indigo' %}text-indigo-600 dark:text-indigo-400{% elif tone == 'red' %}text-red-600 dark:text-red-400{% elif tone == 'purple' %}text-purple-600 dark:text-purple-400{% elif tone == 'green' %}text-green-600 dark:text-green-400{% elif tone == 'amber' %}text-amber-600 dark:text-amber-400{% else %}text-gray-900 dark:text-white{% endif %}">{{ value }}{{ slot }}</p>
+</div>

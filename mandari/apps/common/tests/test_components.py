@@ -191,18 +191,14 @@ class TestUiKitPreview:
 
     def test_preview_url_is_hidden_without_debug(self, client: Client, settings: Any) -> None:
         settings.DEBUG = False
-        if reverse_or_none("dev_ui_kit") is None:
-            pytest.skip("Vorschau-URL ist ohne DEBUG nicht registriert")
+        settings.UI_KIT_PREVIEW = False
         assert client.get(reverse("dev_ui_kit")).status_code == 404
 
-
-def reverse_or_none(name: str) -> str | None:
-    from django.urls import NoReverseMatch
-
-    try:
-        return reverse(name)
-    except NoReverseMatch:
-        return None
+    def test_preview_url_renders_with_preview_flag(self, client: Client, settings: Any) -> None:
+        settings.UI_KIT_PREVIEW = True
+        response = client.get(reverse("dev_ui_kit"))
+        assert response.status_code == 200
+        assert "UI-Kit" in response.content.decode()
 
 
 @pytest.mark.django_db
@@ -232,3 +228,66 @@ class TestAccountsPilot:
         )
         assert response.status_code == 200
         assert "Link ungültig" in response.content.decode()
+
+
+class TestKpiTile:
+    """Kennzahl-Kachel (c-ui.kpi-tile, Hotspot-Zerlegung #174)."""
+
+    def test_default_tone_and_label(self) -> None:
+        html = render('<c-ui.kpi-tile label="Gesamt" value="12" />')
+        assert "Gesamt" in html
+        assert ">12<" in html
+        assert "text-gray-900 dark:text-white" in html
+        assert "rounded-xl border" in html
+
+    def test_tone_colors_value_and_passes_attributes(self) -> None:
+        html = render('<c-ui.kpi-tile label="Überfällig" value="3" tone="red" class="mb-2" data-test="x" />')
+        assert "text-red-600 dark:text-red-400" in html
+        assert "mb-2" in html
+        assert 'data-test="x"' in html
+
+
+class TestPanelComponents:
+    """Alpine-Modal, Panel-Abschnitt und Textbutton (Hotspot-Zerlegung #174, Satz B)."""
+
+    def test_alpine_modal_binds_show_variable_and_sizes(self) -> None:
+        html = render(
+            '<c-ui.alpine-modal show="showItemModal" size="lg" panel_class="max-h-[90vh]" class="py-8">Body</c-ui.alpine-modal>'
+        )
+        assert 'x-show="showItemModal"' in html
+        assert '@click="showItemModal = false"' in html
+        assert "max-w-2xl" in html
+        assert "max-h-[90vh]" in html
+        assert "py-8" in html
+        assert "Body" in html
+
+    def test_alpine_modal_default_size_is_small(self) -> None:
+        html = render('<c-ui.alpine-modal show="open">x</c-ui.alpine-modal>')
+        assert "max-w-md" in html
+        assert "x-cloak" in html
+
+    def test_panel_section_renders_count_and_action_slot(self) -> None:
+        html = render(
+            '<c-ui.panel-section title="Aufgaben" :count="n"><c-slot name="action">'
+            '<c-ui.text-button icon="plus">Aufgabe</c-ui.text-button></c-slot>Inhalt</c-ui.panel-section>',
+            n=3,
+        )
+        assert "Aufgaben" in html
+        assert "(3)" in html
+        assert "Inhalt" in html
+        assert 'data-lucide="plus"' in html
+        assert "uppercase tracking-wider" in html
+
+    def test_panel_section_hides_zero_count(self) -> None:
+        html = render('<c-ui.panel-section title="Anhänge" :count="n">x</c-ui.panel-section>', n=0)
+        assert "(0)" not in html
+
+    def test_text_button_variants_and_attributes(self) -> None:
+        assert "text-primary-600" in render("<c-ui.text-button>Ok</c-ui.text-button>")
+        html = render(
+            '<c-ui.text-button variant="danger" type="submit" icon="trash-2" title="Löschen">Entfernen</c-ui.text-button>'
+        )
+        assert 'type="submit"' in html
+        assert "text-red-500" in html
+        assert 'title="Löschen"' in html
+        assert "text-gray-500" in render('<c-ui.text-button variant="muted">x</c-ui.text-button>')

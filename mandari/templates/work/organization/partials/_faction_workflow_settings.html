@@ -1,0 +1,131 @@
+{# Fraktions-Einstellungen: Workflow-Schalter und Einladungslogik (Issue #62), Teil des Haupt-Formulars #}
+{# Kontext: faction_settings #}
+<c-ui.card>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Workflow-Einstellungen</h3>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+        Konfigurieren Sie, wie Fraktionssitzungen verwaltet und verknüpft werden.
+    </p>
+
+    <div class="space-y-4">
+        <div class="flex items-start gap-4">
+            <div class="flex items-center h-6">
+                <input type="checkbox" id="auto_create_approval_item" name="auto_create_approval_item"
+                       {% if faction_settings.auto_create_approval_item %}checked{% endif %}
+                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+            </div>
+            <div class="flex-1">
+                <label for="auto_create_approval_item" class="block text-sm font-medium text-gray-900 dark:text-white">
+                    Automatischen ersten TOP erstellen
+                </label>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    Bei jeder neuen Sitzung wird automatisch ein TOP 1 für die Genehmigung der Tagesordnung
+                    und des Protokolls der letzten Sitzung erstellt.
+                </p>
+            </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+            <div class="flex items-center h-6">
+                <input type="checkbox" id="link_previous_meeting" name="link_previous_meeting"
+                       {% if faction_settings.link_previous_meeting %}checked{% endif %}
+                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+            </div>
+            <div class="flex-1">
+                <label for="link_previous_meeting" class="block text-sm font-medium text-gray-900 dark:text-white">
+                    Sitzungen automatisch verketten
+                </label>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    Neue Sitzungen werden automatisch mit der vorherigen Sitzung verknüpft.
+                </p>
+            </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+            <div class="flex items-center h-6">
+                <input type="checkbox" id="protocol_revision_safe" name="protocol_revision_safe"
+                       {% if faction_settings.protocol_revision_safe %}checked{% endif %}
+                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+            </div>
+            <div class="flex-1">
+                <label for="protocol_revision_safe" class="block text-sm font-medium text-gray-900 dark:text-white">
+                    Protokolle revisionssicher speichern
+                </label>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    Genehmigte Protokolle werden unveränderlich gespeichert und können nicht mehr bearbeitet werden.
+                </p>
+            </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+            <div class="flex items-center h-6">
+                <input type="checkbox" id="auto_lock_protocol_on_complete" name="auto_lock_protocol_on_complete"
+                       {% if faction_settings.auto_lock_protocol_on_complete %}checked{% endif %}
+                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+            </div>
+            <div class="flex-1">
+                <label for="auto_lock_protocol_on_complete" class="block text-sm font-medium text-gray-900 dark:text-white">
+                    Protokoll bei Abschluss automatisch sperren
+                </label>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    Das Protokoll wird automatisch gesperrt, wenn die Sitzung als "Abgeschlossen" markiert wird.
+                </p>
+            </div>
+        </div>
+
+        <div class="flex items-start gap-4">
+            <div class="flex items-center h-6">
+                <input type="checkbox" id="require_protocol_approval" name="require_protocol_approval"
+                       {% if faction_settings.require_protocol_approval %}checked{% endif %}
+                       class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+            </div>
+            <div class="flex-1">
+                <label for="require_protocol_approval" class="block text-sm font-medium text-gray-900 dark:text-white">
+                    Protokollgenehmigung erforderlich
+                </label>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    Protokolle müssen in einer Folgesitzung offiziell genehmigt werden, bevor sie als finalisiert gelten.
+                </p>
+            </div>
+        </div>
+    </div>
+</c-ui.card>
+
+<c-ui.card>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Einladungen</h3>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+        Legen Sie fest, wie Einladungen zu Fraktionssitzungen versendet werden und ob sich
+        Mitglieder anmelden (Opt-in) oder abmelden (Opt-out).
+    </p>
+
+    <div class="space-y-4">
+        <c-form.select name="invitation_mode" label="Teilnahme-Modus"
+                       help='Im Opt-out-Modus stehen alle Eingeladenen nach dem Versand auf „Zugesagt" und können absagen.'>
+            <option value="opt_in" {% if faction_settings.invitation_mode == "opt_in" %}selected{% endif %}>Opt-in — Teilnehmende melden sich an (Zusagen)</option>
+            <option value="opt_out" {% if faction_settings.invitation_mode == "opt_out" %}selected{% endif %}>Opt-out — Teilnehmende gelten als angemeldet und melden sich ab</option>
+        </c-form.select>
+
+        <div>
+            <label for="id_invitation_lead_hours" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Einladungsvorlauf (Stunden vor Sitzungsbeginn)
+            </label>
+            <input type="number" name="invitation_lead_hours" id="id_invitation_lead_hours" min="1" max="1440"
+                   value="{{ faction_settings.invitation_lead_hours }}"
+                   class="w-full px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            <p class="text-xs text-gray-500 mt-1">
+                z. B. 48 oder 72 — zu diesem Zeitpunkt werden Einladungen automatisch versendet
+                (bzw. ist der Versand nach Freigabe geplant).
+            </p>
+        </div>
+
+        <c-form.select name="invitation_dispatch" label="Versandart"
+                       help="Im Freigabe-Modus werden Vorstand/Vorsitz 24 h und 3 h vor dem geplanten Versandzeitpunkt benachrichtigt (in-App und E-Mail; E-Mails in den Benachrichtigungseinstellungen abschaltbar). Der stellv. Vorsitz darf direkt freigeben — dokumentiert wird, wer freigegeben hat.">
+            <option value="automatic" {% if faction_settings.invitation_dispatch == "automatic" %}selected{% endif %}>Automatisch zum Vorlaufzeitpunkt</option>
+            <option value="approval" {% if faction_settings.invitation_dispatch == "approval" %}selected{% endif %}>Erst nach Freigabe durch Vorstand/Vorsitz</option>
+        </c-form.select>
+
+        <c-form.select name="quorum_rule" label="Beschlussfähigkeit (Quorum)"
+                       help="Weitere Quorum-Regeln folgen später — aktuell gilt die Standardregel.">
+            <option value="majority" selected>Mehr als 50 % der stimmberechtigten Mitglieder anwesend</option>
+        </c-form.select>
+    </div>
+</c-ui.card>

@@ -1,0 +1,141 @@
+{# DSGVO-Datenexport: 4. Aufgaben, 5. Anträge & Dokumente (mit Revisionen, Kommentaren, Genehmigungen, Freigaben, Dokumenten) #}
+{# Kontext: data #}
+<!-- 4. Tasks -->
+<div class="page-break"></div>
+<h2>4. Aufgaben</h2>
+{% if data.tasks %}
+{% for t in data.tasks %}
+<div class="item-header">{{ t.title }}</div>
+<table class="kv-table">
+    <tr><td>Status</td><td>{{ t.status }}</td></tr>
+    <tr><td>Priorit&auml;t</td><td>{{ t.priority }}</td></tr>
+    <tr><td>F&auml;llig</td><td>{{ t.due_date|default:"&mdash;" }}</td></tr>
+    <tr><td>Erstellt</td><td>{{ t.created_at }}</td></tr>
+    <tr><td>Rolle</td><td>{% if t.is_creator %}Ersteller{% endif %}{% if t.is_creator and t.is_assignee %}, {% endif %}{% if t.is_assignee %}Zugewiesen{% endif %}</td></tr>
+</table>
+{% if t.description %}
+<div class="content-block">{{ t.description }}</div>
+{% endif %}
+{% if t.comments %}
+<h3 class="h3-tight">Kommentare</h3>
+{% for c in t.comments %}
+<div class="content-block"><strong>{{ c.created_at }}:</strong> {{ c.content }}</div>
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Aufgaben vorhanden.</p>
+{% endif %}
+
+
+<!-- 5. Motions -->
+<div class="page-break"></div>
+<h2>5. Antr&auml;ge &amp; Dokumente</h2>
+{% if data.motions %}
+{% for m in data.motions %}
+<div class="item-header">{{ m.title }}</div>
+<table class="kv-table">
+    <tr><td>Status</td><td>{{ m.status }}</td></tr>
+    <tr><td>Sichtbarkeit</td><td>{{ m.visibility }}</td></tr>
+    <tr><td>Erstellt</td><td>{{ m.created_at }}</td></tr>
+    {% if m.submitted_at %}<tr><td>Eingereicht</td><td>{{ m.submitted_at }}</td></tr>{% endif %}
+</table>
+{% if m.summary %}
+<p><strong>Zusammenfassung:</strong> {{ m.summary }}</p>
+{% endif %}
+{% if m.content %}
+<div class="content-block">{{ m.content|safe }}</div>
+{% endif %}
+
+{% if m.revisions %}
+<h3>Revisionen</h3>
+<table>
+    <tr>
+        <th class="col-narrow">Version</th>
+        <th class="col-22">Ge&auml;ndert von</th>
+        <th>&Auml;nderung</th>
+        <th class="col-date">Datum</th>
+    </tr>
+    {% for r in m.revisions %}
+    <tr>
+        <td>{{ r.version }}</td>
+        <td>{{ r.changed_by|default:"&mdash;" }}</td>
+        <td>{{ r.change_summary|default:"&mdash;" }}</td>
+        <td>{{ r.created_at }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+
+{% if m.comments %}
+<h3>Kommentare</h3>
+{% for c in m.comments %}
+<div class="content-block"><strong>{{ c.created_at }}:</strong> {{ c.content }}</div>
+{% endfor %}
+{% endif %}
+
+{% if m.approvals %}
+<h3>Genehmigungen</h3>
+<table>
+    <tr>
+        <th class="col-25">Person</th>
+        <th class="col-15">Typ</th>
+        <th class="col-status">Status</th>
+        <th>Kommentar</th>
+        <th class="col-date">Datum</th>
+    </tr>
+    {% for a in m.approvals %}
+    <tr>
+        <td>{{ a.approver|default:"&mdash;" }}</td>
+        <td>{{ a.approval_type }}</td>
+        <td>{% if a.approved == True %}Genehmigt{% elif a.approved == False %}Abgelehnt{% else %}Ausstehend{% endif %}</td>
+        <td>{{ a.comment|default:"&mdash;" }}</td>
+        <td>{{ a.decided_at|default:"&mdash;" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+
+{% if m.shares %}
+<h3>Freigaben</h3>
+<table>
+    <tr>
+        <th class="col-18">Umfang</th>
+        <th class="col-15">Berechtigung</th>
+        <th>Nachricht</th>
+        <th class="col-date">Datum</th>
+    </tr>
+    {% for s in m.shares %}
+    <tr>
+        <td>{{ s.scope }}</td>
+        <td>{{ s.level }}</td>
+        <td>{{ s.message|default:"&mdash;" }}</td>
+        <td>{{ s.created_at }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+
+{% if m.documents %}
+<h3>Dokumente</h3>
+<table>
+    <tr>
+        <th>Dateiname</th>
+        <th class="col-date">Typ</th>
+        <th class="col-narrow">Gr&ouml;&szlig;e</th>
+        <th class="col-date">Hochgeladen</th>
+    </tr>
+    {% for d in m.documents %}
+    <tr>
+        <td>{{ d.filename }}</td>
+        <td>{{ d.mime_type }}</td>
+        <td>{{ d.file_size }}</td>
+        <td>{{ d.uploaded_at }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="empty">Keine Antr&auml;ge vorhanden.</p>
+{% endif %}

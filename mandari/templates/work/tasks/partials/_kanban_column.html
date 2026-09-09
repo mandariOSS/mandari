@@ -1,0 +1,48 @@
+{% comment %}
+Eine Spalte des Kanban-Boards (Kopf, Karten, Leerzustand, optional Schnellanlage).
+Aufruf: {% include "work/tasks/partials/_kanban_column.html" with status="todo" title="Zu erledigen" icon="circle" color="blue" tasks=todo_tasks empty_text="Keine Aufgaben" quick_add=True %}
+Parameter: status (todo|in_progress|done), title, icon, color (blue|amber|green), tasks, empty_text, quick_add
+Kontext: organization, show_completed (für das „+“ bei gekürzter Erledigt-Liste)
+{% endcomment %}
+<div class="kanban-column">
+    <div class="flex items-center justify-between mb-4 pb-3 border-b-2 {% if color == 'amber' %}border-amber-500{% elif color == 'green' %}border-green-500{% else %}border-blue-500{% endif %}">
+        <div class="flex items-center gap-2">
+            <div class="p-2 rounded-lg {% if color == 'amber' %}bg-amber-50 dark:bg-amber-900/20{% elif color == 'green' %}bg-green-50 dark:bg-green-900/20{% else %}bg-blue-50 dark:bg-blue-900/20{% endif %}">
+                <i data-lucide="{{ icon }}" class="w-4 h-4 {% if color == 'amber' %}text-amber-500 dark:text-amber-400{% elif color == 'green' %}text-green-500 dark:text-green-400{% else %}text-blue-500 dark:text-blue-400{% endif %}"></i>
+            </div>
+            <div>
+                <h3 class="text-[15px] font-bold text-gray-900 dark:text-white">{{ title }}</h3>
+                <span id="count-{{ status }}" class="text-xs text-gray-500 dark:text-gray-400">{{ tasks|length }}{% if status == 'done' and not show_completed %}+{% endif %} Aufgaben</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="column-{{ status }}" class="space-y-3 min-h-[200px] p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl border {% if color == 'amber' %}border-amber-100 dark:border-amber-900/30{% elif color == 'green' %}border-green-100 dark:border-green-900/30{% else %}border-blue-100 dark:border-blue-900/30{% endif %}"
+         data-status="{{ status }}">
+        {% for task in tasks %}
+        {% include "work/tasks/_card.html" %}
+        {% endfor %}
+        <div class="empty-placeholder text-center py-6 {% if tasks %}hidden{% endif %}">
+            <p class="text-sm text-gray-400 dark:text-gray-500">{{ empty_text }}</p>
+        </div>
+    </div>
+
+    {% if quick_add %}
+    <!-- Quick Add (HTMX); kanbanBoard setzt das Formular nach Erfolg zurück (data-quick-add) -->
+    <form class="mt-3" data-quick-add
+          hx-post="{% url 'work:tasks_api' org_slug=organization.slug %}"
+          hx-target="#column-{{ status }} .empty-placeholder"
+          hx-swap="beforebegin">
+        <input type="hidden" name="action" value="quick_add">
+        <input type="hidden" name="status" value="{{ status }}">
+        <div class="flex gap-2">
+            <input type="text" name="title" placeholder="Neue Aufgabe..." required
+                   class="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
+            <button type="submit"
+                    class="px-3 py-2 text-sm font-medium text-white {% if color == 'amber' %}bg-amber-600 hover:bg-amber-700{% else %}bg-primary-600 hover:bg-primary-700{% endif %} rounded-lg">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </form>
+    {% endif %}
+</div>

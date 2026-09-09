@@ -36,3 +36,22 @@
     background: #6b7280;
   }
 }
+
+/* Aufgaben-Kanban (templates/work/tasks/list.html): auf Mobil horizontales Scroll-Snapping
+   der Spalten, ab md greift das Tailwind-Grid des Markups. */
+@media (max-width: 767.98px) {
+  .kanban-board {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 12px;
+    margin: 0 -16px;
+    padding: 0 16px 8px;
+  }
+  .kanban-column {
+    flex: 0 0 85%;
+    max-width: 340px;
+    scroll-snap-align: center;
+  }
+}

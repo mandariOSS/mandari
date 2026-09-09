@@ -29,6 +29,9 @@ from ..models import (
 )
 from ._helpers import _can_manage_folder, _flatten_folder_tree, _get_org_folder_or_404
 
+# Platzhalter-UUID in Ordner-URLs, die das Frontend clientseitig durch die echte ID ersetzt
+FOLDER_URL_PLACEHOLDER = "00000000-0000-0000-0000-000000000000"
+
 
 class MotionListView(WorkViewMixin, TemplateView):
     """List of documents (formerly motions)."""
@@ -206,6 +209,20 @@ class MotionListView(WorkViewMixin, TemplateView):
         preserved.pop("ordner", None)
         preserved.pop("page", None)
         context["filter_query"] = preserved.urlencode()
+
+        # Konfiguration der Alpine-Komponente `documentManager` (frontend/alpine/document-manager.ts),
+        # geht per json_script ins Template; die Ordner-URLs tragen eine Platzhalter-UUID.
+        org_kwargs = {"org_slug": self.organization.slug}
+        folder_kwargs = {**org_kwargs, "folder_id": FOLDER_URL_PLACEHOLDER}
+        context["document_manager_config"] = {
+            "currentFolderId": str(current_folder.id) if current_folder else "",
+            "urls": {
+                "folderCreate": reverse("work:document_folder_create", kwargs=org_kwargs),
+                "folderUpdate": reverse("work:document_folder_update", kwargs=folder_kwargs),
+                "folderDelete": reverse("work:document_folder_delete", kwargs=folder_kwargs),
+                "moveToFolder": reverse("work:document_move_to_folder", kwargs=org_kwargs),
+            },
+        }
 
         return context
 

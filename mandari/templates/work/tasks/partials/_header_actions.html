@@ -1,0 +1,38 @@
+{% comment %}
+Kopfzeilen-Aktionen des Aufgaben-Boards: Import/Export-Menü und „Neue Aufgabe“.
+Kontext: organization, can_import
+{% endcomment %}
+<div class="flex items-center gap-2">
+    <div x-data="{ open: false }" class="relative" @click.outside="open = false">
+        <c-ui.button variant="secondary" icon="arrow-down-up" @click="open = !open">Import / Export</c-ui.button>
+        <div x-show="open" x-cloak x-transition.opacity
+             class="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg py-1 z-40">
+            <p class="px-4 pt-2 pb-1 text-xs font-medium uppercase tracking-wide text-gray-400">Export</p>
+            <a href="{% url 'work:tasks_export' org_slug=organization.slug %}?format=csv"
+               class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="table" class="w-4 h-4 inline mr-2 text-gray-400"></i>Als CSV herunterladen
+            </a>
+            <a href="{% url 'work:tasks_export' org_slug=organization.slug %}?format=json"
+               class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="braces" class="w-4 h-4 inline mr-2 text-gray-400"></i>Als JSON herunterladen
+            </a>
+            <a href="{% url 'work:tasks_export' org_slug=organization.slug %}?format=xml"
+               class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="code" class="w-4 h-4 inline mr-2 text-gray-400"></i>Als XML herunterladen
+            </a>
+            {% if can_import %}
+            <div class="my-1 border-t border-gray-100 dark:border-gray-700"></div>
+            <p class="px-4 pt-2 pb-1 text-xs font-medium uppercase tracking-wide text-gray-400">Import</p>
+            <button type="button" @click="open = false; document.getElementById('file-import-modal').showModal()"
+                    class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="file-up" class="w-4 h-4 inline mr-2 text-gray-400"></i>Aus Datei (CSV, JSON, XML)
+            </button>
+            <button type="button" @click="open = false; document.getElementById('import-modal').showModal()"
+                    class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                <i data-lucide="clipboard-list" class="w-4 h-4 inline mr-2 text-gray-400"></i>Aus Protokollen
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    <c-ui.button href="{% url 'work:task_create' org_slug=organization.slug %}" icon="plus" class="shadow-sm">Neue Aufgabe</c-ui.button>
+</div>

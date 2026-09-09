@@ -1,0 +1,75 @@
+{# Mitglied-Detail: Aktionen (deaktivieren, reaktivieren, entfernen, Eigentümerschaft übertragen) #}
+{# Kontext: member, organization, is_self, is_owner, request #}
+<c-ui.card title="Aktionen">
+    <div class="space-y-4">
+        {% if not is_self and not is_owner %}
+            {% if member.is_active %}
+            <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied deaktivieren', message: 'Das Mitglied kann sich danach nicht mehr anmelden.', confirmText: 'Deaktivieren', variant: 'warning'}).then(ok => ok && $el.submit())">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="deactivate">
+                <button type="submit"
+                        class="w-full flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left">
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white">Mitglied deaktivieren</p>
+                        <p class="text-sm text-gray-500">Das Mitglied kann sich nicht mehr anmelden, bleibt aber in der Liste erhalten.</p>
+                    </div>
+                    <i data-lucide="user-x" class="w-5 h-5 text-gray-400"></i>
+                </button>
+            </form>
+            {% else %}
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reactivate">
+                <button type="submit"
+                        class="w-full flex items-center justify-between p-4 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-left">
+                    <div>
+                        <p class="font-medium text-green-700 dark:text-green-300">Mitglied reaktivieren</p>
+                        <p class="text-sm text-green-600 dark:text-green-400">Das Mitglied kann sich wieder anmelden.</p>
+                    </div>
+                    <i data-lucide="user-check" class="w-5 h-5 text-green-500"></i>
+                </button>
+            </form>
+            {% endif %}
+
+            <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied entfernen', message: 'Das Mitglied wird komplett aus der Organisation entfernt. Diese Aktion kann nicht rückgängig gemacht werden.', confirmText: 'Entfernen', variant: 'danger'}).then(ok => ok && $el.submit())">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="remove">
+                <button type="submit"
+                        class="w-full flex items-center justify-between p-4 rounded-lg border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left">
+                    <div>
+                        <p class="font-medium text-red-600 dark:text-red-400">Mitglied entfernen</p>
+                        <p class="text-sm text-red-500 dark:text-red-400">Das Mitglied wird komplett aus der Organisation entfernt.</p>
+                    </div>
+                    <i data-lucide="trash-2" class="w-5 h-5 text-red-400"></i>
+                </button>
+            </form>
+        {% endif %}
+
+        {% if request.user == organization.owner and not is_self %}
+        <form method="post" x-data @submit.prevent="confirmAction({title: 'Eigentümerschaft übertragen', message: 'Sind Sie sicher? Sie können diese Aktion nicht selbst rückgängig machen.', confirmText: 'Übertragen', variant: 'danger'}).then(ok => ok && $el.submit())">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="transfer_ownership">
+            <button type="submit"
+                    class="w-full flex items-center justify-between p-4 rounded-lg border border-amber-200 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors text-left">
+                <div>
+                    <p class="font-medium text-amber-700 dark:text-amber-300">Eigentümerschaft übertragen</p>
+                    <p class="text-sm text-amber-600 dark:text-amber-400">Macht dieses Mitglied zum neuen Eigentümer der Organisation.</p>
+                </div>
+                <i data-lucide="crown" class="w-5 h-5 text-amber-500"></i>
+            </button>
+        </form>
+        {% endif %}
+
+        {% if is_self %}
+        <div class="p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400">
+            <p class="text-sm">Sie können Ihr eigenes Konto nicht deaktivieren oder entfernen.</p>
+        </div>
+        {% endif %}
+
+        {% if is_owner and not is_self %}
+        <div class="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300">
+            <p class="text-sm">Der Eigentümer der Organisation kann nicht deaktiviert oder entfernt werden. Übertragen Sie zuerst die Eigentümerschaft.</p>
+        </div>
+        {% endif %}
+    </div>
+</c-ui.card>

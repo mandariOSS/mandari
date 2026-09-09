@@ -1,0 +1,38 @@
+{% comment %}
+Seitennavigation der Dokumentenliste; aktive Filter bleiben in den Links erhalten.
+Kontext: motions (Seite), paginator, current_folder, search_query, selected_status, selected_type,
+selected_topic, selected_responsible, filter_mine
+{% endcomment %}
+{% if motions.has_other_pages %}
+<div class="px-5 py-4 border-t border-gray-200 dark:border-gray-700">
+    <div class="flex items-center justify-between">
+        <p class="text-sm text-gray-500">
+            Zeige {{ motions.start_index }}-{{ motions.end_index }} von {{ paginator.count }} Hauptanträgen
+        </p>
+        <nav class="flex items-center gap-1">
+            {% if motions.has_previous %}
+            <a href="?page={{ motions.previous_page_number }}{% include 'work/motions/partials/_pagination_query.html' %}"
+               class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </a>
+            {% endif %}
+
+            {% for num in motions.paginator.page_range %}
+            {% if motions.number == num %}
+            <span class="px-3 py-2 bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400 rounded-lg font-medium text-sm">{{ num }}</span>
+            {% elif num > motions.number|add:'-3' and num < motions.number|add:'3' %}
+            <a href="?page={{ num }}{% include 'work/motions/partials/_pagination_query.html' %}"
+               class="px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-sm">{{ num }}</a>
+            {% endif %}
+            {% endfor %}
+
+            {% if motions.has_next %}
+            <a href="?page={{ motions.next_page_number }}{% include 'work/motions/partials/_pagination_query.html' %}"
+               class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </a>
+            {% endif %}
+        </nav>
+    </div>
+</div>
+{% endif %}

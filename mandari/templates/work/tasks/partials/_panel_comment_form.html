@@ -1,0 +1,21 @@
+{% comment %}
+Kommentar-Formular des Panels (HTMX, Ziel #panel-activity).
+Kontext: task, organization, membership. Optional: form_class (Zusatzklassen), blur_after (Eingabe nach Erfolg verlassen)
+{% endcomment %}
+<form hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+      hx-target="#panel-activity"
+      hx-swap="innerHTML"
+      hx-on::after-request="if(event.detail.successful) { this.reset();{% if blur_after %} this.querySelector('input[name=content]').blur();{% endif %} }"
+      class="{{ form_class|default:'' }} flex items-center gap-2">
+    <input type="hidden" name="action" value="add_comment">
+    <div class="w-7 h-7 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+        <span class="text-xs font-semibold text-primary-600 dark:text-primary-400">{{ membership.user.get_display_name|slice:":1" }}</span>
+    </div>
+    <input type="text" name="content" required autocomplete="off"
+           class="flex-1 min-w-0 px-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 outline-none placeholder-gray-400 dark:placeholder-gray-500 transition-all"
+           placeholder="Kommentar schreiben...">
+    <button type="submit"
+            class="p-2 text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors flex-shrink-0 shadow-sm">
+        <i data-lucide="send" class="w-4 h-4"></i>
+    </button>
+</form>

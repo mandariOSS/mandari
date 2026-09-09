@@ -17,6 +17,7 @@ from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView, View
 
@@ -30,6 +31,9 @@ from ..models import Task, TaskLabel
 
 logger = logging.getLogger(__name__)
 from ._helpers import _task_base_queryset
+
+# Platzhalter-UUID in der Panel-URL, die das Frontend clientseitig durch die Aufgaben-ID ersetzt
+TASK_URL_PLACEHOLDER = "00000000-0000-0000-0000-000000000000"
 
 
 class TaskListView(WorkViewMixin, TemplateView):
@@ -135,6 +139,21 @@ class TaskListView(WorkViewMixin, TemplateView):
 
         # Import (Datei/Protokolle) nur mit Erstell-Berechtigung anbieten
         context["can_import"] = self.has_permission("tasks.create")
+
+        # Konfiguration der Alpine-Komponenten kanbanBoard/importManager/fileImportManager
+        # (frontend/alpine/task-board.ts, task-import.ts), geht per json_script ins Template;
+        # die Panel-URL trägt eine Platzhalter-UUID, die das Frontend ersetzt.
+        org_kwargs = {"org_slug": self.organization.slug}
+        context["board_config"] = {
+            "autoOpenTaskId": context["auto_open_task_id"],
+            "urls": {
+                "api": reverse("work:tasks_api", kwargs=org_kwargs),
+                "panel": reverse("work:task_panel", kwargs={**org_kwargs, "task_id": TASK_URL_PLACEHOLDER}),
+                "labels": reverse("work:task_labels", kwargs=org_kwargs),
+                "importProtocol": reverse("work:tasks_import", kwargs=org_kwargs),
+                "importFile": reverse("work:tasks_import_file", kwargs=org_kwargs),
+            },
+        }
 
         return context
 

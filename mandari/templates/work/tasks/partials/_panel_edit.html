@@ -1,0 +1,197 @@
+{% comment %}
+Bearbeitbares Aufgaben-Panel: Auto-Save bei Änderungen, expliziter Speichern-Button, Sektionen für
+Labels, Checkliste, Anhänge und Aktivität. Alpine-Scope: kanbanBoard (closePanel, copyTaskLink, deleteTask).
+Kontext: task, form, organization, membership, shared_members, activities
+{% endcomment %}
+<div x-data="{ saved: false, saving: false }"
+     @task-autosaved.window="saving = false; saved = true; setTimeout(() => saved = false, 2000)"
+     @task-autosaving.window="saving = true"
+     class="flex-1 flex flex-col overflow-hidden">
+
+    <form id="task-update-form"
+          hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+          hx-trigger="change from:find select, change from:find input[type=radio], focusout from:find input[type=text] changed delay:300ms, focusout from:find input[type=date] changed delay:300ms, focusout from:find textarea changed delay:300ms"
+          hx-swap="none"
+          hx-indicator=".autosave-indicator"
+          hx-on::before-request="window.dispatchEvent(new Event('task-autosaving'))"
+          hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new Event('task-autosaved'))"
+          class="flex-1 flex flex-col overflow-hidden">
+        <input type="hidden" name="action" value="update">
+
+        {# ── Header ── #}
+        <div class="px-6 pt-5 pb-4 bg-gradient-to-b from-gray-50/80 to-white dark:from-gray-900/50 dark:to-gray-800">
+            <div class="flex items-start gap-3">
+                <div class="flex-1 min-w-0">
+                    {{ form.title }}
+                </div>
+                <div class="flex items-center gap-1 flex-shrink-0 pt-1">
+                    {# Autosave-Indikator #}
+                    <span x-cloak x-show="saving"
+                          x-transition:enter="transition ease-out duration-150"
+                          x-transition:enter-start="opacity-0"
+                          x-transition:enter-end="opacity-100"
+                          class="autosave-indicator text-gray-400 dark:text-gray-500 p-1">
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                    </span>
+                    <span x-cloak x-show="saved && !saving"
+                          x-transition:enter="transition ease-out duration-200"
+                          x-transition:enter-start="opacity-0 scale-90"
+                          x-transition:enter-end="opacity-100 scale-100"
+                          x-transition:leave="transition ease-in duration-300"
+                          x-transition:leave-start="opacity-100"
+                          x-transition:leave-end="opacity-0"
+                          class="text-green-500 dark:text-green-400 p-1">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                    </span>
+                    {# Speichern-Button #}
+                    <button type="button"
+                            hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+                            hx-include="#task-update-form"
+                            hx-vals='{"action": "save"}'
+                            hx-target="#task-panel-container"
+                            hx-swap="innerHTML"
+                            class="p-1.5 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                            title="Speichern">
+                        <i data-lucide="save" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" @click="closePanel()"
+                            class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+            {# Status, Priorität, Labels #}
+            <div class="flex items-center gap-1.5 mt-3 flex-wrap">
+                {{ form.status }}
+                {{ form.priority }}
+                {% include "work/tasks/partials/_panel_badges.html" %}
+            </div>
+        </div>
+
+        {# ── Scrollable Body ── #}
+        <div id="task-panel-body" class="flex-1 overflow-y-auto">
+            {# Beschreibung #}
+            <div class="px-6 py-4">
+                {{ form.description }}
+            </div>
+
+            {# ── Details-Sektion ── #}
+            <div class="mx-6 rounded-xl border border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-900/30 divide-y divide-gray-100 dark:divide-gray-700/50">
+                <div class="flex items-center h-10 gap-3 px-4">
+                    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <i data-lucide="user" class="w-3.5 h-3.5 text-primary-500"></i>
+                        Zugewiesen an
+                    </span>
+                    <div class="flex-1 min-w-0">{{ form.assigned_to }}</div>
+                </div>
+                <div class="flex items-center h-10 gap-3 px-4">
+                    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <i data-lucide="calendar" class="w-3.5 h-3.5 text-amber-500"></i>
+                        Fällig am
+                    </span>
+                    <div class="flex-1 min-w-0">{{ form.due_date }}</div>
+                </div>
+                <div class="flex items-center min-h-[40px] gap-3 px-4">
+                    <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <i data-lucide="eye" class="w-3.5 h-3.5 text-blue-500"></i>
+                        Sichtbarkeit
+                    </span>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2.5">
+                            {% for radio in form.visibility %}
+                            <label class="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 cursor-pointer hover:text-gray-900 dark:hover:text-gray-200 transition-colors">
+                                {{ radio.tag }}
+                                <span>{{ radio.choice_label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% include "work/tasks/partials/_panel_shared_with.html" with show_empty=True %}
+            </div>
+
+            {% include "work/tasks/partials/_panel_meta.html" %}
+            {% include "work/tasks/partials/_panel_relations.html" %}
+
+            {# Fehler #}
+            {% if form.errors %}
+            <div class="mx-6 mb-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                <ul class="text-xs text-red-600 dark:text-red-400 space-y-0.5">
+                    {% for field, errors in form.errors.items %}
+                    {% for error in errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {# ── Labels ── #}
+            <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+                <div id="panel-labels">
+                    {% include "work/tasks/_panel_labels.html" %}
+                </div>
+            </div>
+
+            {# ── Checkliste ── #}
+            <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+                <div id="panel-checklist">
+                    {% include "work/tasks/_panel_checklist.html" %}
+                </div>
+            </div>
+
+            {# ── Anhänge ── #}
+            <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+                <div id="panel-attachments">
+                    {% include "work/tasks/_panel_attachments.html" %}
+                </div>
+            </div>
+
+            {# ── Aktivität ── #}
+            <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="flex items-center gap-1.5">
+                        <i data-lucide="activity" class="w-4 h-4 text-primary-500"></i>
+                        <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Aktivität</span>
+                    </div>
+                    {% if activities|length > 0 %}
+                    <span class="text-[10px] font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 rounded-full px-1.5 py-0.5 leading-none ring-1 ring-primary-200/50 dark:ring-primary-700/30">{{ activities|length }}</span>
+                    {% endif %}
+                </div>
+                <div id="panel-activity">
+                    {% include "work/tasks/_panel_activity.html" %}
+                </div>
+            </div>
+        </div>{# /scrollable #}
+    </form>
+
+    {# ── Kommentar-Input (außerhalb des Auto-Save-Forms) ── #}
+    <div class="border-t border-gray-200 dark:border-gray-700 px-6 py-3 bg-white dark:bg-gray-800">
+        {% include "work/tasks/partials/_panel_comment_form.html" with blur_after=True %}
+    </div>
+
+    {# ── Footer ── #}
+    <div class="border-t border-gray-200 dark:border-gray-700 px-6 py-2.5 bg-gray-50/80 dark:bg-gray-900/50 flex items-center justify-between">
+        <button type="button"
+                hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
+                hx-vals='{"action": "toggle_complete"}'
+                hx-target="#task-panel-container"
+                hx-swap="innerHTML"
+                class="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-sm
+                {% if task.is_completed %}text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 ring-1 ring-amber-200 dark:ring-amber-800/50
+                {% else %}text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 ring-1 ring-green-200 dark:ring-green-800/50{% endif %}">
+            <i data-lucide="{% if task.is_completed %}rotate-ccw{% else %}check{% endif %}" class="w-3.5 h-3.5"></i>
+            {% if task.is_completed %}Wieder öffnen{% else %}Erledigt{% endif %}
+        </button>
+
+        <div class="flex items-center gap-0.5">
+            {% include "work/tasks/partials/_panel_link_button.html" %}
+            <button type="button"
+                    @click="deleteTask('{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}')"
+                    class="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                    title="Aufgabe löschen">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,22 @@
+{% comment %}
+Kontextmenü „In Ordner verschieben“ für ein einzelnes Dokument (Karten- und Tabellenansicht).
+Alpine-Scope: documentManager (moveDocuments). Kontext: motion, folder_entries
+Optional: button_class (Klassen des Auslösers, Standard: Kartenvariante)
+{% endcomment %}
+<div x-data="{ open: false }" class="relative" @click.stop>
+    <button type="button" @click="open = !open" title="In Ordner verschieben"
+            class="{{ button_class|default:'p-1 rounded' }} opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400">
+        <i data-lucide="folder-input" class="w-4 h-4"></i>
+    </button>
+    <div x-show="open" x-cloak @click.outside="open = false"
+         class="absolute right-0 z-20 mt-1 w-52 max-h-64 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg py-1">
+        <p class="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Verschieben nach</p>
+        <button type="button" @click="moveDocuments(['{{ motion.id }}'], ''); open = false"
+                class="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Alle Dokumente (Wurzel)</button>
+        {% for entry in folder_entries %}
+        <button type="button" @click="moveDocuments(['{{ motion.id }}'], '{{ entry.folder.id }}'); open = false"
+                class="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 truncate"
+                style="padding-left: calc(0.75rem + {{ entry.indent }}px)">{{ entry.folder.name }}</button>
+        {% endfor %}
+    </div>
+</div>

@@ -1,0 +1,157 @@
+{% comment %}
+Nur-Lesen-Ansicht des Aufgaben-Panels (ohne Bearbeitungsrecht): Kopf mit Status/Priorität, Details,
+Checkliste, Anhänge, Aktivität mit Kommentar-Formular. Alpine-Scope: kanbanBoard (closePanel, copyTaskLink).
+Kontext: task, organization, membership, shared_members, checklist_items, attachments, activities
+{% endcomment %}
+{# Header #}
+<div class="px-6 pt-5 pb-4 bg-gradient-to-b from-gray-50/80 to-white dark:from-gray-900/50 dark:to-gray-800">
+    <div class="flex items-start gap-3">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white leading-tight {% if task.is_completed %}line-through opacity-60{% endif %}">
+                {{ task.title }}
+            </h2>
+            <div class="flex items-center gap-1.5 mt-3 flex-wrap">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold
+                    {% if task.status == 'todo' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 ring-1 ring-blue-200/50 dark:ring-blue-700/30
+                    {% elif task.status == 'in_progress' %}bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200/50 dark:ring-amber-700/30
+                    {% else %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 ring-1 ring-green-200/50 dark:ring-green-700/30{% endif %}">
+                    {{ task.get_status_display }}
+                </span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold
+                    {% if task.priority == 'urgent' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 ring-1 ring-red-200/50 dark:ring-red-700/30
+                    {% elif task.priority == 'high' %}bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 ring-1 ring-orange-200/50 dark:ring-orange-700/30
+                    {% elif task.priority == 'medium' %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 ring-1 ring-blue-200/50 dark:ring-blue-700/30
+                    {% else %}bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                    {{ task.get_priority_display }}
+                </span>
+                {% include "work/tasks/partials/_panel_badges.html" with overdue_shape="rounded-md" %}
+            </div>
+        </div>
+        <button type="button" @click="closePanel()"
+                class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors flex-shrink-0">
+            <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+    </div>
+</div>
+
+{# Body #}
+<div id="task-panel-body" class="flex-1 overflow-y-auto">
+    {# Beschreibung #}
+    <div class="px-6 py-4">
+        {% if task.description %}
+        <div class="prose dark:prose-invert prose-sm max-w-none text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
+            {{ task.description|linebreaks }}
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-400 dark:text-gray-500 italic">Keine Beschreibung</p>
+        {% endif %}
+    </div>
+
+    {# ── Details ── #}
+    <div class="mx-6 rounded-xl border border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-900/30 divide-y divide-gray-100 dark:divide-gray-700/50">
+        <div class="flex items-center h-10 gap-3 px-4">
+            <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                <i data-lucide="user" class="w-3.5 h-3.5 text-primary-500"></i>
+                Zugewiesen an
+            </span>
+            <span class="text-xs text-gray-900 dark:text-white">
+                {% if task.assigned_to %}{{ task.assigned_to.user.get_display_name }}{% else %}<span class="text-gray-400">—</span>{% endif %}
+            </span>
+        </div>
+        <div class="flex items-center h-10 gap-3 px-4">
+            <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                <i data-lucide="calendar" class="w-3.5 h-3.5 text-amber-500"></i>
+                Fällig am
+            </span>
+            <span class="text-xs {% if task.is_overdue %}text-red-600 dark:text-red-400 font-medium{% else %}text-gray-900 dark:text-white{% endif %}">
+                {% if task.due_date %}{{ task.due_date|date:"d.m.Y" }}{% else %}<span class="text-gray-400">—</span>{% endif %}
+            </span>
+        </div>
+        <div class="flex items-center h-10 gap-3 px-4">
+            <span class="flex items-center gap-1.5 w-28 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
+                <i data-lucide="eye" class="w-3.5 h-3.5 text-blue-500"></i>
+                Sichtbarkeit
+            </span>
+            <span class="text-xs text-gray-600 dark:text-gray-300">
+                {% if task.visibility == 'private' %}
+                <span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3 h-3 text-gray-400"></i> Privat</span>
+                {% elif task.visibility == 'shared' %}
+                <span class="inline-flex items-center gap-1"><i data-lucide="users" class="w-3 h-3 text-violet-500"></i> Geteilt</span>
+                {% else %}
+                <span class="inline-flex items-center gap-1"><i data-lucide="building" class="w-3 h-3 text-green-500"></i> Organisation</span>
+                {% endif %}
+            </span>
+        </div>
+        {% include "work/tasks/partials/_panel_shared_with.html" %}
+    </div>
+
+    {% include "work/tasks/partials/_panel_meta.html" %}
+    {% include "work/tasks/partials/_panel_relations.html" %}
+
+    {# Checkliste (read-only) #}
+    {% if checklist_items %}
+    <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+        {% with progress=task.checklist_progress %}
+        <div class="flex items-center gap-2 mb-3">
+            <div class="flex items-center gap-1.5">
+                <i data-lucide="check-square" class="w-4 h-4 text-green-500"></i>
+                <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Checkliste</span>
+            </div>
+            <span class="text-[10px] font-bold {% if progress.0 == progress.1 %}text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 ring-1 ring-green-200/50 dark:ring-green-700/30{% else %}text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800{% endif %} rounded-full px-1.5 py-0.5 leading-none">{{ progress.0 }}/{{ progress.1 }}</span>
+        </div>
+        {% endwith %}
+        <div class="space-y-1">
+            {% for item in checklist_items %}
+            <div class="flex items-center gap-2 py-0.5">
+                <i data-lucide="{% if item.is_completed %}check-square{% else %}square{% endif %}" class="w-4 h-4 flex-shrink-0 {% if item.is_completed %}text-green-500{% else %}text-gray-400{% endif %}"></i>
+                <span class="text-sm {% if item.is_completed %}line-through text-gray-400 dark:text-gray-500{% else %}text-gray-700 dark:text-gray-300{% endif %}">{{ item.title }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# Anhänge (read-only) #}
+    {% if attachments %}
+    <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+        <div class="flex items-center gap-2 mb-3">
+            <div class="flex items-center gap-1.5">
+                <i data-lucide="paperclip" class="w-4 h-4 text-blue-500"></i>
+                <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Anhänge</span>
+            </div>
+            <span class="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-full px-1.5 py-0.5 leading-none ring-1 ring-blue-200/50 dark:ring-blue-700/30">{{ attachments|length }}</span>
+        </div>
+        <div class="space-y-1.5">
+            {% for att in attachments %}
+            <a href="{{ att.file.url }}" target="_blank"
+               class="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group">
+                <i data-lucide="{{ att.icon_name }}" class="w-4 h-4 text-gray-400 flex-shrink-0 group-hover:text-primary-500 transition-colors"></i>
+                <span class="text-sm text-gray-700 dark:text-gray-300 truncate flex-1">{{ att.filename }}</span>
+                <span class="text-[11px] text-gray-400 flex-shrink-0">{{ att.size_human }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# Aktivität #}
+    <div class="px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+        <div class="flex items-center gap-2 mb-4">
+            <div class="flex items-center gap-1.5">
+                <i data-lucide="activity" class="w-4 h-4 text-primary-500"></i>
+                <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Aktivität</span>
+            </div>
+        </div>
+        <div id="panel-activity">
+            {% include "work/tasks/_panel_activity.html" %}
+        </div>
+
+        {# Kommentar-Input #}
+        {% include "work/tasks/partials/_panel_comment_form.html" with form_class="mt-4" %}
+    </div>
+</div>
+
+{# Footer (read-only) #}
+<div class="border-t border-gray-200 dark:border-gray-700 px-6 py-2.5 bg-gray-50/80 dark:bg-gray-900/50 flex items-center justify-end">
+    {% include "work/tasks/partials/_panel_link_button.html" %}
+</div>
