@@ -83,7 +83,16 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
 
 ## 7. Betrieb und Beobachtbarkeit
 
-- Strukturierte Logs mit Request-Kennung, kein `DEBUG`-Logging in Produktion.
+- Strukturierte Logs mit Request-Kennung: `apps/common/observability.py` liefert `RequestIdMiddleware`
+  (`X-Request-ID` vom Proxy oder erzeugt, im Response zurück), einen Log-Filter mit `request_id`,
+  `user_id` (nur UUID), `trace_id`/`span_id` und einen JSON-Formatter. Produktion loggt JSON auf INFO,
+  Entwicklung Text auf DEBUG; `LOG_FORMAT`/`LOG_LEVEL` übersteuern, `DEBUG` wird in Produktion gekappt.
+  Keine personenbezogenen Inhalte in Log-Zeilen (keine E-Mails, Namen, Freitexte).
+- OpenTelemetry: `OTEL_EXPORTER_OTLP_ENDPOINT` schaltet Auto-Instrumentierung (Django, psycopg, Redis,
+  requests, httpx) ein; `OTEL_SERVICE_NAME` benennt den Dienst. Der Sync-Trigger an den Ingestor trägt
+  `request_id` und `trace_id`, damit ein Sync der auslösenden Anfrage zugeordnet werden kann.
+- Ausnahmen konkret fangen; ein `except Exception` braucht `logger.exception(...)` und einen Kommentar,
+  warum das Weiterlaufen richtig ist.
 - Hintergrundarbeit über Django Tasks oder Management-Kommandos, immer idempotent.
 - Migrationen additiv; große Apps werden bei Gelegenheit gesquasht.
 

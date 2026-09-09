@@ -238,7 +238,17 @@ class SyncScheduler:
                 try:
                     data = json.loads(message["data"])
                     full = data.get("full", False)
-                    console.print(f"\n[bold yellow]Sync-Trigger empfangen (full={full})[/bold yellow]")
+                    # Korrelation mit der auslösenden Django-Anfrage (X-Request-ID / OTel trace_id)
+                    request_id = data.get("request_id") or "-"
+                    trace_id = data.get("trace_id") or "-"
+                    console.print(
+                        f"\n[bold yellow]Sync-Trigger empfangen (full={full}, "
+                        f"request_id={request_id}, trace_id={trace_id})[/bold yellow]"
+                    )
+                    logger.info(
+                        "Sync-Trigger empfangen",
+                        extra={"full": full, "request_id": request_id, "trace_id": trace_id},
+                    )
                     if full:
                         await self._run_full_sync()
                     else:

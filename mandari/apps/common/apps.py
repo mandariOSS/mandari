@@ -13,3 +13,9 @@ class CommonConfig(AppConfig):
     name = "apps.common"
     label = "common"
     verbose_name = "Gemeinsame Utilities"
+
+    def ready(self) -> None:
+        # Tracing nur, wenn OTEL_EXPORTER_OTLP_ENDPOINT gesetzt ist (sonst No-Op)
+        from .observability import setup_opentelemetry
+
+        setup_opentelemetry()

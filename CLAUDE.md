@@ -546,6 +546,12 @@ EMAIL_HOST_PASSWORD=pass
 EMAIL_USE_TLS=True
 DEFAULT_FROM_EMAIL=noreply@example.com
 
+# Logging / Tracing (apps/common/observability.py)
+LOG_FORMAT=json            # json (Produktion) oder text (Entwicklung)
+LOG_LEVEL=INFO             # DEBUG wird in Produktion auf INFO gekappt
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318   # leer = kein Tracing
+OTEL_SERVICE_NAME=mandari-web
+
 # Elasticsearch (Volltextsuche)
 ELASTICSEARCH_URL=http://localhost:9200
 ELASTICSEARCH_AUTO_INDEX=True

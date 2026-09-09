@@ -117,6 +117,8 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     # Content-Security-Policy (Django 6): zunächst Report-Only, siehe Block SECURE_CSP_REPORT_ONLY
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
+    # Request-Kennung (X-Request-ID) für Logs und Fehlerkorrelation, siehe apps/common/observability.py
+    "apps.common.observability.RequestIdMiddleware",
     # Database error handler - shows maintenance page on DB connection issues
     "apps.common.middleware.DatabaseErrorMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -452,53 +454,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 
 # Logging
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "verbose": {
-            "format": "{levelname} {asctime} {module} {message}",
-            "style": "{",
-        },
-    },
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-            "formatter": "verbose",
-        },
-    },
-    "root": {
-        "handlers": ["console"],
-        "level": "INFO",
-    },
-    "loggers": {
-        "django": {
-            "handlers": ["console"],
-            "level": os.environ.get("DJANGO_LOG_LEVEL", "INFO"),
-            "propagate": False,
-        },
-        "insight_core": {
-            "handlers": ["console"],
-            "level": "DEBUG" if DEBUG else "INFO",
-            "propagate": False,
-        },
-        "insight_sync": {
-            "handlers": ["console"],
-            "level": "DEBUG" if DEBUG else "INFO",
-            "propagate": False,
-        },
-        "apps.work": {
-            "handlers": ["console"],
-            "level": "DEBUG" if DEBUG else "INFO",
-            "propagate": False,
-        },
-        "apps.common": {
-            "handlers": ["console"],
-            "level": "DEBUG" if DEBUG else "INFO",
-            "propagate": False,
-        },
-    },
-}
+# Strukturierte Logs mit Request-Kennung (apps/common/observability.py, Issue #162):
+# Produktion JSON/INFO, Entwicklung Text/DEBUG; LOG_FORMAT und LOG_LEVEL übersteuern.
+from apps.common.observability import logging_config
+
+LOGGING = logging_config(debug=DEBUG)
 
 
 # =============================================================================

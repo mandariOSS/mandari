@@ -111,6 +111,8 @@ frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
+googleapis-common-protos==1.75.3
+    # via opentelemetry-exporter-otlp-proto-http
 greenlet==3.5.5
     # via sqlalchemy
 gunicorn==26.2.0
@@ -156,11 +158,76 @@ multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
+opentelemetry-api==1.44.0
+    # via
+    #   opentelemetry-exporter-otlp-proto-http
+    #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-dbapi
+    #   opentelemetry-instrumentation-django
+    #   opentelemetry-instrumentation-httpx
+    #   opentelemetry-instrumentation-psycopg
+    #   opentelemetry-instrumentation-redis
+    #   opentelemetry-instrumentation-requests
+    #   opentelemetry-instrumentation-wsgi
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
+opentelemetry-exporter-otlp-proto-common==1.44.0
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-http==1.44.0
+    # via -r requirements.txt
+opentelemetry-instrumentation==0.65b0
+    # via
+    #   opentelemetry-instrumentation-dbapi
+    #   opentelemetry-instrumentation-django
+    #   opentelemetry-instrumentation-httpx
+    #   opentelemetry-instrumentation-psycopg
+    #   opentelemetry-instrumentation-redis
+    #   opentelemetry-instrumentation-requests
+    #   opentelemetry-instrumentation-wsgi
+opentelemetry-instrumentation-dbapi==0.65b0
+    # via opentelemetry-instrumentation-psycopg
+opentelemetry-instrumentation-django==0.65b0
+    # via -r requirements.txt
+opentelemetry-instrumentation-httpx==0.65b0
+    # via -r requirements.txt
+opentelemetry-instrumentation-psycopg==0.65b0
+    # via -r requirements.txt
+opentelemetry-instrumentation-redis==0.65b0
+    # via -r requirements.txt
+opentelemetry-instrumentation-requests==0.65b0
+    # via -r requirements.txt
+opentelemetry-instrumentation-wsgi==0.65b0
+    # via opentelemetry-instrumentation-django
+opentelemetry-proto==1.44.0
+    # via
+    #   opentelemetry-exporter-otlp-proto-common
+    #   opentelemetry-exporter-otlp-proto-http
+opentelemetry-sdk==1.44.0
+    # via
+    #   -r requirements.txt
+    #   opentelemetry-exporter-otlp-proto-http
+opentelemetry-semantic-conventions==0.65b0
+    # via
+    #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-dbapi
+    #   opentelemetry-instrumentation-django
+    #   opentelemetry-instrumentation-httpx
+    #   opentelemetry-instrumentation-redis
+    #   opentelemetry-instrumentation-requests
+    #   opentelemetry-instrumentation-wsgi
+    #   opentelemetry-sdk
+opentelemetry-util-http==0.65b0
+    # via
+    #   opentelemetry-instrumentation-django
+    #   opentelemetry-instrumentation-httpx
+    #   opentelemetry-instrumentation-requests
+    #   opentelemetry-instrumentation-wsgi
 oscrypto==1.3.0
     # via pyhanko-certvalidator
 packaging==26.3
     # via
     #   incremental
+    #   opentelemetry-instrumentation
     #   pytesseract
 pdf2image==1.17.0
     # via -r requirements.txt
@@ -176,6 +243,10 @@ propcache==0.5.2
     # via
     #   aiohttp
     #   yarl
+protobuf==7.36.1
+    # via
+    #   googleapis-common-protos
+    #   opentelemetry-proto
 psycopg==3.3.5
     # via -r requirements.txt
 psycopg-binary==3.3.5
@@ -227,7 +298,9 @@ reportlab==5.0.1
     #   svglib
     #   xhtml2pdf
 requests==2.34.2
-    # via -r requirements.txt
+    # via
+    #   -r requirements.txt
+    #   opentelemetry-exporter-otlp-proto-http
 rich==15.0.0
     # via -r requirements.txt
 segno==1.6.6
@@ -259,6 +332,10 @@ typing-extensions==4.16.0
     #   anyio
     #   django-redis
     #   elasticsearch
+    #   opentelemetry-api
+    #   opentelemetry-exporter-otlp-proto-http
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
     #   psycopg
     #   pydantic
     #   pydantic-core
@@ -294,6 +371,12 @@ webencodings==0.6.1
     #   tinycss2
 whitenoise==6.12.0
     # via -r requirements.txt
+wrapt==2.4.0
+    # via
+    #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-dbapi
+    #   opentelemetry-instrumentation-httpx
+    #   opentelemetry-instrumentation-redis
 xhtml2pdf==0.2.18
     # via -r requirements.txt
 yarl==1.24.5

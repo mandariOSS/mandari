@@ -77,9 +77,13 @@ def trigger_sync(full: bool = False):
         import redis
         from django.conf import settings
 
+        from apps.common.observability import current_request_id, current_trace_context
+
+        trace_id, _span_id = current_trace_context()
+        payload = {"full": full, "request_id": current_request_id() or None, "trace_id": trace_id or None}
         r = redis.from_url(getattr(settings, "REDIS_URL", "redis://localhost:6379"))
-        r.publish("mandari:sync:trigger", json.dumps({"full": full}))
-        logger.info(f"Sync-Trigger gesendet (full={full})")
+        r.publish("mandari:sync:trigger", json.dumps(payload))
+        logger.info("Sync-Trigger gesendet (full=%s, request_id=%s)", full, payload["request_id"])
         return True
     except Exception as e:
         logger.warning(f"Sync-Trigger fehlgeschlagen: {e}")
