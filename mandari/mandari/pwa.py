@@ -24,12 +24,7 @@ def _cache_version() -> str:
     ``activate`` aufgeräumt. Im DEBUG-Betrieb (ungehashte URLs) bleibt die
     Version konstant ("dev"-Verhalten, unkritisch).
     """
-    seed = "|".join(
-        static(path)
-        for path in (
-            "css/styles.css",
-        )
-    )
+    seed = "|".join(static(path) for path in ("css/styles.css",))
     return hashlib.md5(seed.encode()).hexdigest()[:12]
 
 
