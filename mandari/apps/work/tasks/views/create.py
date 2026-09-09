@@ -1,15 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Task views for the Work module.
+Aufgaben anlegen und teilen (Work-Modul).
 
-Provides Kanban-style task management with:
-- 3-column board (TODO, In Progress, Done)
-- Drag & drop reordering
-- Slide-over panel with auto-save + explicit save
-- Checklists, attachments, labels, activity feed
+Views parsen die Anfrage und prüfen Berechtigungen; Fachlogik liegt in
+``apps.work.tasks.services`` und ``apps.work.tasks.selectors``.
 """
 
-import contextlib
 import logging
 
 from django.contrib import messages
@@ -18,11 +14,9 @@ from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
 
-from ..activity import log_activity
-from ..forms import (
-    TaskForm,
-)
-from ..models import Task, TaskShare
+from .. import selectors, services
+from ..forms import TaskForm
+from ..models import Task
 
 logger = logging.getLogger(__name__)
 
@@ -41,17 +35,14 @@ class TaskCreateView(WorkViewMixin, TemplateView):
         # Prefill: Aufgabe aus einem Dokument heraus erstellen (?related_motion=)
         related_motion_id = self.request.GET.get("related_motion")
         if related_motion_id:
-            from apps.work.motions.models import Motion
-
-            with contextlib.suppress(Motion.DoesNotExist, ValueError):
-                context["related_motion"] = Motion.objects.get(id=related_motion_id, organization=self.organization)
+            motion = selectors.find_motion(self.organization, related_motion_id)
+            if motion is not None:
+                context["related_motion"] = motion
 
         from_protocol = self.request.GET.get("from_protocol")
         if from_protocol:
-            from apps.work.faction.models import FactionProtocolEntry
-
-            try:
-                entry = FactionProtocolEntry.objects.get(id=from_protocol, meeting__organization=self.organization)
+            entry = selectors.find_protocol_entry(self.organization, from_protocol)
+            if entry is not None:
                 context["form"] = TaskForm(
                     organization=self.organization,
                     initial={
@@ -61,8 +52,6 @@ class TaskCreateView(WorkViewMixin, TemplateView):
                     },
                 )
                 context["from_protocol_entry"] = entry
-            except FactionProtocolEntry.DoesNotExist:
-                pass
 
         return context
 
@@ -70,30 +59,12 @@ class TaskCreateView(WorkViewMixin, TemplateView):
         form = TaskForm(request.POST, organization=self.organization)
 
         if form.is_valid():
-            task = form.save(commit=False)
-            task.organization = self.organization
-            task.created_by = self.membership
-            if not task.assigned_to:
-                task.assigned_to = self.membership
-
-            # Verknüpfung mit Dokument (Prefill aus dem Editor)
-            related_motion_id = request.POST.get("related_motion")
-            if related_motion_id:
-                from apps.work.motions.models import Motion
-
-                with contextlib.suppress(Motion.DoesNotExist, ValueError):
-                    task.related_motion = Motion.objects.get(id=related_motion_id, organization=self.organization)
-
-            task.position = Task.objects.filter(organization=self.organization, status=task.status).count()
-
-            task.save()
-            log_activity(task, self.membership, "created")
-
-            if task.assigned_to and task.assigned_to != self.membership:
-                from apps.work.notifications.services import NotificationHub
-
-                NotificationHub.notify_task_assigned(task, task.assigned_to, self.membership)
-
+            services.create_task(
+                form.save(commit=False),
+                self.organization,
+                self.membership,
+                related_motion_id=request.POST.get("related_motion"),
+            )
             messages.success(request, "Aufgabe erfolgreich erstellt.")
             return redirect("work:tasks", org_slug=self.organization.slug)
 
@@ -110,29 +81,16 @@ class TaskShareView(WorkViewMixin, View):
     def post(self, request, *args, **kwargs):
         task = get_object_or_404(Task, id=kwargs.get("task_id"), organization=self.organization)
 
-        can_edit = (
-            task.created_by == self.membership
-            or task.assigned_to == self.membership
-            or self.membership.has_permission("tasks.manage")
-        )
-        if not can_edit:
+        if not services.can_edit_task(task, self.membership):
             messages.error(request, "Keine Berechtigung.")
             return redirect("work:tasks", org_slug=self.organization.slug)
 
-        new_visibility = request.POST.get("visibility", "private")
-        if new_visibility in ["private", "shared", "organization"]:
-            task.visibility = new_visibility
-            task.save(update_fields=["visibility"])
-
-        if new_visibility == "shared":
-            share_with_ids = request.POST.getlist("share_with[]")
-            TaskShare.objects.filter(task=task).exclude(membership_id__in=share_with_ids).delete()
-            for member_id in share_with_ids:
-                TaskShare.objects.get_or_create(
-                    task=task, membership_id=member_id, defaults={"shared_by": self.membership}
-                )
-        else:
-            TaskShare.objects.filter(task=task).delete()
+        services.update_visibility(
+            task,
+            self.membership,
+            request.POST.get("visibility", "private"),
+            request.POST.getlist("share_with[]"),
+        )
 
         messages.success(request, "Sichtbarkeit aktualisiert.")
         return redirect("work:tasks", org_slug=self.organization.slug)

@@ -7,11 +7,11 @@ giving users access to their municipality's council information system.
 """
 
 from django.core.paginator import Paginator
-from django.db.models import Q
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 
+from .. import selectors
 from ._mixins import RISBodiesMixin
 
 
@@ -30,30 +30,17 @@ class RISFilesView(RISBodiesMixin, WorkViewMixin, TemplateView):
         if bodies is None:
             return context
 
-        from insight_core.models import OParlFile
-        from insight_core.views import _annotate_files_with_context
-
-        # Base queryset
-        files = OParlFile.objects.filter(body__in=bodies).select_related("paper").order_by("-file_date", "-created_at")
-
-        # Search
         search = self.request.GET.get("q", "").strip()
         if search:
-            files = files.filter(
-                Q(name__icontains=search) | Q(file_name__icontains=search) | Q(paper__name__icontains=search)
-            )
             context["search_query"] = search
 
-        # Pagination
-        paginator = Paginator(files, 30)
-        page = self.request.GET.get("page", 1)
-        page_obj = paginator.get_page(page)
+        paginator = Paginator(selectors.files_queryset(bodies, search=search), 30)
+        page_obj = paginator.get_page(self.request.GET.get("page", 1))
 
         # Annotate with context (organization, meeting, agenda item)
-        _annotate_files_with_context(page_obj.object_list)
+        selectors.annotate_files_with_context(page_obj.object_list)
 
         context["files"] = page_obj
         context["paginator"] = paginator
         context["total_count"] = paginator.count
-
         return context

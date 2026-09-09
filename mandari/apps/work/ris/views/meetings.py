@@ -8,11 +8,11 @@ giving users access to their municipality's council information system.
 
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 
+from .. import selectors
 from ._mixins import RISBodiesMixin
 
 
@@ -31,54 +31,30 @@ class RISMeetingsView(RISBodiesMixin, WorkViewMixin, TemplateView):
         if bodies is None:
             return context
 
-        from insight_core.models import OParlMeeting, OParlOrganization
-
-        # Base queryset
-        meetings = OParlMeeting.objects.filter(body__in=bodies).prefetch_related("organizations")
-
-        # Filter: upcoming/past
-        view_mode = self.request.GET.get("view", "upcoming")
-        now = timezone.now()
-
-        if view_mode == "upcoming":
-            meetings = meetings.filter(start__gt=now, cancelled=False)
-            meetings = meetings.order_by("start")
-        elif view_mode == "past":
-            meetings = meetings.filter(start__lte=now)
-            meetings = meetings.order_by("-start")
-        else:
-            meetings = meetings.order_by("-start")
-
+        params = self.request.GET
+        view_mode = params.get("view", "upcoming")
         context["view_mode"] = view_mode
 
-        # Filter by organization
-        org_id = self.request.GET.get("org")
+        org_id = params.get("org")
         if org_id:
-            meetings = meetings.filter(organizations__id=org_id)
             context["selected_org"] = org_id
 
-        # Get available organizations for filter
-        context["organizations"] = OParlOrganization.objects.filter(body__in=bodies).order_by("name")
-
-        # Filter by year
-        year = self.request.GET.get("year")
-        if year:
+        year = None
+        raw_year = params.get("year")
+        if raw_year:
             try:
-                meetings = meetings.filter(start__year=int(year))
-                context["selected_year"] = int(year)
+                year = int(raw_year)
+                context["selected_year"] = year
             except ValueError:
                 pass
 
-        context["years"] = OParlMeeting.objects.filter(body__in=bodies, start__isnull=False).dates(
-            "start", "year", order="DESC"
-        )
+        meetings = selectors.meetings_queryset(bodies, view_mode=view_mode, organization_id=org_id or "", year=year)
+        context["organizations"] = selectors.organizations_for_filter(bodies)
+        context["years"] = selectors.meeting_years(bodies)
 
-        # Pagination
         paginator = Paginator(meetings, 25)
-        page = self.request.GET.get("page", 1)
-        context["meetings"] = paginator.get_page(page)
+        context["meetings"] = paginator.get_page(params.get("page", 1))
         context["paginator"] = paginator
-
         return context
 
 
@@ -97,35 +73,8 @@ class RISMeetingDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
         if bodies is None:
             return context
 
-        from insight_core.models import OParlMeeting
-
-        meeting = get_object_or_404(OParlMeeting, id=kwargs.get("meeting_id"), body__in=bodies)
-
+        meeting = get_object_or_404(selectors.meetings_in_bodies(bodies), id=kwargs.get("meeting_id"))
         context["meeting"] = meeting
-
-        # Get agenda items with related papers
-        # Natural sort: 1, 2, 10 instead of 1, 10, 2
-        import re
-
-        agenda_items = sorted(
-            meeting.agenda_items.all(),
-            key=lambda x: [
-                (0, int(p)) if p.isdigit() else (1, p.lower()) for p in re.split(r"(\d+)", x.number or "999") if p
-            ],
-        )
-
-        # Enrich with papers
-        items_with_papers = []
-        for item in agenda_items:
-            papers = item.get_papers()
-            items_with_papers.append(
-                {
-                    "item": item,
-                    "papers": papers,
-                }
-            )
-
-        context["agenda_items"] = items_with_papers
+        context["agenda_items"] = selectors.agenda_items_with_papers(meeting)
         context["organizations"] = meeting.organizations.all()
-
         return context

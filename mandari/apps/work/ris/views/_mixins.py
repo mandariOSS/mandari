@@ -6,6 +6,8 @@ Provides wrapped versions of insight_core views with organization context,
 giving users access to their municipality's council information system.
 """
 
+from .. import selectors
+
 
 class RISBodiesMixin:
     """
@@ -17,7 +19,7 @@ class RISBodiesMixin:
 
     def get_bodies(self):
         """Alle verknüpften Kommunen als QuerySet (für body__in-Filter)."""
-        return self.organization.get_all_bodies()
+        return selectors.bodies_for_organization(self.organization)
 
     def setup_body_context(self, context):
         """
@@ -33,5 +35,5 @@ class RISBodiesMixin:
         context["bodies"] = bodies
         context["has_multiple_bodies"] = bodies.count() > 1
         # Primäre Kommune für Anzeige (Subtitle, Karte etc.)
-        context["body"] = self.organization.get_primary_body()
+        context["body"] = selectors.primary_body(self.organization)
         return bodies

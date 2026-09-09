@@ -4,13 +4,10 @@ Task views for the Work module.
 
 Thematisch aufgeteiltes Paket; alle Namen werden hier re-exportiert,
 damit bestehende Imports (``from apps.work.tasks import views``)
-unverändert funktionieren.
+unverändert funktionieren. Datenzugriff und Fachlogik liegen in
+``apps.work.tasks.selectors`` bzw. ``apps.work.tasks.services``.
 """
 
-from ._helpers import (
-    _task_base_queryset,
-    _task_panel_queryset,
-)
 from .create import (
     TaskCreateView,
     TaskShareView,
@@ -43,6 +40,4 @@ __all__ = [
     "TaskPanelActionView",
     "TaskPanelView",
     "TaskShareView",
-    "_task_base_queryset",
-    "_task_panel_queryset",
 ]
