@@ -357,7 +357,88 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         cursor_colors = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"]
         context["collab_color"] = cursor_colors[hash(str(self.request.user.id)) % len(cursor_colors)]
 
+        # Konfiguration für die Alpine-Komponente `documentEditor`
+        # (frontend/alpine/document-editor.ts), im Template per json_script
+        context["editor_config"] = self._build_editor_config(
+            motion=motion,
+            access_level=access_level,
+            ai_quota=context["ai_quota"],
+            letterhead=context.get("letterhead"),
+            letterheads_json=letterheads_json,
+            inline_comments_data=inline_comments_data,
+            collab_color=context["collab_color"],
+        )
+
         return context
+
+    def _build_editor_config(
+        self,
+        *,
+        motion,
+        access_level,
+        ai_quota,
+        letterhead,
+        letterheads_json,
+        inline_comments_data,
+        collab_color,
+    ) -> dict:
+        """Server-Werte für den Editor als ein JSON-Objekt (keine String-Interpolation in JS)."""
+        org_slug = self.organization.slug
+        user = self.request.user
+
+        letterhead_config = None
+        if letterhead:
+            margins = {
+                "top": letterhead.content_margin_top or 25,
+                "right": letterhead.content_margin_right or 20,
+                "bottom": letterhead.content_margin_bottom or 25,
+                "left": letterhead.content_margin_left or 20,
+            }
+            if letterhead.is_generated:
+                letterhead_config = {
+                    "kind": "generated",
+                    "previewUrl": reverse(
+                        "work:document_letterhead_editor_preview",
+                        kwargs={"org_slug": org_slug, "letterhead_id": letterhead.id},
+                    ),
+                    "pdfUrl": "",
+                    "margins": margins,
+                }
+            else:
+                letterhead_config = {
+                    "kind": "pdf",
+                    "previewUrl": "",
+                    "pdfUrl": letterhead.pdf_file.url,
+                    "margins": margins,
+                }
+
+        motion_kwargs = {"org_slug": org_slug, "motion_id": motion.id}
+        return {
+            "motionId": str(motion.id),
+            "title": motion.title,
+            "visibility": motion.visibility,
+            "motionType": motion.motion_type,
+            "documentTypeId": str(motion.document_type_id) if motion.document_type_id else "",
+            "documentTypeName": motion.get_type_display(),
+            "letterheadId": str(motion.letterhead_id) if motion.letterhead_id else "",
+            "letterheadName": (motion.letterhead.name if motion.letterhead_id else "") or "Kein Briefpapier",
+            "accessLevel": access_level,
+            "aiQuotaLimit": ai_quota.get("limit") if ai_quota else None,
+            "aiQuotaUsed": (ai_quota.get("used") if ai_quota else None) or 0,
+            "collabUserName": user.get_full_name() or user.email,
+            "collabUserColor": collab_color or "#3b82f6",
+            "letterhead": letterhead_config,
+            "letterheads": letterheads_json,
+            "inlineComments": inline_comments_data,
+            "urls": {
+                "comment": reverse("work:document_comment", kwargs=motion_kwargs),
+                "status": reverse("work:document_status", kwargs=motion_kwargs),
+                "documents": reverse("work:documents", kwargs={"org_slug": org_slug}),
+                "ai": reverse("work:document_ai", kwargs={"org_slug": org_slug}),
+                "revisions": reverse("work:document_revisions", kwargs=motion_kwargs),
+                "checklist": reverse("work:document_checklist", kwargs=motion_kwargs),
+            },
+        }
 
     def post(self, request, *args, **kwargs):
         motion_id = kwargs.get("motion_id")

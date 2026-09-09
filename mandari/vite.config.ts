@@ -6,7 +6,8 @@ import { defineConfig } from 'vite'
  *
  * Einstiege:
  *   frontend/js/main.ts       – alle Layouts (HTMX, Alpine, Icons, Toasts)
- *   frontend/editor/index.ts  – nur Editor-Seiten (TipTap, Yjs)
+ *   frontend/editor/index.ts  – nur Editor-Seiten (TipTap, Yjs) inkl. der Alpine-Komponenten
+ *                               frontend/alpine/document-editor.ts und prepare-meeting.ts
  *
  * Entwicklung: `npm run dev` (Dev-Server mit HMR, DJANGO_VITE_DEV_MODE=1)
  * Produktion:  `npm run build` → static/dist/ (Manifest + gehashte Dateien)

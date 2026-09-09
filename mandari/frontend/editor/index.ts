@@ -1,7 +1,10 @@
 /**
  * Mandari Document Editor — TipTap/ProseMirror based
  *
- * Exports `window.MandariEditor` (IIFE bundle) for use with Alpine.js.
+ * Vite-Einstieg der Editor-Seiten: setzt `window.MandariEditor` (Fabriken, Diff,
+ * Briefkopf) und registriert die Alpine-Komponenten `documentEditor`
+ * (frontend/alpine/document-editor.ts) und `preparationApp`
+ * (frontend/alpine/prepare-meeting.ts).
  */
 
 import { Editor } from '@tiptap/core'
@@ -15,6 +18,9 @@ import { Color, TextStyle } from '@tiptap/extension-text-style'
 import Underline from '@tiptap/extension-underline'
 import { CharacterCount, Placeholder } from '@tiptap/extensions'
 import StarterKit from '@tiptap/starter-kit'
+import Alpine from 'alpinejs'
+import { documentEditor } from '../alpine/document-editor'
+import { preparationApp } from '../alpine/prepare-meeting'
 import { initCollaboration } from './collaboration'
 import type { CollabOptions, CollabResult, CollabUser } from './collaboration'
 import { renderDiff } from './diff'
@@ -317,3 +323,9 @@ declare global {
   }
 }
 window.MandariEditor = MandariEditor
+
+// ---- Alpine-Komponenten der Editor-Seiten ------------------------------------
+// Registrierung vor Alpine.start() (main.ts startet erst bei DOMContentLoaded);
+// Vite teilt den Alpine-Chunk, es ist dieselbe Instanz wie in main.ts.
+Alpine.data('documentEditor', documentEditor)
+Alpine.data('preparationApp', preparationApp)

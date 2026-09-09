@@ -214,93 +214,107 @@ class MeetingPrepareView(WorkViewMixin, TemplateView):
         context["visibility_choices"] = AgendaItemNote.VISIBILITY_CHOICES
         context["stats"] = stats
 
-        # JSON für Alpine.js
-        context["prepared_items_json"] = json.dumps(
-            [
-                {
-                    "id": str(item["item"].id),
-                    "number": item["item"].number or str(idx + 1),
-                    "name": item["item"].name or "Ohne Titel",
-                    # Position (org-weit)
-                    "position": item["position"].position if item["position"] else "open",
-                    "isFinal": item["position"].is_final if item["position"] else False,
-                    "reasoning": item["position"].get_reasoning_decrypted() if item["position"] else "",
-                    "outcome": item["position"].outcome if item["position"] else "",
-                    "setBy": item["position"].set_by.user.get_display_name()
-                    if item["position"] and item["position"].set_by
-                    else None,
-                    # Positionen derselben Org aus anderen Gremien zur selben Vorlage
-                    "crossPositions": cross_positions_by_item.get(item["item"].id, []),
-                    # Private Notiz (pro User)
-                    "privateNote": item["private_note"].get_content_decrypted() if item["private_note"] else "",
-                    # Redebeitrag (pro User)
-                    "hasSpeechNote": bool(item["own_speech"]),
-                    "speechTitle": item["own_speech"].title if item["own_speech"] else "",
-                    "speechContent": item["own_speech"].get_content_decrypted() if item["own_speech"] else "",
-                    "speechDuration": item["own_speech"].estimated_duration if item["own_speech"] else 0,
-                    "speechShared": item["own_speech"].is_shared if item["own_speech"] else False,
-                    "speechLinkedDocument": {
-                        "id": str(item["own_speech"].linked_document_id),
-                        "title": item["own_speech"].linked_document.title,
-                    }
-                    if item["own_speech"] and item["own_speech"].linked_document_id
-                    else None,
-                    "sharedSpeeches": [
-                        {"author": s.author.user.get_display_name(), "content": s.get_content_decrypted()}
-                        for s in item["shared_speeches"]
-                    ],
-                    # Paper
-                    "paper": {
-                        "id": str(item["primary_paper"].id),
-                        "name": item["primary_paper"].name or "Ohne Titel",
-                        "reference": item["primary_paper"].reference or "",
-                        "paperType": item["primary_paper"].paper_type or "",
-                        "consultationCount": getattr(item["primary_paper"], "_prefetched_consultation_count", 0),
-                        "consultations": consultations_by_paper.get(item["primary_paper"].id, []),
-                    }
-                    if item["primary_paper"]
-                    else None,
-                    "hasFiles": item["has_files"],
-                    "files": [
-                        {
-                            "id": str(f.id),
-                            "name": f.name or f.file_name or "Dokument",
-                            "url": f.access_url or f.download_url,
-                            "previewUrl": reverse("insight_core:insight:file_proxy", args=[f.id]),
-                            "mimeType": f.mime_type or "",
-                            "isPdf": is_pdf_file(f.mime_type, f.file_name, f.name),
-                            "size": f.size_human,
-                            "pageCount": f.page_count or 0,
-                            "annotations": file_annotation_counts.get(f.id, 0),
-                        }
-                        for p in item["papers"]
-                        for f in p.files.all()
-                        if f.access_url or f.download_url
-                    ],
-                    # Dokumente (TOP-Anhänge + geteilte Vorlagen-Anhänge)
-                    "documents": [
-                        {
-                            "id": str(d.id),
-                            "title": d.title,
-                            "url": d.display_url,
-                            "type": d.document_type,
-                            "addedBy": d.added_by.user.get_display_name(),
-                            "paperId": str(d.paper_id) if d.paper_id else None,
-                            "sharedAcrossCommittees": d.share_across_committees,
-                        }
-                        for d in item["documents"]
-                    ],
-                    # Alias für Altbestand im Template (documentLinks)
-                    "documentLinks": [
-                        {"id": str(d.id), "title": d.title, "url": d.display_url}
-                        for d in item["documents"]
-                        if d.document_type == "link"
-                    ],
-                    "notesCount": len(item["notes"]),
+        # Daten für die Alpine-Komponente `preparationApp` (frontend/alpine/prepare-meeting.ts)
+        prepared_items_data = [
+            {
+                "id": str(item["item"].id),
+                "number": item["item"].number or str(idx + 1),
+                "name": item["item"].name or "Ohne Titel",
+                # Position (org-weit)
+                "position": item["position"].position if item["position"] else "open",
+                "isFinal": item["position"].is_final if item["position"] else False,
+                "reasoning": item["position"].get_reasoning_decrypted() if item["position"] else "",
+                "outcome": item["position"].outcome if item["position"] else "",
+                "setBy": item["position"].set_by.user.get_display_name()
+                if item["position"] and item["position"].set_by
+                else None,
+                # Positionen derselben Org aus anderen Gremien zur selben Vorlage
+                "crossPositions": cross_positions_by_item.get(item["item"].id, []),
+                # Private Notiz (pro User)
+                "privateNote": item["private_note"].get_content_decrypted() if item["private_note"] else "",
+                # Redebeitrag (pro User)
+                "hasSpeechNote": bool(item["own_speech"]),
+                "speechTitle": item["own_speech"].title if item["own_speech"] else "",
+                "speechContent": item["own_speech"].get_content_decrypted() if item["own_speech"] else "",
+                "speechDuration": item["own_speech"].estimated_duration if item["own_speech"] else 0,
+                "speechShared": item["own_speech"].is_shared if item["own_speech"] else False,
+                "speechLinkedDocument": {
+                    "id": str(item["own_speech"].linked_document_id),
+                    "title": item["own_speech"].linked_document.title,
                 }
-                for idx, item in enumerate(prepared_items)
-            ]
-        )
+                if item["own_speech"] and item["own_speech"].linked_document_id
+                else None,
+                "sharedSpeeches": [
+                    {"author": s.author.user.get_display_name(), "content": s.get_content_decrypted()}
+                    for s in item["shared_speeches"]
+                ],
+                # Paper
+                "paper": {
+                    "id": str(item["primary_paper"].id),
+                    "name": item["primary_paper"].name or "Ohne Titel",
+                    "reference": item["primary_paper"].reference or "",
+                    "paperType": item["primary_paper"].paper_type or "",
+                    "consultationCount": getattr(item["primary_paper"], "_prefetched_consultation_count", 0),
+                    "consultations": consultations_by_paper.get(item["primary_paper"].id, []),
+                }
+                if item["primary_paper"]
+                else None,
+                "hasFiles": item["has_files"],
+                "files": [
+                    {
+                        "id": str(f.id),
+                        "name": f.name or f.file_name or "Dokument",
+                        "url": f.access_url or f.download_url,
+                        "previewUrl": reverse("insight_core:insight:file_proxy", args=[f.id]),
+                        "mimeType": f.mime_type or "",
+                        "isPdf": is_pdf_file(f.mime_type, f.file_name, f.name),
+                        "size": f.size_human,
+                        "pageCount": f.page_count or 0,
+                        "annotations": file_annotation_counts.get(f.id, 0),
+                    }
+                    for p in item["papers"]
+                    for f in p.files.all()
+                    if f.access_url or f.download_url
+                ],
+                # Dokumente (TOP-Anhänge + geteilte Vorlagen-Anhänge)
+                "documents": [
+                    {
+                        "id": str(d.id),
+                        "title": d.title,
+                        "url": d.display_url,
+                        "type": d.document_type,
+                        "addedBy": d.added_by.user.get_display_name(),
+                        "paperId": str(d.paper_id) if d.paper_id else None,
+                        "sharedAcrossCommittees": d.share_across_committees,
+                    }
+                    for d in item["documents"]
+                ],
+                # Alias für Altbestand im Template (documentLinks)
+                "documentLinks": [
+                    {"id": str(d.id), "title": d.title, "url": d.display_url}
+                    for d in item["documents"]
+                    if d.document_type == "link"
+                ],
+                "notesCount": len(item["notes"]),
+            }
+            for idx, item in enumerate(prepared_items)
+        ]
+
+        # Ein JSON-Objekt für den Client (json_script im Template), keine
+        # String-Interpolation von Server-Werten in JavaScript
+        context["prepare_config"] = {
+            "orgSlug": organization.slug,
+            "meetingId": str(meeting.id),
+            "currentUser": self.request.user.get_display_name(),
+            "positionLabels": {code: str(label) for code, label in AgendaItemPosition.POSITION_CHOICES},
+            "orgNotes": preparation.get_notes_decrypted() or "",
+            "items": prepared_items_data,
+            "urls": {
+                "summary": reverse(
+                    "work:meeting_summary", kwargs={"org_slug": organization.slug, "meeting_id": meeting.id}
+                ),
+            },
+        }
 
         return context
 

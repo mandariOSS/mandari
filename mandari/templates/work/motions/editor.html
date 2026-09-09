@@ -13,7 +13,8 @@
 {% endblock %}
 
 {% block work_content %}
-<div class="editor-wrapper" x-data="documentEditor()">
+{{ editor_config|json_script:"document-editor-config" }}
+<div class="editor-wrapper" x-data="documentEditor">
     <!-- Custom Header inside Alpine scope -->
     {% include "work/motions/partials/_editor_header.html" %}
 
@@ -180,8 +181,6 @@
             {% if can_edit %}
             <template id="editor-initial-content">{{ motion_content|default:''|safe }}</template>
             {% endif %}
-            {{ inline_comments_data|json_script:"inline-comments-data" }}
-            {{ letterheads_json|json_script:"letterheads-json" }}
         </div>
 
         <!-- Right Sidebar (Comments / AI / History) -->
@@ -420,7 +419,6 @@
     {% include "work/motions/partials/_editor_popups.html" %}
 </div>
 
-{% include "work/motions/partials/_editor_js.html" %}
 {% endblock %}
 
 

@@ -6,17 +6,9 @@
 import htmx from 'htmx.org'
 import { confirmAction } from './alpine/confirm-dialog'
 import { type ToastType, showToast } from './alpine/toast'
+import { csrfToken } from './csrf'
 
-function readCookie(name: string): string {
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
-  return match ? decodeURIComponent(match[1]) : ''
-}
-
-/** CSRF-Token aus dem Meta-Tag des Layouts, sonst aus dem Cookie. */
-export function csrfToken(): string {
-  const meta = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
-  return meta?.content || readCookie('csrftoken')
-}
+export { csrfToken }
 
 function announce(text: string): void {
   const live = document.createElement('div')

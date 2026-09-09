@@ -86,7 +86,8 @@
     </a>
 </div>
 {% elif meeting %}
-<div x-data="preparationApp()" @keydown.window="handleKeydown($event)" class="fade-up">
+{{ prepare_config|json_script:"prepare-config" }}
+<div x-data="preparationApp" @keydown.window="handleKeydown($event)" class="fade-up">
 
     <!-- ================= Kopfzeile: Fortschritt · Auto-Save · Aktionen ================= -->
     <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mb-4 px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
@@ -191,7 +192,6 @@
     {% include "work/meetings/partials/_prepare_modals.html" %}
 </div>
 
-{% include "work/meetings/partials/_prepare_js.html" %}
 {% else %}
 <div class="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-6 text-center">
     <i data-lucide="calendar-x" class="w-8 h-8 mx-auto mb-3 text-gray-400"></i>
