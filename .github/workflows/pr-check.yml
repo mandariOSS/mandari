@@ -292,6 +292,8 @@ jobs:
           python-version: '3.12'
       - name: Ratchet (Inline-Skripte/-Styles, Template-Größe dürfen nicht zunehmen)
         run: python scripts/check_frontend_ratchet.py
+      - name: Service-Layer-Ratchet (ORM-Zugriffe und lange Funktionen in Views dürfen nicht zunehmen, #160)
+        run: python scripts/check_view_orm_ratio.py
       - name: djlint (Template-Linting, Profil Django)
         run: |
           pip install djlint==1.46.1
