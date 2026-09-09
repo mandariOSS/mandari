@@ -158,7 +158,7 @@ jobs:
         run: |
           cd mandari
           # Coverage-Gate (Issue #157): Stand 09/2026 40 % – Schwelle darf nur steigen
-          pytest -v --cov=apps --cov=insight_core --cov-report=term --cov-report=xml --cov-fail-under=38
+          pytest -v --cov=apps --cov=insight_core --cov-report=term --cov-report=xml --cov-fail-under=38 --ignore=tests_e2e
 
       - name: Schema-Contract Django ↔ Ingestor (docs/adr/20260909-schema-contract-django-ingestor.md)
         env:

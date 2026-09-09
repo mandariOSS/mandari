@@ -9,7 +9,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from playwright.sync_api import expect
+
+# Ohne installiertes Playwright (z. B. im normalen Test-Job) wird das Modul übersprungen statt zu scheitern
+playwright_sync = pytest.importorskip("playwright.sync_api")
+expect = playwright_sync.expect
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
