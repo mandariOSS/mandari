@@ -91,6 +91,10 @@ class APIRootView(OParlMixin, View):
                 "name": f"Session API - {tenant.name}",
                 "version": "1.0",
                 "oparl": build_url(request, "session:oparl_system", tenant_slug=tenant_slug),
+                # Session-API v1 (django-ninja, OpenAPI) – Nachfolger der Pfade unter "session"
+                "v1": build_url(request, "session_api_v1:tenant_root", tenant_slug=tenant_slug),
+                "openapi": build_url(request, "session_api_v1:openapi-json"),
+                # Alte Pfade: bis zur Abschaltung erreichbar (Deprecation-/Sunset-Header)
                 "session": {
                     "meetings": build_url(request, "session:api_meetings", tenant_slug=tenant_slug),
                     "papers": build_url(request, "session:api_papers", tenant_slug=tenant_slug),
@@ -105,8 +109,34 @@ class APIRootView(OParlMixin, View):
 # =============================================================================
 
 
+#: Abschaltdatum der alten Session-API-Pfade (Release-Politik: Ankündigung mindestens zwei Releases vorher)
+SESSION_API_SUNSET = "Wed, 31 Mar 2027 00:00:00 GMT"
+
+
 class SessionAPIMixin(OParlMixin):
-    """Mixin for authenticated Session API views."""
+    """Mixin for authenticated Session API views.
+
+    Die Pfade unter ``/session/<slug>/api/session/…`` sind durch die Session-API v1
+    (``/api/v1/session/<slug>/…``, django-ninja, OpenAPI) abgelöst und antworten bis zur
+    Abschaltung mit ``Deprecation``-, ``Sunset``- und ``Link: rel="successor-version"``-Headern.
+    """
+
+    #: URL-Name des Nachfolgers in der API v1
+    successor_url_name: str = ""
+
+    def json_response(self, data: Any, status: int = 200) -> JsonResponse:
+        response = super().json_response(data, status=status)
+        response["Deprecation"] = "true"
+        response["Sunset"] = SESSION_API_SUNSET
+        tenant_slug = getattr(self, "_tenant_slug", None)
+        if self.successor_url_name and tenant_slug:
+            successor = reverse(self.successor_url_name, kwargs={"tenant_slug": tenant_slug})
+            response["Link"] = f'<{successor}>; rel="successor-version"'
+        return response
+
+    def get_tenant(self, tenant_slug: str) -> SessionTenant:
+        self._tenant_slug = tenant_slug
+        return super().get_tenant(tenant_slug)
 
     def get_session_user(self, request, tenant: SessionTenant):
         """Get session user for authenticated requests."""
@@ -133,6 +163,8 @@ class SessionAPIMixin(OParlMixin):
 
 class SessionMeetingListAPIView(SessionAPIMixin, View):
     """Session Meeting API - includes non-public meetings for authorized users."""
+
+    successor_url_name = "session_api_v1:meetings"
 
     def get(self, request, tenant_slug: str):
         tenant = self.get_tenant(tenant_slug)
@@ -189,6 +221,8 @@ class SessionMeetingListAPIView(SessionAPIMixin, View):
 class SessionPaperListAPIView(SessionAPIMixin, View):
     """Session Paper API - includes non-public papers for authorized users."""
 
+    successor_url_name = "session_api_v1:papers"
+
     def get(self, request, tenant_slug: str):
         tenant = self.get_tenant(tenant_slug)
         session_user = self.get_session_user(request, tenant)
@@ -241,6 +275,8 @@ class SessionPaperListAPIView(SessionAPIMixin, View):
 
 class SessionApplicationListAPIView(SessionAPIMixin, View):
     """Session Application API - for viewing submitted applications."""
+
+    successor_url_name = "session_api_v1:applications"
 
     def get(self, request, tenant_slug: str):
         tenant = self.get_tenant(tenant_slug)
@@ -303,6 +339,8 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
     Authentication: Requires API token in Authorization header.
     Format: Authorization: Bearer <token>
     """
+
+    successor_url_name = "session_api_v1:submit_application"
 
     def _authenticate_token(self, request, tenant: SessionTenant) -> SessionAPIToken | None:
         """Authenticate request using API token."""

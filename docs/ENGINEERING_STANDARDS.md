@@ -77,7 +77,10 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
 ## 6. API
 
 - Neue Endpunkte mit generiertem OpenAPI-Schema (django-ninja), versioniert unter `/api/v1/`,
-  Fehler nach RFC 9457. Bestehende `JsonResponse`-Views werden beim Anfassen migriert.
+  Fehler nach RFC 9457. Bestehende `JsonResponse`-Views werden beim Anfassen migriert. Referenz:
+  Session-API v1 (`apps/session/api/v1/`, Leitfaden `docs/API_V1_SESSION.md`): Schemas in `schemas.py`,
+  Auth als `Principal` in `auth.py`, Fehler über `Problem(...)` in `problems.py`, Router in `endpoints.py`.
+  Abgelöste Pfade antworten bis zur Abschaltung mit `Deprecation`, `Sunset` und `Link: rel="successor-version"`.
 - Öffentliche Schnittstellen (OParl, Fraktions-API, Session-API) folgen der Release- und
   Deprecation-Politik: inkompatible Änderungen nur in neuer Version mit Ankündigungsfrist.
 

@@ -90,6 +90,7 @@ INSTALLED_APPS = [
     "django_htmx",
     "django_cotton",  # Komponentenbibliothek (templates/cotton/)
     "django_vite",  # Frontend-Assets über Vite-Manifest (static/dist/)
+    "ninja",  # Session-API v1: OpenAPI + Swagger UI (lokale Assets, kein CDN)
     "django_safemigrate",
     # Mandari Insight apps (OSS)
     "insight_core",

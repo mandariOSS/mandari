@@ -15,6 +15,7 @@ from django.views.static import serve as static_serve
 
 from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
+from apps.session.api.v1.api import api as session_api_v1
 from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
 from insight_core.admin_monitoring import monitoring_view
@@ -110,6 +111,8 @@ urlpatterns = [
     # (Subdomain api.mandari.de wäre reines Caddy-Routing, gleiche Pfade)
     path("api/public/v1/", include("apps.work.faction.public_api", namespace="faction_public_api")),
     # Public API (stats, contact form - consumed by Wagtail marketing site)
+    # Session-API v1 (django-ninja, OpenAPI unter /api/v1/session/openapi.json, Issue #163)
+    path("api/v1/session/", session_api_v1.urls),
     path("api/", include("insight_core.api_urls")),
     # Provisioning-API fürs Billing-Portal (nur aktiv wenn PROVISIONING_API_KEY gesetzt)
     path("api/provisioning/", include("apps.provisioning.urls", namespace="provisioning")),

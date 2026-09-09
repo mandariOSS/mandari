@@ -87,6 +87,7 @@ django==6.0.8
     #   dj-database-url
     #   django-cotton
     #   django-htmx
+    #   django-ninja
     #   django-redis
     #   django-safemigrate
     #   django-unfold
@@ -94,6 +95,8 @@ django==6.0.8
 django-cotton==2.7.2
     # via -r requirements.txt
 django-htmx==1.29.0
+    # via -r requirements.txt
+django-ninja==1.7.0
     # via -r requirements.txt
 django-redis==7.0.0
     # via -r requirements.txt
@@ -254,7 +257,9 @@ psycopg-binary==3.3.5
 pycparser==3.0
     # via cffi
 pydantic==2.13.5
-    # via pydantic-settings
+    # via
+    #   django-ninja
+    #   pydantic-settings
 pydantic-core==2.46.5
     # via pydantic
 pydantic-settings==2.15.0
