@@ -131,7 +131,7 @@
         </div>
 
         {% if agenda_can_edit %}
-        <script>
+        <script nonce="{{ csp_nonce }}">
         // Drag-and-drop-Umsortierung der Tagesordnung (HTML5 DnD, je Teil)
         (function () {
             var dragged = null;

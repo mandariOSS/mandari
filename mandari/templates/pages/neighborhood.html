@@ -195,7 +195,7 @@
 
 {% block extra_scripts %}
 <script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 {% localize off %}
 function neighborhoodApp() {
     return {

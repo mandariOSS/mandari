@@ -149,6 +149,7 @@ TEMPLATES = [
             "context_processors": [
                 "django.template.context_processors.debug",
                 "django.template.context_processors.request",
+                "django.template.context_processors.csp",  # csp_nonce für Inline-Skripte (#172)
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "insight_core.context_processors.navigation_context",
@@ -475,6 +476,8 @@ from django.utils.csp import CSP
 
 SECURE_CSP_REPORT_ONLY = {
     "default-src": [CSP.SELF],
+    # Alpine braucht heute noch unsafe-eval (Inline-Ausdrücke); die Report-Only-Policy nennt es bewusst nicht,
+    # damit die Konsole den Abstand zum Ziel (Alpine-CSP-Build, #172) sichtbar macht.
     "script-src": [CSP.SELF, CSP.NONCE],
     "style-src": [CSP.SELF, CSP.UNSAFE_INLINE],  # Inline-Styles bleiben bis zur Auslagerung erlaubt
     "img-src": [CSP.SELF, "data:", "https:", "blob:"],

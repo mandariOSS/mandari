@@ -216,7 +216,7 @@
     </form>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 function letterheadForm() {
     return {
         kind: '{% if letterhead %}{{ letterhead.kind }}{% else %}generated{% endif %}',

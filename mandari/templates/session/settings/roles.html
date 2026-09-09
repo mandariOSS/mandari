@@ -120,7 +120,7 @@
 </div>
 
 {% if edit_role %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Bestehende Rechte der bearbeiteten Rolle in der Matrix ankreuzen
 (function () {
     var granted = {{ edit_role_permissions|default:"[]"|safe }};

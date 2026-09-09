@@ -200,7 +200,7 @@ consultation_meetings, tenant_slug
                 Hinzufügen
             </button>
         </form>
-        <script>
+        <script nonce="{{ csp_nonce }}">
         // Zielsitzungs-Auswahl auf das gewählte Gremium einschränken
         (function () {
             var orgSelect = document.getElementById('consultation-add-org');

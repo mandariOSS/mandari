@@ -197,7 +197,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function questionForm() {
     return {
         questionText: '{{ form.question_text.value|default:""|escapejs }}',

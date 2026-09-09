@@ -391,7 +391,7 @@
 
 <!-- Chart.js -->
 <script src="{% static 'vendor/chartjs/chart.min.js' %}"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 document.addEventListener('DOMContentLoaded', function() {
     const isDark = document.documentElement.classList.contains('dark');
     const gridColor = isDark ? '#374151' : '#e5e7eb';

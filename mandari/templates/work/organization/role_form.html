@@ -182,7 +182,7 @@
     {% endif %}
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 {% if is_edit and not role.is_system_role %}
 document.addEventListener('DOMContentLoaded', function() {
     const deleteBtn = document.getElementById('role-delete-btn');

@@ -198,7 +198,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function bodySelectApp() {
     return {
         q: '',

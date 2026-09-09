@@ -410,7 +410,7 @@
 {% if paper_locations %}
 {{ paper_locations|json_script:"paper-locations-data" }}
 <script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
     const locations = JSON.parse(document.getElementById('paper-locations-data').textContent);
     if (!locations.length) return;

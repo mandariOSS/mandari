@@ -2,7 +2,7 @@
 Service-Worker-Registrierung + Install-Prompt-Capture (Android/Chromium).
 Eingebunden in work/base_work.html und accounts/base_auth.html.
 {% endcomment %}
-<script>
+<script nonce="{{ csp_nonce }}">
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
             navigator.serviceWorker.register('{% url "pwa_sw" %}').catch(function () {

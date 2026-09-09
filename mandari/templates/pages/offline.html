@@ -76,7 +76,7 @@
         </p>
         <button type="button" onclick="location.reload()">Erneut versuchen</button>
     </div>
-    <script>
+    <script nonce="{{ csp_nonce }}">
         // Sobald die Verbindung zurück ist, automatisch neu laden.
         window.addEventListener('online', function () { location.reload(); });
     </script>

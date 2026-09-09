@@ -324,7 +324,7 @@
 
 {% block extra_scripts %}
 {% if active_body %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function homeSearchApp() {
     return {
         mode: 'topics',

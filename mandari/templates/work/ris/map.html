@@ -52,7 +52,7 @@
     Klicken Sie auf einen Marker, um Details zum Vorgang anzuzeigen.
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 document.addEventListener('DOMContentLoaded', function() {
     const mapConfig = {{ map_config|safe }};
 

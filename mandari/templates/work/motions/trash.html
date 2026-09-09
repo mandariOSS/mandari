@@ -133,7 +133,7 @@
     {% endif %}
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 const csrfToken = '{{ csrf_token }}';
 const orgSlug = '{{ organization.slug }}';
 

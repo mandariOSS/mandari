@@ -103,7 +103,7 @@ Erwartet:
     {% endif %}
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 function textViewer(fileId) {
     return {
         fileId: fileId,

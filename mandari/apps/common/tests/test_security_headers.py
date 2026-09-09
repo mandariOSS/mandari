@@ -7,11 +7,13 @@ Passwortlänge) und dienen als Startpunkt für die Migration der Smoke-Skripte.
 """
 
 import os
+import re
 
+import pytest
 from django.conf import settings
 from django.http import HttpResponse
 from django.middleware.csp import ContentSecurityPolicyMiddleware
-from django.test import RequestFactory, override_settings
+from django.test import Client, RequestFactory, override_settings
 from django.utils.csp import CSP
 
 
@@ -73,3 +75,22 @@ def test_report_only_csp_header_is_emitted_with_nonce():
 def test_enforced_policy_is_emitted_when_configured():
     response = _run_through_csp_middleware()
     assert response.headers.get("Content-Security-Policy") == "default-src 'self'"
+
+
+@pytest.mark.django_db
+def test_inline_scripts_carry_csp_nonce(client: Client) -> None:
+    """Jedes Inline-Skript trägt die Nonce aus dem CSP-Header (Vorbereitung für Enforce, #172)."""
+    response = client.get("/accounts/login/")
+    header = response.get("Content-Security-Policy-Report-Only", "")
+    match = re.search(r"'nonce-([^']+)'", header)
+    assert match, header
+    nonce = match.group(1)
+    html = response.content.decode()
+    inline = [
+        tag
+        for tag in re.findall(r"<script\b[^>]*>", html)
+        if "src=" not in tag and "application/json" not in tag and "application/ld+json" not in tag
+    ]
+    assert inline, "Login-Seite hat kein Inline-Skript mehr – Test anpassen"
+    for tag in inline:
+        assert f'nonce="{nonce}"' in tag, tag

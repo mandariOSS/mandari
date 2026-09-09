@@ -188,7 +188,7 @@
 {% if active_body %}
 <script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
 <script src="{% static 'vendor/leaflet/leaflet.markercluster.js' %}"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 function mapApp() {
     return {
         timeRange: '12',

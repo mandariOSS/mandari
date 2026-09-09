@@ -116,7 +116,7 @@ Gehen Sie zurück zur Sitzungsvorbereitung und erstellen Sie Redenotizen für di
     </div>
 
     {% load django_vite %}{% vite_asset 'frontend/js/main.ts' %}
-    <script>
+    <script nonce="{{ csp_nonce }}">
         function teleprompter() {
             return {
                 showControls: true,

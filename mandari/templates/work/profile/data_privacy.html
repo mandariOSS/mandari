@@ -261,7 +261,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function dataExport() {
     // Placeholder UUID for URL building — will be replaced per export
     const PLACEHOLDER = '00000000-0000-0000-0000-000000000000';

@@ -249,7 +249,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function assignmentHandler() {
     return {
         selectedAssignee: '{{ form.assigned_to.value|default:"" }}',

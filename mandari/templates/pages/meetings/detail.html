@@ -335,7 +335,7 @@
 </div>
 
 {% if location_coordinates %}
-<script>
+<script nonce="{{ csp_nonce }}">
 document.addEventListener('DOMContentLoaded', function() {
     const lat = {{ location_coordinates.lat }};
     const lng = {{ location_coordinates.lng }};

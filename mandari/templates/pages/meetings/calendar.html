@@ -63,7 +63,7 @@
 <script src="{% static 'vendor/fullcalendar/fullcalendar.min.js' %}"></script>
 <script src="{% static 'vendor/fullcalendar/de.min.js' %}"></script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 document.addEventListener('DOMContentLoaded', function() {
     const calendarEl = document.getElementById('calendar');
     const calendar = new FullCalendar.Calendar(calendarEl, {

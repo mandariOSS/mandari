@@ -174,7 +174,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function importForm() {
     return {
         isDragging: false,

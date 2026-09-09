@@ -260,7 +260,7 @@
 
 {% block extra_scripts %}
 <script src="{% static 'vendor/marked/marked.min.js' %}"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
 function chatApp() {
     return {
         hasConsent: {{ has_chat_consent|yesno:"true,false" }},

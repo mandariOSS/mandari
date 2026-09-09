@@ -166,7 +166,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Radio button visual toggle
 document.querySelectorAll('input[name="preferred_contact"]').forEach(radio => {
     radio.addEventListener('change', () => {
