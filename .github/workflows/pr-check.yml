@@ -108,6 +108,7 @@ jobs:
           cd mandari
           pip install -r requirements.lock
           pip install pytest pytest-django pytest-cov factory-boy
+          pip install "sqlalchemy>=2.0"  # Schema-Contract gegen die Ingestor-Modelle
 
       - uses: actions/setup-node@v4
         with:
@@ -157,6 +158,11 @@ jobs:
         run: |
           cd mandari
           pytest -v --cov=apps --cov=insight_core --cov-report=term --cov-report=xml
+
+      - name: Schema-Contract Django ↔ Ingestor (docs/adr/20260909-schema-contract-django-ingestor.md)
+        env:
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+        run: python scripts/check_schema_contract.py
 
       # Session-Sicherheits-Suiten (Issue #28): Tenant-Isolation,
       # OE/NOE-Sichtbarkeit und Permission-Matrix. Die Skripte setzen ihre

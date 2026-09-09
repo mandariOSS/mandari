@@ -40,7 +40,7 @@ class OParlSource(Base):
     url: Mapped[str] = mapped_column(Text, unique=True)
     contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     contact_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    website: Mapped[str | None] = mapped_column(Text, nullable=True)
+    website: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     # Sync configuration
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -77,7 +77,7 @@ class OParlBody(Base):
 
     name: Mapped[str] = mapped_column(String(255))
     short_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    website: Mapped[str | None] = mapped_column(Text, nullable=True)
+    website: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     license: Mapped[str | None] = mapped_column(Text, nullable=True)
     license_valid_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     classification: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -229,7 +229,7 @@ class OParlPerson(Base):
     given_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title: Mapped[str | None] = mapped_column(String(100), nullable=True)
     gender: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(254), nullable=True)  # wie Django EmailField
     phone: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
@@ -270,7 +270,7 @@ class OParlOrganization(Base):
     classification: Mapped[str | None] = mapped_column(String(100), nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    website: Mapped[str | None] = mapped_column(Text, nullable=True)
+    website: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)
@@ -350,8 +350,8 @@ class OParlFile(Base):
     file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    access_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    download_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    access_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    download_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     file_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Local storage
@@ -472,8 +472,10 @@ class OParlMembership(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     external_id: Mapped[str] = mapped_column(Text, unique=True, index=True)
-    person_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_persons.id"), nullable=True)
-    organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("oparl_organizations.id"), nullable=True)
+    # NOT NULL wie in Django (Schema-Contract): Mitgliedschaften ohne Person oder Gremium werden
+    # in database.py vor dem INSERT verworfen.
+    person_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("oparl_persons.id"), nullable=False)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("oparl_organizations.id"), nullable=False)
 
     role: Mapped[str | None] = mapped_column(String(255), nullable=True)
     voting_right: Mapped[bool] = mapped_column(Boolean, default=True)

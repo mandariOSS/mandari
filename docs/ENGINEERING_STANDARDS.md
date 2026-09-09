@@ -70,6 +70,10 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
 - Barrierefreiheit ist Teil jeder Komponente: Tastaturbedienung, Fokus sichtbar, ARIA, Zielgröße
   mindestens 24 Pixel, Kontraste nach WCAG 2.2 AA.
 
+- Schema-Contract: Django-Modelle und Ingestor-Tabellen (`oparl_*`) müssen zusammenpassen;
+  `scripts/check_schema_contract.py` prüft das im CI. Pflichtfelder, die der Ingestor nicht setzt,
+  bekommen `db_default`. Vorgehen: `docs/adr/20260909-schema-contract-django-ingestor.md`.
+
 ## 6. API
 
 - Neue Endpunkte mit generiertem OpenAPI-Schema (django-ninja), versioniert unter `/api/v1/`,

@@ -66,7 +66,7 @@ class OParlSource(models.Model):
     url = models.TextField(unique=True)
     contact_email = models.EmailField(max_length=255, blank=True, null=True)
     contact_name = models.CharField(max_length=255, blank=True, null=True)
-    website = models.URLField(blank=True, null=True)
+    website = models.URLField(max_length=1000, blank=True, null=True)
 
     # Sync-Konfiguration
     is_active = models.BooleanField(default=True)
@@ -160,7 +160,7 @@ class OParlBody(SourceDeletionModel):
         null=True,
         help_text="Bildnachweis (z.B. 'Foto: Max Mustermann, CC BY-SA 4.0')",
     )
-    website = models.URLField(blank=True, null=True)
+    website = models.URLField(max_length=1000, blank=True, null=True)
     license = models.TextField(blank=True, null=True)
     license_valid_since = models.DateTimeField(blank=True, null=True)
     classification = models.CharField(max_length=100, blank=True, null=True)
@@ -283,7 +283,7 @@ class OParlOrganization(SourceDeletionModel):
     classification = models.CharField(max_length=100, blank=True, null=True)
     start_date = models.DateField(blank=True, null=True)
     end_date = models.DateField(blank=True, null=True)
-    website = models.URLField(blank=True, null=True)
+    website = models.URLField(max_length=1000, blank=True, null=True)
 
     # OParl-Zeitstempel
     oparl_created = models.DateTimeField(blank=True, null=True)
@@ -348,9 +348,12 @@ class OParlPerson(SourceDeletionModel):
         ("manual", "Manuell hochgeladen"),
     ]
     photo = models.FileField(upload_to="persons/photos/", blank=True, null=True, verbose_name="Foto")
-    photo_status = models.CharField(max_length=20, choices=PHOTO_STATUS_CHOICES, default="unknown")
+    # db_default: siehe OParlFile.local_status (Ingestor-INSERTs kennen diese Spalten nicht)
+    photo_status = models.CharField(
+        max_length=20, choices=PHOTO_STATUS_CHOICES, default="unknown", db_default="unknown"
+    )
     photo_fetched_at = models.DateTimeField(blank=True, null=True)
-    photo_error = models.CharField(max_length=255, blank=True, default="")
+    photo_error = models.CharField(max_length=255, blank=True, default="", db_default="")
 
     # OParl-Zeitstempel
     oparl_created = models.DateTimeField(blank=True, null=True)
@@ -702,11 +705,18 @@ class OParlFile(SourceDeletionModel):
         ("error", "Fehler beim Abruf"),
         ("too_large", "Zu groß für den Cache"),
     ]
+    # db_default: Der Ingestor legt Zeilen per SQLAlchemy an, ohne diese Django-Spalten zu kennen;
+    # ohne DB-Default würde jeder INSERT an NOT NULL scheitern (Schema-Contract, Issue #161).
     local_status = models.CharField(
-        max_length=20, choices=LOCAL_STATUS_CHOICES, default="none", db_index=True, verbose_name="Lokale Kopie"
+        max_length=20,
+        choices=LOCAL_STATUS_CHOICES,
+        default="none",
+        db_default="none",
+        db_index=True,
+        verbose_name="Lokale Kopie",
     )
     local_cached_at = models.DateTimeField(blank=True, null=True, verbose_name="Lokal gespeichert am")
-    local_error = models.CharField(max_length=500, blank=True, default="", verbose_name="Cache-Fehler")
+    local_error = models.CharField(max_length=500, blank=True, default="", db_default="", verbose_name="Cache-Fehler")
 
     # Text extraction tracking
     text_extraction_status = models.CharField(
