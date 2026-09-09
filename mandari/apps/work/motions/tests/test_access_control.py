@@ -74,7 +74,9 @@ def _persist(motion, access_level):
     motion.refresh_from_db()
 
 
-@pytest.mark.django_db
+# transaction=True: der Consumer schließt über database_sync_to_async alte Verbindungen; innerhalb einer
+# Test-Transaktion (Postgres) wäre die Verbindung danach tot.
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize("access_level", ["view", "comment"])
 def test_readonly_collaboration_client_does_not_persist_state(setup, access_level):
     motion = setup["motion"]
@@ -82,7 +84,7 @@ def test_readonly_collaboration_client_does_not_persist_state(setup, access_leve
     assert not motion.yjs_document
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_edit_collaboration_client_persists_state(setup):
     motion = setup["motion"]
     _persist(motion, "edit")

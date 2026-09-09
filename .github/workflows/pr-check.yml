@@ -281,7 +281,7 @@ jobs:
         run: python scripts/check_frontend_ratchet.py
       - name: djlint (Template-Linting, Profil Django)
         run: |
-          pip install djlint==1.36.4
+          pip install djlint==1.46.1
           cd mandari && djlint templates --lint
       - uses: actions/setup-node@v4
         with:

@@ -62,6 +62,7 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "django-stubs>=6.0.0",  # Django 6.0 compatible
+    "djlint==1.46.1",  # gleiche Version wie CI und pre-commit (Regelsatz weicht zwischen Versionen ab)
 ]
 
 [build-system]
