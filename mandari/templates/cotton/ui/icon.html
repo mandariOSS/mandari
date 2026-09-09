@@ -1,0 +1,7 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Lucide-Icon.  <c-ui.icon name="check" size="4" label="Erledigt" />
+Ohne label ist das Icon dekorativ (aria-hidden), mit label für Screenreader beschrieben.
+{% endcomment %}
+<c-vars name="circle" size="4" label="" class="" />
+<i data-lucide="{{ name }}" class="w-{{ size }} h-{{ size }} {{ class }}"{% if label %} role="img" aria-label="{{ label }}"{% else %} aria-hidden="true"{% endif %} {{ attrs }}></i>

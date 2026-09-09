@@ -464,8 +464,10 @@ Kurzfassung: Templates sind Struktur, nicht Programm.
   `frontend/` und wird gebündelt; Alpine-Komponenten werden mit `Alpine.data()` registriert und im Template
   nur per `x-data="name"` referenziert. Server-Daten gehen per `{{ data|json_script:"id" }}` an den Client.
 - Höchstens 300 Zeilen je Template; HTMX-Fragmente als Django-6-Template-Partials (`{% partialdef %}`).
-- Wiederkehrendes Markup (Buttons, Cards, Badges, Formularfelder, Modals) als Komponente statt kopierter
-  Klassenketten (Komponentenbibliothek im Aufbau, siehe Epic „Code-Qualität“ auf GitHub).
+- Wiederkehrendes Markup (Buttons, Cards, Badges, Formularfelder, Modals) als django-cotton-Komponente aus
+  `templates/cotton/` statt kopierter Klassenketten: `<c-ui.button type="submit" full>`, `<c-ui.card title="…">`,
+  `<c-form.field :field="form.email" label="E-Mail" type="email" required />`, `<c-form.errors :form="form" />`.
+  Vorschau aller Komponenten unter `/dev/ui/` (nur DEBUG); Tests in `apps/common/tests/test_components.py`.
 - `scripts/check_frontend_ratchet.py` misst Inline-Code und Template-Größe; die Werte dürfen nur sinken.
 
 ```html

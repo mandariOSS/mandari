@@ -49,9 +49,13 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
   Allowlist (Layouts, E-Mails, PDF, PWA). Das Skript `scripts/check_frontend_ratchet.py` misst
   Inline-Skripte, Inline-Styles, `on*=`-Handler, `style=`-Attribute und Templates über 300 Zeilen; die
   Werte dürfen nur sinken.
-- Was fünfmal identisch vorkommt, wird Komponente. Ziel-Bibliothek: `templates/cotton/` (django-cotton)
-  für Buttons, Cards, Badges, Modals, Formularfelder, Tabellenköpfe; Fragmente für HTMX per Django-6-
-  Template-Partials in derselben Datei.
+- Was fünfmal identisch vorkommt, wird Komponente. Bibliothek: `templates/cotton/` (django-cotton) mit
+  `ui/` (button, card, badge, alert, empty-state, modal, icon, th), `form/` (field, password, checkbox,
+  errors) und `layout/` (page-header). Aufruf als Tag: `<c-ui.button variant="secondary" icon="plus">`,
+  gebundene Django-Felder per `:field="form.email"`. Jede Komponente dokumentiert ihre Parameter im
+  Kopfkommentar; die Vorschau liegt unter `/dev/ui/` (nur `DEBUG`) und wird von
+  `apps/common/tests/test_components.py` mitgerendert. Neue Komponente = Vorschau-Eintrag + Test.
+  Fragmente für HTMX per Django-6-Template-Partials in derselben Datei.
 - JavaScript lebt in `frontend/` (TypeScript, gebündelt), Alpine-Komponenten werden mit `Alpine.data()`
   registriert und im Template nur referenziert. Server-Daten kommen per `json_script`.
 - Styles kommen aus Tailwind-Utilities und `frontend/css`; Design-Tokens (Farben, Radien, Schatten,

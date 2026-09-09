@@ -1,0 +1,31 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Modal auf Basis des nativen <dialog>-Elements: Fokusfalle, Escape und Hintergrund kommen vom Browser.
+  <c-ui.modal id="mein-dialog" title="Überschrift" size="sm|md|lg">
+      Inhalt
+      <c-slot name="footer"><c-ui.button variant="secondary" data-close-modal>Abbrechen</c-ui.button></c-slot>
+  </c-ui.modal>
+Öffnen:  <c-ui.button @click="$refs.meinDialog.showModal()"> bzw. document.getElementById('mein-dialog').showModal()
+Schließen: Elemente mit data-close-modal im Dialog, Escape, Klick auf den Hintergrund.
+{% endcomment %}
+<c-vars id="" title="" size="md" class="" />
+<dialog id="{{ id }}" aria-labelledby="{{ id }}-title"
+    class="p-0 rounded-2xl bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-xl border border-gray-200 dark:border-gray-700 w-full
+    {% if size == 'sm' %}max-w-md{% elif size == 'lg' %}max-w-3xl{% else %}max-w-xl{% endif %}
+    backdrop:bg-gray-900/50 backdrop:backdrop-blur-sm {{ class }}"
+    x-data
+    @click.self="$el.close()"
+    @click="if ($event.target.closest('[data-close-modal]')) $el.close()"
+    {{ attrs }}>
+    <div class="flex items-start justify-between gap-4 px-6 pt-6 pb-4 border-b border-gray-200 dark:border-gray-700">
+        <h2 id="{{ id }}-title" class="text-lg font-semibold">{{ title }}</h2>
+        <button type="button" data-close-modal aria-label="Schließen"
+            class="p-2 -m-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
+            <i data-lucide="x" class="w-5 h-5" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div class="px-6 py-5">{{ slot }}</div>
+    {% if footer %}
+    <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900/40 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3">{{ footer }}</div>
+    {% endif %}
+</dialog>

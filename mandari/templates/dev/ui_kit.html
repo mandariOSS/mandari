@@ -1,0 +1,128 @@
+{% load static %}
+{# djlint:off D018 #}
+<!DOCTYPE html>
+<html lang="de" class="h-full"
+      x-data="{ darkMode: localStorage.getItem('darkMode') === 'true' }"
+      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))"
+      :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <title>UI-Kit | mandari</title>
+    <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <script defer src="{% static 'vendor/alpine/alpine.min.js' %}"></script>
+    <script src="{% static 'vendor/lucide/lucide.min.js' %}"></script>
+    <style>[x-cloak] { display: none !important; }</style>
+</head>
+<body class="h-full bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+<div class="max-w-5xl mx-auto px-6 py-10 space-y-12">
+    <c-layout.page-header title="UI-Kit" subtitle="Komponentenbibliothek (templates/cotton/) – nur in der Entwicklung erreichbar">
+        <c-ui.button variant="secondary" icon="moon" @click="darkMode = !darkMode">Dunkelmodus</c-ui.button>
+    </c-layout.page-header>
+
+    <c-ui.card title="Buttons" subtitle="c-ui.button – variant, size, icon, href, full">
+        <div class="flex flex-wrap items-center gap-3">
+            <c-ui.button>Primär</c-ui.button>
+            <c-ui.button variant="secondary">Sekundär</c-ui.button>
+            <c-ui.button variant="danger" icon="trash-2">Löschen</c-ui.button>
+            <c-ui.button variant="ghost" icon="settings">Ghost</c-ui.button>
+            <c-ui.button variant="success" icon="check">Erfolg</c-ui.button>
+            <c-ui.button size="sm">Klein</c-ui.button>
+            <c-ui.button size="lg">Groß</c-ui.button>
+            <c-ui.button href="#" variant="secondary" icon="external-link">Link-Button</c-ui.button>
+            <c-ui.button disabled>Deaktiviert</c-ui.button>
+        </div>
+    </c-ui.card>
+
+    <c-ui.card title="Badges" subtitle="c-ui.badge – color, icon">
+        <div class="flex flex-wrap gap-2">
+            <c-ui.badge>Standard</c-ui.badge>
+            <c-ui.badge color="primary">Primär</c-ui.badge>
+            <c-ui.badge color="green" icon="check">Beschlossen</c-ui.badge>
+            <c-ui.badge color="amber" icon="clock">Ausstehend</c-ui.badge>
+            <c-ui.badge color="red" icon="x">Abgelehnt</c-ui.badge>
+            <c-ui.badge color="blue">Info</c-ui.badge>
+        </div>
+    </c-ui.card>
+
+    <c-ui.card title="Hinweise" subtitle="c-ui.alert – variant, title, icon">
+        <div class="space-y-3">
+            <c-ui.alert variant="info" icon="info" title="Information">Ein neutraler Hinweis mit Titel.</c-ui.alert>
+            <c-ui.alert variant="success" icon="check-circle">Gespeichert.</c-ui.alert>
+            <c-ui.alert variant="warning" icon="triangle-alert" title="Achtung">Diese Aktion kann nicht rückgängig gemacht werden.</c-ui.alert>
+            <c-ui.alert variant="error" icon="x-circle" title="Fehler">Die Vorlage konnte nicht gespeichert werden.</c-ui.alert>
+        </div>
+    </c-ui.card>
+
+    <c-ui.card title="Formularfelder" subtitle="c-form.field, c-form.password, c-form.checkbox, c-form.errors – mit gebundenem Django-Feld">
+        <form class="space-y-5" novalidate>
+            <c-form.errors :form="form" />
+            <c-form.field :field="form.email" label="E-Mail-Adresse (mit Fehler)" type="email" placeholder="name@beispiel.de" required />
+            <c-form.field :field="empty_form.email" label="E-Mail-Adresse (leer)" type="email" help="Wir geben deine Adresse nicht weiter." />
+            <c-form.password :field="form.password" label="Passwort (mit Fehler)" required />
+            <c-form.password :field="empty_form.password" label="Passwort" help="Mindestens 12 Zeichen" autocomplete="new-password" />
+            <c-form.checkbox :field="empty_form.newsletter" label="Newsletter abonnieren" />
+            <c-form.field name="freies_feld" label="Freies Feld ohne Django-Form" value="vorbelegt" />
+            <div class="flex gap-3">
+                <c-ui.button type="submit">Speichern</c-ui.button>
+                <c-ui.button type="reset" variant="secondary">Zurücksetzen</c-ui.button>
+            </div>
+        </form>
+    </c-ui.card>
+
+    <c-ui.card title="Karte mit Aktionen und Fußzeile" subtitle="c-ui.card – title, subtitle, actions-Slot, footer-Slot, padding">
+        <c-slot name="actions"><c-ui.button size="sm" variant="secondary" icon="plus">Aktion</c-ui.button></c-slot>
+        <p class="text-sm text-gray-600 dark:text-gray-300">Inhalt der Karte.</p>
+        <c-slot name="footer"><span class="text-xs text-gray-500">Fußzeile</span></c-slot>
+    </c-ui.card>
+
+    <c-ui.card title="Tabelle" subtitle="c-ui.th – Kopfzellen" padding="none">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead class="bg-gray-50 dark:bg-gray-900/40">
+                <tr>
+                    <c-ui.th>Vorlage</c-ui.th>
+                    <c-ui.th>Status</c-ui.th>
+                    <c-ui.th align="right">Datum</c-ui.th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+                <tr>
+                    <td class="px-4 py-3">Antrag Spielplatz Musterstraße</td>
+                    <td class="px-4 py-3"><c-ui.badge color="green">Beschlossen</c-ui.badge></td>
+                    <td class="px-4 py-3 text-right">12.03.2026</td>
+                </tr>
+            </tbody>
+        </table>
+    </c-ui.card>
+
+    <c-ui.card title="Leerzustand" subtitle="c-ui.empty-state – icon, title" padding="none">
+        <c-ui.empty-state icon="inbox" title="Noch keine Anträge">
+            <p class="mb-4">Lege den ersten Antrag an, um hier eine Übersicht zu sehen.</p>
+            <c-ui.button icon="plus">Antrag anlegen</c-ui.button>
+        </c-ui.empty-state>
+    </c-ui.card>
+
+    <c-ui.card title="Modal" subtitle="c-ui.modal – natives <dialog>, öffnen per showModal()">
+        <c-ui.button variant="secondary" icon="message-square" @click="document.getElementById('demo-modal').showModal()">Modal öffnen</c-ui.button>
+        <c-ui.modal id="demo-modal" title="Beispiel-Dialog">
+            <p class="text-sm text-gray-600 dark:text-gray-300">Fokus, Escape und Hintergrund werden vom Browser gehandhabt.</p>
+            <c-slot name="footer">
+                <c-ui.button variant="secondary" data-close-modal>Abbrechen</c-ui.button>
+                <c-ui.button data-close-modal>Bestätigen</c-ui.button>
+            </c-slot>
+        </c-ui.modal>
+    </c-ui.card>
+
+    <c-ui.card title="Icons" subtitle="c-ui.icon – name, size, label">
+        <div class="flex items-center gap-4 text-gray-600 dark:text-gray-300">
+            <c-ui.icon name="check" />
+            <c-ui.icon name="calendar" size="6" />
+            <c-ui.icon name="file-text" size="8" label="Dokument" class="text-primary-600" />
+        </div>
+    </c-ui.card>
+</div>
+<script>document.addEventListener('DOMContentLoaded', function () { if (window.lucide) { lucide.createIcons(); } });</script>
+</body>
+</html>

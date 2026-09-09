@@ -85,10 +85,13 @@ django==6.0.8
     #   -r requirements.txt
     #   channels
     #   dj-database-url
+    #   django-cotton
     #   django-htmx
     #   django-redis
     #   django-safemigrate
     #   django-unfold
+django-cotton==2.7.2
+    # via -r requirements.txt
 django-htmx==1.29.0
     # via -r requirements.txt
 django-redis==7.0.0

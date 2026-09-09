@@ -64,21 +64,31 @@ uv run pytest
 
 ### Code-Style
 
-Wir nutzen:
-- **Ruff** für Linting
-- **Black** für Formatierung
-- **isort** für Import-Sortierung
+Verbindlich ist [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md). Werkzeuge:
+
+- **Ruff** für Linting und Formatierung (Python)
+- **djlint** für Django-Templates
+- **mypy** (strict) für neuen und angefassten Python-Code
+- **pre-commit** führt alles vor jedem Commit aus
 
 ```bash
-# Formatierung prüfen
-ruff check .
-black --check .
-isort --check .
+# einmalig
+pip install pre-commit && pre-commit install
 
-# Automatisch formatieren
-black .
-isort .
+# manuell
+cd mandari
+ruff check . && ruff format --check .
+djlint templates --lint
+python ../scripts/check_frontend_ratchet.py
+python ../scripts/mypy_allowlist.py
 ```
+
+### UI-Komponenten
+
+Wiederkehrendes Markup kommt aus der Komponentenbibliothek `mandari/templates/cotton/` (django-cotton).
+Die Vorschau aller Komponenten läuft im Entwicklungsmodus unter `http://localhost:8000/dev/ui/`.
+Neue Komponenten bekommen einen Kopfkommentar mit den Parametern, einen Eintrag in der Vorschau und
+einen Test in `apps/common/tests/test_components.py`.
 
 ## Commit-Konventionen
 

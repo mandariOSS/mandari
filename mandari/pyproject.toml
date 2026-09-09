@@ -107,5 +107,6 @@ profile = "django"
 max_line_length = 120
 ignore = "H005,H014,H016,H021,H023,H030,H036"
 custom_blocks = "partialdef"
+custom_html = "c-[a-z0-9.-]+"
 format_css = false
 format_js = false

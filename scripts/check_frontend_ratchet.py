@@ -35,6 +35,7 @@ ALLOW_INLINE = (
     re.compile(r"/pdf/"),
     re.compile(r"^pwa/"),
     re.compile(r"^work/notifications/email/"),
+    re.compile(r"^dev/"),  # eigenständige Entwicklungsseiten (UI-Kit-Vorschau), nur bei DEBUG erreichbar
 )
 SCRIPT_RE = re.compile(
     r"<script\b(?![^>]*\bsrc=)(?![^>]*type=[\"'](?:application/(?:ld\+)?json|text/template)[\"'])[^>]*>", re.I

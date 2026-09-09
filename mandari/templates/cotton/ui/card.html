@@ -1,0 +1,27 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Karte mit optionalem Kopf und Fuß.
+  <c-ui.card title="Überschrift" subtitle="…" padding="md|none">
+      <c-slot name="actions"><c-ui.button size="sm">…</c-ui.button></c-slot>
+      Inhalt
+      <c-slot name="footer">…</c-slot>
+  </c-ui.card>
+{% endcomment %}
+<c-vars title="" subtitle="" padding="md" class="" />
+<section class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden {{ class }}" {{ attrs }}>
+    {% if title or actions %}
+    <header class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between gap-4">
+        <div class="min-w-0">
+            {% if title %}<h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ title }}</h2>{% endif %}
+            {% if subtitle %}<p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">{{ subtitle }}</p>{% endif %}
+        </div>
+        {% if actions %}<div class="flex items-center gap-2 flex-none">{{ actions }}</div>{% endif %}
+    </header>
+    {% endif %}
+    <div class="{% if padding == 'none' %}{% elif padding == 'sm' %}p-4{% else %}p-6{% endif %}">
+        {{ slot }}
+    </div>
+    {% if footer %}
+    <footer class="px-6 py-4 bg-gray-50 dark:bg-gray-900/40 border-t border-gray-200 dark:border-gray-700">{{ footer }}</footer>
+    {% endif %}
+</section>

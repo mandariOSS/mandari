@@ -13,6 +13,7 @@ from django.shortcuts import redirect, render
 from django.urls import include, path, re_path
 from django.views.static import serve as static_serve
 
+from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
 from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
@@ -137,6 +138,10 @@ urlpatterns = [
     # Insight Core (RIS Portal, public protocols, body sitemaps)
     path("", include("insight_core.urls")),
 ]
+
+# Komponentenvorschau (UI-Kit) – nur in der Entwicklung, siehe apps/common/views_dev.py
+if settings.DEBUG:
+    urlpatterns += [path("dev/ui/", ui_kit, name="dev_ui_kit")]
 
 # Serve media files (logos, uploads) — in production via Caddy → Django.
 # Bewusst unabhängig von DEBUG registriert (siehe serve_media-Docstring).

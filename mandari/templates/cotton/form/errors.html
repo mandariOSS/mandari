@@ -1,0 +1,12 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Formularweite Fehler (non_field_errors).  <c-form.errors :form="form" />
+{% endcomment %}
+<c-vars form="" />
+{% if form.non_field_errors %}
+<div role="alert" class="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+    {% for error in form.non_field_errors %}
+    <p class="text-sm text-red-700 dark:text-red-400">{{ error }}</p>
+    {% endfor %}
+</div>
+{% endif %}

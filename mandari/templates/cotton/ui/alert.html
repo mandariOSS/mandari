@@ -1,0 +1,15 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Hinweiskasten.  <c-ui.alert variant="info|success|warning|error" title="">Text</c-ui.alert>
+Fehler werden mit role="alert" angekündigt, alle anderen mit role="status".
+{% endcomment %}
+<c-vars variant="info" title="" icon="" class="" />
+<div role="{% if variant == 'error' %}alert{% else %}status{% endif %}"
+    class="p-4 rounded-lg border flex gap-3
+    {% if variant == 'success' %}bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300{% elif variant == 'warning' %}bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300{% elif variant == 'error' %}bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400{% else %}bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 text-primary-800 dark:text-primary-300{% endif %} {{ class }}" {{ attrs }}>
+    {% if icon %}<i data-lucide="{{ icon }}" class="w-5 h-5 flex-none mt-0.5" aria-hidden="true"></i>{% endif %}
+    <div class="min-w-0 text-sm">
+        {% if title %}<p class="font-medium">{{ title }}</p>{% endif %}
+        <div class="{% if title %}mt-1{% endif %}">{{ slot }}</div>
+    </div>
+</div>
