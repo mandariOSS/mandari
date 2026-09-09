@@ -50,8 +50,8 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
   Inline-Skripte, Inline-Styles, `on*=`-Handler, `style=`-Attribute und Templates über 300 Zeilen; die
   Werte dürfen nur sinken.
 - Was fünfmal identisch vorkommt, wird Komponente. Bibliothek: `templates/cotton/` (django-cotton) mit
-  `ui/` (button, card, badge, alert, empty-state, modal, icon, th), `form/` (field, password, checkbox,
-  errors) und `layout/` (page-header). Aufruf als Tag: `<c-ui.button variant="secondary" icon="plus">`,
+  `ui/` (button, card, badge, alert, empty-state, modal, tabs/tab/tab-panel, icon, th), `form/` (field,
+  password, select, textarea, checkbox, errors) und `layout/` (page-header). Aufruf als Tag: `<c-ui.button variant="secondary" icon="plus">`,
   gebundene Django-Felder per `:field="form.email"`. Jede Komponente dokumentiert ihre Parameter im
   Kopfkommentar; die Vorschau liegt unter `/dev/ui/` (nur `DEBUG`) und wird von
   `apps/common/tests/test_components.py` mitgerendert. Neue Komponente = Vorschau-Eintrag + Test.

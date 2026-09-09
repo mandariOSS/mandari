@@ -1,0 +1,10 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Inhalt eines Reiters, nur innerhalb von <c-ui.tabs>.  <c-ui.tab-panel id="rechte">…</c-ui.tab-panel>
+{% endcomment %}
+<c-vars id="" class="" />
+<div role="tabpanel" id="panel-{{ id }}" aria-labelledby="tab-{{ id }}" tabindex="0"
+    x-show="tab === '{{ id }}'" x-cloak
+    class="pt-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 rounded-lg {{ class }}" {{ attrs }}>
+    {{ slot }}
+</div>

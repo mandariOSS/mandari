@@ -21,11 +21,16 @@ class UiKitDemoForm(forms.Form):
     email = forms.EmailField(label="E-Mail-Adresse")
     password = forms.CharField(label="Passwort", widget=forms.PasswordInput)
     newsletter = forms.BooleanField(label="Newsletter", required=False)
+    role = forms.ChoiceField(
+        label="Rolle",
+        choices=[("member", "Fraktionsmitglied"), ("chair", "Fraktionsvorsitz"), ("staff", "Fraktionspersonal")],
+    )
+    message = forms.CharField(label="Nachricht", widget=forms.Textarea, required=False)
 
 
 def build_demo_form() -> UiKitDemoForm:
     """Gebundenes Formular mit Feld- und Formularfehlern für die Vorschau."""
-    form = UiKitDemoForm(data={"email": "keine-adresse", "password": ""})
+    form = UiKitDemoForm(data={"email": "keine-adresse", "password": "", "role": "chair", "message": "Beispieltext"})
     form.is_valid()
     form.add_error(None, "Beispiel für einen formularweiten Fehler.")
     return form

@@ -100,6 +100,28 @@ class TestFormField:
         assert 'role="alert"' in html
         assert "formularweiten Fehler" in html
 
+    def test_select_from_bound_field_marks_current_choice(self) -> None:
+        form = build_demo_form()
+        html = render('<c-form.select :field="form.role" label="Rolle" placeholder="Bitte wählen" />', form=form)
+        assert '<select name="role" id="id_role"' in html
+        assert '<option value="">Bitte wählen</option>' in html
+        assert '<option value="chair" selected>Fraktionsvorsitz</option>' in html
+        assert '<option value="member">Fraktionsmitglied</option>' in html
+
+    def test_select_with_slot_options(self) -> None:
+        html = render('<c-form.select name="sort" label="Sortierung"><option value="d">Datum</option></c-form.select>')
+        assert 'name="sort" id="id_sort"' in html
+        assert '<option value="d">Datum</option>' in html
+
+    def test_textarea_bound_and_free(self) -> None:
+        form = build_demo_form()
+        html = render('<c-form.textarea :field="form.message" label="Nachricht" rows="3" />', form=form)
+        assert '<textarea name="message" id="id_message" rows="3"' in html
+        assert ">Beispieltext</textarea>" in html
+        free = render('<c-form.textarea name="notiz" value="abc" />')
+        assert 'name="notiz" id="id_notiz" rows="4"' in free
+        assert ">abc</textarea>" in free
+
     def test_errors_component_is_silent_without_errors(self) -> None:
         html = render('<c-form.errors :form="form" />', form=UiKitDemoForm())
         assert html.strip() == ""
@@ -140,6 +162,18 @@ class TestOtherComponents:
         html = render('<c-ui.icon name="check" label="Erledigt" />')
         assert 'role="img" aria-label="Erledigt"' in html
         assert "aria-hidden" not in html
+
+    def test_tabs_are_wai_aria_conform(self) -> None:
+        html = render(
+            '<c-ui.tabs default="a" label="Test"><c-slot name="list"><c-ui.tab id="a">A</c-ui.tab>'
+            '<c-ui.tab id="b">B</c-ui.tab></c-slot><c-ui.tab-panel id="a">PA</c-ui.tab-panel>'
+            '<c-ui.tab-panel id="b">PB</c-ui.tab-panel></c-ui.tabs>'
+        )
+        assert 'role="tablist" aria-label="Test"' in html
+        assert 'role="tab" id="tab-a" aria-controls="panel-a"' in html
+        assert 'role="tabpanel" id="panel-b" aria-labelledby="tab-b"' in html
+        assert "x-data=\"{ tab: 'a' }\"" in html
+        assert "@keydown.right.prevent" in html
 
     def test_empty_state_and_th(self) -> None:
         assert "<h3" in render('<c-ui.empty-state title="Leer">x</c-ui.empty-state>')

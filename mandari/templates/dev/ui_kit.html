@@ -64,6 +64,9 @@
             <c-form.password :field="form.password" label="Passwort (mit Fehler)" required />
             <c-form.password :field="empty_form.password" label="Passwort" help="Mindestens 12 Zeichen" autocomplete="new-password" />
             <c-form.checkbox :field="empty_form.newsletter" label="Newsletter abonnieren" />
+            <c-form.select :field="form.role" label="Rolle (gebunden, vorausgewählt)" placeholder="Bitte wählen" required />
+            <c-form.select name="sortierung" label="Sortierung (Slot-Optionen)"><option value="date">Datum</option><option value="title">Titel</option></c-form.select>
+            <c-form.textarea :field="form.message" label="Nachricht" rows="3" help="Optional" />
             <c-form.field name="freies_feld" label="Freies Feld ohne Django-Form" value="vorbelegt" />
             <div class="flex gap-3">
                 <c-ui.button type="submit">Speichern</c-ui.button>
@@ -113,6 +116,19 @@
                 <c-ui.button data-close-modal>Bestätigen</c-ui.button>
             </c-slot>
         </c-ui.modal>
+    </c-ui.card>
+
+    <c-ui.card title="Reiter" subtitle="c-ui.tabs, c-ui.tab, c-ui.tab-panel – WAI-ARIA Tabs mit Pfeiltasten">
+        <c-ui.tabs default="allgemein" label="Beispielreiter">
+            <c-slot name="list">
+                <c-ui.tab id="allgemein" icon="settings">Allgemein</c-ui.tab>
+                <c-ui.tab id="rechte" icon="shield">Rechte</c-ui.tab>
+                <c-ui.tab id="verlauf" icon="history">Verlauf</c-ui.tab>
+            </c-slot>
+            <c-ui.tab-panel id="allgemein"><p class="text-sm text-gray-600 dark:text-gray-300">Inhalt „Allgemein“.</p></c-ui.tab-panel>
+            <c-ui.tab-panel id="rechte"><p class="text-sm text-gray-600 dark:text-gray-300">Inhalt „Rechte“.</p></c-ui.tab-panel>
+            <c-ui.tab-panel id="verlauf"><p class="text-sm text-gray-600 dark:text-gray-300">Inhalt „Verlauf“.</p></c-ui.tab-panel>
+        </c-ui.tabs>
     </c-ui.card>
 
     <c-ui.card title="Icons" subtitle="c-ui.icon – name, size, label">
