@@ -107,24 +107,24 @@ jobs:
           pip install shared/
           cd mandari
           pip install -r requirements.txt
-          pip install pytest pytest-django
+          pip install pytest pytest-django pytest-cov
 
       - name: Run Django system checks
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           REDIS_URL: redis://localhost:6379
-          SECRET_KEY: test-secret-key-for-ci
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
           DEBUG: 'false'
         run: |
           cd mandari
-          python manage.py check --deploy --fail-level WARNING 2>&1 || true
+          python manage.py check --deploy --fail-level WARNING
           python manage.py check
 
       - name: Run migrations
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           REDIS_URL: redis://localhost:6379
-          SECRET_KEY: test-secret-key-for-ci
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
           DEBUG: 'false'
         run: |
           cd mandari
@@ -134,7 +134,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           REDIS_URL: redis://localhost:6379
-          SECRET_KEY: test-secret-key-for-ci
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
           DEBUG: 'false'
         run: |
           cd mandari
@@ -144,18 +144,18 @@ jobs:
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           REDIS_URL: redis://localhost:6379
-          SECRET_KEY: test-secret-key-for-ci
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
           DEBUG: 'false'
         run: |
           cd mandari
-          pytest -v || echo "No tests found (yet)"
+          pytest -v --cov=apps --cov=insight_core --cov-report=term --cov-report=xml
 
       # Session-Sicherheits-Suiten (Issue #28): Tenant-Isolation,
       # OE/NOE-Sichtbarkeit und Permission-Matrix. Die Skripte setzen ihre
       # Umgebung (SQLite, Schluessel) selbst.
       - name: Session security smoke tests
         env:
-          SECRET_KEY: test-secret-key-for-ci
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
         run: |
           python scripts/smoke_session_matrix.py
           python scripts/smoke_session_applications.py
@@ -186,7 +186,7 @@ jobs:
         # Auch ausführen, wenn ein vorheriger Smoke-Step rot ist (kein Verdecken)
         if: ${{ !cancelled() }}
         env:
-          SECRET_KEY: test-secret-key-for-ci
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
         run: |
           python scripts/smoke_guest_isolation.py
           python scripts/smoke_org_guests.py
@@ -214,6 +214,32 @@ jobs:
   # ===========================================================================
   # Docker Build Validation
   # ===========================================================================
+  ingestor-tests:
+    name: Ingestor Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Abhängigkeiten
+        run: cd ingestor && uv sync --frozen
+      - name: pytest
+        run: cd ingestor && uv run pytest -q
+      - name: mypy (Ingestor ist bereits strikt typisiert)
+        run: cd ingestor && uv run --with mypy mypy src --ignore-missing-imports || true
+
+  frontend-gates:
+    name: Frontend-Qualitätsgates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Ratchet (Inline-Skripte/-Styles, Template-Größe dürfen nicht zunehmen)
+        run: python scripts/check_frontend_ratchet.py
+
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest

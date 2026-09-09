@@ -43,7 +43,8 @@ COPY mandari/frontend/ ./frontend/
 
 # Build CSS + Editor bundle
 RUN npx tailwindcss -i ./static/css/input.css -o ./static/css/styles.css --minify
-RUN npx esbuild frontend/editor/index.ts --bundle --outfile=static/js/editor.bundle.js --format=iife --global-name=MandariEditor --minify --target=es2020 2>/dev/null || true
+# Build-Fehler des Editor-Bundles muessen den Image-Build abbrechen (kein stilles Ausliefern eines alten Bundles)
+RUN npx esbuild frontend/editor/index.ts --bundle --outfile=static/js/editor.bundle.js --format=iife --global-name=MandariEditor --minify --target=es2020
 
 # =============================================================================
 # Stage 3: Finales Runtime-Image (kein build-essential, kein Node.js)

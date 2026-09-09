@@ -252,3 +252,6 @@ aux
 AUX
 prn
 PRN
+
+# Versehentliche pip --prefix Installation unter Windows-Pfad
+mandari/C:/

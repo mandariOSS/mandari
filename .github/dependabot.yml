@@ -1,0 +1,45 @@
+# Automatische Abhängigkeits-Updates (Sicherheits- und Versions-PRs)
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /mandari
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      django:
+        patterns: ["django*", "wagtail*"]
+      minor-and-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 10
+    labels: [dependencies]
+  - package-ecosystem: uv
+    directory: /ingestor
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, app:ingestor]
+  - package-ecosystem: npm
+    directory: /mandari
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      tiptap:
+        patterns: ["@tiptap/*", "y-*", "yjs"]
+    labels: [dependencies]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies]
+  - package-ecosystem: docker
+    directory: /mandari
+    schedule:
+      interval: monthly
+    labels: [dependencies]
+  - package-ecosystem: docker
+    directory: /ingestor
+    schedule:
+      interval: monthly
+    labels: [dependencies, app:ingestor]

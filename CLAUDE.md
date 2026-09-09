@@ -44,7 +44,7 @@ git push origin dev
 
 ```
 mandari/
-├── .private/                   # Interne Planungsdokumente (im Repo)
+├── .private/                   # Interne Planungsdokumente (gitignoriert, nur lokal)
 │   ├── MASTER_FEATURE_LIST.md  # Feature-Übersicht & Roadmap
 │   ├── ARCHITECTURE_*.md       # Architektur-Pläne
 │   ├── CI_CD_*.md              # Deployment-Pläne
@@ -73,9 +73,9 @@ mandari/
 │   ├── templates/              # Django Templates
 │   ├── static/                 # Statische Dateien
 │   └── mandari/settings.py     # Django-Einstellungen
-├── ingestor/                   # Rust-basierter OParl-Ingestor
+├── ingestor/                   # Python-basierter OParl-Ingestor (httpx, SQLAlchemy)
 ├── CLAUDE.md                   # Diese Datei
-└── LICENSE                     # EUPL-1.2
+└── LICENSE                     # AGPL-3.0-or-later
 ```
 
 ---
@@ -457,24 +457,27 @@ class MyView(WorkViewMixin, TemplateView):
 
 ### Templates
 
+Verbindlich: [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md) und die ADRs unter `docs/adr/`.
+Kurzfassung: Templates sind Struktur, nicht Programm.
+
+- Kein `<script>`/`<style>` in Seiten-Templates (Allowlist: Layouts, E-Mails, PDF, PWA). JavaScript lebt in
+  `frontend/` und wird gebündelt; Alpine-Komponenten werden mit `Alpine.data()` registriert und im Template
+  nur per `x-data="name"` referenziert. Server-Daten gehen per `{{ data|json_script:"id" }}` an den Client.
+- Höchstens 300 Zeilen je Template; HTMX-Fragmente als Django-6-Template-Partials (`{% partialdef %}`).
+- Wiederkehrendes Markup (Buttons, Cards, Badges, Formularfelder, Modals) als Komponente statt kopierter
+  Klassenketten (Komponentenbibliothek im Aufbau, siehe Epic „Code-Qualität“ auf GitHub).
+- `scripts/check_frontend_ratchet.py` misst Inline-Code und Template-Größe; die Werte dürfen nur sinken.
+
 ```html
 {% extends "work/base_work.html" %}
 
 {% block content %}
-<div x-data="myComponent()" class="...">
-    <!-- Alpine.js Component -->
+{{ board_data|json_script:"task-board-data" }}
+<div x-data="taskBoard" class="...">
+    {% partialdef task-list inline %}
+    <ul id="task-list">…</ul>
+    {% endpartialdef %}
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-function myComponent() {
-    return {
-        items: [],
-        init() { /* ... */ }
-    }
-}
-</script>
 {% endblock %}
 ```
 

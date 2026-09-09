@@ -8,8 +8,6 @@ Mandari Insight - Kommunalpolitische Transparenz
 import os
 from pathlib import Path
 
-import django
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -115,6 +113,8 @@ ASGI_APPLICATION = "mandari.asgi.application"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Content-Security-Policy (Django 6): zunächst Report-Only, siehe Block SECURE_CSP_REPORT_ONLY
+    "django.middleware.csp.ContentSecurityPolicyMiddleware",
     # Database error handler - shows maintenance page on DB connection issues
     "apps.common.middleware.DatabaseErrorMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -227,20 +227,7 @@ else:
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
-]
+# Passwort-Validierung: siehe Block unter „Session settings“ (eine einzige Definition)
 
 
 # Internationalization
@@ -440,7 +427,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-        "OPTIONS": {"min_length": 8},
+        "OPTIONS": {"min_length": 12},  # BSI-Empfehlung für Verwaltungsanwendungen
     },
     {
         "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
@@ -489,12 +476,12 @@ LOGGING = {
         },
         "apps.work": {
             "handlers": ["console"],
-            "level": "DEBUG",
+            "level": "DEBUG" if DEBUG else "INFO",
             "propagate": False,
         },
         "apps.common": {
             "handlers": ["console"],
-            "level": "DEBUG",
+            "level": "DEBUG" if DEBUG else "INFO",
             "propagate": False,
         },
     },
@@ -504,26 +491,58 @@ LOGGING = {
 # =============================================================================
 # Django 6.0 Content Security Policy (CSP)
 # =============================================================================
-# Built-in CSP support for protection against XSS attacks
+# Stufe 1 (jetzt): Report-Only. Die Middleware ist eingehängt, der Browser meldet
+# Verstöße in der Konsole, blockiert aber nichts. Sobald Inline-Skripte/-Styles
+# ausgelagert bzw. mit Nonce versehen sind, wird die Policy nach SECURE_CSP
+# verschoben und damit erzwungen (Frontend-Modernisierung, Epic siehe GitHub).
+# Der Reverse Proxy setzt derzeit zusätzlich eine permissive Enforce-Policy.
 
-if not DEBUG and django.VERSION >= (6, 0):
-    from django.utils.csp import CSP
+from django.utils.csp import CSP
 
-    SECURE_CSP = {
-        "default-src": [CSP.SELF],
-        "script-src": [CSP.SELF, CSP.NONCE],  # Alle Scripts lokal
-        "style-src": [CSP.SELF, CSP.UNSAFE_INLINE],  # TailwindCSS, MapLibre CSS
-        "img-src": [CSP.SELF, "data:", "https:", "blob:"],  # blob: für MapLibre Tiles
-        "font-src": [CSP.SELF],
-        "connect-src": [CSP.SELF, "https://tiles.versatiles.org"],  # HTMX, VersaTiles
-        "worker-src": [CSP.SELF, "blob:"],  # MapLibre WebWorker
-        "child-src": ["blob:"],  # MapLibre
-        "frame-ancestors": [CSP.NONE],
-    }
+SECURE_CSP_REPORT_ONLY = {
+    "default-src": [CSP.SELF],
+    "script-src": [CSP.SELF, CSP.NONCE],
+    "style-src": [CSP.SELF, CSP.UNSAFE_INLINE],  # Inline-Styles bleiben bis zur Auslagerung erlaubt
+    "img-src": [CSP.SELF, "data:", "https:", "blob:"],
+    "font-src": [CSP.SELF, "data:"],
+    "connect-src": [CSP.SELF, "https://tiles.versatiles.org"],
+    "worker-src": [CSP.SELF, "blob:"],
+    "child-src": ["blob:"],
+    "object-src": [CSP.NONE],
+    "base-uri": [CSP.SELF],
+    "frame-ancestors": [CSP.NONE],
+}
 
-    # Add CSP middleware (after SecurityMiddleware)
-    # Note: Add 'django.middleware.csp.ContentSecurityPolicyMiddleware' to MIDDLEWARE
-    # after 'django.middleware.security.SecurityMiddleware' when ready
+
+# =============================================================================
+# Transport- und Cookie-Sicherheit (in Django, nicht nur im Reverse Proxy)
+# =============================================================================
+# TLS terminiert der Reverse Proxy und leitet HTTP selbst auf HTTPS um; Django
+# erkennt HTTPS über X-Forwarded-Proto. Interne Healthchecks laufen über HTTP,
+# daher kein SECURE_SSL_REDIRECT (Check W008 bewusst stillgelegt).
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_SSL_REDIRECT = os.environ.get("SECURE_SSL_REDIRECT", "False").lower() in ("true", "1", "yes")
+SECURE_REDIRECT_EXEMPT = [r"^health/?$"]
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
+
+if not DEBUG:
+    SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", str(60 * 60 * 24 * 365)))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = False  # Aufnahme in die Preload-Liste ist eine bewusste Entscheidung (W021 stillgelegt)
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
+SILENCED_SYSTEM_CHECKS = [
+    "security.W008",  # SSL-Redirect übernimmt der Reverse Proxy (Healthchecks über HTTP)
+    "security.W021",  # HSTS-Preload bewusst noch nicht gesetzt
+]
 
 
 # =============================================================================
