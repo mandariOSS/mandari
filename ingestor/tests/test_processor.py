@@ -27,6 +27,13 @@ from src.sync.processor import (
 # Path to sample data
 SAMPLE_DATA_PATH = Path(__file__).parent.parent.parent.parent.parent / "_OParl Muster Data"
 
+# Die Musterdaten liegen außerhalb des Repositories; ohne sie werden diese Tests übersprungen
+# (CI und fremde Checkouts), statt mit Dateifehlern abzubrechen.
+pytestmark = pytest.mark.skipif(
+    not SAMPLE_DATA_PATH.exists(),
+    reason="OParl-Musterdaten (_OParl Muster Data) nicht vorhanden",
+)
+
 
 @pytest.fixture
 def processor() -> OParlProcessor:
