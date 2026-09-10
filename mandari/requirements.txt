@@ -59,7 +59,7 @@ segno>=1.6.0  # QR-Codes (reines Python, Teilnahmenachweis-Verifikation)
 python-docx>=1.1.0
 
 # Real-time collaboration (WebSocket)
-channels>=4.2.0
+channels>=4.3.2
 channels-redis>=4.2.0
 daphne>=4.1.0
 
