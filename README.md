@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="mandari" width="120" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-light.svg">
+    <img src="docs/assets/logo.svg" alt="mandari" width="280" />
+  </picture>
 </p>
-
-<h1 align="center">mandari</h1>
 
 <p align="center">
   <strong>Open-Source-Plattform für kommunalpolitische Transparenz</strong><br>

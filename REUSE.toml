@@ -53,7 +53,7 @@ SPDX-License-Identifier = "CC0-1.0"
 
 # --- Marke (Logo, Favicons): urheberrechtlich geschützt, keine freie Lizenz ---
 [[annotations]]
-path = ["mandari/static/brand/**", "mandari/static/images/**", "mandari/static/img/**"]
+path = ["mandari/static/brand/**", "mandari/static/images/**", "mandari/static/img/**", "docs/assets/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2025-2026 mandari Contributors"
 SPDX-License-Identifier = "LicenseRef-Mandari-Brand"
