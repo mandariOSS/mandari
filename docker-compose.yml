@@ -203,6 +203,39 @@ services:
       start_period: 30s
 
   # ===========================================================================
+  # Protokollierung: Orchestrator der GPU-Rechenknoten (centron)
+  # Erstellt und löscht GPU-vServer nach Bedarf. Tut nichts, solange im Admin
+  # unter System → GPU-Rechenknoten „Rechenknoten aktiv" ausgeschaltet ist.
+  # ===========================================================================
+  minutes-orchestrator:
+    image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-minutes-orchestrator
+    restart: unless-stopped
+    command: ["python", "manage.py", "minutes_orchestrator"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      SECRET_KEY: ${SECRET_KEY:?Django secret key required}
+      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:?Encryption key required}
+      DEBUG: "false"
+      ALLOWED_HOSTS: ${DOMAIN:-localhost}
+      SITE_URL: https://${DOMAIN:-localhost}
+      TZ: ${TZ:-Europe/Berlin}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mandari:
+        condition: service_healthy
+    networks:
+      - mandari
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ===========================================================================
   # Marketing Website (Wagtail CMS)
   # ===========================================================================
   website:

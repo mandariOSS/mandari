@@ -836,6 +836,16 @@ UNFOLD = {
                         "icon": "settings",
                         "link": reverse_lazy("admin:common_sitesettings_changelist"),
                     },
+                    {
+                        "title": _("GPU-Rechenknoten"),
+                        "icon": "memory",
+                        "link": reverse_lazy("admin:minutes_computesettings_changelist"),
+                    },
+                    {
+                        "title": _("GPU-Knoten (Übersicht)"),
+                        "icon": "dns",
+                        "link": reverse_lazy("admin:minutes_gpunode_changelist"),
+                    },
                 ],
             },
         ],

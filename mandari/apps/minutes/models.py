@@ -209,6 +209,14 @@ class TranscriptionJob(models.Model):
         default=JobStatus.QUEUED,
         verbose_name="Status",
     )
+    node = models.ForeignKey(
+        "minutes.GpuNode",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="jobs",
+        verbose_name="Knoten",
+    )
 
     # Nachvollziehbarkeit: welches Modell hat welches Ergebnis erzeugt.
     engine = models.CharField(max_length=100, blank=True, verbose_name="Verfahren")
@@ -491,3 +499,8 @@ class ProtocolDraft(EncryptionMixin, models.Model):
 
     def get_encryption_organization(self) -> object:
         return self.segment.recording.get_encryption_organization()
+
+
+# Zentrale Rechenknoten-Konfiguration und GPU-Knoten liegen in einem eigenen
+# Modul; erst dieser Import registriert die Modelle bei Django.
+from .models_compute import ComputeSettings, GpuNode  # noqa: E402, F401
