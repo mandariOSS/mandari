@@ -52,7 +52,7 @@ pdf2image>=1.16.0
 # PDF generation
 xhtml2pdf>=0.2.17  # Security: fixes ReDoS vulnerability
 defusedxml>=0.7.1  # Security: sicheres XML-Parsing (Task-Import)
-reportlab>=4.0.0
+reportlab>=5.0.1
 segno>=1.6.0  # QR-Codes (reines Python, Teilnahmenachweis-Verifikation)
 
 # DOCX generation
