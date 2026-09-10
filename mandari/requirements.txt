@@ -60,7 +60,7 @@ python-docx>=1.1.0
 
 # Real-time collaboration (WebSocket)
 channels>=4.2.0
-channels-redis>=4.2.0
+channels-redis>=4.3.0
 daphne>=4.1.0
 
 # Zero-Downtime Migrations
