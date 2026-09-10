@@ -346,7 +346,7 @@ jobs:
         run: cd mandari && pytest tests_e2e -q --browser chromium
       - name: Screenshots als Artefakt (hell/dunkel, Komponentenvorschau, Kernpfade)
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-screenshots
           path: mandari/tests_e2e/screenshots/
