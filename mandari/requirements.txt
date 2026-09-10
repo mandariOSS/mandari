@@ -73,7 +73,7 @@ gunicorn>=23.0.0
 urllib3>=2.5.0  # Security: fixes open redirect, info disclosure
 requests>=2.32.4  # Security: fixes control flow, sensitive data issues
 anyio>=4.4.0  # Security: fixes race condition
-zipp>=3.19.1  # Security: fixes infinite loop
+zipp>=4.1.0  # Security: fixes infinite loop
 
 # OpenTelemetry (aktiv nur mit OTEL_EXPORTER_OTLP_ENDPOINT, siehe apps/common/observability.py)
 opentelemetry-sdk>=1.27.0
