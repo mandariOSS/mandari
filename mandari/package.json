@@ -44,7 +44,7 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/alpinejs": "^3.13.11",
-    "@types/node": "^20.19.43",
+    "@types/node": "^26.4.1",
     "axe-core": "^4.13.0",
     "concurrently": "^9.1.0",
     "esbuild": "^0.24.0",
