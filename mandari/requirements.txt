@@ -70,7 +70,7 @@ django-safemigrate>=4.3
 gunicorn>=23.0.0
 
 # Transitive dependencies pinned for security
-urllib3>=2.5.0  # Security: fixes open redirect, info disclosure
+urllib3>=2.7.0  # Security: fixes open redirect, info disclosure
 requests>=2.32.4  # Security: fixes control flow, sensitive data issues
 anyio>=4.4.0  # Security: fixes race condition
 zipp>=3.19.1  # Security: fixes infinite loop
