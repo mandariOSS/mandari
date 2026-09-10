@@ -47,10 +47,16 @@ document.addEventListener('click', (event) => {
 installIconObserver()
 
 // ---- Start ---------------------------------------------------------------------
-// Erst nach dem Parsen starten, damit weitere Modul-Einstiege (z. B. der Editor)
-// ihre Globals vor der Initialisierung der x-data-Komponenten gesetzt haben.
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => Alpine.start(), { once: true })
-} else {
+// Vite-Einstiege sind Module: Sie laufen erst, wenn document.readyState bereits
+// "interactive" ist – aber vor DOMContentLoaded und in Dokumentreihenfolge. Startete
+// Alpine hier sofort, hätten work.ts und das Editor-Bundle ihre Komponenten noch nicht
+// registriert, und jedes x-data dieser Seiten bliebe leer. Deshalb bis
+// DOMContentLoaded warten; nur wenn das Ereignis schon ausgelöst wurde (Skript
+// nachträglich eingefügt), sofort starten.
+const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+const domContentLoadedStarted = document.readyState === 'complete' || (navigation?.domContentLoadedEventStart ?? 0) > 0
+if (domContentLoadedStarted) {
   Alpine.start()
+} else {
+  document.addEventListener('DOMContentLoaded', () => Alpine.start(), { once: true })
 }
