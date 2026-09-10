@@ -43,6 +43,11 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     if os.environ.get("MANDARI_E2E") == "1":
+        # Die Live-Server-Threads nutzen eigene Verbindungen zur Datei-SQLite (settings_test): Testdaten
+        # müssen wirklich committet sein, sonst sieht der Server sie nicht.
+        for item in items:
+            if "tests_e2e" in str(item.fspath):
+                item.add_marker(pytest.mark.django_db(transaction=True))
         return
     skip = pytest.mark.skip(reason="E2E nur mit MANDARI_E2E=1 (Playwright + gebaute Assets)")
     for item in items:

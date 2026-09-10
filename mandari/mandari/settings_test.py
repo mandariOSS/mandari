@@ -37,6 +37,16 @@ TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBacken
 # E2E-Tests (MANDARI_E2E=1) laden dagegen die gebauten Assets aus static/dist/ über den Live-Server.
 DJANGO_VITE = {"default": {**DJANGO_VITE["default"], "dev_mode": os.environ.get("MANDARI_E2E") != "1"}}  # noqa: F405
 
+# E2E: Der Browser stellt parallele Anfragen an den Live-Server (Polling, Nachladen). Mit der
+# In-Memory-Testdatenbank teilen sich alle Server-Threads eine SQLite-Verbindung und scheitern mit
+# "database table is locked" – Serverfehler im Test wären dann Umgebungsartefakte. Als Datei mit
+# Lock-Timeout warten parallele Schreiber; die Tests laufen dafür transaktional (tests_e2e/conftest.py).
+if os.environ.get("MANDARI_E2E") == "1" and DATABASES["default"]["ENGINE"].endswith("sqlite3"):  # noqa: F405
+    DATABASES["default"]["TEST"] = {  # noqa: F405
+        "NAME": str(Path(tempfile.mkdtemp(prefix="mandari_e2e_")) / "e2e.sqlite3"),
+    }
+    DATABASES["default"].setdefault("OPTIONS", {})["timeout"] = 30  # noqa: F405
+
 # Komponentenvorschau /dev/ui/ auch ohne DEBUG (Rendering- und E2E-Tests)
 UI_KIT_PREVIEW = True
 

@@ -186,6 +186,19 @@ function readConfig(): PrepareConfig {
   return config
 }
 
+/**
+ * Objekt von Alpines Reaktivität ausnehmen (entspricht Vues `markRaw`, auf dem Alpine aufbaut).
+ *
+ * TipTap-/ProseMirror-Instanzen dürfen nicht in einen reaktiven Proxy gewickelt werden:
+ * ProseMirror prüft beim Anwenden einer Transaktion, ob sie auf *demselben* Dokument-Objekt
+ * aufbaut. Über den Proxy entstehen Transaktionen auf Proxy-Objekten, und `setContent` bzw.
+ * die Toolbar-Befehle scheitern mit „Applying a mismatched transaction".
+ */
+function markRaw<T extends object>(value: T): T {
+  Object.defineProperty(value, '__v_skip', { value: true, configurable: true })
+  return value
+}
+
 /** Alpine-Komponente: `x-data="preparationApp"` */
 export const preparationApp = defineComponent(() => {
   const config = readConfig()
@@ -470,25 +483,28 @@ export const preparationApp = defineComponent(() => {
       if (this.speechEditor || !MandariEditor) return
       const el = this.$refs.speechEditorEl
       if (!el) return
-      this.speechEditor = MandariEditor.createEditor({
-        element: el,
-        content: '',
-        editable: true,
-        placeholder: 'Redetext verfassen — mit / öffnen Sie das Einfüge-Menü...',
-        onUpdate: (html) => {
-          if (this._suppressEditorSave) return
-          const item = this._editorItem
-          if (!item || this.speechReadonly) return
-          item.speechContent = html
-          item.hasSpeechNote = true
-          this.queueItemSave('speech-content', item, (it) => {
-            void this.saveSpeechFields(it, { content: it.speechContent })
-          })
-        },
-        onSelectionUpdate: (state) => {
-          this.speechFormats = state
-        },
-      })
+      // Nicht reaktiv ablegen, siehe markRaw()
+      this.speechEditor = markRaw(
+        MandariEditor.createEditor({
+          element: el,
+          content: '',
+          editable: true,
+          placeholder: 'Redetext verfassen — mit / öffnen Sie das Einfüge-Menü...',
+          onUpdate: (html) => {
+            if (this._suppressEditorSave) return
+            const item = this._editorItem
+            if (!item || this.speechReadonly) return
+            item.speechContent = html
+            item.hasSpeechNote = true
+            this.queueItemSave('speech-content', item, (it) => {
+              void this.saveSpeechFields(it, { content: it.speechContent })
+            })
+          },
+          onSelectionUpdate: (state) => {
+            this.speechFormats = state
+          },
+        }),
+      )
     },
 
     // Editorinhalt auf den aktuellen TOP setzen (bei verknüpftem Dokument
