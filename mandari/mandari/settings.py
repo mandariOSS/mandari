@@ -106,6 +106,8 @@ INSTALLED_APPS = [
     "apps.work",
     # Mandari Session RIS (OSS - AGPL 3.0)
     "apps.session",
+    # Protokollierung (Aufzeichnung, Transkription, KI-Entwurf) — Session + Work
+    "apps.minutes",
 ]
 
 # Custom User Model

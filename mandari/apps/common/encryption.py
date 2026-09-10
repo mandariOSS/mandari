@@ -13,6 +13,7 @@ Key Hierarchy:
 
 import base64
 import os
+from typing import Any
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.conf import settings
@@ -227,7 +228,7 @@ class EncryptedTextField(models.BinaryField):
 
     description = "Encrypted text field using AES-256-GCM"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs.setdefault("editable", True)
         kwargs.setdefault("blank", True)
         kwargs.setdefault("null", True)
