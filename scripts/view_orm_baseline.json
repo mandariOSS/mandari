@@ -1,10 +1,10 @@
 {
   "dashboard": {
-    "orm_calls": 33,
+    "orm_calls": 31,
     "long_functions": 1
   },
   "faction": {
-    "orm_calls": 351,
+    "orm_calls": 349,
     "long_functions": 1
   },
   "meetings": {
@@ -12,7 +12,7 @@
     "long_functions": 0
   },
   "motions": {
-    "orm_calls": 544,
+    "orm_calls": 530,
     "long_functions": 4
   },
   "notifications": {

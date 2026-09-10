@@ -832,16 +832,22 @@ class Motion(EncryptionMixin, models.Model):
         return self.organization
 
     @classmethod
-    def visible_to(cls, membership):
+    def visible_to(cls, membership, *, include_deleted=False):
         """
         Queryset der Dokumente, die ein Mitglied sehen darf (analog can_access).
 
-        Wird u. a. für die sichtbarkeitsabhängigen Ordner-Zähler genutzt:
-        eigene Dokumente, organisationsweite sowie persönlich geteilte.
-        Gäste sehen ausschließlich persönlich freigegebene Dokumente
-        sowie Dokumente in für sie freigegebenen Ordnern (rekursiv).
+        Einzige Quelle für Dokumentlisten aller Art – Liste, Kacheln,
+        Ordner-Zähler, Dashboard, Auswahlfelder, Papierkorb: eigene Dokumente,
+        organisationsweite sowie persönlich geteilte. Gäste sehen ausschließlich
+        persönlich freigegebene Dokumente sowie Dokumente in für sie
+        freigegebenen Ordnern (rekursiv).
+
+        Args:
+            include_deleted: Auch Dokumente im Papierkorb liefern.
         """
-        qs = cls.objects.filter(organization=membership.organization).exclude(status="deleted")
+        qs = cls.objects.filter(organization=membership.organization)
+        if not include_deleted:
+            qs = qs.exclude(status="deleted")
         if getattr(membership, "is_guest", False):
             shared_folder_ids = list(FolderGuestShare.shared_folder_levels(membership.user, membership.organization))
             return qs.filter(

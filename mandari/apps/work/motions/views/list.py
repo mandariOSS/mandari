@@ -45,8 +45,10 @@ class MotionListView(WorkViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "documents"
 
-        # Base queryset - exclude deleted items by default
-        motions = Motion.objects.filter(organization=self.organization).exclude(status="deleted")
+        # Grundmenge: nur Dokumente, die das Mitglied sehen darf. Liste,
+        # Änderungsanträge, Kacheln und Ordner-Zähler rechnen über dieselbe Menge.
+        visible = Motion.visible_to(self.membership)
+        motions = visible
 
         # Ordner-Filter (?ordner=<id>): Ordner inkl. aller Unterordner.
         # Fremde/ungültige Ordner → 404 (Org-Grenze).
@@ -121,8 +123,7 @@ class MotionListView(WorkViewMixin, TemplateView):
 
         # Kinder der Seite laden und gruppiert anhängen
         amendments = (
-            Motion.objects.filter(organization=self.organization, parent_motion__in=list(page_obj))
-            .exclude(status="deleted")
+            visible.filter(parent_motion__in=list(page_obj))
             .select_related(*related)
             .prefetch_related(*prefetches)
             .order_by("-updated_at")
@@ -138,9 +139,9 @@ class MotionListView(WorkViewMixin, TemplateView):
                 motion_rows.append({"motion": amendment, "is_amendment": True})
         context["motion_rows"] = motion_rows
 
-        # Statistics (exclude deleted)
+        # Statistik über dieselbe sichtbare Menge wie Liste und Ordner-Zähler
         today = timezone.localdate()
-        all_motions = Motion.objects.filter(organization=self.organization).exclude(status="deleted")
+        all_motions = visible
         context["stats"] = {
             "total": all_motions.count(),
             "draft": all_motions.filter(status="draft").count(),
@@ -174,7 +175,6 @@ class MotionListView(WorkViewMixin, TemplateView):
         # Nutzer sehen darf (Ordner machen nichts sichtbar!)
         from django.db.models import Count
 
-        visible = Motion.visible_to(self.membership)
         # order_by() leert die Meta-Sortierung (-updated_at), sonst wandert
         # updated_at ins GROUP BY und die Zähler zerfallen in Einzelgruppen
         direct_counts = {

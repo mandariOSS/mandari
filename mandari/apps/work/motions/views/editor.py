@@ -47,7 +47,7 @@ class MotionCreateView(WorkViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "documents"
-        context["form"] = MotionForm(organization=self.organization)
+        context["form"] = MotionForm(organization=self.organization, membership=self.membership)
         context["ai_available"] = MotionAIService(
             organization=self.organization, user_id=self.request.user.id
         ).is_available()
@@ -535,7 +535,7 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                 return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
         # Default: use form for full updates
-        form = MotionForm(request.POST, instance=motion, organization=self.organization)
+        form = MotionForm(request.POST, instance=motion, organization=self.organization, membership=self.membership)
 
         if form.is_valid():
             motion = form.save(commit=False)

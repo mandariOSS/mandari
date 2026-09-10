@@ -92,7 +92,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
         from apps.work.motions.models import Motion
 
         available_motions = (
-            Motion.objects.filter(organization=self.organization)
+            Motion.visible_to(self.membership)
             .exclude(id__in=item.related_motions.values_list("id", flat=True))
             .order_by("-created_at")[:50]
         )

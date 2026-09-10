@@ -5,6 +5,7 @@ Forms for motion/document management.
 
 from django import forms
 from django.core.validators import FileExtensionValidator
+from django.db.models import Q
 
 from .models import (
     Motion,
@@ -74,9 +75,10 @@ class MotionForm(forms.ModelForm):
             ),
         }
 
-    def __init__(self, *args, organization=None, **kwargs):
+    def __init__(self, *args, organization=None, membership=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.organization = organization
+        self.membership = membership
 
         # Limit template choices to organization's templates
         if organization:
@@ -84,9 +86,12 @@ class MotionForm(forms.ModelForm):
                 organization=organization, is_active=True
             ).order_by("-is_default", "name")
 
-            # For amendment - only show motions from same organization
+            # Änderungsantrag: nur Hauptanträge, die das Mitglied sehen darf. Ein bereits
+            # gesetzter Hauptantrag bleibt wählbar, damit Mitbearbeitende speichern können.
+            visible_ids = Motion.visible_to(membership).values("pk") if membership is not None else []
+            current_parent = Q(pk=self.instance.parent_motion_id) if self.instance.parent_motion_id else Q(pk__in=[])
             self.fields["parent_motion"].queryset = (
-                Motion.objects.filter(organization=organization)
+                Motion.objects.filter(Q(pk__in=visible_ids) | current_parent)
                 .exclude(status__in=["archived", "rejected"])
                 .order_by("-created_at")
             )

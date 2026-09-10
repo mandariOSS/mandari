@@ -209,7 +209,7 @@ class DashboardView(WorkViewMixin, TemplateView):
 
         from apps.work.motions.models import Motion
 
-        queryset = Motion.objects.filter(organization=self.organization).exclude(status__in=["deleted", "archived"])
+        queryset = Motion.visible_to(self.membership).exclude(status="archived")
 
         if my_committee_ids:
             # "Meine Gremien": keep internal documents (no committee link) and
