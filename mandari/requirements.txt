@@ -41,7 +41,7 @@ cryptography>=44.0.0
 
 # E-Mail: CSS-Inliner (Rust-Wheel, keine Systemabhängigkeiten) und Text-Alternative (Issue #175)
 css-inline>=0.14
-html2text>=2024.2.26
+html2text>=2025.4.15
 
 # Document extraction (OCR)
 # Note: PyPDF2 is deprecated, using pypdf instead
