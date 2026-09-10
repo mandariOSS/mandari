@@ -2,7 +2,7 @@
 # Build context: repo root (not ./ingestor)
 # Optimized for faster builds with better caching
 
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ COPY ingestor/pyproject.toml ingestor/README.md ./
 RUN uv pip install --system --no-sources .
 
 # --- Final stage ---
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
