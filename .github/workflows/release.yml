@@ -115,7 +115,7 @@ jobs:
       # =====================================================================
 
       - name: Build and push mandari image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./mandari/Dockerfile
@@ -138,7 +138,7 @@ jobs:
           format: 'table'
 
       - name: Build and push ingestor image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./ingestor/Dockerfile
