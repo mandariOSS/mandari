@@ -215,21 +215,11 @@ else:
 
 # Django Channels — WebSocket layer
 # Uses Redis if available, falls back to in-memory for development
-if REDIS_URL:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {
-                "hosts": [REDIS_URL],
-            },
-        },
-    }
-else:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels.layers.InMemoryChannelLayer",
-        },
-    }
+# Lese-Timeout bewusst über der blockierenden Wartezeit von channels_redis (#216),
+# siehe mandari/redis_config.py.
+from mandari.redis_config import build_channel_layers
+
+CHANNEL_LAYERS = build_channel_layers(REDIS_URL)
 
 
 # Password validation
