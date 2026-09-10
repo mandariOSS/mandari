@@ -37,7 +37,7 @@ httpx>=0.28.0
 python-dateutil>=2.9.0
 pillow>=10.3.0  # Security: fixes heap buffer overflow, DoS, eval injection
 markdown>=3.7
-cryptography>=44.0.0
+cryptography>=50.0.1
 
 # E-Mail: CSS-Inliner (Rust-Wheel, keine Systemabhängigkeiten) und Text-Alternative (Issue #175)
 css-inline>=0.14
