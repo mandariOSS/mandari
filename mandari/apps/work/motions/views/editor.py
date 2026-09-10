@@ -35,7 +35,35 @@ from ..models import (
     OrganizationLetterhead,
 )
 from ..services import MotionAIService
-from ._helpers import _flatten_folder_tree, _get_org_folder_or_404
+from ._helpers import _broadcast_doc_reload, _flatten_folder_tree, _get_org_folder_or_404
+
+
+def _current_content(motion) -> str:
+    """Entschlüsselter Inhalt oder leer, wenn er nicht lesbar ist."""
+    try:
+        return motion.get_content_decrypted() or ""
+    except Exception:
+        return ""
+
+
+def _store_content(motion, new_content: str, old_content: str) -> bool:
+    """
+    Inhalt setzen und einen veralteten Kollaborationsstand verwerfen (#184).
+
+    Ein per POST gespeicherter Inhalt macht den gespeicherten Yjs-Zustand
+    veraltet. Bliebe er stehen, gewänne er beim nächsten Öffnen mit
+    Kollaboration und setzte die Änderung stillschweigend zurück. Wie bei der
+    Versionswiederherstellung wird er deshalb verworfen; der Client übernimmt
+    dann den gespeicherten HTML-Inhalt.
+
+    Returns:
+        True, wenn sich der Inhalt geändert hat (verbundene Clients neu laden).
+    """
+    motion.set_content_encrypted(new_content)
+    if new_content == old_content:
+        return False
+    motion.yjs_document = None
+    return True
 
 
 class MotionCreateView(WorkViewMixin, TemplateView):
@@ -479,8 +507,10 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                 if title:
                     motion.title = title
 
-                summary = request.POST.get("summary", "").strip()
-                motion.summary = summary
+                # Nur übernehmen, wenn mitgeschickt: Der Editor sendet die beim Anlegen
+                # erfasste Zusammenfassung nicht mit und würde sie sonst leeren (#183).
+                if "summary" in request.POST:
+                    motion.summary = request.POST.get("summary", "").strip()
 
                 # Update document type if provided
                 document_type_id = request.POST.get("document_type_id", "").strip()
@@ -518,8 +548,10 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                     except Exception as e:
                         logger.exception(f"[DocumentEditor] REVISION CREATION FAILED: {e}")
 
-                motion.set_content_encrypted(new_content)
+                content_changed = _store_content(motion, new_content, old_content)
                 motion.save()
+                if content_changed:
+                    _broadcast_doc_reload(motion)
 
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                     return JsonResponse({"success": True, "saved_at": timezone.now().isoformat()})
@@ -540,9 +572,10 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         if form.is_valid():
             motion = form.save(commit=False)
             new_content = request.POST.get("content", "")
-            if new_content:
-                motion.set_content_encrypted(new_content)
+            content_changed = bool(new_content) and _store_content(motion, new_content, _current_content(motion))
             motion.save()
+            if content_changed:
+                _broadcast_doc_reload(motion)
 
             if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                 return JsonResponse({"success": True})
