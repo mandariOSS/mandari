@@ -33,7 +33,7 @@
     "@tiptap/suggestion": "^3.31.3",
     "@tiptap/y-tiptap": "^3.0.9",
     "alpinejs": "^3.17.2",
-    "diff": "^8.0.3",
+    "diff": "^9.0.0",
     "htmx.org": "^2.0.10",
     "lucide": "^1.43.0",
     "pdfjs-dist": "^4.9.155",
