@@ -31,11 +31,11 @@ def stats(request):
     """
     return JsonResponse(
         {
-            "bodies": OParlBody.objects.filter(deleted=False).count(),
-            "organizations": OParlOrganization.objects.filter(deleted=False).count(),
-            "persons": OParlPerson.objects.filter(deleted=False).count(),
-            "meetings": OParlMeeting.objects.filter(deleted=False).count(),
-            "papers": OParlPaper.objects.filter(deleted=False).count(),
+            "bodies": OParlBody.objects.listed().count(),
+            "organizations": OParlOrganization.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
+            "persons": OParlPerson.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
+            "meetings": OParlMeeting.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
+            "papers": OParlPaper.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
         }
     )
 
@@ -49,7 +49,7 @@ def stats_bodies(request):
     GET /api/stats/bodies/
     Returns list of all bodies with basic info.
     """
-    bodies = OParlBody.objects.filter(deleted=False).order_by("name")
+    bodies = OParlBody.objects.listed().order_by("name")
     data = []
     for body in bodies:
         data.append(

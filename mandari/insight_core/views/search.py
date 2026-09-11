@@ -11,6 +11,7 @@ from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
 from ..models import (
+    OParlBody,
     OParlMeeting,
     OParlOrganization,
     OParlPaper,
@@ -91,8 +92,9 @@ def search_results(request):
 
         search_service = get_search_service()
 
-        # Body-ID für Filter
+        # Body-ID für Filter; kommunenübergreifend nur gelistete Kommunen
         body_id = str(body.id) if body else None
+        body_ids = None if body else [str(pk) for pk in OParlBody.objects.listed().values_list("id", flat=True)]
 
         # Index-Auswahl basierend auf Typ
         index_map = {
@@ -110,6 +112,7 @@ def search_results(request):
         search_result = search_service.search_all(
             query=query,
             body_id=body_id,
+            body_ids=body_ids,
             page=page,
             page_size=page_size,
             index_names=index_names,
@@ -141,8 +144,8 @@ def search_results(request):
 
         results = []
 
-        # Optionaler Body-Filter: body=None bedeutet kommunenübergreifende Suche
-        body_filter = {"body": body} if body else {}
+        # Optionaler Body-Filter: body=None bedeutet kommunenübergreifende Suche über gelistete Kommunen
+        body_filter = {"body": body} if body else {"body__is_listed": True}
 
         # Vorgänge
         papers = OParlPaper.objects.filter(deleted=False, **body_filter).filter(

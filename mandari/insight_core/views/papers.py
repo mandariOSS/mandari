@@ -193,6 +193,9 @@ class PaperListPartial(ListView):
     context_object_name = "papers"
     paginate_by = 20
 
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted=False, body__is_listed=True)
+
 
 @require_GET
 def paper_summary(request, pk):

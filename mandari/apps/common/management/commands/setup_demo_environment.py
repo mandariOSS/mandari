@@ -213,6 +213,8 @@ class Command(BaseCommand):
                 "short_name": "Musterstadt (Demo)",
                 "display_name": "Musterstadt (Demo)",
                 "slug": DEMO_BODY_SLUG,
+                # Per URL erreichbar, aber nicht in Kommunenauswahl und Listen
+                "is_listed": False,
                 "description": (
                     "Willkommen im Demo-Ratsinformationssystem der fiktiven Stadt Musterstadt. "
                     "Alle Daten sind synthetisch und dienen ausschließlich der Demonstration von mandari."

@@ -41,7 +41,7 @@ def active_body(request):
     show_all_bodies = False
 
     try:
-        bodies = list(OParlBody.objects.filter(deleted=False).order_by("name"))
+        bodies = list(OParlBody.objects.listed().order_by("name"))
 
         # "all" bedeutet: Alle Kommunen anzeigen (keine spezifische ausgewählt)
         if body_id == "all":

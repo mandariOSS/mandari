@@ -5,6 +5,8 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
+from django.http import HttpRequest
+
 from ..models import (
     OParlBody,
 )
@@ -14,21 +16,21 @@ from ..models import (
 # =============================================================================
 
 
-def get_active_body(request):
+def get_active_body(request: HttpRequest) -> OParlBody | None:
     """Holt die aktive Kommune aus der Session oder setzt einen Standard."""
     body_id = request.session.get("active_body_id")
     if body_id == "all":
         # "Alle Kommunen"-Modus: Auswahl NICHT überschreiben. Views, die zwingend
         # eine einzelne Kommune brauchen, erhalten die erste Kommune als Fallback,
         # is_all_bodies_mode() bleibt dabei True.
-        return OParlBody.objects.first()
+        return OParlBody.objects.listed().first()
     if body_id:
         try:
             return OParlBody.objects.get(id=body_id)
         except OParlBody.DoesNotExist:
             pass
     # Fallback: Erste Kommune als Standard
-    default_body = OParlBody.objects.first()
+    default_body = OParlBody.objects.listed().first()
     if default_body:
         request.session["active_body_id"] = str(default_body.id)
         return default_body
@@ -52,7 +54,7 @@ class ActiveBodyRequiredMixin:
 
     def dispatch(self, request, *args, **kwargs):
         if is_all_bodies_mode(request):
-            bodies = list(OParlBody.objects.filter(deleted=False)[:2])
+            bodies = list(OParlBody.objects.listed()[:2])
             if len(bodies) == 1:
                 request.session["active_body_id"] = str(bodies[0].id)
                 request.session.modified = True

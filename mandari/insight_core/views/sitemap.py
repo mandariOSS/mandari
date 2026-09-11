@@ -57,7 +57,7 @@ def sitemap_index(request):
     site_url = _site_url()
     xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
     xml_parts.append('<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
-    bodies = OParlBody.objects.filter(deleted=False).exclude(slug__isnull=True).exclude(slug="").order_by("slug")
+    bodies = OParlBody.objects.listed().exclude(slug__isnull=True).exclude(slug="").order_by("slug")
     for body in bodies:
         xml_parts.append("  <sitemap>")
         xml_parts.append(f"    <loc>{site_url}/sitemap-insight-{body.slug}.xml</loc>")
@@ -83,7 +83,7 @@ def body_sitemap(request, body_slug):
     site_url = getattr(settings, "SITE_URL", "https://mandari.de")
 
     try:
-        body = OParlBody.objects.get(slug=body_slug)
+        body = OParlBody.objects.listed().get(slug=body_slug)
     except OParlBody.DoesNotExist:
         raise Http404("Kommune nicht gefunden") from None
 

@@ -119,6 +119,15 @@ class OParlSource(models.Model):
         return self.source_type.startswith("scraper:")
 
 
+class OParlBodyQuerySet(models.QuerySet):
+    def listed(self) -> "OParlBodyQuerySet":
+        """Kommunen für Kommunenauswahl, Übersichten, Sitemaps und öffentliche Listen.
+
+        Nicht gelistete Kommunen (z. B. die Demo-Kommune) bleiben per direkter URL erreichbar.
+        """
+        return self.filter(deleted=False, is_listed=True)
+
+
 class OParlBody(SourceDeletionModel):
     """Eine Körperschaft/Kommune."""
 
@@ -219,6 +228,18 @@ class OParlBody(SourceDeletionModel):
         help_text="Amtlicher Gemeindeschlüssel (8-stellig, z.B. 05515000 für Münster)",
     )
 
+    # Sichtbarkeit im Portal
+    is_listed = models.BooleanField(
+        default=True,
+        # DB-seitiger Default: Der Ingestor legt Kommunen per SQLAlchemy an und kennt die Spalte nicht.
+        db_default=True,
+        verbose_name="In Listen anzeigen",
+        help_text=(
+            "Kommune erscheint in Kommunenauswahl, Übersichten, Sitemaps und öffentlichen Listen. "
+            "Ausgeschaltet bleibt sie per direkter URL erreichbar (z. B. Demo-Kommune)."
+        ),
+    )
+
     # Personenfoto-Konfiguration
     person_photo_url_template = models.CharField(
         max_length=500,
@@ -250,6 +271,8 @@ class OParlBody(SourceDeletionModel):
     # Zeitstempel
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = OParlBodyQuerySet.as_manager()
 
     class Meta:
         db_table = "oparl_bodies"

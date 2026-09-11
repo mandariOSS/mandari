@@ -317,9 +317,10 @@ class OParlBodyAdmin(ModelAdmin):
         "display_name",
         "has_logo",
         "has_geo_data",
+        "is_listed",
         "source",
     ]
-    list_filter = ["source", "classification", "deleted"]
+    list_filter = ["is_listed", "source", "classification", "deleted"]
     search_fields = ["name", "short_name", "display_name"]
     readonly_fields = [
         "id",
@@ -335,7 +336,7 @@ class OParlBodyAdmin(ModelAdmin):
         (
             "Anzeige im Frontend",
             {
-                "fields": ("display_name", "description", "logo", "hero_image", "hero_image_credit"),
+                "fields": ("display_name", "is_listed", "description", "logo", "hero_image", "hero_image_credit"),
                 "description": "Diese Felder bestimmen, wie die Kommune im Frontend angezeigt wird.",
             },
         ),

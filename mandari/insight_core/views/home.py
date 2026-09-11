@@ -87,7 +87,7 @@ def _bodies_with_stats():
 
     Drei gruppierte Count-Queries statt Multi-Annotate (vermeidet Join-Explosion).
     """
-    bodies = list(OParlBody.objects.filter(deleted=False).order_by("name"))
+    bodies = list(OParlBody.objects.listed().order_by("name"))
 
     def counts_by_body(model):
         qs = model.objects.filter(deleted=False).values("body").annotate(n=Count("id"))
@@ -116,7 +116,7 @@ class PortalHomeView(TemplateView):
         # Self-Hosting-Fall: Existiert genau eine Kommune, wird sie automatisch
         # gewählt — kein Auswahlzwang beim ersten Aufruf.
         if is_all_bodies_mode(request):
-            bodies = OParlBody.objects.filter(deleted=False)
+            bodies = OParlBody.objects.listed()
             if bodies.count() == 1:
                 only_body = bodies.first()
                 request.session["active_body_id"] = str(only_body.id)
@@ -140,16 +140,16 @@ class PortalHomeView(TemplateView):
         context["all_bodies_mode"] = all_bodies_mode
 
         if all_bodies_mode:
-            # Kommune-Auswahl: alle Kommunen mit echten Kennzahlen
+            # Kommune-Auswahl: alle gelisteten Kommunen mit echten Kennzahlen
             bodies = _bodies_with_stats()
             context["select_bodies"] = bodies
             context["stats"] = {
                 "bodies": len(bodies),
-                "organizations": OParlOrganization.objects.filter(deleted=False).count(),
-                "persons": OParlPerson.objects.filter(deleted=False).count(),
-                "meetings": OParlMeeting.objects.filter(deleted=False).count(),
-                "papers": OParlPaper.objects.filter(deleted=False).count(),
-                "files": OParlFile.objects.filter(deleted=False).count(),
+                "organizations": OParlOrganization.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
+                "persons": OParlPerson.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
+                "meetings": OParlMeeting.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
+                "papers": OParlPaper.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
+                "files": OParlFile.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
             }
             context["upcoming_meetings"] = None
             context["recent_papers"] = None

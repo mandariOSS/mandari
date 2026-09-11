@@ -265,7 +265,8 @@ def system_view(request):
 
 @oparl_endpoint
 def bodies_view(request):
-    queryset = _annotated(_prepare_bodies(OParlBody.objects.all()))
+    # Nicht gelistete Kommunen (z. B. Demo) fehlen in der Liste, bleiben aber per Objekt-URL abrufbar
+    queryset = _annotated(_prepare_bodies(OParlBody.objects.filter(is_listed=True)))
     return _paginated_response(request, body_list_url(), queryset, s.serialize_body, s.RefContext.empty, "body")
 
 
