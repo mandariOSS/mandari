@@ -33,6 +33,9 @@ services:
         POSTGRES_IMAGE: ${BACKUP_POSTGRES_IMAGE:-postgres:16-alpine}
     image: ${BACKUP_COMPOSE_PROJECT:-mandari-backup}:local
     container_name: ${BACKUP_COMPOSE_PROJECT:-mandari-backup}
+    # Fester Hostname: restic erkennt Sperren abgebrochener Läufe nach einem
+    # Neustart des Containers als veraltet
+    hostname: ${BACKUP_HOSTNAME:-mandari}
     restart: unless-stopped
     environment:
       TZ: ${BACKUP_TZ:-Europe/Berlin}

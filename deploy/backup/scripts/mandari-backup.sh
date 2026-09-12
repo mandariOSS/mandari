@@ -61,12 +61,23 @@ repo() {
     restic -r "$(repo_url "$n")" -o sftp.args="$SSH_ARGS" "$@"
 }
 
+# Abgebrochene Läufe (z. B. Neustart des Containers) hinterlassen restic-Sperren.
+# "restic unlock" entfernt nur veraltete Sperren: gleicher Host mit beendetem
+# Prozess oder älter als 30 Minuten. Eigene parallele Läufe schließt flock aus.
+release_stale_locks() {
+    local n
+    for n in $(repo_numbers); do
+        repo "$n" unlock >/dev/null 2>&1 || true
+    done
+}
+
 take_lock() {
     exec 9>"$LOCK_FILE"
     if ! flock -n 9; then
         log "Ein anderer Backup-Vorgang läuft noch – Abbruch."
         exit 75
     fi
+    release_stale_locks
 }
 
 cmd_init() {
