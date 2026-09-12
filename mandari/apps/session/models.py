@@ -1446,6 +1446,24 @@ class SessionPaper(EncryptionMixin, models.Model):
     def __str__(self):
         return f"{self.reference}: {self.name}"
 
+    @classmethod
+    def next_reference(cls, tenant, year: int | None = None) -> str:
+        """Nächstes freies Aktenzeichen ``V/<Jahr>/<laufende Nummer>`` je Mandant.
+
+        Aufrufer sperren den Mandanten in einer Transaktion
+        (``SessionTenant.objects.select_for_update()``), damit parallele
+        Vergaben keine doppelten Nummern erzeugen.
+        """
+        year = year or timezone.now().year
+        prefix = f"V/{year}/"
+        max_num = 0
+        for ref in cls.objects.filter(tenant=tenant, reference__startswith=prefix).values_list("reference", flat=True):
+            try:
+                max_num = max(max_num, int(ref.rsplit("/", 1)[-1]))
+            except (TypeError, ValueError):
+                continue
+        return f"{prefix}{max_num + 1:04d}"
+
     def get_encryption_organization(self):
         """Return tenant for encryption."""
         return self.tenant

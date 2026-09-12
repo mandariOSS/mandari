@@ -102,6 +102,13 @@ su_admin.roles.add(admin_role)
 admin = Client()
 admin.force_login(admin_user)
 
+# Zweite Person mit gleicher Rolle für das Vier-Augen-Prinzip
+approver_user = User.objects.create_user(email="genehmigung-mp@example.org", password="pw-Smoke-1!")
+su_approver = SessionUser.objects.create(user=approver_user, tenant=tenant)
+su_approver.roles.add(admin_role)
+approver = Client()
+approver.force_login(approver_user)
+
 viewer_role = SessionRole.objects.create(tenant=tenant, name="Leser", can_view_meetings=True)
 viewer_user = User.objects.create_user(email="leser-mp@example.org", password="pw-Smoke-1!")
 su_viewer = SessionUser.objects.create(user=viewer_user, tenant=tenant)
@@ -164,7 +171,9 @@ check("Idempotent (weiterhin 2 Posten)", allowances.count() == 2)
 check("Bestehender Posten behält alten Betrag", allowances.get(rate=zulage).amount == Decimal("874.00"))
 
 resp = admin.post(f"{base}/allowances/monthly/approve/", {"year": year, "month": month})
-check("Alle genehmigt", allowances.filter(status="approved").count() == 2)
+check("Vier-Augen: Erzeuger genehmigt nicht selbst", allowances.filter(status="approved").count() == 0)
+resp = approver.post(f"{base}/allowances/monthly/approve/", {"year": year, "month": month})
+check("Alle genehmigt (zweite Person)", allowances.filter(status="approved").count() == 2)
 
 # =============================================================================
 print()

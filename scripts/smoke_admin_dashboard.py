@@ -15,7 +15,7 @@ application in INSTALLED_APPS).
 Prüft:
 - /admin/ (Index inkl. DASHBOARD_CALLBACK) rendert für einen Superuser
   mit HTTP 200 — der Original-Fehlerpfad aus dem Issue
-- /admin/login/ rendert anonym mit HTTP 200
+- /admin/login/ leitet anonym auf die eigene Anmeldung um (zweiter Faktor)
 - Die App insight_content existiert weder als Python-Modul noch als
   Referenz in INSTALLED_APPS
 - Kein Python-Quelltext unter mandari/ referenziert insight_content mehr
@@ -155,7 +155,11 @@ admin_user.save()
 client = Client()
 
 resp = client.get("/admin/login/")
-check("/admin/login/ rendert anonym mit HTTP 200", resp.status_code == 200, f"Status: {resp.status_code}")
+check(
+    "/admin/login/ leitet auf die eigene Anmeldung um",
+    resp.status_code == 302 and resp["Location"].startswith("/accounts/login/"),
+    f"Status: {resp.status_code}",
+)
 
 client.force_login(admin_user)
 

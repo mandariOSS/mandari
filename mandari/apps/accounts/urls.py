@@ -7,6 +7,7 @@ from django.urls import path
 
 from .views import (
     LoggedOutView,
+    LoginTwoFactorView,
     LoginView,
     LogoutView,
     PasswordResetCompleteView,
@@ -22,6 +23,7 @@ app_name = "accounts"
 urlpatterns = [
     # Login / Logout
     path("login/", LoginView.as_view(), name="login"),
+    path("login/zwei-faktor/", LoginTwoFactorView.as_view(), name="login_2fa"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("logged-out/", LoggedOutView.as_view(), name="logged_out"),
     # Registration (for invited users)

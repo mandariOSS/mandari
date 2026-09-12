@@ -509,17 +509,26 @@ def generate_monthly_allowances(tenant, year: int, month: int, *, created_by=Non
 
 
 def approve_monthly_allowances(allowances, approver) -> dict:
-    """Monats-Pauschalen genehmigen (nur Status „Ausstehend")."""
+    """Monats-Pauschalen genehmigen (nur Status „Ausstehend") — Vier-Augen-Prinzip.
+
+    Posten, die der/die Genehmigende selbst erzeugt hat (Monatslauf), werden
+    NICHT genehmigt (blocked_four_eyes), analog zu ``approve_allowances``.
+    """
     approved = 0
+    blocked = 0
+    now = timezone.now()
     for allowance in allowances:
         if allowance.status != "pending":
             continue
+        if allowance.created_by_id is not None and allowance.created_by_id == approver.pk:
+            blocked += 1
+            continue
         allowance.status = "approved"
         allowance.approved_by = approver
-        allowance.approved_at = timezone.now()
+        allowance.approved_at = now
         allowance.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
         approved += 1
-    return {"approved": approved}
+    return {"approved": approved, "blocked_four_eyes": blocked}
 
 
 def build_monthly_export_csv(allowances) -> str:

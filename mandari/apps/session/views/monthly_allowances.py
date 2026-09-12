@@ -290,6 +290,12 @@ class MonthlyApproveView(SessionViewMixin, View):
         period = _parse_period(request)
         pending = _period_allowances(self, period).filter(status="pending")
         result = allowance_service.approve_monthly_allowances(pending, self.session_user)
+        if result.get("blocked_four_eyes"):
+            messages.warning(
+                request,
+                f"{result['blocked_four_eyes']} Posten nicht genehmigt: Wer den Monatslauf erzeugt hat, "
+                "darf ihn nicht selbst genehmigen (Vier-Augen-Prinzip).",
+            )
         audit.log_event(
             "approve",
             self.session_tenant,

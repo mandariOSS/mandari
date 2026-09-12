@@ -8,6 +8,9 @@ Provides views for:
 """
 
 import contextlib
+import time
+from datetime import timedelta
+from urllib.parse import quote, urlencode
 
 from django.contrib import messages
 from django.contrib.auth import login as auth_login
@@ -25,13 +28,28 @@ from django.contrib.auth.views import (
     PasswordResetView as DjangoPasswordResetView,
 )
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
 from .forms import LoginForm, PasswordResetForm, RegistrationForm, SetPasswordForm
 from .models import LoginAttempt
-from .services import SessionService
+from .services import SessionService, TwoFactorService
+
+# Zweiter Anmeldeschritt: Passwort ist geprüft, angemeldet wird erst nach gültigem Code
+PENDING_2FA_SESSION_KEY = "auth_2fa_pending"
+PENDING_2FA_MAX_AGE_SECONDS = 300
+MAX_2FA_FAILURES = 5
+
+
+def complete_login(request, user, remember: bool) -> None:
+    """Anmeldung abschließen: Session-Rotation, Laufzeit, Geräteliste."""
+    auth_login(request, user)
+    # Ohne „Angemeldet bleiben" endet die Session mit dem Browser, sonst nach 30 Tagen
+    request.session.set_expiry(60 * 60 * 24 * 30 if remember else 0)
+    if request.session.session_key:
+        SessionService.create_session(user, request, request.session.session_key)
 
 
 class LoginView(View):
@@ -88,23 +106,21 @@ class LoginView(View):
         if form.is_valid():
             user = form.get_user()
 
-            # Log successful attempt
+            remember = bool(form.cleaned_data.get("remember_me"))
+
+            if TwoFactorService().is_2fa_enabled(user):
+                # Noch NICHT anmelden: erst nach gültigem Code (LoginTwoFactorView)
+                request.session[PENDING_2FA_SESSION_KEY] = {
+                    "user_id": str(user.pk),
+                    "remember": remember,
+                    "next": next_url or "",
+                    "started": int(time.time()),
+                }
+                request.session.cycle_key()
+                return redirect("accounts:login_2fa")
+
             self.log_attempt(request, email, success=True)
-
-            # Login the user
-            auth_login(request, user)
-
-            # Handle "remember me"
-            if not form.cleaned_data.get("remember_me"):
-                # Session expires when browser closes
-                request.session.set_expiry(0)
-            else:
-                # Session expires in 30 days
-                request.session.set_expiry(60 * 60 * 24 * 30)
-
-            # Track session
-            if request.session.session_key:
-                SessionService.create_session(user, request, request.session.session_key)
+            complete_login(request, user, remember)
 
             messages.success(request, "Erfolgreich angemeldet.")
 
@@ -204,6 +220,84 @@ class LoginView(View):
             # Clear invalid token
             request.session.pop("pending_invitation_token", None)
             return None
+
+
+class LoginTwoFactorView(View):
+    """Zweiter Anmeldeschritt: TOTP-Code aus der Authenticator-App oder Backup-Code."""
+
+    template_name = "accounts/login_2fa.html"
+
+    def _pending(self, request):
+        data = request.session.get(PENDING_2FA_SESSION_KEY)
+        if not isinstance(data, dict):
+            return None, None
+        if int(time.time()) - int(data.get("started", 0)) > PENDING_2FA_MAX_AGE_SECONDS:
+            request.session.pop(PENDING_2FA_SESSION_KEY, None)
+            return None, None
+        from .models import User
+
+        user = User.objects.filter(pk=data.get("user_id"), is_active=True).first()
+        if user is None:
+            request.session.pop(PENDING_2FA_SESSION_KEY, None)
+            return None, None
+        return data, user
+
+    def _expired(self, request):
+        messages.error(request, "Die Anmeldung ist abgelaufen. Bitte melde dich erneut an.")
+        return redirect("accounts:login")
+
+    def _recent_failures(self, user) -> int:
+        return LoginAttempt.objects.filter(
+            email=user.email,
+            was_successful=False,
+            failure_reason="invalid_2fa",
+            timestamp__gte=timezone.now() - timedelta(minutes=15),
+        ).count()
+
+    def _log(self, request, user, success: bool) -> None:
+        # Anmeldung darf nicht scheitern, wenn das Protokollieren fehlschlägt
+        with contextlib.suppress(Exception):
+            LoginAttempt.objects.create(
+                email=user.email,
+                ip_address=LoginView().get_client_ip(request),
+                user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
+                was_successful=success,
+                failure_reason="" if success else "invalid_2fa",
+            )
+
+    def get(self, request):
+        _data, user = self._pending(request)
+        if user is None:
+            return self._expired(request)
+        return render(request, self.template_name, {"error": None})
+
+    def post(self, request):
+        data, user = self._pending(request)
+        if user is None:
+            return self._expired(request)
+
+        if self._recent_failures(user) >= MAX_2FA_FAILURES:
+            request.session.pop(PENDING_2FA_SESSION_KEY, None)
+            messages.error(
+                request, "Zu viele fehlgeschlagene Versuche. Bitte warte 15 Minuten und melde dich erneut an."
+            )
+            return redirect("accounts:login")
+
+        if TwoFactorService().verify_2fa(user, request.POST.get("code", "")):
+            request.session.pop(PENDING_2FA_SESSION_KEY, None)
+            self._log(request, user, success=True)
+            complete_login(request, user, bool(data.get("remember")))
+            messages.success(request, "Erfolgreich angemeldet.")
+            return redirect(LoginView().get_success_url(request, data.get("next") or None))
+
+        self._log(request, user, success=False)
+        return render(request, self.template_name, {"error": "Der Code ist ungültig oder abgelaufen."})
+
+
+def admin_login_redirect(request):
+    """Admin-Anmeldung immer über die eigene Anmeldung (inkl. zweitem Faktor)."""
+    next_url = request.GET.get("next") or "/admin/"
+    return redirect(f"{reverse('accounts:login')}?{urlencode({'next': next_url})}")
 
 
 class LogoutView(View):
@@ -437,18 +531,22 @@ class SelfRegisterView(View):
             # User erstellen oder finden
             from .models import User
 
-            user = None
+            # Ein bestehendes Konto wird nie ohne Anmeldung übernommen (sonst Kontoübernahme per E-Mail-Adresse)
             if request.user.is_authenticated:
                 user = request.user
+            elif User.objects.filter(email__iexact=email).exists():
+                messages.info(
+                    request,
+                    "Für diese E-Mail-Adresse besteht bereits ein Konto. Bitte melde dich an, um beizutreten.",
+                )
+                return redirect(f"{reverse('accounts:login')}?next={quote(request.path)}")
             else:
-                user = User.objects.filter(email=email).first()
-                if not user:
-                    user = User.objects.create_user(
-                        email=email,
-                        password=form.cleaned_data["password1"],
-                        first_name=form.cleaned_data["first_name"],
-                        last_name=form.cleaned_data["last_name"],
-                    )
+                user = User.objects.create_user(
+                    email=email,
+                    password=form.cleaned_data["password1"],
+                    first_name=form.cleaned_data["first_name"],
+                    last_name=form.cleaned_data["last_name"],
+                )
 
             # Membership erstellen
             membership, created = Membership.objects.get_or_create(

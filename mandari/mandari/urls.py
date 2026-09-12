@@ -13,6 +13,7 @@ from django.shortcuts import redirect, render
 from django.urls import include, path, re_path
 from django.views.static import serve as static_serve
 
+from apps.accounts.views import admin_login_redirect
 from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
 from apps.session.api.v1.api import api as session_api_v1
@@ -104,6 +105,8 @@ urlpatterns = [
     path("admin/monitoring/", monitoring_view, name="admin_monitoring"),
     # Redirect admin logout to custom logout (Django 5+ admin only accepts POST)
     path("admin/logout/", lambda request: redirect("accounts:logout")),
+    # Admin-Anmeldung nur über die eigene Anmeldung (Ratenbegrenzung, zweiter Faktor)
+    path("admin/login/", admin_login_redirect, name="admin_login_redirect"),
     # Admin
     path("admin/", admin.site.urls),
     # Öffentliche Fraktions-API v1 (Issue #71): read-only, Opt-in je

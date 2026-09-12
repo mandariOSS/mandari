@@ -4,7 +4,8 @@ Session middleware for tenant isolation and security.
 
 Provides:
 - SessionTenantMiddleware: Sets the current tenant context
-- Automatic RLS enforcement via database connection
+- Mandantentrennung erfolgt in der Anwendung (Tenant-Filter in Views und Querysets),
+  nicht per Row-Level-Security in der Datenbank
 """
 
 from django.http import Http404

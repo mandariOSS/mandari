@@ -1,0 +1,24 @@
+{% extends "accounts/base_auth.html" %}
+
+{% block title %}Bestätigungscode{% endblock %}
+
+{% block header_title %}Zweiter Faktor{% endblock %}
+{% block header_subtitle %}Gib den Code aus deiner Authenticator-App ein{% endblock %}
+
+{% block content %}
+<form method="post" novalidate class="space-y-6">
+    {% csrf_token %}
+    <div>
+        <label for="id_code" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bestätigungscode</label>
+        <input id="id_code" type="text" name="code" required maxlength="11" placeholder="000000" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" autofocus aria-describedby="code-hint"{% if error %} aria-invalid="true"{% endif %} class="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
+        <p id="code-hint" class="mt-2 text-sm text-gray-500 dark:text-gray-400">Sechsstelliger Code aus der App oder einer deiner Backup-Codes.</p>
+    </div>
+    {% if error %}
+    <div role="alert" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300">{{ error }}</div>
+    {% endif %}
+    <c-ui.button type="submit" size="lg" full>Bestätigen</c-ui.button>
+    <p class="text-center text-sm">
+        <a href="{% url 'accounts:login' %}" class="font-medium text-primary-600 dark:text-primary-400 hover:underline">Abbrechen und neu anmelden</a>
+    </p>
+</form>
+{% endblock %}

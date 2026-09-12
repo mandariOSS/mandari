@@ -6,6 +6,7 @@ Provides views for the Session RIS administration interface.
 """
 
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -21,6 +22,7 @@ from ..models import (
     SessionApplication,
     SessionOrganization,
     SessionPaper,
+    SessionTenant,
 )
 from ..permissions import SessionViewMixin
 
@@ -157,23 +159,34 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
             tenant=self.session_tenant,
         )
 
-        # Create paper from application
-        paper = SessionPaper.objects.create(
-            tenant=self.session_tenant,
-            name=application.title,
-            paper_type="motion",
-            main_text=application.justification,
-            resolution_text=application.resolution_proposal,
-            is_public=True,
-            date=timezone.now().date(),
-            main_organization_id=request.POST.get("main_organization"),
-            source_application=application,
-            created_by=self.session_user,
-        )
+        existing = SessionPaper.objects.filter(tenant=self.session_tenant, source_application=application).first()
+        if existing is not None:
+            messages.info(request, f'Der Antrag wurde bereits in die Vorlage "{existing.reference}" umgewandelt.')
+            return redirect(
+                "session:paper_detail",
+                tenant_slug=self.session_tenant.slug,
+                paper_id=existing.id,
+            )
 
-        # Update application status
-        application.status = "converted"
-        application.save(update_fields=["status", "updated_at"])
+        # Vorlage mit fortlaufendem Aktenzeichen anlegen; der Mandanten-Lock
+        # verhindert doppelte Nummern bei parallelen Umwandlungen
+        with transaction.atomic():
+            SessionTenant.objects.select_for_update().get(pk=self.session_tenant.pk)
+            paper = SessionPaper.objects.create(
+                tenant=self.session_tenant,
+                reference=SessionPaper.next_reference(self.session_tenant),
+                name=application.title,
+                paper_type="motion",
+                main_text=application.justification,
+                resolution_text=application.resolution_proposal,
+                is_public=True,
+                date=timezone.now().date(),
+                main_organization_id=request.POST.get("main_organization") or None,
+                source_application=application,
+                created_by=self.session_user,
+            )
+            application.status = "converted"
+            application.save(update_fields=["status", "updated_at"])
 
         messages.success(
             request,

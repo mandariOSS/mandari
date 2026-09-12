@@ -18,8 +18,10 @@ import secrets
 import struct
 import time
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
+from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
 
 try:
@@ -52,28 +54,63 @@ class TwoFactorService:
     BACKUP_CODE_COUNT = 10
     BACKUP_CODE_LENGTH = 8
 
-    def __init__(self):
-        """Initialize the service with encryption key."""
-        key = getattr(settings, "ENCRYPTION_KEY", None)
-        if key:
-            # Derive a proper Fernet key from the settings key
-            derived_key = hashlib.sha256(key.encode()).digest()
-            self._fernet = Fernet(base64.urlsafe_b64encode(derived_key))
-        else:
-            self._fernet = None
+    def __init__(self) -> None:
+        """Schlüssel für Secret und Backup-Codes aus dem Master-Key ableiten."""
+        self._fernet = self._build_fernet()
+
+    @staticmethod
+    def _build_fernet() -> Fernet | None:
+        """Zweckgebundener Fernet-Schlüssel aus ENCRYPTION_MASTER_KEY (Fallback: ENCRYPTION_KEY)."""
+        material = getattr(settings, "ENCRYPTION_MASTER_KEY", "") or getattr(settings, "ENCRYPTION_KEY", "") or ""
+        if not material:
+            return None
+        derived_key = hashlib.sha256(b"mandari-2fa-v1:" + str(material).encode()).digest()
+        return Fernet(base64.urlsafe_b64encode(derived_key))
 
     def _encrypt(self, data: str) -> bytes:
-        """Encrypt data using Fernet."""
+        """Verschlüsseln; ohne Schlüssel nur im DEBUG-Betrieb im Klartext."""
         if not self._fernet:
-            # Fallback: just encode (NOT secure for production!)
+            if not settings.DEBUG:
+                raise ImproperlyConfigured("ENCRYPTION_MASTER_KEY fehlt – 2FA-Daten können nicht verschlüsselt werden.")
             return data.encode()
         return self._fernet.encrypt(data.encode())
 
-    def _decrypt(self, data: bytes) -> str:
-        """Decrypt data using Fernet."""
+    def _decrypt(self, data) -> str:
+        """Entschlüsseln; früher im Klartext gespeicherter Altbestand bleibt lesbar."""
+        raw = bytes(data) if data is not None else b""
+        if self._fernet:
+            try:
+                return self._fernet.decrypt(raw).decode()
+            except InvalidToken:
+                pass
+        try:
+            return raw.decode()
+        except UnicodeDecodeError:
+            return ""
+
+    def _is_encrypted(self, data) -> bool:
+        """True, wenn die Daten mit dem aktuellen Schlüssel entschlüsselbar sind."""
+        if not self._fernet or data is None:
+            return False
+        try:
+            self._fernet.decrypt(bytes(data))
+        except InvalidToken:
+            return False
+        return True
+
+    def _reencrypt_legacy(self, device: TwoFactorDevice) -> None:
+        """Im Klartext gespeicherte Altdaten beim nächsten erfolgreichen Einsatz verschlüsseln."""
         if not self._fernet:
-            return data.decode()
-        return self._fernet.decrypt(data).decode()
+            return
+        fields = []
+        if device.secret_encrypted is not None and not self._is_encrypted(device.secret_encrypted):
+            device.secret_encrypted = self._encrypt(self._decrypt(device.secret_encrypted))
+            fields.append("secret_encrypted")
+        if device.backup_codes_encrypted and not self._is_encrypted(device.backup_codes_encrypted):
+            device.backup_codes_encrypted = self._encrypt(self._decrypt(device.backup_codes_encrypted))
+            fields.append("backup_codes_encrypted")
+        if fields:
+            device.save(update_fields=fields)
 
     def generate_secret(self) -> str:
         """Generate a new TOTP secret (base32 encoded)."""
@@ -141,6 +178,23 @@ class TwoFactorService:
 
         return str(code).zfill(self.TOTP_DIGITS)
 
+    def _matching_counter(self, secret: str, code: str, window: int = 1) -> int | None:
+        """Zeitschritt, zu dem der Code passt, oder None (ohne gültiges Secret nie ein Treffer)."""
+        if not secret:
+            return None
+        code = (code or "").replace(" ", "").strip()
+        if len(code) != self.TOTP_DIGITS or not code.isdigit():
+            return None
+        try:
+            current_counter = int(time.time() // self.TOTP_INTERVAL)
+            for offset in range(-window, window + 1):
+                counter = current_counter + offset
+                if hmac.compare_digest(code, self._get_totp_code(secret, counter)):
+                    return counter
+        except Exception:
+            return None
+        return None
+
     def verify_code(self, secret: str, code: str, window: int = 1) -> bool:
         """
         Verify a TOTP code.
@@ -153,21 +207,7 @@ class TwoFactorService:
         Returns:
             True if the code is valid
         """
-        if not code or len(code) != self.TOTP_DIGITS:
-            return False
-
-        try:
-            current_counter = int(time.time() // self.TOTP_INTERVAL)
-
-            # Check current interval and window on both sides
-            for offset in range(-window, window + 1):
-                expected_code = self._get_totp_code(secret, current_counter + offset)
-                if hmac.compare_digest(code, expected_code):
-                    return True
-
-            return False
-        except Exception:
-            return False
+        return self._matching_counter(secret, code, window) is not None
 
     def setup_2fa(self, user) -> dict:
         """
@@ -254,14 +294,21 @@ class TwoFactorService:
 
         secret = self._decrypt(device.secret_encrypted)
 
-        # Try TOTP first
-        if self.verify_code(secret, code):
+        # Zuerst TOTP; jeder Zeitschritt ist je Nutzer nur einmal verwendbar (Replay-Schutz)
+        counter = self._matching_counter(secret, code)
+        if counter is not None:
+            if not cache.add(f"accounts:2fa-used:{user.pk}:{counter}", True, timeout=self.TOTP_INTERVAL * 3):
+                return False
             device.last_used_at = timezone.now()
-            device.save()
+            device.save(update_fields=["last_used_at"])
+            self._reencrypt_legacy(device)
             return True
 
-        # Try backup codes
-        return bool(self._use_backup_code(device, code))
+        # Danach Backup-Codes (jeweils einmalig)
+        if self._use_backup_code(device, code):
+            self._reencrypt_legacy(device)
+            return True
+        return False
 
     def _use_backup_code(self, device: TwoFactorDevice, code: str) -> bool:
         """Try to use a backup code."""
@@ -274,10 +321,12 @@ class TwoFactorService:
             return False
 
         # Normalize code (remove dashes/spaces)
-        code = code.replace("-", "").replace(" ", "").lower()
+        code = self._normalize_backup_code(code)
+        if not code:
+            return False
 
         for i, stored_code in enumerate(codes):
-            if stored_code and hmac.compare_digest(code, stored_code.lower()):
+            if stored_code and hmac.compare_digest(code, self._normalize_backup_code(stored_code)):
                 # Mark code as used
                 codes[i] = None
                 device.backup_codes_encrypted = self._encrypt(json.dumps(codes))
@@ -286,6 +335,11 @@ class TwoFactorService:
                 return True
 
         return False
+
+    @staticmethod
+    def _normalize_backup_code(code: str) -> str:
+        """Backup-Codes werden mit Bindestrich ausgegeben – Vergleich ohne Trenner und Groß-/Kleinschreibung."""
+        return (code or "").replace("-", "").replace(" ", "").strip().lower()
 
     def generate_backup_codes(self) -> list[str]:
         """Generate a list of backup codes."""
