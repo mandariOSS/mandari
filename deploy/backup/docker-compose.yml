@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# =============================================================================
+# mandari – verschlüsselte Offsite-Backups mit restic
+# =============================================================================
+# Ein Container übernimmt per Cron:
+#   täglich     Datenbank-Dumps + Dateien + Konfiguration in zwei Repositorys
+#               an getrennten Standorten sichern, Stände > 30 Tage löschen
+#   wöchentlich Integritätsprüfung (rotierend ein Viertel der Daten)
+#   monatlich   Wiederherstellungstest in einer Wegwerf-Datenbank
+# Die Daten werden vor der Übertragung verschlüsselt (AES-256, restic).
+#
+#   cp .env.example .env              # Werte eintragen
+#   docker compose build
+#   docker compose run --rm backup mandari-backup init
+#   docker compose up -d
+#
+# Anleitung inkl. Wiederherstellung: docs/BACKUP.md
+# =============================================================================
+
+name: ${BACKUP_COMPOSE_PROJECT:-mandari-backup}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  backup:
+    build:
+      context: .
+      args:
+        POSTGRES_IMAGE: ${BACKUP_POSTGRES_IMAGE:-postgres:16-alpine}
+    image: ${BACKUP_COMPOSE_PROJECT:-mandari-backup}:local
+    container_name: ${BACKUP_COMPOSE_PROJECT:-mandari-backup}
+    restart: unless-stopped
+    environment:
+      TZ: ${BACKUP_TZ:-Europe/Berlin}
+      BACKUP_CRON: "${BACKUP_CRON:-30 2 * * *}"
+      BACKUP_CHECK_CRON: "${BACKUP_CHECK_CRON:-30 6 * * 0}"
+      BACKUP_RESTORE_TEST_CRON: "${BACKUP_RESTORE_TEST_CRON:-30 4 3 * *}"
+      BACKUP_HOSTNAME: ${BACKUP_HOSTNAME:-mandari}
+      BACKUP_KEEP_WITHIN_DAILY: ${BACKUP_KEEP_WITHIN_DAILY:-30d}
+      BACKUP_RESTORE_TEST_DB: ${BACKUP_RESTORE_TEST_DB:-mandari}
+      RESTIC_REPO_1: ${RESTIC_REPO_1:?RESTIC_REPO_1 fehlt (siehe .env.example)}
+      RESTIC_REPO_1_LABEL: ${RESTIC_REPO_1_LABEL:-standort-1}
+      RESTIC_REPO_2: ${RESTIC_REPO_2:-}
+      RESTIC_REPO_2_LABEL: ${RESTIC_REPO_2_LABEL:-standort-2}
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+      BACKUP_PG_HOST: ${BACKUP_PG_HOST:-mandari-postgres}
+      BACKUP_PG_USER: ${BACKUP_PG_USER:-mandari}
+      PGPASSWORD: ${BACKUP_PG_PASSWORD:?BACKUP_PG_PASSWORD fehlt (siehe .env.example)}
+    volumes:
+      - ${BACKUP_SSH_DIR:-./ssh}:/root/.ssh:ro
+      - ${BACKUP_PASSWORD_FILE:-./secrets/restic_password}:/run/secrets/restic_password:ro
+      - ${BACKUP_STATUS_DIR:-./status}:/status
+      - ${BACKUP_WORK_DIR:-./work}:/work
+      - restic_cache:/root/.cache/restic
+      # Quellen (nur lesend) – alles unter /source landet im Backup.
+      # Weitere Verzeichnisse per docker-compose.override.yml unter /source/… einhängen.
+      - ${BACKUP_SRC_CONFIG:-../..}:/source/config:ro
+      - ${BACKUP_SRC_MEDIA:-/var/lib/docker/volumes/mandari_media_data/_data}:/source/media:ro
+      - ${BACKUP_SRC_FILES:-/var/lib/docker/volumes/mandari_files_data/_data}:/source/files:ro
+      - ${BACKUP_SRC_CADDY:-/var/lib/docker/volumes/mandari_caddy_data/_data}:/source/caddy:ro
+    networks:
+      - database
+    mem_limit: 2g
+    logging: *default-logging
+
+volumes:
+  restic_cache:
+
+networks:
+  database:
+    external: true
+    name: ${BACKUP_DB_NETWORK:-mandari_mandari}

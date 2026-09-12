@@ -23,6 +23,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `SESSION_REMINDERS.md` | [Session → Fristen-Erinnerungen](https://docs.mandari.de/session/fristen-erinnerungen/) |
 | `FILE_CACHE.md` | [Betrieb → Dokument-Cache](https://docs.mandari.de/betrieb/dokument-cache/) |
 | `MONITORING.md` | [Betrieb → Betriebsmonitor](https://docs.mandari.de/betrieb/monitoring/) |
+| `BACKUP.md` | [Betrieb → Backups](https://docs.mandari.de/betrieb/backups/) (Seite folgt) |
 | `SCRAPER_SOURCES.md` | [Betrieb → Quellen anbinden](https://docs.mandari.de/betrieb/quellen-anbinden/) |
 | `DEMO_ENVIRONMENT.md` | [Betrieb → Demo-Umgebung](https://docs.mandari.de/betrieb/demo-umgebung/) |
 | `DSGVO_TOM.md`, `DSGVO_LOESCHKONZEPT.md`, `DSGVO_AVV_MUSTER.md` | [Datenschutz](https://docs.mandari.de/datenschutz/) |

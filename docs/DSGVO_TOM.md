@@ -43,7 +43,12 @@ als Anlage zum Auftragsverarbeitungsvertrag ([AVV-Muster](DSGVO_AVV_MUSTER.md)).
 
 ## 3. Verfügbarkeit und Belastbarkeit
 
-- Tägliche automatisierte Datenbank-Backups mit definierter Aufbewahrung.
+- Tägliche automatisierte Sicherung aller Datenbanken, Dateien und der
+  Konfiguration, vor der Übertragung verschlüsselt (AES-256), in zwei
+  räumlich getrennte Rechenzentren; Aufbewahrung höchstens 30 Tage, danach
+  automatische Löschung. Wöchentliche Integritätsprüfung, monatlicher
+  automatisierter Wiederherstellungstest, Alarmierung bei Fehlern
+  ([Backup-Konzept](BACKUP.md)).
 - Infrastruktur als Container (reproduzierbare Deployments), getrennte
   Staging-/Produktionsumgebung.
 - Monitoring des Sync-/Hintergrunddienstes (Watchdog).

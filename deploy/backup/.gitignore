@@ -1,0 +1,6 @@
+.env
+docker-compose.override.yml
+ssh/
+secrets/
+status/
+work/
