@@ -36,11 +36,15 @@ from django.views.generic import TemplateView
 from .forms import LoginForm, PasswordResetForm, RegistrationForm, SetPasswordForm
 from .models import LoginAttempt
 from .services import SessionService, TwoFactorService
+from .two_factor_policy import POLICY_CACHE_SESSION_KEY, two_factor_reasons, two_factor_required
 
 # Zweiter Anmeldeschritt: Passwort ist geprüft, angemeldet wird erst nach gültigem Code
 PENDING_2FA_SESSION_KEY = "auth_2fa_pending"
 PENDING_2FA_MAX_AGE_SECONDS = 300
 MAX_2FA_FAILURES = 5
+# Pflicht-Einrichtung nach dem Passwort: etwas mehr Zeit für App-Installation und Scan
+PENDING_ENROLL_MAX_AGE_SECONDS = 900
+ENROLL_SETUP_SESSION_KEY = "auth_2fa_enroll"
 
 
 def complete_login(request, user, remember: bool) -> None:
@@ -118,6 +122,18 @@ class LoginView(View):
                 }
                 request.session.cycle_key()
                 return redirect("accounts:login_2fa")
+
+            if two_factor_required(user):
+                # 2FA-Pflicht ohne eingerichteten Faktor: erst einrichten, dann anmelden
+                request.session[PENDING_2FA_SESSION_KEY] = {
+                    "user_id": str(user.pk),
+                    "remember": remember,
+                    "next": next_url or "",
+                    "started": int(time.time()),
+                    "enroll": True,
+                }
+                request.session.cycle_key()
+                return redirect("accounts:two_factor_enroll")
 
             self.log_attempt(request, email, success=True)
             complete_login(request, user, remember)
@@ -229,7 +245,7 @@ class LoginTwoFactorView(View):
 
     def _pending(self, request):
         data = request.session.get(PENDING_2FA_SESSION_KEY)
-        if not isinstance(data, dict):
+        if not isinstance(data, dict) or data.get("enroll"):
             return None, None
         if int(time.time()) - int(data.get("started", 0)) > PENDING_2FA_MAX_AGE_SECONDS:
             request.session.pop(PENDING_2FA_SESSION_KEY, None)
@@ -292,6 +308,152 @@ class LoginTwoFactorView(View):
 
         self._log(request, user, success=False)
         return render(request, self.template_name, {"error": "Der Code ist ungültig oder abgelaufen."})
+
+
+class TwoFactorEnrollView(View):
+    """
+    Pflicht-Einrichtung des zweiten Faktors (Authenticator-App).
+
+    Zwei Wege führen hierher: direkt nach geprüftem Passwort – angemeldet wird
+    erst nach der Einrichtung – oder über die Middleware für bereits angemeldete
+    Konten, die die Pflicht noch nicht erfüllen. Freiwillige Einrichtung ist
+    ebenfalls möglich.
+    """
+
+    template_name = "accounts/two_factor_enroll.html"
+
+    def _subject(self, request):
+        """Konto und ausstehende Anmeldung (``None``, wenn bereits angemeldet)."""
+        if request.user.is_authenticated:
+            return request.user, None
+        data = request.session.get(PENDING_2FA_SESSION_KEY)
+        if not isinstance(data, dict) or not data.get("enroll"):
+            return None, None
+        if int(time.time()) - int(data.get("started", 0)) > PENDING_ENROLL_MAX_AGE_SECONDS:
+            request.session.pop(PENDING_2FA_SESSION_KEY, None)
+            return None, None
+        from .models import User
+
+        user = User.objects.filter(pk=data.get("user_id"), is_active=True).first()
+        if user is None:
+            request.session.pop(PENDING_2FA_SESSION_KEY, None)
+            return None, None
+        return user, data
+
+    def _setup(self, request, user) -> dict:
+        """Secret und Backup-Codes dieser Einrichtung (bleiben beim Neuladen erhalten)."""
+        setup = request.session.get(ENROLL_SETUP_SESSION_KEY)
+        if isinstance(setup, dict) and setup.get("user_id") == str(user.pk):
+            return setup
+        data = TwoFactorService().setup_2fa(user)
+        setup = {
+            "user_id": str(user.pk),
+            "secret": data["secret"],
+            "backup_codes": data["backup_codes"],
+            "confirmed": False,
+        }
+        request.session[ENROLL_SETUP_SESSION_KEY] = setup
+        return setup
+
+    def _next(self, request, pending) -> str:
+        if pending is not None:
+            return pending.get("next") or ""
+        return request.POST.get("next") or request.GET.get("next") or ""
+
+    def _expired(self, request):
+        messages.error(request, "Die Anmeldung ist abgelaufen. Bitte melde dich erneut an.")
+        return redirect("accounts:login")
+
+    def _render_scan(self, request, user, pending, setup, error=None, status=200):
+        service = TwoFactorService()
+        context = {
+            "step": "scan",
+            "qr_code": service.generate_qr_code(service.get_totp_uri(user, setup["secret"])),
+            "secret": setup["secret"],
+            "reasons": two_factor_reasons(user),
+            "pending": pending is not None,
+            "next": self._next(request, pending),
+            "error": error,
+        }
+        return render(request, self.template_name, context, status=status)
+
+    def _render_codes(self, request, pending, setup):
+        context = {
+            "step": "codes",
+            "backup_codes": setup.get("backup_codes", []),
+            "pending": pending is not None,
+            "next": self._next(request, pending),
+        }
+        return render(request, self.template_name, context)
+
+    def get(self, request):
+        user, pending = self._subject(request)
+        if user is None:
+            return self._expired(request)
+        if TwoFactorService().is_2fa_enabled(user):
+            setup = request.session.get(ENROLL_SETUP_SESSION_KEY)
+            if isinstance(setup, dict) and setup.get("user_id") == str(user.pk) and setup.get("confirmed"):
+                return self._render_codes(request, pending, setup)
+            if pending is not None:
+                # Inzwischen anderweitig eingerichtet: regulärer Code-Schritt
+                pending.pop("enroll", None)
+                request.session[PENDING_2FA_SESSION_KEY] = pending
+                return redirect("accounts:login_2fa")
+            return redirect(LoginView().get_success_url(request, self._next(request, pending) or None))
+        return self._render_scan(request, user, pending, self._setup(request, user))
+
+    def post(self, request):
+        user, pending = self._subject(request)
+        if user is None:
+            return self._expired(request)
+        service = TwoFactorService()
+
+        if request.POST.get("action") == "finish":
+            if not service.is_2fa_enabled(user):
+                return redirect("accounts:two_factor_enroll")
+            next_url = self._next(request, pending)
+            request.session.pop(ENROLL_SETUP_SESSION_KEY, None)
+            request.session.pop(POLICY_CACHE_SESSION_KEY, None)
+            if pending is not None:
+                request.session.pop(PENDING_2FA_SESSION_KEY, None)
+                LoginTwoFactorView()._log(request, user, success=True)
+                complete_login(request, user, bool(pending.get("remember")))
+                messages.success(request, "Zweiter Faktor eingerichtet – du bist angemeldet.")
+            else:
+                messages.success(request, "Zweiter Faktor eingerichtet.")
+            return redirect(LoginView().get_success_url(request, next_url or None))
+
+        setup = self._setup(request, user)
+        if LoginTwoFactorView()._recent_failures(user) >= MAX_2FA_FAILURES:
+            if pending is not None:
+                request.session.pop(PENDING_2FA_SESSION_KEY, None)
+                messages.error(
+                    request, "Zu viele fehlgeschlagene Versuche. Bitte warte 15 Minuten und melde dich erneut an."
+                )
+                return redirect("accounts:login")
+            return self._render_scan(
+                request,
+                user,
+                pending,
+                setup,
+                error="Zu viele fehlgeschlagene Versuche. Bitte warte 15 Minuten.",
+                status=429,
+            )
+
+        if service.confirm_2fa(user, request.POST.get("code", "")):
+            setup["confirmed"] = True
+            request.session[ENROLL_SETUP_SESSION_KEY] = setup
+            request.session.pop(POLICY_CACHE_SESSION_KEY, None)
+            return self._render_codes(request, pending, setup)
+
+        LoginTwoFactorView()._log(request, user, success=False)
+        return self._render_scan(
+            request,
+            user,
+            pending,
+            setup,
+            error="Der Code ist ungültig. Prüfe die Uhrzeit deines Geräts und versuche es erneut.",
+        )
 
 
 def admin_login_redirect(request):

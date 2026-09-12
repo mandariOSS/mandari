@@ -1,6 +1,6 @@
 {% comment %}
 Karte „Zwei-Faktor-Authentifizierung“ (Status, Backup-Codes, Deaktivieren bzw. Einrichten).
-Alpine-Scope: securitySettings (setup2fa, showBackupCodesModal, showDisable2faModal). Kontext: is_2fa_enabled
+Alpine-Scope: securitySettings (setup2fa, showBackupCodesModal, showDisable2faModal). Kontext: is_2fa_enabled, two_factor_required
 {% endcomment %}
 <c-ui.card title="Zwei-Faktor-Authentifizierung" subtitle="Zusätzliche Sicherheitsebene für Ihr Konto" class="fade-up" style="animation-delay: 50ms">
     <c-slot name="actions">
@@ -16,14 +16,24 @@ Alpine-Scope: securitySettings (setup2fa, showBackupCodesModal, showDisable2faMo
 
     <div class="flex flex-wrap gap-3">
         <c-ui.button variant="secondary" icon="key" @click="showBackupCodesModal = true">Backup-Codes</c-ui.button>
+        {% if two_factor_required %}
+        <p class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+            <i data-lucide="lock" class="w-3.5 h-3.5"></i>
+            Für Ihr Konto vorgeschrieben – Deaktivieren ist nicht möglich.
+        </p>
+        {% else %}
         <button type="button"
                 @click="confirmAction({ title: '2FA deaktivieren', message: 'Das Deaktivieren von 2FA verringert die Sicherheit Ihres Kontos erheblich. Sind Sie sicher?', confirmText: 'Deaktivieren', variant: 'danger' }).then(ok => { if(ok) showDisable2faModal = true })"
                 class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
             <i data-lucide="shield-off" class="w-4 h-4"></i>
             Deaktivieren
         </button>
+        {% endif %}
     </div>
     {% else %}
+    {% if two_factor_required %}
+    <c-ui.alert variant="warning" icon="shield-alert" class="mb-4">Für Ihr Konto ist ein zweiter Faktor vorgeschrieben. Bitte richten Sie ihn jetzt ein.</c-ui.alert>
+    {% endif %}
     <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
         Bei jedem Login wird neben dem Passwort ein Code aus Ihrer Authenticator-App abgefragt.
     </p>

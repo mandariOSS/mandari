@@ -57,3 +57,7 @@ STORAGES = {
     **globals().get("STORAGES", {}),  # bei DEBUG=false definiert settings.py WhiteNoise-Storages
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
+
+# 2FA-Pflicht und Admin-Netze in Tests aus; die Durchsetzung testet apps/accounts/tests/test_two_factor_policy.py
+TWO_FACTOR_ENFORCEMENT = False
+ADMIN_ALLOWED_NETWORKS = []

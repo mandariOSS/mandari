@@ -1014,6 +1014,17 @@ def save_registration_settings(
     )
 
 
+def update_two_factor_requirement(organization: Organization, *, required: bool) -> None:
+    """Zwei-Faktor-Pflicht für alle Mitglieder ein- oder ausschalten.
+
+    Mitglieder mit Administrator-Rolle oder einer Rolle mit „2FA erforderlich" sind
+    unabhängig davon immer verpflichtet (apps/accounts/two_factor_policy.py).
+    """
+    if organization.require_2fa != required:
+        organization.require_2fa = required
+        _save_organization(organization, update_fields=["require_2fa"])
+
+
 def disconnect_ris(organization: Organization) -> bool:
     """Verbindung zur Verwaltung trennen; ``False``, wenn keine besteht."""
     from apps.work.motions import ris_submission

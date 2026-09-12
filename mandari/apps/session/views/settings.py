@@ -86,6 +86,48 @@ class ReminderSettingsView(SessionViewMixin, View):
         return redirect("session:settings", tenant_slug=tenant_slug)
 
 
+class TwoFactorPolicyView(SessionViewMixin, View):
+    """Zwei-Faktor-Pflicht für alle Nutzer des Mandanten ein- oder ausschalten.
+
+    Administratoren sowie Nutzer mit Benutzer- oder Einstellungsrechten sind
+    unabhängig davon immer verpflichtet (apps/accounts/two_factor_policy.py).
+    """
+
+    permission_required = "manage_settings"
+    http_method_names = ["post"]
+
+    def post(self, request, tenant_slug):
+        from .. import audit
+
+        required = request.POST.get("require_2fa") == "1"
+        tenant = self.session_tenant
+        if tenant.require_2fa != required:
+            old_value = tenant.require_2fa
+            tenant.require_2fa = required
+            tenant.save(update_fields=["require_2fa", "updated_at"])
+            audit.log_event(
+                "update",
+                tenant,
+                tenant=tenant,
+                user=self.session_user,
+                request=request,
+                changes={"require_2fa": {"alt": old_value, "neu": required}},
+            )
+        if required:
+            messages.success(
+                request,
+                "Zwei-Faktor-Authentifizierung ist jetzt für alle Nutzer verpflichtend. Wer noch keinen "
+                "zweiten Faktor hat, richtet ihn bei der nächsten Anmeldung ein.",
+            )
+        else:
+            messages.success(
+                request,
+                "Die Pflicht für alle Nutzer ist aufgehoben. Für Administratoren und Nutzer mit "
+                "Verwaltungsrechten bleibt sie bestehen.",
+            )
+        return redirect("session:settings", tenant_slug=tenant_slug)
+
+
 class ImplementationPublishView(SessionViewMixin, View):
     """Öffentliches Beschluss-Tracking ein-/ausschalten (Issue #48)."""
 

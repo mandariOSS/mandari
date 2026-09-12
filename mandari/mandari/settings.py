@@ -134,10 +134,37 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
+    # Django-Admin nur aus freigegebenen Netzen (ADMIN_ALLOWED_NETWORKS)
+    "apps.accounts.middleware.AdminNetworkMiddleware",
+    # 2FA-Pflicht auch für bereits angemeldete Sitzungen durchsetzen
+    "apps.accounts.middleware.TwoFactorEnforcementMiddleware",
     # Work module organization context
     "apps.tenants.middleware.OrganizationMiddleware",
     # Session RIS tenant context + Audit-Log-Attribution (nur /session/-Pfade)
     "apps.session.middleware.SessionTenantMiddleware",
+]
+
+# Zugangsschutz: Pflicht zum zweiten Faktor für Admins sowie je Organisation/Mandant
+# (apps/accounts/two_factor_policy.py). Standard: in Produktion aktiv, bei DEBUG aus.
+TWO_FACTOR_ENFORCEMENT = os.environ.get("TWO_FACTOR_ENFORCEMENT", "false" if DEBUG else "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# Gemeinsam genutzte Demo-Zugänge ohne echte Daten sind von der Pflicht ausgenommen
+TWO_FACTOR_EXEMPT_EMAIL_DOMAINS = [
+    d.strip().lower().lstrip("@")
+    for d in os.environ.get("TWO_FACTOR_EXEMPT_EMAIL_DOMAINS", "demo.mandari.de").split(",")
+    if d.strip()
+]
+# Django-Admin nur aus diesen Netzen (CIDR, kommagetrennt; leer = keine Beschränkung).
+# Voraussetzung: Der vorgelagerte Proxy ersetzt X-Forwarded-For durch die echte Client-Adresse.
+import ipaddress as _ipaddress  # noqa: E402
+
+ADMIN_ALLOWED_NETWORKS = [
+    str(_ipaddress.ip_network(network.strip(), strict=False))
+    for network in os.environ.get("ADMIN_ALLOWED_NETWORKS", "").split(",")
+    if network.strip()
 ]
 
 ROOT_URLCONF = "mandari.urls"

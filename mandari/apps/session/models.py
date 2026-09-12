@@ -102,6 +102,12 @@ class SessionTenant(models.Model):
         verbose_name="Umsetzungsstand im Bürgerportal veröffentlichen",
         help_text="Zeigt den Umsetzungsstand öffentlicher, angenommener Beschlüsse in Insight („Was wurde aus …?“)",
     )
+    # Zwei-Faktor-Pflicht für alle Nutzer (Admins und Nutzer mit Verwaltungsrechten sind immer verpflichtet)
+    require_2fa = models.BooleanField(
+        default=False,
+        verbose_name="2FA für alle Nutzer erforderlich",
+        help_text="Alle Session-Nutzer dieses Mandanten müssen einen zweiten Faktor einrichten",
+    )
 
     # Fristen-Erinnerungen (Issue #83): Vorlaufzeiten und An/Aus je Typ.
     # Nur abweichende Werte werden gespeichert; Defaults siehe

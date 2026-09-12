@@ -209,6 +209,40 @@
         {% endif %}
     </div>
 
+    <!-- Anmeldesicherheit: Zwei-Faktor-Pflicht -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Anmeldesicherheit</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Mitglieder mit Administrator-Rolle oder einer Rolle mit „2FA erforderlich“ verwenden immer einen
+            zweiten Faktor. Hier legen Sie fest, ob das für alle Mitglieder gilt.
+        </p>
+        {% if can_edit %}
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_security">
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" name="require_2fa" value="1" {% if organization.require_2fa %}checked{% endif %}
+                       class="mt-1 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                <span>
+                    <span class="block text-sm font-medium text-gray-900 dark:text-white">Zwei-Faktor-Authentifizierung für alle Mitglieder verpflichtend</span>
+                    <span class="block text-xs text-gray-500 dark:text-gray-400">Wer noch keinen zweiten Faktor hat, richtet ihn bei der nächsten Anmeldung ein.</span>
+                </span>
+            </label>
+            <div class="flex justify-end pt-2">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">
+                    <i data-lucide="save" class="w-4 h-4"></i>
+                    Speichern
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+            {% if organization.require_2fa %}Für alle Mitglieder verpflichtend.{% else %}Für Mitglieder ohne Administrator-Rolle freiwillig.{% endif %}
+        </p>
+        {% endif %}
+    </div>
+
     <!-- Card 3: Stadt/Kommune und Partei (Pflicht-Zuordnung) -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Stadt/Kommune &amp; Partei</h3>

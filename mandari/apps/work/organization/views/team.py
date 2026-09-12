@@ -102,6 +102,7 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
             "update_general": self._update_general,
             "update_contact": self._update_contact,
             "update_parties": self._update_parties,
+            "update_security": self._update_security,
         }.get(request.POST.get("action"))
         if handler is not None:
             try:
@@ -136,6 +137,10 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
             self.organization, request.POST.getlist("parties"), request.POST.get("new_party", "").strip()
         )
         messages.success(request, "Parteizugehörigkeit gespeichert.")
+
+    def _update_security(self, request):
+        services.update_two_factor_requirement(self.organization, required=request.POST.get("require_2fa") == "1")
+        messages.success(request, "Anmeldesicherheit gespeichert.")
 
 
 class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):

@@ -11,6 +11,7 @@ from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 from apps.accounts.services import PasswordService, SessionService, TwoFactorService
+from apps.accounts.two_factor_policy import two_factor_required
 from apps.common.mixins import WorkViewMixin
 from apps.work.faction.models import CalendarFeedToken
 
@@ -90,6 +91,7 @@ class SecurityView(WorkViewMixin, TemplateView):
 
         user = self.request.user
         context["is_2fa_enabled"] = TwoFactorService().is_2fa_enabled(user)
+        context["two_factor_required"] = two_factor_required(user)
 
         sessions = SessionService.get_user_sessions(user)
         current_session_key = self.request.session.session_key
@@ -176,6 +178,11 @@ class SecurityView(WorkViewMixin, TemplateView):
 
     def _disable_2fa(self, request, user):
         """Disable 2FA."""
+        if two_factor_required(user):
+            messages.error(
+                request, "Für Ihr Konto ist ein zweiter Faktor vorgeschrieben – er kann nicht deaktiviert werden."
+            )
+            return self._redirect()
         if not user.check_password(request.POST.get("password", "")):
             messages.error(request, "Passwort ist nicht korrekt.")
             return self._redirect()

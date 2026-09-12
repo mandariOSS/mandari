@@ -1,0 +1,73 @@
+{% extends "accounts/base_auth.html" %}
+
+{% block title %}Zweiten Faktor einrichten{% endblock %}
+
+{% block header_title %}Zweiten Faktor einrichten{% endblock %}
+{% block header_subtitle %}{% if step == "codes" %}Backup-Codes sichern{% else %}Für dein Konto vorgeschrieben{% endif %}{% endblock %}
+
+{% block content %}
+{% if step == "codes" %}
+<div class="space-y-6">
+    <div role="status" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+        Bewahre diese Backup-Codes sicher auf, zum Beispiel im Passwort-Manager. Jeder Code funktioniert genau einmal,
+        falls du keinen Zugriff auf deine Authenticator-App hast.
+    </div>
+    <ul class="grid grid-cols-2 gap-2" aria-label="Backup-Codes">
+        {% for code in backup_codes %}
+        <li><code class="block px-3 py-2 bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-mono text-center select-all">{{ code }}</code></li>
+        {% endfor %}
+    </ul>
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="finish">
+        <input type="hidden" name="next" value="{{ next }}">
+        <c-ui.button type="submit" size="lg" full>Ich habe die Codes gesichert – weiter</c-ui.button>
+    </form>
+</div>
+{% else %}
+<div class="space-y-6">
+    <p class="text-sm text-gray-600 dark:text-gray-400">
+        Für dein Konto ist ein zweiter Faktor vorgeschrieben{% if reasons %} ({{ reasons|join:", " }}){% endif %}.
+        Die Einrichtung dauert etwa eine Minute, danach geht es direkt weiter.
+    </p>
+
+    <div class="space-y-3">
+        <p class="text-sm font-medium text-gray-900 dark:text-white">1. QR-Code mit einer Authenticator-App scannen</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">Zum Beispiel Bitwarden, 2FAS, Microsoft Authenticator oder Google Authenticator.</p>
+        {% if qr_code %}
+        <div class="flex justify-center rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700">
+            <img src="data:image/png;base64,{{ qr_code }}" alt="QR-Code für die Authenticator-App" class="h-44 w-44">
+        </div>
+        {% endif %}
+        <div>
+            <p class="mb-1 text-xs text-gray-500 dark:text-gray-400">Oder den Schlüssel manuell eingeben:</p>
+            <code class="block break-all rounded-lg border border-gray-200 bg-gray-100 px-4 py-2 text-center font-mono text-sm select-all dark:border-gray-700 dark:bg-gray-900">{{ secret }}</code>
+        </div>
+    </div>
+
+    <form method="post" novalidate class="space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <div>
+            <label for="id_code" class="mb-2 block text-sm font-medium text-gray-900 dark:text-white">2. Sechsstelligen Code aus der App eingeben</label>
+            <input id="id_code" type="text" name="code" required maxlength="7" placeholder="000000" inputmode="numeric" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" autofocus{% if error %} aria-invalid="true" aria-describedby="code-error"{% endif %} class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-center font-mono text-2xl tracking-widest outline-none focus:border-transparent focus:ring-2 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800">
+        </div>
+        {% if error %}
+        <div id="code-error" role="alert" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300">{{ error }}</div>
+        {% endif %}
+        <c-ui.button type="submit" size="lg" full>Einrichten</c-ui.button>
+    </form>
+
+    {% if pending %}
+    <p class="text-center text-sm">
+        <a href="{% url 'accounts:login' %}" class="font-medium text-primary-600 hover:underline dark:text-primary-400">Abbrechen</a>
+    </p>
+    {% else %}
+    <form method="post" action="{% url 'accounts:logout' %}" class="text-center text-sm">
+        {% csrf_token %}
+        <button type="submit" class="font-medium text-primary-600 hover:underline dark:text-primary-400">Abmelden</button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

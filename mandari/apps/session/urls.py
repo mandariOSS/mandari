@@ -473,6 +473,11 @@ urlpatterns = [
         views.ReminderSettingsView.as_view(),
         name="settings_reminders",
     ),
+    path(
+        "<slug:tenant_slug>/settings/two-factor/",
+        views.TwoFactorPolicyView.as_view(),
+        name="settings_two_factor",
+    ),
     # Einreichungs-Zugänge für Fraktionen (Issue #40)
     path(
         "<slug:tenant_slug>/settings/api-tokens/",

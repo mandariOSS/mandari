@@ -16,6 +16,7 @@ from .views import (
     PasswordResetView,
     RegisterView,
     SelfRegisterView,
+    TwoFactorEnrollView,
 )
 
 app_name = "accounts"
@@ -24,6 +25,7 @@ urlpatterns = [
     # Login / Logout
     path("login/", LoginView.as_view(), name="login"),
     path("login/zwei-faktor/", LoginTwoFactorView.as_view(), name="login_2fa"),
+    path("zwei-faktor/einrichten/", TwoFactorEnrollView.as_view(), name="two_factor_enroll"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("logged-out/", LoggedOutView.as_view(), name="logged_out"),
     # Registration (for invited users)

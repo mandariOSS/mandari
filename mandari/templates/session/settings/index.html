@@ -274,6 +274,57 @@
             </div>
         </div>
 
+        <!-- Anmeldesicherheit: Zwei-Faktor-Pflicht -->
+        {% if "manage_settings" in permission_checker.permissions %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div class="flex items-center gap-4 mb-3">
+                <div class="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center">
+                    <i data-lucide="shield-check" class="w-6 h-6 text-indigo-600 dark:text-indigo-400"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Anmeldesicherheit</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Zweiter Faktor bei der Anmeldung</p>
+                </div>
+            </div>
+            <div class="mt-4 space-y-3 text-sm">
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    Administratoren sowie Nutzer mit Rechten für Benutzer- oder Einstellungsverwaltung
+                    verwenden immer einen zweiten Faktor.
+                </p>
+                {% if session_tenant.require_2fa %}
+                <p class="inline-flex items-center gap-2 text-green-700 dark:text-green-400 font-medium">
+                    <i data-lucide="check-circle" class="w-4 h-4"></i>
+                    Pflicht für alle Nutzer aktiv.
+                </p>
+                {% else %}
+                <p class="inline-flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <i data-lucide="circle-off" class="w-4 h-4"></i>
+                    Für die übrigen Nutzer freiwillig.
+                </p>
+                {% endif %}
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    Wer noch keinen zweiten Faktor hat, richtet ihn bei der nächsten Anmeldung ein.
+                </p>
+                <form method="post" action="{% url 'session:settings_two_factor' tenant_slug=tenant_slug %}">
+                    {% csrf_token %}
+                    {% if session_tenant.require_2fa %}
+                    <input type="hidden" name="require_2fa" value="0">
+                    <button type="submit" class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors">
+                        <i data-lucide="shield-off" class="w-4 h-4"></i>
+                        Pflicht für alle aufheben
+                    </button>
+                    {% else %}
+                    <input type="hidden" name="require_2fa" value="1">
+                    <button type="submit" class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
+                        <i data-lucide="shield-check" class="w-4 h-4"></i>
+                        Für alle Nutzer verpflichtend machen
+                    </button>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Fristen-Erinnerungen (Issue #83) -->
         {% if "manage_settings" in permission_checker.permissions %}
         <div class="sm:col-span-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
