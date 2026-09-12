@@ -436,3 +436,39 @@ class SecurityNotification(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.user.email})"
+
+
+class WebAuthnCredential(models.Model):
+    """
+    Sicherheitsschlüssel oder Passkey (WebAuthn/FIDO2) als zusätzlicher zweiter Faktor.
+
+    Gespeichert werden nur öffentliche Schlüsseldaten; das Geheimnis verlässt
+    das Gerät nie. Voraussetzung ist eine eingerichtete Authenticator-App
+    (Rückfall mit Backup-Codes).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="webauthn_credentials")
+    name = models.CharField(max_length=100, verbose_name="Bezeichnung")
+    credential_id = models.CharField(max_length=512, unique=True, verbose_name="Credential-ID")
+    public_key = models.BinaryField(verbose_name="Öffentlicher Schlüssel")
+    sign_count = models.PositiveBigIntegerField(default=0, verbose_name="Signaturzähler")
+    transports = models.JSONField(default=list, blank=True, verbose_name="Übertragungswege")
+    aaguid = models.CharField(max_length=36, blank=True, verbose_name="Geräte-Modell (AAGUID)")
+    device_type = models.CharField(max_length=32, blank=True, verbose_name="Gerätetyp")
+    backed_up = models.BooleanField(default=False, verbose_name="Synchronisiert")
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        verbose_name = "Sicherheitsschlüssel"
+        verbose_name_plural = "Sicherheitsschlüssel"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.name} ({self.user.email})"
+
+    @property
+    def is_hardware_key(self) -> bool:
+        """Gerätegebundener Schlüssel (z. B. YubiKey) statt synchronisiertem Passkey."""
+        return self.device_type == "single_device" and not self.backed_up

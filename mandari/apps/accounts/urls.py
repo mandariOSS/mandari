@@ -18,6 +18,13 @@ from .views import (
     SelfRegisterView,
     TwoFactorEnrollView,
 )
+from .views_webauthn import (
+    LoginOptionsView,
+    LoginVerifyView,
+    RegistrationOptionsView,
+    RegistrationVerifyView,
+    SecurityKeysView,
+)
 
 app_name = "accounts"
 
@@ -26,6 +33,16 @@ urlpatterns = [
     path("login/", LoginView.as_view(), name="login"),
     path("login/zwei-faktor/", LoginTwoFactorView.as_view(), name="login_2fa"),
     path("zwei-faktor/einrichten/", TwoFactorEnrollView.as_view(), name="two_factor_enroll"),
+    # Sicherheitsschlüssel und Passkeys (WebAuthn)
+    path("sicherheitsschluessel/", SecurityKeysView.as_view(), name="security_keys"),
+    path(
+        "sicherheitsschluessel/registrieren/optionen/",
+        RegistrationOptionsView.as_view(),
+        name="webauthn_register_options",
+    ),
+    path("sicherheitsschluessel/registrieren/", RegistrationVerifyView.as_view(), name="webauthn_register"),
+    path("login/sicherheitsschluessel/optionen/", LoginOptionsView.as_view(), name="webauthn_login_options"),
+    path("login/sicherheitsschluessel/", LoginVerifyView.as_view(), name="webauthn_login"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("logged-out/", LoggedOutView.as_view(), name="logged_out"),
     # Registration (for invited users)

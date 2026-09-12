@@ -166,6 +166,13 @@ ADMIN_ALLOWED_NETWORKS = [
     for network in os.environ.get("ADMIN_ALLOWED_NETWORKS", "").split(",")
     if network.strip()
 ]
+# Sicherheitsschlüssel/Passkeys (WebAuthn): Relying-Party-ID ist die Hauptdomain (gilt auch für Subdomains)
+WEBAUTHN_RP_ID = os.environ.get("WEBAUTHN_RP_ID", MAIN_DOMAIN.split(":")[0])
+WEBAUTHN_RP_NAME = os.environ.get("WEBAUTHN_RP_NAME", "mandari")
+# Plattform-Administration nur mit Sicherheitsschlüssel – erst einschalten, wenn Schlüssel ausgegeben sind
+TWO_FACTOR_REQUIRE_SECURITY_KEY_FOR_SUPERUSERS = os.environ.get(
+    "TWO_FACTOR_REQUIRE_SECURITY_KEY_FOR_SUPERUSERS", "false"
+).lower() in ("1", "true", "yes")
 
 ROOT_URLCONF = "mandari.urls"
 

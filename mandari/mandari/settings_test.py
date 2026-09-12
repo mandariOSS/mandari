@@ -61,3 +61,4 @@ STORAGES = {
 # 2FA-Pflicht und Admin-Netze in Tests aus; die Durchsetzung testet apps/accounts/tests/test_two_factor_policy.py
 TWO_FACTOR_ENFORCEMENT = False
 ADMIN_ALLOWED_NETWORKS = []
+WEBAUTHN_RP_ID = "testserver"

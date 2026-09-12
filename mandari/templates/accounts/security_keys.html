@@ -1,0 +1,81 @@
+{% extends "accounts/base_auth.html" %}
+{% load django_vite %}
+
+{% block title %}Sicherheitsschlüssel{% endblock %}
+
+{% block extra_head %}{% vite_asset 'frontend/js/webauthn.ts' %}{% endblock %}
+
+{% block header_title %}Sicherheitsschlüssel{% endblock %}
+{% block header_subtitle %}YubiKey, Passkey oder Geräte-Entsperrung{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    {% for message in messages %}
+    <div role="status" class="rounded-xl border px-4 py-3 text-sm {% if message.level_tag == 'error' %}border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300{% else %}border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/30 dark:text-green-300{% endif %}">{{ message }}</div>
+    {% endfor %}
+
+    {% if not totp_enabled %}
+    <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+        Richte zuerst eine Authenticator-App ein. Sie dient zusammen mit den Backup-Codes als Rückfall,
+        falls ein Sicherheitsschlüssel verloren geht.
+    </div>
+    <a href="{% url 'accounts:two_factor_enroll' %}?next={{ request.path|urlencode }}"
+       class="block w-full rounded-xl bg-primary-600 px-4 py-3 text-center text-sm font-medium text-white hover:bg-primary-700">
+        Authenticator-App einrichten
+    </a>
+    {% else %}
+    <p class="text-sm text-gray-600 dark:text-gray-400">
+        Sicherheitsschlüssel funktionieren nur auf der echten mandari-Adresse und schützen so vor gefälschten
+        Anmeldeseiten. Registriere am besten zwei Schlüssel – einen davon als Reserve.
+    </p>
+
+    {% if credentials %}
+    <ul class="divide-y divide-gray-200 overflow-hidden rounded-xl border border-gray-200 dark:divide-gray-700 dark:border-gray-700" aria-label="Registrierte Sicherheitsschlüssel">
+        {% for credential in credentials %}
+        <li class="space-y-3 p-4">
+            <div>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ credential.name }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {% if credential.is_hardware_key %}Hardware-Schlüssel{% else %}Passkey{% endif %}
+                    · hinzugefügt am {{ credential.created_at|date:"d.m.Y" }}
+                    {% if credential.last_used_at %}· zuletzt genutzt {{ credential.last_used_at|date:"d.m.Y H:i" }}{% endif %}
+                </p>
+            </div>
+            <form method="post" class="flex gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="remove">
+                <input type="hidden" name="credential_id" value="{{ credential.pk }}">
+                <label class="sr-only" for="password-{{ credential.pk }}">Passwort zum Entfernen von {{ credential.name }}</label>
+                <input id="password-{{ credential.pk }}" type="password" name="password" required autocomplete="current-password" placeholder="Passwort"
+                       class="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800">
+                <button type="submit" class="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">Entfernen</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-gray-500 dark:text-gray-400">Noch kein Sicherheitsschlüssel registriert.</p>
+    {% endif %}
+
+    <div class="space-y-3" data-webauthn-register
+         data-options-url="{% url 'accounts:webauthn_register_options' %}"
+         data-verify-url="{% url 'accounts:webauthn_register' %}"
+         data-csrf="{{ csrf_token }}">
+        <label for="id_key_name" class="block text-sm font-medium text-gray-900 dark:text-white">Bezeichnung des neuen Schlüssels</label>
+        <input id="id_key_name" type="text" maxlength="100" placeholder="z. B. YubiKey Schlüsselbund" data-webauthn-name
+               class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800">
+        <button type="button" data-webauthn-start
+                class="w-full rounded-xl bg-primary-600 px-4 py-3 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60">
+            Sicherheitsschlüssel hinzufügen
+        </button>
+        <p data-webauthn-status role="status" aria-live="polite" class="text-center text-sm text-gray-600 dark:text-gray-400"></p>
+    </div>
+    {% endif %}
+
+    <p class="text-center text-sm">
+        <a href="{% if next %}{{ next }}{% else %}/{% endif %}" class="font-medium text-primary-600 hover:underline dark:text-primary-400">{% if next %}Zurück{% else %}Zur Startseite{% endif %}</a>
+    </p>
+</div>
+{% endblock %}
+
+{% block footer %}{% endblock %}

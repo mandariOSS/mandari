@@ -38,6 +38,7 @@ from .models import (
     TrustedDevice,
     TwoFactorDevice,
     UserSession,
+    WebAuthnCredential,
 )
 
 
@@ -372,6 +373,8 @@ class TwoFactorService:
         try:
             device = user.totp_device
             device.delete()
+            # Sicherheitsschlüssel setzen die Authenticator-App als Rückfall voraus
+            WebAuthnCredential.objects.filter(user=user).delete()
 
             # Create security notification
             SecurityNotification.objects.create(

@@ -21,14 +21,16 @@ from .two_factor_policy import (
     admin_networks,
     client_ip,
     ip_in_networks,
+    security_key_required,
     two_factor_required,
 )
+from .webauthn_service import has_credentials
 
 logger = logging.getLogger(__name__)
 
 ADMIN_PREFIXES = ("/admin/",)
 
-# Pfade, die ohne eingerichteten zweiten Faktor erreichbar bleiben (Einrichtung, Abmelden, Assets)
+# Pfade, die ohne erfüllte Pflicht erreichbar bleiben (Einrichtung, Abmelden, Assets)
 TWO_FACTOR_EXEMPT_PREFIXES = (
     "/accounts/",
     "/static/",
@@ -39,6 +41,12 @@ TWO_FACTOR_EXEMPT_PREFIXES = (
     "/sw.js",
 )
 POLICY_CACHE_SECONDS = 300
+
+# Offene Pflicht → Ziel der Umleitung
+REQUIREMENT_TARGETS = {
+    "totp": "accounts:two_factor_enroll",
+    "security_key": "accounts:security_keys",
+}
 
 ADMIN_DENIED_HTML = (
     "<!doctype html><html lang='de'><head><meta charset='utf-8'><title>Kein Zugriff</title></head>"
@@ -71,25 +79,22 @@ class AdminNetworkMiddleware:
 
 
 class TwoFactorEnforcementMiddleware:
-    """Angemeldete Konten mit 2FA-Pflicht ohne eingerichteten Faktor zur Einrichtung leiten."""
+    """Angemeldete Konten mit offener Pflicht (Authenticator-App bzw. Sicherheitsschlüssel) umleiten."""
 
     def __init__(self, get_response: GetResponse) -> None:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponseBase:
         user = getattr(request, "user", None)
-        if (
-            user is not None
-            and user.is_authenticated
-            and not request.path.startswith(TWO_FACTOR_EXEMPT_PREFIXES)
-            and self._needs_enrollment(request, user)
-        ):
-            return self._enrollment_response(request)
+        if user is not None and user.is_authenticated and not request.path.startswith(TWO_FACTOR_EXEMPT_PREFIXES):
+            requirement = self._open_requirement(request, user)
+            if requirement:
+                return self._redirect_response(request, reverse(REQUIREMENT_TARGETS[requirement]))
         return self.get_response(request)
 
     @staticmethod
-    def _needs_enrollment(request: HttpRequest, user: object) -> bool:
-        """Richtlinie prüfen; Ergebnis je Session fünf Minuten zwischenspeichern."""
+    def _open_requirement(request: HttpRequest, user: object) -> str:
+        """``"totp"``, ``"security_key"`` oder ``""``; je Session fünf Minuten zwischengespeichert."""
         user_id = str(getattr(user, "pk", ""))
         now = int(time.time())
         cached = request.session.get(POLICY_CACHE_SESSION_KEY)
@@ -98,14 +103,17 @@ class TwoFactorEnforcementMiddleware:
             and cached.get("user") == user_id
             and now - int(cached.get("at", 0)) < POLICY_CACHE_SECONDS
         ):
-            return bool(cached.get("enroll"))
-        enroll = two_factor_required(user) and not TwoFactorService().is_2fa_enabled(user)
-        request.session[POLICY_CACHE_SESSION_KEY] = {"user": user_id, "at": now, "enroll": enroll}
-        return enroll
+            return str(cached.get("need", ""))
+        need = ""
+        if two_factor_required(user) and not TwoFactorService().is_2fa_enabled(user):
+            need = "totp"
+        elif security_key_required(user) and not has_credentials(user):
+            need = "security_key"
+        request.session[POLICY_CACHE_SESSION_KEY] = {"user": user_id, "at": now, "need": need}
+        return need
 
     @staticmethod
-    def _enrollment_response(request: HttpRequest) -> HttpResponseBase:
-        target = reverse("accounts:two_factor_enroll")
+    def _redirect_response(request: HttpRequest, target: str) -> HttpResponseBase:
         if request.headers.get("HX-Request"):
             response = HttpResponse(status=204)
             response["HX-Redirect"] = target

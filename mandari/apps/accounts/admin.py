@@ -246,6 +246,7 @@ class LoginAttemptAdmin(ModelAdmin):
 # ============================================================================
 # - TwoFactorDevice: Enthält Secrets, wird im Work Portal verwaltet
 # - TrustedDevice: Persönliche Gerätedaten
+# - WebAuthnCredential: Sicherheitsschlüssel (Zurücksetzen per manage.py reset_two_factor)
 # - UserSession: Session-Daten sind sensibel
 # - PasswordResetToken: Tokens sollten nicht einsehbar sein
 # - EmailVerificationToken: Tokens sollten nicht einsehbar sein

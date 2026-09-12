@@ -16,6 +16,11 @@ Alpine-Scope: securitySettings (setup2fa, showBackupCodesModal, showDisable2faMo
 
     <div class="flex flex-wrap gap-3">
         <c-ui.button variant="secondary" icon="key" @click="showBackupCodesModal = true">Backup-Codes</c-ui.button>
+        <a href="{% url 'accounts:security_keys' %}?next={{ request.path|urlencode }}"
+           class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+            <i data-lucide="key-round" class="w-4 h-4"></i>
+            Sicherheitsschlüssel
+        </a>
         {% if two_factor_required %}
         <p class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
             <i data-lucide="lock" class="w-3.5 h-3.5"></i>

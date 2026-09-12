@@ -81,6 +81,17 @@ def two_factor_required(user: Any) -> bool:
     return bool(two_factor_reasons(user))
 
 
+def security_key_required(user: Any) -> bool:
+    """Plattform-Administration nur mit Sicherheitsschlüssel (Schalter, erst nach Ausgabe der Schlüssel)."""
+    return (
+        bool(getattr(settings, "TWO_FACTOR_REQUIRE_SECURITY_KEY_FOR_SUPERUSERS", False))
+        and bool(getattr(user, "is_authenticated", False))
+        and _enforcement_enabled()
+        and not _is_exempt(user)
+        and bool(user.is_superuser)
+    )
+
+
 def client_ip(request: HttpRequest) -> str:
     """Client-Adresse.
 

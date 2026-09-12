@@ -1,16 +1,32 @@
 {% extends "accounts/base_auth.html" %}
+{% load django_vite %}
 
 {% block title %}Bestätigungscode{% endblock %}
 
+{% block extra_head %}{% if has_security_key %}{% vite_asset 'frontend/js/webauthn.ts' %}{% endif %}{% endblock %}
+
 {% block header_title %}Zweiter Faktor{% endblock %}
-{% block header_subtitle %}Gib den Code aus deiner Authenticator-App ein{% endblock %}
+{% block header_subtitle %}{% if has_security_key %}Sicherheitsschlüssel oder Code aus der Authenticator-App{% else %}Gib den Code aus deiner Authenticator-App ein{% endif %}{% endblock %}
 
 {% block content %}
+{% if has_security_key %}
+<div class="mb-6 space-y-3" data-webauthn-login
+     data-options-url="{% url 'accounts:webauthn_login_options' %}"
+     data-verify-url="{% url 'accounts:webauthn_login' %}"
+     data-csrf="{{ csrf_token }}">
+    <button type="button" data-webauthn-start
+            class="w-full rounded-xl bg-primary-600 px-4 py-3 text-base font-medium text-white hover:bg-primary-700 disabled:opacity-60">
+        Mit Sicherheitsschlüssel anmelden
+    </button>
+    <p data-webauthn-status role="status" aria-live="polite" class="text-center text-sm text-gray-600 dark:text-gray-400"></p>
+</div>
+<p class="mb-6 text-center text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">oder Code eingeben</p>
+{% endif %}
 <form method="post" novalidate class="space-y-6">
     {% csrf_token %}
     <div>
         <label for="id_code" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bestätigungscode</label>
-        <input id="id_code" type="text" name="code" required maxlength="11" placeholder="000000" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" autofocus aria-describedby="code-hint"{% if error %} aria-invalid="true"{% endif %} class="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
+        <input id="id_code" type="text" name="code" required maxlength="11" placeholder="000000" autocomplete="one-time-code" autocapitalize="off" spellcheck="false"{% if not has_security_key %} autofocus{% endif %} aria-describedby="code-hint"{% if error %} aria-invalid="true"{% endif %} class="w-full px-4 py-3 text-center text-2xl font-mono tracking-widest bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none">
         <p id="code-hint" class="mt-2 text-sm text-gray-500 dark:text-gray-400">Sechsstelliger Code aus der App oder einer deiner Backup-Codes.</p>
     </div>
     {% if error %}

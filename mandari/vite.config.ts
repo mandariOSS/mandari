@@ -7,6 +7,7 @@ import { defineConfig } from 'vite'
  * Einstiege:
  *   frontend/js/main.ts       – alle Layouts (HTMX, Alpine, Icons, Toasts)
  *   frontend/js/work.ts       – Work-Portal (seitenbezogene Alpine-Komponenten)
+ *   frontend/js/webauthn.ts   – Sicherheitsschlüssel/Passkeys (Kontoseite, zweiter Anmeldeschritt)
  *   frontend/editor/index.ts  – nur Editor-Seiten (TipTap, Yjs) inkl. der Alpine-Komponenten
  *                               frontend/alpine/document-editor.ts und prepare-meeting.ts
  *
@@ -26,6 +27,7 @@ export default defineConfig({
         main: resolve(__dirname, 'frontend/js/main.ts'),
         editor: resolve(__dirname, 'frontend/editor/index.ts'),
         work: resolve(__dirname, 'frontend/js/work.ts'),
+        webauthn: resolve(__dirname, 'frontend/js/webauthn.ts'),
       },
     },
   },

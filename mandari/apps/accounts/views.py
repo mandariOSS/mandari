@@ -33,10 +33,16 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
+from . import webauthn_service
 from .forms import LoginForm, PasswordResetForm, RegistrationForm, SetPasswordForm
 from .models import LoginAttempt
 from .services import SessionService, TwoFactorService
-from .two_factor_policy import POLICY_CACHE_SESSION_KEY, two_factor_reasons, two_factor_required
+from .two_factor_policy import (
+    POLICY_CACHE_SESSION_KEY,
+    security_key_required,
+    two_factor_reasons,
+    two_factor_required,
+)
 
 # Zweiter Anmeldeschritt: Passwort ist geprüft, angemeldet wird erst nach gültigem Code
 PENDING_2FA_SESSION_KEY = "auth_2fa_pending"
@@ -285,7 +291,9 @@ class LoginTwoFactorView(View):
         _data, user = self._pending(request)
         if user is None:
             return self._expired(request)
-        return render(request, self.template_name, {"error": None})
+        return render(
+            request, self.template_name, {"error": None, "has_security_key": webauthn_service.has_credentials(user)}
+        )
 
     def post(self, request):
         data, user = self._pending(request)
@@ -299,7 +307,21 @@ class LoginTwoFactorView(View):
             )
             return redirect("accounts:login")
 
-        if TwoFactorService().verify_2fa(user, request.POST.get("code", "")):
+        code = request.POST.get("code", "")
+        has_security_key = webauthn_service.has_credentials(user)
+        if security_key_required(user) and has_security_key and code.replace(" ", "").isdigit():
+            # Pflicht zum Sicherheitsschlüssel: App-Codes gelten nicht, Backup-Codes bleiben der Rückfall
+            return render(
+                request,
+                self.template_name,
+                {
+                    "error": "Für dieses Konto ist die Anmeldung mit Sicherheitsschlüssel vorgeschrieben. "
+                    "Ohne Schlüssel hilft ein Backup-Code.",
+                    "has_security_key": has_security_key,
+                },
+            )
+
+        if TwoFactorService().verify_2fa(user, code):
             request.session.pop(PENDING_2FA_SESSION_KEY, None)
             self._log(request, user, success=True)
             complete_login(request, user, bool(data.get("remember")))
@@ -307,7 +329,11 @@ class LoginTwoFactorView(View):
             return redirect(LoginView().get_success_url(request, data.get("next") or None))
 
         self._log(request, user, success=False)
-        return render(request, self.template_name, {"error": "Der Code ist ungültig oder abgelaufen."})
+        return render(
+            request,
+            self.template_name,
+            {"error": "Der Code ist ungültig oder abgelaufen.", "has_security_key": has_security_key},
+        )
 
 
 class TwoFactorEnrollView(View):
