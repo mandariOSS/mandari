@@ -1,0 +1,19 @@
+# Dein Zugang ist freigeschaltet
+
+Fraktion Test
+
+Hallo Eva,
+
+deine Registrierung bei Fraktion Test wurde geprüft und freigeschaltet. Du meldest dich mit deiner E-Mail-Adresse und deinem Passwort an.
+
+[Zu Fraktion Test](https://mandari.example/work/fraktion-test/)
+
+Zweiter Faktor erforderlich
+
+Für dein Konto ist eine Anmeldung mit zweitem Faktor vorgeschrieben. Falls noch nicht geschehen, richtest du ihn bei der nächsten Anmeldung direkt ein – halte dafür eine Authenticator-App bereit.
+
+Passwort vergessen? Auf der Anmeldeseite setzt du es über „Passwort vergessen“ neu: https://mandari.example/accounts/login/
+
+Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

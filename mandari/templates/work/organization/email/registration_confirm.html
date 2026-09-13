@@ -1,0 +1,19 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Registrierung bestätigen{% endblock %}
+{% block preheader %}Ein Klick bestätigt deine E-Mail-Adresse für {{ organization.name }}.{% endblock %}
+{% block content %}
+<h1 class="h1">Bitte bestätige deine E-Mail-Adresse</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Hallo {{ user.first_name|default:user.email }},</p>
+<p>du hast dich bei {{ organization.name }} auf mandari registriert. Bitte bestätige, dass diese E-Mail-Adresse dir gehört – erst danach geht es weiter.</p>
+<div class="btn-wrap">
+    <a class="btn" href="{{ confirm_url }}">Registrierung bestätigen</a>
+</div>
+<p class="muted small">Der Link ist {{ valid_hours }} Stunden gültig. Falls der Knopf nicht funktioniert, kopiere diese Adresse in deinen Browser:<br>{{ confirm_url }}</p>
+<div class="card card-warning">
+    <p>Du hast dich nicht registriert? Dann ignoriere diese E-Mail. Ohne Bestätigung entsteht keine Anfrage, und niemand erhält Zugang.</p>
+</div>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>
+{% endblock %}

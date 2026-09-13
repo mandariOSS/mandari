@@ -623,8 +623,10 @@ class RegisterView(View):
         form = RegistrationForm(request.POST, email=invitation.email)
 
         if form.is_valid():
-            # Create user
+            # Konto anlegen – der Einladungslink kam per E-Mail, die Adresse ist damit bestätigt
             user = form.save()
+            user.email_verified = True
+            user.save(update_fields=["email_verified"])
 
             # Log the user in
             auth_login(request, user)
@@ -658,19 +660,63 @@ class RegisterView(View):
             return None
 
 
+SELF_REGISTER_MAILS_PER_IP_PER_HOUR = 10
+SELF_REGISTER_MAILS_PER_ADDRESS_PER_HOUR = 3
+
+
+def _registration_mail_allowed(request, email: str) -> bool:
+    """Bestätigungsmails je IP und Adresse drosseln – die Registrierung darf kein Werkzeug für Mail-Fluten sein."""
+    import hashlib
+
+    from django.core.cache import cache
+
+    from .two_factor_policy import client_ip
+
+    address_key = hashlib.sha256(email.lower().encode()).hexdigest()
+    limits = {
+        f"self-register:ip:{client_ip(request)}": SELF_REGISTER_MAILS_PER_IP_PER_HOUR,
+        f"self-register:address:{address_key}": SELF_REGISTER_MAILS_PER_ADDRESS_PER_HOUR,
+    }
+    if any(cache.get(key, 0) >= limit for key, limit in limits.items()):
+        return False
+    for key in limits:
+        cache.add(key, 0, 60 * 60)
+        cache.incr(key)
+    return True
+
+
+def registration_state_response(request, org, membership):
+    """Antwort für eine bestehende Mitgliedschaft: aktiv, Anfrage offen oder deaktiviert."""
+    if membership.is_active:
+        messages.info(request, f"Du bist bereits Mitglied bei {org.name}.")
+        if request.user.is_authenticated:
+            return redirect("work:dashboard", org_slug=org.slug)
+        dashboard = reverse("work:dashboard", kwargs={"org_slug": org.slug})
+        return redirect(f"{reverse('accounts:login')}?next={quote(dashboard)}")
+    if membership.registration_requested_at:
+        return render(
+            request,
+            "accounts/registration_pending.html",
+            {"org": org, "state": "pending", "email": membership.user.email},
+        )
+    messages.error(request, f"Dein Zugang zu {org.name} ist derzeit deaktiviert. Bitte wende dich an die Organisation.")
+    return redirect("accounts:login")
+
+
 class SelfRegisterView(View):
     """
     Selbstregistrierung für Organisationen mit aktivierter Registrierung.
 
     URL: /accounts/register/<org_slug>/
-    Prüft E-Mail-Domain gegen Whitelist der Organisation.
-    Erstellt User + Membership (aktiv oder wartend je nach Auto-Approve).
+    Ablauf: Formular → Bestätigungslink per E-Mail → erst nach dem Klick entsteht die Mitgliedschaft
+    (sofort aktiv oder als offene Anfrage). Die Registrierung meldet nicht an; bereits angemeldete
+    Konten mit bestätigter Adresse treten direkt bei.
     """
 
     template_name = "accounts/self_register.html"
 
     def dispatch(self, request, *args, **kwargs):
-        from apps.tenants.models import Organization
+        from apps.tenants.models import Membership, Organization
 
         self.org = get_object_or_404(Organization, slug=kwargs["org_slug"], is_active=True)
         if not self.org.registration_enabled:
@@ -678,12 +724,9 @@ class SelfRegisterView(View):
             return redirect("accounts:login")
 
         if request.user.is_authenticated:
-            # Bereits eingeloggt → prüfe ob schon Mitglied
-            from apps.tenants.models import Membership
-
-            if Membership.objects.filter(user=request.user, organization=self.org).exists():
-                messages.info(request, f"Du bist bereits Mitglied bei {self.org.name}.")
-                return redirect("work:dashboard", org_slug=self.org.slug)
+            membership = Membership.objects.filter(user=request.user, organization=self.org).first()
+            if membership is not None:
+                return registration_state_response(request, self.org, membership)
 
         return super().dispatch(request, *args, **kwargs)
 
@@ -694,67 +737,98 @@ class SelfRegisterView(View):
         return render(request, self.template_name, {"form": form, "org": self.org})
 
     def post(self, request, **kwargs):
-        from apps.tenants.models import Membership
+        from apps.work.organization import services as organization_services
 
         from .forms import SelfRegistrationForm
+        from .models import User
 
         form = SelfRegistrationForm(
             request.POST,
             org=self.org,
             user=request.user if request.user.is_authenticated else None,
         )
+        if not form.is_valid():
+            return render(request, self.template_name, {"form": form, "org": self.org})
 
-        if form.is_valid():
-            email = form.cleaned_data["email"]
+        # Angemeldet liefert das Formular immer die Adresse des Kontos
+        email = form.cleaned_data["email"]
+        if not self.org.is_email_allowed_for_registration(email):
+            domains = self.org.registration_email_domains
+            form.add_error("email", f"Nur E-Mail-Adressen mit folgenden Domains sind erlaubt: {', '.join(domains)}")
+            return render(request, self.template_name, {"form": form, "org": self.org})
 
-            # E-Mail-Domain prüfen
-            if not self.org.is_email_allowed_for_registration(email):
-                domains = self.org.registration_email_domains
-                form.add_error(
-                    "email",
-                    f"Nur E-Mail-Adressen mit folgenden Domains sind erlaubt: {', '.join(domains)}",
-                )
-                return render(request, self.template_name, {"form": form, "org": self.org})
-
-            # User erstellen oder finden
-            from .models import User
-
-            # Ein bestehendes Konto wird nie ohne Anmeldung übernommen (sonst Kontoübernahme per E-Mail-Adresse)
-            if request.user.is_authenticated:
-                user = request.user
-            elif User.objects.filter(email__iexact=email).exists():
-                messages.info(
-                    request,
-                    "Für diese E-Mail-Adresse besteht bereits ein Konto. Bitte melde dich an, um beizutreten.",
-                )
-                return redirect(f"{reverse('accounts:login')}?next={quote(request.path)}")
-            else:
-                user = User.objects.create_user(
-                    email=email,
-                    password=form.cleaned_data["password1"],
-                    first_name=form.cleaned_data["first_name"],
-                    last_name=form.cleaned_data["last_name"],
-                )
-
-            # Membership erstellen
-            membership, created = Membership.objects.get_or_create(
-                user=user,
-                organization=self.org,
-                defaults={"is_active": self.org.registration_auto_approve},
+        # Ein bestehendes Konto wird nie ohne Anmeldung übernommen (sonst Kontoübernahme per E-Mail-Adresse)
+        if not request.user.is_authenticated and User.objects.filter(email__iexact=email).exists():
+            messages.info(
+                request,
+                "Für diese E-Mail-Adresse besteht bereits ein Konto. Bitte melde dich an, um beizutreten.",
             )
+            return redirect(f"{reverse('accounts:login')}?next={quote(request.path)}")
 
-            if created and self.org.registration_default_role:
-                membership.roles.add(self.org.registration_default_role)
-
-            # Einloggen
-            if not request.user.is_authenticated:
-                auth_login(request, user)
-                if request.session.session_key:
-                    SessionService.create_session(user, request, request.session.session_key)
-
-            if self.org.registration_auto_approve:
+        if request.user.is_authenticated and request.user.email_verified:
+            membership = organization_services.join_by_self_registration(self.org, request.user)
+            if membership.is_active:
                 messages.success(request, f"Willkommen bei {self.org.name}!")
                 return redirect("work:dashboard", org_slug=self.org.slug)
-            return render(request, "accounts/registration_pending.html", {"org": self.org})
+            return registration_state_response(request, self.org, membership)
 
-        return render(request, self.template_name, {"form": form, "org": self.org})
+        if not _registration_mail_allowed(request, email):
+            form.add_error(None, "Gerade wurden zu viele Registrierungen angefordert. Bitte versuche es später erneut.")
+            return render(request, self.template_name, {"form": form, "org": self.org})
+
+        if request.user.is_authenticated:
+            user = request.user
+        else:
+            user = User.objects.create_user(
+                email=email,
+                password=form.cleaned_data["password1"],
+                first_name=form.cleaned_data["first_name"],
+                last_name=form.cleaned_data["last_name"],
+            )
+        mail_sent = organization_services.start_self_registration(self.org, user)
+        return render(
+            request,
+            "accounts/registration_pending.html",
+            {"org": self.org, "state": "confirm", "email": user.email, "mail_failed": not mail_sent},
+        )
+
+
+class SelfRegisterConfirmView(View):
+    """
+    Bestätigungslink der Selbstregistrierung.
+
+    GET zeigt nur die Bestätigung – Link-Scanner in Mailprogrammen rufen Links vorab auf. Erst POST
+    legt die Mitgliedschaft an. Der Link meldet nicht an; die Anmeldung läuft wie immer über Passwort
+    und gegebenenfalls zweiten Faktor.
+    """
+
+    template_name = "accounts/self_register_confirm.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        from apps.tenants.models import Organization
+        from apps.work.organization import selectors as organization_selectors
+
+        self.org = get_object_or_404(Organization, slug=kwargs["org_slug"], is_active=True)
+        self.token = organization_selectors.find_registration_token(kwargs["token"])
+        if self.token is None:
+            return render(request, self.template_name, {"org": self.org, "invalid": True}, status=404)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, **kwargs):
+        return render(request, self.template_name, {"org": self.org, "email": self.token.email})
+
+    def post(self, request, **kwargs):
+        from apps.work.organization import services as organization_services
+
+        try:
+            membership = organization_services.confirm_self_registration(self.org, self.token)
+        except organization_services.ServiceError as exc:
+            return render(request, self.template_name, {"org": self.org, "error": str(exc)}, status=400)
+
+        if not membership.is_active:
+            return registration_state_response(request, self.org, membership)
+        messages.success(request, f"Deine E-Mail-Adresse ist bestätigt – willkommen bei {self.org.name}!")
+        dashboard = reverse("work:dashboard", kwargs={"org_slug": self.org.slug})
+        if request.user.is_authenticated and request.user.pk == membership.user_id:
+            return redirect(dashboard)
+        return redirect(f"{reverse('accounts:login')}?next={quote(dashboard)}")

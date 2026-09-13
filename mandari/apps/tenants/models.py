@@ -1003,6 +1003,9 @@ class Membership(models.Model):
         verbose_name="Eingeladen von",
     )
     invitation_accepted_at = models.DateTimeField(blank=True, null=True, verbose_name="Einladung angenommen")
+    # Selbstregistrierung: gesetzt, solange eine bestätigte Anfrage auf Freischaltung wartet.
+    # Unterscheidet offene Anfragen eindeutig von deaktivierten Mitgliedschaften.
+    registration_requested_at = models.DateTimeField(blank=True, null=True, verbose_name="Registrierung angefragt")
 
     class Meta:
         verbose_name = "Mitgliedschaft"

@@ -15,6 +15,7 @@ from .views import (
     PasswordResetDoneView,
     PasswordResetView,
     RegisterView,
+    SelfRegisterConfirmView,
     SelfRegisterView,
     TwoFactorEnrollView,
 )
@@ -49,6 +50,11 @@ urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
     # Self-registration (for organizations with open registration)
     path("register/<slug:org_slug>/", SelfRegisterView.as_view(), name="self_register"),
+    path(
+        "register/<slug:org_slug>/bestaetigen/<str:token>/",
+        SelfRegisterConfirmView.as_view(),
+        name="self_register_confirm",
+    ),
     # Password Reset
     path("password-reset/", PasswordResetView.as_view(), name="password_reset"),
     path("password-reset/done/", PasswordResetDoneView.as_view(), name="password_reset_done"),

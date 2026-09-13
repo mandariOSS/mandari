@@ -49,6 +49,7 @@ class NotificationType(models.TextChoices):
 
     # Organization
     MEMBER_JOINED = "member_joined", "Neues Mitglied"
+    REGISTRATION_REQUEST = "registration_request", "Registrierungsanfrage"
     ROLE_CHANGED = "role_changed", "Rolle geändert"
 
     # Support
@@ -170,6 +171,7 @@ class Notification(models.Model):
             NotificationType.FACTION_PROPOSAL_DECIDED: "list-checks",
             NotificationType.FACTION_PROTOCOL_APPROVED: "file-check",
             NotificationType.MEMBER_JOINED: "user-plus",
+            NotificationType.REGISTRATION_REQUEST: "user-round-search",
             NotificationType.ROLE_CHANGED: "shield",
             NotificationType.SUPPORT_TICKET_CREATED: "ticket",
             NotificationType.SUPPORT_TICKET_REPLY: "message-circle-reply",
@@ -209,6 +211,7 @@ class Notification(models.Model):
             NotificationType.FACTION_PROPOSAL_DECIDED: "indigo",
             NotificationType.FACTION_PROTOCOL_APPROVED: "green",
             NotificationType.MEMBER_JOINED: "green",
+            NotificationType.REGISTRATION_REQUEST: "orange",
             NotificationType.ROLE_CHANGED: "yellow",
             NotificationType.SUPPORT_TICKET_CREATED: "blue",
             NotificationType.SUPPORT_TICKET_REPLY: "indigo",

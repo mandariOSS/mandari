@@ -8,9 +8,9 @@
 {% block content %}
 <c-ui.alert variant="info" icon="building-2" title="{{ org.name }}" class="mb-6">
     {% if org.registration_auto_approve %}
-    Erstelle dein Konto, um sofort beizutreten.
+    Erstelle dein Konto und bestätige deine E-Mail-Adresse – danach bist du sofort dabei.
     {% else %}
-    Erstelle dein Konto. Ein Administrator wird deine Anfrage prüfen.
+    Erstelle dein Konto und bestätige deine E-Mail-Adresse. Danach prüft {{ org.name }} deine Anfrage.
     {% endif %}
 </c-ui.alert>
 

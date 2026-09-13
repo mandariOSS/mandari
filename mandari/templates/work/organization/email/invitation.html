@@ -1,0 +1,22 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Einladung zu {{ organization.name }}{% endblock %}
+{% block preheader %}{% if inviter_name %}{{ inviter_name }} lädt Sie ein{% else %}Sie wurden eingeladen{% endif %}, {{ organization.name }} beizutreten.{% endblock %}
+{% block content %}
+<h1 class="h1">Einladung zu {{ organization.name }}</h1>
+<p>Hallo,</p>
+<p>{% if inviter_name %}<strong>{{ inviter_name }}</strong> hat Sie eingeladen{% else %}Sie wurden eingeladen{% endif %}, der Organisation <strong>{{ organization.name }}</strong> auf mandari work beizutreten.</p>
+{% if invitation.message %}
+<div class="card card-accent">
+    <p class="label">Nachricht</p>
+    <p class="pre">{{ invitation.message }}</p>
+</div>
+{% endif %}
+<div class="btn-wrap">
+    <a class="btn" href="{{ accept_url }}">Einladung annehmen</a>
+</div>
+<p class="muted small">Die Einladung ist gültig bis {{ invitation.expires_at|date:"d.m.Y, H:i" }} Uhr. Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:<br>{{ accept_url }}</p>
+<p class="muted small">Falls Sie diese Einladung nicht erwartet haben, können Sie diese E-Mail ignorieren.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>
+{% endblock %}

@@ -1,0 +1,20 @@
+# Einladung zu Fraktion Test
+
+Hallo,
+
+Anna Beispiel hat Sie eingeladen, der Organisation Fraktion Test auf mandari work beizutreten.
+
+Nachricht
+
+Hallo Eva, wir freuen uns auf dich im Team.
+
+[Einladung annehmen](https://mandari.example/work/einladung/00000000000000000000000000000701/)
+
+Die Einladung ist gültig bis 14.09.2026, 18:30 Uhr. Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:
+https://mandari.example/work/einladung/00000000000000000000000000000701/
+
+Falls Sie diese Einladung nicht erwartet haben, können Sie diese E-Mail ignorieren.
+
+Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

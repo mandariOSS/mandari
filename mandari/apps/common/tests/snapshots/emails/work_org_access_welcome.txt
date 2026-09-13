@@ -1,0 +1,15 @@
+# Willkommen bei Fraktion Test
+
+Fraktion Test
+
+Hallo Eva,
+
+deine E-Mail-Adresse ist bestätigt, und dein Zugang zu Fraktion Test ist ab sofort aktiv. Du meldest dich mit deiner E-Mail-Adresse und deinem Passwort an.
+
+[Zu Fraktion Test](https://mandari.example/work/fraktion-test/)
+
+Passwort vergessen? Auf der Anmeldeseite setzt du es über „Passwort vergessen“ neu: https://mandari.example/accounts/login/
+
+Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

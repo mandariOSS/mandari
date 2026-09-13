@@ -1,0 +1,17 @@
+# Deine Registrierung ist eingegangen
+
+Fraktion Test
+
+Hallo Eva,
+
+danke, deine E-Mail-Adresse ist bestätigt. Deine Anfrage liegt jetzt bei Fraktion Test zur Freischaltung.
+
+Wie geht es weiter?
+
+Sobald eine berechtigte Person deinen Zugang freischaltet, erhältst du eine weitere E-Mail an eva@example.org. Bis dahin musst du nichts tun.
+
+Fragen zur Freischaltung beantwortet Fraktion Test.
+
+Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

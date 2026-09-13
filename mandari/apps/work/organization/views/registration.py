@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Selbstregistrierung: Einstellungen sowie Freischalten/Ablehnen ausstehender Anfragen.
+Selbstregistrierung: Einstellungen sowie Freischalten/Ablehnen offener Anfragen.
 """
 
 from django.contrib import messages
@@ -30,10 +30,11 @@ class RegistrationSettingsView(WorkViewMixin, TemplateView):
         return context
 
     def post(self, request, *args, **kwargs):
+        # Ungesetzte Checkboxen fehlen im POST ganz; die Anwesenheit des Feldes genügt
         services.save_registration_settings(
             self.organization,
-            enabled=request.POST.get("registration_enabled") == "1",
-            auto_approve=request.POST.get("registration_auto_approve") == "1",
+            enabled="registration_enabled" in request.POST,
+            auto_approve="registration_auto_approve" in request.POST,
             domains_text=request.POST.get("registration_email_domains", ""),
             default_role_id=request.POST.get("registration_default_role", ""),
         )
@@ -42,24 +43,39 @@ class RegistrationSettingsView(WorkViewMixin, TemplateView):
 
 
 class MemberApproveView(WorkViewMixin, View):
-    """Ausstehende Selbstregistrierung freischalten."""
+    """Offene Registrierungsanfrage freischalten und die Person per E-Mail informieren."""
 
     permission_required = "members.invite"
 
     def post(self, request, *args, **kwargs):
-        membership = selectors.get_member_or_404(self.organization, kwargs["membership_id"], is_active=False)
-        services.approve_registration(membership)
-        messages.success(request, f"{membership.user.get_display_name()} wurde freigeschaltet.")
+        membership = selectors.get_pending_registration_or_404(self.organization, kwargs["membership_id"])
+        name = membership.user.get_display_name()
+        if services.approve_registration(membership, actor=self.membership):
+            messages.success(request, f"{name} wurde freigeschaltet und per E-Mail informiert.")
+        else:
+            messages.warning(
+                request,
+                f"{name} wurde freigeschaltet, die E-Mail konnte aber nicht versendet werden. "
+                "Bitte informiere die Person direkt.",
+            )
         return redirect("work:members", org_slug=self.organization.slug)
 
 
 class MemberRejectView(WorkViewMixin, View):
-    """Ausstehende Selbstregistrierung ablehnen."""
+    """Offene Registrierungsanfrage ablehnen (optional mit Begründung) und die Person informieren."""
 
     permission_required = "members.invite"
 
     def post(self, request, *args, **kwargs):
-        membership = selectors.get_member_or_404(self.organization, kwargs["membership_id"], is_active=False)
-        name = services.reject_registration(membership)
-        messages.success(request, f"Registrierungsanfrage von {name} wurde abgelehnt.")
+        membership = selectors.get_pending_registration_or_404(self.organization, kwargs["membership_id"])
+        name, mail_sent = services.reject_registration(membership, reason=request.POST.get("reason", ""))
+        if mail_sent:
+            messages.success(
+                request, f"Die Anfrage von {name} wurde abgelehnt; die Person wurde per E-Mail informiert."
+            )
+        else:
+            messages.warning(
+                request,
+                f"Die Anfrage von {name} wurde abgelehnt, die E-Mail konnte aber nicht versendet werden.",
+            )
         return redirect("work:members", org_slug=self.organization.slug)

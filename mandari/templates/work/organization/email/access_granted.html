@@ -1,0 +1,25 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}{% if variant == "reactivated" %}Zugang wieder aktiv{% elif variant == "welcome" %}Willkommen{% else %}Zugang freigeschaltet{% endif %}{% endblock %}
+{% block preheader %}Du kannst {{ organization.name }} jetzt in mandari work nutzen.{% endblock %}
+{% block content %}
+<h1 class="h1">{% if variant == "reactivated" %}Dein Zugang ist wieder aktiv{% elif variant == "welcome" %}Willkommen bei {{ organization.name }}{% else %}Dein Zugang ist freigeschaltet{% endif %}</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Hallo {{ user.first_name|default:user.email }},</p>
+<p>
+    {% if variant == "reactivated" %}dein Zugang zu {{ organization.name }} wurde wieder aktiviert.{% elif variant == "welcome" %}deine E-Mail-Adresse ist bestätigt, und dein Zugang zu {{ organization.name }} ist ab sofort aktiv.{% else %}deine Registrierung bei {{ organization.name }} wurde geprüft und freigeschaltet.{% endif %}
+    Du meldest dich mit deiner E-Mail-Adresse und deinem Passwort an.
+</p>
+<div class="btn-wrap">
+    <a class="btn" href="{{ start_url }}">Zu {{ organization.name }}</a>
+</div>
+{% if needs_two_factor %}
+<div class="card card-warning">
+    <p><strong>Zweiter Faktor erforderlich</strong></p>
+    <p>Für dein Konto ist eine Anmeldung mit zweitem Faktor vorgeschrieben. Falls noch nicht geschehen, richtest du ihn bei der nächsten Anmeldung direkt ein – halte dafür eine Authenticator-App bereit.</p>
+</div>
+{% endif %}
+<p class="muted small">Passwort vergessen? Auf der Anmeldeseite setzt du es über „Passwort vergessen“ neu: {{ login_url }}</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>
+{% endblock %}

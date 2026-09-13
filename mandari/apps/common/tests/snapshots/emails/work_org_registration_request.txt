@@ -1,0 +1,20 @@
+# Neue Registrierungsanfrage
+
+Fraktion Test
+
+Hallo Anna,
+
+eine Person hat sich über die Selbstregistrierung angemeldet und ihre E-Mail-Adresse bestätigt. Der Zugang ist erst nach der Freischaltung aktiv.
+
+Name: Eva Muster
+E-Mail: eva@example.org
+Angefragt: 14.09.2026, 18:30 Uhr
+Rolle: Mitglied
+
+[Anfrage prüfen](https://mandari.example/work/fraktion-test/organization/members/)
+
+Freischalten oder ablehnen kannst du in der Mitgliederverwaltung. Die Person wird in beiden Fällen automatisch per E-Mail informiert.
+
+Du erhältst diese E-Mail, weil du in Fraktion Test Mitglieder einladen darfst.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

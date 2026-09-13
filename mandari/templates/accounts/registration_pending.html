@@ -1,26 +1,46 @@
 {% extends "accounts/base_auth.html" %}
 
-{% block title %}Registrierung eingereicht{% endblock %}
+{% block title %}{% if state == "confirm" %}E-Mail-Adresse bestätigen{% else %}Registrierung eingereicht{% endif %}{% endblock %}
 
-{% block header_title %}Registrierung eingereicht{% endblock %}
+{% block header_title %}{% if state == "confirm" %}Fast geschafft{% else %}Registrierung eingereicht{% endif %}{% endblock %}
 {% block header_subtitle %}{{ org.name }}{% endblock %}
 
 {% block content %}
 <div class="text-center py-4">
     <div class="w-16 h-16 mx-auto mb-4 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
-        <svg class="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            {% if state == "confirm" %}
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+            {% else %}
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            {% endif %}
         </svg>
     </div>
 
     <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-        Deine Registrierung wurde eingereicht
+        {% if state == "confirm" %}Bitte bestätige deine E-Mail-Adresse{% else %}Deine Registrierung wurde eingereicht{% endif %}
     </h2>
 
-    <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 max-w-sm mx-auto">
-        Ein Administrator von <strong>{{ org.name }}</strong> muss deine Anfrage bestätigen.
-        Du wirst benachrichtigt, sobald dein Zugang freigeschaltet wurde.
+    {% if state == "confirm" %}
+    {% if mail_failed %}
+    <c-ui.alert variant="warning" class="mb-4 text-left">
+        Die Bestätigungs-E-Mail konnte gerade nicht versendet werden. Bitte versuche es später erneut.
+    </c-ui.alert>
+    {% endif %}
+    <p class="text-sm text-gray-600 dark:text-gray-400 mb-3 max-w-sm mx-auto">
+        Wir haben dir eine E-Mail an <strong>{{ email }}</strong> geschickt. Klicke auf den Link darin, um die
+        Registrierung abzuschließen.
+        {% if org.registration_auto_approve %}Danach ist dein Zugang zu {{ org.name }} sofort aktiv.{% else %}Danach prüft {{ org.name }} deine Anfrage.{% endif %}
     </p>
+    <p class="text-xs text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+        Keine E-Mail erhalten? Sieh bitte im Spam-Ordner nach. Der Link ist 48 Stunden gültig.
+    </p>
+    {% else %}
+    <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+        Eine berechtigte Person von <strong>{{ org.name }}</strong> prüft deine Anfrage.
+        Sobald dein Zugang freigeschaltet ist, erhältst du eine E-Mail an <strong>{{ email }}</strong>.
+    </p>
+    {% endif %}
 
     <div class="space-y-3">
         <a href="{% url 'accounts:login' %}"

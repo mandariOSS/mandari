@@ -1,0 +1,19 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Registrierungsanfrage{% endblock %}
+{% block preheader %}Neuigkeiten zu deiner Anfrage bei {{ organization.name }}.{% endblock %}
+{% block content %}
+<h1 class="h1">Deine Registrierungsanfrage</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Hallo {{ user.first_name|default:user.email }},</p>
+<p>deine Anfrage, {{ organization.name }} auf mandari beizutreten, wurde nicht freigeschaltet.</p>
+{% if reason %}
+<div class="card">
+    <p class="label">Begründung</p>
+    <p class="pre">{{ reason }}</p>
+</div>
+{% endif %}
+<p>Falls es sich um ein Versehen handelt, wende dich bitte direkt an {{ organization.name }}{% if organization.contact_email %} ({{ organization.contact_email }}){% endif %}.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>
+{% endblock %}

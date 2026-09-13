@@ -250,12 +250,14 @@ class TestSelbstregistrierung:
         victim.refresh_from_db()
         assert victim.check_password(PASSWORD)
 
-    def test_neues_konto_wird_angelegt_und_angemeldet(self, client: Client) -> None:
+    def test_neues_konto_tritt_erst_nach_bestaetigung_bei(self, client: Client) -> None:
         org = self._org()
-        client.post(
+        response = client.post(
             reverse("accounts:self_register", kwargs={"org_slug": org.slug}),
             self._data("neu@example.org"),
         )
+        assert response.status_code == 200
         user = User.objects.get(email="neu@example.org")
-        assert is_logged_in(client)
-        assert Membership.objects.filter(user=user, organization=org).exists()
+        # Ohne bestätigte Adresse weder Sitzung noch Mitgliedschaft (sonst Domain-Allowlist mit fremder Adresse umgehbar)
+        assert not is_logged_in(client)
+        assert not Membership.objects.filter(user=user, organization=org).exists()

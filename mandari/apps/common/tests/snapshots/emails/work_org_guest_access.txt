@@ -1,0 +1,27 @@
+# Gastzugang für Fraktion Test
+
+Hallo,
+
+Anna Beispiel hat Ihnen einen Gastzugang zur Organisation Fraktion Test auf mandari work eingerichtet. Als Gast sehen Sie ausschließlich die Dokumente, die für Sie freigegeben wurden.
+
+Nachricht
+
+Die Unterlagen zum Radwegkonzept für Ihre Stellungnahme.
+
+Für Sie freigegeben (Stufe: Kommentieren)
+
+  * Dokument: Antrag Radwegkonzept
+  * Ordner: Ausschuss Mobilität (inkl. Unterordner)
+
+Über den folgenden Link legen Sie Ihr Passwort fest und aktivieren Ihren Zugang.
+
+[Passwort festlegen](https://mandari.example/accounts/password-reset/MQ/set-password/)
+
+Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:
+https://mandari.example/accounts/password-reset/MQ/set-password/
+
+Falls Sie diese E-Mail nicht erwartet haben, können Sie sie ignorieren.
+
+Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

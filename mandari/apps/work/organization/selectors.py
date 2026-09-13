@@ -16,7 +16,7 @@ from django.db.models import Count, Q, QuerySet
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from apps.accounts.models import TrustedDevice, User, UserSession
+from apps.accounts.models import EmailVerificationToken, TrustedDevice, User, UserSession
 from apps.tenants.models import (
     AdministrationContact,
     CouncilParty,
@@ -211,21 +211,50 @@ def guests_with_share_counts(organization: Organization) -> list[Membership]:
 
 
 def inactive_members(organization: Organization) -> QuerySet[Membership]:
-    """Deaktivierte Mitgliedschaften."""
+    """Deaktivierte Mitgliedschaften (ohne offene Registrierungsanfragen)."""
     return (
-        Membership.objects.filter(organization=organization, is_active=False)
+        Membership.objects.filter(organization=organization, is_active=False, registration_requested_at__isnull=True)
         .select_related("user")
         .prefetch_related("roles")
     )
 
 
 def pending_registrations(organization: Organization) -> QuerySet[Membership]:
-    """Ausstehende Selbstregistrierungen (inaktiv, ohne angenommene Einladung)."""
+    """Offene Selbstregistrierungen: E-Mail bestätigt, Freischaltung steht aus."""
     return (
-        Membership.objects.filter(organization=organization, is_active=False, invitation_accepted_at__isnull=True)
+        Membership.objects.filter(organization=organization, is_active=False, registration_requested_at__isnull=False)
         .select_related("user")
-        .order_by("-joined_at")
+        .order_by("-registration_requested_at")
     )
+
+
+def get_pending_registration_or_404(organization: Organization, membership_id: Any) -> Membership:
+    """Offene Registrierungsanfrage der Organisation oder 404 – nie eine deaktivierte Mitgliedschaft."""
+    return get_object_or_404(
+        Membership.objects.select_related("user", "organization"),
+        id=membership_id,
+        organization=organization,
+        is_active=False,
+        registration_requested_at__isnull=False,
+    )
+
+
+def registration_reviewers(organization: Organization) -> list[Membership]:
+    """Aktive Mitglieder, die Zugänge freischalten dürfen (Berechtigung members.invite)."""
+    candidates = (
+        Membership.objects.filter(organization=organization, is_active=True, is_guest=False, user__is_active=True)
+        .select_related("user")
+        .prefetch_related("roles__permissions", "individual_permissions", "denied_permissions")
+    )
+    return [membership for membership in candidates if permission_checker(membership).has_permission("members.invite")]
+
+
+def find_registration_token(token: str) -> EmailVerificationToken | None:
+    """Gültiger, noch nicht eingelöster Bestätigungslink einer Selbstregistrierung."""
+    candidate = EmailVerificationToken.objects.select_related("user").filter(token=token).first()
+    if candidate is None or not candidate.is_valid:
+        return None
+    return candidate
 
 
 def get_member_or_404(organization: Organization, member_id: Any, **filters: Any) -> Membership:

@@ -669,18 +669,14 @@ class NotificationHub:
         new_member,  # Membership
         inviter=None,  # Membership (optional)
     ):
-        """Notify organization admins when a new member joins."""
-        # Get admin memberships
-        admins = organization.memberships.filter(
-            is_active=True,
-            role__in=["owner", "admin"],
-        ).exclude(id=new_member.id)
+        """Mitglieder benachrichtigen, die Zugänge verwalten dürfen (members.invite), wenn jemand beitritt."""
+        from apps.work.organization.selectors import registration_reviewers
 
-        if inviter:
-            admins = admins.exclude(id=inviter.id)
+        excluded = {new_member.id, inviter.id if inviter else None}
+        admins = [membership for membership in registration_reviewers(organization) if membership.id not in excluded]
 
         return cls.send_bulk(
-            recipients=list(admins),
+            recipients=admins,
             notification_type=NotificationType.MEMBER_JOINED,
             title="Neues Mitglied",
             message=f"{new_member.user.get_full_name() or new_member.user.email} ist der Organisation beigetreten.",

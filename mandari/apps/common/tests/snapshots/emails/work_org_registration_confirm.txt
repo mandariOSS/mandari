@@ -1,0 +1,18 @@
+# Bitte bestätige deine E-Mail-Adresse
+
+Fraktion Test
+
+Hallo Eva,
+
+du hast dich bei Fraktion Test auf mandari registriert. Bitte bestätige, dass diese E-Mail-Adresse dir gehört – erst danach geht es weiter.
+
+[Registrierung bestätigen](https://mandari.example/accounts/register/fraktion-test/bestaetigen/beispiel-token/)
+
+Der Link ist 48 Stunden gültig. Falls der Knopf nicht funktioniert, kopiere diese Adresse in deinen Browser:
+https://mandari.example/accounts/register/fraktion-test/bestaetigen/beispiel-token/
+
+Du hast dich nicht registriert? Dann ignoriere diese E-Mail. Ohne Bestätigung entsteht keine Anfrage, und niemand erhält Zugang.
+
+Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

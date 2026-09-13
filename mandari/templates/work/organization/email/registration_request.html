@@ -1,0 +1,38 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Neue Registrierungsanfrage{% endblock %}
+{% block preheader %}{{ applicant_name }} möchte {{ organization.name }} beitreten.{% endblock %}
+{% block content %}
+<h1 class="h1">Neue Registrierungsanfrage</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Hallo {{ recipient.first_name|default:recipient.email }},</p>
+<p>eine Person hat sich über die Selbstregistrierung angemeldet und ihre E-Mail-Adresse bestätigt. Der Zugang ist erst nach der Freischaltung aktiv.</p>
+<div class="card">
+    <table role="presentation" class="table" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+            <td class="key">Name:</td>
+            <td>{{ applicant_name }}</td>
+        </tr>
+        <tr>
+            <td class="key">E-Mail:</td>
+            <td>{{ applicant.email }}</td>
+        </tr>
+        <tr>
+            <td class="key">Angefragt:</td>
+            <td>{{ membership.registration_requested_at|date:"d.m.Y, H:i" }} Uhr</td>
+        </tr>
+        {% if default_role %}
+        <tr>
+            <td class="key">Rolle:</td>
+            <td>{{ default_role.name }}</td>
+        </tr>
+        {% endif %}
+    </table>
+</div>
+<div class="btn-wrap">
+    <a class="btn" href="{{ review_url }}">Anfrage prüfen</a>
+</div>
+<p class="muted small">Freischalten oder ablehnen kannst du in der Mitgliederverwaltung. Die Person wird in beiden Fällen automatisch per E-Mail informiert.</p>
+{% endblock %}
+{% block footer %}
+<p>Du erhältst diese E-Mail, weil du in {{ organization.name }} Mitglieder einladen darfst.</p>
+{% endblock %}

@@ -62,11 +62,12 @@ def test_invite_member_creates_invitation_and_blocks_duplicates(org: Any, admin:
         services.invite_member(org, admin.user, member.user.email, [], "")
     assert "bereits Mitglied" in str(excinfo.value)
 
-    # Inaktive Mitgliedschaft wird reaktiviert statt neu eingeladen
+    # Inaktive Mitgliedschaft wird reaktiviert statt neu eingeladen – mit Mail an die Person
     member.is_active = False
     member.save()
     assert (
-        services.invite_member(org, admin.user, member.user.email, [], "") == f"{member.user.email} wurde reaktiviert."
+        services.invite_member(org, admin.user, member.user.email, [], "")
+        == f"{member.user.email} wurde reaktiviert und per E-Mail informiert."
     )
     member.refresh_from_db()
     assert member.is_active is True

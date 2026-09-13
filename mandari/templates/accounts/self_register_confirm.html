@@ -1,0 +1,33 @@
+{% extends "accounts/base_auth.html" %}
+
+{% block title %}Registrierung bestätigen — {{ org.name }}{% endblock %}
+
+{% block header_title %}Registrierung bestätigen{% endblock %}
+{% block header_subtitle %}{{ org.name }}{% endblock %}
+
+{% block content %}
+{% if invalid %}
+<c-ui.alert variant="warning" class="mb-6">
+    Dieser Bestätigungslink ist ungültig, abgelaufen oder wurde bereits verwendet.
+</c-ui.alert>
+<p class="text-center text-sm">
+    <a href="{% url 'accounts:self_register' org_slug=org.slug %}" class="font-medium text-primary-600 hover:underline dark:text-primary-400">Erneut registrieren</a>
+    ·
+    <a href="{% url 'accounts:login' %}" class="font-medium text-primary-600 hover:underline dark:text-primary-400">Zur Anmeldung</a>
+</p>
+{% elif error %}
+<c-ui.alert variant="warning" class="mb-6">{{ error }}</c-ui.alert>
+<p class="text-center text-sm">
+    <a href="{% url 'accounts:login' %}" class="font-medium text-primary-600 hover:underline dark:text-primary-400">Zur Anmeldung</a>
+</p>
+{% else %}
+<p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
+    Bestätige, dass die Adresse <strong>{{ email }}</strong> dir gehört, um deine Registrierung bei
+    {{ org.name }} abzuschließen.
+</p>
+<form method="post">
+    {% csrf_token %}
+    <c-ui.button type="submit" size="lg" full>Registrierung bestätigen</c-ui.button>
+</form>
+{% endif %}
+{% endblock %}

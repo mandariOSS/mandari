@@ -1,0 +1,34 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Gastzugang für {{ organization.name }}{% endblock %}
+{% block preheader %}{{ inviter_name }} hat Ihnen einen Gastzugang eingerichtet.{% endblock %}
+{% block content %}
+<h1 class="h1">Gastzugang für {{ organization.name }}</h1>
+<p>Hallo,</p>
+<p><strong>{{ inviter_name }}</strong> hat Ihnen einen Gastzugang zur Organisation <strong>{{ organization.name }}</strong> auf mandari work eingerichtet. Als Gast sehen Sie ausschließlich die Dokumente, die für Sie freigegeben wurden.</p>
+{% if note %}
+<div class="card card-accent">
+    <p class="label">Nachricht</p>
+    <p class="pre">{{ note }}</p>
+</div>
+{% endif %}
+{% if shared_docs or shared_folders %}
+<p class="label">Für Sie freigegeben (Stufe: {{ level_label }})</p>
+<ul class="list">
+    {% for motion in shared_docs %}
+    <li>Dokument: {{ motion.title }}</li>
+    {% endfor %}
+    {% for folder in shared_folders %}
+    <li>Ordner: {{ folder.name }} (inkl. Unterordner)</li>
+    {% endfor %}
+</ul>
+{% endif %}
+<p>{{ action_hint }}</p>
+<div class="btn-wrap">
+    <a class="btn" href="{{ target_url }}">{{ action_label }}</a>
+</div>
+<p class="muted small">Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:<br>{{ target_url }}</p>
+<p class="muted small">Falls Sie diese E-Mail nicht erwartet haben, können Sie sie ignorieren.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>
+{% endblock %}

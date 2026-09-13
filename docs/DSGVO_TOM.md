@@ -67,7 +67,9 @@ als Anlage zum Auftragsverarbeitungsvertrag ([AVV-Muster](DSGVO_AVV_MUSTER.md)).
 
 - Prinzip der geringsten Rechte bei Rollenzuweisung (Standard-Rollen mit
   abgestuften Rechten).
-- Einladungsbasierte Konten (keine Selbstregistrierung in Mandanten).
+- Einladungsbasierte Konten; Selbstregistrierung nur, wenn eine Organisation sie
+  aktiviert – mit bestätigter E-Mail-Adresse, Domain-Allowlist und optionaler
+  Freischaltung durch Berechtigte (keine Selbstregistrierung in Session-Mandanten).
 - Quelloffener Code (AGPL-3.0-or-later) — überprüfbare Sicherheitsmaßnahmen.
 - Regelmäßige automatisierte Testläufe (Smoke-Suiten) inkl. Permission- und
   Mandanten-Isolationstests vor jedem Release.

@@ -1,0 +1,17 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Registrierung eingegangen{% endblock %}
+{% block preheader %}Deine Anfrage liegt bei {{ organization.name }} zur Freischaltung.{% endblock %}
+{% block content %}
+<h1 class="h1">Deine Registrierung ist eingegangen</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Hallo {{ user.first_name|default:user.email }},</p>
+<p>danke, deine E-Mail-Adresse ist bestätigt. Deine Anfrage liegt jetzt bei {{ organization.name }} zur Freischaltung.</p>
+<div class="card card-accent">
+    <p><strong>Wie geht es weiter?</strong></p>
+    <p>Sobald eine berechtigte Person deinen Zugang freischaltet, erhältst du eine weitere E-Mail an {{ user.email }}. Bis dahin musst du nichts tun.</p>
+</div>
+<p class="muted small">Fragen zur Freischaltung beantwortet {{ organization.name }}{% if organization.contact_email %} unter {{ organization.contact_email }}{% endif %}.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>
+{% endblock %}

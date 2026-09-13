@@ -403,6 +403,92 @@ def work_notification(org: Any, make_member: Any) -> dict[str, Any]:
     }
 
 
+def _ns(**attributes: Any) -> Any:
+    """Feste Beispielobjekte ohne Datenbank – Ablaufzeiten und IDs bleiben im Snapshot stabil."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(**attributes)
+
+
+def _eva() -> Any:
+    return _ns(first_name="Eva", email="eva@example.org")
+
+
+def work_org_invitation(org: Any, make_member: Any) -> dict[str, Any]:
+    return {
+        "organization": org,
+        "invitation": _ns(message="Hallo Eva,\nwir freuen uns auf dich im Team.", expires_at=WHEN),
+        "inviter_name": "Anna Beispiel",
+        "accept_url": f"{SITE_URL}/work/einladung/{_uuid(0x701).hex}/",
+    }
+
+
+def work_org_guest_access(org: Any, make_member: Any) -> dict[str, Any]:
+    return {
+        "organization": org,
+        "inviter_name": "Anna Beispiel",
+        "note": "Die Unterlagen zum Radwegkonzept für Ihre Stellungnahme.",
+        "shared_docs": [_ns(title="Antrag Radwegkonzept")],
+        "shared_folders": [_ns(name="Ausschuss Mobilität")],
+        "level_label": "Kommentieren",
+        "action_hint": "Über den folgenden Link legen Sie Ihr Passwort fest und aktivieren Ihren Zugang.",
+        "action_label": "Passwort festlegen",
+        "target_url": f"{SITE_URL}/accounts/password-reset/MQ/set-password/",
+    }
+
+
+def work_org_registration_confirm(org: Any, make_member: Any) -> dict[str, Any]:
+    return {
+        "organization": org,
+        "user": _eva(),
+        "confirm_url": f"{SITE_URL}/accounts/register/{org.slug}/bestaetigen/beispiel-token/",
+        "valid_hours": 48,
+    }
+
+
+def work_org_registration_received(org: Any, make_member: Any) -> dict[str, Any]:
+    return {"organization": org, "user": _eva(), "membership": _ns(registration_requested_at=WHEN)}
+
+
+def work_org_registration_request(org: Any, make_member: Any) -> dict[str, Any]:
+    return {
+        "organization": org,
+        "recipient": _ns(first_name="Anna", email="anna@example.org"),
+        "applicant": _eva(),
+        "applicant_name": "Eva Muster",
+        "membership": _ns(registration_requested_at=WHEN),
+        "default_role": _ns(name="Mitglied"),
+        "review_url": f"{SITE_URL}/work/{org.slug}/organization/members/",
+    }
+
+
+def _access_granted(org: Any, variant: str, needs_two_factor: bool) -> dict[str, Any]:
+    return {
+        "organization": org,
+        "user": _eva(),
+        "variant": variant,
+        "start_url": f"{SITE_URL}/work/{org.slug}/",
+        "login_url": f"{SITE_URL}/accounts/login/",
+        "needs_two_factor": needs_two_factor,
+    }
+
+
+def work_org_access_approved(org: Any, make_member: Any) -> dict[str, Any]:
+    return _access_granted(org, "approved", needs_two_factor=True)
+
+
+def work_org_access_welcome(org: Any, make_member: Any) -> dict[str, Any]:
+    return _access_granted(org, "welcome", needs_two_factor=False)
+
+
+def work_org_registration_rejected(org: Any, make_member: Any) -> dict[str, Any]:
+    return {
+        "organization": org,
+        "user": _eva(),
+        "reason": "Die Registrierung ist Mitgliedern der Fraktion vorbehalten.\nBitte melde dich bei der Geschäftsstelle.",
+    }
+
+
 @dataclass(frozen=True)
 class MailCase:
     name: str
@@ -433,6 +519,30 @@ CASES = [
     MailCase("work_faction_invitation", "work/faction/email/invitation.html", work_faction_invitation),
     MailCase("work_faction_reminder", "work/faction/email/reminder.html", work_faction_reminder),
     MailCase("work_notification", "work/notifications/email/notification.html", work_notification),
+    MailCase("work_org_invitation", "work/organization/email/invitation.html", work_org_invitation),
+    MailCase("work_org_guest_access", "work/organization/email/guest_access.html", work_org_guest_access),
+    MailCase(
+        "work_org_registration_confirm",
+        "work/organization/email/registration_confirm.html",
+        work_org_registration_confirm,
+    ),
+    MailCase(
+        "work_org_registration_received",
+        "work/organization/email/registration_received.html",
+        work_org_registration_received,
+    ),
+    MailCase(
+        "work_org_registration_request",
+        "work/organization/email/registration_request.html",
+        work_org_registration_request,
+    ),
+    MailCase("work_org_access_approved", "work/organization/email/access_granted.html", work_org_access_approved),
+    MailCase("work_org_access_welcome", "work/organization/email/access_granted.html", work_org_access_welcome),
+    MailCase(
+        "work_org_registration_rejected",
+        "work/organization/email/registration_rejected.html",
+        work_org_registration_rejected,
+    ),
 ]
 
 ALL_MAIL_TEMPLATES = sorted({case.template for case in CASES})

@@ -83,6 +83,21 @@
             </select>
         </div>
 
+        <!-- E-Mails zur Registrierung -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-1">E-Mails zur Registrierung</h3>
+            <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-600 dark:text-gray-300">
+                <li>Bestätigungslink an die angegebene Adresse – ohne Bestätigung entsteht keine Anfrage.</li>
+                <li>Eingangsbestätigung an die Person und eine Anfrage an alle, die Mitglieder einladen dürfen.</li>
+                <li>Nachricht bei Freischaltung (mit Link zu {{ organization.name }}) oder Ablehnung (mit optionaler Begründung).</li>
+            </ul>
+            <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">
+                Versand über den
+                <a href="{% url 'work:organization_email_settings' org_slug=organization.slug %}" class="font-medium text-primary-600 hover:underline dark:text-primary-400">Versandweg der Organisation</a>
+                – mit eigenem SMTP, sofern eingerichtet.
+            </p>
+        </div>
+
         <!-- Speichern -->
         <div class="flex justify-end">
             <button type="submit"

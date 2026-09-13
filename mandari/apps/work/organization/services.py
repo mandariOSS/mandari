@@ -26,8 +26,7 @@ from django.db import transaction
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.accounts.models import User
-from apps.common.email import send_email
+from apps.accounts.models import EmailVerificationToken, User
 from apps.tenants.models import (
     AdministrationContact,
     CouncilParty,
@@ -38,7 +37,7 @@ from apps.tenants.models import (
     UserInvitation,
 )
 
-from . import selectors
+from . import emails, selectors
 from .models import DataExport, MemberAbsence, MemberChangeRequest
 
 if TYPE_CHECKING:
@@ -99,70 +98,21 @@ def _save_organization(organization: Organization, **kwargs: Any) -> None:
 
 
 def send_invitation_email(organization: Organization, invitation: UserInvitation) -> bool:
-    """Einladungs-Mail mit Annahme-Link (SITE_URL, nicht Request-Host) versenden."""
-    base_url = _site_url("https://volt.mandari.de")
-    accept_url = base_url + reverse("work:accept_invitation", kwargs={"token": invitation.token})
-    inviter = display_name(invitation.invited_by) if invitation.invited_by else ""
-    valid_until = invitation.expires_at.strftime("%d.%m.%Y um %H:%M Uhr")
-    subject = f"Einladung zu {organization.name}"
-
-    html_message = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <h2>Einladung zu {organization.name}</h2>
-            <p>Hallo,</p>
-            <p>Sie wurden von <strong>{inviter}</strong>
-               eingeladen, der Organisation <strong>{organization.name}</strong> auf Mandari Work beizutreten.</p>
-
-            {f"<p><em>Nachricht: {invitation.message}</em></p>" if invitation.message else ""}
-
-            <p>
-                <a href="{accept_url}"
-                   style="display: inline-block; padding: 12px 24px; background-color: #4f46e5;
-                          color: white; text-decoration: none; border-radius: 6px;">
-                    Einladung annehmen
-                </a>
-            </p>
-
-            <p style="color: #666; font-size: 14px;">
-                Diese Einladung ist gültig bis zum {valid_until}.
-            </p>
-
-            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="color: #999; font-size: 12px;">
-                Falls Sie diese Einladung nicht erwartet haben, können Sie diese E-Mail ignorieren.
-            </p>
-        </body>
-        </html>
-        """
-
-    plain_message = f"""
-Einladung zu {organization.name}
-
-Hallo,
-
-Sie wurden von {inviter} eingeladen,
-der Organisation {organization.name} auf Mandari Work beizutreten.
-
-{f"Nachricht: {invitation.message}" if invitation.message else ""}
-
-Klicken Sie auf folgenden Link, um die Einladung anzunehmen:
-{accept_url}
-
-Diese Einladung ist gültig bis zum {valid_until}.
-
-Falls Sie diese Einladung nicht erwartet haben, können Sie diese E-Mail ignorieren.
-        """
-
-    success = send_email(
-        subject=subject,
-        body=plain_message,
-        to=[invitation.email],
-        html_body=html_message,
-        fail_silently=True,  # Die Einladung bleibt auch ohne Mail bestehen
+    """Einladungs-Mail mit Annahme-Link über den Versandweg der Organisation; die Einladung bleibt auch ohne Mail."""
+    accept_url = emails.absolute_url(reverse("work:accept_invitation", kwargs={"token": invitation.token}))
+    success = emails.send_organization_mail(
+        organization,
+        template="invitation.html",
+        subject=f"Einladung zu {organization.name}",
+        to=invitation.email,
+        context={
+            "invitation": invitation,
+            "inviter_name": display_name(invitation.invited_by) if invitation.invited_by else "",
+            "accept_url": accept_url,
+        },
     )
     if not success:
-        logger.error(f"Failed to send invitation email to {invitation.email}")
+        logger.error("Einladungs-Mail der Organisation %s konnte nicht versendet werden", organization.slug)
     return success
 
 
@@ -181,8 +131,10 @@ def invite_member(organization: Organization, inviter: User, email: str, role_id
             if existing_membership.is_active:
                 raise ServiceError(f"{email} ist bereits Mitglied dieser Organisation.", message_levels.WARNING)
             existing_membership.is_active = True
+            existing_membership.registration_requested_at = None
             existing_membership.save()
-            return f"{email} wurde reaktiviert."
+            emails.send_access_granted(existing_membership, "reactivated")
+            return f"{email} wurde reaktiviert und per E-Mail informiert."
 
     if selectors.find_pending_invitation(organization, email):
         raise ServiceError(f"Eine Einladung für {email} ist bereits ausstehend.", message_levels.WARNING)
@@ -294,39 +246,38 @@ def send_guest_access_email(
     from django.utils.encoding import force_bytes
     from django.utils.http import urlsafe_base64_encode
 
-    base_url = _site_url("https://mandari.de")
-
-    if user_created or not user.has_usable_password():
+    sets_password = user_created or not user.has_usable_password()
+    if sets_password:
         uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        target_url = base_url + reverse("accounts:password_reset_confirm", kwargs={"uidb64": uidb64, "token": token})
-        action_hint = "Über den folgenden Link legen Sie Ihr Passwort fest und aktivieren Ihren Zugang:"
+        target_path = reverse("accounts:password_reset_confirm", kwargs={"uidb64": uidb64, "token": token})
+        action_hint = "Über den folgenden Link legen Sie Ihr Passwort fest und aktivieren Ihren Zugang."
+        action_label = "Passwort festlegen"
     else:
-        target_url = base_url + reverse("work:guest_documents", kwargs={"org_slug": organization.slug})
-        action_hint = "Ihre freigegebenen Dokumente finden Sie hier:"
+        target_path = reverse("work:guest_documents", kwargs={"org_slug": organization.slug})
+        action_hint = "Ihre freigegebenen Dokumente finden Sie hier."
+        action_label = "Freigegebene Dokumente öffnen"
 
-    level_label = dict(GUEST_SHARE_LEVELS).get(share_level, share_level)
-    share_lines = ""
-    if shared_docs or shared_folders:
-        items = [f"- Dokument: {motion.title}" for motion in shared_docs]
-        items += [f"- Ordner: {folder.name} (inkl. Unterordner)" for folder in shared_folders]
-        share_lines = f"Für Sie freigegeben (Stufe: {level_label}):\n" + "\n".join(items) + "\n\n"
-
-    subject = f"Gastzugang für {organization.name}"
-    plain_message = (
-        f"Hallo,\n\n"
-        f"{display_name(inviter)} hat Ihnen einen Gastzugang zur Organisation "
-        f"{organization.name} auf Mandari Work eingerichtet.\n\n"
-        f"Als Gast sehen Sie ausschließlich die Dokumente, die für Sie freigegeben wurden.\n\n"
-        f"{f'Nachricht: {note}' + chr(10) + chr(10) if note else ''}"
-        f"{share_lines}"
-        f"{action_hint}\n{target_url}\n\n"
-        f"Falls Sie diese E-Mail nicht erwartet haben, können Sie sie ignorieren.\n"
+    success = emails.send_organization_mail(
+        organization,
+        template="guest_access.html",
+        subject=f"Gastzugang für {organization.name}",
+        to=user.email,
+        context={
+            "inviter_name": display_name(inviter),
+            "note": note,
+            "shared_docs": list(shared_docs),
+            "shared_folders": list(shared_folders),
+            "level_label": dict(GUEST_SHARE_LEVELS).get(share_level, share_level),
+            "action_hint": action_hint,
+            "action_label": action_label,
+            "target_url": emails.absolute_url(target_path),
+        },
+        # Links zum Setzen eines Passworts laufen nie über fremde Mailserver
+        via_organization=not sets_password,
     )
-
-    success = send_email(subject=subject, body=plain_message, to=[user.email], fail_silently=True)
     if not success:
-        logger.error(f"Failed to send guest invitation email to {user.email}")
+        logger.error("Gastzugangs-Mail der Organisation %s konnte nicht versendet werden", organization.slug)
     return success
 
 
@@ -491,12 +442,18 @@ def deactivate_member(organization: Organization, member: Membership, actor_user
     member.save()
 
 
-def reactivate_member(organization: Organization, member: Membership) -> None:
-    """Mitglied reaktivieren; das Gast-Limit gilt auch hier (sonst per Deaktivieren/Reaktivieren umgehbar)."""
+def reactivate_member(organization: Organization, member: Membership) -> bool:
+    """
+    Mitglied reaktivieren und per E-Mail informieren; liefert, ob die Mail versendet wurde.
+    Das Gast-Limit gilt auch hier (sonst per Deaktivieren/Reaktivieren umgehbar).
+    """
     if member.is_guest and not member.is_active and not organization.has_free_guest_slot():
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
+    variant: emails.AccessVariant = "approved" if member.registration_requested_at else "reactivated"
     member.is_active = True
+    member.registration_requested_at = None
     member.save()
+    return emails.send_access_granted(member, variant)
 
 
 def remove_member(organization: Organization, member: Membership, actor_user: User) -> str:
@@ -556,17 +513,115 @@ def update_sworn_in(member: Membership, actor: Membership, is_sworn_in: bool) ->
     member.save()
 
 
-def approve_registration(membership: Membership) -> None:
-    """Ausstehende Selbstregistrierung freischalten."""
+# ---------------------------------------------------------------------------
+# Selbstregistrierung
+# ---------------------------------------------------------------------------
+
+REGISTRATION_CONFIRM_VALID_HOURS = 48
+REJECTION_REASON_MAX_LENGTH = 1000
+
+
+def _ensure_registration_open(organization: Organization, email: str) -> None:
+    if not organization.registration_enabled or not organization.is_email_allowed_for_registration(email):
+        raise ServiceError("Eine Registrierung bei dieser Organisation ist mit dieser E-Mail-Adresse nicht möglich.")
+
+
+def start_self_registration(organization: Organization, user: User) -> bool:
+    """
+    Selbstregistrierung beginnen: Bestätigungslink an die Adresse des Kontos senden (``True`` bei Versand).
+
+    Die Mitgliedschaft entsteht erst mit :func:`confirm_self_registration`. So beweist die Person, dass
+    ihr die Adresse gehört – die Domain-Allowlist lässt sich nicht mit fremden Adressen umgehen.
+    """
+    _ensure_registration_open(organization, user.email)
+    token = EmailVerificationToken.create_for_user(user, valid_hours=REGISTRATION_CONFIRM_VALID_HOURS)
+    return emails.send_registration_confirmation(organization, user, str(token.token), REGISTRATION_CONFIRM_VALID_HOURS)
+
+
+def join_by_self_registration(organization: Organization, user: User) -> Membership:
+    """
+    Mitgliedschaft für eine bestätigte Adresse anlegen – sofort aktiv oder als offene Anfrage – und
+    Person sowie Freigebende informieren. Eine bestehende Mitgliedschaft bleibt unverändert.
+    """
+    _ensure_registration_open(organization, user.email)
+    auto_approve = organization.registration_auto_approve
+    with transaction.atomic():
+        membership, created = Membership.objects.get_or_create(
+            user=user,
+            organization=organization,
+            defaults={
+                "is_active": auto_approve,
+                "registration_requested_at": None if auto_approve else timezone.now(),
+            },
+        )
+        if created and organization.registration_default_role is not None:
+            membership.roles.add(organization.registration_default_role)
+    if created:
+        announce_self_registration(membership)
+    return membership
+
+
+def confirm_self_registration(organization: Organization, token: EmailVerificationToken) -> Membership:
+    """Bestätigungslink einlösen (einmalig), Adresse als bestätigt markieren und beitreten."""
+    user = token.user
+    if user.email.lower() != token.email.lower():
+        raise ServiceError("Dieser Link gehört zu einer früheren E-Mail-Adresse. Bitte registriere dich erneut.")
+    _ensure_registration_open(organization, user.email)
+    token.verified_at = timezone.now()
+    token.save(update_fields=["verified_at"])
+    if not user.email_verified:
+        user.email_verified = True
+        user.save(update_fields=["email_verified"])
+    return join_by_self_registration(organization, user)
+
+
+def announce_self_registration(membership: Membership) -> None:
+    """Nach dem Beitritt per Selbstregistrierung: Mail an die Person, bei offener Anfrage auch an die Freigebenden."""
+    organization = membership.organization
+    if membership.is_active:
+        emails.send_access_granted(membership, "welcome")
+        _hub().notify_member_joined(organization, membership)
+        return
+
+    emails.send_registration_received(membership)
+    reviewers = selectors.registration_reviewers(organization)
+    recipients = [reviewer.user for reviewer in reviewers]
+    if not recipients and organization.owner is not None and organization.owner.is_active:
+        # Niemand darf freischalten: wenigstens der Eigentümer erfährt von der Anfrage
+        recipients = [organization.owner]
+    emails.send_registration_request(membership, recipients)
+    if reviewers:
+        _hub().send_bulk(
+            recipients=reviewers,
+            notification_type=_notification_types().REGISTRATION_REQUEST,
+            title="Neue Registrierungsanfrage",
+            message=f"{display_name(membership.user)} möchte {organization.name} beitreten und wartet auf Freischaltung.",
+            link=reverse("work:members", kwargs={"org_slug": organization.slug}),
+            metadata={"member_id": str(membership.id)},
+            send_email=False,
+        )
+
+
+def approve_registration(membership: Membership, actor: Membership | None = None) -> bool:
+    """Offene Registrierungsanfrage freischalten und die Person informieren; liefert, ob die Mail rausging."""
     membership.is_active = True
-    membership.save(update_fields=["is_active"])
+    membership.registration_requested_at = None
+    membership.save(update_fields=["is_active", "registration_requested_at", "updated_at"])
+    _hub().notify_member_joined(membership.organization, membership, inviter=actor)
+    return emails.send_access_granted(membership, "approved")
 
 
-def reject_registration(membership: Membership) -> str:
-    """Ausstehende Selbstregistrierung ablehnen (löschen); liefert den Anzeigenamen."""
-    name = membership.user.get_display_name()
+def reject_registration(membership: Membership, reason: str = "") -> tuple[str, bool]:
+    """
+    Offene Registrierungsanfrage ablehnen (Mitgliedschaft löschen) und die Person informieren,
+    optional mit Begründung. Liefert Anzeigenamen und ob die Mail versendet wurde.
+    """
+    user = membership.user
+    organization = membership.organization
+    name = user.get_display_name()
     membership.delete()
-    return name
+    sent = emails.send_registration_rejected(organization, user, reason.strip()[:REJECTION_REASON_MAX_LENGTH])
+    return name, sent
 
 
 # ---------------------------------------------------------------------------
