@@ -139,9 +139,8 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
         messages.success(request, "Parteizugehörigkeit gespeichert.")
 
     def _update_security(self, request):
-        services.update_two_factor_requirement(
-            self.organization, required=request.POST.get("require_2fa") in ("1", "on")
-        )
+        # Ungesetzte Checkboxen fehlen im POST ganz; die Anwesenheit des Feldes genügt
+        services.update_two_factor_requirement(self.organization, required="require_2fa" in request.POST)
         messages.success(request, "Anmeldesicherheit gespeichert.")
 
 
