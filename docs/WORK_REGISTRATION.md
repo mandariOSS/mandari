@@ -10,8 +10,14 @@ mandari work. Code: `apps/work/organization/emails.py` (Versand), `services.py` 
 Alle Mails laufen über `apps.common.org_email.send_org_email`, also über den Weg, den die
 Organisation unter *Organisation → E-Mail-Einstellungen* gewählt hat:
 
-- **mandari-Standardversand** (Voreinstellung) oder
-- **eigenes SMTP der Organisation** – mit optionalem Rückfall auf mandari bei SMTP-Fehlern.
+- **mandari-Standardversand** (Voreinstellung; auch wenn „eigenes SMTP“ gewählt, aber kein Server
+  eingetragen ist) oder
+- **eigenes SMTP der Organisation** mit deren Absender.
+
+Rückfall: Schlägt das eigene SMTP fehl und ist „Bei SMTP-Fehler auf mandari-Versand zurückfallen“
+aktiv (Voreinstellung), geht die Mail über den mandari-Standardversand – SMTP-Konfiguration und
+Absender aus den Site-Einstellungen, ersatzweise aus den Umgebungsvariablen. Ohne Rückfall wird der
+Fehler protokolliert; Freischalten und Ablehnen zeigen ihn in der Oberfläche an.
 
 Ausnahmen: Links, mit denen sich ein Passwort setzen lässt (Gastzugang für neue Konten,
 Passwort-Zurücksetzen), gehen immer über mandari. Antworten landen bei der Kontaktadresse der

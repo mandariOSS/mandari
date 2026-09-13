@@ -15,9 +15,11 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from django.contrib.messages import get_messages
 from django.core import mail
 from django.core.cache import cache
 from django.core.mail import get_connection
+from django.core.mail.backends.base import BaseEmailBackend
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -246,6 +248,38 @@ def test_einladung_laeuft_ueber_smtp_der_organisation(org: Any, reviewer: Any) -
     html = message.alternatives[0][0]
     assert "&lt;script&gt;" in html
     assert "<script>" not in html
+
+
+class FailingBackend(BaseEmailBackend):
+    """SMTP der Organisation nicht erreichbar."""
+
+    def send_messages(self, email_messages: Any) -> int:
+        raise OSError("SMTP nicht erreichbar")
+
+
+def test_smtp_fehler_faellt_auf_mandari_standardversand_zurueck(org: Any, reviewer: Any) -> None:
+    use_own_smtp(org)
+    assert org.smtp_fallback_to_mandari is True
+    pending = pending_membership(org, "anfrage@example.org")
+    with mock.patch("apps.common.org_email.get_organization_connection", return_value=FailingBackend()):
+        assert services.approve_registration(pending, actor=reviewer) is True
+    message = mails_to("anfrage@example.org")[0]
+    assert "fraktion@example.org" not in message.from_email
+
+
+def test_ohne_rueckfall_meldet_work_den_versandfehler(client_for: Any, org: Any, reviewer: Any) -> None:
+    use_own_smtp(org)
+    org.smtp_fallback_to_mandari = False
+    org.save()
+    pending = pending_membership(org, "anfrage@example.org")
+    with mock.patch("apps.common.org_email.get_organization_connection", return_value=FailingBackend()):
+        response = client_for(reviewer.user).post(
+            reverse("work:member_approve", kwargs={"org_slug": org.slug, "membership_id": pending.id})
+        )
+    pending.refresh_from_db()
+    assert pending.is_active is True
+    assert not mails_to("anfrage@example.org")
+    assert any("nicht versendet" in str(message) for message in get_messages(response.wsgi_request))
 
 
 def test_passwort_links_fuer_gaeste_laufen_nie_ueber_fremdes_smtp(org: Any, make_member: Any) -> None:
