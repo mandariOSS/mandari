@@ -125,7 +125,7 @@ async function register(root: HTMLElement): Promise<void> {
     publicKey: creationOptions(options),
   })) as PublicKeyCredential | null
   if (!credential) throw new Error('Es wurde kein Schlüssel erstellt.')
-  const name = root.querySelector<HTMLInputElement>('[data-webauthn-name]')?.value ?? ''
+  const name = root.querySelector<HTMLInputElement>('input[name="key_name"]')?.value ?? ''
   await postJson(root.dataset.verifyUrl ?? '', csrf, { credential: serializeCredential(credential), name })
   window.location.reload()
 }

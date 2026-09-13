@@ -61,9 +61,7 @@
          data-options-url="{% url 'accounts:webauthn_register_options' %}"
          data-verify-url="{% url 'accounts:webauthn_register' %}"
          data-csrf="{{ csrf_token }}">
-        <label for="id_key_name" class="block text-sm font-medium text-gray-900 dark:text-white">Bezeichnung des neuen Schlüssels</label>
-        <input id="id_key_name" type="text" maxlength="100" placeholder="z. B. YubiKey Schlüsselbund" data-webauthn-name
-               class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-700 dark:bg-gray-800">
+        <c-form.field name="key_name" label="Bezeichnung des neuen Schlüssels" placeholder="z. B. YubiKey Schlüsselbund" autocomplete="off" />
         <button type="button" data-webauthn-start
                 class="w-full rounded-xl bg-primary-600 px-4 py-3 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60">
             Sicherheitsschlüssel hinzufügen

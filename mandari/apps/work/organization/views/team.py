@@ -139,7 +139,9 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
         messages.success(request, "Parteizugehörigkeit gespeichert.")
 
     def _update_security(self, request):
-        services.update_two_factor_requirement(self.organization, required=request.POST.get("require_2fa") == "1")
+        services.update_two_factor_requirement(
+            self.organization, required=request.POST.get("require_2fa") in ("1", "on")
+        )
         messages.success(request, "Anmeldesicherheit gespeichert.")
 
 

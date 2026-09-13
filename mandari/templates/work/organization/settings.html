@@ -220,14 +220,10 @@
         <form method="post" class="space-y-4">
             {% csrf_token %}
             <input type="hidden" name="action" value="update_security">
-            <label class="flex items-start gap-3 cursor-pointer">
-                <input type="checkbox" name="require_2fa" value="1" {% if organization.require_2fa %}checked{% endif %}
-                       class="mt-1 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
-                <span>
-                    <span class="block text-sm font-medium text-gray-900 dark:text-white">Zwei-Faktor-Authentifizierung für alle Mitglieder verpflichtend</span>
-                    <span class="block text-xs text-gray-500 dark:text-gray-400">Wer noch keinen zweiten Faktor hat, richtet ihn bei der nächsten Anmeldung ein.</span>
-                </span>
-            </label>
+            <div>
+                <c-form.checkbox name="require_2fa" label="Zwei-Faktor-Authentifizierung für alle Mitglieder verpflichtend" :checked="organization.require_2fa" />
+                <p class="ml-6 text-xs text-gray-500 dark:text-gray-400">Wer noch keinen zweiten Faktor hat, richtet ihn bei der nächsten Anmeldung ein.</p>
+            </div>
             <div class="flex justify-end pt-2">
                 <button type="submit"
                         class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 shadow-sm">

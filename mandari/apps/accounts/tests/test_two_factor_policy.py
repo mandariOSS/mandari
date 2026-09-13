@@ -318,6 +318,9 @@ class TestSettingsToggles:
         assert response.status_code == 302
         organization.refresh_from_db()
         assert organization.require_2fa
+        page = client.get(reverse("work:organization", kwargs={"org_slug": organization.slug}))
+        assert page.status_code == 200
+        assert 'name="require_2fa"' in page.content.decode()
 
     def test_work_mitglied_ohne_recht_aendert_nichts(self, client: Client, settings: Any) -> None:
         settings.TWO_FACTOR_ENFORCEMENT = False
