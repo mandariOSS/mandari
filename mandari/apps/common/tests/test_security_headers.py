@@ -86,10 +86,14 @@ def test_inline_scripts_carry_csp_nonce(client: Client) -> None:
     assert match, header
     nonce = match.group(1)
     html = response.content.decode()
+    # Gross-/Kleinschreibung ignorieren: <SCRIPT> ist fuer den Browser dasselbe Tag
+    # und duerfte sonst unbemerkt ohne Nonce durchrutschen.
     inline = [
         tag
-        for tag in re.findall(r"<script\b[^>]*>", html)
-        if "src=" not in tag and "application/json" not in tag and "application/ld+json" not in tag
+        for tag in re.findall(r"<script\b[^>]*>", html, re.IGNORECASE)
+        if "src=" not in tag.lower()
+        and "application/json" not in tag.lower()
+        and "application/ld+json" not in tag.lower()
     ]
     assert inline, "Login-Seite hat kein Inline-Skript mehr – Test anpassen"
     for tag in inline:

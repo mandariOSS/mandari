@@ -138,7 +138,12 @@ Row = dict[str, Any]
 
 
 class TaskImportError(ValueError):
-    """Datei kann nicht importiert werden (Format, Kodierung, Größe, Inhalt)."""
+    """Datei kann nicht importiert werden (Format, Kodierung, Größe, Inhalt).
+
+    Die Meldung wird der hochladenden Person angezeigt und enthält deshalb nur fest
+    formulierten Text, höchstens ergänzt um Zeilen-/Spaltenangaben aus der Datei –
+    niemals den Text einer Parser-Ausnahme oder einen Stack-Trace.
+    """
 
 
 @dataclass

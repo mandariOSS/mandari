@@ -28,5 +28,11 @@ def unauthorized() -> JsonResponse:
 
 
 def error_response(message: str, status: int = 400) -> JsonResponse:
-    """Fachlicher Fehler als JSON."""
+    """Fachlicher Fehler als JSON.
+
+    Aufgerufen wird das ausschließlich mit der Meldung einer ``PreparationError``;
+    die ist per Vertrag ein fester, für Nutzer:innen formulierter Text. Es fließen
+    also keine internen Ausnahmedetails nach außen (CodeQL py/stack-trace-exposure
+    kann das der Datenflussanalyse nicht ansehen).
+    """
     return JsonResponse({"error": message}, status=status)

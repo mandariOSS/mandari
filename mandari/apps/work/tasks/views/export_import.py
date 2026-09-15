@@ -58,6 +58,8 @@ class TaskFileImportView(WorkViewMixin, View):
         try:
             file_format, rows = import_service.parse_upload(upload.name or "", upload.read())
         except import_service.TaskImportError as exc:
+            # Nur die kuratierte Meldung der eigenen Ausnahme, keine Fremdausnahme
+            # und kein Stack-Trace – siehe Klassendoku von TaskImportError.
             return JsonResponse({"error": str(exc)}, status=400)
 
         dry_run = request.POST.get("dry_run") in ("1", "true")

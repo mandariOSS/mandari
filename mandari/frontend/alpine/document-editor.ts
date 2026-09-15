@@ -18,6 +18,7 @@ import { showToast } from '../js/alpine/toast'
 import { csrfToken } from '../js/csrf'
 import { readJsonScript } from '../js/json-script'
 import { installMotionTracking } from '../js/motion-tracking'
+import { navigateTo } from '../js/navigation'
 
 // ---- Konfiguration aus dem View -------------------------------------------------
 
@@ -1412,7 +1413,7 @@ export const documentEditor = defineComponent(() => {
         })
         const data: JsonResponse = await response.json()
         if (data.success) {
-          window.location.href = config.urls.documents
+          navigateTo(config.urls.documents)
         } else {
           showToast('Fehler beim Loeschen: ' + (data.error || 'Unbekannter Fehler'), 'error')
         }
