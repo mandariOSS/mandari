@@ -8,6 +8,7 @@
  */
 
 import { csrfToken } from './csrf'
+import { navigateTo } from './navigation'
 
 type JsonObject = Record<string, unknown>
 
@@ -138,7 +139,7 @@ async function login(root: HTMLElement): Promise<void> {
   })) as PublicKeyCredential | null
   if (!credential) throw new Error('Es wurde keine Signatur erstellt.')
   const result = await postJson(root.dataset.verifyUrl ?? '', csrf, { credential: serializeCredential(credential) })
-  window.location.assign(typeof result.redirect === 'string' ? result.redirect : '/')
+  navigateTo(result.redirect)
 }
 
 function setup(root: HTMLElement, run: (root: HTMLElement) => Promise<void>): void {

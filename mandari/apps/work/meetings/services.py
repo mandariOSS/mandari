@@ -48,7 +48,12 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
 class PreparationError(Exception):
-    """Fachlicher Fehler mit Meldung und HTTP-Status für die JSON-Antwort."""
+    """Fachlicher Fehler mit Meldung und HTTP-Status für die JSON-Antwort.
+
+    ``message`` geht unverändert an die Oberfläche und ist deshalb immer ein fest
+    formulierter Text ohne technische Details (keine Pfade, keine Ausnahmetexte
+    Dritter, kein Stack-Trace). Wer hier eine neue Meldung ergänzt, hält sich daran.
+    """
 
     def __init__(self, message: str, status: int = 400) -> None:
         super().__init__(message)

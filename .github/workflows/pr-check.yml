@@ -227,17 +227,33 @@ jobs:
   # Docker Build Validation
   # ===========================================================================
   dependency-audit:
-    name: Abhängigkeiten prüfen (pip-audit)
+    name: Abhängigkeiten prüfen (pip-audit, npm audit)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: pip-audit (blockierend bei bekannten Schwachstellen)
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mandari/package-lock.json
+      - name: pip-audit Django-Anwendung (blockierend bei bekannten Schwachstellen)
         run: |
           pip install pip-audit
           pip-audit -r mandari/requirements.lock --no-deps --progress-spinner off
+      - name: pip-audit Ingestor (blockierend bei bekannten Schwachstellen)
+        run: |
+          cd ingestor
+          uv export --frozen --no-emit-project --no-emit-package mandari-oparl --no-hashes --all-extras -o /tmp/ingestor-requirements.txt
+          pip-audit -r /tmp/ingestor-requirements.txt --no-deps --progress-spinner off
+      - name: npm audit (blockierend ab "high")
+        run: |
+          cd mandari
+          npm audit || true
+          npm audit --audit-level=high
       - name: REUSE-Lizenzkonformität (zunächst informativ, ab 2027 blockierend)
         continue-on-error: true
         run: |
@@ -309,6 +325,8 @@ jobs:
         run: cd mandari && npm run typecheck
       - name: Biome (Lint + Format)
         run: cd mandari && npm run lint
+      - name: Frontend-Unit-Tests (Navigations-Helfer)
+        run: cd mandari && npm run test:navigation
       - name: Vite-Build (Manifest muss entstehen)
         run: |
           cd mandari && npx vite build

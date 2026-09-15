@@ -1,7 +1,12 @@
 # Automatische Abhängigkeits-Updates (Sicherheits- und Versions-PRs)
+#
+# Zielzweig ist überall `dev`: Dort wird entwickelt, `main` ist nur der
+# Freigabe-Zeiger und wird per Fast-Forward nachgezogen. PRs gegen `main`
+# würden die beiden Zweige auseinanderlaufen lassen.
 version: 2
 updates:
   - package-ecosystem: pip
+    target-branch: dev
     directory: /mandari
     schedule:
       interval: weekly
@@ -14,12 +19,14 @@ updates:
     open-pull-requests-limit: 10
     labels: [dependencies]
   - package-ecosystem: uv
+    target-branch: dev
     directory: /ingestor
     schedule:
       interval: weekly
       day: monday
     labels: [dependencies, app:ingestor]
   - package-ecosystem: npm
+    target-branch: dev
     directory: /mandari
     schedule:
       interval: weekly
@@ -29,16 +36,19 @@ updates:
         patterns: ["@tiptap/*", "y-*", "yjs"]
     labels: [dependencies]
   - package-ecosystem: github-actions
+    target-branch: dev
     directory: /
     schedule:
       interval: monthly
     labels: [dependencies]
   - package-ecosystem: docker
+    target-branch: dev
     directory: /mandari
     schedule:
       interval: monthly
     labels: [dependencies]
   - package-ecosystem: docker
+    target-branch: dev
     directory: /ingestor
     schedule:
       interval: monthly
