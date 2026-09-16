@@ -4,7 +4,8 @@ Forms for the Tasks module.
 """
 
 from django import forms
-from django.core.exceptions import ValidationError
+
+from apps.common.uploads import DOCUMENTS, MB, validate_upload
 
 from .models import Task, TaskAttachment, TaskChecklistItem, TaskLabel
 
@@ -181,9 +182,7 @@ class TaskAttachmentForm(forms.ModelForm):
     def clean_file(self):
         f = self.cleaned_data.get("file")
         if f:
-            max_size = 20 * 1024 * 1024  # 20 MB
-            if f.size > max_size:
-                raise ValidationError("Datei darf maximal 20 MB groß sein.")
+            validate_upload(f, allowed=DOCUMENTS, max_bytes=20 * MB, bezeichnung="Anlage")
         return f
 
 

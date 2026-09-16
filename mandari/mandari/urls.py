@@ -5,6 +5,8 @@ URL configuration for Mandari project.
 Mandari Insight - Kommunalpolitische Transparenz
 """
 
+from pathlib import PurePosixPath
+
 from django.conf import settings
 from django.contrib import admin
 from django.db import connection
@@ -14,6 +16,7 @@ from django.urls import include, path, re_path
 from django.views.static import serve as static_serve
 
 from apps.accounts.views import admin_login_redirect
+from apps.common.uploads import is_embeddable
 from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
 from apps.session.api.v1.api import api as session_api_v1
@@ -69,6 +72,13 @@ def serve_media(request, path):
     response["Cache-Control"] = (
         "public, max-age=3600" if path.startswith(PUBLIC_MEDIA_PREFIXES) else "private, no-store"
     )
+    # Zweite Verteidigungslinie zur Upload-Pruefung (Issue #260): Nur Bildformate
+    # werden eingebettet ausgeliefert. Alles andere geht als Download hinaus, damit
+    # eine Datei nicht im Ursprung der Anwendung zur Anzeige und Ausfuehrung kommt.
+    if not is_embeddable(path):
+        dateiname = PurePosixPath(path).name.replace('"', "")
+        response["Content-Disposition"] = f'attachment; filename="{dateiname}"'
+    response["X-Content-Type-Options"] = "nosniff"
     return response
 
 

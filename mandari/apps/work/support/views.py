@@ -8,6 +8,7 @@ Provides support ticket system and knowledge base for organizations.
 import re
 
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -17,6 +18,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.common.uploads import DOCUMENTS, MB, validate_upload
 from apps.work.notifications.services import NotificationHub
 
 from .models import (
@@ -126,14 +128,17 @@ class SupportCreateView(WorkViewMixin, TemplateView):
         # Handle file attachments
         files = request.FILES.getlist("attachments")
         for f in files[:5]:  # Limit to 5 files
-            if f.size <= 10 * 1024 * 1024:  # Max 10MB
-                SupportTicketAttachment.objects.create(
-                    ticket=ticket,
-                    file=f,
-                    filename=f.name,
-                    mime_type=f.content_type or "application/octet-stream",
-                    file_size=f.size,
-                )
+            try:
+                validate_upload(f, allowed=DOCUMENTS, max_bytes=10 * MB, bezeichnung="Anlage")
+            except ValidationError:
+                continue  # ungeeignete Anlage uebergehen, Ticket bzw. Nachricht bleibt bestehen
+            SupportTicketAttachment.objects.create(
+                ticket=ticket,
+                file=f,
+                filename=f.name,
+                mime_type=f.content_type or "application/octet-stream",
+                file_size=f.size,
+            )
 
         # Send notification (for staff/logging purposes)
         NotificationHub.notify_support_ticket_created(ticket, self.membership)
@@ -213,15 +218,18 @@ class SupportDetailView(WorkViewMixin, TemplateView):
             # Handle attachments
             files = request.FILES.getlist("attachments")
             for f in files[:3]:  # Limit to 3 files per message
-                if f.size <= 10 * 1024 * 1024:
-                    SupportTicketAttachment.objects.create(
-                        ticket=ticket,
-                        message=msg,
-                        file=f,
-                        filename=f.name,
-                        mime_type=f.content_type or "application/octet-stream",
-                        file_size=f.size,
-                    )
+                try:
+                    validate_upload(f, allowed=DOCUMENTS, max_bytes=10 * MB, bezeichnung="Anlage")
+                except ValidationError:
+                    continue  # ungeeignete Anlage uebergehen, Ticket bzw. Nachricht bleibt bestehen
+                SupportTicketAttachment.objects.create(
+                    ticket=ticket,
+                    message=msg,
+                    file=f,
+                    filename=f.name,
+                    mime_type=f.content_type or "application/octet-stream",
+                    file_size=f.size,
+                )
 
             # Update ticket status and track customer reply timestamp
             ticket.last_customer_reply_at = timezone.now()

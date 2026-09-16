@@ -15,8 +15,11 @@ import contextlib
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
+
+from apps.common.uploads import DOCUMENTS, validate_upload
 
 from . import consumers, selectors
 from .models import (
@@ -444,8 +447,10 @@ def add_document_upload(
         raise PreparationError("Keine Datei")
     if not title:
         title = uploaded_file.name or ""
-    if (uploaded_file.size or 0) > MAX_UPLOAD_BYTES:
-        raise PreparationError("Datei zu groß (max. 50 MB)")
+    try:
+        validate_upload(uploaded_file, allowed=DOCUMENTS, max_bytes=MAX_UPLOAD_BYTES, bezeichnung="Datei")
+    except ValidationError as exc:
+        raise PreparationError(exc.messages[0]) from exc
     paper, share_across = resolve_paper_anchor(agenda_item, paper_id, share_flag)
     doc = AgendaSupplementaryDocument.objects.create(
         organization=organization,
