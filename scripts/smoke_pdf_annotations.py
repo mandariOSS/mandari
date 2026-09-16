@@ -28,6 +28,7 @@ from pathlib import Path
 # --- Umgebung VOR django.setup() konfigurieren -------------------------------
 PROJECT_DIR = Path(__file__).resolve().parent.parent / "mandari"
 sys.path.insert(0, str(PROJECT_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 _db_path = Path(tempfile.mkdtemp(prefix="mandari_smoke_ann_")) / "smoke.sqlite3"
 os.environ["DJANGO_SETTINGS_MODULE"] = "mandari.settings"
@@ -49,7 +50,6 @@ django.setup()
 
 from django.conf import settings  # noqa: E402
 from django.core.files.uploadedfile import SimpleUploadedFile  # noqa: E402
-from django.core.management import call_command  # noqa: E402
 from django.db import IntegrityError, transaction  # noqa: E402
 from django.test import Client  # noqa: E402
 from django.test.utils import setup_test_environment  # noqa: E402
@@ -58,7 +58,9 @@ from django.utils import timezone  # noqa: E402
 settings.MEDIA_ROOT = str(Path(tempfile.mkdtemp(prefix="mandari_smoke_ann_media_")))
 
 setup_test_environment()
-call_command("migrate", verbosity=0, interactive=False)
+from _smoke_db import prepare_database  # noqa: E402
+
+prepare_database(PROJECT_DIR)
 
 from apps.accounts.models import User  # noqa: E402
 from apps.common.encryption import TenantEncryption  # noqa: E402

@@ -28,6 +28,7 @@ from pathlib import Path
 # --- Umgebung VOR django.setup() konfigurieren -------------------------------
 PROJECT_DIR = Path(__file__).resolve().parent.parent / "mandari"
 sys.path.insert(0, str(PROJECT_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 _tmp = Path(tempfile.mkdtemp(prefix="mandari_smoke_"))
 _db_path = _tmp / "smoke.sqlite3"
@@ -60,7 +61,9 @@ from django.utils import timezone  # noqa: E402
 setup_test_environment()
 _overrides = override_settings(MEDIA_ROOT=str(_media_root))
 _overrides.enable()
-call_command("migrate", verbosity=0, interactive=False)
+from _smoke_db import prepare_database  # noqa: E402
+
+prepare_database(PROJECT_DIR)
 
 from apps.accounts.models import User  # noqa: E402
 from insight_core.models import (  # noqa: E402

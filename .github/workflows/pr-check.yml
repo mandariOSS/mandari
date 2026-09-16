@@ -165,6 +165,16 @@ jobs:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
         run: python scripts/check_schema_contract.py
 
+      # Die Smoke-Skripte migrieren sonst jedes fuer sich rund 38 Sekunden lang
+      # eine frische SQLite hoch — 42-mal dasselbe Schema. Einmal bauen, danach
+      # kopieren (scripts/_smoke_db.py). Der Pfad landet ueber GITHUB_ENV in
+      # MANDARI_SMOKE_DB_TEMPLATE. Passt der Fingerabdruck der Migrationen
+      # nicht, migriert ein Skript von selbst wieder vollstaendig.
+      - name: Smoke-Datenbankvorlage einmalig erzeugen
+        env:
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+        run: python scripts/build_smoke_db_template.py "${{ runner.temp }}/mandari-smoke-template.sqlite3"
+
       # Session-Sicherheits-Suiten (Issue #28): Tenant-Isolation,
       # OE/NOE-Sichtbarkeit und Permission-Matrix. Die Skripte setzen ihre
       # Umgebung (SQLite, Schluessel) selbst.

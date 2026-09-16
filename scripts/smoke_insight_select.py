@@ -29,6 +29,7 @@ from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent / "mandari"
 sys.path.insert(0, str(PROJECT_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 _db_path = Path(tempfile.mkdtemp(prefix="mandari_smoke_select_")) / "smoke.sqlite3"
 _media_root = _db_path.parent / "media"
@@ -47,7 +48,6 @@ import django  # noqa: E402
 sys.argv = ["manage.py", "smoke_insight_select"]
 django.setup()
 
-from django.core.management import call_command  # noqa: E402
 from django.db import connection  # noqa: E402
 from django.test import Client, override_settings  # noqa: E402
 from django.test.utils import CaptureQueriesContext, setup_test_environment  # noqa: E402
@@ -55,7 +55,9 @@ from django.test.utils import CaptureQueriesContext, setup_test_environment  # n
 setup_test_environment()
 _overrides = override_settings(MEDIA_ROOT=str(_media_root))
 _overrides.enable()
-call_command("migrate", verbosity=0, interactive=False)
+from _smoke_db import prepare_database  # noqa: E402
+
+prepare_database(PROJECT_DIR)
 
 from django.utils import timezone  # noqa: E402
 from insight_core.models import (  # noqa: E402

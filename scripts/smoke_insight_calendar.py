@@ -18,6 +18,7 @@ from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent / "mandari"
 sys.path.insert(0, str(PROJECT_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 _tmp = Path(tempfile.mkdtemp(prefix="mandari_smoke_"))
 os.environ["DJANGO_SETTINGS_MODULE"] = "mandari.settings"
@@ -39,13 +40,14 @@ from django.conf import settings as _dj_settings  # noqa: E402
 
 _dj_settings.DATABASES["default"].setdefault("OPTIONS", {})["timeout"] = 30
 
-from django.core.management import call_command  # noqa: E402
 from django.test import Client  # noqa: E402
 from django.test.utils import setup_test_environment  # noqa: E402
 from django.utils import timezone  # noqa: E402
 
 setup_test_environment()
-call_command("migrate", verbosity=0, interactive=False)
+from _smoke_db import prepare_database  # noqa: E402
+
+prepare_database(PROJECT_DIR)
 
 from insight_core.models import OParlBody, OParlMeeting, OParlOrganization, OParlSource  # noqa: E402
 
