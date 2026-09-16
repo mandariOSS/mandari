@@ -58,6 +58,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Release-Tag passt zu den Versionsangaben
+        if: github.event_name == 'release'
+        run: python scripts/check_version_consistency.py --tag "${{ github.event.release.tag_name }}"
+
       - name: Determine image tags
         id: tags
         run: |

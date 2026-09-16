@@ -1,6 +1,6 @@
 [project]
 name = "mandari"
-version = "2.0.0"
+version = "0.10.0"
 description = "Mandari Insight - Kommunalpolitische Transparenz"
 readme = "README.md"
 license = { text = "AGPL-3.0" }
