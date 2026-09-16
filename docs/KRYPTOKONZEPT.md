@@ -122,20 +122,40 @@ Mandantenschlüssel nicht die Daten anderer Organisationen betrifft.
 | Erzeugung Hauptschlüssel | Einmalig beim Aufsetzen, `secrets.token_bytes(32)`, Base64 |
 | Erzeugung Mandantenschlüssel | Automatisch beim Anlegen einer Organisation |
 | Aufbewahrung | Hauptschlüssel in der Umgebung, getrennt vom Server gesichert |
-| Wechsel | **derzeit nicht vorgesehen — siehe unten** |
+| Wechsel | `manage.py rotate_encryption` — wechselt Hauptschlüssel **und** alle Mandantenschlüssel |
 | Vernichtung | Mit dem Löschen der Organisation entfällt der Mandantenschlüssel |
 
-### Offener Punkt: Schlüsselwechsel
+### Schlüsselwechsel
 
-Ein Verfahren zum Wechsel des Hauptschlüssels oder eines Mandantenschlüssels
-**gibt es derzeit nicht**. Solange kein Verdacht auf Kompromittierung besteht,
-ist das vertretbar — ein turnusmäßiger Wechsel ist bei AES-256 nicht aus
-kryptografischen Gründen nötig.
+`apps/common/management/commands/rotate_encryption.py` wechselt den Hauptschlüssel
+und alle Mandantenschlüssel. Der alte Hauptschlüssel kommt über `--old-master-key`
+oder `OLD_MASTER_KEY`, der neue steht in `ENCRYPTION_MASTER_KEY`. Die zu
+verschlüsselnden Felder werden **selbst ermittelt**, es gibt einen `--dry-run`,
+und je Mandant läuft eine Transaktion.
 
-Es fehlt aber der Weg für den Ernstfall: Wird ein Hauptschlüssel bekannt, müsste
-heute jeder Mandantenschlüssel von Hand neu verschlüsselt werden. Ein Verfahren
-dafür ist zu schaffen, bevor es gebraucht wird. Dazu gehört ein Feld für die
-Schlüsselversion, damit alter und neuer Stand nebeneinander bestehen können.
+Entstanden ist der Befehl für den Umzug einer Datenbank zwischen Servern. Für den
+Ernstfall — ein bekannt gewordener Hauptschlüssel — hat er drei Schwächen:
+
+1. **Er kann nur alles auf einmal.** Ein bekannt gewordener *Hauptschlüssel*
+   erfordert eigentlich nur, die wenigen Mandantenschlüssel neu einzupacken —
+   die Feldinhalte sind davon gar nicht betroffen. Heute werden trotzdem alle
+   38 Felder aller Datensätze neu verschlüsselt. Das ist um Größenordnungen mehr
+   Arbeit und Risiko als nötig.
+2. **Er lädt die Datensätze vollständig in den Speicher** (`for obj in objects`
+   ohne `.iterator()`). Bei den großen Tabellen ist das genau das Muster, das
+   an anderer Stelle schon zu Speicherabbrüchen geführt hat.
+3. **Er ist nicht fortsetzbar.** Bricht er beim dritten von vier Mandanten ab,
+   sind zwei umgestellt und zwei nicht. Jeder Mandant ist für sich stimmig, der
+   Gesamtstand aber uneinheitlich — und ein zweiter Lauf müsste wissen, wo er
+   weitermacht.
+
+Hilfreich ist dabei eine Eigenschaft des gewählten Verfahrens: **AES-GCM ist
+authentifiziert.** Eine Entschlüsselung mit dem falschen Schlüssel schlägt
+sauber fehl, statt Unsinn zu liefern. Damit lässt sich ein Übergang ohne
+Ausfallzeit bauen, in dem beide Schlüssel nebeneinander gelten und der jeweils
+passende einfach ausprobiert wird — ohne Versionsspalten an 38 Feldern.
+
+Die Verbesserung dieser drei Punkte ist als Arbeitspaket beschrieben.
 
 ## 5. Rollen und Zugriff
 
@@ -194,5 +214,5 @@ weist alte Versionen ab.
 | Zufallszahlen | konform |
 | Passwort-Hashing PBKDF2, 1.200.000 Iterationen | zulässig; Wechsel auf Argon2id offen und begründet zurückgestellt |
 | Schlüsselhierarchie und -trennung | konform |
-| **Schlüsselwechsel** | **fehlt — Verfahren für den Ernstfall zu schaffen** |
+| Schlüsselwechsel | vorhanden (`rotate_encryption`), für den Ernstfall aber zu grob, speicherhungrig und nicht fortsetzbar |
 | Notfallvorsorge | beschrieben, Übung über #229 zu verzahnen |
