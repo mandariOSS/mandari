@@ -120,20 +120,19 @@ Der eine Code-Schritt, der horizontale Skalierung überhaupt erst möglich macht
 Nutzen auch ohne weitere Stufen: Die Sicherung der Medien wird vom Server
 entkoppelt.
 
-### Stufe 3 — Zweiter physischer Knoten *(die größte Risikominderung)*
+### Stufe 3 — Echte Hochverfügbarkeit *(die eigentliche Investition)*
 
-Der Schritt, der Ausfallpunkt 1 auflöst.
+Der Schritt, der Ausfallpunkt 1 auflöst. **Drei Knoten, nicht zwei.**
 
-- Zweiter Rechner, Proxmox-Cluster. Für ein Quorum bei zwei Knoten genügt ein
-  **QDevice** auf einem kleinen dritten Gerät — kein dritter Server nötig
-- **ZFS-Replikation** der VMs in kurzen Abständen (Minuten). Das ist deutlich
-  einfacher zu betreiben als Ceph und für zwei Knoten angemessen
-- Damit wird möglich: Live-Migration bei geplanten Arbeiten, Neustart eines Hosts
-  ohne Ausfall, und im Störfall ein Anlauf auf dem zweiten Knoten mit wenigen
-  Minuten Datenverlust statt Stunden
+Eine frühere Fassung dieses Dokuments schlug hier zwei Knoten mit
+ZFS-Replikation vor. Das war falsch benannt: Eine Replikation von
+Maschinenabbildern im Minutentakt ist ein **warmer Klon** — sie verliert Daten
+seit der letzten Übertragung und braucht jemanden, der umschaltet. Das ist
+Wiederanlauf, nicht Hochverfügbarkeit.
 
-Das ist der Punkt mit dem besten Verhältnis von Aufwand zu Wirkung. Ein zweiter
-Knoten kostet weniger als der Ausfall eines Sitzungstags bei einem Kunden.
+Was es tatsächlich verlangt — drei Knoten für den Mehrheitsentscheid,
+Watchdog-Fencing, Ceph über ein eigenes Netz, Patroni mit `synchronous_mode` —
+steht in einem eigenen Dokument: **[Hochverfügbarkeit](HOCHVERFUEGBARKEIT.md)**.
 
 ### Stufe 4 — Anwendung mehrfach *(klein, sobald Stufe 2 steht)*
 
@@ -144,29 +143,23 @@ Knoten kostet weniger als der Ausfall eines Sitzungstags bei einem Kunden.
 
 ### Stufe 5 — Zustandsdienste ausfallsicher *(aufwendig, zuletzt)*
 
-- **PostgreSQL:** Bei zwei Knoten ist **repmgr** oder **pg_auto_failover** die
-  passende Wahl; Patroni braucht ein etcd-Quorum und lohnt erst in größeren
-  Umgebungen. Dazu pgBouncer, damit die Anwendung den Wechsel nicht merkt
-- **Redis:** Sentinel mit einem Beobachter auf dem QDevice
-- **Elasticsearch:** zweiter Knoten. Geringste Dringlichkeit — fällt die Suche
-  aus, bleibt das Portal nutzbar
+PostgreSQL, Redis und Elasticsearch ohne einzelnen Ausfallpunkt. Die Ausführung
+steht in [Hochverfügbarkeit](HOCHVERFUEGBARKEIT.md); dort auch, warum bei
+echtem HA Patroni mit einem etcd-Verbund die richtige Wahl ist und nicht repmgr:
+repmgr passt zu zwei Knoten, und zwei Knoten reichen für Hochverfügbarkeit nicht.
 
 ## 5. Empfehlung
 
-In dieser Reihenfolge:
-
 1. **Stufe 1 jetzt.** Ohne gemessene Wiederherstellungszeit ist jede Zusage geraten.
-2. **Stufe 3 als nächstes größeres Vorhaben.** Ein zweiter Knoten beseitigt den
-   Ausfallpunkt, der alle anderen dominiert. Alles davor ist Kosmetik.
-3. **Stufe 2 parallel**, wenn Entwicklungszeit frei ist — sie ist die Voraussetzung
-   für Stufe 4 und nützt schon für sich.
-4. **Stufe 5 erst, wenn es mehr Kunden gibt.** Datenbank-Failover ist aufwendig im
-   Betrieb und bringt bei einem Ausfallpunkt, der ohnehin dahinter liegt, wenig.
+2. **Stufe 2 parallel**, wenn Entwicklungszeit frei ist — sie ist die
+   Voraussetzung für alles Weitere und nützt schon für sich.
+3. **Stufe 3 als eigentliche Investition.** Drei Knoten lösen den Ausfallpunkt,
+   der alle anderen dominiert. Alles davor ist Kosmetik.
+4. **Stufen 4 bis 5 danach**, in dieser Reihenfolge.
 
 Was ausdrücklich **nicht** empfohlen wird: mehrere Instanzen der Anwendung, solange
 alles auf einer Maschine läuft. Das erhöht die Zahl der beweglichen Teile, ohne den
-Ausfallpunkt zu beseitigen — und kann durch geteilte Medienverzeichnisse neue
-Fehler schaffen.
+Ausfallpunkt zu beseitigen.
 
 ## 6. Was das für Kunden bedeutet
 
