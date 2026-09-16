@@ -35,6 +35,7 @@ sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR / "mandari"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 DB_PATH = BASE_DIR / "smoke_document_sharing.sqlite3"
 if DB_PATH.exists():
@@ -60,11 +61,11 @@ from django.conf import settings  # noqa: E402
 
 settings.MEDIA_ROOT = str(MEDIA_DIR)
 
+from _smoke_db import prepare_database  # noqa: E402
 from django.core.files.uploadedfile import SimpleUploadedFile  # noqa: E402
-from django.core.management import call_command  # noqa: E402
 from django.test import Client  # noqa: E402
 
-call_command("migrate", verbosity=0, interactive=False)
+prepare_database(BASE_DIR / "mandari")
 
 from apps.accounts.models import User  # noqa: E402
 from apps.tenants.models import Membership, Organization, Role  # noqa: E402

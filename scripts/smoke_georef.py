@@ -35,6 +35,7 @@ if sys.platform == "win32":
 # --- Umgebung VOR django.setup() konfigurieren -------------------------------
 PROJECT_DIR = Path(__file__).resolve().parent.parent / "mandari"
 sys.path.insert(0, str(PROJECT_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 _db_path = Path(tempfile.mkdtemp(prefix="mandari_smoke_georef_")) / "smoke.sqlite3"
 os.environ["DJANGO_SETTINGS_MODULE"] = "mandari.settings"
@@ -55,13 +56,14 @@ sys.argv = ["manage.py", "smoke_georef"]
 django.setup()
 
 from django.core.cache import cache  # noqa: E402
-from django.core.management import call_command  # noqa: E402
 from django.db import connection  # noqa: E402
 from django.test import Client  # noqa: E402
 from django.test.utils import CaptureQueriesContext, setup_test_environment  # noqa: E402
 
 setup_test_environment()
-call_command("migrate", verbosity=0, interactive=False)
+from _smoke_db import prepare_database  # noqa: E402
+
+prepare_database(PROJECT_DIR)
 
 from insight_core.models import (  # noqa: E402
     OParlBody,

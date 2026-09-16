@@ -36,6 +36,7 @@ from pathlib import Path
 REPO_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = REPO_DIR / "mandari"
 sys.path.insert(0, str(PROJECT_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 _db_path = Path(tempfile.mkdtemp(prefix="mandari_smoke_admin_")) / "smoke.sqlite3"
 os.environ["DJANGO_SETTINGS_MODULE"] = "mandari.settings"
@@ -57,13 +58,14 @@ django.setup()
 
 from django.conf import settings  # noqa: E402
 from django.contrib.auth import get_user_model  # noqa: E402
-from django.core.management import call_command  # noqa: E402
 from django.test import Client  # noqa: E402
 from django.test.utils import setup_test_environment  # noqa: E402
 from django.urls import NoReverseMatch  # noqa: E402
 
 setup_test_environment()
-call_command("migrate", verbosity=0, interactive=False)
+from _smoke_db import prepare_database  # noqa: E402
+
+prepare_database(PROJECT_DIR)
 
 PASS = 0
 FAIL = 0
