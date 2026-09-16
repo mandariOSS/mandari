@@ -33,6 +33,8 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.common.next_url import safe_next_url
+
 from . import webauthn_service
 from .forms import LoginForm, PasswordResetForm, RegistrationForm, SetPasswordForm
 from .models import LoginAttempt
@@ -75,7 +77,7 @@ class LoginView(View):
             return redirect(self.get_success_url(request))
 
         form = LoginForm()
-        next_url = request.GET.get("next", "")
+        next_url = safe_next_url(request, request.GET.get("next"))
 
         # Check for pending invitation
         invitation = self._get_pending_invitation(request)
@@ -92,7 +94,7 @@ class LoginView(View):
 
     def post(self, request):
         form = LoginForm(request.POST, request=request)
-        next_url = request.POST.get("next", "")
+        next_url = safe_next_url(request, request.POST.get("next"))
 
         # Rate limiting check
         ip_address = self.get_client_ip(request)
@@ -383,8 +385,8 @@ class TwoFactorEnrollView(View):
 
     def _next(self, request, pending) -> str:
         if pending is not None:
-            return pending.get("next") or ""
-        return request.POST.get("next") or request.GET.get("next") or ""
+            return safe_next_url(request, pending.get("next"))
+        return safe_next_url(request, request.POST.get("next") or request.GET.get("next"))
 
     def _expired(self, request):
         messages.error(request, "Die Anmeldung ist abgelaufen. Bitte melde dich erneut an.")
@@ -484,7 +486,7 @@ class TwoFactorEnrollView(View):
 
 def admin_login_redirect(request):
     """Admin-Anmeldung immer über die eigene Anmeldung (inkl. zweitem Faktor)."""
-    next_url = request.GET.get("next") or "/admin/"
+    next_url = safe_next_url(request, request.GET.get("next"), fallback="/admin/")
     return redirect(f"{reverse('accounts:login')}?{urlencode({'next': next_url})}")
 
 
@@ -763,7 +765,8 @@ class SelfRegisterView(View):
                 request,
                 "Für diese E-Mail-Adresse besteht bereits ein Konto. Bitte melde dich an, um beizutreten.",
             )
-            return redirect(f"{reverse('accounts:login')}?next={quote(request.path)}")
+            login_next = safe_next_url(request, request.path)
+            return redirect(f"{reverse('accounts:login')}?next={quote(login_next)}")
 
         if request.user.is_authenticated and request.user.email_verified:
             membership = organization_services.join_by_self_registration(self.org, request.user)
