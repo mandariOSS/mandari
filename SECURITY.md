@@ -48,6 +48,14 @@ vollständigen Offenlegung — kürzer, wenn eine Lücke bereits ausgenutzt wird
 Wer sich daran hält, muss keine rechtlichen Schritte befürchten. Ein Programm mit Geldprämien
 gibt es nicht; wir nennen Meldende auf Wunsch in den Release Notes.
 
+## Umgang mit gemeldeten Lücken
+
+Wie wir eine Meldung behandeln — Bewertung nach CVSS v3.1, Behebung, CVE-Vergabe
+und Fristen je Schweregrad — steht in
+[docs/SICHERHEITSMELDUNGEN.md](docs/SICHERHEITSMELDUNGEN.md). Kurz: erst der Fix,
+dann die Veröffentlichung. Wir bestätigen den Eingang innerhalb von drei
+Werktagen und melden spätestens nach zwei Wochen einen Zwischenstand.
+
 ## Was mandari mitbringt
 
 | Bereich | Maßnahme |
