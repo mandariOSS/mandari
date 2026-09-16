@@ -393,4 +393,8 @@ class TestQrCodeDerEinrichtung:
         assert response.status_code == 200
         html = response.content.decode()
         assert 'src="data:image/png;base64,' in html, "Die Seite verspricht einen QR-Code — er muss auch da sein"
-        assert "Oder den Schlüssel manuell eingeben" in html, "Der Schlüssel bleibt als Rückfall nötig"
+        # Der Schlüssel selbst bleibt als Rückfall auf der Seite (zum Aufklappen),
+        # falls sich der QR-Code nicht scannen lässt.
+        geheimnis = client.session[ENROLL_SETUP_SESSION_KEY]["secret"]
+        assert geheimnis in html, "Der Schlüssel bleibt als Rückfall nötig"
+        assert "manuell eingeben" in html, "Der Schlüssel muss auch auffindbar sein"

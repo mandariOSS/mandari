@@ -43,10 +43,11 @@
             </button>
         </header>
 
-        <main class="flex-1 flex items-center justify-center px-4 py-8">
-            <div class="w-full max-w-md fade-up">
+        <main class="flex-1 flex items-center justify-center px-4 {% block main_padding %}py-8{% endblock %}">
+            <div class="w-full {% block card_width %}max-w-md{% endblock %} fade-up">
                 <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
                     <!-- Header -->
+                    {% block card_header %}
                     <div class="px-8 pt-8 pb-6 text-center border-b border-gray-100 dark:border-gray-700">
                         <a href="/" class="inline-flex items-center justify-center mb-3">
                             <img src="{% static 'brand/favicon.svg' %}" alt="mandari" class="w-11 h-11 rounded-xl">
@@ -58,9 +59,10 @@
                             {% block header_subtitle %}Das offene Ratsinformationssystem{% endblock %}
                         </p>
                     </div>
+                    {% endblock %}
 
                     <!-- Content -->
-                    <div class="px-8 py-8">
+                    <div class="px-8 {% block card_body_padding %}py-8{% endblock %}">
                         {# Auth pages should NOT display general messages - those belong in the work area #}
                         {# Login-specific errors are shown via form.non_field_errors in the login template #}
                         {% block content %}{% endblock %}
