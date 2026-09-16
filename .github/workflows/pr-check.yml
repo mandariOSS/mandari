@@ -252,8 +252,13 @@ jobs:
           cache-dependency-path: mandari/package-lock.json
       - name: pip-audit Django-Anwendung (blockierend bei bekannten Schwachstellen)
         run: |
-          pip install pip-audit
+          pip install pip-audit packaging
           pip-audit -r mandari/requirements.lock --no-deps --progress-spinner off
+      # Installiert wird ueberall requirements.lock. Eine angehobene Grenze in
+      # requirements.txt ohne neu erzeugtes Lockfile aendert nichts am Laufenden
+      # und laesst beide Dateien auseinanderlaufen (Issue #241).
+      - name: requirements.lock passt zu requirements.txt
+        run: python scripts/check_requirements_lock.py
       - name: pip-audit Ingestor (blockierend bei bekannten Schwachstellen)
         run: |
           cd ingestor
