@@ -29,6 +29,8 @@ import sys
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
+from insight_core.services import portal_stats
+
 
 class Command(BaseCommand):
     help = "Synchronisiert OParl-Daten von registrierten Quellen"
@@ -124,6 +126,10 @@ class Command(BaseCommand):
                     )
 
         asyncio.run(_run())
+
+        # Die Startseite zeigt zwischengespeicherte Kennzahlen — nach einem Sync
+        # sollen sie sofort stimmen, nicht erst nach Ablauf der Cache-Dauer.
+        portal_stats.invalidate_portal_stats()
 
     def _count_entities(self, result) -> int:
         """Zählt alle synchronisierten Entitäten."""

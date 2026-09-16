@@ -503,6 +503,12 @@ class OParlMeeting(SourceDeletionModel):
         verbose_name = "Sitzung"
         verbose_name_plural = "Sitzungen"
         ordering = ["-start"]
+        indexes = [
+            # Sitzungslisten und "nächste Sitzungen" filtern je Kommune und
+            # sortieren nach Beginn — ohne diesen Index sortiert Postgres die
+            # ganze Tabelle.
+            models.Index(fields=["body", "start"], name="oparl_meeting_body_start"),
+        ]
 
     def __str__(self):
         return self.get_display_name()
@@ -623,6 +629,12 @@ class OParlPaper(SourceDeletionModel):
         verbose_name = "Vorgang"
         verbose_name_plural = "Vorgänge"
         ordering = ["-date", "-oparl_created"]
+        indexes = [
+            # Vorgangslisten und die Startseite lesen die neuesten Vorgänge einer
+            # Kommune in der Standardsortierung. Der Index liefert sie direkt,
+            # statt zehntausende Zeilen zu sortieren.
+            models.Index(fields=["body", "-date", "-oparl_created"], name="oparl_paper_body_datum"),
+        ]
 
     def __str__(self):
         if self.reference:

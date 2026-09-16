@@ -8,7 +8,6 @@ Server-Side Rendering mit Django Templates + HTMX.
 import json
 import re
 
-from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -16,13 +15,10 @@ from django.views.generic import TemplateView
 
 from ..models import (
     OParlBody,
-    OParlFile,
     OParlMeeting,
-    OParlOrganization,
     OParlPaper,
-    OParlPerson,
-    PublicQuestion,
 )
+from ..services import portal_stats
 from ._helpers import get_active_body, is_all_bodies_mode
 
 # =============================================================================
@@ -85,22 +81,18 @@ def get_bundesland_for_body(body):
 def _bodies_with_stats():
     """Alle Kommunen inkl. Kennzahlen (Vorgänge/Gremien/Sitzungen) und Region.
 
-    Drei gruppierte Count-Queries statt Multi-Annotate (vermeidet Join-Explosion).
+    Die Kennzahlen kommen aus dem Cache (drei gruppierte Count-Queries über die
+    großen Tabellen, siehe ``services.portal_stats``); die Kommunenliste selbst
+    bleibt frisch.
     """
     bodies = list(OParlBody.objects.listed().order_by("name"))
-
-    def counts_by_body(model):
-        qs = model.objects.filter(deleted=False).values("body").annotate(n=Count("id"))
-        return {row["body"]: row["n"] for row in qs}
-
-    paper_counts = counts_by_body(OParlPaper)
-    org_counts = counts_by_body(OParlOrganization)
-    meeting_counts = counts_by_body(OParlMeeting)
+    counts = portal_stats.counts_by_body()
 
     for body in bodies:
-        body.stat_papers = paper_counts.get(body.id, 0)
-        body.stat_organizations = org_counts.get(body.id, 0)
-        body.stat_meetings = meeting_counts.get(body.id, 0)
+        key = str(body.id)
+        body.stat_papers = counts["papers"].get(key, 0)
+        body.stat_organizations = counts["organizations"].get(key, 0)
+        body.stat_meetings = counts["meetings"].get(key, 0)
         body.bundesland = get_bundesland_for_body(body)
         body.kind_label = get_kind_label_for_body(body)
     return bodies
@@ -143,27 +135,13 @@ class PortalHomeView(TemplateView):
             # Kommune-Auswahl: alle gelisteten Kommunen mit echten Kennzahlen
             bodies = _bodies_with_stats()
             context["select_bodies"] = bodies
-            context["stats"] = {
-                "bodies": len(bodies),
-                "organizations": OParlOrganization.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
-                "persons": OParlPerson.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
-                "meetings": OParlMeeting.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
-                "papers": OParlPaper.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
-                "files": OParlFile.objects.filter(deleted=False).exclude(body__is_listed=False).count(),
-            }
+            context["stats"] = {"bodies": len(bodies), **portal_stats.overview_stats()}
             context["upcoming_meetings"] = None
             context["recent_papers"] = None
 
         elif body:
-            # Statistiken für die aktive Kommune
-            context["stats"] = {
-                "organizations": OParlOrganization.objects.filter(body=body, deleted=False).count(),
-                "persons": OParlPerson.objects.filter(body=body, deleted=False).count(),
-                "meetings": OParlMeeting.objects.filter(body=body, deleted=False).count(),
-                "papers": OParlPaper.objects.filter(body=body, deleted=False).count(),
-                "files": OParlFile.objects.filter(paper__body=body, deleted=False).count(),
-                "public_questions": PublicQuestion.objects.filter(body=body, status="published").count(),
-            }
+            # Statistiken für die aktive Kommune (aus dem Cache)
+            context["stats"] = portal_stats.body_stats(body)
 
             # Nächste Sitzungen (5 für einheitliche Listen)
             context["upcoming_meetings"] = (
