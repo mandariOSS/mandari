@@ -12,6 +12,7 @@ Simplified architecture: 4 views instead of 13.
 import json
 import logging
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -20,6 +21,7 @@ from django.urls import reverse
 from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
+from apps.common.uploads import DOCUMENTS, MB, validate_upload
 
 from ..models import (
     FactionAgendaItem,
@@ -405,8 +407,10 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             return HttpResponse(status=403)
 
         uploaded_file = request.FILES.get("file")
-        if not uploaded_file:
-            return HttpResponse("Keine Datei ausgewählt.", status=400)
+        try:
+            validate_upload(uploaded_file, allowed=DOCUMENTS, max_bytes=20 * MB, bezeichnung="Anlage")
+        except ValidationError as exc:
+            return HttpResponse(exc.messages[0], status=400)
 
         attachment = FactionAgendaItemAttachment.objects.create(
             agenda_item=item,
