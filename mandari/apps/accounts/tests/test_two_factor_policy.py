@@ -365,3 +365,32 @@ class TestSettingsToggles:
             {"action": "disable_2fa", "password": PASSWORD},
         )
         assert TwoFactorService().is_2fa_enabled(user)
+
+
+class TestQrCodeDerEinrichtung:
+    """Der QR-Code fehlte in Produktion, weil ``import qrcode`` nie gelang.
+
+    Ein Test, der nur den Status 200 prüft, hätte das nicht bemerkt — deshalb
+    wird hier das Bild selbst nachgewiesen.
+    """
+
+    def test_generate_qr_code_liefert_ein_png(self) -> None:
+        import base64
+
+        roh = TwoFactorService().generate_qr_code(
+            "otpauth://totp/mandari:a@b.de?secret=JBSWY3DPEHPK3PXP&issuer=mandari"
+        )
+        assert roh, "Ohne QR-Code müssten alle den Schlüssel abtippen"
+        bytes_ = base64.b64decode(roh)
+        assert bytes_.startswith(b"\x89PNG\r\n\x1a\n"), "Muss ein PNG sein (Template bettet data:image/png;base64 ein)"
+        assert len(bytes_) > 200
+
+    def test_einrichtungsseite_zeigt_den_qr_code(self, client: Client) -> None:
+        user = make_user()
+        work_member(user, is_admin=True)
+        client.post(reverse("accounts:login"), {"email": user.email, "password": PASSWORD})
+        response = client.get(reverse("accounts:two_factor_enroll"))
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert 'src="data:image/png;base64,' in html, "Die Seite verspricht einen QR-Code — er muss auch da sein"
+        assert "Oder den Schlüssel manuell eingeben" in html, "Der Schlüssel bleibt als Rückfall nötig"

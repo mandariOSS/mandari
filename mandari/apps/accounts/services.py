@@ -10,10 +10,12 @@ Provides:
 """
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import io
 import json
+import logging
 import secrets
 import struct
 import time
@@ -24,15 +26,6 @@ from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
 
-try:
-    import qrcode
-
-    HAS_QRCODE = True
-except ImportError:
-    HAS_QRCODE = False
-
-import contextlib
-
 from .models import (
     SecurityNotification,
     TrustedDevice,
@@ -40,6 +33,8 @@ from .models import (
     UserSession,
     WebAuthnCredential,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class TwoFactorService:
@@ -137,26 +132,25 @@ class TwoFactorService:
         )
 
     def generate_qr_code(self, uri: str) -> str | None:
-        """Generate QR code as base64-encoded PNG."""
-        if not HAS_QRCODE:
+        """QR-Code als base64-kodiertes PNG (reines Python via segno).
+
+        Vorher stand hier ``import qrcode`` — das Paket ist keine Abhängigkeit des
+        Projekts, der Import schlug also immer fehl und die Einrichtungsseite zeigte
+        nie einen QR-Code, nur den Schlüssel zum Abtippen. Für QR-Codes nutzt mandari
+        segno (siehe ``apps/work/faction/certificates.py``).
+
+        ``None`` nur, wenn die Erzeugung scheitert; die Seite zeigt dann weiterhin den
+        Schlüssel zur manuellen Eingabe, die Einrichtung bleibt also möglich.
+        """
+        try:
+            import segno
+
+            buffer = io.BytesIO()
+            segno.make(uri, error="m").save(buffer, kind="png", scale=6, border=2)
+            return base64.b64encode(buffer.getvalue()).decode("ascii")
+        except Exception:
+            logger.warning("QR-Code für die Zwei-Faktor-Einrichtung konnte nicht erzeugt werden")
             return None
-
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
-        )
-        qr.add_data(uri)
-        qr.make(fit=True)
-
-        img = qr.make_image(fill_color="black", back_color="white")
-
-        buffer = io.BytesIO()
-        img.save(buffer, format="PNG")
-        buffer.seek(0)
-
-        return base64.b64encode(buffer.getvalue()).decode("ascii")
 
     def _get_totp_code(self, secret: str, counter: int) -> str:
         """Generate TOTP code for a given counter value."""
