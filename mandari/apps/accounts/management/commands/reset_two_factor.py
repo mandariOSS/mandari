@@ -23,6 +23,16 @@ from apps.accounts.models import TrustedDevice, TwoFactorDevice, User, WebAuthnC
 logger = logging.getLogger(__name__)
 
 
+def _deleted(queryset: Any) -> int:
+    """Nur die Anzahl gelöschter Zeilen — ``delete()`` liefert ``(Gesamtzahl, Details je Modell)``.
+
+    Bewusst als eigene Funktion mit ``int``: Ins Protokoll gehört die Anzahl, nie ein
+    Datensatz. Die Modelle tragen TOTP-Geheimnisse und Schlüsselkennungen.
+    """
+    total, _per_model = queryset.delete()
+    return int(total)
+
+
 class Command(BaseCommand):
     help = "Setzt Authenticator-App, Backup-Codes und Sicherheitsschlüssel eines Kontos zurück."
 
@@ -45,9 +55,9 @@ class Command(BaseCommand):
             if answer.strip().lower() != "ja":
                 raise CommandError("Abgebrochen.")
 
-        totp = TwoFactorDevice.objects.filter(user=user).delete()[0]
-        keys = WebAuthnCredential.objects.filter(user=user).delete()[0]
-        trusted = TrustedDevice.objects.filter(user=user).delete()[0]
+        totp = _deleted(TwoFactorDevice.objects.filter(user=user))
+        keys = _deleted(WebAuthnCredential.objects.filter(user=user))
+        trusted = _deleted(TrustedDevice.objects.filter(user=user))
         logger.warning(
             "Zweiter Faktor zurückgesetzt",
             extra={"user_id": str(user.pk), "reason": reason, "totp": totp, "security_keys": keys, "trusted": trusted},

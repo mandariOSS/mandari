@@ -14,8 +14,9 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
-from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
+
+from apps.common.next_url import safe_next_url
 
 from . import webauthn_service
 from .models import User, WebAuthnCredential
@@ -54,11 +55,7 @@ class SecurityKeysView(LoginRequiredMixin, View):
 
     def get(self, request: HttpRequest) -> HttpResponse:
         user = cast(User, request.user)
-        next_url = request.GET.get("next", "")
-        if not url_has_allowed_host_and_scheme(
-            next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
-        ):
-            next_url = ""
+        next_url = safe_next_url(request, request.GET.get("next"))
         context = {
             "credentials": WebAuthnCredential.objects.filter(user=user),
             "totp_enabled": TwoFactorService().is_2fa_enabled(user),
