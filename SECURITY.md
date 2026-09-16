@@ -60,7 +60,7 @@ Werktagen und melden spätestens nach zwei Wochen einen Zwischenstand.
 
 | Bereich | Maßnahme |
 |---------|----------|
-| Verschlüsselung | AES-256-GCM für vertrauliche Felder, Schlüsselhierarchie Hauptschlüssel → Mandantenschlüssel → Feld |
+| Verschlüsselung | AES-256-GCM für vertrauliche Felder, Schlüsselhierarchie Hauptschlüssel → Mandantenschlüssel → Feld; Verfahren und Parameter im [Kryptokonzept](docs/KRYPTOKONZEPT.md), abgeglichen mit BSI TR-02102 |
 | Anmeldung | Zwei-Faktor per TOTP, vertrauenswürdige Geräte, Sitzungsübersicht, Ratenbegrenzung (5 Versuche je 15 Minuten), Mindestpasswortlänge 12 Zeichen nach BSI-Empfehlung |
 | Berechtigungen | Rollenbasiert mit über 50 Einzelrechten, zusätzlich individuelle Erteilung und Entzug je Mitgliedschaft |
 | Mandantentrennung | Jede Abfrage ist organisationsgebunden; eine automatisierte Matrix prüft über 160 Adressen des Arbeitsbereichs gegen jede Rolle |
