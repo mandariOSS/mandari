@@ -289,7 +289,7 @@ pyopenssl==26.4.0
     # via
     #   twisted
     #   webauthn
-pypdf==6.18.0
+pypdf==6.19.0
     # via
     #   -r requirements.txt
     #   xhtml2pdf
@@ -399,7 +399,7 @@ wrapt==2.4.0
     #   opentelemetry-instrumentation-dbapi
     #   opentelemetry-instrumentation-httpx
     #   opentelemetry-instrumentation-redis
-xhtml2pdf==0.2.18
+xhtml2pdf==0.2.20
     # via -r requirements.txt
 yarl==1.24.5
     # via aiohttp
