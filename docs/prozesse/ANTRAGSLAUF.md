@@ -163,9 +163,14 @@ Beratungsfolge, Beschluss, Niederschrift, Kontrolle — ist länderübergreifend
 
 ## 5. Pflege dieses Modells
 
-Die BPMN-Datei wird aus `scripts/` nicht generiert, sondern direkt gepflegt. Wer sie
-ändert, sollte anschließend prüfen, dass Referenzen und Diagrammangaben zusammenpassen
-(jeder Fluss verbindet Knoten desselben Prozesses, jeder Knoten hat eine Form).
+Die Datei wird in einem BPMN-Werkzeug gepflegt (Camunda Modeler oder bpmn.io), nicht
+von Hand im XML. Das Anfangslayout ist erzeugt; ab jetzt gilt das Werkzeug als Quelle.
+
+Beim Ändern lohnt ein Blick auf vier Dinge, die beim ersten Entwurf schiefgingen:
+Überlappen sich Elemente? Laufen Kanten durch fremde Elemente hindurch? Liegen
+Beschriftungen auf Elementen? Sehen Alternativen wie eine Abfolge aus — der Fehler, der
+Vertagung, Verweisung und Rücknahme zunächst als Kette erscheinen ließ, obwohl sie sich
+gegenseitig ausschließen.
 
 Quellen: [GO NRW auf recht.nrw.de](https://recht.nrw.de/lmi/owa/br_bes_text?anw_nr=2&gld_nr=2&ugl_nr=2023&bes_id=6784),
 insbesondere § 47 (Einberufung), § 48 (Öffentlichkeit), § 52 (Niederschrift), § 56 (Fraktionen).
