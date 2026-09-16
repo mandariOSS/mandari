@@ -1,0 +1,587 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_Antragslauf" targetNamespace="https://mandari.de/bpmn" exporter="mandari" exporterVersion="1.0">
+  <bpmn:collaboration id="Collab_Antragslauf">
+    <bpmn:participant id="Part_Fraktion" name="Fraktion (mandari Arbeitsbereich)" processRef="Proc_Fraktion" />
+    <bpmn:participant id="Part_Verwaltung" name="Verwaltung (mandari Session-RIS)" processRef="Proc_Verwaltung" />
+    <bpmn:participant id="Part_Gremium" name="Gremium: Ausschuss und Rat" processRef="Proc_Gremium" />
+    <bpmn:messageFlow id="m1" name="Antrag mit Begründung" sourceRef="T_Einreichen" targetRef="StartEingang" />
+    <bpmn:messageFlow id="m2" name="Hinweis auf Mangel" sourceRef="T_Rueckmeldung" targetRef="E_Verfolgen" />
+    <bpmn:messageFlow id="m3" name="Ladung mit Tagesordnung" sourceRef="T_Ladung" targetRef="StartSitzung" />
+    <bpmn:messageFlow id="m4" name="Beschlussergebnis" sourceRef="E_Angenommen" targetRef="T_Niederschrift" />
+    <bpmn:messageFlow id="m5" name="Beschlussergebnis" sourceRef="E_Abgelehnt" targetRef="T_Niederschrift" />
+  </bpmn:collaboration>
+  <bpmn:process id="Proc_Fraktion" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_Proc_Fraktion">
+      <bpmn:lane id="L_Mitglied" name="Mitglied">
+        <bpmn:flowNodeRef>StartIdee</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Entwurf</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Intern</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G_Aendern</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="L_Vorsitz" name="Fraktionsvorsitz / Geschäftsführung">
+        <bpmn:flowNodeRef>T_FraktBeschluss</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G_Koalition</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Koalition</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G_KoalitionJoin</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Freigabe</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Einreichen</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>E_Verfolgen</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartIdee" name="Antragsidee entsteht">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="T_Entwurf" name="Antrag entwerfen">
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:incoming>f4</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="T_Intern" name="Fraktionsintern abstimmen">
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="G_Aendern" name="Änderungen nötig?">
+      <bpmn:incoming>f3</bpmn:incoming>
+      <bpmn:outgoing>f4</bpmn:outgoing>
+      <bpmn:outgoing>f5</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="T_FraktBeschluss" name="Fraktionsbeschluss fassen">
+      <bpmn:incoming>f5</bpmn:incoming>
+      <bpmn:outgoing>f6</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="G_Koalition" name="Koalition beteiligen?">
+      <bpmn:incoming>f6</bpmn:incoming>
+      <bpmn:outgoing>f7</bpmn:outgoing>
+      <bpmn:outgoing>f9</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="T_Koalition" name="Mit Koalition abstimmen">
+      <bpmn:incoming>f7</bpmn:incoming>
+      <bpmn:outgoing>f8</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="G_KoalitionJoin">
+      <bpmn:incoming>f8</bpmn:incoming>
+      <bpmn:incoming>f9</bpmn:incoming>
+      <bpmn:outgoing>f10</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="T_Freigabe" name="Antrag freigeben">
+      <bpmn:incoming>f10</bpmn:incoming>
+      <bpmn:outgoing>f11</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sendTask id="T_Einreichen" name="Bei der Verwaltung einreichen">
+      <bpmn:incoming>f11</bpmn:incoming>
+      <bpmn:outgoing>f12</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:endEvent id="E_Verfolgen" name="Antrag läuft">
+      <bpmn:incoming>f12</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="StartIdee" targetRef="T_Entwurf" />
+    <bpmn:sequenceFlow id="f2" sourceRef="T_Entwurf" targetRef="T_Intern" />
+    <bpmn:sequenceFlow id="f3" sourceRef="T_Intern" targetRef="G_Aendern" />
+    <bpmn:sequenceFlow id="f4" name="ja" sourceRef="G_Aendern" targetRef="T_Entwurf" />
+    <bpmn:sequenceFlow id="f5" name="nein" sourceRef="G_Aendern" targetRef="T_FraktBeschluss" />
+    <bpmn:sequenceFlow id="f6" sourceRef="T_FraktBeschluss" targetRef="G_Koalition" />
+    <bpmn:sequenceFlow id="f7" name="ja" sourceRef="G_Koalition" targetRef="T_Koalition" />
+    <bpmn:sequenceFlow id="f8" sourceRef="T_Koalition" targetRef="G_KoalitionJoin" />
+    <bpmn:sequenceFlow id="f9" name="nein" sourceRef="G_Koalition" targetRef="G_KoalitionJoin" />
+    <bpmn:sequenceFlow id="f10" sourceRef="G_KoalitionJoin" targetRef="T_Freigabe" />
+    <bpmn:sequenceFlow id="f11" sourceRef="T_Freigabe" targetRef="T_Einreichen" />
+    <bpmn:sequenceFlow id="f12" sourceRef="T_Einreichen" targetRef="E_Verfolgen" />
+  </bpmn:process>
+  <bpmn:process id="Proc_Verwaltung" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_Proc_Verwaltung">
+      <bpmn:lane id="L_Ratsbuero" name="Ratsbüro / Schriftführung">
+        <bpmn:flowNodeRef>StartEingang</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Erfassen</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G_Zulaessig</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Rueckmeldung</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>E_Unzulaessig</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Tagesordnung</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Niederschrift</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Veroeffentlichen</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>E_Verwaltung</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="L_Fachamt" name="Fachverwaltung / Bürgermeister">
+        <bpmn:flowNodeRef>T_Stellungnahme</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_OeNOe</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Beratungsfolge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T_Ladung</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Timer_Ladungsfrist</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEingang" name="Antrag geht ein">
+      <bpmn:outgoing>f20</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="T_Erfassen" name="Erfassen, Aktenzeichen vergeben">
+      <bpmn:incoming>f20</bpmn:incoming>
+      <bpmn:outgoing>f21</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="G_Zulaessig" name="Zulässig?">
+      <bpmn:incoming>f21</bpmn:incoming>
+      <bpmn:outgoing>f22</bpmn:outgoing>
+      <bpmn:outgoing>f24</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sendTask id="T_Rueckmeldung" name="Rückmeldung an Fraktion">
+      <bpmn:incoming>f22</bpmn:incoming>
+      <bpmn:outgoing>f23</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:endEvent id="E_Unzulaessig" name="Nicht zur Beratung">
+      <bpmn:incoming>f23</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:userTask id="T_Tagesordnung" name="Tagesordnung aufstellen">
+      <bpmn:incoming>f27</bpmn:incoming>
+      <bpmn:outgoing>f28</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="T_Niederschrift" name="Niederschrift erstellen (§ 52)">
+      <bpmn:incoming>f30</bpmn:incoming>
+      <bpmn:outgoing>f31</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="T_Veroeffentlichen" name="Öffentlichen Teil veröffentlichen">
+      <bpmn:incoming>f31</bpmn:incoming>
+      <bpmn:outgoing>f32</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:endEvent id="E_Verwaltung" name="Vorgang dokumentiert">
+      <bpmn:incoming>f32</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:userTask id="T_Stellungnahme" name="Stellungnahme der Fachverwaltung">
+      <bpmn:incoming>f24</bpmn:incoming>
+      <bpmn:outgoing>f25</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:businessRuleTask id="T_OeNOe" name="Öffentlich oder nicht-öffentlich einstufen (§ 48)">
+      <bpmn:incoming>f25</bpmn:incoming>
+      <bpmn:outgoing>f26</bpmn:outgoing>
+    </bpmn:businessRuleTask>
+    <bpmn:userTask id="T_Beratungsfolge" name="Beratungsfolge festlegen">
+      <bpmn:incoming>f26</bpmn:incoming>
+      <bpmn:outgoing>f27</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sendTask id="T_Ladung" name="Einberufen und laden (§ 47)">
+      <bpmn:incoming>f28</bpmn:incoming>
+      <bpmn:outgoing>f29</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:intermediateCatchEvent id="Timer_Ladungsfrist" name="Ladungsfrist mindestens 7 Tage">
+      <bpmn:incoming>f29</bpmn:incoming>
+      <bpmn:outgoing>f30</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerDef_Ladung">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">P7D</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f20" sourceRef="StartEingang" targetRef="T_Erfassen" />
+    <bpmn:sequenceFlow id="f21" sourceRef="T_Erfassen" targetRef="G_Zulaessig" />
+    <bpmn:sequenceFlow id="f22" name="nein" sourceRef="G_Zulaessig" targetRef="T_Rueckmeldung" />
+    <bpmn:sequenceFlow id="f23" sourceRef="T_Rueckmeldung" targetRef="E_Unzulaessig" />
+    <bpmn:sequenceFlow id="f24" name="ja" sourceRef="G_Zulaessig" targetRef="T_Stellungnahme" />
+    <bpmn:sequenceFlow id="f25" sourceRef="T_Stellungnahme" targetRef="T_OeNOe" />
+    <bpmn:sequenceFlow id="f26" sourceRef="T_OeNOe" targetRef="T_Beratungsfolge" />
+    <bpmn:sequenceFlow id="f27" sourceRef="T_Beratungsfolge" targetRef="T_Tagesordnung" />
+    <bpmn:sequenceFlow id="f28" sourceRef="T_Tagesordnung" targetRef="T_Ladung" />
+    <bpmn:sequenceFlow id="f29" sourceRef="T_Ladung" targetRef="Timer_Ladungsfrist" />
+    <bpmn:sequenceFlow id="f30" sourceRef="Timer_Ladungsfrist" targetRef="T_Niederschrift" />
+    <bpmn:sequenceFlow id="f31" sourceRef="T_Niederschrift" targetRef="T_Veroeffentlichen" />
+    <bpmn:sequenceFlow id="f32" sourceRef="T_Veroeffentlichen" targetRef="E_Verwaltung" />
+  </bpmn:process>
+  <bpmn:process id="Proc_Gremium" isExecutable="false">
+    <bpmn:startEvent id="StartSitzung" name="Sitzung beginnt">
+      <bpmn:outgoing>f40</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="T_TOPAufrufen" name="Tagesordnungspunkt aufrufen">
+      <bpmn:incoming>f40</bpmn:incoming>
+      <bpmn:outgoing>f41</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="T_Beratung" name="Antrag beraten">
+      <bpmn:incoming>f41</bpmn:incoming>
+      <bpmn:outgoing>f42</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="G_Ergebnis" name="Wie wird verfahren?">
+      <bpmn:incoming>f42</bpmn:incoming>
+      <bpmn:outgoing>f43</bpmn:outgoing>
+      <bpmn:outgoing>f44</bpmn:outgoing>
+      <bpmn:outgoing>f45</bpmn:outgoing>
+      <bpmn:outgoing>f46</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="T_Abstimmung" name="Abstimmen">
+      <bpmn:incoming>f43</bpmn:incoming>
+      <bpmn:outgoing>f47</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="T_Vertagen" name="Vertagen">
+      <bpmn:incoming>f44</bpmn:incoming>
+      <bpmn:outgoing>f50</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="T_Verweisen" name="In den Fachausschuss verweisen">
+      <bpmn:incoming>f45</bpmn:incoming>
+      <bpmn:outgoing>f51</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="T_Zurueckziehen" name="Antragsteller zieht zurück">
+      <bpmn:incoming>f46</bpmn:incoming>
+      <bpmn:outgoing>f52</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="G_Beschluss" name="Angenommen?">
+      <bpmn:incoming>f47</bpmn:incoming>
+      <bpmn:outgoing>f48</bpmn:outgoing>
+      <bpmn:outgoing>f49</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="E_Angenommen" name="Beschluss gefasst">
+      <bpmn:incoming>f48</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="E_Abgelehnt" name="Antrag abgelehnt">
+      <bpmn:incoming>f49</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="E_Erneut" name="Erneute Beratung nötig">
+      <bpmn:incoming>f50</bpmn:incoming>
+      <bpmn:incoming>f51</bpmn:incoming>
+      <bpmn:incoming>f52</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f40" sourceRef="StartSitzung" targetRef="T_TOPAufrufen" />
+    <bpmn:sequenceFlow id="f41" sourceRef="T_TOPAufrufen" targetRef="T_Beratung" />
+    <bpmn:sequenceFlow id="f42" sourceRef="T_Beratung" targetRef="G_Ergebnis" />
+    <bpmn:sequenceFlow id="f43" name="Abstimmung" sourceRef="G_Ergebnis" targetRef="T_Abstimmung" />
+    <bpmn:sequenceFlow id="f44" name="Vertagung" sourceRef="G_Ergebnis" targetRef="T_Vertagen" />
+    <bpmn:sequenceFlow id="f45" name="Verweisung" sourceRef="G_Ergebnis" targetRef="T_Verweisen" />
+    <bpmn:sequenceFlow id="f46" name="Rücknahme" sourceRef="G_Ergebnis" targetRef="T_Zurueckziehen" />
+    <bpmn:sequenceFlow id="f47" sourceRef="T_Abstimmung" targetRef="G_Beschluss" />
+    <bpmn:sequenceFlow id="f48" name="ja" sourceRef="G_Beschluss" targetRef="E_Angenommen" />
+    <bpmn:sequenceFlow id="f49" name="nein" sourceRef="G_Beschluss" targetRef="E_Abgelehnt" />
+    <bpmn:sequenceFlow id="f50" sourceRef="T_Vertagen" targetRef="E_Erneut" />
+    <bpmn:sequenceFlow id="f51" sourceRef="T_Verweisen" targetRef="E_Erneut" />
+    <bpmn:sequenceFlow id="f52" sourceRef="T_Zurueckziehen" targetRef="E_Erneut" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_Antragslauf">
+    <bpmndi:BPMNPlane id="Plane_Antragslauf" bpmnElement="Collab_Antragslauf">
+      <bpmndi:BPMNShape id="Shape_Part_Fraktion" bpmnElement="Part_Fraktion" isHorizontal="true">
+        <dc:Bounds x="130" y="60" width="1780" height="360" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Part_Verwaltung" bpmnElement="Part_Verwaltung" isHorizontal="true">
+        <dc:Bounds x="130" y="410" width="1780" height="360" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Part_Gremium" bpmnElement="Part_Gremium" isHorizontal="true">
+        <dc:Bounds x="130" y="780" width="1780" height="300" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_L_Mitglied" bpmnElement="L_Mitglied" isHorizontal="true">
+        <dc:Bounds x="160" y="60" width="1750" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_L_Vorsitz" bpmnElement="L_Vorsitz" isHorizontal="true">
+        <dc:Bounds x="160" y="240" width="1750" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_L_Ratsbuero" bpmnElement="L_Ratsbuero" isHorizontal="true">
+        <dc:Bounds x="160" y="410" width="1750" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_L_Fachamt" bpmnElement="L_Fachamt" isHorizontal="true">
+        <dc:Bounds x="160" y="590" width="1750" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_StartIdee" bpmnElement="StartIdee">
+        <dc:Bounds x="180" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Entwurf" bpmnElement="T_Entwurf">
+        <dc:Bounds x="260" y="85" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Intern" bpmnElement="T_Intern">
+        <dc:Bounds x="430" y="85" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_G_Aendern" bpmnElement="G_Aendern">
+        <dc:Bounds x="600" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_FraktBeschluss" bpmnElement="T_FraktBeschluss">
+        <dc:Bounds x="700" y="245" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_G_Koalition" bpmnElement="G_Koalition">
+        <dc:Bounds x="870" y="255" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Koalition" bpmnElement="T_Koalition">
+        <dc:Bounds x="950" y="245" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_G_KoalitionJoin" bpmnElement="G_KoalitionJoin">
+        <dc:Bounds x="1120" y="255" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Freigabe" bpmnElement="T_Freigabe">
+        <dc:Bounds x="1200" y="245" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Einreichen" bpmnElement="T_Einreichen">
+        <dc:Bounds x="1370" y="245" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_E_Verfolgen" bpmnElement="E_Verfolgen">
+        <dc:Bounds x="1560" y="262" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_StartEingang" bpmnElement="StartEingang">
+        <dc:Bounds x="180" y="452" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Erfassen" bpmnElement="T_Erfassen">
+        <dc:Bounds x="260" y="435" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_G_Zulaessig" bpmnElement="G_Zulaessig">
+        <dc:Bounds x="430" y="445" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Rueckmeldung" bpmnElement="T_Rueckmeldung">
+        <dc:Bounds x="510" y="545" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_E_Unzulaessig" bpmnElement="E_Unzulaessig">
+        <dc:Bounds x="700" y="562" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Tagesordnung" bpmnElement="T_Tagesordnung">
+        <dc:Bounds x="950" y="435" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Niederschrift" bpmnElement="T_Niederschrift">
+        <dc:Bounds x="1370" y="435" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Veroeffentlichen" bpmnElement="T_Veroeffentlichen">
+        <dc:Bounds x="1540" y="435" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_E_Verwaltung" bpmnElement="E_Verwaltung">
+        <dc:Bounds x="1710" y="452" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Stellungnahme" bpmnElement="T_Stellungnahme">
+        <dc:Bounds x="600" y="605" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_OeNOe" bpmnElement="T_OeNOe">
+        <dc:Bounds x="770" y="605" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Beratungsfolge" bpmnElement="T_Beratungsfolge">
+        <dc:Bounds x="940" y="605" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Ladung" bpmnElement="T_Ladung">
+        <dc:Bounds x="1110" y="605" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Timer_Ladungsfrist" bpmnElement="Timer_Ladungsfrist">
+        <dc:Bounds x="1280" y="622" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_StartSitzung" bpmnElement="StartSitzung">
+        <dc:Bounds x="180" y="802" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_TOPAufrufen" bpmnElement="T_TOPAufrufen">
+        <dc:Bounds x="260" y="785" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Beratung" bpmnElement="T_Beratung">
+        <dc:Bounds x="430" y="785" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_G_Ergebnis" bpmnElement="G_Ergebnis">
+        <dc:Bounds x="600" y="795" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Abstimmung" bpmnElement="T_Abstimmung">
+        <dc:Bounds x="700" y="785" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Vertagen" bpmnElement="T_Vertagen">
+        <dc:Bounds x="700" y="915" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Verweisen" bpmnElement="T_Verweisen">
+        <dc:Bounds x="870" y="915" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_T_Zurueckziehen" bpmnElement="T_Zurueckziehen">
+        <dc:Bounds x="1040" y="915" width="130" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_G_Beschluss" bpmnElement="G_Beschluss">
+        <dc:Bounds x="870" y="795" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_E_Angenommen" bpmnElement="E_Angenommen">
+        <dc:Bounds x="1120" y="772" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_E_Abgelehnt" bpmnElement="E_Abgelehnt">
+        <dc:Bounds x="1120" y="862" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_E_Erneut" bpmnElement="E_Erneut">
+        <dc:Bounds x="1210" y="932" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_f1" bpmnElement="f1">
+        <di:waypoint x="216" y="120" />
+        <di:waypoint x="260" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f2" bpmnElement="f2">
+        <di:waypoint x="390" y="120" />
+        <di:waypoint x="430" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f3" bpmnElement="f3">
+        <di:waypoint x="560" y="120" />
+        <di:waypoint x="600" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f4" bpmnElement="f4">
+        <di:waypoint x="650" y="120" />
+        <di:waypoint x="260" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f5" bpmnElement="f5">
+        <di:waypoint x="650" y="120" />
+        <di:waypoint x="670" y="120" />
+        <di:waypoint x="670" y="280" />
+        <di:waypoint x="700" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f6" bpmnElement="f6">
+        <di:waypoint x="830" y="280" />
+        <di:waypoint x="870" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f7" bpmnElement="f7">
+        <di:waypoint x="920" y="280" />
+        <di:waypoint x="950" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f8" bpmnElement="f8">
+        <di:waypoint x="1080" y="280" />
+        <di:waypoint x="1120" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f9" bpmnElement="f9">
+        <di:waypoint x="920" y="280" />
+        <di:waypoint x="1120" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f10" bpmnElement="f10">
+        <di:waypoint x="1170" y="280" />
+        <di:waypoint x="1200" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f11" bpmnElement="f11">
+        <di:waypoint x="1330" y="280" />
+        <di:waypoint x="1370" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f12" bpmnElement="f12">
+        <di:waypoint x="1500" y="280" />
+        <di:waypoint x="1560" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f20" bpmnElement="f20">
+        <di:waypoint x="216" y="470" />
+        <di:waypoint x="260" y="470" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f21" bpmnElement="f21">
+        <di:waypoint x="390" y="470" />
+        <di:waypoint x="430" y="470" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f22" bpmnElement="f22">
+        <di:waypoint x="480" y="470" />
+        <di:waypoint x="500" y="470" />
+        <di:waypoint x="500" y="580" />
+        <di:waypoint x="510" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f23" bpmnElement="f23">
+        <di:waypoint x="640" y="580" />
+        <di:waypoint x="700" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f24" bpmnElement="f24">
+        <di:waypoint x="480" y="470" />
+        <di:waypoint x="500" y="470" />
+        <di:waypoint x="500" y="640" />
+        <di:waypoint x="600" y="640" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f25" bpmnElement="f25">
+        <di:waypoint x="730" y="640" />
+        <di:waypoint x="770" y="640" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f26" bpmnElement="f26">
+        <di:waypoint x="900" y="640" />
+        <di:waypoint x="940" y="640" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f27" bpmnElement="f27">
+        <di:waypoint x="1070" y="640" />
+        <di:waypoint x="1090" y="640" />
+        <di:waypoint x="1090" y="470" />
+        <di:waypoint x="950" y="470" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f28" bpmnElement="f28">
+        <di:waypoint x="1080" y="470" />
+        <di:waypoint x="1100" y="470" />
+        <di:waypoint x="1100" y="640" />
+        <di:waypoint x="1110" y="640" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f29" bpmnElement="f29">
+        <di:waypoint x="1240" y="640" />
+        <di:waypoint x="1280" y="640" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f30" bpmnElement="f30">
+        <di:waypoint x="1316" y="640" />
+        <di:waypoint x="1336" y="640" />
+        <di:waypoint x="1336" y="470" />
+        <di:waypoint x="1370" y="470" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f31" bpmnElement="f31">
+        <di:waypoint x="1500" y="470" />
+        <di:waypoint x="1540" y="470" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f32" bpmnElement="f32">
+        <di:waypoint x="1670" y="470" />
+        <di:waypoint x="1710" y="470" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f40" bpmnElement="f40">
+        <di:waypoint x="216" y="820" />
+        <di:waypoint x="260" y="820" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f41" bpmnElement="f41">
+        <di:waypoint x="390" y="820" />
+        <di:waypoint x="430" y="820" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f42" bpmnElement="f42">
+        <di:waypoint x="560" y="820" />
+        <di:waypoint x="600" y="820" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f43" bpmnElement="f43">
+        <di:waypoint x="650" y="820" />
+        <di:waypoint x="700" y="820" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f44" bpmnElement="f44">
+        <di:waypoint x="650" y="820" />
+        <di:waypoint x="670" y="820" />
+        <di:waypoint x="670" y="950" />
+        <di:waypoint x="700" y="950" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f45" bpmnElement="f45">
+        <di:waypoint x="650" y="820" />
+        <di:waypoint x="670" y="820" />
+        <di:waypoint x="670" y="950" />
+        <di:waypoint x="870" y="950" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f46" bpmnElement="f46">
+        <di:waypoint x="650" y="820" />
+        <di:waypoint x="670" y="820" />
+        <di:waypoint x="670" y="950" />
+        <di:waypoint x="1040" y="950" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f47" bpmnElement="f47">
+        <di:waypoint x="830" y="820" />
+        <di:waypoint x="870" y="820" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f48" bpmnElement="f48">
+        <di:waypoint x="920" y="820" />
+        <di:waypoint x="940" y="820" />
+        <di:waypoint x="940" y="790" />
+        <di:waypoint x="1120" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f49" bpmnElement="f49">
+        <di:waypoint x="920" y="820" />
+        <di:waypoint x="940" y="820" />
+        <di:waypoint x="940" y="880" />
+        <di:waypoint x="1120" y="880" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f50" bpmnElement="f50">
+        <di:waypoint x="830" y="950" />
+        <di:waypoint x="1210" y="950" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f51" bpmnElement="f51">
+        <di:waypoint x="1000" y="950" />
+        <di:waypoint x="1210" y="950" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f52" bpmnElement="f52">
+        <di:waypoint x="1170" y="950" />
+        <di:waypoint x="1210" y="950" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_m1" bpmnElement="m1">
+        <di:waypoint x="1500" y="280" />
+        <di:waypoint x="1520" y="280" />
+        <di:waypoint x="1520" y="470" />
+        <di:waypoint x="180" y="470" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_m2" bpmnElement="m2">
+        <di:waypoint x="640" y="580" />
+        <di:waypoint x="660" y="580" />
+        <di:waypoint x="660" y="280" />
+        <di:waypoint x="1560" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_m3" bpmnElement="m3">
+        <di:waypoint x="1240" y="640" />
+        <di:waypoint x="1260" y="640" />
+        <di:waypoint x="1260" y="820" />
+        <di:waypoint x="180" y="820" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_m4" bpmnElement="m4">
+        <di:waypoint x="1156" y="790" />
+        <di:waypoint x="1176" y="790" />
+        <di:waypoint x="1176" y="470" />
+        <di:waypoint x="1370" y="470" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_m5" bpmnElement="m5">
+        <di:waypoint x="1156" y="880" />
+        <di:waypoint x="1176" y="880" />
+        <di:waypoint x="1176" y="470" />
+        <di:waypoint x="1370" y="470" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
