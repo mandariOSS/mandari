@@ -342,6 +342,14 @@ class DatabaseStorage:
                 source.consecutive_failures = 0
                 await session.commit()
 
+    async def update_source_sync_config(self, source_id: UUID, sync_config: dict[str, Any]) -> None:
+        """sync_config einer Quelle ersetzen (z. B. Zensus-Ergebnis unter ``probe``, Issue #114)."""
+        async with self.get_session() as session:
+            source = await session.get(OParlSource, source_id)
+            if source:
+                source.sync_config = sync_config
+                await session.commit()
+
     async def record_source_failure(self, url: str, error: str, error_kind: str | None = None) -> None:
         """
         Fehlgeschlagenen Sync-Versuch an der Quelle festhalten (Betriebsmonitor

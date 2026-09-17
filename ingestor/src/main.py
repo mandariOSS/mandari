@@ -25,7 +25,10 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+import json
 from datetime import UTC
+from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -676,6 +679,94 @@ def main() -> None:
     Use 'mandari-ingestor COMMAND --help' for more information on a command.
     """
     pass
+
+
+@app.command("probe-ris")
+def probe_ris(
+    url: list[str] | None = typer.Argument(None, help="Startseite(n) des Ratsinformationssystems"),  # noqa: B008
+    batch: str | None = typer.Option(None, "--batch", "-b", help="Datei mit einer URL je Zeile (Kommentare mit #)"),
+    fmt: str = typer.Option("json", "--format", help="json oder csv"),
+    out: str | None = typer.Option(None, "--out", "-o", help="Zieldatei (Standard: Ausgabe auf der Konsole)"),
+    store: bool = typer.Option(
+        False, "--store", help="Ergebnis in sync_config['probe'] einer registrierten Quelle ablegen"
+    ),
+) -> None:
+    """
+    Zensus: Hersteller, robots-Status, Bot-Gate und OParl-Endpunkt je Kommune (Issue #114).
+
+    Höchstens fünf Anfragen je Kommune, Politeness-Regeln gelten, keine Umgehung von Gates.
+    Der Batch-Lauf liefert zusätzlich zwei Listen: „ohne OParl, robots-frei“ und
+    „OParl vorhanden, nicht registriert“ (Abgleich mit den registrierten Quellen).
+    """
+    import csv
+    import io
+
+    import httpx
+
+    from src.probe import ris_probe
+
+    ziele = list(url or [])
+    if batch:
+        for zeile in Path(batch).read_text(encoding="utf-8").splitlines():
+            zeile = zeile.strip()
+            if zeile and not zeile.startswith("#"):
+                ziele.append(zeile.split(",")[0].strip())
+    if not ziele:
+        console.print("[red]Keine URL angegeben (Argument oder --batch).[/red]")
+        raise typer.Exit(1)
+
+    async def run_probe() -> tuple[list[ris_probe.ProbeResult], set[str]]:
+        results: list[ris_probe.ProbeResult] = []
+        async with httpx.AsyncClient(headers={"User-Agent": settings.scraper_user_agent}) as client:
+            for ziel in ziele:
+                results.append(await ris_probe.probe_url(ziel, client, user_agent=settings.scraper_user_agent))
+                await asyncio.sleep(2)  # Politeness: eine Kommune nach der anderen, nicht gleichzeitig
+        registriert: set[str] = set()
+        if batch or store:
+            try:
+                async with SyncOrchestrator() as orchestrator:
+                    for quelle in await orchestrator.storage.get_all_sources():
+                        registriert.add(str(quelle.url).rstrip("/"))
+                        if store:
+                            treffer = next(
+                                (
+                                    r
+                                    for r in results
+                                    if r.oparl_endpoint and r.oparl_endpoint.rstrip("/") == str(quelle.url).rstrip("/")
+                                ),
+                                None,
+                            )
+                            if treffer is not None:
+                                cfg = dict(quelle.sync_config or {})
+                                cfg["probe"] = treffer.to_dict()
+                                await orchestrator.storage.update_source_sync_config(quelle.id, cfg)
+            except Exception as e:  # ohne Datenbank bleibt der Zensus trotzdem nutzbar
+                console.print(f"[yellow]Registrierte Quellen nicht lesbar: {e}[/yellow]")
+        return results, registriert
+
+    try:
+        results, registriert = asyncio.run(run_probe())
+    except KeyboardInterrupt:
+        raise typer.Exit(130) from None
+
+    if fmt == "csv":
+        puffer = io.StringIO()
+        zeilen = ris_probe.to_csv_rows(results)
+        writer = csv.DictWriter(puffer, fieldnames=list(zeilen[0].keys()))
+        writer.writeheader()
+        writer.writerows(zeilen)
+        text = puffer.getvalue()
+    else:
+        daten: dict[str, Any] = {"ergebnisse": [r.to_dict() for r in results]}
+        if len(results) > 1 or batch:
+            daten["listen"] = ris_probe.classify_batch(results, registriert)
+        text = json.dumps(daten, ensure_ascii=False, indent=2)
+
+    if out:
+        Path(out).write_text(text, encoding="utf-8")
+        console.print(f"[green]{len(results)} Kommune(n) geprüft → {out}[/green]")
+    else:
+        console.print(text)
 
 
 if __name__ == "__main__":
