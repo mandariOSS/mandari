@@ -13,9 +13,9 @@ Jede Upload-Stelle ruft sie mit einem Profil und einer Höchstgröße auf (Issue
 | `IMAGES` | png, jpg, jpeg, gif, webp | Dateien, die eingebettet angezeigt werden (Logos, Profilbilder) |
 | `PDF` | pdf | Briefköpfe |
 | `IMPORTABLE_DOCUMENTS` | pdf, docx | Antrags-Import mit Textübernahme |
-| `DATA` | csv, json | Import-Schnittstellen (xml steht in `NEVER` und ist damit ausgeschlossen) |
+| `DATA` | csv, json, xml | Import-Schnittstellen; nur geparst (XML über defusedxml), nie gespeichert oder ausgeliefert |
 
-`NEVER` sticht jedes Profil: HTML, SVG, XML/XSL, JavaScript, Serverskripte und
+`NEVER` sticht jedes Profil: HTML, SVG, XSL/XSLT, JavaScript, Serverskripte und
 ausführbare Dateien werden nie angenommen. SVG fehlt auch im Bildprofil bewusst, weil
 eine SVG-Datei Skript enthalten kann und vom Browser als aktives Dokument behandelt wird.
 Gemessen wird die letzte Endung des Dateinamens; Pfadangaben im Namen ändern nichts.

@@ -130,3 +130,18 @@ class TestAuslieferung:
         # Django liefert bei FileResponse immer eine Disposition; entscheidend ist "inline"
         assert antwort["Content-Disposition"].startswith("inline")
         assert antwort["X-Content-Type-Options"] == "nosniff"
+
+
+class TestXmlNurAlsImportdaten:
+    """XML ist Datenformat der Import-Schnittstellen (nur geparst), aber kein Dokument."""
+
+    def test_xml_im_datenprofil_erlaubt(self) -> None:
+        validate_upload(datei("aufgaben.xml"), allowed=DATA, max_bytes=MB, bezeichnung="Importdatei")
+
+    def test_xml_im_dokumentprofil_abgelehnt(self) -> None:
+        with pytest.raises(ValidationError):
+            validate_upload(datei("anlage.xml"), allowed=DOCUMENTS, max_bytes=MB, bezeichnung="Anlage")
+
+    def test_xsl_bleibt_ueberall_gesperrt(self) -> None:
+        with pytest.raises(ValidationError):
+            validate_upload(datei("boese.xsl"), allowed=DATA, max_bytes=MB, bezeichnung="Importdatei")

@@ -60,11 +60,14 @@ PDF = frozenset({".pdf"})
 #: Vorlagen, aus denen Text übernommen wird (Antrags-Import).
 IMPORTABLE_DOCUMENTS = frozenset({".pdf", ".docx"})
 
-#: Strukturierte Daten für Import-Schnittstellen.
+#: Strukturierte Daten für Import-Schnittstellen. Sie werden nur geparst (XML über
+#: defusedxml), nie gespeichert oder ausgeliefert; deshalb darf XML hier stehen.
 DATA = frozenset({".csv", ".json", ".xml"})
 
 #: Endungen, die niemals angenommen werden — unabhängig vom Profil.
-#: Aktive Inhalte, die ein Browser ausführen würde, und Serverskripte.
+#: Aktive Inhalte, die ein Browser ausführen würde, und Serverskripte. XML fehlt
+#: bewusst: Es ist Datenformat der Import-Schnittstellen, kein Dokument-Profil
+#: nimmt es an, und ausgeliefert wird es nie.
 NEVER = frozenset(
     {
         ".htm",
@@ -73,7 +76,6 @@ NEVER = frozenset(
         ".shtml",
         ".svg",
         ".svgz",
-        ".xml",
         ".xsl",
         ".xslt",
         ".js",
