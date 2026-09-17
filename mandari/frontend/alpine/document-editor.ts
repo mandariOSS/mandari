@@ -511,8 +511,9 @@ export const documentEditor = defineComponent(() => {
             this._savedSeq = this._changeSeq
           },
           onReloadRequired: () => {
-            // Server hat eine Version wiederhergestellt → frisch laden
-            showToast('Eine Version wurde wiederhergestellt — das Dokument wird neu geladen.', 'info')
+            // Server hat einen neuen Stand (Versions-Wiederherstellung oder Speichern
+            // ohne Verbindung durch eine andere Person) → frisch laden
+            showToast('Das Dokument wurde an anderer Stelle gespeichert — es wird neu geladen.', 'info')
             this.leaveIntentionally()
             window.setTimeout(() => window.location.reload(), 800)
           },

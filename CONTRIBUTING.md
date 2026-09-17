@@ -85,6 +85,10 @@ MANDARI_E2E=1 pytest tests_e2e -q
 Ohne `MANDARI_E2E=1` werden diese Tests übersprungen. Screenshots landen unter
 `tests_e2e/screenshots/`, in der CI als Artefakt.
 
+Die Kollaborationstests (`tests_e2e/test_editor_kollaboration.py`) starten einen eigenen
+ASGI-Testserver (Daphne im Thread, In-Memory-Channel-Layer, kein Redis) und öffnen zwei
+Browserkontexte. Sie brauchen kein zusätzliches Setup, dauern aber je rund eine Minute.
+
 **E-Mail-Vorlagen** werden gegen Snapshots geprüft. Nach einer gewollten Änderung:
 
 ```bash
