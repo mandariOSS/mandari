@@ -1,0 +1,35 @@
+# Beispiel: Prometheus-Scrape-Konfiguration für mandari (Issue #231, docs/MONITORING.md)
+#
+# Die Anwendung liefert /metrics/ nur an Absender aus METRICS_ALLOWED_NETWORKS (Vorgabe:
+# Loopback und private Netze) oder mit Bearer-Token (METRICS_TOKEN). Ein Prometheus im selben
+# Compose-Netz braucht deshalb kein Token; ein externer Prometheus nutzt das Token über HTTPS.
+# Der Ingestor liefert seine Metriken (mandari_ingestor_*) über einen eigenen Port.
+
+global:
+  scrape_interval: 30s
+
+scrape_configs:
+  # Anwendung im selben Docker-Netz (Containername anpassen)
+  - job_name: mandari
+    metrics_path: /metrics/
+    static_configs:
+      - targets: ["mandari-app:8000"]
+        labels:
+          service: mandari-web
+
+  # Alternative: von außen über den Reverse-Proxy mit Token
+  # - job_name: mandari-extern
+  #   metrics_path: /metrics/
+  #   scheme: https
+  #   authorization:
+  #     type: Bearer
+  #     credentials_file: /etc/prometheus/mandari-metrics.token
+  #   static_configs:
+  #     - targets: ["mandari.example.org"]
+
+  # Ingestor (Port laut ingestor/README, METRICS_PORT)
+  - job_name: mandari-ingestor
+    static_configs:
+      - targets: ["mandari-ingestor:9090"]
+        labels:
+          service: mandari-ingestor
