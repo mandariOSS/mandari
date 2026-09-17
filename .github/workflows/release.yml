@@ -37,6 +37,39 @@ env:
   IMAGE_OWNER: mandarioss
 
 jobs:
+  # Stueckliste (SBOM, CycloneDX) je Release: drei Dateien als Release-Anhang, damit
+  # Kunden ihre eigene Schwachstellenueberwachung auf mandari anwenden koennen (Issue #97).
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+      - name: Werkzeuge
+        run: |
+          pip install cyclonedx-bom==7.1.0
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: SBOM erzeugen
+        run: sh scripts/build_sbom.sh sbom
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sbom-${{ github.event.release.tag_name || github.event.inputs.tag }}
+          path: sbom/*.cdx.json
+      - name: An das Release anhaengen
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" sbom/*.cdx.json --clobber
+
   build:
     name: Build and Push
     runs-on: ubuntu-latest

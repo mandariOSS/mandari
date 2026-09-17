@@ -262,3 +262,6 @@ mandari/static/js/editor.bundle.js
 
 # E2E-Screenshots (CI-Artefakt)
 mandari/tests_e2e/screenshots/
+
+# SBOM-Ausgabe von scripts/build_sbom.sh (Release-Anhang, nicht versioniert)
+sbom/
