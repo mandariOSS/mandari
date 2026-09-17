@@ -38,6 +38,7 @@ dependencies = [
 
     # AI / HTTP
     "httpx>=0.28.0",
+    "pyyaml>=6.0.2",
 
     # Django 6.0 has built-in background tasks - no Celery needed!
 
