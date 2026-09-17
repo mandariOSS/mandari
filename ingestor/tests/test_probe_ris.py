@@ -200,6 +200,7 @@ def test_cli_probe_ris_nutzt_vorhandenes_user_agent_setting(monkeypatch: pytest.
         return rp.ProbeResult(url=url, vendor="sessionnet", robots="erlaubt")
 
     monkeypatch.setattr(rp, "probe_url", fake_probe)
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)  # lokale Umgebung: httpx liest die Variable beim Client-Aufbau
     ausgabe = tmp_path / "probe.json"
     ergebnis = CliRunner().invoke(
         cli.app, ["probe-ris", "https://ris.example.org/", "--format", "json", "--out", str(ausgabe)]
