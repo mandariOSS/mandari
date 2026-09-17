@@ -74,6 +74,31 @@ services:
     image: postgres:16-alpine
     container_name: ${COMPOSE_PROJECT_NAME:-mandari}-postgres
     restart: unless-stopped
+    # Grundeinstellungen statt Auslieferungswerte (Issue #258).
+    # PostgreSQL liefert shared_buffers=128MB und random_page_cost=4 aus — das
+    # beschreibt eine drehende Festplatte und einen kleinen Datenbestand. Beides
+    # trifft hier nicht zu. Die Werte sind vom zugeteilten Arbeitsspeicher
+    # abgeleitet (POSTGRES_MEM_LIMIT) und einzeln uebersteuerbar; Herleitung und
+    # Anpassung stehen in DEPLOYMENT.md. Eine Aenderung wirkt erst nach einem
+    # Neustart des Datenbankdienstes.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-768MB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-8MB}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-128MB}
+      - -c
+      - random_page_cost=${POSTGRES_RANDOM_PAGE_COST:-1.1}
+      - -c
+      - effective_io_concurrency=${POSTGRES_EFFECTIVE_IO_CONCURRENCY:-200}
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+      - -c
+      - max_wal_size=${POSTGRES_MAX_WAL_SIZE:-2GB}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mandari}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
@@ -83,7 +108,9 @@ services:
       - ./scripts/init-website-db.sh:/docker-entrypoint-initdb.d/init-website-db.sh:ro
     networks:
       - mandari
-    mem_limit: 512m
+    # shared_buffers ist auf ein Viertel hiervon ausgelegt. Wer diesen Wert
+    # aendert, zieht POSTGRES_SHARED_BUFFERS mit (siehe DEPLOYMENT.md).
+    mem_limit: ${POSTGRES_MEM_LIMIT:-1g}
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
