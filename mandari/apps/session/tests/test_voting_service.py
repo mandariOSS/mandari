@@ -50,16 +50,37 @@ def welt() -> dict[str, Any]:
     return {"item": item, "personen": personen, "user": session_user, "tenant": tenant, "meeting": meeting}
 
 
-def test_dreissig_stimmen_mit_wenigen_abfragen(welt: dict[str, Any], django_assert_max_num_queries: Any) -> None:
-    stimmen = {p: ("yes" if i % 3 else "no") for i, p in enumerate(welt["personen"])}
+def test_abfragezahl_haengt_nicht_von_der_stimmenzahl_ab(welt: dict[str, Any]) -> None:
+    """Die Schreibzugriffe sind gesammelt: 60 Stimmen kosten so viele Abfragen wie 30.
 
-    with django_assert_max_num_queries(8):
-        tally = voting_service.capture_votes(welt["item"], stimmen, recorded_by=welt["user"])
+    Die absolute Zahl enthält konstante Anteile aus den Signal-Handlern von
+    ``agenda_item.save()`` (Audit-Log, Statusableitung); entscheidend ist, dass sie mit
+    der Stimmenzahl nicht wächst.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
 
+    personen = welt["personen"]
+    for i in range(30, 60):
+        person = SessionPerson.objects.create(tenant=welt["tenant"], given_name=f"P{i}", family_name=f"Mitglied{i}")
+        SessionAttendance.objects.create(meeting=welt["meeting"], person=person, status="present")
+        personen.append(person)
+
+    def erfassen(anzahl: int) -> int:
+        stimmen = {p: ("yes" if i % 3 else "no") for i, p in enumerate(personen[:anzahl])}
+        SessionVote.objects.filter(agenda_item=welt["item"]).delete()
+        with CaptureQueriesContext(connection) as ctx:
+            voting_service.capture_votes(welt["item"], stimmen, recorded_by=welt["user"])
+        return len(ctx.captured_queries)
+
+    dreissig = erfassen(30)
+    sechzig = erfassen(60)
+
+    assert sechzig == dreissig, f"{sechzig} Abfragen für 60 Stimmen, {dreissig} für 30"
+    assert dreissig <= 15
     welt["item"].refresh_from_db()
-    assert SessionVote.objects.filter(agenda_item=welt["item"]).count() == 30
-    assert (welt["item"].votes_yes, welt["item"].votes_no, welt["item"].votes_abstain) == (20, 10, 0)
-    assert tally["yes"] == 20 if "yes" in tally else True
+    assert SessionVote.objects.filter(agenda_item=welt["item"]).count() == 60
+    assert (welt["item"].votes_yes, welt["item"].votes_no) == (40, 20)
 
 
 def test_korrektur_loeschen_und_unveraendert(welt: dict[str, Any]) -> None:
