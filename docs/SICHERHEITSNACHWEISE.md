@@ -4,8 +4,7 @@ Was mandari heute an Sicherheitsnachweisen hat, was in welcher Reihenfolge dazuk
 und wie wir mit Befunden umgehen. Grundlage für das Trust Center und für
 Vergabeunterlagen (Issues #97 und #261, BSI IT-Grundschutz APP.3.1.A22).
 
-> **Stand: Entwurf zur Entscheidung.** Termine und Turnus mit „(Entscheidung)“ sind
-> Vorschläge; verbindlich werden sie mit Veröffentlichung im Trust Center.
+> **Stand:** beschlossen am 17.09.2026; Termine werden im Trust Center mit Datum fortgeschrieben.
 
 ## 1. Was heute belegbar ist
 
@@ -39,7 +38,7 @@ Berechtigungsketten und im Zusammenspiel der Portale.
 Schwerpunkt ist das, was Automatisierung nicht abdeckt: Berechtigungslogik über
 mehrere Schritte, Ö/NÖ-Trennung, Mandantentrennung.
 
-**Form und Turnus (Entscheidung):** externer Dienstleister (Grey-Box mit Prüfkonten je
+**Form und Turnus:** externer Dienstleister (Grey-Box mit Prüfkonten je
 Rolle), **jährlich** sowie anlassbezogen vor 1.0 und vor größeren Änderungen an
 Authentisierung oder Rechtemodell. Ein Bug-Bounty-Programm folgt frühestens nach dem
 ersten Test.
@@ -73,7 +72,7 @@ nicht fehlend um jeden Preis.
 | ORP.4 Identitäts- und Berechtigungsmanagement | Rollen, Vier-Augen, zweiter Faktor | umgesetzt (2FA-Pflicht, Rollen); Vier-Augen in Session (#222) offen | `SECURITY.md` |
 | DER.4 Notfallmanagement | RTO/RPO, Wiederanlauf geübt | teilweise; Messung offen (#229) | `docs/HOCHVERFUEGBARKEIT.md`, `docs/SLA.md` |
 | DER.2.1 Behandlung von Sicherheitsvorfällen | Meldeweg, Fristen | umgesetzt | `SECURITY.md` |
-| ISMS.1 Sicherheitsmanagement | Rolle der Informationssicherheitsbeauftragten | **offen (Entscheidung):** Benennung durch den Betreiber | |
+| ISMS.1 Sicherheitsmanagement | Rolle der Informationssicherheitsbeauftragten | benannt: der Betreiber persönlich (Geschäftsführung), seit 17.09.2026 | Trust Center |
 
 ## 4. SBOM je Release
 
@@ -84,7 +83,7 @@ CycloneDX-Format und hängt sie an das GitHub-Release: `sbom-mandari-python.cdx.
 `sh scripts/build_sbom.sh <ausgabeverzeichnis>`. Damit können Kunden ihre eigene
 Schwachstellenüberwachung auf mandari anwenden.
 
-## 5. ISO 27001 und BSI C5 (Entscheidung)
+## 5. ISO 27001 und BSI C5
 
 Eine Zertifizierung des Betreibers lohnt ab einem Auftragsvolumen, das die
 jährlichen Kosten (Audit, Beratung, interner Aufwand) trägt. Vorschlag: Start der
@@ -92,12 +91,12 @@ Vorbereitung auf **ISO 27001**, sobald drei Verwaltungskunden im Managed Hosting
 laufen oder eine Vergabe sie verlangt; BSI C5 nur auf ausdrückliche Anforderung.
 Bis dahin: Grundschutz-Selbstbewertung (Abschnitt 3) jährlich fortschreiben.
 
-## 6. Fahrplan (Entscheidung)
+## 6. Fahrplan
 
 | Wann | Schritt | Nachweis im Trust Center |
 |---|---|---|
-| **Q4 2026** | SBOM je Release (erledigt mit diesem Fahrplan); Grundschutz-Selbstbewertung veröffentlicht; Informationssicherheitsbeauftragte benannt | Abschnitt „Nachweise“ mit Links auf TOM, Löschkonzept, SBOM, Fahrplan |
-| **Q1 2027** | Erster externer Penetrationstest (Umfang Abschnitt 2), kritische und hohe Befunde geschlossen | Management-Summary mit Datum |
-| **Q2 2027** | Notfallübung mit gemessener Wiederanlaufzeit (#229); SLA verbindlich | RTO/RPO als Zahl |
+| **Q4 2026** | SBOM je Release (erledigt); Grundschutz-Selbstbewertung veröffentlicht; Informationssicherheitsbeauftragter benannt (erledigt) | Abschnitt „Nachweise“ mit Links auf TOM, Löschkonzept, SBOM, Fahrplan |
+| **Q3 2027** | Erster externer Penetrationstest (Umfang Abschnitt 2), kritische und hohe Befunde geschlossen | Management-Summary mit Datum |
+| **Q2 2027** | Notfallübung mit gemessener Wiederanlaufzeit (#229) | RTO/RPO als Zahl |
 | **jährlich ab 2027** | Penetrationstest wiederholen, Selbstbewertung fortschreiben | Datum der letzten Prüfung |
 | **bei Bedarf** | ISO 27001 (Abschnitt 5) | Zertifikat |
