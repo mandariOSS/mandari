@@ -486,6 +486,7 @@ def work_org_registration_rejected(org: Any, make_member: Any) -> dict[str, Any]
         "organization": org,
         "user": _eva(),
         "reason": "Die Registrierung ist Mitgliedern der Fraktion vorbehalten.\nBitte melde dich bei der Geschäftsstelle.",
+        "retention_days": 30,  # Löschfrist nach Ablehnung (#238)
     }
 
 
