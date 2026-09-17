@@ -10,6 +10,8 @@ Digitale Abstimmung und Umlaufbeschlüsse (Issue #41).
   stimmberechtigte Besetzung, Nummernvergabe U/<Jahr>/<lfd>.
 """
 
+from typing import Any
+
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -38,22 +40,46 @@ def capture_votes(agenda_item: SessionAgendaItem, votes_by_person: dict, *, reco
     secret = agenda_item.voting_method == "secret"
     valid_votes = {value for value, _ in SessionVote.VOTE_CHOICES}
 
-    for person, vote_value in votes_by_person.items():
-        if vote_value not in valid_votes:
-            SessionVote.objects.filter(agenda_item=agenda_item, person=person).delete()
-            continue
-        if secret and vote_value not in ("excluded", "not_participating"):
-            # Geheime Abstimmung: kein individuelles Stimmverhalten speichern
-            SessionVote.objects.filter(agenda_item=agenda_item, person=person).delete()
-            continue
-        SessionVote.objects.update_or_create(
-            agenda_item=agenda_item,
-            person=person,
-            defaults={"vote": vote_value, "recorded_by": recorded_by},
-        )
+    # Gesammelt statt je Person einzeln (Issue #291): Bei 90 Ratsmitgliedern kosteten
+    # update_or_create-Aufrufe rund zwei Sekunden je Erfassung; jetzt eine Leseabfrage,
+    # ein Löschen, ein bulk_create und ein bulk_update in einer Transaktion.
+    personen = list(votes_by_person)
+    with transaction.atomic():
+        vorhanden = {
+            stimme.person_id: stimme
+            for stimme in SessionVote.objects.select_for_update().filter(agenda_item=agenda_item, person__in=personen)
+        }
+        loeschen: list[Any] = []
+        neu: list[SessionVote] = []
+        aendern: list[SessionVote] = []
+        jetzt = timezone.now()
+        for person, vote_value in votes_by_person.items():
+            bestehend = vorhanden.get(person.pk)
+            ungueltig = vote_value not in valid_votes
+            # Geheime Abstimmung: kein individuelles Stimmverhalten speichern, nur Vermerke
+            verboten = secret and vote_value not in ("excluded", "not_participating")
+            if ungueltig or verboten:
+                if bestehend is not None:
+                    loeschen.append(bestehend.pk)
+                continue
+            if bestehend is None:
+                neu.append(
+                    SessionVote(agenda_item=agenda_item, person=person, vote=vote_value, recorded_by=recorded_by)
+                )
+            elif bestehend.vote != vote_value or bestehend.recorded_by_id != getattr(recorded_by, "pk", None):
+                bestehend.vote = vote_value
+                bestehend.recorded_by = recorded_by
+                bestehend.updated_at = jetzt  # bulk_update setzt auto_now nicht selbst
+                aendern.append(bestehend)
+        if loeschen:
+            SessionVote.objects.filter(pk__in=loeschen).delete()
+        if neu:
+            SessionVote.objects.bulk_create(neu)
+        if aendern:
+            SessionVote.objects.bulk_update(aendern, ["vote", "recorded_by", "updated_at"])
 
-    if not secret:
-        recompute_sums(agenda_item)
+        if not secret:
+            recompute_sums(agenda_item)
     return tally(agenda_item)
 
 
