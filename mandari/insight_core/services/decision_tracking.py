@@ -18,11 +18,10 @@ from __future__ import annotations
 
 import logging
 
+from apps.common.email import render_email
 from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import timezone
-
-from apps.common.email import render_email
 
 logger = logging.getLogger(__name__)
 

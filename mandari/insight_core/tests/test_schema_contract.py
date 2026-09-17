@@ -13,7 +13,15 @@ from pathlib import Path
 
 import pytest
 
-from insight_core.schema_contract import ColumnSpec, SchemaSpec, compare, django_schema, sqlalchemy_schema
+from insight_core.schema_contract import (
+    ColumnSpec,
+    SchemaSpec,
+    compare,
+    django_schema,
+    elasticsearch_contract,
+    ingestor_index_names,
+    sqlalchemy_schema,
+)
 
 pytest.importorskip("sqlalchemy")
 
@@ -83,3 +91,46 @@ def test_compatible_families_only_warn(schemas: tuple[SchemaSpec, SchemaSpec]) -
     report = compare(django, softened)
     assert not any(f.column == "location_address" for f in report.errors)
     assert any(f.column == "location_address" for f in report.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Elasticsearch-Indizes (Issue #215): Django legt an, der Ingestor schreibt nur
+# ---------------------------------------------------------------------------
+
+
+def _django_index_names() -> set[str]:
+    from insight_search.management.commands.setup_elasticsearch import Command
+
+    return set(Command()._get_index_configs([]).keys())
+
+
+def test_elasticsearch_contract_holds() -> None:
+    assert elasticsearch_contract(INGESTOR_DIR, _django_index_names()) == []
+
+
+def test_ingestor_knows_exactly_the_django_indices() -> None:
+    assert set(ingestor_index_names(INGESTOR_DIR)) == _django_index_names()
+
+
+def _fake_ingestor(tmp_path: Path, quelle: str) -> Path:
+    datei = tmp_path / "src" / "indexing" / "elasticsearch.py"
+    datei.parent.mkdir(parents=True)
+    datei.write_text(quelle, encoding="utf-8")
+    return tmp_path
+
+
+def test_detects_unknown_index_and_own_mapping(tmp_path: Path) -> None:
+    fake = _fake_ingestor(
+        tmp_path,
+        'INDEX_NAMES = ("papers", "geheim")\nMAPPING = {"name": {"type": "text", "analyzer": "german"}}\n',
+    )
+    probleme = elasticsearch_contract(fake, {"papers", "meetings"})
+    assert any("'geheim'" in p for p in probleme)
+    assert any("'meetings'" in p for p in probleme)
+    assert any('"analyzer"' in p for p in probleme)
+
+
+def test_detects_missing_index_names_constant(tmp_path: Path) -> None:
+    fake = _fake_ingestor(tmp_path, "INDICES = ()\n")
+    probleme = elasticsearch_contract(fake, {"papers"})
+    assert len(probleme) == 1 and "INDEX_NAMES" in probleme[0]

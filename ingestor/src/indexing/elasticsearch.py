@@ -16,89 +16,14 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Index mappings mirroring setup_elasticsearch.py (Django command).
-# Synonyms are NOT included here — they require Django's insight_search.synonyms.
-INDEX_MAPPINGS: dict[str, dict[str, Any]] = {
-    "papers": {
-        "properties": {
-            "id": {"type": "keyword"},
-            "type": {"type": "keyword"},
-            "body_id": {"type": "keyword"},
-            "name": {"type": "text", "analyzer": "german"},
-            "reference": {"type": "text", "analyzer": "standard", "fields": {"keyword": {"type": "keyword"}}},
-            "paper_type": {"type": "keyword"},
-            "date": {"type": "date", "format": "strict_date_optional_time||yyyy-MM-dd", "ignore_malformed": True},
-            "oparl_created": {"type": "date", "ignore_malformed": True},
-            "oparl_modified": {"type": "date", "ignore_malformed": True},
-            "file_contents_preview": {"type": "text", "analyzer": "german"},
-            "file_names": {"type": "text"},
-        }
-    },
-    "meetings": {
-        "properties": {
-            "id": {"type": "keyword"},
-            "type": {"type": "keyword"},
-            "body_id": {"type": "keyword"},
-            "name": {"type": "text", "analyzer": "german"},
-            "organization_names": {"type": "text", "analyzer": "german"},
-            "location_name": {"type": "text"},
-            "start": {"type": "date", "ignore_malformed": True},
-            "end": {"type": "date", "ignore_malformed": True},
-            "cancelled": {"type": "boolean"},
-            "oparl_modified": {"type": "date", "ignore_malformed": True},
-        }
-    },
-    "persons": {
-        "properties": {
-            "id": {"type": "keyword"},
-            "type": {"type": "keyword"},
-            "body_id": {"type": "keyword"},
-            "name": {"type": "text", "analyzer": "german"},
-            "given_name": {"type": "text"},
-            "family_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
-            "title": {"type": "text"},
-            "oparl_modified": {"type": "date", "ignore_malformed": True},
-        }
-    },
-    "organizations": {
-        "properties": {
-            "id": {"type": "keyword"},
-            "type": {"type": "keyword"},
-            "body_id": {"type": "keyword"},
-            "name": {"type": "text", "analyzer": "german", "fields": {"keyword": {"type": "keyword"}}},
-            "short_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
-            "organization_type": {"type": "keyword"},
-            "classification": {"type": "keyword"},
-            "oparl_modified": {"type": "date", "ignore_malformed": True},
-        }
-    },
-    "files": {
-        "properties": {
-            "id": {"type": "keyword"},
-            "type": {"type": "keyword"},
-            "body_id": {"type": "keyword"},
-            "name": {"type": "text", "analyzer": "german"},
-            "file_name": {"type": "text"},
-            "mime_type": {"type": "keyword"},
-            "text_content": {"type": "text", "analyzer": "german"},
-            "text_preview": {"type": "text", "index": False},
-            "paper_id": {"type": "keyword"},
-            "paper_name": {"type": "text", "analyzer": "german"},
-            "paper_reference": {"type": "text", "analyzer": "standard"},
-            "meeting_id": {"type": "keyword"},
-            "organization_names": {"type": "text", "analyzer": "german"},
-            "meeting_name": {"type": "text"},
-            "meeting_date": {"type": "date", "ignore_malformed": True},
-            "agenda_number": {"type": "keyword"},
-            "oparl_modified": {"type": "date", "ignore_malformed": True},
-        }
-    },
-}
-
-INDEX_SETTINGS: dict[str, Any] = {
-    "number_of_shards": 1,
-    "number_of_replicas": 0,
-}
+# Die Indizes samt Mappings und Analyzern legt ausschließlich Django an
+# (``manage.py setup_elasticsearch``, insight_search). Der Ingestor kennt nur die
+# Namen und schreibt Dokumente hinein. Er darf weder Indizes anlegen noch Mappings
+# ändern: Ein hier gepflegtes Zweit-Mapping driftete von Djangos Analyzern
+# (german_custom/german_search mit Synonymen) ab, und ein vom Ingestor angelegter
+# Index kannte diese Analyzer gar nicht (Issue #215). Ob die Namen zu Django
+# passen, prüft scripts/check_schema_contract.py.
+INDEX_NAMES: tuple[str, ...] = ("papers", "meetings", "persons", "organizations", "files")
 
 
 class ElasticsearchIndexer:
@@ -116,6 +41,7 @@ class ElasticsearchIndexer:
     ) -> None:
         self.url = (url or settings.elasticsearch_url).rstrip("/")
         self._client: httpx.AsyncClient | None = None
+        self._missing: set[str] = set()
 
     async def __aenter__(self) -> ElasticsearchIndexer:
         self._client = httpx.AsyncClient(
@@ -140,54 +66,42 @@ class ElasticsearchIndexer:
         except Exception:
             return False
 
-    async def ensure_index_settings(self) -> None:
-        """Configure all index settings (idempotent).
+    async def missing_indices(self) -> set[str]:
+        """Prüft, welche der bekannten Indizes fehlen, und merkt sie sich.
 
-        Creates indices with proper mappings if they don't exist.
+        Fehlende Indizes werden nicht angelegt; das ist Aufgabe von Django
+        (``manage.py setup_elasticsearch``). Schreibzugriffe auf fehlende Indizes
+        werden anschließend übersprungen, damit Elasticsearch sie nicht mit einem
+        dynamischen Mapping ohne die deutschen Analyzer auto-anlegt.
         """
         if not self._client:
-            logger.warning("Elasticsearch client not initialized, skipping settings")
-            return
+            logger.warning("Elasticsearch client not initialized, skipping index check")
+            return set()
 
-        for index_name, mappings in INDEX_MAPPINGS.items():
+        missing: set[str] = set()
+        for index_name in INDEX_NAMES:
             try:
-                # Prüfen ob Index existiert
                 resp = await self._client.head(f"/{index_name}")
-                if resp.status_code == 200:
-                    # Index existiert — Mappings aktualisieren
-                    resp = await self._client.put(
-                        f"/{index_name}/_mapping",
-                        json=mappings,
-                    )
-                    if resp.status_code == 200:
-                        logger.info("Index mappings updated for '%s'", index_name)
-                    else:
-                        logger.warning(
-                            "Failed to update mappings on %s: %d %s",
-                            index_name,
-                            resp.status_code,
-                            resp.text[:200],
-                        )
-                else:
-                    # Neuen Index erstellen
-                    resp = await self._client.put(
-                        f"/{index_name}",
-                        json={
-                            "settings": INDEX_SETTINGS,
-                            "mappings": mappings,
-                        },
-                    )
-                    if resp.status_code == 200:
-                        logger.info("Index '%s' created", index_name)
-                    else:
-                        logger.warning(
-                            "Failed to create index %s: %d %s",
-                            index_name,
-                            resp.status_code,
-                            resp.text[:200],
-                        )
             except Exception as e:
-                logger.warning("Error configuring index '%s': %s", index_name, e)
+                logger.warning("Error checking index '%s': %s", index_name, e)
+                missing.add(index_name)
+                continue
+            if resp.status_code != 200:
+                missing.add(index_name)
+        if missing:
+            logger.warning(
+                "Elasticsearch indices missing: %s. Run `manage.py setup_elasticsearch` on the "
+                "Django side; the ingestor does not create indices (see issue #215).",
+                ", ".join(sorted(missing)),
+            )
+        self._missing = missing
+        return missing
+
+    def _skip_missing(self, index_name: str, action: str) -> bool:
+        if index_name in self._missing:
+            logger.warning("Skipping %s: index '%s' does not exist (Django creates it)", action, index_name)
+            return True
+        return False
 
     async def index_documents(
         self,
@@ -209,6 +123,8 @@ class ElasticsearchIndexer:
 
         if not self._client:
             logger.warning("Elasticsearch client not initialized")
+            return False
+        if self._skip_missing(index_name, "indexing"):
             return False
 
         try:
@@ -267,6 +183,8 @@ class ElasticsearchIndexer:
 
         if not self._client:
             logger.warning("Elasticsearch client not initialized")
+            return False
+        if self._skip_missing(index_name, "delete"):
             return False
 
         try:

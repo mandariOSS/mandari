@@ -7,6 +7,9 @@ CI-Gate: Schema-Contract zwischen Django-Modellen und den SQLAlchemy-Tabellen de
 
 Braucht die Django-Abhängigkeiten (mandari/requirements.lock) und ``sqlalchemy``; der Ingestor
 selbst muss nicht installiert sein, nur sein Quellbaum (``ingestor/``).
+Prüft außerdem, dass der Ingestor nur in die Elasticsearch-Indizes schreibt, die Django anlegt,
+und selbst keine Mappings definiert (Issue #215).
+
 Hintergrund: docs/adr/20260909-schema-contract-django-ingestor.md (Issue #161).
 """
 
@@ -35,12 +38,31 @@ def main() -> int:
 
     django.setup()
 
-    from insight_core.schema_contract import compare, django_schema, format_report, sqlalchemy_schema
+    from insight_core.schema_contract import (
+        compare,
+        django_schema,
+        elasticsearch_contract,
+        format_report,
+        sqlalchemy_schema,
+    )
 
     report = compare(django_schema(), sqlalchemy_schema(INGESTOR_DIR))
     print(format_report(report))
+
+    # Suchindizes: Django legt an, der Ingestor schreibt nur (Issue #215)
+    from insight_search.management.commands.setup_elasticsearch import Command as SetupElasticsearch
+
+    django_indices = set(SetupElasticsearch()._get_index_configs([]).keys())
+    es_probleme = elasticsearch_contract(INGESTOR_DIR, django_indices)
+    if es_probleme:
+        print("\nElasticsearch-Indizes:")
+        for problem in es_probleme:
+            print(f"  ✗ {problem}")
+    else:
+        print(f"\nElasticsearch-Indizes: OK ({', '.join(sorted(django_indices))}; nur Django legt an)")
+
     strict = "--strict" in sys.argv
-    if not report.ok or (strict and report.warnings):
+    if not report.ok or es_probleme or (strict and report.warnings):
         return 1
     return 0
 

@@ -956,8 +956,14 @@ class SyncOrchestrator:
                 if not await indexer.is_healthy():
                     console.print("[yellow]  Elasticsearch not reachable, skipping indexing[/yellow]")
                 else:
-                    # Ensure index settings before first indexing
-                    await indexer.ensure_index_settings()
+                    # Indizes legt Django an (setup_elasticsearch); fehlende werden
+                    # hier nur gemeldet und beim Schreiben übersprungen (Issue #215).
+                    missing = await indexer.missing_indices()
+                    if missing:
+                        console.print(
+                            "[yellow]  Elasticsearch indices missing: "
+                            f"{', '.join(sorted(missing))} — run `manage.py setup_elasticsearch`[/yellow]"
+                        )
                     batch_size = settings.elasticsearch_batch_size
                     indexed_total = 0
 

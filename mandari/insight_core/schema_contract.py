@@ -14,6 +14,7 @@ Entscheidung: ``docs/adr/20260909-schema-contract-django-ingestor.md``.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import sys
 from dataclasses import dataclass, field
@@ -331,3 +332,55 @@ def format_report(report: Report) -> str:
         + ("" if report.ok else " – Contract verletzt")
     )
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Elasticsearch-Indizes: Django legt an, der Ingestor schreibt nur (Issue #215)
+# ---------------------------------------------------------------------------
+
+_ES_VERBOTEN = ('"analyzer"', "_mapping", '"mappings"', '"settings"')
+
+
+def ingestor_index_names(ingestor_dir: Path) -> tuple[str, ...]:
+    """Liest ``INDEX_NAMES`` aus dem Ingestor-Quelltext, ohne ihn zu importieren."""
+    quelle = (ingestor_dir / "src" / "indexing" / "elasticsearch.py").read_text(encoding="utf-8")
+    for knoten in ast.walk(ast.parse(quelle)):
+        ziele: list[ast.expr] = []
+        if isinstance(knoten, ast.Assign):
+            ziele = knoten.targets
+        elif isinstance(knoten, ast.AnnAssign) and knoten.value is not None:
+            ziele = [knoten.target]
+        else:
+            continue
+        if any(isinstance(z, ast.Name) and z.id == "INDEX_NAMES" for z in ziele):
+            wert = knoten.value
+            if isinstance(wert, ast.Tuple | ast.List):
+                return tuple(str(ast.literal_eval(e)) for e in wert.elts)
+    raise ValueError("INDEX_NAMES nicht im Ingestor gefunden (src/indexing/elasticsearch.py)")
+
+
+def elasticsearch_contract(ingestor_dir: Path, django_indices: set[str]) -> list[str]:
+    """
+    Prüft den Vertrag für die Suchindizes: Der Ingestor kennt genau die Indexnamen,
+    die Django in ``setup_elasticsearch`` anlegt, und definiert selbst weder Mappings,
+    Settings noch Analyzer. Liefert eine Liste von Problemen (leer = in Ordnung).
+    """
+    probleme: list[str] = []
+    try:
+        namen = set(ingestor_index_names(ingestor_dir))
+    except (OSError, ValueError, SyntaxError) as exc:
+        return [f"Ingestor-Indexnamen nicht lesbar: {exc}"]
+
+    for name in sorted(namen - django_indices):
+        probleme.append(f"Ingestor schreibt in Index '{name}', den Django nicht anlegt")
+    for name in sorted(django_indices - namen):
+        probleme.append(f"Django legt Index '{name}' an, den der Ingestor nicht kennt")
+
+    quelle = (ingestor_dir / "src" / "indexing" / "elasticsearch.py").read_text(encoding="utf-8")
+    for token in _ES_VERBOTEN:
+        if token in quelle:
+            probleme.append(
+                f"Ingestor-Quelltext enthält {token}: Mappings/Settings/Analyzer gehören nur nach Django "
+                "(insight_search/management/commands/setup_elasticsearch.py)"
+            )
+    return probleme
