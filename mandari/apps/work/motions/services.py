@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 import httpx
 from django.conf import settings
+from django.http import HttpRequest, JsonResponse
 
 from apps.common.models import AISettings, SiteSettings
 
@@ -498,3 +499,41 @@ Text:
             return False
         cfg = self._resolve_provider_config()
         return bool(cfg["api_key"] and cfg["base_url"] and cfg["model"])
+
+
+# ---------------------------------------------------------------------------
+# Speichern ohne Kollaborationsverbindung (#184)
+# ---------------------------------------------------------------------------
+
+#: Hinweis, wenn ein Speichern auf einen inzwischen geänderten Stand trifft.
+KONFLIKT_HINWEIS = (
+    "Das Dokument wurde inzwischen an anderer Stelle geändert. "
+    "Lade die Seite neu, um den aktuellen Stand zu sehen, oder überschreibe ihn bewusst."
+)
+
+
+def speicherkonflikt(request: HttpRequest, old_content: str, new_content: str) -> JsonResponse | str | None:
+    """
+    Prüft, ob ein POST-Speichern einen neueren Stand still überschreiben würde (#184).
+
+    Der Editor schickt ohne Kollaborationsverbindung ``base_content_hash`` mit, den
+    Fingerabdruck des Stands, von dem er ausgeht. Passt er nicht mehr zum gespeicherten
+    Inhalt und unterscheidet sich der neue Inhalt, hat inzwischen jemand anderes
+    gespeichert. Nur ein ausdrückliches ``force=1`` überschreibt dann.
+
+    Liefert ``None`` (kein Konflikt), eine 409-Antwort für den Editor (AJAX) oder den
+    Hinweistext für ein normales Formular.
+    """
+    from .models import content_fingerprint
+
+    base_hash = request.POST.get("base_content_hash", "").strip()
+    if not base_hash or request.POST.get("force") == "1" or old_content == new_content:
+        return None
+    if base_hash == content_fingerprint(old_content):
+        return None
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return JsonResponse(
+            {"error": "conflict", "message": KONFLIKT_HINWEIS, "content_hash": content_fingerprint(old_content)},
+            status=409,
+        )
+    return KONFLIKT_HINWEIS

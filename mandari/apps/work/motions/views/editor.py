@@ -15,12 +15,6 @@ from django.views.generic import TemplateView
 
 logger = logging.getLogger("apps.work.motions")
 
-# Speichern ohne Kollaborationsverbindung traf auf einen neueren Stand (#184)
-KONFLIKT_HINWEIS = (
-    "Das Dokument wurde inzwischen an anderer Stelle geändert. "
-    "Lade die Seite neu, um den aktuellen Stand zu sehen, oder überschreibe ihn bewusst."
-)
-
 import contextlib
 
 from apps.common.mixins import WorkViewMixin
@@ -41,7 +35,7 @@ from ..models import (
     OrganizationLetterhead,
     content_fingerprint,
 )
-from ..services import MotionAIService
+from ..services import MotionAIService, speicherkonflikt
 from ._helpers import _broadcast_doc_reload, _flatten_folder_tree, _get_org_folder_or_404
 
 
@@ -541,27 +535,12 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
                 new_content = request.POST.get("content", "")
 
-                # Konflikt sichtbar machen statt still überschreiben (#184): Der Editor
-                # schickt ohne Kollaborationsverbindung den Fingerabdruck des Stands mit,
-                # von dem er ausgeht. Passt er nicht mehr, hat inzwischen jemand anderes
-                # gespeichert; nur ein ausdrückliches "force" überschreibt dann.
-                base_hash = request.POST.get("base_content_hash", "").strip()
-                if (
-                    base_hash
-                    and request.POST.get("force") != "1"
-                    and old_content != new_content
-                    and base_hash != content_fingerprint(old_content)
-                ):
-                    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-                        return JsonResponse(
-                            {
-                                "error": "conflict",
-                                "message": KONFLIKT_HINWEIS,
-                                "content_hash": content_fingerprint(old_content),
-                            },
-                            status=409,
-                        )
-                    messages.error(request, KONFLIKT_HINWEIS)
+                # Konflikt sichtbar machen statt still überschreiben (#184)
+                konflikt = speicherkonflikt(request, old_content, new_content)
+                if konflikt is not None:
+                    if isinstance(konflikt, JsonResponse):
+                        return konflikt
+                    messages.error(request, konflikt)
                     return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
                 # Create revision if content changed
