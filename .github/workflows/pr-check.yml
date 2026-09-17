@@ -35,7 +35,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
           cache: 'pip'
 
       - name: Install linters
@@ -105,7 +105,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
           cache: 'pip'
 
       - name: Install dependencies
@@ -279,7 +279,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-node@v7
         with:
@@ -318,7 +318,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
           cache: 'pip'
       - name: Abhängigkeiten
         run: |
@@ -356,7 +356,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - name: Ratchet (Inline-Skripte/-Styles, Template-Größe dürfen nicht zunehmen)
         run: python scripts/check_frontend_ratchet.py
       - name: Service-Layer-Ratchet (ORM-Zugriffe und lange Funktionen in Views dürfen nicht zunehmen, #160)
@@ -391,7 +391,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
           cache: 'pip'
       - uses: actions/setup-node@v7
         with:

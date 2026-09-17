@@ -5,7 +5,7 @@
 # =============================================================================
 # Stage 1: Python dependencies bauen
 # =============================================================================
-FROM python:3.12-slim AS python-builder
+FROM python:3.14-slim AS python-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -50,7 +50,7 @@ RUN npx vite build
 # =============================================================================
 # Stage 3: Finales Runtime-Image (kein build-essential, kein Node.js)
 # =============================================================================
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Environment
 ENV PYTHONDONTWRITEBYTECODE=1 \

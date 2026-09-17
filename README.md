@@ -161,9 +161,9 @@ selbst betriebenen Installationen entsteht also keine zusätzliche Angriffsfläc
 
 | Bereich | Technologie |
 |---------|-------------|
-| Backend | Django 6.0, Python 3.12 |
+| Backend | Django 6.0, Python 3.14 (Image; 3.12+ unterstützt) |
 | Frontend | Django-Templates, HTMX, Alpine.js, Tailwind CSS, Vite |
-| Ingestor | Python 3.12 (httpx, SQLAlchemy, APScheduler) |
+| Ingestor | Python 3.14 (httpx, SQLAlchemy, APScheduler) |
 | Datenbank | PostgreSQL 16 |
 | Suche | Elasticsearch 8 (abschaltbar) |
 | Cache und Kanäle | Redis 7 |
