@@ -690,6 +690,11 @@ urlpatterns = [
         views.InvitationCancelView.as_view(),
         name="invitation_cancel",
     ),
+    path(
+        "<slug:tenant_slug>/settings/invitations/<uuid:invitation_id>/resend/",
+        views.InvitationResendView.as_view(),
+        name="invitation_resend",
+    ),
     # Audit-Log
     path(
         "<slug:tenant_slug>/audit/",

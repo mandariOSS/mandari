@@ -1,0 +1,18 @@
+# Willkommen bei mandari work
+
+Fraktion Test
+
+Hallo,
+
+deine Organisation Fraktion Test wurde eingerichtet. Über den folgenden Knopf richtest du dein Administrator-Konto ein und kannst anschließend dein Team einladen.
+
+[Administrator-Konto einrichten](https://mandari.example/work/invite/pppppppppppppppppppppppppppppppp/)
+
+Der Link ist gültig bis 14.09.2026, 18:30 Uhr. Falls der Knopf nicht funktioniert, kopiere diese Adresse in deinen Browser:
+https://mandari.example/work/invite/pppppppppppppppppppppppppppppppp/
+
+Falls du diese Einladung nicht erwartet hast, kannst du diese E-Mail ignorieren. Ohne Annahme wird kein Zugang eingerichtet.
+
+mandari work · Diese E-Mail wurde automatisch versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

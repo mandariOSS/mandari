@@ -1,0 +1,22 @@
+# Einladung zum Sitzungsdienst
+
+Stadt Musterstadt
+
+Guten Tag,
+
+Erika Muster hat Sie eingeladen, dem Sitzungsdienst von Stadt Musterstadt auf mandari beizutreten.
+
+Vorgesehene Rollen
+
+Sitzungsdienst, Lesezugriff
+
+[Einladung annehmen](https://mandari.example/session/invite/tttttttttttttttttttttttttttttttt/)
+
+Die Einladung ist gültig bis 14.09.2026, 18:30 Uhr. Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:
+https://mandari.example/session/invite/tttttttttttttttttttttttttttttttt/
+
+Falls Sie diese Einladung nicht erwartet haben, können Sie diese E-Mail ignorieren. Ohne Annahme wird kein Zugang eingerichtet.
+
+Diese E-Mail wurde automatisch im Auftrag von Stadt Musterstadt über mandari versendet.
+
+© mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)

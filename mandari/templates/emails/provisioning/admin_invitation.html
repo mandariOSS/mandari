@@ -1,0 +1,17 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Deine neue mandari work Organisation: {{ organization.name }}{% endblock %}
+{% block preheader %}{{ organization.name }} ist eingerichtet. Richte jetzt dein Administrator-Konto ein.{% endblock %}
+{% block content %}
+<h1 class="h1">Willkommen bei mandari work</h1>
+<p class="muted">{{ organization.name }}</p>
+<p>Hallo,</p>
+<p>deine Organisation <strong>{{ organization.name }}</strong> wurde eingerichtet. Über den folgenden Knopf richtest du dein Administrator-Konto ein und kannst anschließend dein Team einladen.</p>
+<div class="btn-wrap">
+    <a class="btn" href="{{ accept_url }}">Administrator-Konto einrichten</a>
+</div>
+<p class="muted small">Der Link ist gültig bis {{ invitation.expires_at|date:"d.m.Y, H:i" }} Uhr. Falls der Knopf nicht funktioniert, kopiere diese Adresse in deinen Browser:<br>{{ accept_url }}</p>
+<p class="muted small">Falls du diese Einladung nicht erwartet hast, kannst du diese E-Mail ignorieren. Ohne Annahme wird kein Zugang eingerichtet.</p>
+{% endblock %}
+{% block footer %}
+<p><strong>mandari work</strong> · Diese E-Mail wurde automatisch versendet.</p>
+{% endblock %}

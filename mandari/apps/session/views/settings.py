@@ -9,11 +9,9 @@ Deaktivieren — ohne Django-Admin.
 
 import logging
 
-from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import (
@@ -27,6 +25,7 @@ from ..models import (
     SessionUser,
 )
 from ..permissions import SessionViewMixin
+from ..services.user_invitations import resend_user_invitation, send_user_invitation
 
 logger = logging.getLogger(__name__)
 
@@ -294,29 +293,8 @@ class UserInviteView(SessionViewMixin, TemplateView):
         return redirect("session:users", tenant_slug=self.session_tenant.slug)
 
     def _send_invitation_email(self, invitation):
-        from apps.common.email import send_email
-
-        base_url = getattr(django_settings, "SITE_URL", "https://mandari.de").rstrip("/")
-        accept_path = reverse("session:invitation_accept", kwargs={"token": invitation.token})
-        accept_url = f"{base_url}{accept_path}"
-
-        tenant_name = invitation.tenant.name
-        body = (
-            f"Guten Tag,\n\n"
-            f"Sie wurden eingeladen, dem Sitzungsdienst von {tenant_name} beizutreten.\n\n"
-            f"Einladung annehmen: {accept_url}\n\n"
-            f"Der Link ist 7 Tage gültig.\n\n"
-            f"Mit freundlichen Grüßen\n{tenant_name}"
-        )
-        try:
-            send_email(
-                subject=f"Einladung zum Sitzungsdienst {tenant_name}",
-                body=body,
-                to=[invitation.email],
-                fail_silently=False,
-            )
-        except Exception:
-            logger.exception("Einladungs-E-Mail an %s konnte nicht versendet werden.", invitation.email)
+        # Gemeinsames Mail-Layout, Standardversand, Absendername nennt den Mandanten (#239)
+        send_user_invitation(invitation)
 
 
 class UserRolesUpdateView(SessionViewMixin, View):
@@ -375,6 +353,26 @@ class UserDeactivateView(SessionViewMixin, View):
         state = "reaktiviert" if target.is_active else "deaktiviert"
         messages.success(request, f"{target.user.email} wurde {state}.")
         return redirect("session:users", tenant_slug=tenant_slug)
+
+
+class InvitationResendView(SessionViewMixin, View):
+    """Offene Einladung erneut senden; die Gültigkeit läuft ab jetzt neu (#239)."""
+
+    permission_required = "manage_users"
+    http_method_names = ["post"]
+
+    def post(self, request, tenant_slug, invitation_id):
+        invitation = get_object_or_404(
+            SessionInvitation,
+            pk=invitation_id,
+            tenant=self.session_tenant,
+            accepted_at__isnull=True,
+        )
+        if resend_user_invitation(invitation):
+            messages.success(request, f"Einladung an {invitation.email} wurde erneut versendet.")
+        else:
+            messages.error(request, f"Die Einladung an {invitation.email} konnte nicht versendet werden.")
+        return redirect("session:users", tenant_slug=self.session_tenant.slug)
 
 
 class InvitationCancelView(SessionViewMixin, View):

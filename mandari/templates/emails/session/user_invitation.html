@@ -1,0 +1,23 @@
+{% extends "emails/base_email.html" %}
+{% block subject %}Einladung zum Sitzungsdienst {{ tenant.name }}{% endblock %}
+{% block preheader %}{% if inviter_name %}{{ inviter_name }} lädt Sie ein{% else %}Sie wurden eingeladen{% endif %}, dem Sitzungsdienst von {{ tenant.name }} beizutreten.{% endblock %}
+{% block content %}
+<h1 class="h1">Einladung zum Sitzungsdienst</h1>
+<p class="muted">{{ tenant.name }}</p>
+<p>Guten Tag,</p>
+<p>{% if inviter_name %}<strong>{{ inviter_name }}</strong> hat Sie eingeladen{% else %}Sie wurden eingeladen{% endif %}, dem Sitzungsdienst von <strong>{{ tenant.name }}</strong> auf mandari beizutreten.</p>
+{% if role_names %}
+<div class="card">
+    <p class="label">Vorgesehene Rollen</p>
+    <p>{{ role_names|join:", " }}</p>
+</div>
+{% endif %}
+<div class="btn-wrap">
+    <a class="btn" href="{{ accept_url }}">Einladung annehmen</a>
+</div>
+<p class="muted small">Die Einladung ist gültig bis {{ invitation.expires_at|date:"d.m.Y, H:i" }} Uhr. Falls der Knopf nicht funktioniert, kopieren Sie diese Adresse in Ihren Browser:<br>{{ accept_url }}</p>
+<p class="muted small">Falls Sie diese Einladung nicht erwartet haben, können Sie diese E-Mail ignorieren. Ohne Annahme wird kein Zugang eingerichtet.</p>
+{% endblock %}
+{% block footer %}
+<p>Diese E-Mail wurde automatisch im Auftrag von {{ tenant.name }} über mandari versendet.</p>
+{% endblock %}
