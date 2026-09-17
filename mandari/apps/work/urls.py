@@ -88,7 +88,7 @@ urlpatterns = [
     ),
     path(
         "<slug:org_slug>/meetings/notes/<uuid:note_id>/delete/",
-        meetings_views.AgendaNotesAPIView.as_view(),
+        meetings_views.AgendaNotesAPIView.as_view(http_method_names=["delete"]),
         name="meeting_note_delete",
     ),
     # Private notes (per user)
@@ -123,7 +123,7 @@ urlpatterns = [
     ),
     path(
         "<slug:org_slug>/meetings/supplementary/<uuid:doc_id>/delete/",
-        meetings_views.SupplementaryDocumentAPIView.as_view(),
+        meetings_views.SupplementaryDocumentAPIView.as_view(http_method_names=["delete"]),
         name="meeting_supplementary_delete",
     ),
     # Legacy URL compatibility (redirects to new supplementary endpoint)
@@ -134,7 +134,7 @@ urlpatterns = [
     ),
     path(
         "<slug:org_slug>/meetings/documents/<uuid:link_id>/delete/",
-        meetings_views.SupplementaryDocumentAPIView.as_view(),
+        meetings_views.SupplementaryDocumentAPIView.as_view(http_method_names=["delete"]),
         name="meeting_document_delete",
     ),
     # Datei-Anmerkungen (seitenbezogen, an OParl-Dateien oder eigenen Anlagen)
@@ -145,7 +145,7 @@ urlpatterns = [
     ),
     path(
         "<slug:org_slug>/meetings/annotations/<uuid:annotation_id>/delete/",
-        meetings_views.FileAnnotationAPIView.as_view(),
+        meetings_views.FileAnnotationAPIView.as_view(http_method_names=["delete"]),
         name="meeting_file_annotation_delete",
     ),
     # Paper comments (cross-committee collaboration)
@@ -156,7 +156,7 @@ urlpatterns = [
     ),
     path(
         "<slug:org_slug>/paper/comment/<uuid:comment_id>/delete/",
-        meetings_views.PaperCommentAPIView.as_view(),
+        meetings_views.PaperCommentAPIView.as_view(http_method_names=["delete"]),
         name="paper_comment_delete",
     ),
     # Gast-Übersicht: persönlich freigegebene Dokumente

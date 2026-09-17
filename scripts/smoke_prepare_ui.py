@@ -56,9 +56,13 @@ from django.test.utils import setup_test_environment  # noqa: E402
 from django.utils import timezone  # noqa: E402
 
 setup_test_environment()
+from _smoke_assets import editor_quelltext  # noqa: E402
 from _smoke_db import prepare_database  # noqa: E402
 
 prepare_database(PROJECT_DIR)
+
+# Verdrahtung liegt seit #170 im TypeScript, nicht mehr im Template (#249).
+bundle = editor_quelltext(PROJECT_DIR)
 
 from apps.accounts.models import User  # noqa: E402
 from apps.tenants.models import Membership, Organization, Role  # noqa: E402
@@ -176,16 +180,16 @@ check("Alle Outcome-Optionen", not missing_outcomes, f"fehlt: {missing_outcomes}
 check("Begründungsfeld vorhanden", 'id="reasoning-input"' in html)
 check("Beratungsverlauf-Container", "cross-positions" in html and "Im Beratungsverlauf" in html)
 check("crossPositions im Kontext-JSON", "crossPositions" in html)
-check("WYSIWYG-Init (MandariEditor.createEditor)", "MandariEditor.createEditor" in html)
-check("Editor-Bundle eingebunden", "js/editor.bundle.js" in html)
+check("WYSIWYG-Init (MandariEditor.createEditor)", "MandariEditor" in bundle and "createEditor" in bundle)
+check("Editor-Modul eingebunden", "/static/dist/assets/" in html)
 check("Anhänge: RIS-Sektion", "Aus dem Ratsinformationssystem" in html)
 check("Anhänge: Eigene Anlagen getrennt", "Eigene Anlagen" in html)
 check("Vorlagen-Anker-Checkbox", "An der Vorlage speichern" in html)
 check("Thread: Sichtbarkeits-Select", 'id="thread-visibility"' in html)
 check("Thread: 'Position der Fraktion'", "Position der Fraktion" in html)
 check("Auto-Save-Statuselement", 'id="autosave-status"' in html)
-check("WebSocket-URL im JS", "/ws/preparation/" in html)
-check("Teleprompter-Link", 'id="teleprompter-link"' in html and "/teleprompter/" in html)
+check("WebSocket-URL im Modul", "/ws/preparation/" in bundle)
+check("Teleprompter-Link", "teleprompterUrl" in bundle and "/teleprompter/" in bundle)
 check("Org-Sitzungsnotizen-Panel", "Allgemeine Notizen zur Sitzung" in html)
 check("Zusammenfassungs-Button", "Zusammenfassung" in html)
 
@@ -195,7 +199,7 @@ missing_positions = [label for label in position_labels if label not in html]
 check("Alle 8 Positions-Buttons/Labels", not missing_positions, f"fehlt: {missing_positions}")
 check("aria-pressed an Positions-Buttons", "aria-pressed" in html)
 check("Titel-Tooltip + line-clamp im Navigator", "line-clamp-2" in html and ':title="item.name"' in html)
-check("Tastaturnavigation (Pfeiltasten)", "ArrowDown" in html and "ArrowUp" in html)
+check("Tastaturnavigation (Pfeiltasten)", "ArrowDown" in bundle and "ArrowUp" in bundle)
 check("Mobile Tabs (TOPs/Vorbereitung/Diskussion)", "mobileTab" in html and "Vorbereitung" in html)
 
 # --- 2. Deprecated / verwaiste Referenzen --------------------------------------

@@ -855,6 +855,12 @@ class Motion(EncryptionMixin, models.Model):
             ).distinct()
         return qs.filter(
             models.Q(author=membership)
+            # Federfuehrung und Mitarbeit sehen das Dokument, fuer das sie
+            # eingeteilt sind. Ohne das erhaelt die Federfuehrung zwar eine
+            # Benachrichtigung ueber die Zuweisung, laeuft beim Oeffnen aber in
+            # ein 404 — die Zuweisung waere folgenlos (Issue #249).
+            | models.Q(responsible=membership)
+            | models.Q(contributors=membership)
             | models.Q(visibility="organization")
             | models.Q(visibility="shared", shares__user=membership.user)
         ).distinct()

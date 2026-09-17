@@ -58,9 +58,13 @@ from django.utils import timezone  # noqa: E402
 settings.MEDIA_ROOT = str(Path(tempfile.mkdtemp(prefix="mandari_smoke_ann_media_")))
 
 setup_test_environment()
+from _smoke_assets import editor_quelltext  # noqa: E402
 from _smoke_db import prepare_database  # noqa: E402
 
 prepare_database(PROJECT_DIR)
+
+# Verdrahtung liegt seit #170 im TypeScript, nicht mehr im Template (#249).
+bundle = editor_quelltext(PROJECT_DIR)
 
 from apps.accounts.models import User  # noqa: E402
 from apps.common.encryption import TenantEncryption  # noqa: E402
@@ -336,7 +340,7 @@ check("Kommentarspur vorhanden", 'id="annotation-rail"' in html)
 check("RIS-Sektion vorhanden", 'id="section-ris"' in html)
 check("'Im neuen Tab öffnen' in der Vorschau", "Im neuen Tab öffnen" in html)
 check("Anmerkungs-Eingabe (Seitenwahl)", "Anmerkung zu Seite" in html)
-check("Seitensprung-Anker (#page=N)", "#page=" in html)
+check("Seitensprung-Anker (#page=N)", "#page=" in bundle)
 check("iframe-Vorschau (RIS-Muster)", "preview.frameSrc" in html and "<iframe" in html)
 
 # Reihenfolge im DOM: Position -> RIS-Dokumente -> Redebeitrag -> Anhänge

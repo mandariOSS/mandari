@@ -55,6 +55,8 @@ jobs:
       # steht dann eine Commit-Kennung statt einer Version (Release v0.10.0).
       - name: Versionsangaben stimmen ueberein
         run: python scripts/check_version_consistency.py
+      - name: Jedes Smoke-Skript laeuft in der CI
+        run: python scripts/check_smoke_in_ci.py
 
   # ===========================================================================
   # Django System Checks & Tests
@@ -210,6 +212,36 @@ jobs:
           python scripts/smoke_faction_meetings.py
 
       # Work-Portal: Gastzugänge, Dokument-Freigaben und geschützte Anhänge
+      # Diese 21 Skripte liefen bisher in keinem CI-Schritt; sieben davon waren
+      # unbemerkt verfallen (Issue #249). Mit der Schema-Vorlage kosten sie
+      # zusammen rund zwei Minuten.
+      - name: Uebrige Smoke-Tests (bisher ohne CI-Abdeckung)
+        if: ${{ !cancelled() }}
+        env:
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+        run: |
+          python scripts/smoke_admin_dashboard.py
+          python scripts/smoke_collab_ai.py
+          python scripts/smoke_editor_polish.py
+          python scripts/smoke_insight_select.py
+          python scripts/smoke_letterhead_export.py
+          python scripts/smoke_meetings_rework.py
+          python scripts/smoke_member_privilege.py
+          python scripts/smoke_motions_status_lock.py
+          python scripts/smoke_motions_tracking.py
+          python scripts/smoke_oparl_api.py
+          python scripts/smoke_oparl_file_size.py
+          python scripts/smoke_org_logo.py
+          python scripts/smoke_pdf_annotations.py
+          python scripts/smoke_prepare_ui.py
+          python scripts/smoke_prepare_ws_guard.py
+          python scripts/smoke_pwa.py
+          python scripts/smoke_session_privacy.py
+          python scripts/smoke_session_terms.py
+          python scripts/smoke_tombstones.py
+          python scripts/smoke_url_reachability.py
+          python scripts/smoke_work_idor.py
+
       - name: Work guest & document smoke tests
         # Auch ausführen, wenn ein vorheriger Smoke-Step rot ist (kein Verdecken)
         if: ${{ !cancelled() }}

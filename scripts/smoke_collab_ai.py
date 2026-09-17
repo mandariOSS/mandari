@@ -70,6 +70,7 @@ from django.test import Client  # noqa: E402
 from django.test.utils import setup_test_environment  # noqa: E402
 
 setup_test_environment()
+from _smoke_assets import editor_quelltext  # noqa: E402
 from _smoke_db import prepare_database  # noqa: E402
 
 prepare_database(PROJECT_DIR)
@@ -133,15 +134,18 @@ print("=== 1. Editor: Collab-Init statt Solo-Schalter ===")
 resp = client.get(f"{DOCS}/{motion.id}/")
 check("Editor-Seite 200", resp.status_code == 200, f"got {resp.status_code}")
 html = resp.content.decode()
-check("Collab-Init im Template (_initCollabEditor)", "_initCollabEditor(" in html)
+# Quelltext statt gebautes Modul: Das Ergebnis ist minifiziert, dort sind
+# Bezeichner umbenannt (Issue #249).
+bundle = editor_quelltext(PROJECT_DIR)
+
+check("Collab-Init im Modul (_initCollabEditor)", "_initCollabEditor(" in bundle)
 check("Kein Solo-Zwangsschalter mehr", "force solo mode" not in html)
-check("createCollaborativeEditor wird genutzt", "createCollaborativeEditor" in html)
-check("Solo-Fallback vorhanden (_switchToSoloMode)", "_switchToSoloMode(" in html)
+check("createCollaborativeEditor wird genutzt", "createCollaborativeEditor" in bundle)
+check("Solo-Fallback vorhanden (_switchToSoloMode)", "_switchToSoloMode(" in bundle)
 check("Presence-Anzeige (collabUsers)", "collabUsers" in html)
-check("WebSocket-URL /ws/documents/", "/ws/documents/" in html)
+check("WebSocket-URL /ws/documents/", "/ws/documents/" in bundle)
 check("Seitenumbruch im Initial-Content", "data-page-break" in html)
 
-bundle = (PROJECT_DIR / "static" / "js" / "editor.bundle.js").read_text(encoding="utf-8", errors="ignore")
 check("Bundle: createCollaborativeEditor exportiert", "createCollaborativeEditor" in bundle)
 check("Bundle: yjs_save sendet HTML mit (getHtml)", "getHtml" in bundle)
 check("Bundle: reload-Handling (onReloadRequired)", "onReloadRequired" in bundle)
@@ -497,9 +501,9 @@ check("Editor-Seite 200 (KI konfiguriert)", resp.status_code == 200, f"got {resp
 html = resp.content.decode()
 check("KI-Panel aktiv (kein 'nicht eingerichtet')", "noch nicht eingerichtet" not in html)
 check("Kontingentanzeige im Panel", "KI-Kontingent" in html)
-check("aiQuotaLimit initialisiert (100000)", "aiQuotaLimit: 100000" in html)
-check("aiQuotaUsed initialisiert (183)", "aiQuotaUsed: 183" in html)
-check("Quota-Update aus AI-Response verdrahtet", "data.quota" in html)
+check("aiQuotaLimit initialisiert (100000)", '"aiQuotaLimit": 100000' in html)
+check("aiQuotaUsed initialisiert (183)", '"aiQuotaUsed": 183' in html)
+check("Quota-Update aus AI-Response verdrahtet", "data.quota" in bundle)
 check("Übernehmen-Button (Einfügen)", "applyAiContent(" in html)
 
 print()

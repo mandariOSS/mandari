@@ -211,6 +211,12 @@ paper_b = OParlPaper.objects.create(
 )
 
 client = Client()
+# Die Kennzahlen der Auswahlseite liegen seit #256 im Cache. Nach dem Anlegen
+# der Testdaten muss er verworfen werden, sonst zeigt die Seite Nullen.
+from insight_core.services.portal_stats import invalidate_portal_stats  # noqa: E402
+
+invalidate_portal_stats()
+
 resp = client.get("/insight/")
 page = html(resp)
 check("GET /insight/ mit 8 Kommunen: 200 (Auswahlseite)", resp.status_code == 200, f"status={resp.status_code}")

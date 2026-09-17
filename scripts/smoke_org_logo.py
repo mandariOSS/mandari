@@ -38,6 +38,12 @@ _media_root = _tmp_dir / "media"
 os.environ["DJANGO_SETTINGS_MODULE"] = "mandari.settings"
 # DEBUG=false: Produktionsverhalten — genau dort war /media/* kaputt.
 os.environ["DEBUG"] = "false"
+# Dieses Skript braucht DEBUG=false, weil es genau die Media-Auslieferung in
+# Produktion prueft. Damit greift aber auch die Zwei-Faktor-Pflicht (#236) und
+# leitet den Org-Admin auf die Einrichtungsseite um — geprueft wird hier aber
+# das Logo, nicht die Anmeldung. Die Pflicht hat ihre eigenen Tests in
+# apps/accounts/tests/test_two_factor_policy.py.
+os.environ["TWO_FACTOR_ENFORCEMENT"] = "false"
 os.environ["DATABASE_URL"] = f"sqlite:///{_db_path.as_posix()}"
 os.environ["ENCRYPTION_MASTER_KEY"] = base64.b64encode(secrets.token_bytes(32)).decode()
 os.environ["ELASTICSEARCH_AUTO_INDEX"] = "False"

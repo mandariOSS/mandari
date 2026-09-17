@@ -59,9 +59,14 @@ from django.test import Client  # noqa: E402
 from django.test.utils import setup_test_environment  # noqa: E402
 
 setup_test_environment()
+from _smoke_assets import editor_quelltext  # noqa: E402
 from _smoke_db import prepare_database  # noqa: E402
 
 prepare_database(PROJECT_DIR)
+
+# Quelltext statt gebautes Modul: Das Ergebnis ist minifiziert, dort sind
+# Bezeichner umbenannt (Issue #249).
+bundle = editor_quelltext(PROJECT_DIR)
 
 from apps.accounts.models import User  # noqa: E402
 from apps.tenants.models import Membership, Organization, Role  # noqa: E402
@@ -132,7 +137,7 @@ check("Ersetzen-Feld", 'placeholder="Ersetzen durch..."' in html)
 check("Alle ersetzen", "Alle ersetzen" in html)
 check("Groß-/Kleinschreibung-Toggle", "searchMatchCase" in html)
 check("Treffer x/y", "searchCurrent + '/' + searchTotal" in html)
-check("Strg+F-Handler", "openSearch()" in html and "_globalKeydownHandler" in html)
+check("Strg+F-Handler", "openSearch()" in bundle and "_globalKeydownHandler" in bundle)
 
 # --- 3. Statusleiste --------------------------------------------------------------
 print("=== 3. Statusleiste ===")
@@ -155,9 +160,9 @@ check("Link-Dialog", "showLinkModal" in html and "insertLink()" in html)
 
 # --- 5. Editor-Init + Strg+S -------------------------------------------------------
 print("=== 5. Editor-Init ===")
-check("Editor-Init vorhanden", "MandariEditor.createEditor" in html)
-check("onSearchUpdate angebunden", "onSearchUpdate" in html)
-check("Strg+S-Handler", "e.key.toLowerCase() === 's'" in html)
+check("Editor-Init vorhanden", "MandariEditor" in bundle and "createEditor" in bundle)
+check("onSearchUpdate angebunden", "onSearchUpdate" in bundle)
+check("Strg+S-Handler", "toLowerCase() === 's'" in bundle)
 
 # --- 6. WYSIWYG: Ränder/Schrift aus dem Briefkopf ----------------------------------
 print("=== 6. WYSIWYG-Ränder ===")
@@ -190,7 +195,6 @@ check("letterheads_json: font_size", '"font_size": 12' in html_lh)
 
 # --- 7. Bundle enthält neue Funktionen ----------------------------------------------
 print("=== 7. Editor-Bundle ===")
-bundle = (PROJECT_DIR / "static" / "js" / "editor.bundle.js").read_text(encoding="utf-8", errors="ignore")
 for symbol in ("setSearchTerm", "replaceAll", "findReplace", "cleanPastedHtml", "setPageBreak", "data-page-break"):
     check(f"Bundle enthält {symbol}", symbol in bundle)
 
@@ -232,9 +236,9 @@ check("KI-Tab", "sidebarTab === 'ai'" in html_lh)
 check("Versionen-Tab", "sidebarTab === 'history'" in html_lh)
 check("Share-Modal", "showShareModal" in html_lh)
 check("Statuswechsel", "changeStatus(" in html_lh)
-check("KI-Aktionen", "aiAction(" in html_lh)
-check("Versionen laden", "loadRevisions()" in html_lh)
-check("Kommentar-Marks-Handler", "_handleMarkClick" in html_lh)
+check("KI-Aktionen", "aiAction(" in bundle)
+check("Versionen laden", "loadRevisions()" in bundle)
+check("Kommentar-Marks-Handler", "_handleMarkClick" in bundle)
 check("Bild-Modal", "showImageModal" in html_lh)
 check("Tabellen-Dropdown (Toolbar)", "editor-table-cmd" in html_lh)
 
