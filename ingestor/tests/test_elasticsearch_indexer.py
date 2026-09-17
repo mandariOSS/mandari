@@ -11,6 +11,7 @@ import inspect
 
 import httpx
 import pytest
+
 import src.indexing.elasticsearch as es_modul
 from src.indexing.elasticsearch import INDEX_NAMES, ElasticsearchIndexer
 

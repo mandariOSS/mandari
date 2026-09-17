@@ -28,6 +28,30 @@ je Quelle sichtbar; der Filter "Quellen-Art" trennt OParl/Bridge/Scraper.
 
 ---
 
+## 0. Zensus vor dem Anbinden: `probe-ris`
+
+Bevor ein Adapter entsteht, klärt der Zensus je Kommune vier Fragen mit **höchstens fünf
+Anfragen** (robots.txt, Startseite, bei 403 eine Vergleichsanfrage mit neutralem Client,
+danach OParl-Kandidaten) und ohne jede Umgehung: Welcher Hersteller (SessionNet, ALLRIS 3/4,
+Sternberg RIM, more! rubin, regisafe, komuna)? Erlaubt die robots.txt unseren User-Agent
+(RFC 9309, Produkt-Token und voller UA-String)? Liegt ein Bot-Gate oder eine WAF davor
+(Browser-Verifikation, Proof-of-Work) oder sperrt die Quelle nur unseren User-Agent? Gibt es
+längst einen OParl-Endpunkt (herstellertypische Pfade zuerst, Fehlerobjekte werden erkannt)?
+
+```bash
+mandari-ingestor probe-ris https://buergerinfo.example.org/bi/            # eine Kommune, JSON
+mandari-ingestor probe-ris --batch kommunen.txt --format csv --out zensus.csv
+mandari-ingestor probe-ris --batch kommunen.txt --store                     # Ergebnis an registrierte Quellen
+```
+
+Das Ergebnis enthält einen Vorschlag für `sync_config` (OParl-Systemadresse mit Version oder
+SessionNet-Basis-URL) beziehungsweise die Begründung, warum kein Adapter sinnvoll ist (robots,
+Gate, Hersteller ohne Scraping-Pfad, siehe ADR 2026-09-17). Der Batch-Lauf liefert zwei
+Listen: **ohne OParl, robots-frei** (Scraper-Kandidaten) und **OParl vorhanden, nicht
+registriert** (Aktivierung und Registrierung anstoßen). Mit `--store` landet das Ergebnis in
+`sync_config["probe"]` der passenden Quelle und ist im Django-Admin sichtbar. Fixtures und
+Tests: `ingestor/tests/fixtures/ris/`, `ingestor/tests/test_probe_ris.py`.
+
 ## 1. SessionNet-Kommune anbinden (Schritt für Schritt)
 
 SessionNet-Bürgerinfo-Frontends sind mandantenfähige Standard-Templates.
