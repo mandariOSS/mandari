@@ -315,10 +315,19 @@ aus #256:
 Listen- und Detailseiten lagen vorher wie nachher bei 10–50 ms; sie sind durch
 die Umstellung nicht langsamer geworden.
 
+## 🖧 Mehrere Server (Rollen data / web / worker)
+
+Ein Server ist der Standard. Für getrennte Daten-, Web- und Worker-Server gibt es
+Compose-Rollenprofile unter `deploy/roles/`, gewählt über `COMPOSE_FILE` in der `.env`;
+zeitgesteuerte Jobs sind gegen Doppelläufe gesperrt. Anleitung, Voraussetzungen (privates
+Netz, gemeinsame Ablagen) und Nachweis: `docs/MEHR_SERVER_BETRIEB.md` (Issue #55).
+
 ## ⏰ Geplante Aufgaben (Cron)
 
 Die Anwendung bringt keinen eigenen Scheduler mit. Wiederkehrende Management-Commands
-laufen auf dem Host per Cron gegen den laufenden Container, jeweils mit eigener Logdatei:
+laufen auf dem Host per Cron gegen den laufenden Container, jeweils mit eigener Logdatei.
+Jedes dieser Commands hält während des Laufs eine Singleton-Sperre in Redis; ein
+überlappender zweiter Aufruf wird mit Hinweis übersprungen (`--ohne-sperre` erzwingt):
 
 ```cron
 # Erinnerungen und Pflege (Beispiel; Containername anpassen)

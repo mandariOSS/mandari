@@ -9,8 +9,12 @@ Erste Erinnerung nach 14 Tagen ohne Antwort, danach alle 14 Tage.
 
 from django.core.management.base import BaseCommand
 
+from apps.common.einmalig import EinmaligMixin
 
-class Command(BaseCommand):
+
+class Command(EinmaligMixin, BaseCommand):
+    sperre = "send_question_reminders"  # Singleton je Cache/Redis, #55
+    sperre_ttl = 3600
     help = "Erinnert Ratsmitglieder per E-Mail an unbeantwortete öffentliche Fragen"
 
     def add_arguments(self, parser):

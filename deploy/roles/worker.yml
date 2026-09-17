@@ -1,0 +1,39 @@
+# Rolle „worker“: Ingestor (Quellen-Synchronisation) und Protokoll-Orchestrator (Issue #55).
+#
+# In der .env:
+#   COMPOSE_FILE=docker-compose.yml:deploy/roles/worker.yml
+#   DATA_HOST=10.0.0.10        # Server mit der Rolle „data“ (privates Netz)
+#   DATA_PG_PORT=5432          # 6432, wenn dort PgBouncer aktiv ist
+#
+# Läuft diese Rolle versehentlich auf zwei Servern, verhindert der Ingestor doppelte
+# Sync-Läufe über eine PostgreSQL-Advisory-Sperre (nur eine Instanz synchronisiert, die
+# andere wartet); der Orchestrator hält eine Redis-Sperre je Durchlauf.
+
+services:
+  caddy:
+    profiles: ["aus"]
+  postgres:
+    profiles: ["aus"]
+  redis:
+    profiles: ["aus"]
+  elasticsearch:
+    profiles: ["aus"]
+  mandari:
+    profiles: ["aus"]
+  website:
+    profiles: ["aus"]
+
+  minutes-orchestrator:
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:${DATA_PG_PORT:-5432}/${POSTGRES_DB:-mandari}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
+    depends_on: !reset []
+
+  ingestor:
+    environment:
+      # Direkt an PostgreSQL (nicht über PgBouncer): Die Singleton-Sperre des Daemons ist eine
+      # sitzungsgebundene Advisory-Sperre, die ein Pooler im Transaktionsmodus nicht durchreicht.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:5432/${POSTGRES_DB:-mandari}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
+      ELASTICSEARCH_URL: http://${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:9200
+    depends_on: !reset []

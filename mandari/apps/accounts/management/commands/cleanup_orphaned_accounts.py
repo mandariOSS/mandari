@@ -25,9 +25,12 @@ from apps.accounts.orphaned_accounts import (
     UNBESTAETIGT_TAGE,
     loesche_verwaiste_konten,
 )
+from apps.common.einmalig import EinmaligMixin
 
 
-class Command(BaseCommand):
+class Command(EinmaligMixin, BaseCommand):
+    sperre = "cleanup_orphaned_accounts"  # Singleton je Cache/Redis, #55
+    sperre_ttl = 3600
     help = "Verwaiste Konten (unbestätigt, abgelehnt, ohne Zuordnung) nach Fristablauf löschen."
 
     def add_arguments(self, parser: CommandParser) -> None:

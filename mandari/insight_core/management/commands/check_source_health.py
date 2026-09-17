@@ -10,8 +10,12 @@ Nur Bericht ausgeben:
 
 from django.core.management.base import BaseCommand
 
+from apps.common.einmalig import EinmaligMixin
 
-class Command(BaseCommand):
+
+class Command(EinmaligMixin, BaseCommand):
+    sperre = "check_source_health"  # Singleton je Cache/Redis, #55
+    sperre_ttl = 3600
     help = "Bewertet OParl-Quellen und Systemdienste; verschickt Alarme und Entwarnungen per E-Mail"
 
     def add_arguments(self, parser):

@@ -18,6 +18,8 @@ from typing import Any
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
+from apps.common.einmalig import EinmaligMixin
+
 
 def vormonat(jetzt: datetime | None = None) -> str:
     jetzt = jetzt or datetime.now(tz=UTC)
@@ -25,7 +27,9 @@ def vormonat(jetzt: datetime | None = None) -> str:
     return f"{erster.year - 1}-12" if erster.month == 1 else f"{erster.year}-{erster.month - 1:02d}"
 
 
-class Command(BaseCommand):
+class Command(EinmaligMixin, BaseCommand):
+    sperre = "availability_report"  # Singleton je Cache/Redis, #55
+    sperre_ttl = 3600
     help = "Erstellt den Verfügbarkeitsbericht eines Monats je überwachtem Dienst als Markdown"
 
     def add_arguments(self, parser: CommandParser) -> None:
