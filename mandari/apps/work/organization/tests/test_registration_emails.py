@@ -18,7 +18,6 @@ import pytest
 from django.contrib.messages import get_messages
 from django.core import mail
 from django.core.cache import cache
-from django.core.mail import get_connection
 from django.core.mail.backends.base import BaseEmailBackend
 from django.test import Client
 from django.urls import reverse
@@ -26,6 +25,7 @@ from django.utils import timezone
 
 from apps.accounts import views as account_views
 from apps.accounts.models import User
+from apps.common.mail_backends import build_backend
 from apps.tenants.models import Membership
 from apps.work.notifications.models import Notification, NotificationType
 from apps.work.organization import selectors, services
@@ -239,7 +239,7 @@ def test_einladung_laeuft_ueber_smtp_der_organisation(org: Any, reviewer: Any) -
     use_own_smtp(org)
     with mock.patch(
         "apps.common.org_email.get_organization_connection",
-        return_value=get_connection("django.core.mail.backends.locmem.EmailBackend"),
+        return_value=build_backend("django.core.mail.backends.locmem.EmailBackend"),
     ) as connection:
         services.invite_member(org, reviewer.user, "eingeladen@example.org", [], "Hallo <script>")
     connection.assert_called_once()

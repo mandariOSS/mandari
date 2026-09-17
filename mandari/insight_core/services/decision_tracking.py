@@ -137,7 +137,6 @@ def _send(subject: str, template: str, context: dict, recipient: str) -> bool:
             from_email=_from_email(),
             recipient_list=[recipient],
             html_message=html_message,
-            fail_silently=True,
         )
         return True
     except Exception as exc:  # Mailfehler dürfen die Seite nicht brechen

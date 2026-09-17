@@ -335,7 +335,6 @@ class NotificationHub:
                 from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"),
                 recipient_list=[recipient_email],
                 html_message=html_content,
-                fail_silently=False,
             )
 
             # Mark as sent

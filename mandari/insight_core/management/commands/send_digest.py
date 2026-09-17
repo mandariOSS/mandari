@@ -110,7 +110,6 @@ class Command(BaseCommand):
                     from_email=from_email,
                     recipient_list=[subscriber.email],
                     html_message=html_message,
-                    fail_silently=False,
                 )
 
                 # Log digest

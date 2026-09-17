@@ -146,15 +146,17 @@ class SiteSettingsAdmin(ModelAdmin):
     @action(description="Test-E-Mail senden")
     def test_email(self, request, object_id):
         """Send a test email to verify SMTP settings."""
-        from django.core.mail import EmailMessage, get_connection
+        from django.core.mail import EmailMessage
+
+        from apps.common.mail_backends import build_backend, send_with
 
         settings = SiteSettings.get_settings()
         config = SiteSettings.get_email_config()
 
         try:
-            # Create connection with current settings
-            connection = get_connection(
-                backend=config["EMAIL_BACKEND"],
+            # Backend mit den aktuellen Einstellungen aufbauen (Django ≥ 6.1, #80)
+            connection = build_backend(
+                config["EMAIL_BACKEND"],
                 host=config["EMAIL_HOST"],
                 port=config["EMAIL_PORT"],
                 username=config["EMAIL_HOST_USER"],
@@ -179,9 +181,8 @@ class SiteSettingsAdmin(ModelAdmin):
                 ),
                 from_email=from_email,
                 to=[request.user.email],
-                connection=connection,
             )
-            email.send()
+            send_with(connection, email)
 
             messages.success(request, f"Test-E-Mail wurde erfolgreich an {request.user.email} gesendet.")
         except Exception as e:

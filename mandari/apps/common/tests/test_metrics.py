@@ -136,14 +136,13 @@ def test_mailversand_wird_gezaehlt() -> None:
 
 @pytest.mark.django_db
 def test_fehlgeschlagener_mailversand_wird_gezaehlt(monkeypatch: pytest.MonkeyPatch) -> None:
-    from django.core.mail import EmailMessage
-
+    from apps.common import email as email_modul
     from apps.common.email import send_email
 
-    def scheitert(self: EmailMessage, fail_silently: bool = False) -> int:
+    def scheitert(backend: object, message: object) -> int:
         raise ConnectionError("SMTP weg")
 
-    monkeypatch.setattr(EmailMessage, "send", scheitert)
+    monkeypatch.setattr(email_modul, "send_with", scheitert)
     vorher = _sample("mandari_emails_total", result="failed")
 
     assert send_email("Test", "Hallo", ["empfang@example.org"], fail_silently=True) is False

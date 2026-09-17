@@ -492,23 +492,36 @@ TASKS = {
 
 # Custom email backend that reads SMTP settings from SiteSettings (Admin)
 # Falls back to environment variables if SiteSettings is not configured
-EMAIL_BACKEND = os.environ.get(
+# Django ≥ 6.1 verbietet die alten EMAIL_*-Settings neben MAILERS; die Umgebungsvariablen
+# heißen weiterhin EMAIL_*, landen aber in MAIL_BACKEND / SMTP_FALLBACK (Issue #80).
+MAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND",
     "django.core.mail.backends.console.EmailBackend" if DEBUG else "apps.common.email_backend.SiteSettingsEmailBackend",
 )
 
-EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
-EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
-EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
-EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True").lower() in ("true", "1", "yes")
-EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "False").lower() in ("true", "1", "yes")
+# SMTP-Zugang aus der Umgebung – Fallback, wenn in den SiteSettings (Admin) nichts hinterlegt ist
+SMTP_FALLBACK = {
+    "host": os.environ.get("EMAIL_HOST", ""),
+    "port": int(os.environ.get("EMAIL_PORT", "587")),
+    "username": os.environ.get("EMAIL_HOST_USER", ""),
+    "password": os.environ.get("EMAIL_HOST_PASSWORD", ""),
+    "use_tls": os.environ.get("EMAIL_USE_TLS", "True").lower() in ("true", "1", "yes"),
+    "use_ssl": os.environ.get("EMAIL_USE_SSL", "False").lower() in ("true", "1", "yes"),
+    "timeout": int(os.environ.get("EMAIL_TIMEOUT", "30")),
+}
 
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@mandari.de")
 SERVER_EMAIL = os.environ.get("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
 
-# Email timeout
-EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "30"))
+# Django ≥ 6.1 (Issue #80): Versandwege heißen MAILERS. Der Standardweg ist das
+# SiteSettings-Backend (Zugangsdaten aus dem Admin, Fallback auf die EMAIL_*-Werte
+# oben). Organisationseigenes SMTP wird zur Laufzeit aufgebaut (apps.common.mail_backends).
+MAILERS = {
+    "default": {
+        "BACKEND": MAIL_BACKEND,
+        "OPTIONS": {},
+    },
+}
 
 
 # =============================================================================

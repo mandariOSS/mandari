@@ -23,19 +23,19 @@ class SiteSettingsEmailBackend(SMTPBackend):
 
     Falls back to Django settings if SiteSettings doesn't have values configured.
 
-    Usage in settings.py:
-        EMAIL_BACKEND = "apps.common.email_backend.SiteSettingsEmailBackend"
+    Usage in settings.py (Django ≥ 6.1, Issue #80):
+        MAILERS = {"default": {"BACKEND": "apps.common.email_backend.SiteSettingsEmailBackend"}}
     """
 
     def __init__(self, **kwargs):
         # Get configuration from SiteSettings
         config = self._get_config()
 
-        # WICHTIG: setdefault() reicht NICHT. Django ruft aus send_mail()
-        # get_connection(username=None, password=None) auf – der Schlüssel
-        # EXISTIERT dann mit Wert None, setdefault() greift nicht und die
-        # Verbindung liefe ohne SMTP-Login (Server verweigert das Relay).
-        # Deshalb: explizite None-Werte durch die SiteSettings ersetzen.
+        # WICHTIG: setdefault() reicht NICHT. Django reicht aus MAILERS/OPTIONS bzw.
+        # beim Aufbau username=None, password=None durch – der Schlüssel EXISTIERT
+        # dann mit Wert None, setdefault() greift nicht und die Verbindung liefe
+        # ohne SMTP-Login (Server verweigert das Relay). Deshalb: explizite
+        # None-Werte durch die SiteSettings ersetzen.
         for key in ("host", "port", "username", "password", "use_tls", "use_ssl", "timeout"):
             if kwargs.get(key) is None:
                 kwargs[key] = config.get(key)
@@ -74,15 +74,16 @@ class SiteSettingsEmailBackend(SMTPBackend):
         except Exception as e:
             logger.warning(f"Could not load SiteSettings: {e}")
 
-        # Fallback to Django settings
+        # Fallback: SMTP-Zugang aus der Umgebung (settings.SMTP_FALLBACK, Issue #80)
+        fallback = dict(getattr(django_settings, "SMTP_FALLBACK", {}) or {})
         return {
-            "host": getattr(django_settings, "EMAIL_HOST", ""),
-            "port": getattr(django_settings, "EMAIL_PORT", 587),
-            "username": getattr(django_settings, "EMAIL_HOST_USER", ""),
-            "password": getattr(django_settings, "EMAIL_HOST_PASSWORD", ""),
-            "use_tls": getattr(django_settings, "EMAIL_USE_TLS", True),
-            "use_ssl": getattr(django_settings, "EMAIL_USE_SSL", False),
-            "timeout": getattr(django_settings, "EMAIL_TIMEOUT", 30),
+            "host": fallback.get("host", ""),
+            "port": fallback.get("port", 587),
+            "username": fallback.get("username", ""),
+            "password": fallback.get("password", ""),
+            "use_tls": fallback.get("use_tls", True),
+            "use_ssl": fallback.get("use_ssl", False),
+            "timeout": fallback.get("timeout", 30),
         }
 
 
