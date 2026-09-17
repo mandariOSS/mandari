@@ -26,6 +26,9 @@ Zeitpläne und Aufbewahrung sind über die `.env` des Stacks einstellbar.
 - **Konfiguration:** Installationsverzeichnis inklusive `.env` (enthält den
   `ENCRYPTION_MASTER_KEY` – ohne ihn sind verschlüsselte Felder nach einer
   Wiederherstellung unlesbar) sowie die TLS-Daten von Caddy.
+- **Protokolle:** das systemd-Journal des Hosts (`/var/log/journal`, Container- und
+  Anwendungslogs, 90 Tage) und die Zugriffslogs im Caddy-Volume; Fristen und
+  Zugriffsschutz in `docs/PROTOKOLLE.md`.
 - Weitere Verzeichnisse lassen sich per `docker-compose.override.yml` unter
   `/source/…` einhängen.
 

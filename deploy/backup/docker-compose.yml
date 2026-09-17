@@ -65,6 +65,8 @@ services:
       - ${BACKUP_SRC_MEDIA:-/var/lib/docker/volumes/mandari_media_data/_data}:/source/media:ro
       - ${BACKUP_SRC_FILES:-/var/lib/docker/volumes/mandari_files_data/_data}:/source/files:ro
       - ${BACKUP_SRC_CADDY:-/var/lib/docker/volumes/mandari_caddy_data/_data}:/source/caddy:ro
+      # Systemprotokolle (journald, 90 Tage auf dem Host) – docs/PROTOKOLLE.md, Issue #263
+      - ${BACKUP_SRC_JOURNAL:-/var/log/journal}:/source/journal:ro
     networks:
       - database
     mem_limit: 2g

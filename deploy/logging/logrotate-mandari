@@ -1,0 +1,11 @@
+# Logdateien der Cron-Jobs (Erinnerungen, Fotos, Löschläufe, Backup-Watchdog).
+# Ziel: /etc/logrotate.d/mandari (deploy/logging/install.sh). 12 Wochen, komprimiert.
+/var/log/mandari-*.log /var/log/portal-*.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 root adm
+}

@@ -116,6 +116,7 @@
 		output file /data/access.log {
 			roll_size 10mb
 			roll_keep 5
+			roll_keep_for 336h   # 14 Tage: Zugriffslogs enthalten IP-Adressen (docs/PROTOKOLLE.md, #263)
 		}
 	}
 }
