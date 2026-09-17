@@ -223,13 +223,16 @@
         }
 
         /* Abschnitts-Label */
+        .dark .session-nav-section {
+            color: #9ca3af;
+        }
         .session-nav-section {
             padding: 14px 20px 6px;
             font-size: 10px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            color: #9ca3af;
+            color: #6b7280; /* 4,6:1 auf Weiß (BITV 1.4.3), #176 */
             white-space: nowrap;
             overflow: hidden;
         }
@@ -517,7 +520,7 @@
                     <div class="flex-1 min-w-0">
                         <p class="text-sm font-medium text-gray-900 dark:text-white" x-text="toast.message"></p>
                     </div>
-                    <button type="button" @click="removeToast(toast.id)"
+                    <button type="button" @click="removeToast(toast.id)" aria-label="Meldung schließen"
                             class="flex-shrink-0 p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                         <i data-lucide="x" class="w-4 h-4"></i>
                     </button>

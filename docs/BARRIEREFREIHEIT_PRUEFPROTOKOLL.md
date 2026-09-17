@@ -1,6 +1,6 @@
 # Barrierefreiheit: Prüfprotokoll der Komponenten und Kernpfade
 
-Stand: 18.09.2026 · Issue #176 (Grundlage für #44, #98 und die Barrierefreiheitserklärung)
+Stand: 18.09.2026 · Issues #176, #44 (Grundlage für #44, #98 und die Barrierefreiheitserklärung)
 
 Dieses Protokoll hält fest, **was automatisch geprüft wird**, **was manuell geprüft wurde**
 und **was offen ist**. Es ist die technische Grundlage für die Barrierefreiheitserklärung
@@ -19,6 +19,7 @@ werden (Stand dieses Protokolls):
 | Komponentenbibliothek | `/dev/ui/` (Buttons, Karten, Formularfelder, Tabs, Modal, Alpine-Modal, Alerts) | `TestUiKit` |
 | Work: Dashboard, Dokumentenliste, Aufgaben | `/work/<org>/dashboard/`, `…/documents/`, `…/tasks/` | `TestWorkPortal` |
 | Insight: Startseite | `/` | `TestInsightPortal` |
+| Session: Dashboard, Sitzungen, Vorlagen | `/session/<mandant>/`, `…/meetings/`, `…/papers/` | `TestSessionPortal` (Fixture `session_user`) |
 
 Ergebnis: **keine kritischen oder schweren Befunde** (Stand 18.09.2026, CI-Lauf des PR zu #176).
 Befunde der Stufen *moderate*/*minor* brechen den Lauf nicht ab; sie stehen in der Ausgabe
@@ -59,7 +60,8 @@ Fehler) angesagt werden. Befunde als Issue mit Label `a11y` anlegen.
   der CI (Live-Server ohne WebSocket); manuell prüfen.
 - Insight-Karten (MapLibre) sind nicht tastaturbedienbar; die Listen daneben bieten dieselben
   Informationen.
-- Session-Portal: axe-Lauf in der CI fehlt noch (Mandanten-Fixture für E2E), siehe #44.
+- Session-Portal: Dashboard, Sitzungs- und Vorlagenliste laufen in der CI; Sitzungsdetail, Tagesordnung,
+  Niederschrift und Sitzungsgelder noch nicht (#44).
 - Zielgröße 24 px ist in den Komponenten eingehalten, in älteren Seiten-Templates nicht
   flächendeckend geprüft.
 

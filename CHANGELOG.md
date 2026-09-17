@@ -18,6 +18,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - E2E-Tests der Editor-Kollaboration mit zwei Browsern gegen einen ASGI-Testserver (#289).
 
 ### Geändert
+- Session-Portal in der axe-Prüfung der CI (Dashboard, Sitzungen, Vorlagen); Filter beschriftet, Kontrast von Seitenleiste, Datumsbadge und Toast-Schließen-Button behoben (#44, #176).
 - Barrierefreiheit: Alpine-Modals mit `role=dialog`, `aria-modal`, Fokusfalle (`x-trap.inert.noscroll`) und Escape; axe-core in der CI zusätzlich auf Insight-Startseite, Dokumentenliste und Aufgaben; Prüfprotokoll `docs/BARRIEREFREIHEIT_PRUEFPROTOKOLL.md` (#176).
 - htmx ohne Inline-JavaScript: `hx-on`-Handler durch `data-autosave`/`data-after-request` ersetzt, `allowEval` und Fremdanfragen abgeschaltet (Vorbereitung CSP ohne `unsafe-eval`, #172).
 - Alle 80 Inline-Event-Handler in den Templates durch `data-*`-Aktionen ersetzt (Vorbereitung CSP-Enforce, #172).

@@ -136,6 +136,25 @@ class TestWorkPortal:
         _assert_axe_clean(axe(), "Aufgaben")
 
 
+class TestSessionPortal:
+    def test_dashboard_sitzungen_vorlagen_barrierefrei(
+        self, page: Any, goto: Any, login: Any, session_user: Any, axe: Any, screenshot: Any
+    ) -> None:
+        """Session-Portal in der axe-Prüfung (#44, #176): Dashboard, Sitzungsliste, Vorlagenliste."""
+        su, password = session_user
+        login(su.user.email, password)
+        assert "/accounts/login" not in page.url, "Anmeldung fehlgeschlagen"
+        for pfad, name in (
+            ("", "Session-Dashboard"),
+            ("meetings/", "Session-Sitzungen"),
+            ("papers/", "Session-Vorlagen"),
+        ):
+            goto(f"/session/{su.tenant.slug}/{pfad}")
+            assert page.locator("body").count() == 1
+            _assert_axe_clean(axe(), name)
+        screenshot("session-dashboard")
+
+
 class TestInsightPortal:
     def test_startseite_barrierefrei(self, page: Any, goto: Any, axe: Any, screenshot: Any) -> None:
         goto("/")

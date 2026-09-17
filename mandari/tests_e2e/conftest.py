@@ -243,3 +243,34 @@ def member_user(db: Any, org: Any, make_member: Any) -> Iterator[tuple[Any, str]
     membership.user.set_password(password)
     membership.user.save(update_fields=["password"])
     yield membership, password
+
+
+@pytest.fixture
+def session_user(db: Any) -> Iterator[tuple[Any, str]]:
+    """
+    Session-Portal: Mandant mit Gremium, öffentlicher Sitzung und Vorlage sowie ein Nutzer mit
+    Standardrolle (Dashboard, Sitzungen, Vorlagen ansehen) – für Barrierefreiheitsprüfungen (#44, #176).
+    """
+    from django.utils import timezone
+
+    from apps.common.tests.factories import DEFAULT_PASSWORD, UserFactory
+    from apps.session.models import (
+        SessionMeeting,
+        SessionOrganization,
+        SessionPaper,
+        SessionRole,
+        SessionTenant,
+        SessionUser,
+    )
+
+    tenant = SessionTenant.objects.create(name="E2E-Stadt", slug="e2e-stadt")
+    gremium = SessionOrganization.objects.create(tenant=tenant, name="Rat")
+    SessionMeeting.objects.create(
+        tenant=tenant, name="Ratssitzung", organization=gremium, start=timezone.now(), is_public=True
+    )
+    SessionPaper.objects.create(tenant=tenant, reference="V/2026/1", name="Haushaltsvorlage", is_public=True)
+    role = SessionRole.objects.create(tenant=tenant, name="Lesend")
+    user = UserFactory(email="session-e2e@example.org")
+    session_user = SessionUser.objects.create(user=user, tenant=tenant, is_active=True)
+    session_user.roles.add(role)
+    yield session_user, DEFAULT_PASSWORD
