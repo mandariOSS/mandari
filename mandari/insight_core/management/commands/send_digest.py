@@ -10,11 +10,10 @@ Usage: python manage.py send_digest
 
 import logging
 
+from apps.common.email import render_email
 from django.conf import settings
 from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
-
-from apps.common.email import render_email
 
 logger = logging.getLogger(__name__)
 

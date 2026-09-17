@@ -59,3 +59,21 @@ Option 2. `insight_core/schema_contract.py` normalisiert beide Seiten und vergle
   Abgleich der Prod-DB gegen die Migrationen bleibt eine eigene Betriebsaufgabe.
 - Option 1 bleibt möglich, wenn beide Seiten später aus einer Quelle generiert werden sollen; die
   Normalisierung aus diesem ADR ist dann die Testbasis.
+
+## Ergänzung: Elasticsearch-Indizes (Issue #215)
+
+Dieselbe Frage stellte sich für die Suchindizes. Django (`setup_elasticsearch`) legt die
+Indizes mit den Analyzern `german_custom`/`german_search` und den kommunalen Synonymen an;
+der Ingestor führte daneben ein zweites, vereinfachtes Mapping mit dem Standard-Analyzer
+`german`, aktualisierte damit bei jedem Lauf per `PUT _mapping` die bestehenden Indizes und
+legte fehlende selbst an. Je nachdem, wer zuerst lief, hatte ein Index die Synonyme oder nicht.
+
+Entscheidung: **Django ist für die Indizes allein maßgeblich.** Der Ingestor kennt nur die
+Indexnamen (`INDEX_NAMES`), prüft per `HEAD`, ob sie existieren, meldet fehlende und
+überspringt Schreibzugriffe darauf; damit kann Elasticsearch keinen Index ohne die
+deutschen Analyzer dynamisch auto-anlegen. Fehlt ein Index, ist auf der Django-Seite
+`manage.py setup_elasticsearch` auszuführen (läuft beim Containerstart automatisch).
+
+`scripts/check_schema_contract.py` prüft zusätzlich, dass der Ingestor genau die Indexnamen
+kennt, die Django anlegt, und selbst weder Mappings, Settings noch Analyzer definiert.
+
