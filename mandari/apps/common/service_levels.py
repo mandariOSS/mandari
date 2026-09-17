@@ -160,8 +160,21 @@ def pruefe_tls(hosts: list[str] | None = None, *, min_days: int | None = None) -
 # ---------------------------------------------------------------------------
 
 
-def lade_metriken(url: str, token: str = "", timeout: float = 5.0) -> str:
+def erster_erlaubter_host() -> str:
+    """Erster konkreter Eintrag aus ALLOWED_HOSTS (kein Platzhalter, keine Loopback-Adresse)."""
+    for host in settings.ALLOWED_HOSTS:
+        if host and not host.startswith(("*", ".", "localhost", "127.")):
+            return str(host)
+    return ""
+
+
+def lade_metriken(url: str, token: str = "", timeout: float = 5.0, host: str | None = None) -> str:
     anfrage = urllib.request.Request(url)
+    # Die Instanz wird über Loopback abgefragt; ohne passenden Host-Header lehnt Django die
+    # Anfrage mit 400 ab (ALLOWED_HOSTS). Deshalb den eigenen öffentlichen Host mitschicken.
+    host = erster_erlaubter_host() if host is None else host
+    if host:
+        anfrage.add_header("Host", host)
     if token:
         anfrage.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:  # noqa: S310 – URL aus den Settings
