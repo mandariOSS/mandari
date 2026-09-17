@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir --prefix=/install -r /tmp/requirements.lock
 # =============================================================================
 # Stage 2: Frontend assets bauen
 # =============================================================================
-FROM node:20-slim AS node-builder
+FROM node:26-slim AS node-builder
 
 WORKDIR /build
 
