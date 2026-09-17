@@ -161,9 +161,42 @@ def test_pdf_erzeugung_wird_gezaehlt() -> None:
     assert _sample("mandari_pdf_generation_seconds_count") == dauer_vorher + 1
 
 
-def test_sammler_liefern_ohne_redis_und_pool_keine_fehler(client: Client) -> None:
-    """Testumgebung: SQLite ohne Pool, LocMem-Cache – die Sammler schweigen, statt zu scheitern."""
+def test_sammler_schweigen_ohne_redis_und_pool(client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ohne Pool und ohne Redis-Backend liefern die Sammler nichts, statt zu scheitern.
+
+    Der Pool wird gezielt abgeschaltet: In der CI läuft der Test gegen PostgreSQL mit Pool,
+    lokal gegen SQLite ohne – das Ergebnis darf davon nicht abhängen.
+    """
+    monkeypatch.setattr(metrics, "db_pool_stats", lambda: None)
+    monkeypatch.setattr(metrics, "db_open_connections", lambda: None)
+    monkeypatch.setattr(metrics, "cache_stats", lambda: None)
+
     text = client.get("/metrics/").content.decode()
 
     assert "mandari_cache_hit_ratio" not in text
     assert "mandari_db_pool_connections" not in text
+    assert "mandari_db_connections_open" not in text
+
+
+def test_pool_statistik_erscheint_als_metrik(client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        metrics,
+        "db_pool_stats",
+        lambda: {"pool_min": 2, "pool_max": 10, "pool_size": 4, "pool_available": 1, "requests_waiting": 3},
+    )
+
+    text = client.get("/metrics/").content.decode()
+
+    assert 'mandari_db_pool_connections{state="in_use"} 3.0' in text
+    assert 'mandari_db_pool_connections{state="available"} 1.0' in text
+    assert 'mandari_db_pool_connections{state="max"} 10.0' in text
+    assert "mandari_db_pool_requests_waiting 3.0" in text
+
+
+def test_cache_statistik_erscheint_als_metrik(client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(metrics, "cache_stats", lambda: {"hits": 75, "misses": 25})
+
+    text = client.get("/metrics/").content.decode()
+
+    assert "mandari_cache_keyspace_hits_total 75.0" in text
+    assert "mandari_cache_hit_ratio 0.75" in text
