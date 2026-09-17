@@ -52,6 +52,16 @@ OPARL_PATHS_BY_VENDOR: dict[str, list[str]] = {
 }
 OPARL_PATHS_GENERIC = ["/oparl/system", "/oparl/v1/system", "/oparl/v1.1/system"]
 
+_STERNBERG = re.compile(r"sd\.?net(?:\s*rim)?|sdnetrim")
+_GREMIEN_INFO = re.compile(r"gremien\.info")
+
+
+def _hostname_matches(host: str, domain: str) -> bool:
+    """Exakter Host oder Subdomain – kein Teilstring-Vergleich."""
+    host = host.split(":")[0]
+    return host == domain or host.endswith("." + domain)
+
+
 _GATE_MARKERS = {
     "browser_verification": (
         "just a moment",
@@ -105,9 +115,16 @@ def fingerprint(html: str, url: str = "", headers: dict[str, str] | None = None)
     if m:
         generator = m.group(1)
 
-    if "sd.net" in generator or "sdnet" in generator or "sd.net rim" in text or "sdnetrim" in text:
+    # Regulaere Ausdruecke statt Teilstring-Vergleichen auf domain-artige Zeichenketten:
+    # Das ist Fingerprinting von HTML, keine Sicherheitsentscheidung ueber eine URL.
+    if _STERNBERG.search(generator) or _STERNBERG.search(text):
         return "sternberg_rim"
-    if "gremien.info" in host or "gremien.info" in text[:5000] or "rubin" in generator or "more! rubin" in text:
+    if (
+        _hostname_matches(host, "gremien.info")
+        or _GREMIEN_INFO.search(text[:5000])
+        or "rubin" in generator
+        or "more! rubin" in text
+    ):
         return "rubin"
     if "regisafe" in text and ("liferay" in text or "portlet" in text or "liferay" in kopf.get("set-cookie", "")):
         return "regisafe"
