@@ -247,7 +247,10 @@ class TestKollaboration:
         editor_oeffnen(page_b, url, "Alpha")
         warte_auf_editor_text(page_b, "Alt Alpha", timeout=15000)
         expect(page_a.get_by_text("2 online")).to_be_visible(timeout=15000)
-        expect(page_b.get_by_text("2 online")).to_be_visible(timeout=15000)
+        # B kennt A erst nach einer Awareness-Meldung von A (Cursor); ohne Aktion erneuert
+        # y-protocols den Zustand nur alle 15 s – darum A einmal in den Editor klicken lassen.
+        page_a.locator(PROSEMIRROR).click()
+        expect(page_b.get_by_text("2 online")).to_be_visible(timeout=30000)
 
         # Und zurück: B tippt, A sieht es
         tippen(page_b, " Beta")
