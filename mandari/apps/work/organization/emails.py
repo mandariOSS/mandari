@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from django.conf import settings
 from django.urls import reverse
 
+from apps.accounts.orphaned_accounts import ABGELEHNT_TAGE
 from apps.accounts.two_factor_policy import two_factor_required
 from apps.common.email import render_email, send_email
 from apps.common.org_email import send_org_email
@@ -168,5 +169,5 @@ def send_registration_rejected(organization: Organization, user: User, reason: s
         template="registration_rejected.html",
         subject=f"Deine Registrierungsanfrage bei {organization.name}",
         to=user.email,
-        context={"user": user, "reason": reason},
+        context={"user": user, "reason": reason, "retention_days": ABGELEHNT_TAGE},
     )

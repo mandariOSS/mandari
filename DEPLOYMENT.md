@@ -299,6 +299,26 @@ aus #256:
 
 Listen- und Detailseiten lagen vorher wie nachher bei 10–50 ms; sie sind durch
 die Umstellung nicht langsamer geworden.
+
+## ⏰ Geplante Aufgaben (Cron)
+
+Die Anwendung bringt keinen eigenen Scheduler mit. Wiederkehrende Management-Commands
+laufen auf dem Host per Cron gegen den laufenden Container, jeweils mit eigener Logdatei:
+
+```cron
+# Erinnerungen und Pflege (Beispiel; Containername anpassen)
+0 7 * * *   docker exec mandari-app python manage.py send_session_reminders   >> /var/log/mandari-reminders.log 2>&1
+30 7 * * *  docker exec mandari-app python manage.py send_question_reminders  >> /var/log/mandari-question-reminders.log 2>&1
+15 7 * * *  docker exec mandari-app python manage.py send_task_due_reminders  >> /var/log/mandari-task-reminders.log 2>&1
+0 3 * * 1   docker exec mandari-app python manage.py fetch_person_photos      >> /var/log/mandari-person-photos.log 2>&1
+# Verwaiste Konten (unbestätigt, abgelehnt, ohne Zuordnung) nach Frist löschen, Issue #238
+45 3 * * *  docker exec mandari-app python manage.py cleanup_orphaned_accounts >> /var/log/mandari-orphaned-accounts.log 2>&1
+```
+
+Vor dem ersten Scharfschalten von `cleanup_orphaned_accounts` lohnt ein Probelauf mit
+`--dry-run`; die Kriterien stehen in `docs/DSGVO_LOESCHKONZEPT.md`. Die Ausgaben aller
+Läufe enthalten nur Zahlen, keine personenbezogenen Daten.
+
 ## 🔌 Datenbankverbindungen: Budget
 
 Alle Dienste teilen sich **eine** PostgreSQL-Instanz. Ist deren `max_connections`

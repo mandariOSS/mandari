@@ -69,6 +69,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True, verbose_name="Aktiv")
     is_staff = models.BooleanField(default=False, verbose_name="Mitarbeiter")
     email_verified = models.BooleanField(default=False, verbose_name="E-Mail verifiziert")
+    # Issue #238: abgelehnte Registrierungsanfragen werden nach Frist automatisch gelöscht
+    registration_rejected_at = models.DateTimeField(blank=True, null=True, verbose_name="Registrierung abgelehnt am")
 
     # Timestamps
     date_joined = models.DateTimeField(default=timezone.now, verbose_name="Beigetreten")
