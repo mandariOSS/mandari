@@ -32,6 +32,26 @@ Ab `INSIGHT_SOURCE_BACKOFF_FAILURES` (Standard 3) Fehlversuchen greift die **Que
 Dokument-Cache und Datei-Proxy pausieren für diese Quelle, der Ingestor verdoppelt den Abstand
 zwischen den Versuchen bis auf 6 Stunden (siehe `docs/FILE_CACHE.md`).
 
+## Liveness und Readiness
+
+Zwei Endpunkte, zwei Fragen (Issue #231):
+
+| Endpunkt | Frage | Prüft | Bei Fehler |
+|---|---|---|---|
+| `/health/live/` | Antwortet der Prozess? | nichts weiter | Prozess neu starten (Liveness-Probe) |
+| `/health/ready/` | Kann die Instanz Anfragen bedienen? | Datenbank, Cache (Redis), Elasticsearch, Medienspeicher, je 2 s Zeitlimit | keine Anfragen zuteilen (Readiness-Probe), **kein** Neustart |
+| `/health/` | bisheriger Check (Datenbank) | Datenbank | bleibt für Compose-Healthcheck und Statusseite |
+
+`/health/ready/` liefert 503 und `"status": "error"`, sobald eine Prüfung scheitert oder ins
+Zeitlimit läuft; die Antwort nennt je Prüfung Ergebnis, Detail und Dauer. Ein Ausfall von
+Redis oder Elasticsearch macht die Readiness rot, die Liveness bleibt davon unberührt.
+Prüfungen, die für eine Installation nicht kritisch sind, lassen sich mit
+`HEALTH_READY_OPTIONAL=elasticsearch` (kommagetrennt) als optional erklären: Sie werden
+weiter gemeldet (`"status": "degraded"`), die Antwort bleibt 200.
+
+Das Helm-Chart nutzt `live` für Startup- und Liveness-Probe und `ready` für die
+Readiness-Probe. Die Statusseite (Gatus) kann `/health/ready/` als Bedingung nehmen.
+
 ## Alarmierung
 
 ```cron

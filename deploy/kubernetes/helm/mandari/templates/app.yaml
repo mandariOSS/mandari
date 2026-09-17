@@ -81,19 +81,21 @@ spec:
           startupProbe:
             # Erster Start kann dauern (Datenbankverbindung, Caches)
             httpGet:
-              path: /health/
+              path: /health/live/
               port: http
             periodSeconds: 5
             failureThreshold: 60
+          # Readiness prüft Datenbank, Redis, Elasticsearch und Speicher (Issue #231);
+          # ein Ausfall nimmt den Pod aus dem Service, startet ihn aber nicht neu.
           readinessProbe:
             httpGet:
-              path: /health/
+              path: /health/ready/
               port: http
             periodSeconds: 10
             timeoutSeconds: 5
           livenessProbe:
             httpGet:
-              path: /health/
+              path: /health/live/
               port: http
             periodSeconds: 20
             timeoutSeconds: 5
