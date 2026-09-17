@@ -16,6 +16,7 @@ from django.urls import include, path, re_path
 from django.views.static import serve as static_serve
 
 from apps.accounts.views import admin_login_redirect
+from apps.common import health
 from apps.common.uploads import is_embeddable
 from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
@@ -103,6 +104,9 @@ def health_check(request):
 urlpatterns = [
     # Health check (for Docker/Kubernetes)
     path("health/", health_check, name="health_check"),
+    # Getrennte Liveness-/Readiness-Prüfungen (Issue #231)
+    path("health/live/", health.live, name="health_live"),
+    path("health/ready/", health.ready, name="health_ready"),
     # PWA: Manifest, Service Worker (Root-Scope), Offline-Fallback
     path("manifest.webmanifest", pwa.manifest, name="pwa_manifest"),
     path("sw.js", pwa.service_worker, name="pwa_sw"),
