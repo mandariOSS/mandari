@@ -1,6 +1,14 @@
 /**
  * HTMX-Konfiguration: CSRF, ein zentraler Swap-Hook (Fokus, Ankündigung, Toasts),
- * Bestätigungsdialog für `hx-confirm` und Server-Toasts per `HX-Trigger`.
+ * Bestätigungsdialog für `hx-confirm`, Server-Toasts per `HX-Trigger` und deklarative
+ * Nachbearbeitung statt `hx-on`-Inline-JavaScript (#172, CSP ohne unsafe-eval):
+ *
+ * - `data-autosave="panel"`: vor der Anfrage `panel-autosaving`, nach Erfolg `panel-autosaved`
+ *   als Window-Event (Anzeige „wird gespeichert …“ in Alpine-Komponenten).
+ * - `data-after-request="reload|reset|follow-href|notification-read"` nach erfolgreicher Anfrage:
+ *   Seite neu laden; Formular zurücksetzen (optional `data-blur="<Selektor>"`); dem eigenen
+ *   `href` folgen, sonst `notification:marked-read` auslösen; Benachrichtigung als gelesen
+ *   darstellen (Hervorhebung und Punkt im Elternelement `data-parent` entfernen, Button entfernen).
  */
 
 import htmx from 'htmx.org'
@@ -34,8 +42,68 @@ interface ToastDetail {
   value?: { message?: string; type?: ToastType }
 }
 
+interface RequestDetail {
+  successful?: boolean
+  elt?: Element
+}
+
+function requestSource(event: Event): HTMLElement | null {
+  const elt = (event as CustomEvent<RequestDetail>).detail?.elt
+  const source = elt instanceof HTMLElement ? elt : event.target
+  return source instanceof HTMLElement ? source : null
+}
+
+function afterRequest(el: HTMLElement): void {
+  switch (el.dataset.afterRequest) {
+    case 'reload':
+      window.location.reload()
+      break
+    case 'reset': {
+      if (el instanceof HTMLFormElement) el.reset()
+      const blur = el.dataset.blur ? el.querySelector<HTMLElement>(el.dataset.blur) : null
+      blur?.blur()
+      break
+    }
+    case 'follow-href': {
+      const href = el.getAttribute('href')
+      if (href && href !== '#') window.location.href = href
+      else window.dispatchEvent(new CustomEvent('notification:marked-read'))
+      break
+    }
+    case 'notification-read': {
+      const parent = el.closest<HTMLElement>(el.dataset.parent ?? '.p-4')
+      parent?.classList.remove('bg-primary-50/50', 'dark:bg-primary-900/10')
+      parent?.querySelector('.inline-block.w-2.h-2')?.remove()
+      el.remove()
+      break
+    }
+    default:
+      break
+  }
+}
+
 export function setupHtmx(): void {
   window.htmx = htmx
+  // Kein Inline-JavaScript in hx-on/hx-vals/Trigger-Filtern: Voraussetzung für eine CSP ohne
+  // unsafe-eval (#172). Nachbearbeitung läuft über die data-*-Attribute oben.
+  htmx.config.allowEval = false
+  htmx.config.selfRequestsOnly = true
+
+  document.body.addEventListener('htmx:beforeRequest', (event) => {
+    const source = requestSource(event)
+    const name = source?.closest<HTMLElement>('[data-autosave]')?.dataset.autosave
+    if (name) window.dispatchEvent(new Event(`${name}-autosaving`))
+  })
+
+  document.body.addEventListener('htmx:afterRequest', (event) => {
+    const source = requestSource(event)
+    if (!source) return
+    const successful = (event as CustomEvent<RequestDetail>).detail?.successful === true
+    const autosave = source.closest<HTMLElement>('[data-autosave]')
+    if (autosave && successful) window.dispatchEvent(new Event(`${autosave.dataset.autosave}-autosaved`))
+    const after = source.closest<HTMLElement>('[data-after-request]')
+    if (after && (successful || after.dataset.afterRequest === 'reload')) afterRequest(after)
+  })
 
   document.body.addEventListener('htmx:configRequest', (event) => {
     const detail = (event as CustomEvent<{ headers: Record<string, string> }>).detail

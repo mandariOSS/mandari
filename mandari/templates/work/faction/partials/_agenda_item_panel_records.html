@@ -8,8 +8,7 @@
           hx-trigger="focusout from:find textarea changed delay:300ms"
           hx-swap="none"
           hx-vals='{"action": "update"}'
-          hx-on::before-request="window.dispatchEvent(new Event('panel-autosaving'))"
-          hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new Event('panel-autosaved'))">
+          data-autosave="panel">
         {% csrf_token %}
         <textarea name="description" rows="3" placeholder="Beschreibung hinzufügen..."
                   class="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none resize-y">{{ item.get_description_decrypted|default:"" }}</textarea>

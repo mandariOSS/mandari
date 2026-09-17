@@ -41,7 +41,7 @@ SCRIPT_RE = re.compile(
     r"<script\b(?![^>]*\bsrc=)(?![^>]*type=[\"'](?:application/(?:ld\+)?json|text/template)[\"'])[^>]*>", re.I
 )
 STYLE_RE = re.compile(r"<style\b[^>]*>", re.I)
-ONHANDLER_RE = re.compile(r"\son[a-z]+=\"", re.I)
+ONHANDLER_RE = re.compile(r"\s(?:on[a-z]+|hx-on[:a-z-]*)=\"", re.I)  # Inline-Handler inkl. htmx hx-on (#172)
 STYLE_ATTR_RE = re.compile(r"\sstyle=\"", re.I)
 CLASS_RE = re.compile(r"\sclass=\"([^\"{}]+)\"")
 DUP_MIN_TOKENS = 4

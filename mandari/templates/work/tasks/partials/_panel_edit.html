@@ -13,8 +13,7 @@ Kontext: task, form, organization, membership, shared_members, activities
           hx-trigger="change from:find select, change from:find input[type=radio], focusout from:find input[type=text] changed delay:300ms, focusout from:find input[type=date] changed delay:300ms, focusout from:find textarea changed delay:300ms"
           hx-swap="none"
           hx-indicator=".autosave-indicator"
-          hx-on::before-request="window.dispatchEvent(new Event('task-autosaving'))"
-          hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new Event('task-autosaved'))"
+          data-autosave="task"
           class="flex-1 flex flex-col overflow-hidden">
         <input type="hidden" name="action" value="update">
 

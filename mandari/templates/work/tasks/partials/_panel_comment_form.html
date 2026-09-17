@@ -5,7 +5,7 @@ Kontext: task, organization, membership. Optional: form_class (Zusatzklassen), b
 <form hx-post="{% url 'work:task_panel_action' org_slug=organization.slug task_id=task.id %}"
       hx-target="#panel-activity"
       hx-swap="innerHTML"
-      hx-on::after-request="if(event.detail.successful) { this.reset();{% if blur_after %} this.querySelector('input[name=content]').blur();{% endif %} }"
+      data-after-request="reset"{% if blur_after %} data-blur="input[name=content]"{% endif %}
       class="{{ form_class|default:'' }} flex items-center gap-2">
     <input type="hidden" name="action" value="add_comment">
     <div class="w-7 h-7 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
