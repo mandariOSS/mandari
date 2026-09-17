@@ -1,0 +1,5 @@
+{
+  "type": "https://schema.oparl.org/1.0/Error",
+  "message": "Requested class doesn't exist.",
+  "debug": "Error-Code 101"
+}

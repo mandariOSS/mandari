@@ -1,0 +1,46 @@
+{
+  "data": [
+    {
+      "id": "https://mandant-a.gremien.example/oparl/organization/WBKSE",
+      "type": "https://schema.oparl.org/1.0/Organization",
+      "body": "https://mandant-a.gremien.example/oparl/body/KH",
+      "name": "Werkausschuss für die Musterstadter Stadtentwässerung",
+      "membership": [
+        "https://mandant-a.gremien.example/oparl/membership/WBKSE.715",
+        "https://mandant-a.gremien.example/oparl/membership/WBKSE.420"
+      ],
+      "meeting": "https://mandant-a.gremien.example/oparl/organization/WBKSE/meeting",
+      "post": [
+        "Ratsmitglied",
+        "Vorsitzender",
+        "Ausschussmitglied"
+      ],
+      "shortName": "WBKSE",
+      "organizationType": "Gremium"
+    },
+    {
+      "id": "https://mandant-a.gremien.example/oparl/organization/KRN",
+      "type": "https://schema.oparl.org/1.0/Organization",
+      "body": "https://mandant-a.gremien.example/oparl/body/KH",
+      "name": "Aufsichtsrat des Kommunalverkehrs Rhein-Nahe GmbH (KRN)",
+      "membership": [
+        "https://mandant-a.gremien.example/oparl/membership/KRN.331",
+        "https://mandant-a.gremien.example/oparl/membership/KRN.604"
+      ],
+      "meeting": "https://mandant-a.gremien.example/oparl/organization/KRN/meeting",
+      "shortName": "KRN",
+      "organizationType": "Gremium"
+    }
+  ],
+  "pagination": {
+    "totalElements": 45,
+    "elementsPerPage": 100,
+    "currentPage": 1,
+    "totalPages": 1
+  },
+  "links": {
+    "first": "https://mandant-a.gremien.example/oparl/body/KH/organization/page/1",
+    "self": "https://mandant-a.gremien.example/oparl/body/KH/organization/page/1",
+    "last": "https://mandant-a.gremien.example/oparl/body/KH/organization/page/1"
+  }
+}

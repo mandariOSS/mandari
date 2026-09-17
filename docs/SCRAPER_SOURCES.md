@@ -269,3 +269,85 @@ Crawler-Infoseite genannten Kontakte melden. Ablauf:
 3. **Abwägung**: Opt-out-Wünsche werden geprüft, nicht blind ausgeführt
    (Transparenzinteresse an amtlichen Informationen); mindestens
    Drosselung/Nachtfenster wird immer angeboten. Reaktionszeit: 5 Werktage.
+
+## 6. OParl 1.0 anbinden (more! rubin auf gremien.info)
+
+Streng genommen keine Nicht-OParl-Quelle, aber der gleiche Anbindungsweg:
+more! rubin liefert auf `*.gremien.info` standardmäßig **OParl 1.0** — auch
+ohne Registrierung bei der Kommune. Der Ingestor toleriert die 1.0-Eigenheiten
+seit Issue #122; die Kommune muss nichts freischalten.
+
+### Erkennungsmerkmale
+
+| Merkmal | Beobachtung (drei geprüfte Mandanten, September 2026) |
+|---|---|
+| System-URL | `https://<mandant>.gremien.info/oparl/system` (auch `/oparl` liefert das System) |
+| Namespace | `oparlVersion` und alle `type`-URLs unter `https://schema.oparl.org/1.0/` |
+| 1.1-Pfade | `/oparl/v1.1/...` antwortet mit **HTTP 200** und einem Fehlerobjekt `{"type": ".../1.0/Error", "message": "Requested class doesn't exist."}` |
+| Body-Liste | `system.body` zeigt auf `/oparl/Body` (Standard-Liste mit `data[]`, `pagination`, `links`) |
+| Body-Felder | nur `organization`, `person`, `meeting`, `paper`; **keine** Listen für Membership, AgendaItem, File, Location; `legislativeTerm` und `location` eingebettet |
+| Eingebettete Objekte | Membership im Person-Objekt, AgendaItem/Dateien in Meeting, `mainFile`/`auxiliaryFile`/`consultation` in Paper (inkl. Volltext im Feld `text`) |
+| Zeitstempel | `created` = `modified` = Abrufdatum um Mitternacht bei **allen** Objekten; Organisationen ganz ohne Stempel |
+| `modified_since` | wird stillschweigend ignoriert (Parameter fehlt in `links.self`/`links.next`, `totalElements` unverändert) |
+| Sortierung | Paper aufsteigend (neueste auf der letzten Seite), Meetings absteigend |
+| Vendor-Felder | `more-it-solutions:internal`, `more-software-gmbh:faction_id`, … werden ignoriert, bleiben im `raw_json` |
+| robots.txt | `Disallow: /config/` und `/documents.php` — die OParl-Pfade sind erlaubt |
+
+### Was der Ingestor daraus macht
+
+- **Autodiscovery**: Fehlerobjekt oder 404 auf einem 1.1-Pfad → Rückfall auf
+  die 1.0-Pfadvarianten (`/oparl/system`, dann `/oparl`). Die erkannte Version
+  landet in `OParlSource.oparl_version` (Admin, schreibgeschützt). Nur bei
+  "Pfad existiert nicht"-Signalen, nie bei Timeouts oder 5xx.
+- **Fehlerobjekte** werden nie als Datensatz verarbeitet.
+- **Ignoriertes `modified_since`** wird an den Listen-Links erkannt; der Host
+  landet im bestehenden Capability-Cache (`sync_config`), Folgelisten senden
+  den Parameter nicht mehr.
+- **Änderungserkennung ohne Zeitstempel**: Objekte mit synthetischem oder
+  fehlendem `modified` bekommen wie Scraper-Quellen einen Content-Hash
+  (`mandari:contentHash` im `raw_json`). Der inkrementelle Lauf upsertet nur
+  bei Inhaltsänderung; die Early-Stop-Regel (fünf unveränderte Seiten) greift
+  damit wieder.
+
+### Grenzen
+
+- Aufsteigend sortierte Listen (Paper): neue Vorlagen stehen am Ende, der
+  inkrementelle Lauf bricht vorher ab. Sie kommen spätestens mit dem
+  täglichen Voll-Sync (`FULL_SYNC_INTERVAL_HOURS`, Standard 24 h).
+- Ein Voll-Sync zieht die komplette Liste (Beispiel: 34 Paper-Seiten à
+  100 Objekte mit Volltext, ca. 0,6 MB je Seite). Kommunen einzeln
+  aufschalten, nicht Dutzende an einem Tag.
+- Volltexte kommen bereits im JSON (`text`); PDFs müssen dafür nicht geladen
+  werden. Die OCR-Queue behandelt sie wie sonst auch.
+- Löschungen werden über `deleted: true` geliefert; ob more! rubin gelöschte
+  Objekte in den Listen behält, ist nicht belegt.
+
+### Quelle anlegen
+
+1. System-URL prüfen (eine Anfrage, unser User-Agent):
+
+   ```bash
+   curl -sS -A "Mandari-Ingestor/2.0 (https://github.com/mandariOSS/mandari)" \
+     https://<mandant>.gremien.info/oparl/system | head -c 400
+   ```
+
+   Erwartet: `"oparlVersion":"https://schema.oparl.org/1.0/"` und `"body":".../oparl/Body"`.
+
+2. Quelle und Bodies anlegen — das Kommando folgt der Body-Liste inklusive
+   Paginierung und speichert `oparl_version`:
+
+   ```bash
+   python manage.py add_oparl_source "https://<mandant>.gremien.info/oparl/system"
+   ```
+
+   Verbandsgemeinden liefern mehrere Bodies (Ortsgemeinden, Zweckverbände);
+   nicht gewünschte Bodies danach im Admin auf `is_listed=false` setzen oder
+   löschen.
+
+3. Erstlauf als Voll-Sync anstoßen (Admin-Aktion „Voll-Sync" oder
+   `mandari-ingestor sync --body <System-URL> --full`), danach übernimmt
+   der Daemon. Im Log erscheint einmalig „Server ignoriert modified_since".
+
+4. Nach dem ersten inkrementellen Lauf im Admin prüfen: `oparl_version = 1.0`,
+   `sync_config.modified_since_unsupported_hosts` enthält den Host, im
+   SyncLog stehen nur noch wenige neue/aktualisierte Objekte.

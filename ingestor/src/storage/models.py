@@ -53,6 +53,10 @@ class OParlSource(Base):
     last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
+    # Erkannte OParl-Version der Quelle ("1.0"/"1.1"), von der Autodiscovery
+    # gesetzt (Issue #122). NULL = noch nicht erkannt.
+    oparl_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # Raw OParl data
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 

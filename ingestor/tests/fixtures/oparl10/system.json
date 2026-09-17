@@ -1,0 +1,12 @@
+{
+  "id": "https://mandant-a.gremien.example/oparl/system",
+  "type": "https://schema.oparl.org/1.0/System",
+  "oparlVersion": "https://schema.oparl.org/1.0/",
+  "body": "https://mandant-a.gremien.example/oparl/Body",
+  "name": "OParl-Schnittstelle \"Bürgerinfosystem\"",
+  "contactEmail": "info@more-rubin.de",
+  "contactName": "more! software GmbH",
+  "website": "https://mandant-a.gremien.example",
+  "vendor": "https://www.more-rubin.de/",
+  "web": "https://www.more-rubin.de/"
+}

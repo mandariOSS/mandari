@@ -1,0 +1,51 @@
+{
+  "data": [
+    {
+      "id": "https://mandant-a.gremien.example/oparl/person/14",
+      "type": "https://schema.oparl.org/1.0/Person",
+      "name": "Erika Musterfrau",
+      "familyName": "Musterfrau",
+      "givenName": "Erika",
+      "formOfAddress": "Frau",
+      "gender": "female",
+      "phone": [],
+      "email": [
+        "erika.musterfrau@musterstadt.example"
+      ],
+      "location": "https://mandant-a.gremien.example/oparl/person/14/location",
+      "membership": [
+        {
+          "id": "https://mandant-a.gremien.example/oparl/membership/SW.14",
+          "type": "https://schema.oparl.org/1.0/Membership",
+          "person": "https://mandant-a.gremien.example/oparl/person/14",
+          "organization": "https://mandant-a.gremien.example/oparl/organization/SW",
+          "role": "Ratsmitglied",
+          "more-software-gmbh:faction_id": "FWG",
+          "votingRight": true,
+          "more-software-gmbh:chairman": false,
+          "startDate": "2026-01-29",
+          "web": "https://mandant-a.gremien.example",
+          "created": "2026-09-17T00:00:00+02:00",
+          "modified": "2026-09-17T00:00:00+02:00",
+          "deleted": false
+        }
+      ],
+      "created": "2026-09-17T00:00:00+02:00",
+      "modified": "2026-09-17T00:00:00+02:00",
+      "deleted": false,
+      "more-it-solutions:internal": true
+    }
+  ],
+  "pagination": {
+    "totalElements": 263,
+    "elementsPerPage": 100,
+    "currentPage": 1,
+    "totalPages": 3
+  },
+  "links": {
+    "first": "https://mandant-a.gremien.example/oparl/body/KH/person/page/1",
+    "self": "https://mandant-a.gremien.example/oparl/body/KH/person/page/1",
+    "next": "https://mandant-a.gremien.example/oparl/body/KH/person/page/2",
+    "last": "https://mandant-a.gremien.example/oparl/body/KH/person/page/3"
+  }
+}

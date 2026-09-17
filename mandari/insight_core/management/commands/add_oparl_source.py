@@ -9,10 +9,40 @@ Usage:
     python manage.py add_oparl_source "https://example.com/oparl/v1.1/system" --osm-id 12345
 """
 
+import re
+
 import httpx
 from django.core.management.base import BaseCommand, CommandError
 
 from insight_core.models import OParlBody, OParlSource
+
+_NAMESPACE_VERSION = re.compile(r"^https?://schema\.oparl\.org/(1\.[01])/")
+
+# Obergrenze für paginierte Body-Listen (Verbandsgemeinden haben Dutzende Bodies)
+MAX_BODY_PAGES = 20
+
+
+def is_oparl_error(data) -> bool:
+    """OParl-Fehlerobjekt (HTTP 200, type .../Error) — Verhalten von more! rubin bei 1.1-Pfaden."""
+    if not isinstance(data, dict):
+        return False
+    type_url = data.get("type")
+    if isinstance(type_url, str) and type_url.rstrip("/").endswith("/Error"):
+        return True
+    return "error" in data and "id" not in data and "type" not in data
+
+
+def detect_oparl_version(data) -> str | None:
+    """OParl-Version ("1.0"/"1.1") aus oparlVersion oder dem Namespace der type-URL."""
+    if not isinstance(data, dict):
+        return None
+    for key in ("oparlVersion", "type"):
+        value = data.get(key)
+        if isinstance(value, str):
+            match = _NAMESPACE_VERSION.match(value)
+            if match:
+                return match.group(1)
+    return None
 
 
 class Command(BaseCommand):
@@ -66,6 +96,40 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f"Error fetching body: {e}"))
             return None
 
+    def resolve_bodies(self, body_ref) -> list[dict]:
+        """
+        Löst das ``body``-Feld des System-Objekts in Body-Dicts auf.
+
+        - String: Listen-URL (``{"data": [...], "links": {"next": ...}}``,
+          Standard und OParl 1.0 ``/oparl/Body``) oder ein einzelnes Body-Objekt
+        - Liste: Body-URLs (werden einzeln geholt) oder eingebettete Body-Objekte
+        """
+        refs = [body_ref] if isinstance(body_ref, str) else list(body_ref or [])
+        bodies: list[dict] = []
+        for ref in refs:
+            if isinstance(ref, dict):
+                bodies.append(ref)
+                continue
+            if not isinstance(ref, str):
+                continue
+            next_url: str | None = ref
+            pages = 0
+            while next_url and pages < MAX_BODY_PAGES:
+                self.stdout.write(f"Fetching bodies: {next_url}")
+                data = self.fetch_oparl_body(next_url)
+                pages += 1
+                if not data or is_oparl_error(data):
+                    self.stdout.write(self.style.WARNING("  Could not fetch body data"))
+                    break
+                if isinstance(data.get("data"), list):
+                    bodies.extend(item for item in data["data"] if isinstance(item, dict))
+                    links = data.get("links") or {}
+                    next_url = links.get("next") if isinstance(links, dict) else None
+                else:
+                    bodies.append(data)
+                    next_url = None
+        return bodies
+
     def handle(self, *args, **options):
         url = options["url"]
 
@@ -77,10 +141,20 @@ class Command(BaseCommand):
         if not system_data:
             raise CommandError("Failed to fetch OParl system data")
 
+        # OParl 1.0 (more! rubin auf gremien.info) liefert für unbekannte Pfade
+        # ein Fehlerobjekt mit HTTP 200 statt 404 — z. B. für /oparl/v1.1/system.
+        if is_oparl_error(system_data):
+            raise CommandError(
+                f"OParl-Fehlerobjekt statt System: {system_data.get('message') or system_data}. "
+                "Bei gremien.info die URL https://<mandant>.gremien.info/oparl/system verwenden."
+            )
+
+        oparl_version = detect_oparl_version(system_data)
+
         # System-Info anzeigen
         self.stdout.write(self.style.SUCCESS("\nOParl System Info:"))
         self.stdout.write(f"  Name: {system_data.get('name', 'N/A')}")
-        self.stdout.write(f"  OParl Version: {system_data.get('oparlVersion', 'N/A')}")
+        self.stdout.write(f"  OParl Version: {oparl_version or system_data.get('oparlVersion', 'N/A')}")
         self.stdout.write(f"  Contact: {system_data.get('contactEmail', 'N/A')}")
         self.stdout.write(f"  Website: {system_data.get('website', 'N/A')}")
 
@@ -93,6 +167,7 @@ class Command(BaseCommand):
                 "contact_name": system_data.get("contactName"),
                 "website": system_data.get("website"),
                 "is_active": True,
+                "oparl_version": oparl_version,
                 "raw_json": system_data,
             },
         )
@@ -102,21 +177,16 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.SUCCESS(f"\nSource updated: {source.name}"))
 
-        # Bodies verarbeiten
-        body_urls = system_data.get("body", [])
-        if isinstance(body_urls, str):
-            body_urls = [body_urls]
+        # Bodies verarbeiten: "body" ist laut Spec eine Listen-URL; manche
+        # Server liefern stattdessen eine Liste von Body-URLs oder eingebettete
+        # Body-Objekte. Listen-URLs (auch 1.0: /oparl/Body) werden paginiert.
+        bodies = self.resolve_bodies(system_data.get("body", []))
 
-        self.stdout.write(f"\nFound {len(body_urls)} body/bodies")
+        self.stdout.write(f"\nFound {len(bodies)} body/bodies")
 
-        for i, body_url in enumerate(body_urls):
-            self.stdout.write(f"\nFetching body {i + 1}: {body_url}")
-
-            body_data = self.fetch_oparl_body(body_url)
-
-            if not body_data:
-                self.stdout.write(self.style.WARNING("  Could not fetch body data"))
-                continue
+        for i, body_data in enumerate(bodies):
+            body_url = body_data.get("id", "?")
+            self.stdout.write(f"\nProcessing body {i + 1}: {body_url}")
 
             # Body erstellen oder aktualisieren
             body, body_created = OParlBody.objects.update_or_create(
