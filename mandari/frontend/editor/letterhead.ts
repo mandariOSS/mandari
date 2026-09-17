@@ -38,7 +38,8 @@ export async function renderLetterhead(options: LetterheadOptions): Promise<() =
   }
 
   try {
-    const pdf = await pdfjsLib.getDocument(pdfUrl).promise
+    // pdfjs 6: getDocument nimmt nur noch ein Parameterobjekt entgegen
+    const pdf = await pdfjsLib.getDocument({ url: pdfUrl }).promise
     const page = await pdf.getPage(1)
 
     // Get page dimensions for A4 rendering
@@ -71,7 +72,9 @@ export async function renderLetterhead(options: LetterheadOptions): Promise<() =
     // Render the PDF page to canvas
     const ctx = canvas.getContext('2d')
     if (ctx) {
+      // pdfjs 6: RenderParameters verlangt zusaetzlich das Canvas selbst
       await page.render({
+        canvas,
         canvasContext: ctx,
         viewport: scaledViewport,
       }).promise
