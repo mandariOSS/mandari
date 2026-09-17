@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import logging
 from io import BytesIO
+from typing import Any
 from uuid import UUID
 
 import httpx
@@ -63,6 +64,7 @@ class TextExtractor:
         self.concurrency = settings.text_extraction_concurrency
         self.timeout = settings.text_extraction_timeout
         self.batch_size = settings.text_extraction_batch_size
+        self._header_cache: dict[Any, dict[str, str]] = {}
 
     async def extract_pending_files(self, body_id: UUID) -> int:
         """
@@ -130,7 +132,7 @@ class TextExtractor:
             return False
 
         try:
-            data = await self._download(download_url)
+            data = await self._download(download_url, await self._download_headers(file_row.body_id))
         except Exception as e:
             logger.warning("Download failed for %s: %s", download_url, e)
             await self.storage.update_file_text(
@@ -188,10 +190,28 @@ class TextExtractor:
         )
         return False
 
-    async def _download(self, url: str) -> bytes:
+    async def _download_headers(self, body_id: Any) -> dict[str, str]:
+        """
+        Zusätzliche Download-Header je Quelle (``sync_config["download_headers"]``, Issue #116):
+        manche RIS liefern Anlagen nur mit Referer oder Sitzungs-Cookie aus. Ergebnis je Body
+        zwischengespeichert; ohne Body oder Konfiguration leer.
+        """
+        if body_id is None:
+            return {}
+        cache = self._header_cache
+        if body_id not in cache:
+            try:
+                cache[body_id] = await self.storage.get_download_headers_for_body(body_id)
+            except Exception as e:  # noqa: BLE001 - Header sind optional, Download läuft ohne weiter
+                logger.warning("Download-Header für Body %s nicht ladbar: %s", body_id, e)
+                cache[body_id] = {}
+        return cache[body_id]
+
+    async def _download(self, url: str, extra_headers: dict[str, str] | None = None) -> bytes:
         """Download a file via httpx async."""
         headers = {
             "User-Agent": "Mandari/2.0 (+https://mandari.de; support@mandari.de)",
+            **(extra_headers or {}),
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.get(url, headers=headers, follow_redirects=True)

@@ -38,7 +38,13 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-from src.client.oparl_client import ERROR_KIND_SERVER_ERROR_SERIES, ERROR_KIND_UA_BLOCKED, OParlClient, SyncStats
+from src.client.oparl_client import (
+    ERROR_KIND_ROBOTS_BLOCKED,
+    ERROR_KIND_SERVER_ERROR_SERIES,
+    ERROR_KIND_UA_BLOCKED,
+    OParlClient,
+    SyncStats,
+)
 from src.client.oparl_compat import (
     detect_oparl_version,
     is_oparl_error,
@@ -67,6 +73,8 @@ BACKOFF_MAX_MINUTES = 360
 BACKOFF_MIN_MINUTES_BY_KIND = {
     ERROR_KIND_UA_BLOCKED: 60,
     ERROR_KIND_SERVER_ERROR_SERIES: 30,
+    # robots.txt ändert sich selten: einmal täglich nachsehen genügt (Issue #116)
+    ERROR_KIND_ROBOTS_BLOCKED: 24 * 60,
 }
 
 
@@ -1543,6 +1551,7 @@ class SyncOrchestrator:
                 kind_labels = {
                     ERROR_KIND_UA_BLOCKED: "User-Agent gesperrt",
                     ERROR_KIND_SERVER_ERROR_SERIES: "5xx-Serie",
+                    ERROR_KIND_ROBOTS_BLOCKED: "robots.txt sperrt",
                 }
                 reason = kind_labels.get(
                     getattr(source, "last_error_kind", None) or "",

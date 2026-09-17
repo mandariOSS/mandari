@@ -172,7 +172,8 @@ class FakeClient:
             raise httpx.ConnectError("Verbindung abgelehnt")
         return FakeResponse(200, PDF)
 
-    def stream(self, method, url):
+    def stream(self, method, url, headers=None):
+        # headers: Download-Header je Quelle (#116) – hier ohne Wirkung
         return self.respond(url)
 
     def get(self, url, **kwargs):

@@ -299,6 +299,23 @@ class DatabaseStorage:
 
             return source_id
 
+    async def get_download_headers_for_body(self, body_id: UUID) -> dict[str, str]:
+        """
+        Download-Header der Quelle eines Bodies (``sync_config["download_headers"]``, Issue #116).
+        Nur String-Werte; leer, wenn nichts konfiguriert ist.
+        """
+        async with self.get_session() as session:
+            result = await session.execute(
+                select(OParlSource.sync_config)
+                .join(OParlBody, OParlBody.source_id == OParlSource.id)
+                .where(OParlBody.id == body_id)
+            )
+            sync_config = result.scalar_one_or_none() or {}
+        headers = sync_config.get("download_headers") if isinstance(sync_config, dict) else None
+        if not isinstance(headers, dict):
+            return {}
+        return {str(k): str(v) for k, v in headers.items() if isinstance(v, str | int | float) and str(k).strip()}
+
     async def get_source_by_url(self, url: str) -> OParlSource | None:
         """Get a source by URL."""
         async with self.get_session() as session:

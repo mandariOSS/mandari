@@ -75,8 +75,13 @@ Sitzungskalender liefern und der Seitentitel „SessionNet | …" sein.
 ### Schritt 2: robots.txt prüfen
 
 Der Ingestor prüft robots.txt automatisch vor jedem Crawl und überspringt
-die Quelle bei einem Disallow (Status wird im Admin angezeigt). Vorab
-manuell prüfen schadet nicht: `https://<host>/robots.txt`.
+die Quelle bei einem Disallow. Seit #116 ist das kein stiller Parse-Fehler mehr:
+Die Quelle bekommt die Fehlerklasse `robots_blocked` („robots.txt sperrt“), der
+Betriebsmonitor und die Alarmmail zeigen Grund und Handlungsempfehlung, und die
+Quellen-Schonung fragt nur noch täglich nach (`docs/MONITORING.md`). Manche
+Hoster sperren alle Mandanten bis auf einen — dann hilft nur das Gespräch mit
+dem Betreiber, keine Umgehung. Vorab manuell prüfen schadet nicht:
+`https://<host>/robots.txt`.
 
 ### Schritt 3: Quelle im Django-Admin anlegen
 
@@ -113,6 +118,12 @@ Alle `scraper`-Schlüssel außer `base_url` sind optional:
 | `full_window_days` | `[-365, 210]` | Fenster des Full-Crawls (Historie) |
 | `max_detail_pages` | unbegrenzt | Obergrenze Detailseiten je Lauf (Onboarding/Pilot) |
 | `members_on_full_only` | `true` | Gremien-Mitglieder nur im Full-Crawl crawlen |
+
+Außerhalb von `scraper` (auf oberster Ebene der Sync config, auch für OParl-Quellen):
+
+| Schlüssel | Default | Bedeutung |
+|---|---|---|
+| `download_headers` | keine | Zusätzliche HTTP-Header für **Datei-Downloads** dieser Quelle (Dateicache, Textextraktion im Ingestor und in Django), z. B. `{"Referer": "https://rat.example.de/bi/", "Cookie": "consent=1"}`. Für RIS, die Anlagen nur mit Referer oder Consent-Cookie ausliefern (#116). Werte sind Klartext im Admin — keine persönlichen Sitzungs-Cookies hinterlegen. |
 
 ### Schritt 4: Probe-Crawl mit Limit
 
@@ -168,6 +179,9 @@ werden in Elasticsearch indexiert.
 - Golden-File-Tests (`ingestor/tests/test_sessionnet_parser.py`) mit
   eingefrorenen HTML-Fixtures zweier realer Instanzen sichern die Parser
   in CI ab.
+- robots-Sperren erscheinen als Fehlerklasse `robots_blocked` im
+  Betriebsmonitor (Admin → Monitoring) und in der Alarmmail, mit Grund und
+  Empfehlung; die Quelle wird täglich erneut geprüft (#116).
 
 ---
 

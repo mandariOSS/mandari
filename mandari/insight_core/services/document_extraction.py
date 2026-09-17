@@ -76,10 +76,11 @@ class DocumentExtractionError(RuntimeError):
     """Wird geworfen, wenn Text nicht extrahiert werden kann."""
 
 
-def _http_get(url: str, timeout: float = 60.0) -> httpx.Response:
-    """Führt einen HTTP-GET Request aus."""
+def _http_get(url: str, timeout: float = 60.0, extra_headers: dict[str, str] | None = None) -> httpx.Response:
+    """Führt einen HTTP-GET Request aus (``extra_headers``: Download-Header je Quelle, Issue #116)."""
     headers = {
         "User-Agent": "Mandari/2.0 (https://mandari.dev; contact@mandari.dev)",
+        **(extra_headers or {}),
     }
     try:
         with httpx.Client(timeout=timeout) as client:
@@ -269,6 +270,7 @@ def download_and_extract(
     mime_type: str | None = None,
     original_name: str = "",
     timeout: float = 60.0,
+    extra_headers: dict[str, str] | None = None,
 ) -> ExtractedDocument:
     """
     Lädt ein Dokument herunter und extrahiert Text.
@@ -282,7 +284,7 @@ def download_and_extract(
     Returns:
         ExtractedDocument mit Binärdaten, Text und Metadaten
     """
-    response = _http_get(url, timeout=timeout)
+    response = _http_get(url, timeout=timeout, extra_headers=extra_headers)
     binary = response.content
     resolved_mime = mime_type or response.headers.get("Content-Type", "").split(";")[0]
     checksum = hashlib.sha256(binary).hexdigest()
@@ -312,6 +314,7 @@ async def download_and_extract_async(
     mime_type: str | None = None,
     original_name: str = "",
     timeout: float = 60.0,
+    extra_headers: dict[str, str] | None = None,
 ) -> ExtractedDocument:
     """
     Asynchrone Version von download_and_extract.
@@ -327,6 +330,7 @@ async def download_and_extract_async(
     """
     headers = {
         "User-Agent": "Mandari/2.0 (https://mandari.dev; contact@mandari.dev)",
+        **(extra_headers or {}),
     }
 
     try:

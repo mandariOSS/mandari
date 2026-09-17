@@ -34,13 +34,14 @@ zwischen den Versuchen bis auf 6 Stunden (siehe `docs/FILE_CACHE.md`).
 
 ### Sperren und 5xx-Serien (Fehlerklassen)
 
-Zwei Störungsbilder erkennt der Ingestor selbst und ordnet sie einer **Fehlerklasse**
+Drei Störungsbilder erkennt der Ingestor selbst und ordnet sie einer **Fehlerklasse**
 (`last_error_kind`) zu; der Betriebsmonitor zeigt dazu Grund und Handlungsempfehlung, die
 Alarmmail nennt beides (Issue #123):
 
 | Fehlerklasse | Erkennung | Was der Ingestor tut |
 |---|---|---|
 | `ua_blocked` — „User-Agent gesperrt“ | Ein Endpunkt antwortet mit HTTP 403. Der Client stellt daraufhin **genau eine** Vergleichsanfrage mit neutralem Client-Header (`python-httpx/<Version>`). Kommt darauf eine normale Antwort, filtert die Quelle gezielt auf unseren User-Agent. | Befund mit Zeitstempel in Sync-Log und Quellenstatus; die Quelle wird ab dem ersten Befund geschont (frühestens nach 60 Minuten wieder, danach wachsend bis 6 Stunden). Der Regelbetrieb läuft weiter mit unserem User-Agent — **keine Umgehung**. |
+| `robots_blocked` — „robots.txt sperrt“ | Scraper-Quellen (#116): Die robots.txt der Instanz verbietet unserem User-Agent den Abruf der Basis-URL oder einer Seite. | Kein Crawl, keine Umgehung. Fehlerklasse mit Grund und Empfehlung an der Quelle; Schonung mit täglicher Nachprüfung (robots.txt ändert sich selten). Handlungsempfehlung: Betreiber um Freigabe unseres User-Agents in der robots.txt oder um die OParl-Schnittstelle bitten (Textvorschlag unten, sinngemäß). |
 | `server_error_series` — „5xx-Serie“ | Ab `OPARL_SERVER_ERROR_SERIES_THRESHOLD` (Standard 5) aufeinanderfolgenden 5xx-Antworten je Host. | Sync-Warnung mit Statistik (Anzahl, Zeitraum, letzte Statuscodes, **betroffene Objektlisten**) statt stiller Lücke; Schonung ab dem ersten Befund (frühestens nach 30 Minuten). Eine erfolgreiche Antwort beendet die Serie. |
 
 Die Statistik steht im Feld *Letzter Fehler* der Quelle und in den Details des Sync-Protokolls

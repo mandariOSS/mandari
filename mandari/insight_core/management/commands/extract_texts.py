@@ -25,6 +25,7 @@ from insight_core.services.document_extraction import (
     DocumentDownloadError,
     download_and_extract,
 )
+from insight_core.services.file_cache import download_headers
 
 logger = logging.getLogger(__name__)
 
@@ -194,6 +195,7 @@ class Command(BaseCommand):
                 mime_type=file.mime_type,
                 original_name=file.file_name or file.name or "",
                 timeout=120.0,
+                extra_headers=download_headers(file.body),
             )
 
             # Text speichern

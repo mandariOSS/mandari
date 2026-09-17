@@ -64,9 +64,11 @@ class OParlSource(models.Model):
     # Fehlerklassen des Ingestors (ingestor/src/client/oparl_client.py, Issue #123)
     ERROR_KIND_UA_BLOCKED = "ua_blocked"
     ERROR_KIND_SERVER_ERROR_SERIES = "server_error_series"
+    ERROR_KIND_ROBOTS_BLOCKED = "robots_blocked"  # Scraper-Quellen: robots.txt verbietet den Crawl (Issue #116)
     ERROR_KIND_CHOICES = [
         (ERROR_KIND_UA_BLOCKED, "User-Agent gesperrt"),
         (ERROR_KIND_SERVER_ERROR_SERIES, "5xx-Serie"),
+        (ERROR_KIND_ROBOTS_BLOCKED, "robots.txt sperrt"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

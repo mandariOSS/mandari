@@ -45,6 +45,18 @@ ERROR_KIND_INFO = {
             "(frühestens stündlich) — keine Umgehung."
         ),
     },
+    "robots_blocked": {
+        "label": "robots.txt sperrt",
+        "reason": (
+            "robots.txt sperrt: Die robots.txt der Instanz verbietet unserem Crawler den Abruf, "
+            "die Quelle wird nicht gecrawlt (keine Umgehung)"
+        ),
+        "recommendation": (
+            "Betreiber der Quelle ansprechen: um eine Freigabe unseres User-Agents in der robots.txt "
+            "oder um die OParl-Schnittstelle bitten (Textvorschlag in docs/MONITORING.md). Der Ingestor "
+            "prüft die robots.txt täglich erneut; bis dahin bleiben die Daten dieser Kommune unverändert."
+        ),
+    },
     "server_error_series": {
         "label": "5xx-Serie",
         "reason": "5xx-Serie: Die Quelle liefert reihenweise Serverfehler, betroffene Objektlisten fehlen im Lauf",
