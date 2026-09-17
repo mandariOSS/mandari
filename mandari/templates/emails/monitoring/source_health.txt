@@ -7,11 +7,14 @@ Status: {{ item.detail }}
 {% else %}Quelle: {{ source.name }}
 URL: {{ source.url }}
 Status: {{ item.label }}
-{% if item.bodies %}Kommunen: {{ item.bodies|join:", " }}{% endif %}
+{% if item.error_kind_label %}Grund: {{ item.error_kind_label }}
+{% endif %}{% if item.bodies %}Kommunen: {{ item.bodies|join:", " }}{% endif %}
 {% if source.last_sync %}Letzter erfolgreicher Sync: {{ source.last_sync|date:"d.m.Y H:i" }}{% else %}Letzter erfolgreicher Sync: nie{% endif %}
 {% if item.consecutive_failures %}Fehlversuche in Folge: {{ item.consecutive_failures }}{% endif %}
 {% for reason in item.reasons %}- {{ reason }}
-{% endfor %}{% endif %}
+{% endfor %}{% if item.recommendation %}
+Empfehlung: {{ item.recommendation }}
+{% endif %}{% endif %}
 ---
 
 Betriebsmonitor: {{ monitoring_url }}

@@ -29,6 +29,8 @@ class Command(BaseCommand):
             source = item["source"]
             reasons = "; ".join(item["reasons"]) or "-"
             self.stdout.write(f"  [{item['label']:8}] {source.name} — {reasons}")
+            if item.get("recommendation"):
+                self.stdout.write(f"             Empfehlung: {item['recommendation']}")
         for action in health["actions"]:
             self.stdout.write(f"  Handlungsbedarf: {action['count']} × {action['label']}")
 

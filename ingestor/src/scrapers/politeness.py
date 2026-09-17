@@ -4,7 +4,7 @@ Höflicher HTML-Fetcher für Scraper-Adapter.
 - Rate-Limit je Host (konfigurierbar je Quelle, Default 1 Request / 2 s)
 - max_concurrent=1 je Quelle (Serialisierung über Lock)
 - robots.txt-Respekt (urllib.robotparser, 24-h-Cache, Fehler => erlaubt)
-- Transparenter User-Agent: "mandari-ingestor (+https://mandari.de/crawler)"
+- Transparenter User-Agent (settings.user_agent, je Quelle überschreibbar)
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ class PoliteFetcher:
         self.rate_limit_seconds = max(0.0, rate_limit_seconds)
         self.timeout = timeout
         self.max_retries = max_retries
-        self.user_agent = user_agent or settings.scraper_user_agent
+        self.user_agent = user_agent or settings.user_agent
         self.source_name = source_name
         self.respect_robots = respect_robots
 

@@ -222,10 +222,18 @@ services:
 
 ## 3. Politeness-Defaults (alle Scraper-Quellen)
 
-- **User-Agent**: `mandari-ingestor (+https://mandari.de/crawler)`
-  (Env `SCRAPER_USER_AGENT`). Die Crawler-Infoseite
-  `https://mandari.de/crawler` gehört zur Marketing-Website und erklärt,
-  wer wir sind, warum wir crawlen und wie man uns erreicht/drosselt.
+- **User-Agent**: `mandari-ingestor/<Version> (+https://mandari.de; support@mandari.de)`
+  (Env `INGESTOR_USER_AGENT`, ältere Schreibweise `SCRAPER_USER_AGENT`) — gilt für
+  OParl-Client und Scraper gleichermaßen und ist **je Quelle** im Admin
+  überschreibbar (Feld *User-Agent*, leer = Standard). Der Wert bleibt
+  identifizierbar (Produkt-Token, Version, Website, Kontaktadresse), vermeidet
+  aber bewusst den Begriff, auf den mindestens eine Quelle im User-Agent
+  filtert und mit HTTP 403 antwortet (Issue #123). Die Infoseite
+  `https://mandari.de/crawler` gehört zur Marketing-Website und erklärt, wer
+  wir sind, warum wir abrufen und wie man uns erreicht/drosselt; sobald sie
+  unter einem Pfad ohne diesen Begriff erreichbar ist, gehört die URL wieder
+  in den User-Agent. Wie der Ingestor eine Sperre erkennt und was dann zu tun
+  ist: `docs/MONITORING.md`, Abschnitt „Sperren und 5xx-Serien“.
 - **Rate-Limit**: max. 1 Request / 2 s je Host (konfigurierbar je Quelle),
   `max_concurrent=1` — RIS-Server kleiner Kommunen sind schwachbrüstig.
 - **robots.txt**: wird respektiert (24-h-Cache je Host). Disallow →

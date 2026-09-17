@@ -47,10 +47,14 @@ class OParlSource(Base):
     last_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_full_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sync_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    # User-Agent je Quelle (Issue #123); leer = Standard aus settings.user_agent
+    user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Betriebsmonitor (Django-Admin): Fehlerstatus, bei Erfolg zurückgesetzt
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Fehlerklasse des letzten Fehlers: "ua_blocked", "server_error_series" oder NULL (Issue #123)
+    last_error_kind: Mapped[str | None] = mapped_column(String(40), nullable=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     # Erkannte OParl-Version der Quelle ("1.0"/"1.1"), von der Autodiscovery

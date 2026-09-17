@@ -14,6 +14,7 @@ Features:
 import asyncio
 import hashlib
 import time
+from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -30,6 +31,16 @@ from src.metrics import metrics
 
 console = Console()
 
+# Fehlerklassen für Sync-Log und Quellenstatus (Issue #123). Die Django-Seite
+# kennt dieselben Werte (insight_core.models.OParlSource.ERROR_KIND_*).
+ERROR_KIND_UA_BLOCKED = "ua_blocked"
+ERROR_KIND_SERVER_ERROR_SERIES = "server_error_series"
+
+# Neutraler Client-Header für die einmalige Vergleichsanfrage nach einem 403.
+# Absichtlich der nackte Bibliotheks-Default: Antwortet der Server darauf mit
+# 200, filtert er gezielt auf unseren User-Agent — das ist der Befund, mehr nicht.
+NEUTRAL_USER_AGENT = f"python-httpx/{httpx.__version__}"
+
 
 @dataclass
 class FetchResult:
@@ -41,6 +52,109 @@ class FetchResult:
     from_cache: bool = False
     error: str | None = None
     fetch_time: float = 0.0
+    # Fehlerklasse (ERROR_KIND_*), wenn der Fehler einer Sperre oder Störung zuzuordnen ist
+    error_kind: str | None = None
+
+
+class ListFetchError(Exception):
+    """
+    Eine Objektliste (oder eine ihrer Seiten) war nicht abrufbar.
+
+    Früher brach fetch_list still ab und der Lauf galt als erfolgreich — die
+    Lücke fiel niemandem auf. Jetzt trägt der Fehler die Liste, die Seite und
+    die Fehlerklasse, damit der Orchestrator sie im Sync-Log nennt.
+    """
+
+    def __init__(self, list_url: str, page_url: str, result: FetchResult) -> None:
+        self.list_url = list_url
+        self.page_url = page_url
+        self.result = result
+        self.error_kind = result.error_kind
+        page = "" if page_url == list_url else f" (Seite {page_url})"
+        super().__init__(f"Liste {list_url}{page} nicht abrufbar: {result.error}")
+
+
+@dataclass
+class HostHealth:
+    """
+    Befund je Host: User-Agent-Sperre und 5xx-Serie (Issue #123).
+
+    Wird vom Client während eines Laufs gepflegt; der Orchestrator liest ihn am
+    Ende aus und schreibt Fehlerklasse und Statistik in Sync-Log und Quellenstatus.
+    """
+
+    host: str
+    forbidden_count: int = 0
+    ua_probe_status: int | None = None  # Status der Vergleichsanfrage (0 = Verbindungsfehler)
+    ua_blocked_at: datetime | None = None
+    consecutive_server_errors: int = 0
+    server_error_total: int = 0
+    server_error_series_started_at: datetime | None = None
+    last_server_error_at: datetime | None = None
+    last_status_codes: deque[int] = field(default_factory=lambda: deque(maxlen=10))
+    failed_lists: list[str] = field(default_factory=list)
+
+    @property
+    def server_error_series(self) -> bool:
+        return self.consecutive_server_errors >= max(1, settings.oparl_server_error_series_threshold)
+
+    @property
+    def error_kind(self) -> str | None:
+        if self.ua_blocked_at is not None:
+            return ERROR_KIND_UA_BLOCKED
+        if self.server_error_series:
+            return ERROR_KIND_SERVER_ERROR_SERIES
+        return None
+
+    def note_failed_list(self, list_url: str) -> None:
+        # Gedeckelt: Der Text landet in last_error und im Sync-Log
+        if list_url not in self.failed_lists and len(self.failed_lists) < 20:
+            self.failed_lists.append(list_url)
+
+    def describe(self) -> str:
+        """Lesbare Zusammenfassung für Sync-Log, Quellenstatus und Konsole."""
+        kind = self.error_kind
+        if kind == ERROR_KIND_UA_BLOCKED:
+            assert self.ua_blocked_at is not None
+            text = (
+                f"User-Agent gesperrt: {self.host} antwortet auf unseren User-Agent mit HTTP 403, "
+                f"ein neutraler Client erhält HTTP {self.ua_probe_status} "
+                f"(erkannt {self.ua_blocked_at:%d.%m.%Y %H:%M} UTC)"
+            )
+        elif kind == ERROR_KIND_SERVER_ERROR_SERIES:
+            codes = ", ".join(str(code) for code in self.last_status_codes)
+            started = self.server_error_series_started_at
+            last = self.last_server_error_at
+            span = ""
+            if started and last:
+                minutes = max(0, int((last - started).total_seconds() // 60))
+                span = f" zwischen {started:%H:%M} und {last:%H:%M} UTC ({minutes} min)"
+            text = (
+                f"5xx-Serie: {self.host} lieferte {self.consecutive_server_errors} Serverfehler in Folge"
+                f"{span}, insgesamt {self.server_error_total} in diesem Lauf; letzte Statuscodes: {codes}"
+            )
+        else:
+            return ""
+        if self.failed_lists:
+            text += "; betroffene Listen: " + ", ".join(self.failed_lists)
+        return text
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "host": self.host,
+            "error_kind": self.error_kind,
+            "forbidden_count": self.forbidden_count,
+            "ua_probe_status": self.ua_probe_status,
+            "ua_blocked_at": self.ua_blocked_at.isoformat() if self.ua_blocked_at else None,
+            "consecutive_server_errors": self.consecutive_server_errors,
+            "server_error_total": self.server_error_total,
+            "server_error_series_started_at": (
+                self.server_error_series_started_at.isoformat() if self.server_error_series_started_at else None
+            ),
+            "last_server_error_at": self.last_server_error_at.isoformat() if self.last_server_error_at else None,
+            "last_status_codes": list(self.last_status_codes),
+            "failed_lists": list(self.failed_lists),
+        }
 
 
 @dataclass
@@ -109,6 +223,7 @@ class OParlClient:
         timeout: int | None = None,
         wait_time: float | None = None,
         source_name: str | None = None,
+        user_agent: str | None = None,
     ) -> None:
         self.max_concurrent = max_concurrent
         self.timeout = timeout or settings.oparl_request_timeout
@@ -116,6 +231,11 @@ class OParlClient:
         self.max_retries = settings.oparl_max_retries
         self.retry_backoff = settings.oparl_retry_backoff
         self.source_name = source_name or "unknown"
+        # Je Quelle überschreibbar (OParlSource.user_agent); leer = Standard
+        self.user_agent = (user_agent or "").strip() or settings.user_agent
+
+        # Sperr- und Störungsbefund je Host (Issue #123), lebt so lange wie der Client
+        self.host_health: dict[str, HostHealth] = {}
 
         # Caching
         self.etag_cache: dict[str, str] = {}
@@ -155,13 +275,100 @@ class OParlClient:
             ),
             headers={
                 "Accept": "application/json",
-                "User-Agent": "Mandari-Ingestor/2.0 (https://github.com/mandariOSS/mandari)",
+                "User-Agent": self.user_agent,
             },
             follow_redirects=True,  # Follow HTTP 301/302 redirects
         )
         self.stats = SyncStats()
         self._circuit_breakers = {}
+        self.host_health = {}
         return self
+
+    # ------------------------------------------------------------------
+    # Sperr- und Störungserkennung (Issue #123)
+    # ------------------------------------------------------------------
+
+    def _health(self, url: str) -> HostHealth:
+        host = urlparse(url).netloc
+        if host not in self.host_health:
+            self.host_health[host] = HostHealth(host=host)
+        return self.host_health[host]
+
+    def host_findings(self) -> list[HostHealth]:
+        """Hosts mit Sperr- oder Störungsbefund (User-Agent gesperrt zuerst)."""
+        findings = [h for h in self.host_health.values() if h.error_kind]
+        findings.sort(key=lambda h: (h.error_kind != ERROR_KIND_UA_BLOCKED, h.host))
+        return findings
+
+    @property
+    def error_kind(self) -> str | None:
+        """Schwerwiegendste Fehlerklasse dieses Laufs (None = kein Befund)."""
+        findings = self.host_findings()
+        return findings[0].error_kind if findings else None
+
+    def _note_server_error(self, url: str, status_code: int) -> None:
+        health = self._health(url)
+        now = datetime.now(UTC)
+        if health.consecutive_server_errors == 0:
+            health.server_error_series_started_at = now
+        health.consecutive_server_errors += 1
+        health.server_error_total += 1
+        health.last_server_error_at = now
+        health.last_status_codes.append(status_code)
+        if health.consecutive_server_errors == max(1, settings.oparl_server_error_series_threshold):
+            metrics.record_http_error(self.source_name, ERROR_KIND_SERVER_ERROR_SERIES)
+            console.print(
+                f"[red]{health.host}: {health.consecutive_server_errors} Serverfehler in Folge — "
+                f"Quelle gilt als gestört (5xx-Serie)[/red]"
+            )
+
+    def _note_success(self, url: str) -> None:
+        # Eine erfolgreiche Antwort beendet die Serie, die Gesamtzahl bleibt für die Statistik
+        health = self.host_health.get(urlparse(url).netloc)
+        if health is not None:
+            health.consecutive_server_errors = 0
+
+    async def _diagnose_forbidden(self, url: str) -> tuple[str | None, str]:
+        """
+        Einmalige Vergleichsanfrage nach HTTP 403 (je Host und Client-Instanz).
+
+        Nur Diagnose: Bekommt ein neutraler Client-Header eine 2xx-Antwort, filtert
+        der Server gezielt auf unseren User-Agent (Fehlerklasse ua_blocked). Der
+        Regelbetrieb läuft weiter mit unserem User-Agent — keine Umgehung.
+        """
+        assert self._client is not None
+        health = self._health(url)
+        health.forbidden_count += 1
+        if health.ua_blocked_at is not None:
+            return ERROR_KIND_UA_BLOCKED, "User-Agent gesperrt"
+        if health.ua_probe_status is not None:
+            return None, "Zugriff verweigert, auch für neutralen Client"
+        if not settings.oparl_ua_probe_enabled:
+            return None, "Zugriff verweigert"
+
+        health.ua_probe_status = 0
+        try:
+            if self.wait_time > 0:
+                await asyncio.sleep(self.wait_time)
+            start = time.time()
+            response = await self._client.get(
+                url, headers={"User-Agent": NEUTRAL_USER_AGENT, "Accept": "application/json"}
+            )
+        except httpx.HTTPError as exc:
+            return None, f"Zugriff verweigert; Vergleichsanfrage fehlgeschlagen: {exc}"
+        self.stats.http_requests += 1
+        metrics.record_http_request(self.source_name, response.status_code, time.time() - start)
+        health.ua_probe_status = response.status_code
+
+        if response.status_code < 400:
+            health.ua_blocked_at = datetime.now(UTC)
+            metrics.record_http_error(self.source_name, ERROR_KIND_UA_BLOCKED)
+            console.print(
+                f"[red]{health.host}: HTTP 403 für unseren User-Agent, neutraler Client erhält "
+                f"HTTP {response.status_code} — User-Agent gesperrt[/red]"
+            )
+            return ERROR_KIND_UA_BLOCKED, f"User-Agent gesperrt: neutraler Client erhält HTTP {response.status_code}"
+        return None, f"Zugriff verweigert, auch für neutralen Client (HTTP {response.status_code})"
 
     def _get_circuit_breaker(self, url: str) -> CircuitBreaker:
         """Get or create circuit breaker for URL's host."""
@@ -238,17 +445,25 @@ class OParlClient:
                     )
 
                 except httpx.HTTPStatusError as e:
-                    if e.response.status_code == 404:
+                    status_code = e.response.status_code
+                    if status_code == 404:
                         return FetchResult(url=url, data=None, status_code=404, error="Not found")
-                    if e.response.status_code >= 500:
-                        last_error = f"HTTP {e.response.status_code}"
-                        metrics.record_http_error(self.source_name, f"http_{e.response.status_code}")
+                    if status_code >= 500:
+                        last_error = f"HTTP {status_code}"
+                        metrics.record_http_error(self.source_name, f"http_{status_code}")
+                        self._note_server_error(url, status_code)
+                    elif status_code == 403:
+                        kind, detail = await self._diagnose_forbidden(url)
+                        self.stats.errors += 1
+                        return FetchResult(
+                            url=url, data=None, status_code=403, error=f"HTTP 403 ({detail})", error_kind=kind
+                        )
                     else:
                         return FetchResult(
                             url=url,
                             data=None,
-                            status_code=e.response.status_code,
-                            error=f"HTTP {e.response.status_code}",
+                            status_code=status_code,
+                            error=f"HTTP {status_code}",
                         )
 
                 except (httpx.RequestError, httpx.TimeoutException) as e:
@@ -266,11 +481,14 @@ class OParlClient:
             metrics.record_http_error(self.source_name, "unknown")
 
         self.stats.errors += 1
+        health = self.host_health.get(urlparse(url).netloc)
+        series = health is not None and health.server_error_series
         return FetchResult(
             url=url,
             data=None,
             status_code=0,
             error=f"Max retries exceeded: {last_error}",
+            error_kind=ERROR_KIND_SERVER_ERROR_SERIES if series else None,
         )
 
     async def _do_fetch(
@@ -310,6 +528,9 @@ class OParlClient:
             duration=fetch_time,
             from_cache=from_cache,
         )
+
+        if response.status_code < 500:
+            self._note_success(url)
 
         # Not modified - cache hit
         if response.status_code == 304:
@@ -378,7 +599,12 @@ class OParlClient:
             # modified_since mit 401/403/400. Dann einmalig ohne den Filter
             # neu ansetzen — die Client-seitige modified-Prüfung plus
             # Early-Stop hält den Mehraufwand klein.
-            if tried_modified_since and pages_fetched == 0 and result.status_code in (400, 401, 403):
+            if (
+                tried_modified_since
+                and pages_fetched == 0
+                and result.status_code in (400, 401, 403)
+                and result.error_kind != ERROR_KIND_UA_BLOCKED  # Sperre, kein Capability-Problem
+            ):
                 console.print(
                     f"[yellow]{url}: modified_since nicht unterstützt "
                     f"(HTTP {result.status_code}) — Fallback auf vollständige Liste[/yellow]"
@@ -390,8 +616,11 @@ class OParlClient:
                 continue
 
             if result.error:
+                # Keine stille Lücke (Issue #123): der Aufrufer erfährt, welche
+                # Liste ab welcher Seite fehlt, und nennt sie im Sync-Log.
                 console.print(f"[red]Error fetching {current_url}: {result.error}[/red]")
-                break
+                self._health(current_url).note_failed_list(url)
+                raise ListFetchError(url, current_url, result)
 
             if result.data is None:
                 break

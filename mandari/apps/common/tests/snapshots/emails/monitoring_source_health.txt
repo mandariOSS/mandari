@@ -4,11 +4,14 @@ Alarm: OParl-Quelle kritisch
 Quelle: RIS Musterstadt
 URL: https://ris.musterstadt.example/oparl/v1/system
 Status: kritisch
+Grund: User-Agent gesperrt
 Kommunen: Musterstadt, Nachbarstadt
 Letzter erfolgreicher Sync: 14.09.2026 18:30
 Fehlversuche in Folge: 5
 - HTTP 503 seit 3 Tagen
 - Zertifikat der Quelle abgelaufen
+
+Empfehlung: Betreiber der Quelle kontaktieren und um Freischaltung unseres User-Agents bitten.
 
 ---
 
