@@ -71,7 +71,7 @@
                     <span>{{ term.membership_count }} Besetzung(en)</span>
                     {% if not term.meeting_count and not term.membership_count %}
                     <form method="post" action="{% url 'session:term_delete' tenant_slug=tenant_slug term_id=term.id %}"
-                          onsubmit="return confirm('Wahlperiode wirklich löschen?');">
+                          data-confirm="Wahlperiode wirklich löschen?">
                         {% csrf_token %}
                         <button type="submit" class="text-red-600 dark:text-red-400 hover:underline">Löschen</button>
                     </form>
@@ -134,7 +134,7 @@
             Alt-Daten bleiben unter der bisherigen Periode auffindbar (Archiv).
         </p>
         <form method="post" action="{% url 'session:term_change' tenant_slug=tenant_slug %}"
-              onsubmit="return confirm('Periodenwechsel wirklich durchführen? Laufende Besetzungen werden zum Stichtag beendet.');"
+              data-confirm="Periodenwechsel wirklich durchführen? Laufende Besetzungen werden zum Stichtag beendet."
               class="space-y-4">
             {% csrf_token %}
             <div class="flex flex-wrap items-end gap-3">

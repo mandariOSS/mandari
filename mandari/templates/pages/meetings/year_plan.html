@@ -27,7 +27,7 @@
             <a href="?year={{ year|add:"1" }}" class="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-medium">{{ year|add:"1" }}<i data-lucide="chevron-right" class="w-4 h-4"></i></a>
             <a href="{% url 'insight_core:insight:meeting_calendar' %}" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-medium"><i data-lucide="calendar" class="w-4 h-4"></i>Kalender</a>
             <a href="{% url 'insight_core:insight:calendar_feed' %}" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm font-medium" title="Alle öffentlichen Sitzungen als Kalender-Abo (ICS)"><i data-lucide="rss" class="w-4 h-4"></i>Abonnieren</a>
-            <button type="button" onclick="window.print()" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium"><i data-lucide="printer" class="w-4 h-4"></i>Drucken</button>
+            <button type="button" data-action="print" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium"><i data-lucide="printer" class="w-4 h-4"></i>Drucken</button>
         </div>
     </div>
 

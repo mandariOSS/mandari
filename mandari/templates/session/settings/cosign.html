@@ -52,7 +52,7 @@
                     </p>
                 </div>
                 <form method="post" action="{% url 'session:cosign_rule_manage' tenant_slug=tenant_slug %}"
-                      onsubmit="return confirm('Mitzeichnungsregel wirklich löschen?');">
+                      data-confirm="Mitzeichnungsregel wirklich löschen?">
                     {% csrf_token %}
                     <input type="hidden" name="rule_id" value="{{ rule.id }}">
                     <input type="hidden" name="action" value="delete">

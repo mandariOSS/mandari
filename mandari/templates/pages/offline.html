@@ -74,11 +74,12 @@
             Es besteht gerade keine Internetverbindung.
             Sobald du wieder online bist, kannst du normal weiterarbeiten.
         </p>
-        <button type="button" onclick="location.reload()">Erneut versuchen</button>
+        <button type="button" id="erneut-versuchen">Erneut versuchen</button>
     </div>
     <script nonce="{{ csp_nonce }}">
         // Sobald die Verbindung zurück ist, automatisch neu laden.
         window.addEventListener('online', function () { location.reload(); });
+        document.getElementById('erneut-versuchen').addEventListener('click', function () { location.reload(); });
     </script>
 </body>
 </html>

@@ -48,7 +48,7 @@
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
             {% for member in members %}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                onclick="window.location='{% url 'work:team_profile' org_slug=organization.slug member_id=member.id %}'">
+                data-href="{% url 'work:team_profile' org_slug=organization.slug member_id=member.id %}">
                 <td class="px-6 py-3">
                     <div class="flex items-center gap-3">
                         <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-sm">

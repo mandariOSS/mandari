@@ -95,7 +95,7 @@
                         {% endif %}
                         {% if device.status != 'retired' %}
                         <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='retire' %}"
-                              onsubmit="return confirm('Gerät wirklich ausmustern?');">
+                              data-confirm="Gerät wirklich ausmustern?">
                             {% csrf_token %}
                             <button type="submit" class="px-2 py-1 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg" title="Ausmustern">Ausmustern</button>
                         </form>
@@ -187,7 +187,7 @@
                     {% endif %}
                     {% if grant.status == 'pending' or grant.status == 'approved' %}
                     <form method="post" action="{% url 'session:device_grant_action' tenant_slug=tenant_slug grant_id=grant.id action='cancel' %}"
-                          onsubmit="return confirm('Zuschuss wirklich stornieren?');">
+                          data-confirm="Zuschuss wirklich stornieren?">
                         {% csrf_token %}
                         <button type="submit" class="px-2 py-1 text-xs text-gray-400 hover:text-red-600 rounded-lg">Stornieren</button>
                     </form>

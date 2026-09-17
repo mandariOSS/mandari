@@ -14,7 +14,7 @@
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
             {% for meeting in meetings %}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer {% if meeting.cancelled %}opacity-60{% endif %}"
-                onclick="window.location='{% url 'insight_core:insight:meeting_detail' meeting.id %}'">
+                data-href="{% url 'insight_core:insight:meeting_detail' meeting.id %}">
                 <td class="px-6 py-3">
                     <div class="flex items-center gap-2">
                         <a href="{% url 'insight_core:insight:meeting_detail' meeting.id %}"

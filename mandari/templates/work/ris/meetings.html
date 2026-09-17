@@ -48,14 +48,14 @@
     <!-- Filters -->
     <form method="get" class="flex flex-wrap items-center gap-3 pb-2">
         <input type="hidden" name="view" value="{{ view_mode }}">
-        <select name="org" onchange="this.form.submit()"
+        <select name="org" data-autosubmit
                 class="max-w-[240px] px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
             <option value="">Alle Gremien</option>
             {% for org in organizations %}
             <option value="{{ org.id }}" {% if selected_org == org.id|slugify %}selected{% endif %}>{{ org.short_name|default:org.name }}</option>
             {% endfor %}
         </select>
-        <select name="year" onchange="this.form.submit()"
+        <select name="year" data-autosubmit
                 class="max-w-[240px] px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-gray-900 dark:text-white">
             <option value="">Alle Jahre</option>
             {% for year in years %}
@@ -82,7 +82,7 @@
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
             {% for meeting in meetings %}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer {% if meeting.cancelled %}opacity-60{% endif %}"
-                onclick="window.location='{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}'">
+                data-href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}">
                 <td class="px-6 py-3">
                     <div class="flex items-center gap-2">
                         <a href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}"

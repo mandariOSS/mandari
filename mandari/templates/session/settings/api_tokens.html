@@ -102,7 +102,7 @@
                     </td>
                     <td class="px-4 py-3 text-right">
                         {% if token.is_active %}
-                        <form method="post" action="{% url 'session:settings_api_tokens_revoke' tenant_slug=tenant_slug token_id=token.id %}" onsubmit="return confirm('Zugang „{{ token.name|escapejs }}“ zurückziehen? Die Fraktion kann dann keine Anträge mehr einreichen.')">
+                        <form method="post" action="{% url 'session:settings_api_tokens_revoke' tenant_slug=tenant_slug token_id=token.id %}" data-confirm="Zugang „{{ token.name }}“ zurückziehen? Die Fraktion kann dann keine Anträge mehr einreichen.">
                             {% csrf_token %}
                             <button type="submit" class="text-xs text-red-600 hover:text-red-700 dark:text-red-400">Zurückziehen</button>
                         </form>

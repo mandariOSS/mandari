@@ -149,7 +149,7 @@ consultation_meetings, tenant_slug
                         </button>
                     </form>
                     <form method="post" action="{% url 'session:consultation_delete' tenant_slug=tenant_slug consultation_id=station.id %}" class="inline"
-                          onsubmit="return confirm('Station wirklich aus der Beratungsfolge entfernen? Ein bereits angelegter TOP bleibt bestehen.');">
+                          data-confirm="Station wirklich aus der Beratungsfolge entfernen? Ein bereits angelegter TOP bleibt bestehen.">
                         {% csrf_token %}
                         <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded" title="Station entfernen">
                             <i data-lucide="trash-2" class="w-4 h-4"></i>

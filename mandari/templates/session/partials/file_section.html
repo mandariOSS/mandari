@@ -58,7 +58,7 @@ Erwarteter Kontext:
             </button>
             <!-- Löschen -->
             <form method="post" action="{% url 'session:file_delete' tenant_slug=tenant_slug file_id=file.id %}" class="inline"
-                  onsubmit="return confirm('Anlage {{ file.name|escapejs }} wirklich löschen?');">
+                  data-confirm="Anlage {{ file.name }} wirklich löschen?">
                 {% csrf_token %}
                 <button type="submit" class="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg" title="Löschen">
                     <i data-lucide="trash-2" class="w-4 h-4"></i>

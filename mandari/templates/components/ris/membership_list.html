@@ -33,7 +33,7 @@
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
             {% for m in items %}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer{% if collapsible %} opacity-70{% endif %}"
-                onclick="window.location='{% if link_type == 'person' %}{% if org_slug %}{% url 'work:ris_person_detail' org_slug=org_slug person_id=m.person.id %}{% else %}{% url 'insight_core:insight:person_detail' m.person.id %}{% endif %}{% else %}{% if org_slug %}{% url 'work:ris_organization_detail' org_slug=org_slug org_id=m.organization.id %}{% else %}{% url 'insight_core:insight:organization_detail' m.organization.id %}{% endif %}{% endif %}'">
+                data-href="{% if link_type == 'person' %}{% if org_slug %}{% url 'work:ris_person_detail' org_slug=org_slug person_id=m.person.id %}{% else %}{% url 'insight_core:insight:person_detail' m.person.id %}{% endif %}{% else %}{% if org_slug %}{% url 'work:ris_organization_detail' org_slug=org_slug org_id=m.organization.id %}{% else %}{% url 'insight_core:insight:organization_detail' m.organization.id %}{% endif %}{% endif %}">
                 <td class="px-6 py-3">
                     {% if link_type == "person" %}
                     <span class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">

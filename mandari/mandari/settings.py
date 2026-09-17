@@ -574,6 +574,8 @@ SECURE_CSP_REPORT_ONLY = {
     "object-src": [CSP.NONE],
     "base-uri": [CSP.SELF],
     "frame-ancestors": [CSP.NONE],
+    # Verstöße landen im Protokoll (Logger mandari.csp) und im Zähler mandari_csp_violations_total (#172)
+    "report-uri": ["/csp-report/"],
 }
 
 

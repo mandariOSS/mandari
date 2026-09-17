@@ -98,8 +98,7 @@ Kontext: item, tenant_slug, agenda_can_edit, is_sub (optional)
                 </button>
             </form>
             {% else %}
-            <form method="post" action="{% url 'session:agenda_item_withdraw' tenant_slug=tenant_slug item_id=item.id %}" class="inline"
-                  onsubmit="var r = prompt('Grund der Absetzung (optional):'); if (r === null) return false; this.reason.value = r; return true;">
+            <form method="post" action="{% url 'session:agenda_item_withdraw' tenant_slug=tenant_slug item_id=item.id %}" class="inline" data-prompt="Grund der Absetzung (optional):" data-prompt-field="reason">
                 {% csrf_token %}
                 <input type="hidden" name="reason" value="">
                 <button type="submit" class="p-1 text-gray-400 hover:text-amber-600 rounded" title="Absetzen (dokumentiert)">
@@ -108,7 +107,7 @@ Kontext: item, tenant_slug, agenda_can_edit, is_sub (optional)
             </form>
             {% endif %}
             <form method="post" action="{% url 'session:agenda_item_delete' tenant_slug=tenant_slug item_id=item.id %}" class="inline"
-                  onsubmit="return confirm('TOP wirklich löschen? Für reguläre Änderungen bitte absetzen statt löschen.');">
+                  data-confirm="TOP wirklich löschen? Für reguläre Änderungen bitte absetzen statt löschen.">
                 {% csrf_token %}
                 <button type="submit" class="p-1 text-gray-400 hover:text-red-600 rounded" title="Löschen">
                     <i data-lucide="trash-2" class="w-4 h-4"></i>

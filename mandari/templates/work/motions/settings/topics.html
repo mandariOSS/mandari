@@ -65,7 +65,7 @@
                     </button>
                 </form>
                 <form method="post" action="{% url 'work:document_topic_delete' org_slug=organization.slug topic_id=topic.id %}"
-                      class="inline" onsubmit="return confirm('Thema „{{ topic.name|escapejs }}“ wirklich löschen? Zuordnungen zu Dokumenten und Fachgebieten werden entfernt.')">
+                      class="inline" data-confirm="Thema „{{ topic.name }}“ wirklich löschen? Zuordnungen zu Dokumenten und Fachgebieten werden entfernt.">
                     {% csrf_token %}
                     <button type="submit" class="mt-1 inline-flex items-center gap-1 text-xs text-gray-400 hover:text-red-500" title="Löschen">
                         <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>

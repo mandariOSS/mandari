@@ -53,7 +53,7 @@
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
             {% for person in persons %}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                onclick="window.location='{% url 'work:ris_person_detail' org_slug=organization.slug person_id=person.id %}'">
+                data-href="{% url 'work:ris_person_detail' org_slug=organization.slug person_id=person.id %}">
                 <td class="px-6 py-3">
                     <div class="flex items-center gap-3">
                         {% include "components/person_avatar.html" with person=person size="sm" %}
@@ -73,7 +73,7 @@
                 </td>
                 <td class="px-4 py-3 max-sm:hidden">
                     {% if person.email %}
-                    <a href="mailto:{{ person.email }}" class="text-sm text-primary-600 dark:text-primary-400 hover:underline" onclick="event.stopPropagation()">
+                    <a href="mailto:{{ person.email }}" class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
                         {{ person.email }}
                     </a>
                     {% else %}
