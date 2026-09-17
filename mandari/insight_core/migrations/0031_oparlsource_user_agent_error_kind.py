@@ -11,7 +11,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("insight_core", "0029_portal_indizes"),
+        ("insight_core", "0030_oparlsource_oparl_version"),
     ]
 
     operations = [

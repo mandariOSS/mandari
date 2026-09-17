@@ -76,8 +76,8 @@
                                 <td colspan="5" class="mon-small mon-details">
                                     {% if item.error_kind_label %}<div class="mon-strong">Grund: {{ item.error_kind_label }}</div>{% endif %}
                                     {% for reason in item.reasons %}<div>{{ reason }}</div>{% endfor %}
-                                    {% if item.recommendation %}<div class="mon-strong" style="margin-top:.2rem">Empfehlung: <span style="font-weight:400">{{ item.recommendation }}</span></div>{% endif %}
-                                    {% if item.source.health_alert_sent_at %}<div class="mon-muted" style="margin-top:.2rem">Alarm gesendet {{ item.source.health_alert_sent_at|date:"d.m.Y H:i" }}</div>{% endif %}
+                                    {% if item.recommendation %}<div class="mon-strong">Empfehlung: {{ item.recommendation }}</div>{% endif %}
+                                    {% if item.source.health_alert_sent_at %}<div class="mon-muted">Alarm gesendet {{ item.source.health_alert_sent_at|date:"d.m.Y H:i" }}</div>{% endif %}
                                 </td>
                             </tr>
                             {% endif %}
