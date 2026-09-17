@@ -73,3 +73,31 @@ def test_command_mixin_ueberspringt_bei_gehaltener_sperre() -> None:
     call_command(Zaehler())
     assert Zaehler.laeufe == 2
     assert cache.get("einmalig:zaehler") is None, "nach dem Lauf freigegeben"
+
+
+class MitEigenenArgumenten(EinmaligMixin, BaseCommand):
+    """Wie die echten Cron-Commands: eigenes add_arguments ohne super()-Aufruf."""
+
+    sperre = "eigene"
+    laeufe: list[bool] = []
+
+    def add_arguments(self, parser: Any) -> None:
+        parser.add_argument("--report", action="store_true")
+
+    def handle(self, *args: Any, **options: Any) -> None:
+        MitEigenenArgumenten.laeufe.append(bool(options["report"]))
+
+
+def test_ohne_sperre_option_ueberlebt_eigenes_add_arguments() -> None:
+    MitEigenenArgumenten.laeufe.clear()
+    fremd = Sperre("eigene")
+    fremd.inhaber = "anderer-knoten:1"
+    assert fremd.erwerben()
+
+    parser = MitEigenenArgumenten().create_parser("manage.py", "eigene")
+    assert "--ohne-sperre" in parser.format_help() and "--report" in parser.format_help()
+
+    call_command(MitEigenenArgumenten(), "--report", stderr=StringIO())
+    assert MitEigenenArgumenten.laeufe == [], "gesperrt → übersprungen"
+    call_command(MitEigenenArgumenten(), "--report", "--ohne-sperre")
+    assert MitEigenenArgumenten.laeufe == [True]
