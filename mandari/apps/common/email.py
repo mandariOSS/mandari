@@ -24,6 +24,8 @@ from django.http import HttpRequest
 from django.template import TemplateDoesNotExist
 from django.template.loader import render_to_string
 
+from apps.common.metrics import EMAILS
+
 logger = logging.getLogger(__name__)
 
 # Bereiche, die nur im HTML sinnvoll sind (Preheader, Wortmarke), werden im Basis-Layout mit
@@ -205,10 +207,12 @@ def send_email(
         # würde: "keine Mail, kein Fehler"). Die fail_silently-Semantik
         # übernimmt der umschließende try/except.
         email.send()
+        EMAILS.labels(result="sent").inc()
         logger.info(f"Email sent successfully to {', '.join(to)}: {subject}")
         return True
 
     except Exception as e:
+        EMAILS.labels(result="failed").inc()
         logger.error(f"Failed to send email to {', '.join(to)}: {e}")
         if not fail_silently:
             raise

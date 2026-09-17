@@ -64,3 +64,94 @@ Readiness-Probe. Die Statusseite (Gatus) kann `/health/ready/` als Bedingung neh
 - Empfänger: `INSIGHT_ALERT_EMAILS` (kommagetrennt), sonst `INSIGHT_MODERATION_EMAILS`, sonst Superuser
 
 Bericht ohne Versand: `python manage.py check_source_health --report`
+
+## Metriken
+
+`/metrics/` liefert Anwendungsmetriken im Prometheus-Textformat (Issue #231; Code in
+`apps/common/metrics.py`). Alle Werte gelten je Prozess und beginnen beim Neustart bei null –
+das ist für Prometheus normal (`rate()`/`increase()` rechnen Neustarts heraus).
+
+| Metrik | Labels | Bedeutung |
+|---|---|---|
+| `mandari_http_request_duration_seconds` (Histogramm) | `view`, `status_class` | Antwortzeit je View |
+| `mandari_http_requests_total` | `view`, `status_class` | Anfragen je View und Statusklasse (`2xx` … `5xx`) |
+| `mandari_http_request_errors_total` | `view` | Antworten mit Status 5xx |
+| `mandari_db_pool_connections` | `state` (`in_use`, `available`, `min`, `max`) | Belegung des psycopg-Pools |
+| `mandari_db_pool_requests_waiting` | – | Anfragen, die auf eine Pool-Verbindung warten |
+| `mandari_db_connections_open` | – | nur ohne Pool: offene Verbindungen laut `pg_stat_activity` |
+| `mandari_cache_keyspace_hits_total`, `…_misses_total`, `mandari_cache_hit_ratio` | – | Redis `INFO stats` (serverweit); ohne Redis-Backend nicht vorhanden |
+| `mandari_emails_total` | `result` (`sent`, `failed`) | Versandversuche über `apps.common.email` |
+| `mandari_pdf_documents_total`, `mandari_pdf_generation_seconds` | `result` | PDF-Erzeugung an der zentralen Stelle `apps.common.pdf.html_to_pdf` |
+| `mandari_transcription_jobs` | `status` | wartende und laufende Transkriptionsaufträge |
+
+`view` ist der URL-Name samt Namensraum (z. B. `session:meeting_detail`), nie der konkrete
+Pfad – sonst würde jede ID ein neues Label erzeugen. Nicht auflösbare Pfade laufen unter
+`unresolved`; der Abruf von `/metrics/` selbst wird nicht gezählt.
+
+**Zugriff:** Der Endpunkt antwortet nur Absendern aus `METRICS_ALLOWED_NETWORKS`
+(kommagetrennte CIDRs; Vorgabe Loopback und private Netze, also auch das Compose-Netz) oder
+mit `Authorization: Bearer <METRICS_TOKEN>`. Alle anderen bekommen **404**, nicht 403 – der
+Endpunkt soll von außen nicht einmal bestätigt werden. Die Absenderadresse kommt aus
+`X-Forwarded-For`, das Caddy vor der Anwendung durch die echte Adresse ersetzt; ein anderer
+Reverse-Proxy muss das genauso tun, sonst darf `METRICS_ALLOWED_NETWORKS` nur das Proxy-Netz
+enthalten und Prometheus nutzt das Token.
+
+Beispiel-Scrape-Konfiguration: `deploy/monitoring/prometheus-scrape.example.yml`;
+Grafana-Vorlage (p95-Latenz je View, Fehlerquote, Pool-Belegung, Cache-Trefferquote):
+`deploy/monitoring/grafana-mandari.json`. Der Ingestor liefert seine eigenen Metriken
+(`mandari_ingestor_*`) weiterhin über seinen Port.
+
+## Service-Level-Alarme
+
+```cron
+30 6 * * * docker exec mandari python manage.py check_service_levels >> /var/log/mandari-service-levels.log 2>&1
+```
+
+`check_service_levels` prüft täglich und meldet Unterschreitungen per E-Mail an
+`INSIGHT_ALERT_EMAILS` (Code in `apps/common/service_levels.py`):
+
+| Prüfung | Schwelle (Einstellung) | Quelle |
+|---|---|---|
+| Speicherplatz Medienverzeichnis und Wurzeldateisystem | frei ≥ 10 % **und** ≥ 2 GB (`SERVICE_LEVEL_DISK_MIN_FREE_PERCENT`, `…_GB`) | `shutil.disk_usage` |
+| TLS-Zertifikate der eigenen Domains | Restlaufzeit ≥ 14 Tage (`SERVICE_LEVEL_TLS_MIN_DAYS`); auch „nicht prüfbar“ ist ein Alarm | TLS-Handschlag mit dem Host aus `SITE_URL` und `MONITOR_TLS_HOSTS` |
+| Fehlerquote 5xx | ≤ 1 % bei mindestens 100 Anfragen (`SERVICE_LEVEL_ERROR_RATE_MAX_PERCENT`, `…_MIN_REQUESTS`) | `/metrics/` der laufenden Instanz (`METRICS_URL`, Vorgabe `http://127.0.0.1:8000/metrics/`) |
+| Warteschlange Transkription | ältester wartender Auftrag ≤ 120 min (`SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES`) | `minutes.TranscriptionJob` |
+
+Zur Fehlerquote ehrlich: Die Zähler leben im Web-Prozess und beginnen bei jedem Neustart bei
+null. Der Lauf merkt sich deshalb den letzten Zählerstand im Cache und bewertet die Differenz
+seit dem letzten Lauf – bei täglichem Cron die letzten ~24 h. Liegt der Zähler unter dem
+gemerkten Stand (Neustart), gilt der Stand seit dem Start. Sind die Metriken nicht abrufbar,
+ist das selbst ein Alarm.
+
+Django-Tasks laufen mit dem `ImmediateBackend` synchron; eine allgemeine Warteschlange, die
+sich stauen könnte, gibt es nicht. Geprüft wird darum nur die Transkriptions-Warteschlange.
+
+Jeder Alarm geht **höchstens einmal je 24 h** hinaus (Sperre im Cache je Prüfobjekt);
+alle fälligen Alarme eines Laufs stehen in einer Sammelmail. Entwarnungen werden nicht
+verschickt. `--report` zeigt alle Befunde ohne Versand, `--dry-run` zeigt fällige Alarme,
+ohne die Sperre zu setzen.
+
+## Verfügbarkeitsbericht
+
+```cron
+15 0 1 * * docker exec mandari python manage.py availability_report --out /var/lib/mandari/reports/verfuegbarkeit-$(date -d "yesterday" +\%Y-\%m).md >> /var/log/mandari-availability.log 2>&1
+```
+
+`availability_report --month YYYY-MM [--gatus-url URL] [--out datei.md] [--target 99.5]`
+stellt aus der Statusseite (Gatus, `GATUS_URL`) die Verfügbarkeit je überwachtem Dienst –
+Bürgerportal, Work, Session, OParl-API, je nachdem, was die Statusseite überwacht – als
+Markdown zusammen: Verfügbarkeit, Zielwert (99,5 % laut Konzept), Anzahl und Dauer der
+Störungen, Gesamtverfügbarkeit als Mittel über die Dienste. Ohne `--month` gilt der Vormonat;
+ohne erreichbare Statusseite endet der Lauf mit Exit-Code 1.
+
+Grenzen, die im Bericht selbst stehen:
+
+- Gatus kennt Verfügbarkeit nur für 1 h, 24 h, 7 d und 30 d, keinen Kalendermonat. Der
+  Bericht nimmt den 30-Tage-Wert als Näherung; am Monatsersten für den Vormonat erzeugt,
+  weicht er höchstens um einen Tag ab. Störungen und Ausfallzeit werden dagegen exakt aus den
+  Ereignissen des Monats berechnet (`UNHEALTHY` → `HEALTHY`), daraus auch eine zweite
+  Verfügbarkeitszahl „aus Ereignissen“.
+- **Je Mandant** lässt sich nichts trennen: Alle Dienste laufen auf derselben Instanz, ein
+  Ausfall trifft alle Mandanten gleich. Der Bericht gilt je Dienst und für alle Mandanten
+  gemeinsam; für einen SLA-Nachweis gegenüber einem einzelnen Mandanten ist er damit
+  vollständig, nur nicht mandantenspezifisch beschriftet.

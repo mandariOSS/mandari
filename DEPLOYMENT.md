@@ -313,7 +313,17 @@ laufen auf dem Host per Cron gegen den laufenden Container, jeweils mit eigener 
 0 3 * * 1   docker exec mandari-app python manage.py fetch_person_photos      >> /var/log/mandari-person-photos.log 2>&1
 # Verwaiste Konten (unbestätigt, abgelehnt, ohne Zuordnung) nach Frist löschen, Issue #238
 45 3 * * *  docker exec mandari-app python manage.py cleanup_orphaned_accounts >> /var/log/mandari-orphaned-accounts.log 2>&1
+# Betrieb (Issue #231, docs/MONITORING.md): Quellen stündlich, Service-Level täglich, Verfügbarkeitsbericht monatlich
+15 * * * *  docker exec mandari-app python manage.py check_source_health    >> /var/log/mandari-source-health.log 2>&1
+30 6 * * *  docker exec mandari-app python manage.py check_service_levels   >> /var/log/mandari-service-levels.log 2>&1
+15 0 1 * *  docker exec mandari-app python manage.py availability_report --out /var/lib/mandari/reports/verfuegbarkeit-$(date -d "yesterday" +\%Y-\%m).md >> /var/log/mandari-availability.log 2>&1
 ```
+
+`check_service_levels` braucht `INSIGHT_ALERT_EMAILS` als Empfänger und erreicht die Metriken
+der laufenden Instanz über `METRICS_URL` (Vorgabe `http://127.0.0.1:8000/metrics/`, also im
+Container selbst). `availability_report` braucht `GATUS_URL` (Statusseite) und ein
+beschreibbares Zielverzeichnis im Container; ohne erreichbare Statusseite endet der Lauf mit
+Exit-Code 1.
 
 Vor dem ersten Scharfschalten von `cleanup_orphaned_accounts` lohnt ein Probelauf mit
 `--dry-run`; die Kriterien stehen in `docs/DSGVO_LOESCHKONZEPT.md`. Die Ausgaben aller

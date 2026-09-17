@@ -14,6 +14,9 @@ Bausteine:
 import io
 import logging
 import re
+import time
+
+from apps.common.metrics import PDF_DOCUMENTS, PDF_DURATION
 
 logger = logging.getLogger(__name__)
 
@@ -46,22 +49,33 @@ def html_to_pdf(html_content: str) -> bytes:
     """
     HTML in ein PDF umwandeln (xhtml2pdf, Fallback: reportlab).
 
+    Zentrale Stelle für Einladungen, Niederschriften, Beschlussauszüge, Exporte und
+    Bescheinigungen – deshalb werden hier Anzahl und Dauer als Metrik erfasst (Issue #231).
+
     Args:
         html_content: vollständiges HTML-Dokument
 
     Returns:
         bytes: PDF-Inhalt
     """
+    start = time.perf_counter()
     try:
-        from xhtml2pdf import pisa
+        try:
+            from xhtml2pdf import pisa
 
-        result = io.BytesIO()
-        pisa_status = pisa.CreatePDF(src=html_content, dest=result, encoding="UTF-8")
-        if pisa_status.err:
-            raise RuntimeError(f"PDF generation error: {pisa_status.err}")
-        return result.getvalue()
-    except ImportError:
-        return simple_text_pdf(html_content)
+            result = io.BytesIO()
+            pisa_status = pisa.CreatePDF(src=html_content, dest=result, encoding="UTF-8")
+            if pisa_status.err:
+                raise RuntimeError(f"PDF generation error: {pisa_status.err}")
+            pdf = result.getvalue()
+        except ImportError:
+            pdf = simple_text_pdf(html_content)
+    except Exception:
+        PDF_DOCUMENTS.labels(result="failed").inc()
+        raise
+    PDF_DURATION.observe(time.perf_counter() - start)
+    PDF_DOCUMENTS.labels(result="ok").inc()
+    return pdf
 
 
 def simple_text_pdf(html_content: str, margins: dict | None = None) -> bytes:

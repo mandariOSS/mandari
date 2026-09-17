@@ -249,6 +249,8 @@ pillow==12.3.0
     #   reportlab
     #   svglib
     #   xhtml2pdf
+prometheus-client==0.26.0
+    # via -r requirements.txt
 propcache==0.5.2
     # via
     #   aiohttp

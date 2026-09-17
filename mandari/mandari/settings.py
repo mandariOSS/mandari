@@ -117,6 +117,8 @@ AUTH_USER_MODEL = "accounts.User"
 ASGI_APPLICATION = "mandari.asgi.application"
 
 MIDDLEWARE = [
+    # Ganz außen, damit die gemessene Antwortzeit den gesamten Middleware-Stapel umfasst (apps/common/metrics.py)
+    "apps.common.metrics.RequestMetricsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Content-Security-Policy (Django 6): zunächst Report-Only, siehe Block SECURE_CSP_REPORT_ONLY
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
@@ -166,6 +168,30 @@ ADMIN_ALLOWED_NETWORKS = [
     for network in os.environ.get("ADMIN_ALLOWED_NETWORKS", "").split(",")
     if network.strip()
 ]
+# Metriken-Endpunkt /metrics/ (Issue #231): nur aus diesen Netzen oder mit Bearer-Token erreichbar, sonst 404.
+# Vorgabe: Loopback und private Netze (Docker-Netz, VPN); ein Prometheus im selben Compose-Netz braucht kein Token.
+METRICS_ALLOWED_NETWORKS = [
+    str(_ipaddress.ip_network(network.strip(), strict=False))
+    for network in os.environ.get(
+        "METRICS_ALLOWED_NETWORKS", "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    ).split(",")
+    if network.strip()
+]
+METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "")
+# Woher check_service_levels die Metriken der laufenden Instanz holt (leer = Fehlerquote nicht prüfen)
+METRICS_URL = os.environ.get("METRICS_URL", "http://127.0.0.1:8000/metrics/")
+
+# Service-Level-Alarme (check_service_levels, Issue #231); Empfänger: INSIGHT_ALERT_EMAILS
+SERVICE_LEVEL_DISK_MIN_FREE_PERCENT = float(os.environ.get("SERVICE_LEVEL_DISK_MIN_FREE_PERCENT", "10"))
+SERVICE_LEVEL_DISK_MIN_FREE_GB = float(os.environ.get("SERVICE_LEVEL_DISK_MIN_FREE_GB", "2"))
+SERVICE_LEVEL_TLS_MIN_DAYS = int(os.environ.get("SERVICE_LEVEL_TLS_MIN_DAYS", "14"))
+SERVICE_LEVEL_ERROR_RATE_MAX_PERCENT = float(os.environ.get("SERVICE_LEVEL_ERROR_RATE_MAX_PERCENT", "1"))
+SERVICE_LEVEL_ERROR_RATE_MIN_REQUESTS = int(os.environ.get("SERVICE_LEVEL_ERROR_RATE_MIN_REQUESTS", "100"))
+SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES = int(os.environ.get("SERVICE_LEVEL_QUEUE_MAX_AGE_MINUTES", "120"))
+# Zusätzliche Hosts, deren TLS-Zertifikat geprüft wird (kommagetrennt); SITE_URL wird immer geprüft
+MONITOR_TLS_HOSTS = [h.strip() for h in os.environ.get("MONITOR_TLS_HOSTS", "").split(",") if h.strip()]
+# Statusseite (Gatus) für den Verfügbarkeitsbericht (availability_report)
+GATUS_URL = os.environ.get("GATUS_URL", "")
 # Sicherheitsschlüssel/Passkeys (WebAuthn): Relying-Party-ID ist die Hauptdomain (gilt auch für Subdomains)
 WEBAUTHN_RP_ID = os.environ.get("WEBAUTHN_RP_ID", MAIN_DOMAIN.split(":")[0])
 WEBAUTHN_RP_NAME = os.environ.get("WEBAUTHN_RP_NAME", "mandari")

@@ -1,0 +1,126 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "type": "datasource",
+      "pluginId": "prometheus"
+    }
+  ],
+  "title": "mandari – Betrieb",
+  "uid": "mandari-betrieb",
+  "description": "Anwendungsmetriken von /metrics/ (Issue #231): Latenz p95 je View, Fehlerquote, Pool-Belegung, Cache-Trefferquote.",
+  "tags": ["mandari"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "label": "Job",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "query": "label_values(mandari_http_requests_total, job)",
+        "current": { "text": "mandari", "value": "mandari" },
+        "refresh": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Antwortzeit p95 je View (5 min)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 9 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (le, view) (rate(mandari_http_request_duration_seconds_bucket{job=\"$job\"}[5m]))))",
+          "legendFormat": "{{view}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Fehlerquote 5xx (5 min)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.01 }] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mandari_http_requests_total{job=\"$job\",status_class=\"5xx\"}[5m])) / sum(rate(mandari_http_requests_total{job=\"$job\"}[5m]))",
+          "legendFormat": "gesamt"
+        },
+        {
+          "refId": "B",
+          "expr": "topk(5, sum by (view) (rate(mandari_http_request_errors_total{job=\"$job\"}[5m])))",
+          "legendFormat": "5xx/s {{view}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Datenbank-Pool",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 0, "y": 9, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "mandari_db_pool_connections{job=\"$job\"}", "legendFormat": "{{state}}" },
+        { "refId": "B", "expr": "mandari_db_pool_requests_waiting{job=\"$job\"}", "legendFormat": "wartend" },
+        { "refId": "C", "expr": "mandari_db_connections_open{job=\"$job\"}", "legendFormat": "offen (ohne Pool)" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Cache-Trefferquote (Redis, 15 min)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 12, "y": 9, "w": 6, "h": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 0.8 }] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mandari_cache_keyspace_hits_total{job=\"$job\"}[15m]) / (rate(mandari_cache_keyspace_hits_total{job=\"$job\"}[15m]) + rate(mandari_cache_keyspace_misses_total{job=\"$job\"}[15m]))",
+          "legendFormat": "Trefferquote"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Hintergrund (1 h)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "x": 18, "y": 9, "w": 6, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum(increase(mandari_emails_total{job=\"$job\",result=\"sent\"}[1h]))", "legendFormat": "Mails gesendet" },
+        { "refId": "B", "expr": "sum(increase(mandari_emails_total{job=\"$job\",result=\"failed\"}[1h]))", "legendFormat": "Mails fehlgeschlagen" },
+        { "refId": "C", "expr": "sum(increase(mandari_pdf_documents_total{job=\"$job\"}[1h]))", "legendFormat": "PDFs" },
+        { "refId": "D", "expr": "sum(mandari_transcription_jobs{job=\"$job\",status=\"queued\"})", "legendFormat": "Transkription wartend" }
+      ]
+    }
+  ]
+}
