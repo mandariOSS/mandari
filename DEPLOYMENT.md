@@ -147,20 +147,32 @@ docker compose logs -f
 docker ps
 ```
 
-### Mit Scripts
+### Mit Skript: Gesundheitsprüfung und automatischer Rückfall
+
+`deploy/scripts/deploy.sh` ist nicht interaktiv (für Betrieb, Cron, CI) und macht aus
+jedem Deploy einen geprüften Vorgang: Sicherung, `safemigrate`, Umschalten mit `--wait`,
+dann **Anwendungsprüfung im Container** (`deploy/scripts/verify_deploy.py`: Readiness,
+Anmeldeseite, Bürgerportal, OParl-System, optional angemeldete Demo-Seiten, jeweils mit
+Inhaltsprüfung). Scheitert sie, schaltet das Skript **selbsttätig auf das vorherige Image
+zurück** und meldet das per Mail. Jeder Lauf schreibt eine Zeile in `deploy-log.tsv`
+(alt, neu, Ergebnis, Unterbrechung in Sekunden, Dauer), die Grundlage für die Kennzahl
+„Ausfallzeit je Deploy“ aus dem Verfügbarkeitskonzept.
 
 ```bash
-cd infrastructure/scripts
-
-# Deployment
-./deploy.sh app
-
-# Backup
-./backup.sh full
-
-# Failover prüfen
-./failover.sh check
+# Umgebung einmalig in einer Datei ablegen (Dienstnamen, Compose-Dateien, Empfänger)
+set -a; . /opt/mandari/deploy.env; set +a
+sh deploy/scripts/deploy.sh plan   v0.11.0   # Images ziehen, migrate --plan, check
+sh deploy/scripts/deploy.sh apply  v0.11.0   # Sicherung, Migration, Umschalten, Prüfung, ggf. Rückfall
+sh deploy/scripts/deploy.sh verify           # nur die Prüfung gegen den laufenden Stand
+sh deploy/scripts/deploy.sh rollback v0.10.0 # von Hand zurück
 ```
+
+Alle Parameter (`MANDARI_DIR`, `COMPOSE_FILES`, `APP_SERVICE`, `WORKER_SERVICES`,
+`DB_SERVICE`, `BACKUP_DIR`, `NOTIFY_EMAIL`, `VERIFY_*`) stehen im Kopf des Skripts.
+Migrationen müssen abwärtskompatibel sein: Der Rückfall rollt Code zurück, keine
+Migrationen (`django-safemigrate` spielt nur verträgliche Migrationen vor dem Umschalten ein).
+Das interaktive `update.sh` für Selbst-Hoster nutzt dieselbe Anwendungsprüfung und rollt
+bei Fehlschlag ebenfalls zurück.
 
 ---
 

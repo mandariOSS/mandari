@@ -535,6 +535,36 @@ if ! swap_container mandari mandari 45; then
     error "Update fehlgeschlagen. Mandari auf vorherige Version zurückgesetzt. Prüfe: docker logs $APP_CONTAINER"
 fi
 
+# Anwendungsprüfung (Issue #285): "healthy" heißt nur, dass der Prozess antwortet.
+# Erst wenn Anmeldeseite, Portal und API mit Inhalt kommen, gilt das Update als gelungen;
+# sonst Rollback wie oben.
+if [ -f "$SCRIPT_DIR/deploy/scripts/verify_deploy.py" ]; then
+    printf "  %-30s " "Anwendungsprüfung"
+    docker cp "$SCRIPT_DIR/deploy/scripts/verify_deploy.py" "$APP_CONTAINER:/tmp/verify_deploy.py" >> "$UPDATE_LOG" 2>&1
+    if docker exec "$APP_CONTAINER" python manage.py shell -c "exec(open('/tmp/verify_deploy.py').read())" >> "$UPDATE_LOG" 2>&1; then
+        printf "${GREEN}✓ bestanden${NC}
+"
+    else
+        printf "${RED}✗ FAILED${NC}
+"
+        UPDATE_FAILED=true
+        warn "Anwendungsprüfung fehlgeschlagen (Details: $UPDATE_LOG). Versuche Rollback..."
+        if [ -f ".env.pre-update" ]; then
+            cp .env.pre-update .env
+            docker compose up -d --no-deps mandari >> "$UPDATE_LOG" 2>&1
+            printf "  %-30s " "mandari (rollback)"
+            if wait_for_healthy mandari 45; then
+                printf "${GREEN}✓ restored${NC}
+"
+            else
+                printf "${RED}✗ FAILED${NC}
+"
+            fi
+        fi
+        error "Update fehlgeschlagen. Mandari auf vorherige Version zurückgesetzt. Prüfe: $UPDATE_LOG"
+    fi
+fi
+
 # Website (Wagtail)
 if ! swap_container website mandari-website 30; then
     warn "Website-Container unhealthy — prüfe Logs: docker logs $WEBSITE_CONTAINER"
