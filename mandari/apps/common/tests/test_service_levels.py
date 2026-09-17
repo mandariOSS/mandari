@@ -201,3 +201,29 @@ def test_command_sendet_und_wiederholt_nicht(monkeypatch: pytest.MonkeyPatch, se
     assert len(mail.outbox) == 1
     assert "Alarme gesendet: 1" in out.getvalue()
     assert "Alarme gesendet: 0" in out.getvalue()
+
+
+def test_metriken_abruf_setzt_host_header(monkeypatch: pytest.MonkeyPatch, settings: Any) -> None:
+    """Loopback-Abruf ohne Host-Header endet mit 400 (ALLOWED_HOSTS); der Header muss gesetzt sein."""
+    import io
+    import urllib.request
+
+    settings.ALLOWED_HOSTS = ["localhost", ".example.org", "mandari.example"]
+    gesehen: dict[str, str] = {}
+
+    class Antwort(io.BytesIO):
+        def __enter__(self) -> Antwort:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    def fake_urlopen(anfrage: urllib.request.Request, timeout: float = 0) -> Antwort:
+        gesehen.update({k.lower(): v for k, v in anfrage.header_items()})
+        return Antwort(b"# leer\n")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    assert sl.lade_metriken("http://127.0.0.1:8000/metrics/", token="geheim") == "# leer\n"
+    assert gesehen["host"] == "mandari.example"
+    assert gesehen["authorization"] == "Bearer geheim"

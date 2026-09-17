@@ -178,8 +178,12 @@ METRICS_ALLOWED_NETWORKS = [
     if network.strip()
 ]
 METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "")
-# Woher check_service_levels die Metriken der laufenden Instanz holt (leer = Fehlerquote nicht prüfen)
+# Woher check_service_levels die Metriken der laufenden Instanz holt (leer = Fehlerquote nicht prüfen).
+# Der Abruf setzt den Host-Header auf den ersten Eintrag aus ALLOWED_HOSTS, damit Django die
+# Loopback-Adresse nicht mit 400 abweist.
 METRICS_URL = os.environ.get("METRICS_URL", "http://127.0.0.1:8000/metrics/")
+# Statusseite (Gatus) für den monatlichen Verfügbarkeitsbericht (availability_report)
+GATUS_URL = os.environ.get("GATUS_URL", "")
 
 # Service-Level-Alarme (check_service_levels, Issue #231); Empfänger: INSIGHT_ALERT_EMAILS
 SERVICE_LEVEL_DISK_MIN_FREE_PERCENT = float(os.environ.get("SERVICE_LEVEL_DISK_MIN_FREE_PERCENT", "10"))
