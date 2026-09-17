@@ -717,9 +717,9 @@ def probe_ris(
 
     async def run_probe() -> tuple[list[ris_probe.ProbeResult], set[str]]:
         results: list[ris_probe.ProbeResult] = []
-        async with httpx.AsyncClient(headers={"User-Agent": settings.scraper_user_agent}) as client:
+        async with httpx.AsyncClient(headers={"User-Agent": settings.user_agent}) as client:
             for ziel in ziele:
-                results.append(await ris_probe.probe_url(ziel, client, user_agent=settings.scraper_user_agent))
+                results.append(await ris_probe.probe_url(ziel, client, user_agent=settings.user_agent))
                 await asyncio.sleep(2)  # Politeness: eine Kommune nach der anderen, nicht gleichzeitig
         registriert: set[str] = set()
         if batch or store:

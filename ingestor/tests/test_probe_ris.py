@@ -185,3 +185,25 @@ def test_csv_zeilen_und_json() -> None:
     zeile = rp.to_csv_rows([r])[0]
     assert zeile["hersteller"] == "sessionnet" and json.loads(zeile["vorschlag"]) == {"scraper": "sessionnet"}
     assert json.loads(json.dumps(r.to_dict()))["url"] == "https://a"
+
+
+def test_cli_probe_ris_nutzt_vorhandenes_user_agent_setting(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Regression: Der Befehl griff auf settings.scraper_user_agent zu, das es nicht gibt (#53)."""
+    from typer.testing import CliRunner
+
+    from src import main as cli
+
+    gesehen: list[str] = []
+
+    async def fake_probe(url: str, client: object, *, user_agent: str, max_requests: int = 5) -> rp.ProbeResult:
+        gesehen.append(user_agent)
+        return rp.ProbeResult(url=url, vendor="sessionnet", robots="erlaubt")
+
+    monkeypatch.setattr(rp, "probe_url", fake_probe)
+    ausgabe = tmp_path / "probe.json"
+    ergebnis = CliRunner().invoke(
+        cli.app, ["probe-ris", "https://ris.example.org/", "--format", "json", "--out", str(ausgabe)]
+    )
+    assert ergebnis.exit_code == 0, ergebnis.output
+    assert gesehen and "mandari" in gesehen[0].lower()
+    assert json.loads(ausgabe.read_text(encoding="utf-8"))[0]["vendor"] == "sessionnet"
