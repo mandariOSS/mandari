@@ -237,6 +237,68 @@ docker exec mandari-api python manage.py migrate
 
 ---
 
+## 🐘 PostgreSQL: Grundeinstellungen
+
+PostgreSQL liefert Werte aus, die zu einem kleinen Rechner mit drehender
+Festplatte passen. Für mandari trifft beides nicht zu: `shared_buffers=128MB`
+gegen einen Datenbestand von mehreren Gigabyte bedeutet, dass eine einzige
+größere Abfrage den gesamten Cache verdrängt. `random_page_cost=4` beschreibt
+eine Festplatte und führt dazu, dass der Planer Indizes meidet und stattdessen
+ganze Tabellen liest.
+
+Die mitgelieferte `docker-compose.yml` setzt deshalb eigene Werte. **Jeder ist
+per Umgebungsvariable übersteuerbar**, und eine Änderung wirkt erst nach einem
+Neustart des Datenbankdienstes.
+
+### Woher die Werte kommen
+
+Alles leitet sich vom Arbeitsspeicher des **Datenbankdienstes** ab
+(`POSTGRES_MEM_LIMIT`, Vorgabe `1g`) — nicht vom Arbeitsspeicher des Servers.
+
+| Einstellung | Faustregel | Vorgabe bei 1 GB |
+|---|---|---|
+| `POSTGRES_SHARED_BUFFERS` | **ein Viertel** des Dienst-Speichers | `256MB` |
+| `POSTGRES_EFFECTIVE_CACHE_SIZE` | **drei Viertel** — eine Schätzung, keine Belegung: was der Planer an Cache erwarten darf | `768MB` |
+| `POSTGRES_WORK_MEM` | je Sortier- oder Gruppiervorgang, **nicht je Verbindung** | `8MB` |
+| `POSTGRES_MAINTENANCE_WORK_MEM` | für `VACUUM` und Indexaufbau, etwa ein Achtel | `128MB` |
+| `POSTGRES_RANDOM_PAGE_COST` | `1.1` für SSD/NVMe, `4` nur für drehende Platten | `1.1` |
+| `POSTGRES_EFFECTIVE_IO_CONCURRENCY` | `200` für SSD/NVMe, `2` für drehende Platten | `200` |
+| `POSTGRES_MAX_CONNECTIONS` | muss zur Summe aller Dienste passen | `100` |
+| `POSTGRES_MAX_WAL_SIZE` | mehr bedeutet seltenere Checkpoints | `2GB` |
+
+**Die Falle bei `work_mem`:** Der Wert gilt je Sortiervorgang, und eine einzelne
+Abfrage kann mehrere davon haben. Im Extremfall belegt die Datenbank
+`max_connections × work_mem` zusätzlich zu `shared_buffers`. Bei 100 Verbindungen
+und 8 MB sind das rechnerisch 800 MB — deshalb sind `mem_limit`,
+`max_connections` und `work_mem` nur gemeinsam zu ändern.
+
+### Für größere Installationen
+
+Beispiel aus dem eigenen Betrieb (Datenbankdienst mit 4 GB, gemeinsam genutzt von
+mandari, Website und Kundenportal):
+
+```env
+POSTGRES_MEM_LIMIT=4g
+POSTGRES_SHARED_BUFFERS=1GB
+POSTGRES_EFFECTIVE_CACHE_SIZE=3GB
+POSTGRES_WORK_MEM=8MB
+POSTGRES_MAINTENANCE_WORK_MEM=256MB
+POSTGRES_MAX_CONNECTIONS=200
+```
+
+### Wirkung
+
+Gemessen am eigenen Bestand (Köln, 42.247 Vorgänge), zusammen mit den Indizes
+aus #256:
+
+| Seite | vorher | nachher |
+|---|---|---|
+| Insight-Portal, extern gemessen | 204 ms | **46 ms** |
+| Auswahlseite, serverseitig | 193 ms | **12 ms** |
+| Kommunenseite Köln | 215 ms | **20 ms** |
+
+Listen- und Detailseiten lagen vorher wie nachher bei 10–50 ms; sie sind durch
+die Umstellung nicht langsamer geworden.
 ## 🔌 Datenbankverbindungen: Budget
 
 Alle Dienste teilen sich **eine** PostgreSQL-Instanz. Ist deren `max_connections`
