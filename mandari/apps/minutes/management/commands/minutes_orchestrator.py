@@ -18,6 +18,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandParser
 from django.db import close_old_connections
 
+from apps.common.einmalig import Sperre
 from apps.minutes.models_compute import ComputeSettings
 from apps.minutes.node_service import run_once
 from apps.minutes.provisioning.centron import CentronClient, CentronCredentials, CentronError
@@ -38,7 +39,14 @@ class Command(BaseCommand):
         interval = max(10, int(options["interval"]))
         while not self._stop:
             close_old_connections()
-            self._tick()
+            # Singleton je Durchlauf (#55): Läuft ein zweiter Orchestrator, überspringt er
+            # den Takt statt doppelt Rechenknoten anzulegen. Die Sperre verfällt nach dem
+            # Dreifachen des Intervalls von selbst, falls ein Prozess abstürzt.
+            with Sperre("minutes_orchestrator", ttl=interval * 3) as erhalten:
+                if erhalten:
+                    self._tick()
+                else:
+                    self.stderr.write("Orchestrator läuft bereits an anderer Stelle – Durchlauf übersprungen.")
             if options["once"]:
                 return
             for _ in range(interval):

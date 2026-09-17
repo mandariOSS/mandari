@@ -18,8 +18,12 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandParser
 
+from apps.common.einmalig import EinmaligMixin
 
-class Command(BaseCommand):
+
+class Command(EinmaligMixin, BaseCommand):
+    sperre = "check_service_levels"  # Singleton je Cache/Redis, #55
+    sperre_ttl = 3600
     help = "Prüft Speicherplatz, TLS-Laufzeiten, Fehlerquote und Warteschlange; verschickt Alarme per E-Mail"
 
     def add_arguments(self, parser: CommandParser) -> None:

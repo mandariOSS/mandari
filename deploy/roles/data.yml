@@ -1,0 +1,62 @@
+# Rolle „data“: PostgreSQL, Redis, Elasticsearch (Issue #55).
+#
+# Zusammen mit der Basisdatei verwenden, am einfachsten dauerhaft in der .env:
+#   COMPOSE_FILE=docker-compose.yml:deploy/roles/data.yml
+#   DATA_BIND=10.0.0.10        # Adresse im privaten Netz, an die die Dienste gebunden werden
+#
+# Die Datendienste werden NUR an DATA_BIND veröffentlicht – niemals an eine öffentliche
+# Adresse. Der Weg zu den web-/worker-Servern gehört in ein privates Netz (VLAN, WireGuard).
+# Alle anderen Dienste sind hier abgeschaltet (Profil „aus“ wird nie aktiviert).
+#
+# Optional: PgBouncer als Verbindungs-Pooler, aktivieren mit COMPOSE_PROFILES=pgbouncer.
+# Web- und Worker-Server zeigen dann mit DATA_PG_PORT=6432 auf den Pooler.
+
+services:
+  postgres:
+    ports:
+      - "${DATA_BIND:?DATA_BIND (private Adresse) fehlt}:5432:5432"
+
+  redis:
+    ports:
+      - "${DATA_BIND:?DATA_BIND (private Adresse) fehlt}:6379:6379"
+
+  elasticsearch:
+    ports:
+      - "${DATA_BIND:?DATA_BIND (private Adresse) fehlt}:9200:9200"
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.23.1-p1
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-pgbouncer
+    restart: unless-stopped
+    profiles: ["pgbouncer"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-mandari}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+      DB_NAME: "*"
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "500"
+      DEFAULT_POOL_SIZE: "20"
+    ports:
+      - "${DATA_BIND:?DATA_BIND (private Adresse) fehlt}:6432:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mandari
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+
+  caddy:
+    profiles: ["aus"]
+  mandari:
+    profiles: ["aus"]
+  minutes-orchestrator:
+    profiles: ["aus"]
+  website:
+    profiles: ["aus"]
+  ingestor:
+    profiles: ["aus"]

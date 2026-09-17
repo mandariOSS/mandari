@@ -303,9 +303,19 @@ async def run_scheduler(
         max_concurrent=max_concurrent,
     )
 
+    # Singleton (#55): Nur eine Daemon-Instanz je Datenbank synchronisiert; eine zweite
+    # wartet auf die PostgreSQL-Advisory-Sperre und übernimmt, wenn die erste endet.
+    from src.scheduler.singleton import Fuehrung
+
+    fuehrung = Fuehrung(settings.database_url)
+
     try:
         # Start metrics server
         await metrics.start_server(port=metrics_port)
+
+        await fuehrung.warten(
+            lambda inhaber: console.print(f"[yellow]Andere Ingestor-Instanz aktiv ({inhaber}) – warte …[/yellow]")
+        )
 
         await scheduler.start()
 
@@ -325,3 +335,5 @@ async def run_scheduler(
         await scheduler.stop()
     except KeyboardInterrupt:
         await scheduler.stop()
+    finally:
+        await fuehrung.freigeben()

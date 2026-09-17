@@ -12,10 +12,13 @@ Optionen:
 
 from django.core.management.base import BaseCommand
 
+from apps.common.einmalig import EinmaligMixin
 from apps.session.services import reminder_service
 
 
-class Command(BaseCommand):
+class Command(EinmaligMixin, BaseCommand):
+    sperre = "send_session_reminders"  # Singleton je Cache/Redis, #55
+    sperre_ttl = 3600
     help = "Versendet Fristen-Erinnerungen (Ladung, Vorlagen, Rückmeldung, Beschlusskontrolle)."
 
     def add_arguments(self, parser):

@@ -11,8 +11,12 @@ Einzelne Kommune, alles neu laden:
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 
+from apps.common.einmalig import EinmaligMixin
 
-class Command(BaseCommand):
+
+class Command(EinmaligMixin, BaseCommand):
+    sperre = "fetch_person_photos"  # Singleton je Cache/Redis, #55
+    sperre_ttl = 21600
     help = "Lädt Personenfotos aus den Ratsinformationssystemen und speichert sie lokal"
 
     def add_arguments(self, parser):

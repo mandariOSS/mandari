@@ -1,0 +1,35 @@
+# Rolle „web“: Caddy, Anwendung, Website (Issue #55).
+#
+# In der .env:
+#   COMPOSE_FILE=docker-compose.yml:deploy/roles/web.yml
+#   DATA_HOST=10.0.0.10        # Server mit der Rolle „data“ (privates Netz)
+#   DATA_PG_PORT=5432          # 6432, wenn dort PgBouncer aktiv ist
+#
+# Die Datendienste laufen nicht hier; die Anwendung verbindet sich über DATA_HOST.
+# Mehrere web-Server brauchen gemeinsame Ablagen für Medien und Dokument-Cache
+# (mandari_media, mandari_files), z. B. per NFS – siehe docs/MEHR_SERVER_BETRIEB.md.
+# Die Singleton-Sperre der Cron-Jobs liegt in Redis; Cron nur auf EINEM web-Server einrichten.
+
+services:
+  postgres:
+    profiles: ["aus"]
+  redis:
+    profiles: ["aus"]
+  elasticsearch:
+    profiles: ["aus"]
+  minutes-orchestrator:
+    profiles: ["aus"]
+  ingestor:
+    profiles: ["aus"]
+
+  mandari:
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:${DATA_PG_PORT:-5432}/${POSTGRES_DB:-mandari}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
+      ELASTICSEARCH_URL: http://${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:9200
+    depends_on: !reset []
+
+  website:
+    environment:
+      WEBSITE_DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:${DATA_PG_PORT:-5432}/${WEBSITE_DB:-mandari_website}
+    depends_on: !reset []
