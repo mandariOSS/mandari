@@ -27,6 +27,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import EmailVerificationToken, User
+from apps.common.uploads import IMAGES, validate_upload
 from apps.tenants.models import (
     AdministrationContact,
     CouncilParty,
@@ -51,8 +52,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
-IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+def _pruefe_bild(datei: UploadedFile[Any], bezeichnung: str) -> None:
+    """Bilder, die später eingebettet angezeigt werden: gemeinsame Regel aus apps.common.uploads (#260)."""
+    try:
+        validate_upload(datei, allowed=IMAGES, max_bytes=MAX_IMAGE_BYTES, bezeichnung=bezeichnung)
+    except ValidationError as exc:
+        raise ServiceError(" ".join(exc.messages)) from exc
+
+
 GUEST_SHARE_LEVELS = [("view", "Lesen"), ("comment", "Kommentieren"), ("edit", "Bearbeiten")]
 INVITATION_VALID_DAYS = 7
 
@@ -1139,8 +1149,7 @@ def update_profile(
     user.last_name = last_name
     user.phone = phone
     if avatar is not None:
-        if avatar.content_type not in IMAGE_TYPES or (avatar.size or 0) > MAX_IMAGE_BYTES:
-            raise ServiceError("Bild muss JPG, PNG oder WebP sein und max. 5 MB groß.")
+        _pruefe_bild(avatar, "Profilbild")
         if user.avatar:
             user.avatar.delete(save=False)
         user.avatar = avatar
@@ -1438,8 +1447,7 @@ def update_general_settings(
     if primary_color and HEX_COLOR_RE.match(primary_color):
         organization.primary_color = primary_color
     if logo is not None:
-        if logo.content_type not in IMAGE_TYPES or (logo.size or 0) > MAX_IMAGE_BYTES:
-            raise ServiceError("Logo muss JPG, PNG oder WebP sein und max. 5 MB gross.")
+        _pruefe_bild(logo, "Logo")
         if organization.logo:
             organization.logo.delete(save=False)
         organization.logo = logo

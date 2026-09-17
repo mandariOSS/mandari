@@ -51,6 +51,10 @@ jobs:
 
       - name: Template-Kommentare prüfen (kein mehrzeiliges {# … #})
         run: python scripts/check_template_comments.py mandari/templates
+
+      - name: Upload-Stellen mit gemeinsamer Pruefung (Issue 260)
+        run: python scripts/check_upload_validation.py
+
       # Drei Stellen nannten frueher drei verschiedene Versionen. Im Advisory
       # steht dann eine Commit-Kennung statt einer Version (Release v0.10.0).
       - name: Versionsangaben stimmen ueberein

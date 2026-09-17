@@ -7,7 +7,7 @@ import logging
 import uuid
 
 from django.contrib import messages
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -20,6 +20,7 @@ logger = logging.getLogger("apps.work.motions")
 import contextlib
 
 from apps.common.mixins import WorkViewMixin
+from apps.common.uploads import IMPORTABLE_DOCUMENTS, MB, validate_upload
 from apps.work.notifications.services import NotificationHub
 
 from ..forms import (
@@ -665,7 +666,8 @@ class MotionImportView(WorkViewMixin, TemplateView):
         "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }
-    ALLOWED_EXTENSIONS = {".pdf", ".docx"}
+    #: Textübernahme nur aus PDF und DOCX; 25 MB reichen für gescannte Vorlagen (#260).
+    IMPORT_MAX_BYTES = 25 * MB
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -685,11 +687,12 @@ class MotionImportView(WorkViewMixin, TemplateView):
         # Filter to allowed file types
         valid_files = []
         for f in uploaded_files:
-            name_lower = (f.name or "").lower()
-            if any(name_lower.endswith(ext) for ext in self.ALLOWED_EXTENSIONS):
-                valid_files.append(f)
-            else:
-                messages.warning(request, f"'{f.name}' übersprungen — nur PDF und DOCX werden unterstützt.")
+            try:
+                validate_upload(f, allowed=IMPORTABLE_DOCUMENTS, max_bytes=self.IMPORT_MAX_BYTES, bezeichnung="Datei")
+            except ValidationError as exc:
+                messages.warning(request, f"'{f.name}' übersprungen: {' '.join(exc.messages)}")
+                continue
+            valid_files.append(f)
 
         if not valid_files:
             messages.error(request, "Keine gültigen Dateien (PDF/DOCX) ausgewählt.")

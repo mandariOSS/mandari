@@ -9,10 +9,12 @@ die Views reichen Upload bzw. Format durch und formen die Antwort.
 
 import logging
 
+from django.core.exceptions import ValidationError
 from django.http import HttpResponse, JsonResponse
 from django.views.generic import View
 
 from apps.common.mixins import WorkViewMixin
+from apps.common.uploads import DATA, validate_upload
 
 from .. import export_service, import_service
 
@@ -52,8 +54,12 @@ class TaskFileImportView(WorkViewMixin, View):
         upload = request.FILES.get("file")
         if not upload:
             return JsonResponse({"error": "Keine Datei übermittelt."}, status=400)
-        if upload.size > import_service.MAX_IMPORT_FILE_SIZE:
-            return JsonResponse({"error": "Datei zu groß (max. 5 MB)."}, status=400)
+        try:
+            validate_upload(
+                upload, allowed=DATA, max_bytes=import_service.MAX_IMPORT_FILE_SIZE, bezeichnung="Importdatei"
+            )
+        except ValidationError as exc:
+            return JsonResponse({"error": " ".join(exc.messages)}, status=400)
 
         try:
             file_format, rows = import_service.parse_upload(upload.name or "", upload.read())

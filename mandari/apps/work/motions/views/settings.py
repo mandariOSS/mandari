@@ -6,14 +6,17 @@ Motion/Antrag views for the Work module.
 import logging
 
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic import TemplateView, View
 
 logger = logging.getLogger("apps.work.motions")
 
+
 import contextlib
 
 from apps.common.mixins import WorkViewMixin
+from apps.common.uploads import MB, PDF, validate_upload
 
 from ..forms import (
     MotionTemplateForm,
@@ -24,6 +27,9 @@ from ..models import (
     MotionType,
     OrganizationLetterhead,
 )
+
+#: Briefköpfe sind einseitige PDFs; 10 MB lassen auch hochauflösende Logos zu (#260).
+LETTERHEAD_MAX_BYTES = 10 * MB
 
 # =============================================================================
 # Settings Views for Motion Types, Templates, and Letterheads
@@ -481,8 +487,10 @@ class LetterheadCreateView(WorkViewMixin, TemplateView):
             if not pdf_file:
                 messages.error(request, "Für einen PDF-Briefkopf ist eine PDF-Datei erforderlich.")
                 return self.render_to_response(self.get_context_data(**kwargs))
-            if not pdf_file.name.lower().endswith(".pdf"):
-                messages.error(request, "Nur PDF-Dateien sind erlaubt.")
+            try:
+                validate_upload(pdf_file, allowed=PDF, max_bytes=LETTERHEAD_MAX_BYTES, bezeichnung="Briefkopf-Datei")
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
                 return self.render_to_response(self.get_context_data(**kwargs))
         else:
             pdf_file = None
@@ -549,8 +557,10 @@ class LetterheadEditView(WorkViewMixin, TemplateView):
         # Handle file upload (optional for edit)
         new_file = request.FILES.get("pdf_file")
         if new_file:
-            if not new_file.name.lower().endswith(".pdf"):
-                messages.error(request, "Nur PDF-Dateien sind erlaubt.")
+            try:
+                validate_upload(new_file, allowed=PDF, max_bytes=LETTERHEAD_MAX_BYTES, bezeichnung="Briefkopf-Datei")
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
                 return self.render_to_response(self.get_context_data(**kwargs))
             letterhead.pdf_file = new_file
 

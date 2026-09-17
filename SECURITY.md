@@ -64,6 +64,7 @@ Werktagen und melden spätestens nach zwei Wochen einen Zwischenstand.
 | Anmeldung | Zwei-Faktor per TOTP, vertrauenswürdige Geräte, Sitzungsübersicht, Ratenbegrenzung (5 Versuche je 15 Minuten), Mindestpasswortlänge 12 Zeichen nach BSI-Empfehlung |
 | Berechtigungen | Rollenbasiert mit über 50 Einzelrechten, zusätzlich individuelle Erteilung und Entzug je Mitgliedschaft |
 | Mandantentrennung | Jede Abfrage ist organisationsgebunden; eine automatisierte Matrix prüft über 160 Adressen des Arbeitsbereichs gegen jede Rolle |
+| Uploads | Eine gemeinsame Prüfung nach Dateityp und Größe für alle Upload-Pfade (`apps/common/uploads.py`, Profile und Limits in [docs/UPLOADS.md](docs/UPLOADS.md)); aktive Inhalte wie HTML, SVG oder Skripte werden nie angenommen; Nicht-Bild-Anhänge werden als Download ausgeliefert, nicht eingebettet; ein CI-Gate meldet neue Upload-Stellen ohne Prüfung |
 | Transport | HSTS, sichere Cookies, `SECURE_PROXY_SSL_HEADER`, Referrer-Policy; Zertifikate automatisch |
 | Content-Security-Policy | Aktiv im Berichtsmodus mit Nonce an allen eingebetteten Skripten; die Umstellung auf Erzwingen ist in Arbeit |
 | Protokollierung | Vollständiges Audit-Log im Verwaltungs-RIS, strukturierte Logs mit Anfrage-Kennung, keine personenbezogenen Inhalte in Log-Zeilen |

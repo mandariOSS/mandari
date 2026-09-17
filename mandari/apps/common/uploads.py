@@ -54,6 +54,12 @@ DOCUMENTS = frozenset(
 #: Dateien, die eingebettet dargestellt werden. Ohne SVG (kann Skript tragen).
 IMAGES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
 
+#: Nur PDF — Briefköpfe, die unter den Text gelegt werden.
+PDF = frozenset({".pdf"})
+
+#: Vorlagen, aus denen Text übernommen wird (Antrags-Import).
+IMPORTABLE_DOCUMENTS = frozenset({".pdf", ".docx"})
+
 #: Strukturierte Daten für Import-Schnittstellen.
 DATA = frozenset({".csv", ".json", ".xml"})
 

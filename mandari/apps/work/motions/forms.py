@@ -3,9 +3,12 @@
 Forms for motion/document management.
 """
 
+from typing import Any
+
 from django import forms
-from django.core.validators import FileExtensionValidator
 from django.db.models import Q
+
+from apps.common.uploads import DOCUMENTS, MB, validate_upload
 
 from .models import (
     Motion,
@@ -112,6 +115,10 @@ class MotionContentForm(forms.Form):
     )
 
 
+#: Anlagen zu Anträgen — wie Sitzungsvorbereitung 50 MB (#260).
+MOTION_DOCUMENT_MAX_BYTES = 50 * MB
+
+
 class MotionDocumentForm(forms.ModelForm):
     """Form for uploading documents to a motion."""
 
@@ -129,9 +136,12 @@ class MotionDocumentForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["file"].validators = [
-            FileExtensionValidator(allowed_extensions=["pdf", "doc", "docx", "xls", "xlsx", "png", "jpg", "jpeg"])
-        ]
+
+    def clean_file(self) -> Any:
+        f = self.cleaned_data.get("file")
+        if f:
+            validate_upload(f, allowed=DOCUMENTS, max_bytes=MOTION_DOCUMENT_MAX_BYTES, bezeichnung="Datei")
+        return f
 
 
 class MotionShareForm(forms.ModelForm):
