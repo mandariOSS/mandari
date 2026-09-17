@@ -87,3 +87,4 @@ opentelemetry-instrumentation-requests>=0.65b0
 opentelemetry-instrumentation-httpx>=0.48b0
 # Anwendungsmetriken unter /metrics/ (apps/common/metrics.py, Issue #231)
 prometheus-client>=0.21.0
+pyyaml>=6.0.2  # Prüfung der Compose-Rollenprofile (scripts/check_compose_roles.py, #55)
