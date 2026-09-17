@@ -8,6 +8,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ### Hinzugefügt
 - Betriebsmonitor bewertet Scraper-Quellen nach Parse-Quote und Entitäten-Zufluss des letzten Laufs, Alarm über `check_source_health` (#53).
+- Insight Geo-Verortung: Hausnummern-Punkte aus OSM (`import_streets --with-addresses`), Umkreissuche über eine indexierte Verortungstabelle statt JSONB-Vollscan (`backfill_paper_locations`), Nachbarschafts-Autocomplete aus dem eigenen Straßenverzeichnis, Admin-Korrektur „bestätigen/entfernen“ mit Sperre gegen Wiederanlage, `check_body_geodata` für Kommunen ohne OSM-Zuordnung (#54).
 - Scraper-Quellen: robots-Sperren als Fehlerklasse `robots_blocked` im Betriebsmonitor mit Empfehlung; Download-Header je Quelle (`download_headers`, z. B. Referer/Cookie) für Dateicache und Textextraktion (#116).
 - Compose-Rollenprofile data/web/worker für den Mehr-Server-Betrieb, Singleton-Sperren für Cron-Jobs, Orchestrator und Ingestor-Daemon, optional PgBouncer (#55).
 - CSP-Report-Endpunkt `/csp-report/` mit Protokoll und Zähler `mandari_csp_violations_total` (#172).

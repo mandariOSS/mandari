@@ -14,7 +14,10 @@ das alte Verhalten (Photon-Geocoding + Blocklist) zurück.
 
 `locations`-Einträge tragen `source` (oparl|address_match|street_match|ai|manual)
 und `confidence`. Einträge mit source oparl/manual werden bei Re-Runs nie
-überschrieben (siehe update_paper_georef).
+überschrieben (siehe update_paper_georef). Treffer mit Hausnummer werden auf den
+OSM-Adresspunkt (Address-Modell) verfeinert, sofern importiert (Issue #54).
+Jeder Lauf spiegelt das JSON zusätzlich in die Tabelle PaperLocation
+(services/paper_locations.py) – Grundlage für Umkreissuche und Admin-Korrektur.
 """
 
 import json
@@ -882,9 +885,11 @@ def extract_with_gazetteer(text: str, gazetteer, person_names: set[str]) -> list
     for hit in gazetteer.find_in_text(text):
         _collect_street_hit(street_hits, hit)
 
-    # c) Personen-False-Positives ausschließen
+    # c) Personen-False-Positives ausschließen, Hausnummern auf Adresspunkte verfeinern
     return [
-        _street_hit_to_location(hit) for hit in street_hits.values() if not _is_person_false_positive(hit, person_names)
+        _street_hit_to_location(gazetteer.refine(hit))
+        for hit in street_hits.values()
+        if not _is_person_false_positive(hit, person_names)
     ]
 
 
@@ -957,7 +962,7 @@ def process_paper_georef(paper, mode: str = "all") -> dict:
             if gazetteer:
                 hit = gazetteer.lookup(address)
                 if hit:
-                    geocoded.append(_street_hit_to_location(hit))
+                    geocoded.append(_street_hit_to_location(gazetteer.refine(hit)))
                     continue
 
             # POIs/sonstige Orte: Photon/Nominatim-Fallback mit BBox-Check
@@ -1031,3 +1036,9 @@ def update_paper_georef(paper, result: dict) -> None:
     update_fields.append("locations")
 
     paper.save(update_fields=update_fields)
+
+    # Tabelle PaperLocation nachziehen (Umkreissuche, Admin-Korrektur). Entfernte
+    # Verortungen bleiben gesperrt und fallen dabei auch aus dem JSON heraus.
+    from insight_core.services.paper_locations import sync_paper_locations
+
+    sync_paper_locations(paper)

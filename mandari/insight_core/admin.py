@@ -8,10 +8,11 @@ Verwendet Django Unfold für modernes Admin-Interface.
 import threading
 
 from django.contrib import admin, messages
-from django.shortcuts import redirect
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.safestring import mark_safe
-from unfold.admin import ModelAdmin
+from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
 from .models import (
@@ -257,6 +258,40 @@ class OParlSourceAdmin(ModelAdmin):
         messages.success(request, f"Vollständiger Sync für {queryset.count()} Quellen gestartet.")
 
 
+class GeoCoverageListFilter(admin.SimpleListFilter):
+    """Kommunen ohne OSM-Zuordnung (Relation-ID/AGS) bzw. ohne Straßenverzeichnis finden."""
+
+    title = "Geo-Zuordnung"
+    parameter_name = "geo"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("ohne_osm", "ohne OSM-Relation oder AGS"),
+            ("ohne_relation", "ohne OSM-Relation-ID"),
+            ("ohne_ags", "ohne AGS"),
+            ("ohne_strassen", "ohne Straßenverzeichnis"),
+            ("vollstaendig", "vollständig"),
+        ]
+
+    def queryset(self, request, queryset):
+        from django.db.models import Q
+
+        from .services.geo_coverage import bodies_without_osm_filter
+
+        value = self.value()
+        if value == "ohne_osm":
+            return queryset.filter(bodies_without_osm_filter())
+        if value == "ohne_relation":
+            return queryset.filter(osm_relation_id__isnull=True)
+        if value == "ohne_ags":
+            return queryset.filter(Q(ags__isnull=True) | Q(ags=""))
+        if value == "ohne_strassen":
+            return queryset.filter(streets__isnull=True)
+        if value == "vollstaendig":
+            return queryset.exclude(bodies_without_osm_filter()).filter(streets__isnull=False).distinct()
+        return queryset
+
+
 @admin.register(OParlBody)
 class OParlBodyAdmin(ModelAdmin):
     # -------------------------------------------------------------------------
@@ -325,10 +360,12 @@ class OParlBodyAdmin(ModelAdmin):
         "display_name",
         "has_logo",
         "has_geo_data",
+        "has_osm_relation",
+        "ags",
         "is_listed",
         "source",
     ]
-    list_filter = ["is_listed", "source", "classification", "deleted"]
+    list_filter = ["is_listed", GeoCoverageListFilter, "source", "classification", "deleted"]
     search_fields = ["name", "short_name", "display_name"]
     readonly_fields = [
         "id",
@@ -409,6 +446,11 @@ class OParlBodyAdmin(ModelAdmin):
     def has_geo_data(self, obj):
         return bool(obj.latitude and obj.longitude and obj.bbox_north)
 
+    @admin.display(boolean=True, description="OSM")
+    def has_osm_relation(self, obj):
+        """Ohne OSM-Relation-ID gibt es weder Straßen- noch Adressimport (siehe check_body_geodata)."""
+        return bool(obj.osm_relation_id)
+
     @admin.display(description="Anzeigename")
     def get_display_name(self, obj):
         return obj.get_display_name()
@@ -469,12 +511,33 @@ class OParlMeetingAdmin(ModelAdmin):
     readonly_fields = ["id", "external_id", "created_at", "updated_at"]
 
 
+from .models import PaperLocation
+
+
+class PaperLocationInline(TabularInline):
+    """Verortungen eines Vorgangs mit Herkunft und Prüfstatus (Korrektur über den Änderungslink)."""
+
+    model = PaperLocation
+    extra = 0
+    can_delete = False
+    show_change_link = True
+    fields = ["name", "source", "status", "latitude", "longitude", "reviewed_at"]
+    readonly_fields = fields
+    verbose_name = "Verortung"
+    verbose_name_plural = "Verortungen (Herkunft und Prüfstatus; bestätigen/entfernen über den Änderungslink)"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(OParlPaper)
 class OParlPaperAdmin(ModelAdmin):
     list_display = ["reference", "name", "paper_type", "date", "georef_status_display", "body"]
     list_filter = ["body", "paper_type", "georef_status", "deleted"]
     search_fields = ["name", "reference"]
     date_hierarchy = "date"
+    inlines = [PaperLocationInline]
+    actions = ["rebuild_paper_locations"]
     readonly_fields = [
         "id",
         "external_id",
@@ -539,6 +602,13 @@ class OParlPaperAdmin(ModelAdmin):
         }
         color = colors.get(obj.georef_status, "#64748b")
         return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_georef_status_display()}</span>')
+
+    @admin.action(description="Verortungen aus dem JSON neu aufbauen (Tabelle abgleichen)")
+    def rebuild_paper_locations(self, request, queryset):
+        from .services.paper_locations import sync_paper_locations
+
+        changed = sum(1 for paper in queryset if sync_paper_locations(paper).changed)
+        messages.success(request, f"Verortungen abgeglichen: {changed} von {queryset.count()} Vorgängen geändert.")
 
 
 @admin.register(OParlAgendaItem)
@@ -646,7 +716,7 @@ class TileCacheAdmin(ModelAdmin):
         return False
 
 
-from .models import Street
+from .models import Address, Street
 
 
 @admin.register(Street)
@@ -658,6 +728,125 @@ class StreetAdmin(ModelAdmin):
     search_fields = ["name", "normalized_name"]
     readonly_fields = ["created_at", "updated_at"]
     autocomplete_fields = ["body"]
+
+
+@admin.register(Address)
+class AddressAdmin(ModelAdmin):
+    """Hausnummern-Punkte aus OSM — importiert via import_streets --with-addresses."""
+
+    list_display = ["street", "house_number", "postal_code", "body", "osm_type", "osm_id"]
+    list_filter = ["body", "osm_type"]
+    search_fields = ["street", "normalized_street", "house_number"]
+    readonly_fields = ["created_at", "updated_at"]
+    autocomplete_fields = ["body"]
+
+
+@admin.register(PaperLocation)
+class PaperLocationAdmin(ModelAdmin):
+    """
+    Korrektur-Workflow für Verortungen (Issue #54): Herkunft sichtbar,
+    „Bestätigen“ / „Entfernen“ als Zeilen-, Detail- und Sammelaktion.
+    Entfernte Verortungen legt der automatische Lauf nicht wieder an.
+    """
+
+    list_display = [
+        "name",
+        "source",
+        "status_display",
+        "paper_reference",
+        "body",
+        "latitude",
+        "longitude",
+        "reviewed_at",
+    ]
+    list_filter = ["status", "source", "body"]
+    list_select_related = ["paper", "body"]
+    search_fields = ["name", "paper__reference", "paper__name"]
+    raw_id_fields = ["paper"]
+    readonly_fields = ["body", "reviewed_at", "created_at", "updated_at"]
+    ordering = ["-updated_at"]
+    actions = ["confirm_selected", "remove_selected_locations"]
+    actions_row = ["confirm_row", "remove_row"]
+    actions_detail = ["confirm_detail", "remove_detail"]
+
+    @admin.display(description="Status")
+    def status_display(self, obj):
+        colors = {
+            PaperLocation.STATUS_AUTO: "#64748b",
+            PaperLocation.STATUS_CONFIRMED: "#16a34a",
+            PaperLocation.STATUS_REMOVED: "#dc2626",
+        }
+        color = colors.get(obj.status, "#64748b")
+        return mark_safe(f'<span style="color: {color}; font-weight: 600;">{obj.get_status_display()}</span>')
+
+    @admin.display(description="Vorgang")
+    def paper_reference(self, obj):
+        return str(obj.paper)
+
+    def save_model(self, request, obj, form, change):
+        """Statusänderung im Formular ebenfalls ins JSON des Vorgangs übernehmen."""
+        from .services.paper_locations import sync_paper_locations
+
+        if obj.body_id is None:
+            obj.body_id = obj.paper.body_id
+        if "status" in form.changed_data:
+            obj.reviewed_at = timezone.now()
+        super().save_model(request, obj, form, change)
+        sync_paper_locations(obj.paper)
+
+    # --- Sammelaktionen (Liste) ---
+
+    @admin.action(description="Ausgewählte Verortungen bestätigen")
+    def confirm_selected(self, request, queryset):
+        from .services.paper_locations import confirm_location
+
+        for location in queryset.select_related("paper"):
+            confirm_location(location)
+        messages.success(request, f"{queryset.count()} Verortung(en) bestätigt.")
+
+    @admin.action(description="Ausgewählte Verortungen entfernen (Sperre)")
+    def remove_selected_locations(self, request, queryset):
+        from .services.paper_locations import remove_location
+
+        for location in queryset.select_related("paper"):
+            remove_location(location)
+        messages.success(request, f"{queryset.count()} Verortung(en) entfernt und gesperrt.")
+
+    # --- Zeilen- und Detailaktionen (ein Klick je Verortung) ---
+
+    def _confirm(self, request, object_id):
+        from .services.paper_locations import confirm_location
+
+        location = get_object_or_404(PaperLocation, pk=object_id)
+        confirm_location(location)
+        messages.success(request, f"Verortung „{location.name or location.pk}“ bestätigt.")
+
+    def _remove(self, request, object_id):
+        from .services.paper_locations import remove_location
+
+        location = get_object_or_404(PaperLocation, pk=object_id)
+        remove_location(location)
+        messages.success(request, f"Verortung „{location.name or location.pk}“ entfernt und gesperrt.")
+
+    @action(description="Bestätigen", url_path="bestaetigen")
+    def confirm_row(self, request, object_id):
+        self._confirm(request, object_id)
+        return redirect(reverse("admin:insight_core_paperlocation_changelist"))
+
+    @action(description="Entfernen", url_path="entfernen")
+    def remove_row(self, request, object_id):
+        self._remove(request, object_id)
+        return redirect(reverse("admin:insight_core_paperlocation_changelist"))
+
+    @action(description="Bestätigen", url_path="detail-bestaetigen")
+    def confirm_detail(self, request, object_id):
+        self._confirm(request, object_id)
+        return redirect(reverse("admin:insight_core_paperlocation_change", args=[object_id]))
+
+    @action(description="Entfernen", url_path="detail-entfernen")
+    def remove_detail(self, request, object_id):
+        self._remove(request, object_id)
+        return redirect(reverse("admin:insight_core_paperlocation_change", args=[object_id]))
 
 
 @admin.register(LocationMapping)

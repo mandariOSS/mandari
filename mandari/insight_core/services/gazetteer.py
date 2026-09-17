@@ -60,6 +60,39 @@ def strip_house_number(name: str) -> tuple[str, str | None]:
     return (name or "").strip(), None
 
 
+def normalize_house_number(house_number: str | None) -> str:
+    """Hausnummer für den Abgleich: Kleinschreibung ohne Leerzeichen ("12 A" → "12a")."""
+    return re.sub(r"\s+", "", (house_number or "").strip().lower())
+
+
+def resolve_address_point(
+    body: OParlBody, normalized_street: str, house_number: str | None
+) -> tuple[float, float] | None:
+    """
+    Hausnummern-Punkt aus dem OSM-Adressverzeichnis (``Address``) der Kommune.
+
+    Liegt zur Straße und Hausnummer ein Punkt vor, ist er genauer als der
+    Straßen-Zentroid und wird beim Matching bevorzugt (Issue #54).
+    """
+    from insight_core.models import Address
+
+    normalized_number = normalize_house_number(house_number)
+    if not normalized_street or not normalized_number:
+        return None
+    row = (
+        Address.objects.filter(
+            body=body,
+            normalized_street=normalized_street,
+            normalized_house_number=normalized_number,
+        )
+        .values_list("latitude", "longitude")
+        .first()
+    )
+    if row is None:
+        return None
+    return float(row[0]), float(row[1])
+
+
 def has_street_suffix(normalized_name: str) -> bool:
     """Prüft, ob das letzte Wort eines normalisierten Namens ein Straßen-Suffix trägt."""
     words = normalized_name.split()
@@ -124,6 +157,20 @@ class StreetGazetteer:
         if not entry:
             return None
         return {**entry, "house_number": house_number, "normalized": normalized}
+
+    def refine(self, hit: dict) -> dict:
+        """
+        Verfeinert einen Treffer mit Hausnummer auf den Adresspunkt aus OSM.
+
+        Ohne Hausnummer oder ohne passende Adresse bleibt der Straßen-Zentroid;
+        ``precision`` zeigt an, welcher Punkt verwendet wurde.
+        """
+        if not hit.get("house_number"):
+            return hit
+        point = resolve_address_point(self.body, hit.get("normalized", ""), hit.get("house_number"))
+        if point is None:
+            return {**hit, "precision": "street"}
+        return {**hit, "lat": point[0], "lon": point[1], "precision": "address"}
 
     def _build_search_patterns(self) -> list[re.Pattern]:
         """

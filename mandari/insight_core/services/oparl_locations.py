@@ -115,4 +115,8 @@ def apply_oparl_locations(paper, save: bool = True) -> bool:
     paper.locations = merged
     if save:
         paper.save(update_fields=["locations", "updated_at"])
+
+        from insight_core.services.paper_locations import sync_paper_locations
+
+        sync_paper_locations(paper)
     return True
