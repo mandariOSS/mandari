@@ -11,6 +11,9 @@ Aktualisierungen zeitnah einspielen (`./update.sh` beziehungsweise `helm upgrade
 | `beta` | nur Vorschau, keine Zusage |
 | ältere Releases | nein |
 
+Supportzeiträume je Version, Release-Kadenz und die Fristen für Sicherheitskorrekturen nach
+Schweregrad stehen in der [Release- und Support-Politik](docs/RELEASE_POLITIK.md).
+
 ## Sicherheitslücke melden
 
 **Bitte nicht über öffentliche Issues oder Diskussionen melden.**
