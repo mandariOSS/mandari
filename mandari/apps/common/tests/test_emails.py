@@ -489,6 +489,27 @@ def work_org_registration_rejected(org: Any, make_member: Any) -> dict[str, Any]
     }
 
 
+def session_user_invitation(org: Any, make_member: Any) -> dict[str, Any]:
+    tenant = _ns(name="Stadt Musterstadt")
+    invitation = _ns(email="neu@example.org", expires_at=WHEN, token="t" * 32)
+    return {
+        "tenant": tenant,
+        "invitation": invitation,
+        "inviter_name": "Erika Muster",
+        "role_names": ["Sitzungsdienst", "Lesezugriff"],
+        "accept_url": f"{SITE_URL}/session/invite/{invitation.token}/",
+    }
+
+
+def provisioning_admin_invitation(org: Any, make_member: Any) -> dict[str, Any]:
+    invitation = _ns(email="admin@example.org", expires_at=WHEN, token="p" * 32)
+    return {
+        "organization": org,
+        "invitation": invitation,
+        "accept_url": f"{SITE_URL}/work/invite/{invitation.token}/",
+    }
+
+
 @dataclass(frozen=True)
 class MailCase:
     name: str
@@ -508,6 +529,10 @@ CASES = [
         "monitoring_source_health_daemon", "emails/monitoring/source_health.html", monitoring_source_health_daemon
     ),
     MailCase("questions_verification", "emails/questions/verification.html", questions_verification),
+    MailCase("session_user_invitation", "emails/session/user_invitation.html", session_user_invitation),
+    MailCase(
+        "provisioning_admin_invitation", "emails/provisioning/admin_invitation.html", provisioning_admin_invitation
+    ),
     MailCase("questions_notification", "emails/questions/notification.html", questions_notification),
     MailCase("questions_published", "emails/questions/published.html", questions_published),
     MailCase(

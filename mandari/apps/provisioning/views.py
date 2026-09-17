@@ -74,20 +74,20 @@ def _invitation_accept_url(invitation: UserInvitation) -> str:
 
 
 def _send_admin_invitation(org: Organization, invitation: UserInvitation, accept_url: str) -> bool:
-    """Einladungs-Mail an den künftigen Org-Admin. False bei Versandfehler."""
-    from django.core.mail import send_mail
+    """
+    Einladungs-Mail an den künftigen Org-Admin im gemeinsamen Mail-Layout über den
+    mandari-Standardversand (Site-Einstellungen). False bei Versandfehler (#239).
+    """
+    from apps.common.email import send_template_email
 
-    subject = f"Deine neue mandari work Organisation: {org.name}"
-    plain = (
-        f"Willkommen bei mandari work!\n\n"
-        f"Deine Organisation „{org.name}“ wurde eingerichtet.\n"
-        f"Über den folgenden Link richtest du dein Administrator-Konto ein:\n\n"
-        f"{accept_url}\n\n"
-        f"Der Link ist gültig bis {invitation.expires_at.strftime('%d.%m.%Y')}.\n"
-    )
     try:
-        send_mail(subject, plain, None, [invitation.email])
-        return True
+        return send_template_email(
+            subject=f"Deine neue mandari work Organisation: {org.name}",
+            template_name="emails/provisioning/admin_invitation",
+            context={"organization": org, "invitation": invitation, "accept_url": accept_url},
+            to=[invitation.email],
+            fail_silently=False,
+        )
     except Exception as e:
         # Einladung bleibt in der DB — das Portal erhält die URL im Response
         # und kann sie anzeigen bzw. den Versand wiederholen.
