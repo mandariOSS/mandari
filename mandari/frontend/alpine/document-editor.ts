@@ -171,6 +171,13 @@ export const documentEditor = defineComponent(() => {
     saveConflict: false,
     contentHash: config.contentHash,
     saving: false,
+    // Ungespeicherte Änderungen (#185): Zähler statt Boolean, damit Eingaben während eines
+    // laufenden Speicherns nicht als gesichert gelten – gesichert ist erst der Stand, der beim
+    // Absenden vorlag und den der Server bestätigt hat.
+    _changeSeq: 0,
+    _savedSeq: 0,
+    // Bewusstes Verlassen (Löschen, Statuswechsel, Neu laden, eigene Formulare): keine Rückfrage
+    _leavingIntentionally: false,
     // Suchen & Ersetzen
     searchOpen: false,
     searchTerm: '',
@@ -327,6 +334,24 @@ export const documentEditor = defineComponent(() => {
         }
         document.addEventListener('keydown', this._globalKeydownHandler)
 
+        // Titel, Dokumenttyp und Briefpapier werden mitgespeichert – sie zählen als Änderung
+        this.$watch('title', () => this._markChanged())
+
+        // Rückfrage beim Verlassen mit ungespeicherten Änderungen (#185). Der Handler bleibt
+        // wie der Keydown-Handler bewusst registriert: destroy() läuft auch in den
+        // Recovery-Pfaden, und beim Verlassen wird die Seite ohnehin komplett neu geladen.
+        window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
+          if (this._leavingIntentionally || !this.hasUnsavedChanges()) return
+          e.preventDefault()
+          // Ältere Browser zeigen die Rückfrage nur mit gesetztem returnValue
+          e.returnValue = ''
+        })
+        // Eigene Formulare im Editor (z. B. „Kommentar erledigen“) verlassen die Seite
+        // absichtlich; per fetch abgeschickte Formulare haben preventDefault gesetzt.
+        this.$el.addEventListener('submit', (e: Event) => {
+          if (!e.defaultPrevented) this.leaveIntentionally()
+        })
+
         this.updateWordCount()
 
         // Autosave alle 60 Sekunden
@@ -416,6 +441,7 @@ export const documentEditor = defineComponent(() => {
         placeholder: PLACEHOLDER,
         onUpdate: () => {
           this.updatedAt = Date.now()
+          this._markChanged()
           this.updateWordCount()
         },
         onSelectionUpdate: (state) => {
@@ -449,6 +475,7 @@ export const documentEditor = defineComponent(() => {
           },
           onUpdate: () => {
             this.updatedAt = Date.now()
+            this._markChanged()
             this.updateWordCount()
           },
           onSelectionUpdate: (state) => {
@@ -481,10 +508,12 @@ export const documentEditor = defineComponent(() => {
             // der Stand, von dem ein späteres Speichern ohne Verbindung ausgeht (#184).
             this.contentHash = contentHash
             this.saveConflict = false
+            this._savedSeq = this._changeSeq
           },
           onReloadRequired: () => {
             // Server hat eine Version wiederhergestellt → frisch laden
             showToast('Eine Version wurde wiederhergestellt — das Dokument wird neu geladen.', 'info')
+            this.leaveIntentionally()
             window.setTimeout(() => window.location.reload(), 800)
           },
         })
@@ -826,6 +855,19 @@ export const documentEditor = defineComponent(() => {
         })
         const data: JsonResponse = await response.json()
         if (data.success && data.comment) {
+          // Neue Markierung sofort anklickbar machen: Die Popup-Daten kommen sonst erst
+          // mit dem nächsten Seitenaufbau aus dem View (#185)
+          this.inlineCommentsData.push({
+            id: String(data.comment.id),
+            mark_id: markId,
+            content: String(data.comment.content),
+            selected_text: this.inlineSelectedText,
+            author_name: String(data.comment.author),
+            author_initials: String(data.comment.author).substring(0, 2).toUpperCase(),
+            created_at: String(data.comment.created_at),
+            is_resolved: false,
+            replies: [],
+          })
           this.hideCommentPopup()
           this.sidebarTab = 'comments'
           await this.reloadCommentsSidebar()
@@ -1242,6 +1284,8 @@ export const documentEditor = defineComponent(() => {
       if (this.saving || !editor) return
       this.saving = true
       this.saveError = false
+      // Stand, den diese Anfrage sichert; spätere Eingaben bleiben „ungespeichert“
+      const seq = this._changeSeq
 
       const formData = new FormData()
       formData.append('csrfmiddlewaretoken', csrfToken())
@@ -1276,6 +1320,7 @@ export const documentEditor = defineComponent(() => {
             this.lastSaved = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
             this.saveError = false
             this.saveConflict = false
+            this._savedSeq = seq
             if (typeof data.content_hash === 'string') this.contentHash = data.content_hash
           } else {
             this.saveError = true
@@ -1299,7 +1344,23 @@ export const documentEditor = defineComponent(() => {
       // Nach einem Konflikt nicht blind weiterversuchen: Die Person entscheidet
       // über "Neu laden" oder "Trotzdem speichern" (#184).
       if (this.saveConflict) return
+      // Ohne Änderung keine Anfrage: spart Revisionen und Last (#185)
+      if (!this.hasUnsavedChanges()) return
       if (!this.saving && editor) void this.save()
+    },
+
+    /** Liegen seit dem letzten erfolgreichen Speichern Änderungen vor? */
+    hasUnsavedChanges(): boolean {
+      return this._changeSeq !== this._savedSeq
+    },
+
+    _markChanged(): void {
+      this._changeSeq += 1
+    },
+
+    /** Vor gewollter Navigation aufrufen: Die Rückfrage gilt nur für unbeabsichtigtes Verlassen. */
+    leaveIntentionally(): void {
+      this._leavingIntentionally = true
     },
 
     /** Konflikt (#184): den eigenen Stand bewusst über den neueren schreiben. */
@@ -1309,17 +1370,21 @@ export const documentEditor = defineComponent(() => {
 
     /** Konflikt (#184): den neueren Stand vom Server holen; eigene Änderungen gehen verloren. */
     reloadFromServer(): void {
+      // Die Person verwirft ihre Änderungen bewusst – keine zusätzliche Rückfrage
+      this.leaveIntentionally()
       window.location.reload()
     },
 
     setDocumentType(id: string, name: string): void {
       this.documentTypeId = id
       this.documentTypeName = name
+      this._markChanged()
     },
 
     setLetterhead(id: string, name: string): void {
       this.letterheadId = id
       this.letterheadName = name
+      this._markChanged()
 
       // Briefkopf-Hintergrund neu rendern
       const container = document.getElementById('editor-container')
@@ -1420,6 +1485,7 @@ export const documentEditor = defineComponent(() => {
         })
         const data: JsonResponse = await response.json()
         if (data.success) {
+          this.leaveIntentionally()
           location.reload()
         } else {
           showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error')
@@ -1450,6 +1516,7 @@ export const documentEditor = defineComponent(() => {
         })
         const data: JsonResponse = await response.json()
         if (data.success) {
+          this.leaveIntentionally()
           navigateTo(config.urls.documents)
         } else {
           showToast('Fehler beim Loeschen: ' + (data.error || 'Unbekannter Fehler'), 'error')
