@@ -11,7 +11,7 @@ django-unfold>=0.40.0
 whitenoise>=6.7.0
 
 # Database
-psycopg[binary]>=3.2.0
+psycopg[binary,pool]>=3.2.0  # pool: Verbindungspool statt langlebiger Verbindungen (#257)
 dj-database-url>=2.2.0
 
 # Ingestor integration (needed for Django sync daemon)

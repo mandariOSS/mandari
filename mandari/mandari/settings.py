@@ -221,6 +221,36 @@ DATABASES = {
     )
 }
 
+# Verbindungspool (Issue #257)
+#
+# Unter ASGI bearbeitet je ein Thread eine Anfrage und behält seine Verbindung
+# danach noch ``CONN_MAX_AGE`` Sekunden. Bei einer Anfragespitze — ein
+# Schwachstellen-Scanner genügt — wächst die Zahl der Verbindungen deshalb
+# schneller, als sie zurückgegeben werden, bis ``max_connections`` erreicht ist.
+# Dann bekommt *jeder* Dienst an derselben Datenbank "sorry, too many clients
+# already", auch einer ganz ohne Last.
+#
+# Der Pool deckelt die Zahl nach oben, statt sie mit der Last wachsen zu lassen.
+# Django verlangt dafür ``CONN_MAX_AGE = 0``: Die Wiederverwendung übernimmt der
+# Pool, nicht mehr Django. Nur für PostgreSQL — SQLite kennt weder das Problem
+# noch die Option.
+DB_POOL_ENABLED = os.environ.get("DB_POOL", "true").lower() in ("true", "1", "yes")
+
+if DB_POOL_ENABLED and DATABASES["default"]["ENGINE"].endswith("postgresql"):
+    DATABASES["default"]["CONN_MAX_AGE"] = 0
+    DATABASES["default"].setdefault("OPTIONS", {})["pool"] = {
+        # Vorgehalten, damit die erste Anfrage nicht auf den Verbindungsaufbau wartet.
+        "min_size": int(os.environ.get("DB_POOL_MIN", "2")),
+        # Obergrenze je Prozess. Voreinstellung passt zum Thread-Pool von Django
+        # unter ASGI (min(32, CPU+4)); mehr Verbindungen kann ein Prozess gar
+        # nicht gleichzeitig benutzen.
+        "max_size": int(os.environ.get("DB_POOL_MAX", "10")),
+        # Bei erschöpftem Pool kurz warten statt sofort scheitern. Eine Anfrage,
+        # die zwei Sekunden später bedient wird, ist besser als ein Serverfehler.
+        "timeout": float(os.environ.get("DB_POOL_TIMEOUT", "10")),
+        "max_lifetime": float(os.environ.get("DB_POOL_MAX_LIFETIME", "1800")),
+    }
+
 
 # Cache - use Redis if available, fallback to local memory
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
