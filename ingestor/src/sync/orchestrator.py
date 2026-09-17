@@ -39,9 +39,17 @@ from rich.progress import (
 )
 
 from src.client.oparl_client import OParlClient, SyncStats
+from src.client.oparl_compat import (
+    detect_oparl_version,
+    is_oparl_error,
+    oparl_10_fallback_urls,
+    oparl_error_message,
+    timestamps_unreliable,
+)
 from src.config import settings
 from src.events import EventEmitter
 from src.metrics import metrics
+from src.scrapers.base import CONTENT_HASH_FIELD, content_hash
 from src.storage.database import DatabaseStorage
 from src.sync.processor import OParlProcessor
 
@@ -163,6 +171,11 @@ class SyncOrchestrator:
 
         async with OParlClient(max_concurrent=1) as client:
             system_data = await client.fetch_system(url)
+            if is_oparl_error(system_data):
+                # 1.1-Pfad auf einem OParl-1.0-Server (Issue #122)
+                system_data, _resolved = await self._try_oparl_10_fallback(
+                    client, url, oparl_error_message(system_data)
+                )
 
         if not system_data:
             raise ValueError(f"Could not fetch OParl system from {url}")
@@ -173,6 +186,7 @@ class SyncOrchestrator:
             url=url,
             name=source_name,
             raw_json=system_data,
+            oparl_version=detect_oparl_version(system_data),
         )
 
         console.print(f"[green]Registered source: {source_name} (ID: {source_id})[/green]")
@@ -191,37 +205,48 @@ class SyncOrchestrator:
         self,
         client: OParlClient,
         url: str,
-    ) -> tuple[str, list[dict[str, Any]]]:
+    ) -> tuple[str, list[dict[str, Any]], str | None]:
         """
         Detect whether a URL points to a Body, Body-List, or System.
 
         Handles all known OParl server variants:
         - Single Body object (ITK Rheinland: /Oparl/bodies/0015)
         - Body list with data[] wrapper (Köln, Münster, Bonn, Aachen)
-        - System object with body reference
+        - System object with body reference (string, list of URLs or
+          embedded Body objects)
+        - OParl 1.0 (more! rubin): 1.1-Pfade antworten mit einem
+          Fehlerobjekt ("Requested class doesn't exist") oder 404 — dann
+          fällt die Erkennung auf die 1.0-Pfadvarianten zurück (Issue #122)
 
         Args:
             client: OParl HTTP client
             url: The URL to detect
 
         Returns:
-            Tuple of (type_name, list_of_body_dicts)
+            Tuple of (type_name, list_of_body_dicts, oparl_version), wobei
+            oparl_version "1.0"/"1.1" oder None (nicht erkennbar) ist.
 
         Raises:
             ValueError: If URL is not a valid OParl endpoint
         """
         result = await client.fetch(url, use_cache=False, skip_wait=True)
+        response = result.data
 
-        if result.error or not result.data:
+        if result.status_code == 404 or is_oparl_error(response):
+            reason = result.error or oparl_error_message(response)
+            response, _resolved = await self._try_oparl_10_fallback(client, url, reason)
+            if response is None:
+                raise ValueError(f"Could not fetch OParl endpoint: {url} ({reason})")
+        elif result.error or not response:
             raise ValueError(f"Could not fetch OParl endpoint: {url} ({result.error})")
 
-        response = result.data
+        oparl_version = detect_oparl_version(response)
 
         # Case 1: Single Body (ITK Rheinland pattern - no data[] wrapper)
         type_str = response.get("type", "") if isinstance(response, dict) else ""
         if type_str.endswith("/Body"):
             console.print("[green]Detected: Single Body object[/green]")
-            return "body", [response]
+            return "body", [response], oparl_version
 
         # Case 2: Body list with data[] wrapper (standard OParl)
         if isinstance(response, dict) and "data" in response:
@@ -230,17 +255,63 @@ class SyncOrchestrator:
                 first_type = items[0].get("type", "") if isinstance(items[0], dict) else ""
                 if first_type.endswith("/Body"):
                     console.print(f"[green]Detected: Body list ({len(items)} bodies)[/green]")
-                    return "body_list", items
+                    return "body_list", items, oparl_version
 
         # Case 3: System object -> follow body reference
         if isinstance(response, dict) and type_str.endswith("/System"):
-            body_list_url = response.get("body")
-            if body_list_url:
-                console.print(f"[green]Detected: System -> fetching bodies from {body_list_url}[/green]")
-                bodies = await client.fetch_list_all(body_list_url)
-                return "system", bodies
+            body_ref = response.get("body")
+            if body_ref:
+                console.print(f"[green]Detected: System -> fetching bodies from {body_ref}[/green]")
+                bodies = await self._fetch_bodies(client, body_ref)
+                return "system", bodies, oparl_version or detect_oparl_version(bodies)
 
         raise ValueError(f"URL is neither Body, Body-List, nor System: {url}\nResponse type: {type_str or 'unknown'}")
+
+    async def _try_oparl_10_fallback(
+        self,
+        client: OParlClient,
+        url: str,
+        reason: str,
+    ) -> tuple[dict[str, Any] | None, str]:
+        """
+        Probiert die OParl-1.0-Pfadvarianten zu ``url`` (Issue #122).
+
+        Liefert (Antwort, aufgelöste URL) des ersten Kandidaten, der ein
+        echtes OParl-Objekt zurückgibt, sonst (None, url). Wird bewusst nur
+        bei "Pfad existiert nicht"-Signalen (404, Fehlerobjekt) aufgerufen,
+        nicht bei Timeouts oder 5xx — sonst würden wir einen kränkelnden
+        Host mit weiteren Anfragen belasten.
+        """
+        for candidate in oparl_10_fallback_urls(url):
+            console.print(f"[yellow]{url}: {reason} — versuche OParl-1.0-Pfad {candidate}[/yellow]")
+            result = await client.fetch(candidate, use_cache=False, skip_wait=True)
+            data = result.data
+            if result.error or not isinstance(data, dict) or is_oparl_error(data):
+                continue
+            console.print(f"[green]OParl-1.0-Rückfall erfolgreich: {candidate}[/green]")
+            return data, candidate
+        return None, url
+
+    async def _fetch_bodies(self, client: OParlClient, body_ref: Any) -> list[dict[str, Any]]:
+        """
+        Löst das ``body``-Feld eines System-Objekts in Body-Dicts auf.
+
+        Varianten: Listen-URL (Standard, auch OParl 1.0 ``/oparl/Body``),
+        Liste von Body-URLs oder bereits eingebettete Body-Objekte.
+        """
+        if isinstance(body_ref, str):
+            return await client.fetch_list_all(body_ref)
+        bodies: list[dict[str, Any]] = []
+        if isinstance(body_ref, list):
+            for entry in body_ref:
+                if isinstance(entry, dict):
+                    bodies.append(entry)
+                elif isinstance(entry, str):
+                    result = await client.fetch(entry, use_cache=False)
+                    data = result.data
+                    if isinstance(data, dict) and not is_oparl_error(data):
+                        bodies.extend(OParlClient._extract_items(data))
+        return bodies
 
     async def sync_body_url(
         self,
@@ -289,7 +360,7 @@ class SyncOrchestrator:
             ) as client:
                 # Auto-detect URL type
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
-                url_type, bodies_data = await self.auto_detect_url(client, url)
+                url_type, bodies_data, oparl_version = await self.auto_detect_url(client, url)
 
                 if not bodies_data:
                     result.errors.append(f"No bodies found at {url}")
@@ -298,7 +369,7 @@ class SyncOrchestrator:
 
                 # Use first body name as source name
                 result.source_name = bodies_data[0].get("name", "Unknown")
-                console.print(f"[green]Source: {result.source_name} ({url_type})[/green]")
+                console.print(f"[green]Source: {result.source_name} ({url_type}, OParl {oparl_version or '?'})[/green]")
 
                 # Emit sync started event
                 if self._event_emitter:
@@ -313,6 +384,7 @@ class SyncOrchestrator:
                     url=url,
                     name=result.source_name,
                     raw_json=bodies_data[0] if len(bodies_data) == 1 else {"bodies_count": len(bodies_data)},
+                    oparl_version=oparl_version,
                 )
 
                 # Sync bodies
@@ -480,11 +552,19 @@ class SyncOrchestrator:
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
                 system_result = await client.fetch(url, use_cache=False, skip_wait=True)
                 system_data = system_result.data
+                reason = system_result.error or (
+                    f"HTTP {system_result.status_code}" if system_result.status_code else "keine Antwort"
+                )
+
+                # OParl 1.0 (more! rubin): 1.1-Pfad liefert Fehlerobjekt/404 (Issue #122)
+                if is_oparl_error(system_data):
+                    reason = oparl_error_message(system_data)
+                    system_data = None
+                    system_data, _resolved = await self._try_oparl_10_fallback(client, url, reason)
+                elif system_data is None and system_result.status_code == 404:
+                    system_data, _resolved = await self._try_oparl_10_fallback(client, url, reason)
 
                 if not system_data:
-                    reason = system_result.error or (
-                        f"HTTP {system_result.status_code}" if system_result.status_code else "keine Antwort"
-                    )
                     result.errors.append(f"Failed to fetch system from {url} ({reason})")
                     await self._record_source_failure(url, reason)
                     return result
@@ -505,6 +585,7 @@ class SyncOrchestrator:
                     url=url,
                     name=result.source_name,
                     raw_json=system_data,
+                    oparl_version=detect_oparl_version(system_data),
                 )
 
                 # Get body list URL
@@ -515,7 +596,7 @@ class SyncOrchestrator:
 
                 # Fetch all bodies
                 console.print("[blue]Fetching bodies list...[/blue]")
-                bodies_data = await client.fetch_list_all(body_list_url)
+                bodies_data = await self._fetch_bodies(client, body_list_url)
                 console.print(f"[dim]Found {len(bodies_data)} bodies[/dim]")
 
                 # Filter bodies if requested
@@ -1139,6 +1220,10 @@ class SyncOrchestrator:
                             if await self._mark_deleted(item, entity_type, es_deletions):
                                 deleted_count += 1
                             continue
+                        # Content-Hash mitschreiben, damit der nächste inkrementelle
+                        # Lauf unveränderte Objekte ohne Zeitstempel erkennt (#122)
+                        if timestamps_unreliable(item):
+                            item[CONTENT_HASH_FIELD] = content_hash(item)
                         processed = self.processor.process(item, body_external_id)
                         if processed:
                             stored = await self._store_entity(processed, body_id, entity_type, body_name)
@@ -1151,6 +1236,15 @@ class SyncOrchestrator:
                 # Incremental hybrid: server pre-filtered + client-side comparison
                 external_ids = [item.get("id", "") for item in page if item.get("id")]
                 existing_ids = await self.storage.batch_check_entities_exist(entity_type, external_ids)
+
+                # OParl 1.0 (more! rubin, Issue #122): created/modified sind
+                # synthetisch (Abrufdatum) oder fehlen ganz. Für solche Objekte
+                # entscheidet der Content-Hash im raw_json statt der Zeitstempel,
+                # wie bei Scraper-Quellen — sonst würde jeder Lauf alles upserten.
+                unreliable_ids = {item.get("id", "") for item in page if item.get("id") and timestamps_unreliable(item)}
+                stored_hashes: dict[str, str | None] = {}
+                if unreliable_ids:
+                    stored_hashes = await self.storage.get_entity_content_hashes(entity_type, sorted(unreliable_ids))
 
                 for item in page:
                     try:
@@ -1167,6 +1261,26 @@ class SyncOrchestrator:
                             continue
 
                         db_modified = existing_ids.get(external_id)
+
+                        if external_id in unreliable_ids:
+                            item_hash = content_hash(item)
+                            stored_hash = stored_hashes.get(external_id)
+                            if stored_hash == item_hash:
+                                unchanged_on_page += 1
+                                skipped_count += 1
+                                continue
+                            item[CONTENT_HASH_FIELD] = item_hash
+                            processed = self.processor.process(item, body_external_id)
+                            if processed:
+                                stored = await self._store_entity(processed, body_id, entity_type, body_name)
+                                if stored and db_modified is None and stored_hash is None:
+                                    new_on_page += 1
+                                    count += 1
+                                elif stored:
+                                    updated_on_page += 1
+                                    updated_count += 1
+                            continue
+
                         item_modified = self.processor.parse_datetime(item.get("modified"))
 
                         if db_modified is None:

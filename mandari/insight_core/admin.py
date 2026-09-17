@@ -125,6 +125,7 @@ class OParlSourceAdmin(ModelAdmin):
         "updated_at",
         "last_sync",
         "last_full_sync",
+        "oparl_version",
         "scraper_status_display",
         "last_error",
         "last_error_at",

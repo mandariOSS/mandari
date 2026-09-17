@@ -1,0 +1,77 @@
+{
+  "data": [
+    {
+      "id": "https://mandant-a.gremien.example/oparl/body/KH",
+      "type": "https://schema.oparl.org/1.0/Body",
+      "system": "https://mandant-a.gremien.example/oparl/system",
+      "shortName": "KH",
+      "name": "Stadt Musterstadt",
+      "website": "https://www.musterstadt.example",
+      "oparlSince": "2021-02-25T07:59:10+01:00",
+      "contactEmail": "stadtverwaltung@musterstadt.example",
+      "contactName": "Stadt Musterstadt",
+      "organization": "https://mandant-a.gremien.example/oparl/body/KH/organization",
+      "person": "https://mandant-a.gremien.example/oparl/body/KH/person",
+      "meeting": "https://mandant-a.gremien.example/oparl/body/KH/meeting",
+      "paper": "https://mandant-a.gremien.example/oparl/body/KH/paper",
+      "legislativeTerm": [
+        {
+          "id": "https://mandant-a.gremien.example/oparl/LegislativeTerm/4",
+          "type": "https://schema.oparl.org/1.0/LegislativeTerm",
+          "name": "Legi",
+          "startDate": "2014-06-01",
+          "endDate": "2019-06-30",
+          "created": "2026-09-17T00:00:00+02:00",
+          "modified": "2026-09-17T00:00:00+02:00",
+          "deleted": false
+        },
+        {
+          "id": "https://mandant-a.gremien.example/oparl/LegislativeTerm/5",
+          "type": "https://schema.oparl.org/1.0/LegislativeTerm",
+          "name": "Wahl",
+          "startDate": "2019-06-01",
+          "endDate": "2024-06-30",
+          "created": "2026-09-17T00:00:00+02:00",
+          "modified": "2026-09-17T00:00:00+02:00",
+          "deleted": false
+        }
+      ],
+      "location": {
+        "id": "https://mandant-a.gremien.example/oparl/body/KH/location",
+        "type": "https://schema.oparl.org/1.0/Location",
+        "streetAddress": "Kornmarkt 5",
+        "postalCode": "55543",
+        "locality": "Musterstadt",
+        "web": "https://mandant-a.gremien.example",
+        "created": "2026-09-17T00:00:00+02:00",
+        "modified": "2026-09-17T00:00:00+02:00",
+        "deleted": false,
+        "bodies": [
+          "https://mandant-a.gremien.example/oparl/body/KH"
+        ],
+        "geojson": {
+          "type": "Feature",
+          "geometry": {
+            "type": "Point",
+            "coordinates": []
+          }
+        }
+      },
+      "created": "2026-09-17T00:00:00+02:00",
+      "modified": "2026-09-17T00:00:00+02:00",
+      "deleted": false,
+      "more-it-solutions:internal": false
+    }
+  ],
+  "pagination": {
+    "totalElements": 1,
+    "elementsPerPage": 100,
+    "currentPage": 1,
+    "totalPages": 1
+  },
+  "links": {
+    "first": "https://mandant-a.gremien.example/oparl/Body?page=1",
+    "last": "https://mandant-a.gremien.example/oparl/Body?page=1",
+    "self": "https://mandant-a.gremien.example/oparl/Body?page=1"
+  }
+}

@@ -261,9 +261,13 @@ class DatabaseStorage:
         url: str,
         name: str,
         raw_json: dict[str, Any] | None = None,
+        oparl_version: str | None = None,
     ) -> UUID:
         """
         Insert or update an OParl source.
+
+        ``oparl_version`` ("1.0"/"1.1") stammt aus der Autodiscovery und wird
+        nur überschrieben, wenn ein Wert erkannt wurde (Issue #122).
 
         Returns the source UUID.
         """
@@ -272,6 +276,7 @@ class DatabaseStorage:
                 url=url,
                 name=name,
                 raw_json=raw_json or {},
+                oparl_version=oparl_version,
                 is_active=True,
                 created_at=func.now(),
                 updated_at=func.now(),
@@ -279,6 +284,7 @@ class DatabaseStorage:
             update_set = {
                 "name": stmt.excluded.name,
                 "raw_json": stmt.excluded.raw_json,
+                "oparl_version": func.coalesce(stmt.excluded.oparl_version, OParlSource.oparl_version),
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)

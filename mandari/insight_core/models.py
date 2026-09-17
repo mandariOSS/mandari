@@ -80,6 +80,16 @@ class OParlSource(models.Model):
     consecutive_failures = models.PositiveIntegerField(default=0, verbose_name="Fehlversuche in Folge")
     health_alert_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Alarm gesendet am")
 
+    # Vom Ingestor bei der Autodiscovery erkannte OParl-Version ("1.0"/"1.1");
+    # leer = noch nicht erkannt. Siehe docs/SCRAPER_SOURCES.md, Abschnitt OParl 1.0.
+    oparl_version = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        verbose_name="OParl-Version",
+        help_text="Vom Ingestor erkannt (z. B. 1.0 bei more! rubin auf gremien.info).",
+    )
+
     # Rohe OParl-Daten
     raw_json = models.JSONField(default=dict, blank=True)
 

@@ -1,0 +1,157 @@
+{
+  "data": [
+    {
+      "id": "https://mandant-a.gremien.example/oparl/paper/00810100289",
+      "type": "https://schema.oparl.org/1.0/Paper",
+      "name": "Beispielvorlage 1",
+      "reference": "18/403",
+      "date": "2018-10-08",
+      "paperType": "Beschlussvorlage",
+      "mainFile": {
+        "id": "https://mandant-a.gremien.example/oparl/file/00810100289",
+        "type": "https://schema.oparl.org/1.0/File",
+        "name": "18/403",
+        "fileName": "00810100289",
+        "mimeType": "application/pdf",
+        "size": 61524,
+        "created": "2026-09-17T00:00:00+02:00",
+        "modified": "2026-09-17T00:00:00+02:00",
+        "deleted": false,
+        "text": "Beispieltext der Vorlage 1.",
+        "accessUrl": "https://mandant-a.gremien.example/api.php?document_type_id=4&submission_id=00810100289&id=69&inline=true",
+        "downloadUrl": "https://mandant-a.gremien.example/api.php?document_type_id=4&submission_id=00810100289&id=69"
+      },
+      "consultation": [
+        {
+          "id": "https://mandant-a.gremien.example/oparl/consultation/789",
+          "type": "https://schema.oparl.org/1.0/Consultation",
+          "agendaItem": "https://mandant-a.gremien.example/oparl/agendaItem/2018-PLUV-8%7C00810100289%7C1",
+          "meeting": "https://mandant-a.gremien.example/oparl/meeting/2018-PLUV-8",
+          "organization": [
+            "https://mandant-a.gremien.example/oparl/organization/PLUV"
+          ],
+          "authoritative": false,
+          "role": "vorberatend"
+        }
+      ],
+      "created": "2026-09-17T00:00:00+02:00",
+      "modified": "2026-09-17T00:00:00+02:00",
+      "deleted": false,
+      "underDirectionOf": [
+        "https://mandant-a.gremien.example/oparl/person/100"
+      ]
+    },
+    {
+      "id": "https://mandant-a.gremien.example/oparl/paper/00811100331",
+      "type": "https://schema.oparl.org/1.0/Paper",
+      "name": "Beispielvorlage 2",
+      "reference": "18/394",
+      "date": "2018-11-08",
+      "paperType": "Beschlussvorlage",
+      "mainFile": {
+        "id": "https://mandant-a.gremien.example/oparl/file/00811100331",
+        "type": "https://schema.oparl.org/1.0/File",
+        "name": "18/394",
+        "fileName": "00811100331",
+        "mimeType": "application/pdf",
+        "size": 67456,
+        "created": "2026-09-17T00:00:00+02:00",
+        "modified": "2026-09-17T00:00:00+02:00",
+        "deleted": false,
+        "text": "Beispieltext der Vorlage 2.",
+        "accessUrl": "https://mandant-a.gremien.example/api.php?document_type_id=4&submission_id=00811100331&id=69&inline=true",
+        "downloadUrl": "https://mandant-a.gremien.example/api.php?document_type_id=4&submission_id=00811100331&id=69"
+      },
+      "consultation": [
+        {
+          "id": "https://mandant-a.gremien.example/oparl/consultation/798",
+          "type": "https://schema.oparl.org/1.0/Consultation",
+          "agendaItem": "https://mandant-a.gremien.example/oparl/agendaItem/2018-PLUV-8%7C00811100331%7C1",
+          "meeting": "https://mandant-a.gremien.example/oparl/meeting/2018-PLUV-8",
+          "organization": [
+            "https://mandant-a.gremien.example/oparl/organization/PLUV"
+          ],
+          "authoritative": false,
+          "role": "vorberatend"
+        }
+      ],
+      "created": "2026-09-17T00:00:00+02:00",
+      "modified": "2026-09-17T00:00:00+02:00",
+      "deleted": false,
+      "underDirectionOf": [
+        "https://mandant-a.gremien.example/oparl/person/101"
+      ]
+    },
+    {
+      "id": "https://mandant-a.gremien.example/oparl/paper/01311100340",
+      "type": "https://schema.oparl.org/1.0/Paper",
+      "name": "Beispielvorlage 3",
+      "reference": "18/401",
+      "date": "2018-11-13",
+      "paperType": "Anträge und Anfragen",
+      "mainFile": {
+        "id": "https://mandant-a.gremien.example/oparl/file/01311100340",
+        "type": "https://schema.oparl.org/1.0/File",
+        "name": "18/401",
+        "fileName": "01311100340",
+        "mimeType": "application/pdf",
+        "size": 60866,
+        "created": "2026-09-17T00:00:00+02:00",
+        "modified": "2026-09-17T00:00:00+02:00",
+        "deleted": false,
+        "text": "Beispieltext der Vorlage 3.",
+        "accessUrl": "https://mandant-a.gremien.example/api.php?document_type_id=4&submission_id=01311100340&id=69&inline=true",
+        "downloadUrl": "https://mandant-a.gremien.example/api.php?document_type_id=4&submission_id=01311100340&id=69"
+      },
+      "auxiliaryFile": [
+        {
+          "id": "https://mandant-a.gremien.example/oparl/file/vla%7C01311100340%7C1",
+          "type": "https://schema.oparl.org/1.0/File",
+          "name": "anlage 1",
+          "fileName": "20181113074811.pdf",
+          "mimeType": "application/pdf",
+          "date": "2018-11-13",
+          "sha1Checksum": "87cc900f636f62462a45f16d702b1126aff43886",
+          "size": 703776,
+          "accessUrl": "https://mandant-a.gremien.example/api.php?id=69&inline=1&document_type_id=13&submission_attachment_id=01311100340%7C20181113074811.pdf%7C",
+          "downloadUrl": "https://mandant-a.gremien.example/api.php?id=69&document_type_id=13&submission_attachment_id=01311100340%7C20181113074811.pdf%7C",
+          "text": "Beispieltext der Vorlage 3.",
+          "masterFile": "https://mandant-a.gremien.example/oparl/file/01311100340",
+          "created": "2026-09-17T00:00:00+02:00",
+          "modified": "2026-09-17T00:00:00+02:00"
+        }
+      ],
+      "consultation": [
+        {
+          "id": "https://mandant-a.gremien.example/oparl/consultation/735",
+          "type": "https://schema.oparl.org/1.0/Consultation",
+          "agendaItem": "https://mandant-a.gremien.example/oparl/agendaItem/2018-PLUV-8%7C01311100340%7C1",
+          "meeting": "https://mandant-a.gremien.example/oparl/meeting/2018-PLUV-8",
+          "organization": [
+            "https://mandant-a.gremien.example/oparl/organization/PLUV"
+          ],
+          "authoritative": false,
+          "role": "beschließend"
+        }
+      ],
+      "created": "2026-09-17T00:00:00+02:00",
+      "modified": "2026-09-17T00:00:00+02:00",
+      "deleted": false,
+      "underDirectionOf": [
+        "https://mandant-a.gremien.example/oparl/person/102"
+      ]
+    }
+  ],
+  "pagination": {
+    "totalElements": 3366,
+    "elementsPerPage": 100,
+    "currentPage": 1,
+    "totalPages": 34
+  },
+  "links": {
+    "first": "https://mandant-a.gremien.example/oparl/body/KH/paper/page/1",
+    "self": "https://mandant-a.gremien.example/oparl/body/KH/paper/page/1",
+    "next": "https://mandant-a.gremien.example/oparl/body/KH/paper/page/2",
+    "last": "https://mandant-a.gremien.example/oparl/body/KH/paper/page/34"
+  }
+}

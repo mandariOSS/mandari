@@ -24,6 +24,7 @@ import httpx
 from rich.console import Console
 
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError
+from src.client.oparl_compat import is_oparl_error, modified_since_dropped, oparl_error_message
 from src.config import settings
 from src.metrics import metrics
 
@@ -395,6 +396,31 @@ class OParlClient:
             if result.data is None:
                 break
 
+            # OParl 1.0 (more! rubin) liefert Fehlerobjekte mit HTTP 200,
+            # z. B. "Requested class doesn't exist." für unbekannte Pfade.
+            # Ohne diese Prüfung würde das Fehlerobjekt als Einzelobjekt
+            # durch _extract_items laufen (Issue #122).
+            if is_oparl_error(result.data):
+                console.print(f"[red]OParl-Fehlerobjekt von {current_url}: {oparl_error_message(result.data)}[/red]")
+                break
+
+            # Server, die modified_since stillschweigend ignorieren (OParl 1.0,
+            # more! rubin): der Parameter fehlt in self/next. Die Seite ist dann
+            # bereits die ungefilterte Liste — weiterlaufen, aber den Host
+            # merken, damit Folgelisten den toten Parameter nicht mehr senden.
+            if (
+                tried_modified_since
+                and pages_fetched == 0
+                and isinstance(result.data, dict)
+                and modified_since_dropped(result.data.get("links"))
+            ):
+                console.print(
+                    f"[yellow]{url}: Server ignoriert modified_since (Filter fehlt in den Listen-Links) "
+                    f"— Client-seitiger Abgleich[/yellow]"
+                )
+                self._modified_since_unsupported.add(host)
+                tried_modified_since = False
+
             self.stats.pages_fetched += 1
             pages_fetched += 1
 
@@ -468,8 +494,9 @@ class OParlClient:
             if items:
                 return items
 
-            # Single object without data[] wrapper (ITK Rheinland pattern)
-            if data.get("type"):
+            # Single object without data[] wrapper (ITK Rheinland pattern);
+            # OParl-Fehlerobjekte (HTTP 200, type .../Error) sind keine Items.
+            if data.get("type") and not is_oparl_error(data):
                 return [data]
 
         # Array without data wrapper
