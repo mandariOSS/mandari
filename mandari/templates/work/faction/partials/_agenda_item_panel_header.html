@@ -6,8 +6,7 @@
                    focusout from:find input[type=text] changed delay:300ms,
                    change from:find select"
       hx-swap="none"
-      hx-on::before-request="window.dispatchEvent(new Event('panel-autosaving'))"
-      hx-on::after-request="if(event.detail.successful) window.dispatchEvent(new Event('panel-autosaved'))"
+      data-autosave="panel"
       class="flex-shrink-0">
     <input type="hidden" name="action" value="update">
 

@@ -18,6 +18,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ### Geändert
 - Barrierefreiheit: Alpine-Modals mit `role=dialog`, `aria-modal`, Fokusfalle (`x-trap.inert.noscroll`) und Escape; axe-core in der CI zusätzlich auf Insight-Startseite, Dokumentenliste und Aufgaben; Prüfprotokoll `docs/BARRIEREFREIHEIT_PRUEFPROTOKOLL.md` (#176).
+- htmx ohne Inline-JavaScript: `hx-on`-Handler durch `data-autosave`/`data-after-request` ersetzt, `allowEval` und Fremdanfragen abgeschaltet (Vorbereitung CSP ohne `unsafe-eval`, #172).
 - Alle 80 Inline-Event-Handler in den Templates durch `data-*`-Aktionen ersetzt (Vorbereitung CSP-Enforce, #172).
 - Elasticsearch-Indizes legt ausschließlich Django an; der Ingestor schreibt nur noch (#215).
 - Upload-Prüfung nach Dateityp und Größe auf allen Upload-Pfaden mit CI-Gate (#260).

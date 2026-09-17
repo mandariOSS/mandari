@@ -52,6 +52,8 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
 - Keine Inline-Handler (`onclick=`, `onsubmit=`, `onchange=`): Aktionen stehen als `data-*`-Attribute im
   Template (`data-confirm`, `data-autosubmit`, `data-href`, `data-action`, `data-post`, …), `frontend/js/actions.ts`
   hängt die delegierten Listener an. Voraussetzung für eine CSP ohne `unsafe-inline` (#172).
+  Gleiches gilt für htmx: kein `hx-on`, keine `hx-vals="js:…"`, keine Trigger-Filter `[…]` – `allowEval` ist aus;
+  Nachbearbeitung über `data-autosave`/`data-after-request` (`frontend/js/htmx-setup.ts`).
 - Was fünfmal identisch vorkommt, wird Komponente. Bibliothek: `templates/cotton/` (django-cotton) mit
   `ui/` (button, card, badge, alert, empty-state, modal, tabs/tab/tab-panel, icon, th), `form/` (field,
   password, select, textarea, checkbox, errors) und `layout/` (page-header). Aufruf als Tag: `<c-ui.button variant="secondary" icon="plus">`,
