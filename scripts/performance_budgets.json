@@ -1,0 +1,62 @@
+{
+  "insight_startseite": {
+    "beschreibung": "Insight: Startseite der Kommune",
+    "abfragen": 16,
+    "ms": 500
+  },
+  "insight_suche": {
+    "beschreibung": "Insight: Suchseite mit Suchbegriff",
+    "abfragen": 8,
+    "ms": 500
+  },
+  "insight_suche_ergebnisse": {
+    "beschreibung": "Insight: Suchergebnisse (HTMX-Partial, ohne Elasticsearch: Datenbank-Rückfall)",
+    "abfragen": 12,
+    "ms": 500
+  },
+  "insight_termine": {
+    "beschreibung": "Insight: Sitzungsliste",
+    "abfragen": 10,
+    "ms": 500
+  },
+  "insight_vorgaenge": {
+    "beschreibung": "Insight: Vorgangsliste",
+    "abfragen": 13,
+    "ms": 500
+  },
+  "session_sitzungsliste": {
+    "beschreibung": "Session: Sitzungsliste (Seite 1 von 20)",
+    "abfragen": 22,
+    "ms": 500
+  },
+  "session_sitzungsdetail": {
+    "beschreibung": "Session: Sitzungsdetail mit Tagesordnung",
+    "abfragen": 26,
+    "ms": 500
+  },
+  "session_vorlagenliste": {
+    "beschreibung": "Session: Vorlagenliste",
+    "abfragen": 21,
+    "ms": 500
+  },
+  "session_abstimmung": {
+    "beschreibung": "Session: Abstimmungserfassung der laufenden Sitzung",
+    "abfragen": 22,
+    "ms": 500
+  },
+  "work_dashboard": {
+    "beschreibung": "Work: Dashboard",
+    "abfragen": 37,
+    "ms": 500
+  },
+  "work_dokumentliste": {
+    "beschreibung": "Work: Dokumentliste",
+    "abfragen": 47,
+    "ms": 500
+  },
+  "work_editor": {
+    "beschreibung": "Work: Editor-Seite eines Antrags",
+    "abfragen": 53,
+    "ms": 500
+  }
+}

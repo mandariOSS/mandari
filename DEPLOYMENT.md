@@ -284,6 +284,9 @@ Abfrage kann mehrere davon haben. Im Extremfall belegt die Datenbank
 und 8 MB sind das rechnerisch 800 MB — deshalb sind `mem_limit`,
 `max_connections` und `work_mem` nur gemeinsam zu ändern.
 
+Größenempfehlungen je Größenklasse (klein, mittel, groß) mit Mengengerüst,
+Verbindungsbudget und den Ergebnissen der Lasttests: [docs/LASTTESTS.md](docs/LASTTESTS.md).
+
 ### Für größere Installationen
 
 Beispiel aus dem eigenen Betrieb (Datenbankdienst mit 4 GB, gemeinsam genutzt von

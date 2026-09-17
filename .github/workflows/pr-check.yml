@@ -185,6 +185,16 @@ jobs:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
         run: python scripts/build_smoke_db_template.py "${{ runner.temp }}/mandari-smoke-template.sqlite3"
 
+      # Performance-Budgets (Issue #228): Abfragen je Kernseite gegen die Lasttest-
+      # Daten des Profils "klein" (generate_load_data). Budgets stehen in
+      # scripts/performance_budgets.json und duerfen nur sinken; die Antwortzeit
+      # ist wegen der Schwankung der Laeufer nur eine Warnung.
+      - name: Performance-Budgets der Kernseiten (Abfragen hart, Zeit als Warnung)
+        if: ${{ !cancelled() }}
+        env:
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+        run: python scripts/check_performance_budgets.py
+
       # Session-Sicherheits-Suiten (Issue #28): Tenant-Isolation,
       # OE/NOE-Sichtbarkeit und Permission-Matrix. Die Skripte setzen ihre
       # Umgebung (SQLite, Schluessel) selbst.
