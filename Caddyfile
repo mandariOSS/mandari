@@ -4,7 +4,7 @@
 # Automatic HTTPS via Let's Encrypt (HTTP-01 Challenge)
 #
 # Routing:
-#   /insight/*, /work/*, /session/*, /accounts/*, /admin/*, /api/* → Mandari (Django)
+#   /insight/*, /work/*, /session/*, /accounts/*, /admin/*, /api/*, /oparl/*, /csp-report/* … → Mandari (Django)
 #   /*  (everything else)                                          → Website (Wagtail)
 #
 # Requirements:
@@ -59,6 +59,8 @@
 	# =========================================================================
 	@mandari {
 		path /insight/* /work/* /session/* /accounts/* /admin/* /api/* /public/* /ws/*
+		# OParl-Endpunkt, Nachweise, Kalender, Feedback und CSP-Verstoßmeldungen (#172) gehören zur Anwendung
+		path /oparl/* /nachweis/* /kalender/* /feedback/* /csp-report/*
 		path /static/* /media/*
 		path /sitemap-insight-*
 		# PWA (mandari work): Manifest, Service Worker (Root-Scope), Offline-Fallback
