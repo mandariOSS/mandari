@@ -237,7 +237,16 @@ services:
   beim Onboarding einer Kommune wächst der OCR-Backlog sprunghaft →
   Kommunen einzeln aufschalten.
 
-## 4. Opt-out- / Takedown-Prozess
+## 4. Ausgeschlossene Systeme
+
+Für gehostetes **Sternberg RIM** (JavaScript-verifizierende WAF, opake Kennungen),
+**regisafe** und **komuna** (`Disallow: /`, Single-Page-Apps) bauen wir keinen
+Adapter und umgehen nichts; robots.txt ist nach § 44b UrhG ein Nutzungsvorbehalt.
+Stattdessen bieten wir der Kommune den Kooperationspfad an (OParl aktivieren oder
+unseren User-Agent per robots.txt erlauben). Begründung je System, Wiedervorlage und
+Textvorlage: [ADR 2026-09-17](adr/20260917-kein-scraping-sternberg-regisafe-komuna.md).
+
+## 5. Opt-out- / Takedown-Prozess
 
 Kommunen (oder Betroffene) können sich jederzeit über die auf der
 Crawler-Infoseite genannten Kontakte melden. Ablauf:
