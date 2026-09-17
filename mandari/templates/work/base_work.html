@@ -161,7 +161,9 @@
 
         .work-nav-item.active {
             background: var(--org-color-light, #eef2ff);
-            color: var(--org-color, #4f46e5);
+            /* Organisationsfarbe für Text abgedunkelt: helle Primärfarben (Standard #6366f1) erreichen auf der
+               Tönung sonst keine 4,5:1 (BITV 1.4.3, #176); der Balken behält die reine Farbe */
+            color: color-mix(in srgb, var(--org-color, #4f46e5) 65%, #111827);
             font-weight: 600;
             box-shadow: inset 3px 0 0 var(--org-color, #4f46e5);
             padding-left: 9px;
@@ -203,13 +205,16 @@
         }
 
         /* Sidebar Section */
+        .dark .work-nav-section {
+            color: #9ca3af;
+        }
         .work-nav-section {
             padding: 12px 12px 6px;
             font-size: 10px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            color: #9ca3af;
+            color: #6b7280; /* 4,6:1 auf Weiß (BITV 1.4.3), #176 */
             white-space: nowrap;
             overflow: hidden;
         }
@@ -459,7 +464,7 @@
             <!-- Organization Header -->
             <div class="work-org-header">
                 {% with org_logo=organization.effective_logo %}
-                <a href="/" class="work-org-logo {% if not org_logo %}has-fallback{% endif %}" {% if not org_logo and organization.primary_color %}style="background: {{ organization.primary_color }}20; color: {{ organization.primary_color }};"{% endif %}>
+                <a href="/" class="work-org-logo {% if not org_logo %}has-fallback{% endif %}" {% if not org_logo and organization.primary_color %}style="background: {{ organization.primary_color }}20; color: color-mix(in srgb, {{ organization.primary_color }} 55%, #111827);"{% endif %}>
                     {% if org_logo %}
                         <img src="{{ org_logo.url }}" alt="{{ organization.name }}">
                     {% else %}
@@ -944,7 +949,7 @@
     </div>
 
     <!-- Toast Notifications -->
-    <div x-data="toastManager" @show-toast.window="addToast($event.detail.message, $event.detail.type)" class="fixed top-4 right-4 z-[100] space-y-3 pointer-events-none">
+    <div x-data="toastManager" @show-toast.window="addToast($event.detail.message, $event.detail.type)" role="status" aria-live="polite" class="fixed top-4 right-4 z-[100] space-y-3 pointer-events-none">
         <template x-for="toast in toasts" :key="toast.id">
             <div x-show="toast.visible"
                  x-transition:enter="transition ease-out duration-300"

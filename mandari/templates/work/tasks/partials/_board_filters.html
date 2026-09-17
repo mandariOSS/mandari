@@ -28,7 +28,7 @@ members, assignee_filter, overdue_only, stats
         </div>
 
         <!-- Priority Filter -->
-        <select name="priority" @change="$el.form.submit()"
+        <select name="priority" aria-label="Priorität" @change="$el.form.submit()"
                 class="px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <option value="" {% if not priority_filter %}selected{% endif %}>Alle Prioritäten</option>
             {% for value, label in priority_choices %}
@@ -38,7 +38,7 @@ members, assignee_filter, overdue_only, stats
 
         <!-- Label Filter -->
         {% if labels %}
-        <select name="label" @change="$el.form.submit()"
+        <select name="label" aria-label="Label" @change="$el.form.submit()"
                 class="px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <option value="" {% if not label_filter %}selected{% endif %}>Alle Labels</option>
             {% for label in labels %}
@@ -49,7 +49,7 @@ members, assignee_filter, overdue_only, stats
 
         <!-- Personen-Filter (nur in "Alle"-Ansicht) -->
         {% if view_mode == 'all' %}
-        <select name="assignee" @change="$el.form.submit()"
+        <select name="assignee" aria-label="Zuständige Person" @change="$el.form.submit()"
                 class="px-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <option value="" {% if not assignee_filter %}selected{% endif %}>Alle Personen</option>
             {% for member in members %}

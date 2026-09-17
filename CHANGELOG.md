@@ -15,6 +15,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Release- und Support-Politik sowie SLA-Entwurf (#96, #93).
 
 ### Geändert
+- Barrierefreiheit: Alpine-Modals mit `role=dialog`, `aria-modal`, Fokusfalle (`x-trap.inert.noscroll`) und Escape; axe-core in der CI zusätzlich auf Insight-Startseite, Dokumentenliste und Aufgaben; Prüfprotokoll `docs/BARRIEREFREIHEIT_PRUEFPROTOKOLL.md` (#176).
 - Alle 80 Inline-Event-Handler in den Templates durch `data-*`-Aktionen ersetzt (Vorbereitung CSP-Enforce, #172).
 - Elasticsearch-Indizes legt ausschließlich Django an; der Ingestor schreibt nur noch (#215).
 - Upload-Prüfung nach Dateityp und Größe auf allen Upload-Pfaden mit CI-Gate (#260).

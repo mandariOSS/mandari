@@ -7,13 +7,18 @@ Alpine-gesteuertes Modal (x-show) für Seiten, die ihren Dialogzustand selbst in
 `show` ist der Name der booleschen Alpine-Variable im umgebenden x-data; ein Klick auf den Hintergrund
 setzt sie auf false. Größen: sm = max-w-md, md = max-w-xl, lg = max-w-2xl. `panel_class` erweitert den
 Dialogkasten, `class` den zentrierenden Wrapper (z. B. py-8). Für einfache Dialoge ohne eigenen
-Zustand ist <c-ui.modal> (natives <dialog>) vorzuziehen.
+Zustand ist <c-ui.modal> (natives <dialog>) vorzuziehen. Der Dialogkasten ist role=dialog mit
+aria-modal, Fokusfalle (x-trap.inert.noscroll) und Escape; eine Überschrift im Inhalt sollte per
+aria-labelledby verknüpft werden (attrs: aria-labelledby="…").
 {% endcomment %}
 <c-vars show="open" size="sm" panel_class="" class="" />
-<div x-show="{{ show }}" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition {{ attrs }}>
+<div x-show="{{ show }}" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition
+    @keydown.escape.window="{{ show }} = false" {{ attrs }}>
     <div class="flex items-center justify-center min-h-screen px-4 {{ class }}">
         <div class="fixed inset-0 bg-black/50" @click="{{ show }} = false"></div>
-        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full {% if size == 'lg' %}max-w-2xl{% elif size == 'md' %}max-w-xl{% else %}max-w-md{% endif %} {{ panel_class }}" @click.stop>
+        {# Fokusfalle, Hintergrund inert, kein Scrollen (BITV, #176): x-trap gibt den Fokus beim Schließen zurück #}
+        <div role="dialog" aria-modal="true" x-trap.inert.noscroll="{{ show }}"
+             class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full {% if size == 'lg' %}max-w-2xl{% elif size == 'md' %}max-w-xl{% else %}max-w-md{% endif %} {{ panel_class }}" @click.stop>
             {{ slot }}
         </div>
     </div>

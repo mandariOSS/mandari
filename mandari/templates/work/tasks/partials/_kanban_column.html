@@ -23,7 +23,7 @@ Kontext: organization, show_completed (für das „+“ bei gekürzter Erledigt-
         {% include "work/tasks/_card.html" %}
         {% endfor %}
         <div class="empty-placeholder text-center py-6 {% if tasks %}hidden{% endif %}">
-            <p class="text-sm text-gray-400 dark:text-gray-500">{{ empty_text }}</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ empty_text }}</p>
         </div>
     </div>
 
@@ -36,11 +36,11 @@ Kontext: organization, show_completed (für das „+“ bei gekürzter Erledigt-
         <input type="hidden" name="action" value="quick_add">
         <input type="hidden" name="status" value="{{ status }}">
         <div class="flex gap-2">
-            <input type="text" name="title" placeholder="Neue Aufgabe..." required
+            <input type="text" name="title" placeholder="Neue Aufgabe..." aria-label="Titel der neuen Aufgabe" required
                    class="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
-            <button type="submit"
+            <button type="submit" aria-label="Aufgabe hinzufügen"
                     class="px-3 py-2 text-sm font-medium text-white {% if color == 'amber' %}bg-amber-600 hover:bg-amber-700{% else %}bg-primary-600 hover:bg-primary-700{% endif %} rounded-lg">
-                <i data-lucide="plus" class="w-4 h-4"></i>
+                <i data-lucide="plus" class="w-4 h-4" aria-hidden="true"></i>
             </button>
         </div>
     </form>

@@ -279,10 +279,12 @@
 
 {# ===== Create Meeting Modal ===== #}
 {% if membership|has_perm:"faction.create" %}
-<div x-show="showCreateModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition>
+<div x-show="showCreateModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition
+     @keydown.escape.window="showCreateModal = false">
     <div class="flex items-center justify-center min-h-screen px-4 py-8">
         <div class="fixed inset-0 bg-black/50" @click="showCreateModal = false"></div>
-        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto" @click.stop>
+        <div role="dialog" aria-modal="true" x-trap.inert.noscroll="showCreateModal"
+             class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto" @click.stop>
             <form method="post">
                 {% csrf_token %}
 
