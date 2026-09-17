@@ -219,7 +219,11 @@ def warte_auf_editor_text(page: Any, text: str, timeout: int = 15000) -> None:
     """Pollt den Editortext (ohne Cursor-Labels), bis er exakt dem erwarteten Text entspricht."""
     ist: str | None = None
     for _ in range(max(1, timeout // 200)):
-        ist = editor_text_ohne_cursor(page)
+        try:
+            ist = editor_text_ohne_cursor(page)
+        except playwright_sync.Error:
+            # Seite lädt gerade neu (Reload-Aufforderung des Servers): weiter pollen
+            ist = None
         if ist == text:
             return
         page.wait_for_timeout(200)

@@ -294,7 +294,27 @@ async def run_collab_tests():
     # Safety- + Restore-Revision zusätzlich zur Kollab-Revision
     results.append(("Restore: Safety+Restore-Revisionen", len(state["revisions"]) == 3, str(state["revisions"])))
 
-    # 2f. Weitere Änderung, dann Disconnect des letzten Teilnehmers → Snapshot-Revision
+    # 2f. Nach der Reload-Aufforderung ist diese Verbindung veraltet: Ein spätes yjs_save
+    # (Tab verborgen, beforeunload) darf den wiederhergestellten Stand nicht überschreiben (#298)
+    await comm.send_json_to(
+        {
+            "type": "yjs_save",
+            "data": base64.b64encode(b"fake-yjs-state-veraltet").decode(),
+            "html": "<p>Kollab veraltet</p>",
+        }
+    )
+    antwort = await comm.receive_json_from(timeout=5)
+    results.append(("Nach reload: yjs_save verworfen", antwort.get("type") == "yjs_save_rejected", str(antwort)))
+    state = await _get_motion_state()
+    results.append(("Nach reload: Inhalt unverändert", state["content"] == "<p>Kollab Version 2</p>", state["content"][:80]))
+    await comm.disconnect()
+
+    # 2g. Neue Verbindung (wie nach dem Neuladen), weitere Änderung, dann Disconnect des
+    # letzten Teilnehmers → Snapshot-Revision
+    comm = _make_communicator(user)
+    await comm.connect(timeout=5)
+    await comm.receive_json_from(timeout=5)  # connected
+    await comm.receive_json_from(timeout=5)  # yjs_state
     await comm.send_json_to(
         {
             "type": "yjs_save",
