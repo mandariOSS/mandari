@@ -138,9 +138,10 @@ class SubscribeView(ActiveBodyRequiredMixin, TemplateView):
 
 def _send_confirmation_email(subscriber):
     """Sendet Double-Opt-In-Bestätigungsmail."""
-    from apps.common.email import render_email
     from django.conf import settings as django_settings
     from django.core.mail import send_mail
+
+    from apps.common.email import render_email
 
     site_url = getattr(django_settings, "SITE_URL", "http://localhost:8000")
     confirm_url = f"{site_url}/insight/abo/bestaetigen/{subscriber.token}/"
