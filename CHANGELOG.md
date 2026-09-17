@@ -7,6 +7,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 ## [Unreleased]
 
 ### Hinzugefügt
+- Scraper-Quellen: robots-Sperren als Fehlerklasse `robots_blocked` im Betriebsmonitor mit Empfehlung; Download-Header je Quelle (`download_headers`, z. B. Referer/Cookie) für Dateicache und Textextraktion (#116).
 - CSP-Report-Endpunkt `/csp-report/` mit Protokoll und Zähler `mandari_csp_violations_total` (#172).
 - Getrennte Liveness- und Readiness-Prüfungen `/health/live/` und `/health/ready/` (#231).
 - Verwaiste Konten werden nach Frist automatisch gelöscht (`cleanup_orphaned_accounts`, #238).

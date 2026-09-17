@@ -35,6 +35,8 @@ console = Console()
 # kennt dieselben Werte (insight_core.models.OParlSource.ERROR_KIND_*).
 ERROR_KIND_UA_BLOCKED = "ua_blocked"
 ERROR_KIND_SERVER_ERROR_SERIES = "server_error_series"
+# robots.txt der Instanz verbietet unseren Crawler (Scraper-Quellen, Issue #116)
+ERROR_KIND_ROBOTS_BLOCKED = "robots_blocked"
 
 # Neutraler Client-Header für die einmalige Vergleichsanfrage nach einem 403.
 # Absichtlich der nackte Bibliotheks-Default: Antwortet der Server darauf mit

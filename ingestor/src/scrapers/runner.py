@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 
+from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED
 from src.config import settings
 from src.metrics import metrics
 from src.scrapers import get_adapter
@@ -110,6 +111,7 @@ class ScraperSyncRunner:
                 result.errors.append(message)
                 state["robots_disallowed"] = True
                 await self.storage.update_scraper_state(self.source.url, state)
+                await self._sperre_festhalten(result, message)
                 return result
             state.pop("robots_disallowed", None)
 
@@ -140,10 +142,13 @@ class ScraperSyncRunner:
                             stats[entity_type] = stats.get(entity_type, 0) + 1
                 crawl_completed = True
             except RobotsDisallowedError as e:
-                result.errors.append(f"robots.txt verbietet {e}")
+                message = f"robots.txt verbietet {e}"
+                result.errors.append(message)
+                await self._sperre_festhalten(result, message)
             except Exception as e:
                 result.errors.append(f"Crawl-Fehler: {e}")
                 console.print(f"[red]Scraper-Fehler bei {self.source.name}: {e}[/red]")
+                await self.orchestrator._record_source_failure(self.source.url, f"Crawl-Fehler: {e}")
 
             # Parse-Quote prüfen (Metrik + Log-Warnung bei Einbruch)
             quota = adapter.stats.parse_quota
@@ -220,6 +225,15 @@ class ScraperSyncRunner:
             f"{adapter.stats.pages_fetched} Seiten, {result.duration_seconds:.0f}s[/green]"
         )
         return result
+
+    async def _sperre_festhalten(self, result: Any, message: str) -> None:
+        """
+        robots-Sperre als Fehlerklasse an der Quelle festhalten (Issue #116): Betriebsmonitor
+        und Admin zeigen „robots.txt sperrt“ mit Empfehlung statt eines stillen Parse-Fehlers,
+        und die Quellen-Schonung fragt nur noch täglich nach. Keine Umgehung.
+        """
+        result.error_kind = ERROR_KIND_ROBOTS_BLOCKED
+        await self.orchestrator._record_source_failure(self.source.url, message, ERROR_KIND_ROBOTS_BLOCKED)
 
     async def _handle_missing(
         self,

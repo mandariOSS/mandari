@@ -59,6 +59,20 @@ def backoff_failures() -> int:
     return int(getattr(settings, "INSIGHT_SOURCE_BACKOFF_FAILURES", 3))
 
 
+def download_headers(body) -> dict[str, str]:
+    """
+    Zusätzliche Header für Datei-Downloads je Quelle (``sync_config["download_headers"]``,
+    Issue #116): manche RIS liefern Anlagen nur mit Referer oder Sitzungs-Cookie aus.
+    Nur String-Werte; leer ohne Body oder Konfiguration.
+    """
+    source = getattr(body, "source", None) if body is not None else None
+    sync_config = getattr(source, "sync_config", None) or {}
+    headers = sync_config.get("download_headers") if isinstance(sync_config, dict) else None
+    if not isinstance(headers, dict):
+        return {}
+    return {str(k): str(v) for k, v in headers.items() if isinstance(v, str | int | float) and str(k).strip()}
+
+
 def source_paused(body) -> bool:
     """
     Quellen-Schonung: Hat der Ingestor die Quelle mehrfach in Folge nicht erreicht
@@ -202,7 +216,7 @@ def fetch_and_cache(file_obj, client=None) -> str:
         client = httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=http_timeout(), follow_redirects=True)
     try:
         try:
-            with client.stream("GET", url) as response:
+            with client.stream("GET", url, headers=download_headers(file_obj.body)) as response:
                 if response.status_code in (404, 410):
                     return _mark(file_obj, "missing", f"HTTP {response.status_code}")
                 if response.status_code != 200:
