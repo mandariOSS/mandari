@@ -43,7 +43,7 @@
                     </p>
                 </div>
                 <form method="post" action="{% url 'session:standard_item_manage' tenant_slug=tenant_slug %}"
-                      onsubmit="return confirm('Standard-TOP wirklich löschen?');">
+                      data-confirm="Standard-TOP wirklich löschen?">
                     {% csrf_token %}
                     <input type="hidden" name="item_id" value="{{ item.id }}">
                     <input type="hidden" name="action" value="delete">
@@ -119,7 +119,7 @@
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 whitespace-pre-line">{{ block.content|truncatechars:160 }}</p>
                 </div>
                 <form method="post" action="{% url 'session:textblock_manage' tenant_slug=tenant_slug %}"
-                      onsubmit="return confirm('Textbaustein wirklich löschen?');">
+                      data-confirm="Textbaustein wirklich löschen?">
                     {% csrf_token %}
                     <input type="hidden" name="block_id" value="{{ block.id }}">
                     <input type="hidden" name="action" value="delete">

@@ -38,7 +38,7 @@
                 <label for="filter-year" class="sr-only">Nach Jahr filtern</label>
                 <select id="filter-year"
                         name="year"
-                        onchange="this.form.submit()"
+                        data-autosubmit
                         class="w-full sm:w-auto px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 outline-none">
                     <option value="">Alle Jahre</option>
                     {% for year in available_years %}

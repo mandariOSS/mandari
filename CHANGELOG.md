@@ -7,6 +7,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 ## [Unreleased]
 
 ### Hinzugefügt
+- CSP-Report-Endpunkt `/csp-report/` mit Protokoll und Zähler `mandari_csp_violations_total` (#172).
 - Getrennte Liveness- und Readiness-Prüfungen `/health/live/` und `/health/ready/` (#231).
 - Verwaiste Konten werden nach Frist automatisch gelöscht (`cleanup_orphaned_accounts`, #238).
 - Session-Einladung und Provisioning-Einladung im gemeinsamen Mail-Layout, „Einladung erneut senden“ (#239).
@@ -14,6 +15,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Release- und Support-Politik sowie SLA-Entwurf (#96, #93).
 
 ### Geändert
+- Alle 80 Inline-Event-Handler in den Templates durch `data-*`-Aktionen ersetzt (Vorbereitung CSP-Enforce, #172).
 - Elasticsearch-Indizes legt ausschließlich Django an; der Ingestor schreibt nur noch (#215).
 - Upload-Prüfung nach Dateityp und Größe auf allen Upload-Pfaden mit CI-Gate (#260).
 - Python 3.14, Node 26, pdfjs-dist 6 (#255, #254, #253).

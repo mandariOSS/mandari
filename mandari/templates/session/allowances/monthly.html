@@ -53,7 +53,7 @@
                     {% if rate.legal_basis %}<p class="text-xs text-gray-500 dark:text-gray-400">{{ rate.legal_basis }}</p>{% endif %}
                 </div>
                 <form method="post" action="{% url 'session:monthly_rate_delete' tenant_slug=tenant_slug %}"
-                      onsubmit="return confirm('Pauschale wirklich löschen?');">
+                      data-confirm="Pauschale wirklich löschen?">
                     {% csrf_token %}
                     <input type="hidden" name="rate_id" value="{{ rate.id }}">
                     <button type="submit" class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30" title="Löschen">
@@ -200,7 +200,7 @@
                 </button>
             </form>
             <form method="post" action="{% url 'session:monthly_export_sepa' tenant_slug=tenant_slug %}"
-                  onsubmit="return confirm('SEPA-Datei erzeugen und genehmigte Posten als ausgezahlt markieren?');">
+                  data-confirm="SEPA-Datei erzeugen und genehmigte Posten als ausgezahlt markieren?">
                 {% csrf_token %}
                 <input type="hidden" name="year" value="{{ period.year }}">
                 <input type="hidden" name="month" value="{{ period.month }}">

@@ -55,7 +55,7 @@
                         Bearbeiten
                     </a>
                     <form method="post" action="{% url 'session:person_deactivate' tenant_slug=tenant_slug person_id=person.id %}"
-                          onsubmit="return confirm('Person wirklich {% if person.is_active %}deaktivieren{% else %}reaktivieren{% endif %}?');">
+                          data-confirm="Person wirklich {% if person.is_active %}deaktivieren{% else %}reaktivieren{% endif %}?">
                         {% csrf_token %}
                         <button type="submit"
                                 class="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">

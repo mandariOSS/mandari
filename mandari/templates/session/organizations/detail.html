@@ -40,7 +40,7 @@
                         Bearbeiten
                     </a>
                     <form method="post" action="{% url 'session:organization_deactivate' tenant_slug=tenant_slug organization_id=organization.id %}"
-                          onsubmit="return confirm('Gremium wirklich {% if organization.is_active %}deaktivieren{% else %}reaktivieren{% endif %}?');">
+                          data-confirm="Gremium wirklich {% if organization.is_active %}deaktivieren{% else %}reaktivieren{% endif %}?">
                         {% csrf_token %}
                         <button type="submit"
                                 class="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium rounded-lg transition-colors">
@@ -67,7 +67,7 @@
                 {% if legislative_terms %}
                 <!-- Besetzung je Wahlperiode (Issue #39) -->
                 <form method="get" class="flex items-center gap-2">
-                    <select name="term" onchange="this.form.submit()"
+                    <select name="term" data-autosubmit
                             class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                         <option value="">Aktuelle Besetzung</option>
                         {% for term in legislative_terms %}

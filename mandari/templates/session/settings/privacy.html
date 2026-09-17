@@ -115,7 +115,7 @@
                 </button>
             </form>
             <form method="post" action="{% url 'session:privacy_purge' tenant_slug=tenant_slug %}"
-                  onsubmit="return confirm('Löschlauf wirklich ausführen? Anonymisierte Daten sind nicht wiederherstellbar.');">
+                  data-confirm="Löschlauf wirklich ausführen? Anonymisierte Daten sind nicht wiederherstellbar.">
                 {% csrf_token %}
                 <button type="submit"
                         class="px-4 py-2 text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white rounded-lg">
@@ -136,7 +136,7 @@
             Mitgliedschaften, Anwesenheiten, Sitzungsgelder, Vorlagen). Bankdaten werden nur
             mit der Berechtigung „Sitzungsgelder verwalten“ entschlüsselt. Jeder Export wird auditiert.
         </p>
-        <form method="get" onsubmit="if(this.person.value){this.action='/session/{{ tenant_slug }}/persons/' + this.person.value + '/auskunft.json'; return true;} return false;"
+        <form method="get" data-submit-to="/session/{{ tenant_slug }}/persons/{person}/auskunft.json"
               class="flex flex-wrap items-end gap-3">
             <div class="flex-1 min-w-[220px]">
                 <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Person</label>

@@ -16,7 +16,7 @@ from django.urls import include, path, re_path
 from django.views.static import serve as static_serve
 
 from apps.accounts.views import admin_login_redirect
-from apps.common import health, metrics
+from apps.common import csp, health, metrics
 from apps.common.uploads import is_embeddable
 from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
@@ -109,6 +109,7 @@ urlpatterns = [
     path("health/ready/", health.ready, name="health_ready"),
     # Prometheus-Metriken; nur intern (METRICS_ALLOWED_NETWORKS / METRICS_TOKEN), sonst 404
     path("metrics/", metrics.metrics_view, name="metrics"),
+    path("csp-report/", csp.csp_report, name="csp_report"),
     # PWA: Manifest, Service Worker (Root-Scope), Offline-Fallback
     path("manifest.webmanifest", pwa.manifest, name="pwa_manifest"),
     path("sw.js", pwa.service_worker, name="pwa_sw"),

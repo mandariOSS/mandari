@@ -14,7 +14,9 @@
     Zurück zu Dokumenten
 </a>
 {% if trash_count > 0 %}
-<button type="button" onclick="emptyTrash()"
+<button type="button" data-post="{% url 'work:document_empty_trash' org_slug=organization.slug %}"
+        data-confirm-title="Papierkorb leeren" data-confirm-message="Alle {{ trash_count }} Dokumente werden unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+        data-confirm-text="Papierkorb leeren" data-confirm-variant="danger"
         class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700">
     <i data-lucide="trash-2" class="w-4 h-4"></i>
     Papierkorb leeren
@@ -67,12 +69,16 @@
 
                 <!-- Actions -->
                 <div class="flex items-center gap-2 flex-shrink-0">
-                    <button type="button" onclick="restoreMotion('{{ motion.id }}')"
+                    <button type="button" data-post="{% url 'work:document_restore' org_slug=organization.slug motion_id=motion.id %}"
+                            data-confirm-title="Dokument wiederherstellen" data-confirm-message="Das Dokument wird als Entwurf wiederhergestellt."
+                            data-confirm-text="Wiederherstellen" data-confirm-variant="info"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors">
                         <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
                         Wiederherstellen
                     </button>
-                    <button type="button" onclick="permanentlyDelete('{{ motion.id }}', '{{ motion.title|escapejs }}')"
+                    <button type="button" data-post="{% url 'work:document_permanent_delete' org_slug=organization.slug motion_id=motion.id %}"
+                            data-confirm-title="Endgültig löschen" data-confirm-message="„{{ motion.title }}“ wird unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+                            data-confirm-text="Löschen" data-confirm-variant="danger"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 dark:bg-red-900/30 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors">
                         <i data-lucide="x" class="w-4 h-4"></i>
                         Endgültig löschen
@@ -132,88 +138,4 @@
     </div>
     {% endif %}
 </div>
-
-<script nonce="{{ csp_nonce }}">
-const csrfToken = '{{ csrf_token }}';
-const orgSlug = '{{ organization.slug }}';
-
-async function restoreMotion(motionId) {
-    const ok = await confirmAction({
-        title: 'Dokument wiederherstellen',
-        message: 'Das Dokument wird als Entwurf wiederhergestellt.',
-        confirmText: 'Wiederherstellen',
-        variant: 'info'
-    });
-    if (!ok) return;
-
-    try {
-        const res = await fetch(`/work/${orgSlug}/documents/${motionId}/restore/`, {
-            method: 'POST',
-            headers: { 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        const data = await res.json();
-        if (data.success) {
-            location.reload();
-        } else {
-            showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
-        }
-    } catch (err) {
-        console.error('Restore error:', err);
-        showToast('Fehler beim Wiederherstellen: ' + err.message, 'error');
-    }
-}
-
-async function permanentlyDelete(motionId, title) {
-    const ok = await confirmAction({
-        title: 'Endgültig löschen',
-        message: `"${title}" wird unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.`,
-        confirmText: 'Löschen',
-        variant: 'danger'
-    });
-    if (!ok) return;
-
-    try {
-        const res = await fetch(`/work/${orgSlug}/documents/${motionId}/permanent-delete/`, {
-            method: 'POST',
-            headers: { 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        const data = await res.json();
-        if (data.success) {
-            location.reload();
-        } else {
-            showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
-        }
-    } catch (err) {
-        console.error('Delete error:', err);
-        showToast('Fehler beim Löschen: ' + err.message, 'error');
-    }
-}
-
-async function emptyTrash() {
-    const ok = await confirmAction({
-        title: 'Papierkorb leeren',
-        message: 'Alle {{ trash_count }} Dokumente werden unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.',
-        confirmText: 'Papierkorb leeren',
-        variant: 'danger'
-    });
-    if (!ok) return;
-
-    try {
-        const res = await fetch(`/work/${orgSlug}/documents/trash/empty/`, {
-            method: 'POST',
-            headers: { 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        const data = await res.json();
-        if (data.success) {
-            location.reload();
-        } else {
-            showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error');
-        }
-    } catch (err) {
-        console.error('Empty trash error:', err);
-        showToast('Fehler beim Leeren: ' + err.message, 'error');
-    }
-}
-});
-</script>
 {% endblock %}

@@ -86,7 +86,7 @@
         </div>
 
         {% if view_mode == 'all' %}
-        <select name="committee" onchange="this.form.submit()"
+        <select name="committee" data-autosubmit
                 class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <option value="">Alle Gremien</option>
             {% for committee in all_committees %}
@@ -97,7 +97,7 @@
         </select>
         {% endif %}
 
-        <select name="time" onchange="this.form.submit()"
+        <select name="time" data-autosubmit
                 class="px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <option value="upcoming" {% if time_filter == 'upcoming' %}selected{% endif %}>Anstehend</option>
             <option value="past" {% if time_filter == 'past' %}selected{% endif %}>Vergangen</option>

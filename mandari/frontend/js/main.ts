@@ -9,6 +9,7 @@
 import collapse from '@alpinejs/collapse'
 import focus from '@alpinejs/focus'
 import Alpine from 'alpinejs'
+import { installActions } from './actions'
 import { confirmAction, confirmDialog } from './alpine/confirm-dialog'
 import { showToast, toastManager } from './alpine/toast'
 import { setupHtmx } from './htmx-setup'
@@ -17,6 +18,9 @@ import { registerBookmarksStore } from './stores/bookmarks'
 
 // ---- HTMX --------------------------------------------------------------------
 setupHtmx()
+
+// ---- Deklarative Aktionen (data-confirm, data-href, … statt Inline-Handlern, #172) ----
+installActions()
 
 // ---- Globals für Templates ----------------------------------------------------
 window.Alpine = Alpine

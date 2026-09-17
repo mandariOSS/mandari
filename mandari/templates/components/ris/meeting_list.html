@@ -38,7 +38,7 @@
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
             {% for meeting in items %}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer{% if collapsible %} opacity-70{% endif %}"
-                onclick="window.location='{% if org_slug %}{% url 'work:ris_meeting_detail' org_slug=org_slug meeting_id=meeting.id %}{% else %}{% url 'insight_core:insight:meeting_detail' meeting.id %}{% endif %}'">
+                data-href="{% if org_slug %}{% url 'work:ris_meeting_detail' org_slug=org_slug meeting_id=meeting.id %}{% else %}{% url 'insight_core:insight:meeting_detail' meeting.id %}{% endif %}">
                 <td class="px-6 py-3 text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap">
                     {{ meeting.start|date:"d.m.Y" }}
                 </td>

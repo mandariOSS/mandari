@@ -83,7 +83,7 @@
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
             {% for paper in papers %}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                onclick="window.location='{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}'">
+                data-href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}">
                 <td class="px-6 py-3">
                     <a href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}"
                        class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">

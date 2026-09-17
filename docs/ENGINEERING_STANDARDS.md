@@ -49,6 +49,9 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
   Allowlist (Layouts, E-Mails, PDF, PWA). Das Skript `scripts/check_frontend_ratchet.py` misst
   Inline-Skripte, Inline-Styles, `on*=`-Handler, `style=`-Attribute und Templates über 300 Zeilen; die
   Werte dürfen nur sinken.
+- Keine Inline-Handler (`onclick=`, `onsubmit=`, `onchange=`): Aktionen stehen als `data-*`-Attribute im
+  Template (`data-confirm`, `data-autosubmit`, `data-href`, `data-action`, `data-post`, …), `frontend/js/actions.ts`
+  hängt die delegierten Listener an. Voraussetzung für eine CSP ohne `unsafe-inline` (#172).
 - Was fünfmal identisch vorkommt, wird Komponente. Bibliothek: `templates/cotton/` (django-cotton) mit
   `ui/` (button, card, badge, alert, empty-state, modal, tabs/tab/tab-panel, icon, th), `form/` (field,
   password, select, textarea, checkbox, errors) und `layout/` (page-header). Aufruf als Tag: `<c-ui.button variant="secondary" icon="plus">`,

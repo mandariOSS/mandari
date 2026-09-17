@@ -69,7 +69,7 @@
         <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
             {% for org in organizations %}
             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                onclick="window.location='{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=org.id %}'">
+                data-href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=org.id %}">
                 <td class="px-6 py-4">
                     <a href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=org.id %}"
                        class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">

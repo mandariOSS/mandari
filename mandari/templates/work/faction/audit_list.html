@@ -20,14 +20,14 @@
     <!-- Filters -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <form method="get" class="flex flex-wrap items-center gap-3">
-            <select name="model" onchange="this.form.submit()"
+            <select name="model" data-autosubmit
                     class="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 outline-none">
                 <option value="">Alle Objekt-Typen</option>
                 {% for name in model_names %}
                 <option value="{{ name }}" {% if selected_model == name %}selected{% endif %}>{{ name }}</option>
                 {% endfor %}
             </select>
-            <select name="action" onchange="this.form.submit()"
+            <select name="action" data-autosubmit
                     class="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 outline-none">
                 <option value="">Alle Aktionen</option>
                 {% for value, label in actions %}
