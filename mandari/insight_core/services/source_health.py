@@ -77,6 +77,50 @@ def thresholds() -> tuple[int, int]:
     )
 
 
+def scraper_quota_thresholds() -> tuple[float, float]:
+    """(Warnschwelle, kritische Schwelle) für die Parse-Quote von Scraper-Quellen (Issue #53)."""
+    return (
+        float(getattr(settings, "INSIGHT_SCRAPER_QUOTA_WARN", 0.95)),
+        float(getattr(settings, "INSIGHT_SCRAPER_QUOTA_CRITICAL", 0.80)),
+    )
+
+
+def scraper_run_findings(source) -> dict:
+    """
+    Befunde des letzten Scraper-Laufs (Issue #53): Parse-Quote und Entitäten-Zufluss aus
+    ``sync_config["scraper_state"]["last_run"]``, wie der Ingestor sie nach jedem Lauf ablegt.
+    Für OParl-Quellen leer.
+    """
+    leer = {"is_scraper": False, "status": "ok", "reasons": [], "parse_quota": None, "entities_stored": None, "at": ""}
+    sync_config = source.sync_config if isinstance(source.sync_config, dict) else {}
+    if not str(sync_config.get("source_type") or "").startswith("scraper:"):
+        return leer
+    befund = dict(leer, is_scraper=True)
+    last_run = (sync_config.get("scraper_state") or {}).get("last_run") or {}
+    if not last_run:
+        return befund
+    warn, critical = scraper_quota_thresholds()
+    quota = last_run.get("parse_quota")
+    attempted = int(last_run.get("detail_pages_attempted") or 0)
+    befund["parse_quota"] = quota
+    befund["entities_stored"] = last_run.get("entities_stored")
+    befund["at"] = str(last_run.get("at") or "")
+    if quota is not None and attempted >= 5:
+        if quota < critical:
+            befund["status"] = "critical"
+            befund["reasons"].append(
+                f"Parse-Quote eingebrochen: {quota:.0%} (kritisch unter {critical:.0%}) – "
+                "typisch für ein Frontend-Redesign der Instanz, Parser prüfen"
+            )
+        elif quota < warn:
+            befund["status"] = "warning"
+            befund["reasons"].append(f"Parse-Quote {quota:.0%} unter der Pilot-Schwelle von {warn:.0%}")
+    if last_run.get("full") and not last_run.get("entities_stored") and not last_run.get("unchanged_skipped"):
+        befund["status"] = "critical" if befund["status"] == "critical" else "warning"
+        befund["reasons"].append("Voll-Lauf ohne Entitäten-Zufluss: keine Sitzungen/Vorlagen gespeichert oder erkannt")
+    return befund
+
+
 def _site_url() -> str:
     return getattr(settings, "SITE_URL", "http://localhost:8000")
 
@@ -158,6 +202,22 @@ def evaluate_source(source, now=None) -> dict:
         if info["last_error"]:
             when = f" ({source.last_error_at:%d.%m.%Y %H:%M})" if source.last_error_at else ""
             info["reasons"].append(f"Letzter Fehler{when}: {info['last_error']}")
+
+    # Scraper-Quellen (Issue #53): Parse-Quote und Zufluss des letzten Laufs
+    scraper = scraper_run_findings(source)
+    info["scraper"] = scraper
+    if source.is_active and scraper["reasons"]:
+        info["reasons"].extend(scraper["reasons"])
+        if scraper["status"] == "critical":
+            info["status"] = "critical"
+        elif info["status"] in ("ok", "never"):
+            info["status"] = "warning"
+        if not info["recommendation"]:
+            info["recommendation"] = (
+                "Stichprobe gegen die Quell-Website ziehen (Sitzungsliste, Vorlage). Bei Parser-Bruch die "
+                "Golden-Fixtures der Instanz aktualisieren (docs/SCRAPER_SOURCES.md); bei fehlendem Zufluss "
+                "robots.txt, Sperren und das Kalenderfenster prüfen."
+            )
 
     info.update(STATUS_META[info["status"]])
     return info

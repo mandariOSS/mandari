@@ -80,6 +80,21 @@ stehen (`Caddyfile`, Matcher `@mandari_app`), sonst landen die Meldungen auf der
 Website (403). Auswertung: `journalctl CONTAINER_NAME=<app> | grep CSP-Verstoß` und die
 Metrik `mandari_csp_violations_total{directive}`; Limit 60 Meldungen je Adresse und Minute.
 
+### Scraper-Quellen: Parse-Quote und Zufluss (Pilot #53)
+
+Für Quellen mit `source_type: scraper:*` bewertet der Betriebsmonitor zusätzlich den letzten
+Lauf (`sync_config.scraper_state.last_run`, vom Ingestor nach jedem Lauf abgelegt):
+
+| Befund | Schwelle | Status |
+|---|---|---|
+| Parse-Quote unter der Pilot-Schwelle | `INSIGHT_SCRAPER_QUOTA_WARN` (Standard 0,95), ab 5 Detailseiten | Warnung |
+| Parse-Quote eingebrochen | `INSIGHT_SCRAPER_QUOTA_CRITICAL` (Standard 0,80) | Kritisch – typisch für ein Frontend-Redesign der Instanz (Parser-Bruch) |
+| Voll-Lauf ohne gespeicherte oder erkannte Entitäten | – | Warnung (robots, Sperren, Kalenderfenster prüfen) |
+
+Die Befunde erscheinen mit Empfehlung im Betriebsmonitor und in der Alarmmail von
+`check_source_health`; die Ingestor-Metriken `mandari_ingestor_scraper_parse_quota` und
+`mandari_ingestor_scraper_parse_failures_total` liefern den Verlauf für Grafana.
+
 ## Liveness und Readiness
 
 Zwei Endpunkte, zwei Fragen (Issue #231):
