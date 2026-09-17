@@ -559,7 +559,6 @@ class SyncOrchestrator:
                 # OParl 1.0 (more! rubin): 1.1-Pfad liefert Fehlerobjekt/404 (Issue #122)
                 if is_oparl_error(system_data):
                     reason = oparl_error_message(system_data)
-                    system_data = None
                     system_data, _resolved = await self._try_oparl_10_fallback(client, url, reason)
                 elif system_data is None and system_result.status_code == 404:
                     system_data, _resolved = await self._try_oparl_10_fallback(client, url, reason)
