@@ -355,6 +355,20 @@ Der Ingestor darf mit 30 Verbindungen mehr als die Anwendung. Das ist historisch
 und nicht gemessen — wer hier Luft braucht, kürzt zuerst dort
 (`ingestor/src/storage/database.py`, `pool_size` und `max_overflow`).
 
+## 🧾 Protokolle
+
+Container-Logs laufen auf Produktionshosts über `journald` (90 Tage, höchstens 2 GB,
+überstehen die Neuerstellung von Containern), Zugriffslogs von Caddy 14 Tage, das
+fachliche Audit-Log je Mandant in der Datenbank. Einrichtung in drei Schritten:
+
+```bash
+sudo sh deploy/logging/install.sh mandari admin@example.org      # journald-Drop-in, logrotate, Überlaufwarnung
+docker compose -f docker-compose.yml -f deploy/logging/docker-compose.journald.yml up -d
+# Caddy: roll_keep_for 336h in den Zugriffslog-Blöcken, dann caddy reload
+```
+
+Fristen, Begründungen, Sicherung und Zugriffsschutz: [docs/PROTOKOLLE.md](docs/PROTOKOLLE.md).
+
 ## 🚨 Troubleshooting
 
 ### Deployment schlägt fehl

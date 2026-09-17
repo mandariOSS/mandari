@@ -66,7 +66,7 @@ Werktagen und melden spätestens nach zwei Wochen einen Zwischenstand.
 | Mandantentrennung | Jede Abfrage ist organisationsgebunden; eine automatisierte Matrix prüft über 160 Adressen des Arbeitsbereichs gegen jede Rolle |
 | Transport | HSTS, sichere Cookies, `SECURE_PROXY_SSL_HEADER`, Referrer-Policy; Zertifikate automatisch |
 | Content-Security-Policy | Aktiv im Berichtsmodus mit Nonce an allen eingebetteten Skripten; die Umstellung auf Erzwingen ist in Arbeit |
-| Protokollierung | Vollständiges Audit-Log im Verwaltungs-RIS, strukturierte Logs mit Anfrage-Kennung, keine personenbezogenen Inhalte in Log-Zeilen |
+| Protokollierung | Vollständiges Audit-Log im Verwaltungs-RIS, strukturierte Logs mit Anfrage-Kennung, keine personenbezogenen Inhalte in Log-Zeilen; Container-Logs 90 Tage im systemd-Journal, Zugriffslogs 14 Tage, beides in der täglichen Sicherung ([docs/PROTOKOLLE.md](docs/PROTOKOLLE.md)) |
 | Lieferkette | Alle Abhängigkeiten in Lockfiles; `pip-audit` (Django-Anwendung **und** Ingestor) sowie `npm audit` blockieren jede Änderung, CycloneDX-Stückliste je Release, Dependabot, REUSE-Lizenzinventar |
 | Prüfungen | Rund 1.500 automatisierte Tests je Änderung, darunter Sicherheitsmatrizen für Mandantentrennung, Gastzugänge und die Trennung öffentlicher von nicht-öffentlichen Daten |
 

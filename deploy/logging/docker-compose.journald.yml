@@ -1,0 +1,35 @@
+# Protokolle nach journald statt in Docker-JSON-Dateien (Issue #263, BSI OPS.1.1.5).
+#
+# Docker-JSON-Logs liegen im Container-Verzeichnis und verschwinden, sobald der
+# Container beim Deploy neu erstellt wird; ihre Aufbewahrung ist nur nach Größe
+# begrenzt. journald hält sie auf dem Host, zeitbasiert (deploy/logging/journald-mandari.conf),
+# sie überstehen jede Neuerstellung und wandern mit /var/log/journal in die Sicherung.
+#
+# Verwendung (zusätzlich zur Basis-Compose):
+#   docker compose -f docker-compose.yml -f deploy/logging/docker-compose.journald.yml up -d
+#
+# Abfragen: journalctl CONTAINER_NAME=mandari -S -1h
+# Nur auf Linux-Hosts mit systemd; Docker Desktop kennt den Treiber nicht.
+
+x-journald: &journald
+  driver: journald
+  options:
+    tag: "{{.Name}}"
+
+services:
+  caddy:
+    logging: *journald
+  postgres:
+    logging: *journald
+  redis:
+    logging: *journald
+  elasticsearch:
+    logging: *journald
+  mandari:
+    logging: *journald
+  minutes-orchestrator:
+    logging: *journald
+  website:
+    logging: *journald
+  ingestor:
+    logging: *journald
