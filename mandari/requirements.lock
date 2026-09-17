@@ -261,6 +261,8 @@ psycopg==3.3.5
     # via -r requirements.txt
 psycopg-binary==3.3.5
     # via psycopg
+psycopg-pool==3.3.1
+    # via psycopg
 pyasn1==0.6.4
     # via
     #   pyasn1-modules
@@ -357,6 +359,7 @@ typing-extensions==4.16.0
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   psycopg
+    #   psycopg-pool
     #   pydantic
     #   pydantic-core
     #   pyopenssl

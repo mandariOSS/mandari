@@ -237,6 +237,62 @@ docker exec mandari-api python manage.py migrate
 
 ---
 
+## 🔌 Datenbankverbindungen: Budget
+
+Alle Dienste teilen sich **eine** PostgreSQL-Instanz. Ist deren `max_connections`
+erschöpft, bekommt *jeder* Dienst `FATAL: sorry, too many clients already` — auch
+einer ganz ohne eigene Last. Genau das ist am 15.09.2026 passiert, als ein
+Schwachstellen-Scanner mit 304 Anfragen pro Minute (normal: 8) die Verbindungszahl
+über die damalige Obergrenze trieb.
+
+Deshalb hat jeder Dienst eine feste Obergrenze, und die Summe bleibt unter der
+Obergrenze der Datenbank.
+
+| Dienst | Obergrenze | Woher |
+|---|---|---|
+| mandari (Daphne, 1 Prozess) | **10** | `DB_POOL_MAX`, passt zum ASGI-Thread-Pool von Django |
+| Ingestor | 30 | SQLAlchemy `pool_size=10` + `max_overflow=20` |
+| OCR-Worker | 30 | gleiches Image wie der Ingestor |
+| Website (Wagtail) | 10 | eigener Container, eigene Datenbank |
+| Kundenportal | 10 | eigener Container, eigene Datenbank |
+| Sicherung (`pg_dump`) | 2 | nur während des Laufs |
+| Reserve für Superuser | 3 | `superuser_reserved_connections`, Postgres-Vorgabe |
+| **Summe** | **95** | |
+| **`max_connections`** | **200** | in `docker-compose.web01.yml` |
+
+Reserve: rund 100 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
+**und** prüft die Summe.
+
+### Einstellungen der Anwendung
+
+| Variable | Vorgabe | Bedeutung |
+|---|---|---|
+| `DB_POOL` | `true` | Pool an- oder abschalten. Bei SQLite ohne Wirkung |
+| `DB_POOL_MIN` | `2` | Vorgehaltene Verbindungen, damit die erste Anfrage nicht wartet |
+| `DB_POOL_MAX` | `10` | Obergrenze je Prozess |
+| `DB_POOL_TIMEOUT` | `10` | Sekunden warten bei erschöpftem Pool, statt sofort zu scheitern |
+| `DB_POOL_MAX_LIFETIME` | `1800` | Verbindungen nach dieser Zeit erneuern |
+
+Bei eingeschaltetem Pool setzt die Anwendung `CONN_MAX_AGE` selbsttätig auf `0` —
+Django verlangt das, weil sonst zwei Mechanismen dieselbe Verbindung verwalten
+würden.
+
+### Prüfen, was tatsächlich offen ist
+
+```bash
+docker exec staging-postgres psql -U mandari -d postgres -c "
+select datname, count(*) as verbindungen, count(*) filter (where state='idle') as idle
+from pg_stat_activity where backend_type='client backend' group by 1 order by 2 desc;"
+```
+
+Gemessener Normalbetrieb (16.09.2026): mandari 13, Portal 3, Website 2.
+
+### Wenn der Ingestor der Engpass wird
+
+Der Ingestor darf mit 30 Verbindungen mehr als die Anwendung. Das ist historisch
+und nicht gemessen — wer hier Luft braucht, kürzt zuerst dort
+(`ingestor/src/storage/database.py`, `pool_size` und `max_overflow`).
+
 ## 🚨 Troubleshooting
 
 ### Deployment schlägt fehl
