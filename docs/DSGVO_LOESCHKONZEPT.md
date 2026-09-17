@@ -36,6 +36,25 @@ Mandatsende; Audit-Log 5–10 Jahre; NÖ-Inhalte gemäß örtlicher
 Archivsatzung (häufig dauerhafte Aufbewahrung — dann Frist deaktiviert
 lassen und dem Kommunalarchiv anbieten).
 
+### Konten ohne Zuordnung (plattformweit)
+
+Unabhängig von den Mandantenfristen räumt die Plattform Konten auf, die nirgends mehr
+gebraucht werden (Art. 5 Abs. 1 lit. e DSGVO, Speicherbegrenzung). Ein Konto wird nur
+gelöscht, wenn es **keine** Mitgliedschaft (Organisation oder Session-Mandant), keine
+gültige Einladung, keine Gruppe und kein weiteres verknüpftes Objekt hat und zusätzlich
+eine dieser Fristen gerissen ist:
+
+| Fall | Frist | Grundlage |
+|---|---|---|
+| E-Mail-Adresse nie bestätigt | 9 Tage nach Registrierung | Bestätigungslink 48 h + 7 Tage Kulanz |
+| Registrierungsanfrage abgelehnt | 30 Tage nach Ablehnung | `User.registration_rejected_at`; die Ablehnungsmail nennt die Frist |
+| Bestätigt, aber nie zugeordnet (Altbestand ohne Ablehnungsstempel) | 30 Tage ohne Anmeldung | Konto älter als 30 Tage und seit 30 Tagen kein Login |
+
+Mitarbeiter- und Superuser-Konten sind ausgenommen. Der Lauf löscht mit dem Konto nur
+dessen eigene Artefakte (2FA-Gerät, vertraute Geräte, Sitzungen, Tokens,
+Sicherheitsbenachrichtigungen); jede andere Beziehung schützt das Konto. Die Ausgabe
+nennt nur Zahlen, keine Adressen.
+
 ## 3. Durchführung des Löschlaufs
 
 Zwei gleichwertige Wege:
@@ -48,6 +67,13 @@ Zwei gleichwertige Wege:
    python manage.py session_privacy_purge              # alle aktiven Mandanten
    python manage.py session_privacy_purge --tenant stadt-musterstadt
    python manage.py session_privacy_purge --dry-run    # nur zählen
+   ```
+
+   Konten ohne Zuordnung (plattformweit, täglich per Cron, siehe DEPLOYMENT.md):
+
+   ```bash
+   python manage.py cleanup_orphaned_accounts           # löschen
+   python manage.py cleanup_orphaned_accounts --dry-run # nur zählen
    ```
 
 ### Nachweisbarkeit

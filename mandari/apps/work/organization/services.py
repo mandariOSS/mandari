@@ -630,6 +630,9 @@ def reject_registration(membership: Membership, reason: str = "") -> tuple[str, 
     organization = membership.organization
     name = user.get_display_name()
     membership.delete()
+    # Stempel für die automatische Löschung verwaister Konten (Issue #238)
+    user.registration_rejected_at = timezone.now()
+    user.save(update_fields=["registration_rejected_at"])
     sent = emails.send_registration_rejected(organization, user, reason.strip()[:REJECTION_REASON_MAX_LENGTH])
     return name, sent
 

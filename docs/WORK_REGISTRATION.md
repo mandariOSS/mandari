@@ -38,11 +38,13 @@ Freitext wie Einladungsnachricht oder Ablehnungsgrund.
 | … mit automatischer Freischaltung | Mitgliedschaft aktiv | „Willkommen“ an die Person, In-App-Hinweis „Neues Mitglied“ an Freigebende |
 | … ohne automatische Freischaltung | offene Anfrage (`Membership.registration_requested_at`) | Eingangsbestätigung an die Person, Anfrage an alle mit `members.invite` (ersatzweise Eigentümer), In-App-Hinweis „Registrierungsanfrage“ |
 | Freischalten | Mitgliedschaft aktiv | „Zugang freigeschaltet“ mit Link und Hinweis auf Zwei-Faktor-Pflicht |
-| Ablehnen (optional mit Begründung) | Mitgliedschaft gelöscht | „Registrierungsanfrage“ mit Begründung |
+| Ablehnen (optional mit Begründung) | Mitgliedschaft gelöscht, `User.registration_rejected_at` gesetzt; das Konto wird nach 30 Tagen ohne andere Zuordnung automatisch gelöscht (`cleanup_orphaned_accounts`, siehe DSGVO_LOESCHKONZEPT.md) | „Registrierungsanfrage“ mit Begründung und Hinweis auf die Löschfrist |
 
 - Die erlaubten Domains gelten für die bestätigte Adresse; angemeldete Konten registrieren sich
   immer mit ihrer Kontoadresse. Konten mit bestätigter Adresse treten ohne erneuten Link bei.
 - Konten aus einer Einladung gelten als bestätigt (der Einladungslink kam per Mail).
+- Wer den Bestätigungslink nie nutzt, behält kein Konto: unbestätigte Konten werden nach 9 Tagen
+  automatisch gelöscht, sofern sie nirgends zugeordnet sind (Issue #238).
 - Bestätigungsmails sind je IP und Adresse pro Stunde gedrosselt
   (`SELF_REGISTER_MAILS_PER_IP_PER_HOUR`, `SELF_REGISTER_MAILS_PER_ADDRESS_PER_HOUR`).
 - Der Link meldet nicht an; die Anmeldung läuft über Passwort und gegebenenfalls zweiten Faktor.

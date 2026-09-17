@@ -13,6 +13,7 @@
 </div>
 {% endif %}
 <p>Falls es sich um ein Versehen handelt, wende dich bitte direkt an {{ organization.name }}{% if organization.contact_email %} ({{ organization.contact_email }}){% endif %}.</p>
+<p class="muted">Dein Konto auf mandari wird {{ retention_days }} Tage nach dieser Ablehnung automatisch gelöscht, sofern du bis dahin keiner Organisation angehörst.</p>
 {% endblock %}
 {% block footer %}
 <p>Diese E-Mail wurde automatisch im Auftrag von {{ organization.name }} über mandari versendet.</p>
