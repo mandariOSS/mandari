@@ -13,6 +13,7 @@ Provides motion management with:
 - Document attachments
 """
 
+import hashlib
 import uuid
 from datetime import timedelta
 
@@ -1680,3 +1681,14 @@ class AdministrationConnection(models.Model):
         from apps.session.models import SessionAPIToken
 
         return SessionAPIToken.objects.filter(token=self.token_hash, tenant_id=self.tenant_id).first()
+
+
+def content_fingerprint(content: str | None) -> str:
+    """
+    Kurzer Fingerabdruck des gespeicherten Inhalts für die Konflikterkennung (#184).
+
+    Der Editor bekommt ihn beim Laden und nach jedem Speichern; beim Speichern ohne
+    Kollaborationsverbindung schickt er ihn zurück. Weicht er vom aktuellen Stand ab,
+    hat jemand anderes inzwischen gespeichert, und der Server überschreibt nicht still.
+    """
+    return hashlib.sha256((content or "").encode("utf-8")).hexdigest()[:16]

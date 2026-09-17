@@ -76,6 +76,8 @@ export interface DocumentEditorConfig {
   motionId: string
   title: string
   visibility: string
+  /** Fingerabdruck des gespeicherten Inhalts für die Konflikterkennung (#184) */
+  contentHash: string
   motionType: string
   documentTypeId: string
   documentTypeName: string
@@ -165,6 +167,9 @@ export const documentEditor = defineComponent(() => {
     currentPage: 1,
     lastSaved: null as string | null,
     saveError: false,
+    // Speichern ohne Verbindung traf auf einen neueren Stand (#184)
+    saveConflict: false,
+    contentHash: config.contentHash,
     saving: false,
     // Suchen & Ersetzen
     searchOpen: false,
@@ -470,6 +475,12 @@ export const documentEditor = defineComponent(() => {
               // Erste Verbindung fehlgeschlagen → stabiler Solo-Fallback
               this._switchToSoloMode('Echtzeit-Kollaboration nicht verfügbar — Solo-Modus aktiv.')
             }
+          },
+          onPersisted: (contentHash) => {
+            // Der Server hat unseren Kollaborationsstand gespeichert: Das ist ab jetzt
+            // der Stand, von dem ein späteres Speichern ohne Verbindung ausgeht (#184).
+            this.contentHash = contentHash
+            this.saveConflict = false
           },
           onReloadRequired: () => {
             // Server hat eine Version wiederhergestellt → frisch laden
@@ -1227,7 +1238,7 @@ export const documentEditor = defineComponent(() => {
       editor.commands.setContent(html)
     },
 
-    async save(): Promise<void> {
+    async save(force = false): Promise<void> {
       if (this.saving || !editor) return
       this.saving = true
       this.saveError = false
@@ -1240,6 +1251,12 @@ export const documentEditor = defineComponent(() => {
       formData.append('motion_type', this.motionType)
       formData.append('document_type_id', this.documentTypeId)
       formData.append('letterhead_id', this.letterheadId)
+      // Ohne Kollaborationsverbindung den Stand mitschicken, von dem wir ausgehen:
+      // Der Server überschreibt dann keinen neueren Stand still (#184). Mit
+      // Verbindung führt Yjs zusammen, da braucht es die Prüfung nicht.
+      const verbunden = this.collabEnabled && this.collabStatus === 'connected'
+      if (!verbunden && this.contentHash) formData.append('base_content_hash', this.contentHash)
+      if (force) formData.append('force', '1')
 
       try {
         const response = await fetch(window.location.href, {
@@ -1248,11 +1265,18 @@ export const documentEditor = defineComponent(() => {
           body: formData,
         })
 
-        if (response.ok) {
+        if (response.status === 409) {
+          const data: JsonResponse = await response.json()
+          this.saveConflict = true
+          this.saveError = true
+          showToast(data.message || 'Das Dokument wurde inzwischen an anderer Stelle geändert.', 'warning')
+        } else if (response.ok) {
           const data: JsonResponse = await response.json()
           if (data.success) {
             this.lastSaved = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
             this.saveError = false
+            this.saveConflict = false
+            if (typeof data.content_hash === 'string') this.contentHash = data.content_hash
           } else {
             this.saveError = true
           }
@@ -1272,7 +1296,20 @@ export const documentEditor = defineComponent(() => {
       // gedrosselte Revisionen) — kein POST-Autosave nötig, solange
       // die Verbindung steht.
       if (this.collabEnabled && this.collabStatus === 'connected') return
+      // Nach einem Konflikt nicht blind weiterversuchen: Die Person entscheidet
+      // über "Neu laden" oder "Trotzdem speichern" (#184).
+      if (this.saveConflict) return
       if (!this.saving && editor) void this.save()
+    },
+
+    /** Konflikt (#184): den eigenen Stand bewusst über den neueren schreiben. */
+    saveOverwrite(): Promise<void> {
+      return this.save(true)
+    },
+
+    /** Konflikt (#184): den neueren Stand vom Server holen; eigene Änderungen gehen verloren. */
+    reloadFromServer(): void {
+      window.location.reload()
     },
 
     setDocumentType(id: string, name: string): void {

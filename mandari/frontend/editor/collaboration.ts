@@ -45,6 +45,12 @@ export interface CollabOptions {
    * restore). Default behavior: window.location.reload().
    */
   onReloadRequired?: () => void
+  /**
+   * Called after the server persisted a yjs_save (content_hash of the stored
+   * HTML). The editor keeps it as the base for conflict detection when it
+   * later saves via POST without a connection (#184).
+   */
+  onPersisted?: (contentHash: string) => void
 }
 
 export interface CollabUser {
@@ -94,6 +100,7 @@ class DjangoYjsProvider {
   private onInitialState?: (hasState: boolean) => void
   private getHtml?: () => string
   private onReloadRequired?: () => void
+  private onPersisted?: (contentHash: string) => void
   private _beforeUnloadHandler: (() => void) | null = null
   private _visibilityHandler: (() => void) | null = null
 
@@ -105,6 +112,7 @@ class DjangoYjsProvider {
     onInitialState?: (hasState: boolean) => void,
     getHtml?: () => string,
     onReloadRequired?: () => void,
+    onPersisted?: (contentHash: string) => void,
   ) {
     this.wsUrl = wsUrl
     this.ydoc = ydoc
@@ -113,6 +121,7 @@ class DjangoYjsProvider {
     this.onInitialState = onInitialState
     this.getHtml = getHtml
     this.onReloadRequired = onReloadRequired
+    this.onPersisted = onPersisted
 
     // Listen to Yjs document updates
     this.ydoc.on('update', this._onDocUpdate)
@@ -218,6 +227,9 @@ class DjangoYjsProvider {
           this.onInitialState?.(false)
         }
       }
+    } else if (msg.type === 'yjs_saved' && typeof msg.content_hash === 'string') {
+      // Server persisted our yjs_save; remember the fingerprint of the stored HTML (#184).
+      this.onPersisted?.(msg.content_hash)
     } else if (msg.type === 'reload') {
       // Server requests a full document reload (e.g. after revision restore).
       if (this.onReloadRequired) {
@@ -409,6 +421,7 @@ export function initCollaboration(options: CollabOptions): CollabResult {
     options.onInitialState,
     options.getHtml,
     options.onReloadRequired,
+    options.onPersisted,
   )
 
   // Build TipTap extensions
