@@ -129,6 +129,7 @@ class OParlSourceAdmin(ModelAdmin):
         "scraper_status_display",
         "last_error",
         "last_error_at",
+        "last_error_kind",
         "consecutive_failures",
         "health_alert_sent_at",
     ]
@@ -148,7 +149,13 @@ class OParlSourceAdmin(ModelAdmin):
 
     @admin.action(description="Fehlerzähler und Alarm zurücksetzen")
     def reset_health(self, request, queryset):
-        count = queryset.update(last_error=None, last_error_at=None, consecutive_failures=0, health_alert_sent_at=None)
+        count = queryset.update(
+            last_error=None,
+            last_error_at=None,
+            last_error_kind=None,
+            consecutive_failures=0,
+            health_alert_sent_at=None,
+        )
         messages.success(request, f"Gesundheitsstatus von {count} Quelle(n) zurückgesetzt.")
 
     @admin.display(description="Art")

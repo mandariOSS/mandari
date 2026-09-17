@@ -22,6 +22,10 @@
     {% endif %}
     <p class="label">Letzter erfolgreicher Sync</p>
     <p>{% if source.last_sync %}{{ source.last_sync|date:"d.m.Y H:i" }}{% else %}nie{% endif %}</p>
+    {% if item.error_kind_label %}
+    <p class="label">Grund</p>
+    <p>{{ item.error_kind_label }}</p>
+    {% endif %}
     {% if item.consecutive_failures %}
     <p class="label">Fehlversuche in Folge</p>
     <p>{{ item.consecutive_failures }}</p>
@@ -31,6 +35,9 @@
 <ul class="list muted">
     {% for reason in item.reasons %}<li>{{ reason }}</li>{% endfor %}
 </ul>
+{% endif %}
+{% if item.recommendation %}
+<p><strong>Empfehlung:</strong> {{ item.recommendation }}</p>
 {% endif %}
 {% endif %}
 <div class="btn-wrap">

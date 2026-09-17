@@ -205,8 +205,10 @@ class TestPoliteFetcher:
         finally:
             await fetcher._client.aclose()
         assert seen_agents
-        assert all("mandari" in agent for agent in seen_agents)
-        assert any("mandari.de/crawler" in agent for agent in seen_agents)
+        assert all(agent.startswith("mandari-ingestor/") for agent in seen_agents)
+        # Kontaktadresse bleibt, der filterauslösende Begriff nicht (Issue #123)
+        assert all("support@mandari.de" in agent for agent in seen_agents)
+        assert all("crawler" not in agent.lower() for agent in seen_agents)
 
     async def test_404_returns_none(self):
         def handler(request: httpx.Request) -> httpx.Response:

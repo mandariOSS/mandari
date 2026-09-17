@@ -38,7 +38,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-from src.client.oparl_client import OParlClient, SyncStats
+from src.client.oparl_client import ERROR_KIND_SERVER_ERROR_SERIES, ERROR_KIND_UA_BLOCKED, OParlClient, SyncStats
 from src.client.oparl_compat import (
     detect_oparl_version,
     is_oparl_error,
@@ -60,17 +60,29 @@ from src.sync.processor import OParlProcessor
 BACKOFF_AFTER_FAILURES = 3
 BACKOFF_BASE_MINUTES = 10
 BACKOFF_MAX_MINUTES = 360
+# Sperre und 5xx-Serie (Issue #123) schonen die Quelle schon beim ersten Befund —
+# Nachfassen im Zehn-Minuten-Takt ändert an einer User-Agent-Sperre nichts und
+# hält einen überlasteten Server nur weiter unter Druck. Mindestabstand je Klasse;
+# darüber hinaus verdoppelt sich der Abstand wie bei gewöhnlichen Fehlversuchen.
+BACKOFF_MIN_MINUTES_BY_KIND = {
+    ERROR_KIND_UA_BLOCKED: 60,
+    ERROR_KIND_SERVER_ERROR_SERIES: 30,
+}
 
 
 def source_backoff_until(source, now: datetime | None = None) -> datetime | None:
     """Zeitpunkt, bis zu dem eine mehrfach gescheiterte Quelle in Ruhe gelassen wird (sonst None)."""
     failures = getattr(source, "consecutive_failures", 0) or 0
     last_error_at = getattr(source, "last_error_at", None)
+    kind_minimum = BACKOFF_MIN_MINUTES_BY_KIND.get(getattr(source, "last_error_kind", None) or "", 0)
+    if kind_minimum:
+        failures = max(failures, BACKOFF_AFTER_FAILURES)
     if failures < BACKOFF_AFTER_FAILURES or last_error_at is None:
         return None
     if last_error_at.tzinfo is None:
         last_error_at = last_error_at.replace(tzinfo=UTC)
     minutes = min(BACKOFF_BASE_MINUTES * 2 ** (failures - BACKOFF_AFTER_FAILURES), BACKOFF_MAX_MINUTES)
+    minutes = max(minutes, kind_minimum)
     until = last_error_at + timedelta(minutes=minutes)
     now = now or datetime.now(UTC)
     return until if until > now else None
@@ -99,6 +111,9 @@ class SyncResult:
     errors: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
     http_stats: SyncStats | None = None
+    # Sperr-/Störungsbefund des Laufs (Issue #123): Fehlerklasse und Statistik je Host
+    error_kind: str | None = None
+    host_findings: list[dict[str, Any]] = field(default_factory=list)
 
 
 class SyncOrchestrator:
@@ -352,11 +367,13 @@ class SyncOrchestrator:
         await self._seed_modified_since_cache()
         capability_snapshot = OParlClient.get_modified_since_unsupported()
 
+        client: OParlClient | None = None
         try:
             concurrent = max_concurrent or self.max_concurrent
             async with OParlClient(
                 max_concurrent=concurrent,
                 source_name=url.split("/")[2] if "/" in url else "unknown",
+                user_agent=getattr(source_row, "user_agent", None),
             ) as client:
                 # Auto-detect URL type
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
@@ -364,7 +381,9 @@ class SyncOrchestrator:
 
                 if not bodies_data:
                     result.errors.append(f"No bodies found at {url}")
-                    await self._record_source_failure(url, "Keine Kommunen (Bodies) am Endpunkt gefunden")
+                    await self._record_source_failure(
+                        url, "Keine Kommunen (Bodies) am Endpunkt gefunden", client.error_kind
+                    )
                     return result
 
                 # Use first body name as source name
@@ -432,6 +451,7 @@ class SyncOrchestrator:
                 await self.storage.update_source_sync_time(source_id, full_sync=full)
                 result.http_stats = client.stats
                 result.success = True
+                await self._apply_host_findings(result, client)
 
                 total_synced = (
                     result.meetings_synced
@@ -463,7 +483,9 @@ class SyncOrchestrator:
         except Exception as e:
             result.errors.append(str(e))
             console.print(f"[red]Sync failed: {e}[/red]")
-            await self._record_source_failure(url, str(e))
+            await self._record_source_failure(url, str(e), client.error_kind if client else None)
+            if client is not None:
+                self._collect_host_findings(result, client)
 
             if self._event_emitter:
                 await self._event_emitter.emit_sync_failed(
@@ -478,6 +500,34 @@ class SyncOrchestrator:
 
         result.duration_seconds = (datetime.now(UTC) - start_time).total_seconds()
         return result
+
+    # ========== Sperr- und Störungsbefund (Issue #123) ==========
+
+    def _collect_host_findings(self, result: SyncResult, client: OParlClient) -> None:
+        """Befunde des Clients (User-Agent gesperrt, 5xx-Serie) in das Laufergebnis übernehmen."""
+        findings = client.host_findings()
+        if not findings:
+            return
+        result.error_kind = findings[0].error_kind
+        for health in findings:
+            summary = health.describe()
+            if summary and summary not in result.errors:
+                result.errors.append(summary)
+            result.host_findings.append(health.as_dict())
+
+    async def _apply_host_findings(self, result: SyncResult, client: OParlClient) -> None:
+        """
+        Nach einem durchgelaufenen Sync: Befund als Sync-Warnung und Quellenstatus
+        festhalten. Der Lauf bleibt „erfolgreich“ (andere Listen kamen durch), aber
+        Fehlerklasse und Statistik landen an der Quelle, damit Schonung und
+        Betriebsmonitor greifen und keine stille Lücke entsteht.
+        """
+        self._collect_host_findings(result, client)
+        if result.error_kind is None:
+            return
+        summary = "; ".join(h.describe() for h in client.host_findings() if h.describe())
+        console.print(f"[yellow]Sync-Warnung für {result.source_name or result.source_url}: {summary}[/yellow]")
+        await self._record_source_failure(result.source_url, summary, result.error_kind)
 
     # ========== Sync Operations ==========
 
@@ -512,10 +562,10 @@ class SyncOrchestrator:
         except Exception as e:
             console.print(f"[yellow]Capability-Cache konnte nicht gespeichert werden: {e}[/yellow]")
 
-    async def _record_source_failure(self, url: str, error: str) -> None:
+    async def _record_source_failure(self, url: str, error: str, error_kind: str | None = None) -> None:
         """Fehlerstatus für den Betriebsmonitor speichern — darf den Sync nie gefährden."""
         try:
-            await self.storage.record_source_failure(url, error)
+            await self.storage.record_source_failure(url, error, error_kind)
         except Exception as exc:
             console.print(f"[yellow]Warning: Quellen-Fehlerstatus nicht gespeichert: {exc}[/yellow]")
 
@@ -542,11 +592,14 @@ class SyncOrchestrator:
         # "modified_since nicht unterstützt" überlebt so Daemon-Neustarts.
         await self._seed_modified_since_cache()
         capability_snapshot = OParlClient.get_modified_since_unsupported()
+        source_row = await self.storage.get_source_by_url(url)
 
+        client: OParlClient | None = None
         try:
             async with OParlClient(
                 max_concurrent=self.max_concurrent,
                 source_name=url.split("/")[2] if "/" in url else "unknown",
+                user_agent=getattr(source_row, "user_agent", None),
             ) as client:
                 # Fetch system
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
@@ -565,7 +618,8 @@ class SyncOrchestrator:
 
                 if not system_data:
                     result.errors.append(f"Failed to fetch system from {url} ({reason})")
-                    await self._record_source_failure(url, reason)
+                    self._collect_host_findings(result, client)
+                    await self._record_source_failure(url, reason, system_result.error_kind or client.error_kind)
                     return result
 
                 result.source_name = system_data.get("name", "Unknown")
@@ -657,6 +711,7 @@ class SyncOrchestrator:
                 await self.storage.update_source_sync_time(source_id, full_sync=full)
                 result.http_stats = client.stats
                 result.success = True
+                await self._apply_host_findings(result, client)
 
                 # Calculate total entities synced
                 total_synced = (
@@ -703,6 +758,7 @@ class SyncOrchestrator:
                             "files": result.files_synced,
                             "agenda_items": result.agenda_items_synced,
                             "consultations": result.consultations_synced,
+                            **self._finding_details(result),
                         },
                         triggered_by="daemon",
                     )
@@ -715,7 +771,9 @@ class SyncOrchestrator:
         except Exception as e:
             result.errors.append(str(e))
             console.print(f"[red]Sync failed: {e}[/red]")
-            await self._record_source_failure(url, str(e))
+            await self._record_source_failure(url, str(e), client.error_kind if client else None)
+            if client is not None:
+                self._collect_host_findings(result, client)
 
             # Sync log is written by the scheduler (one per cycle, not per source)
 
@@ -1482,8 +1540,16 @@ class SyncOrchestrator:
             if until is None:
                 due.append(source)
             else:
+                kind_labels = {
+                    ERROR_KIND_UA_BLOCKED: "User-Agent gesperrt",
+                    ERROR_KIND_SERVER_ERROR_SERIES: "5xx-Serie",
+                }
+                reason = kind_labels.get(
+                    getattr(source, "last_error_kind", None) or "",
+                    f"{source.consecutive_failures} Fehlversuche in Folge",
+                )
                 console.print(
-                    f"[yellow]Quelle {source.name}: {source.consecutive_failures} Fehlversuche in Folge — "
+                    f"[yellow]Quelle {source.name}: {reason} — "
                     f"Schonung, nächster Versuch nach {until:%d.%m. %H:%M} UTC[/yellow]"
                 )
         sources = due
@@ -1587,6 +1653,13 @@ class SyncOrchestrator:
             if len(result.errors) > 10:
                 console.print(f"  ... and {len(result.errors) - 10} more")
 
+    @staticmethod
+    def _finding_details(result: SyncResult) -> dict[str, Any]:
+        """Fehlerklasse und Host-Statistik für die Sync-Log-Details (nur bei Befund)."""
+        if not result.error_kind:
+            return {}
+        return {"error_kind": result.error_kind, "host_findings": result.host_findings}
+
     async def write_results_to_synclog(
         self,
         results: list[SyncResult],
@@ -1623,6 +1696,7 @@ class SyncOrchestrator:
                 "meetings": result.meetings_synced,
                 "papers": result.papers_synced,
                 "files": result.files_synced,
+                **self._finding_details(result),
             }
 
         status = "success" if not all_errors or total_entities > 0 else "failed"

@@ -5,8 +5,27 @@ Settings for the OParl synchronization service.
 """
 
 from functools import lru_cache
+from importlib import metadata
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _ingestor_version() -> str:
+    """Paketversion für den User-Agent; ohne installiertes Paket (z. B. Quellbaum) ein fester Wert."""
+    try:
+        return metadata.version("mandari-ingestor")
+    except metadata.PackageNotFoundError:
+        return "0.1.0"
+
+
+# Transparenter User-Agent (Produkt-Token/Version, Infoseite, Kontaktadresse), damit
+# Betreiber uns identifizieren und gezielt drosseln oder ansprechen können.
+# Bewusst ohne den Begriff, den mindestens ein RIS im User-Agent filtert und mit
+# 403 quittiert, obwohl derselbe Abruf mit neutralem Client durchgeht (Issue #123).
+# Gilt für OParl-Client und Scraper gleichermaßen; je Quelle überschreibbar
+# (OParlSource.user_agent).
+DEFAULT_USER_AGENT = f"mandari-ingestor/{_ingestor_version()} (+https://mandari.de; support@mandari.de)"
 
 
 class Settings(BaseSettings):
@@ -106,10 +125,22 @@ class Settings(BaseSettings):
     elasticsearch_indexing_enabled: bool = True
     elasticsearch_batch_size: int = 500
 
-    # Scraper (Nicht-OParl-Quellen, siehe src/scrapers/ und
-    # docs/SCRAPER_SOURCES.md). Transparenter User-Agent mit Kontakt-URL,
-    # damit Kommunen uns identifizieren und gezielt steuern können.
-    scraper_user_agent: str = "mandari-ingestor (+https://mandari.de/crawler)"
+    # User-Agent für OParl-Client und Scraper (siehe DEFAULT_USER_AGENT).
+    # Env INGESTOR_USER_AGENT; SCRAPER_USER_AGENT bleibt als älterer Name gültig.
+    user_agent: str = Field(
+        default=DEFAULT_USER_AGENT,
+        validation_alias=AliasChoices("INGESTOR_USER_AGENT", "SCRAPER_USER_AGENT", "user_agent"),
+    )
+
+    # Sperr- und Störungserkennung je Host (Issue #123): Auf HTTP 403 folgt genau
+    # eine Vergleichsanfrage mit neutralem Client-Header — nur zur Diagnose, der
+    # Regelbetrieb läuft weiter mit unserem User-Agent. Ab N aufeinanderfolgenden
+    # 5xx-Antworten je Host gilt die Quelle als gestört (Fehlerklasse
+    # server_error_series) und wird geschont.
+    oparl_ua_probe_enabled: bool = True
+    oparl_server_error_series_threshold: int = 5
+
+    # Scraper (Nicht-OParl-Quellen, siehe src/scrapers/ und docs/SCRAPER_SOURCES.md).
     # Log-Warnung + Fehler-Eintrag, wenn die Parse-Quote eines Laufs
     # (erfolgreich geparste Detailseiten / abgerufene Detailseiten)
     # unter diesen Wert fällt (Parser-Bruch-Erkennung).

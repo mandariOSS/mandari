@@ -61,6 +61,14 @@ class SourceDeletionModel(models.Model):
 class OParlSource(models.Model):
     """Eine registrierte OParl-Datenquelle (z.B. RIS-API einer Stadt)."""
 
+    # Fehlerklassen des Ingestors (ingestor/src/client/oparl_client.py, Issue #123)
+    ERROR_KIND_UA_BLOCKED = "ua_blocked"
+    ERROR_KIND_SERVER_ERROR_SERIES = "server_error_series"
+    ERROR_KIND_CHOICES = [
+        (ERROR_KIND_UA_BLOCKED, "User-Agent gesperrt"),
+        (ERROR_KIND_SERVER_ERROR_SERIES, "5xx-Serie"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     url = models.TextField(unique=True)
@@ -73,10 +81,25 @@ class OParlSource(models.Model):
     last_sync = models.DateTimeField(blank=True, null=True)
     last_full_sync = models.DateTimeField(blank=True, null=True)
     sync_config = models.JSONField(default=dict, blank=True)
+    # User-Agent je Quelle (Issue #123): leer = Standard des Ingestors
+    user_agent = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name="User-Agent",
+        help_text=(
+            "Leer = Standard des Ingestors (mandari-ingestor/<Version> mit Kontaktadresse). "
+            "Nur setzen, wenn mit dem Betreiber der Quelle ein bestimmter Wert vereinbart ist."
+        ),
+    )
 
     # Betriebsmonitor: vom Ingestor bei jedem Fehlversuch gesetzt, bei Erfolg zurückgesetzt
     last_error = models.TextField(blank=True, null=True, verbose_name="Letzter Fehler")
     last_error_at = models.DateTimeField(blank=True, null=True, verbose_name="Letzter Fehler am")
+    # Sperre oder Störung als Klasse (Issue #123): steuert Bewertung, Empfehlung und Schonung
+    last_error_kind = models.CharField(
+        max_length=40, blank=True, null=True, choices=ERROR_KIND_CHOICES, verbose_name="Fehlerklasse"
+    )
     consecutive_failures = models.PositiveIntegerField(default=0, verbose_name="Fehlversuche in Folge")
     health_alert_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Alarm gesendet am")
 

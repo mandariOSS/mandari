@@ -29,6 +29,33 @@ STATUS_META = {
 }
 ALERT_REPEAT_DAYS = 7
 
+# Sperre und Störung (Issue #123): Grund und Handlungsempfehlung je Fehlerklasse.
+# Der Ingestor setzt OParlSource.last_error_kind; die Statistik steht in last_error.
+ERROR_KIND_INFO = {
+    "ua_blocked": {
+        "label": "User-Agent gesperrt",
+        "reason": (
+            "User-Agent gesperrt: Die Quelle antwortet auf unseren User-Agent mit HTTP 403, "
+            "ein neutraler Client erhält eine normale Antwort"
+        ),
+        "recommendation": (
+            "Betreiber der Quelle kontaktieren und um Freischaltung unseres User-Agents bitten "
+            "(Textvorschlag in docs/MONITORING.md); ein mit dem Betreiber vereinbarter Wert kann im Feld "
+            "„User-Agent“ der Quelle hinterlegt werden. Der Ingestor schont die Quelle bis dahin "
+            "(frühestens stündlich) — keine Umgehung."
+        ),
+    },
+    "server_error_series": {
+        "label": "5xx-Serie",
+        "reason": "5xx-Serie: Die Quelle liefert reihenweise Serverfehler, betroffene Objektlisten fehlen im Lauf",
+        "recommendation": (
+            "Statistik unter „Letzter Fehler“ prüfen (Anzahl, Zeitraum, Statuscodes, betroffene Listen). "
+            "Hält die Serie länger als einen Tag an, Betreiber der Quelle mit diesen Angaben informieren. "
+            "Der Ingestor probiert mit wachsendem Abstand (frühestens alle 30 Minuten) weiter."
+        ),
+    },
+}
+
 
 def thresholds() -> tuple[int, int]:
     """(Warnschwelle in Stunden, kritische Schwelle in Tagen)."""
@@ -63,6 +90,9 @@ def evaluate_source(source, now=None) -> dict:
         "age_hours": None,
         "age_days": None,
         "last_error": source.last_error or "",
+        "error_kind": source.last_error_kind or "",
+        "error_kind_label": "",
+        "recommendation": "",
         "consecutive_failures": source.consecutive_failures or 0,
         "paused": False,
         "reasons": [],
@@ -91,6 +121,14 @@ def evaluate_source(source, now=None) -> dict:
 
     if source.is_active:
         failures = info["consecutive_failures"]
+        kind_info = ERROR_KIND_INFO.get(info["error_kind"])
+        if kind_info:
+            # Sperre oder Störung ist immer kritisch: Daten fehlen, ohne dass Abwarten hilft
+            info["status"] = "critical"
+            info["error_kind_label"] = kind_info["label"]
+            info["recommendation"] = kind_info["recommendation"]
+            info["reasons"].append(kind_info["reason"])
+            info["paused"] = True
         if failures >= 3:
             info["status"] = "critical"
             info["reasons"].append(f"{failures} Fehlversuche in Folge")
@@ -100,6 +138,8 @@ def evaluate_source(source, now=None) -> dict:
                     "Quellen-Schonung aktiv: Dokument-Cache und Datei-Proxy pausieren, "
                     "der Ingestor probiert mit wachsendem Abstand (höchstens alle 6 Stunden)"
                 )
+        elif kind_info:
+            info["reasons"].append("Quellen-Schonung aktiv: der Ingestor probiert mit wachsendem Abstand")
         elif failures >= 1 and info["status"] in ("ok", "never"):
             info["status"] = "warning"
             info["reasons"].append("Letzter Sync-Versuch fehlgeschlagen")

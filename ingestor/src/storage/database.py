@@ -338,14 +338,17 @@ class DatabaseStorage:
                 # Erfolg setzt den Fehlerstatus des Betriebsmonitors zurück
                 source.last_error = None
                 source.last_error_at = None
+                source.last_error_kind = None
                 source.consecutive_failures = 0
                 await session.commit()
 
-    async def record_source_failure(self, url: str, error: str) -> None:
+    async def record_source_failure(self, url: str, error: str, error_kind: str | None = None) -> None:
         """
         Fehlgeschlagenen Sync-Versuch an der Quelle festhalten (Betriebsmonitor
         im Django-Admin). Die Quelle wird über ihre URL gefunden, weil bei einem
-        Verbindungsfehler noch keine Source-ID vorliegt.
+        Verbindungsfehler noch keine Source-ID vorliegt. ``error_kind`` ordnet
+        den Fehler einer Sperre oder Störung zu (Issue #123) und steuert die
+        Quellen-Schonung im nächsten Zyklus.
         """
         async with self.get_session() as session:
             result = await session.execute(select(OParlSource).where(OParlSource.url == url))
@@ -354,6 +357,7 @@ class DatabaseStorage:
                 return
             source.last_error = (error or "Unbekannter Fehler")[:2000]
             source.last_error_at = datetime.now(UTC)
+            source.last_error_kind = error_kind
             source.consecutive_failures = (source.consecutive_failures or 0) + 1
             await session.commit()
 

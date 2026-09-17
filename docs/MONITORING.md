@@ -21,7 +21,7 @@ OParl-Quelle, die ab Februar 2026 nur noch HTTP 403 lieferte, ohne dass es jeman
 |--------|-----------|
 | OK | letzter erfolgreicher Sync jünger als `INSIGHT_SOURCE_STALE_WARNING_HOURS` (Standard 48 h) |
 | Warnung | älter als Warnschwelle **oder** letzter Versuch fehlgeschlagen |
-| Kritisch | älter als `INSIGHT_SOURCE_STALE_CRITICAL_DAYS` (Standard 7 Tage) **oder** ≥ 3 Fehlversuche in Folge **oder** seit > 7 Tagen angelegt und nie synchronisiert |
+| Kritisch | älter als `INSIGHT_SOURCE_STALE_CRITICAL_DAYS` (Standard 7 Tage) **oder** ≥ 3 Fehlversuche in Folge **oder** seit > 7 Tagen angelegt und nie synchronisiert **oder** Fehlerklasse „User-Agent gesperrt“ / „5xx-Serie“ |
 | Inaktiv | `is_active = false` — erscheint nur im Admin-Filter der Quellenliste, nicht im Betriebsmonitor |
 
 Der **Ingestor** schreibt bei jedem fehlgeschlagenen Versuch `last_error`, `last_error_at` und
@@ -31,6 +31,45 @@ die Werte zurück. So ist der konkrete Grund (z. B. `HTTP 403`) direkt im Admin 
 Ab `INSIGHT_SOURCE_BACKOFF_FAILURES` (Standard 3) Fehlversuchen greift die **Quellen-Schonung**:
 Dokument-Cache und Datei-Proxy pausieren für diese Quelle, der Ingestor verdoppelt den Abstand
 zwischen den Versuchen bis auf 6 Stunden (siehe `docs/FILE_CACHE.md`).
+
+### Sperren und 5xx-Serien (Fehlerklassen)
+
+Zwei Störungsbilder erkennt der Ingestor selbst und ordnet sie einer **Fehlerklasse**
+(`last_error_kind`) zu; der Betriebsmonitor zeigt dazu Grund und Handlungsempfehlung, die
+Alarmmail nennt beides (Issue #123):
+
+| Fehlerklasse | Erkennung | Was der Ingestor tut |
+|---|---|---|
+| `ua_blocked` — „User-Agent gesperrt“ | Ein Endpunkt antwortet mit HTTP 403. Der Client stellt daraufhin **genau eine** Vergleichsanfrage mit neutralem Client-Header (`python-httpx/<Version>`). Kommt darauf eine normale Antwort, filtert die Quelle gezielt auf unseren User-Agent. | Befund mit Zeitstempel in Sync-Log und Quellenstatus; die Quelle wird ab dem ersten Befund geschont (frühestens nach 60 Minuten wieder, danach wachsend bis 6 Stunden). Der Regelbetrieb läuft weiter mit unserem User-Agent — **keine Umgehung**. |
+| `server_error_series` — „5xx-Serie“ | Ab `OPARL_SERVER_ERROR_SERIES_THRESHOLD` (Standard 5) aufeinanderfolgenden 5xx-Antworten je Host. | Sync-Warnung mit Statistik (Anzahl, Zeitraum, letzte Statuscodes, **betroffene Objektlisten**) statt stiller Lücke; Schonung ab dem ersten Befund (frühestens nach 30 Minuten). Eine erfolgreiche Antwort beendet die Serie. |
+
+Die Statistik steht im Feld *Letzter Fehler* der Quelle und in den Details des Sync-Protokolls
+(`error_kind`, `host_findings`). Nicht abrufbare Objektlisten (etwa die Sitzungsliste einer
+Kommune) tauchen seit #123 als Fehler des Laufs auf, auch wenn der Rest der Quelle durchkam.
+
+Ist ein Wert mit dem Betreiber vereinbart, lässt sich der User-Agent **je Quelle** im Admin
+setzen (Feld *User-Agent*, leer = Standard). Den Standard beschreibt
+`docs/SCRAPER_SOURCES.md`, Abschnitt Politeness. Die Vergleichsanfrage lässt sich mit
+`OPARL_UA_PROBE_ENABLED=false` abschalten.
+
+Handlungsempfehlung bei „User-Agent gesperrt“: den Betreiber ansprechen. Neutraler Textvorschlag
+(Angaben in spitzen Klammern ersetzen):
+
+> Sehr geehrte Damen und Herren,
+>
+> wir betreiben mit mandari (https://mandari.de) eine offene Plattform, die Ratsinformationen
+> über die OParl-Schnittstelle Ihres Ratsinformationssystems bereitstellt. Seit dem <Datum>
+> beantwortet Ihr System unsere Abrufe unter <URL des OParl-Endpunkts> mit HTTP 403, während
+> derselbe Abruf mit anderen Clients funktioniert. Wir vermuten daher eine Regel, die auf
+> unseren User-Agent „<User-Agent>“ reagiert.
+>
+> Unsere Abrufe sind bewusst sparsam (kleine Parallelität, Pausen zwischen Anfragen,
+> Abruf nur geänderter Objekte); den Abstand passen wir gern an Ihre Vorgaben an. Könnten Sie
+> unseren User-Agent freischalten oder uns mitteilen, unter welcher Kennung wir die
+> Schnittstelle abrufen dürfen? Für Rückfragen erreichen Sie uns unter support@mandari.de.
+>
+> Mit freundlichen Grüßen
+> <Name>, mandari
 
 ## Liveness und Readiness
 
