@@ -1,13 +1,11 @@
 # Service Level Agreement (SLA) für mandari Managed Hosting
 
-Entwurf der Vertragsanlage „Service Level“ für Kunden im Managed Hosting.
+Vertragsanlage „Service Level“ für Kunden im Managed Hosting, Version 1.0 vom 17.09.2026.
 Grundlage sind das Verfügbarkeitskonzept und die seit September 2026 laufende
 Messung über die Statusseite (Issue #93).
 
-> **Stand: Entwurf zur Entscheidung.** Die Zusagen sind Vorschläge des
-> Entwicklungsteams und werden erst mit Veröffentlichung auf mandari.de/sla/ und
-> Aufnahme in die AGB verbindlich. Werte mit „(Entscheidung)“ sind Geschäftsentscheidungen
-> des Betreibers. Preise stehen bewusst nicht hier.
+> **Stand:** Version 1.0, beschlossen am 17.09.2026. Verbindlich mit Veröffentlichung auf
+> mandari.de/sla/ und Aufnahme in die AGB. Preise stehen bewusst nicht hier.
 
 ## 1. Geltungsbereich
 
@@ -16,7 +14,7 @@ und dem Bürgerportal einschließlich OParl-API. Nicht erfasst sind Selbst-Hosti
 Testinstanzen, Vorschau-Funktionen („Beta“) und Drittsysteme (Ratsinformationssysteme
 der Kommunen, Mailversand über kundeneigene Server, Videokonferenzdienste).
 
-## 2. Verfügbarkeit (Entscheidung)
+## 2. Verfügbarkeit
 
 | Stufe | Zusage je Kalendermonat | Messung |
 |---|---|---|
@@ -44,7 +42,7 @@ Der heutige Betrieb (ein Standort, Sicherung an zwei Standorten, Deploy mit Rüc
 erreicht das mit Messung belegbar; 99,9 % (44 Minuten je Monat) setzt die Stufen 2 und 3
 des Verfügbarkeitskonzepts voraus und ist deshalb der Enterprise-Stufe vorbehalten.
 
-## 3. Wartungsfenster (Entscheidung)
+## 3. Wartungsfenster
 
 - **Regelfenster:** Dienstag und Donnerstag, 05:00–06:00 Uhr (Europe/Berlin).
 - Wartungen werden mindestens **48 Stunden** vorher auf der Statusseite angekündigt;
@@ -55,7 +53,7 @@ des Verfügbarkeitskonzepts voraus und ist deshalb der Enterprise-Stufe vorbehal
 - Nicht in Wartungsfenster fallen Sitzungstage, die der Kunde bis 14 Tage vorher
   im Kundenportal hinterlegt hat.
 
-## 4. Störungsklassen, Reaktion und Wiederherstellung (Entscheidung)
+## 4. Störungsklassen, Reaktion und Wiederherstellung
 
 | Klasse | Beschreibung | Reaktion Standard | Reaktion Premium/Enterprise | Wiederherstellungsziel |
 |---|---|---|---|---|
@@ -72,10 +70,10 @@ Korrektur folgt nach Release-Politik.
 | Kennzahl | Zusage | Grundlage |
 |---|---|---|
 | **Sicherung** | täglich, verschlüsselt, an zwei getrennten Standorten, 30 Tage Aufbewahrung | restic, wöchentliche Integritätsprüfung, monatlicher Wiederherstellungstest (`docs/BACKUP.md`) |
-| **RPO** (höchstens verlorene Daten) | **24 Stunden** (Standard/Premium); **1 Stunde** Enterprise (Entscheidung) | Enterprise setzt die stündliche Replikation aus dem Verfügbarkeitskonzept voraus |
+| **RPO** (höchstens verlorene Daten) | **24 Stunden** (Standard/Premium); **1 Stunde** Enterprise | Enterprise setzt die stündliche Replikation aus dem Verfügbarkeitskonzept voraus |
 | **RTO** (Wiederanlauf nach Totalverlust des Standorts) | **8 Stunden** Standard, **4 Stunden** Premium/Enterprise | Datenbankwiederherstellung aus dem Offsite-Backup gemessen unter fünf Minuten; der vollständige Neuaufbau wird mit #229 gemessen und die Zahl danach geschärft |
 
-## 6. Servicezeiten und Kanäle (Entscheidung)
+## 6. Servicezeiten und Kanäle
 
 | Stufe | Servicezeit | Kanäle |
 |---|---|---|
@@ -87,7 +85,7 @@ Korrektur folgt nach Release-Politik.
 Wiederherstellungszeit) → Stufe 3 Geschäftsführung (nach Ablauf der
 Wiederherstellungszeit). Der Kunde kann jede Stufe über das Ticket anfordern.
 
-## 7. Gutschriften (Entscheidung)
+## 7. Gutschriften
 
 Unterschreitet die gemessene Monatsverfügbarkeit die Zusage, erhält der Kunde auf
 Antrag (binnen 30 Tagen nach Monatsende) eine Gutschrift auf das Monatsentgelt der
@@ -122,14 +120,8 @@ Sitzungstage im Kundenportal aktuell, nutzt unterstützte Browser (jeweils aktue
 und vorherige Hauptversion von Firefox, Chrome, Edge, Safari) und meldet Störungen
 über die genannten Kanäle mit Zeitpunkt, betroffener Funktion und Beispiel.
 
-## 10. Offene Entscheidungen des Betreibers
+## 10. Pflege
 
-| Punkt | Vorschlag | Zu klären |
-|---|---|---|
-| Verfügbarkeit je Stufe | 99,5 / 99,7 / 99,9 % | Enterprise erst nach Stufe 3 des Verfügbarkeitskonzepts anbieten? |
-| Wartungsfenster | Di/Do 05:00–06:00 | |
-| Reaktionszeiten | s. Abschnitt 4 | Premium-Bereitschaft personell abgesichert? |
-| RPO/RTO | 24 h / 8 h Standard | RTO nach Messung mit #229 schärfen |
-| Gutschriften | 10 / 25 / 50 % | Obergrenze je Jahr? |
-| AGB | Ziffer „Verfügbarkeit“ ersetzen | juristisch gegenlesen lassen |
-| Veröffentlichung | `/sla/` auf mandari.de, PDF mit Version/Datum, Trust Center und Preisseite verlinken | Website-Repo |
+Änderungen an dieser Anlage erhalten eine neue Versionsnummer und ein Datum; bestehende Kunden
+werden mindestens 30 Tage vor Wirksamwerden informiert. Der RTO-Wert wird nach der ersten
+gemessenen Notfallübung (#229) überprüft.

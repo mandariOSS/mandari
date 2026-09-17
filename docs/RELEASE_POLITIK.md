@@ -6,9 +6,8 @@ wird, in welcher Frist Sicherheitslücken geschlossen werden und wie lange
 Schnittstellen stabil bleiben. Sie ist die verbindliche Grundlage für Betreiber,
 Selbst-Hoster und Vergabestellen (Issue #96).
 
-> **Stand: Entwurf zur Entscheidung.** Werte, die mit „(Entscheidung)“ markiert
-> sind, sind begründete Vorschläge des Entwicklungsteams; sie werden mit der
-> Veröffentlichung dieser Seite auf docs.mandari.de verbindlich.
+> **Stand:** beschlossen am 17.09.2026, gültig ab Release 0.10.0. Änderungen werden hier mit
+> Datum vermerkt und auf docs.mandari.de veröffentlicht.
 
 ## 1. Versionierung
 
@@ -30,7 +29,7 @@ Entwicklungsstände sind keine Releases und tragen keine Zusage.
 bis 1.0 in Ausnahmefällen brechende Änderungen enthalten, die dann im Changelog unter
 „Brechend“ stehen und eine Migrationsanleitung bekommen.
 
-## 2. Release-Kadenz (Entscheidung)
+## 2. Release-Kadenz
 
 | Art | Rhythmus | Inhalt |
 |---|---|---|
@@ -44,7 +43,7 @@ Hosting läuft dazwischen auf erprobten Entwicklungsständen (`dev-<commit>`), d
 jedem Release in Produktion waren; das Release ist damit nie der erste Kontakt mit
 echtem Betrieb.
 
-## 3. Supportzeitraum je Version (Entscheidung)
+## 3. Supportzeitraum je Version
 
 | Version | Erhält | Dauer |
 |---|---|---|
@@ -62,7 +61,7 @@ ohne gesonderte Zustimmung. Kunden erhalten die Ankündigung über die Statussei
 (status.mandari.de) und, bei Auswirkungen auf die Bedienung, per Mail an die
 hinterlegte Kontaktadresse.
 
-## 4. Sicherheitskorrekturen: Fristen (Entscheidung)
+## 4. Sicherheitskorrekturen: Fristen
 
 Schweregrad nach CVSS 3.1 (Bewertung siehe `docs/SICHERHEITSMELDUNGEN.md`):
 
@@ -79,7 +78,7 @@ drei Werktagen, siehe `SECURITY.md`). Abhängigkeiten werden von Dependabot übe
 Ist eine Korrektur in der Frist nicht möglich, veröffentlichen wir eine
 Übergangsmaßnahme (Konfiguration, Abschaltung einer Funktion) und einen Termin.
 
-## 5. Schnittstellen und Abkündigung (Entscheidung)
+## 5. Schnittstellen und Abkündigung
 
 | Schnittstelle | Versionierung | Ankündigungsfrist für brechende Änderungen |
 |---|---|---|
@@ -105,14 +104,14 @@ Release-Checkliste). Die Kurzfassung erscheint auf `/releases/`.
 - **GitHub Security Advisories** des Repositories: „Watch → Custom → Security alerts“.
 - **Feed:** `https://github.com/mandariOSS/mandari/security/advisories` und die
   Release-Feeds `https://github.com/mandariOSS/mandari/releases.atom`.
-- **E-Mail-Verteiler** (Entscheidung): `security-announce@mandari.de`, nur Ankündigungen,
+- **E-Mail-Verteiler:** `security-announce@mandari.de`, nur Ankündigungen,
   Anmeldung über das Trust Center.
 
 Meldungen an uns: `security@mandari.de`, Ablauf in `SECURITY.md`.
 
-## 8. Entscheidungen auf einen Blick
+## 8. Auf einen Blick
 
-| Punkt | Vorschlag |
+| Punkt | Regel |
 |---|---|
 | Kadenz MINOR | alle zwei Monate |
 | Support vorherige MINOR | sechs Monate |
