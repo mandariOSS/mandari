@@ -12,6 +12,8 @@ Die Registrierung ist Mitgliedern der Fraktion vorbehalten. Bitte melde dich bei
 
 Falls es sich um ein Versehen handelt, wende dich bitte direkt an Fraktion Test.
 
+Dein Konto auf mandari wird 30 Tage nach dieser Ablehnung automatisch gelöscht, sofern du bis dahin keiner Organisation angehörst.
+
 Diese E-Mail wurde automatisch im Auftrag von Fraktion Test über mandari versendet.
 
 © mandari — Open Source unter AGPL-3.0 · [Datenschutz](https://mandari.de/datenschutz/) · [Impressum](https://mandari.de/impressum/)
