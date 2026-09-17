@@ -199,8 +199,10 @@
     {% if can_edit %}
     <div x-show="aiPreviewActive" x-cloak
          class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-         @click.self="closeAiPreview()">
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden m-4 flex flex-col">
+         @click.self="closeAiPreview()"
+         @keydown.escape.window="if (aiPreviewActive) closeAiPreview()">
+        <div role="dialog" aria-modal="true" aria-label="KI-Vorschau" x-trap.inert.noscroll="aiPreviewActive"
+             class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden m-4 flex flex-col">
             <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center">

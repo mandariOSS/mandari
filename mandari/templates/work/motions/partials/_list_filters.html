@@ -20,7 +20,7 @@ selected_type, status_choices, selected_status, org_topics, selected_topic, org_
         </div>
 
         <!-- Type Filter -->
-        <select name="type" @change="$el.form.submit()"
+        <select name="type" aria-label="Typ" @change="$el.form.submit()"
                 class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <option value="">Alle Typen</option>
             {% for doc_type in document_types %}
@@ -33,7 +33,7 @@ selected_type, status_choices, selected_status, org_topics, selected_topic, org_
         </select>
 
         <!-- Status Filter -->
-        <select name="status" @change="$el.form.submit()"
+        <select name="status" aria-label="Status" @change="$el.form.submit()"
                 class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <option value="">Alle Status</option>
             {% for value, label in status_choices %}
@@ -43,7 +43,7 @@ selected_type, status_choices, selected_status, org_topics, selected_topic, org_
 
         <!-- Topic Filter -->
         {% if org_topics %}
-        <select name="thema" @change="$el.form.submit()"
+        <select name="thema" aria-label="Thema" @change="$el.form.submit()"
                 class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <option value="">Alle Themen</option>
             {% for topic in org_topics %}
@@ -53,7 +53,7 @@ selected_type, status_choices, selected_status, org_topics, selected_topic, org_
         {% endif %}
 
         <!-- Responsible Filter -->
-        <select name="verantwortlich" @change="$el.form.submit()"
+        <select name="verantwortlich" aria-label="Verantwortliche Person" @change="$el.form.submit()"
                 class="max-w-[240px] px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
             <option value="">Alle Verantwortlichen</option>
             <option value="me" {% if selected_responsible == "me" %}selected{% endif %}>Meine Federführung</option>
@@ -72,17 +72,17 @@ selected_type, status_choices, selected_status, org_topics, selected_topic, org_
 
         <!-- View Toggle -->
         <div class="flex items-center gap-1 bg-gray-100 dark:bg-gray-900 rounded-lg p-1">
-            <button type="button"
+            <button type="button" aria-label="Kachelansicht" :aria-pressed="viewMode === 'grid' ? 'true' : 'false'"
                     @click="setViewMode('grid')"
                     :class="viewMode === 'grid' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'hover:bg-white/50 dark:hover:bg-gray-700/50'"
                     class="p-2 rounded-md transition-colors">
-                <i data-lucide="grid-3x3" class="w-4 h-4" :class="viewMode === 'grid' ? 'text-primary-600' : 'text-gray-500'"></i>
+                <i data-lucide="grid-3x3" class="w-4 h-4" aria-hidden="true" :class="viewMode === 'grid' ? 'text-primary-600' : 'text-gray-500'"></i>
             </button>
-            <button type="button"
+            <button type="button" aria-label="Listenansicht" :aria-pressed="viewMode === 'list' ? 'true' : 'false'"
                     @click="setViewMode('list')"
                     :class="viewMode === 'list' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'hover:bg-white/50 dark:hover:bg-gray-700/50'"
                     class="p-2 rounded-md transition-colors">
-                <i data-lucide="list" class="w-4 h-4" :class="viewMode === 'list' ? 'text-primary-600' : 'text-gray-500'"></i>
+                <i data-lucide="list" class="w-4 h-4" aria-hidden="true" :class="viewMode === 'list' ? 'text-primary-600' : 'text-gray-500'"></i>
             </button>
         </div>
     </form>

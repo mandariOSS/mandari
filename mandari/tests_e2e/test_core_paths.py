@@ -82,6 +82,27 @@ class TestUiKit:
         page.click("dialog#demo-modal button[aria-label='Schließen']")
         expect(dialog).to_be_hidden()
 
+    def test_alpine_modal_traps_focus_and_restores_it(self, page: Any, goto: Any) -> None:
+        """Alpine-Modal (#176): role=dialog, Fokusfalle, Escape schließt, Fokus kehrt zum Auslöser zurück."""
+        goto("/dev/ui/")
+        # CSS-Locator statt Rolle: während der Dialog offen ist, liegt der Auslöser unter aria-hidden
+        trigger = page.locator("button", has_text="Alpine-Modal öffnen")
+        trigger.click()
+        dialog = page.locator("[role=dialog][aria-modal=true]", has_text="Beispiel-Dialog")
+        expect(dialog).to_be_visible()
+        # Fokus liegt im Dialog und bleibt beim Tabben darin (x-trap)
+        expect(dialog.locator(":focus")).to_have_count(1)
+        for _ in range(6):
+            page.keyboard.press("Tab")
+            assert page.evaluate("() => document.activeElement.closest('[role=dialog]') !== null"), (
+                "Fokus verließ den Dialog"
+            )
+        # Hintergrund ist für Hilfstechnik verborgen (x-trap.inert setzt aria-hidden außerhalb des Dialogs)
+        assert trigger.evaluate("el => !!el.closest('[aria-hidden=\"true\"]')"), "Hintergrund nicht verborgen"
+        page.keyboard.press("Escape")
+        expect(dialog).to_be_hidden()
+        expect(trigger).to_be_focused()
+
     def test_tabs_keyboard_navigation(self, page: Any, goto: Any) -> None:
         goto("/dev/ui/")
         first = page.locator("[role=tab]#tab-allgemein")
@@ -109,3 +130,15 @@ class TestWorkPortal:
         assert page.evaluate("() => typeof window.Alpine !== 'undefined'")
         _assert_axe_clean(axe(), "Work-Dashboard")
         screenshot("work-dashboard")
+        goto(f"/work/{membership.organization.slug}/documents/")
+        _assert_axe_clean(axe(), "Dokumentenliste")
+        goto(f"/work/{membership.organization.slug}/tasks/")
+        _assert_axe_clean(axe(), "Aufgaben")
+
+
+class TestInsightPortal:
+    def test_startseite_barrierefrei(self, page: Any, goto: Any, axe: Any, screenshot: Any) -> None:
+        goto("/")
+        assert page.locator("body").count() == 1
+        _assert_axe_clean(axe(), "Insight-Startseite")
+        screenshot("insight-start")
