@@ -15,6 +15,16 @@
 {% block work_content %}
 {{ editor_config|json_script:"document-editor-config" }}
 <div class="editor-wrapper" x-data="documentEditor">
+    {# Konflikthinweis (#184): Speichern ohne Verbindung traf auf einen neueren Stand #}
+    <div x-show="saveConflict" x-cloak role="alert"
+         class="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-100">
+        <i data-lucide="alert-triangle" class="h-4 w-4 shrink-0"></i>
+        <span class="flex-1">Das Dokument wurde inzwischen an anderer Stelle geändert. Deine Änderungen sind noch nicht gespeichert.</span>
+        <button type="button" @click="reloadFromServer()"
+                class="rounded-md border border-amber-400 bg-white px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100 dark:bg-transparent dark:text-amber-100 dark:hover:bg-amber-800/40">Neu laden</button>
+        <button type="button" @click="saveOverwrite()"
+                class="rounded-md bg-amber-600 px-3 py-1.5 font-medium text-white hover:bg-amber-700">Trotzdem speichern</button>
+    </div>
     <!-- Custom Header inside Alpine scope -->
     {% include "work/motions/partials/_editor_header.html" %}
 

@@ -169,7 +169,11 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
 
         elif msg_type == "yjs_save":
             # Client sends full state (plus aktuelles HTML) for persistence
-            await self._persist_yjs_state(content.get("data", ""), content.get("html"))
+            content_hash = await self._persist_yjs_state(content.get("data", ""), content.get("html"))
+            if content_hash:
+                # Fingerabdruck des gespeicherten Inhalts zurückmelden: Von diesem Stand
+                # geht der Client aus, wenn er später ohne Verbindung speichert (#184).
+                await self.send_json({"type": "yjs_saved", "content_hash": content_hash})
 
     # --- Group message handlers ---
 
@@ -263,16 +267,17 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         gedrosselt auf REVISION_MIN_INTERVAL_SECONDS — eine MotionRevision
         angelegt.
         """
-        from .models import Motion
+        from .models import Motion, content_fingerprint
 
         if not data_b64 and html is None:
-            return
+            return None
 
         try:
             motion = Motion.objects.get(id=self.document_id)
         except Motion.DoesNotExist:
-            return
+            return None
 
+        stored_content: str | None = None
         try:
             update_fields = []
             can_write = bool(self.user_info and self.user_info.get("access_level") == "edit")
@@ -304,6 +309,7 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
                     motion.set_content_encrypted(html)
                     update_fields.append("content_encrypted")
                     content_changed = True
+                stored_content = html if html else old_content
 
             if update_fields:
                 motion.save(update_fields=update_fields + ["updated_at"])
@@ -312,6 +318,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
                 self._create_revision_if_due(motion, html)
         except Exception as e:
             logger.warning(f"Failed to persist Yjs state for {self.document_id}: {e}")
+            return None
+        return content_fingerprint(stored_content) if stored_content is not None else None
 
     def _create_revision_if_due(self, motion, content, force=False):
         """

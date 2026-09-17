@@ -59,6 +59,8 @@ export interface CollaborativeEditorOptions extends EditorOptions {
   onInitialState?: (hasState: boolean) => void
   /** Called when the server requests a document reload (e.g. after revision restore) */
   onReloadRequired?: () => void
+  /** Server persisted a yjs_save; fingerprint of the stored HTML for conflict detection (#184). */
+  onPersisted?: (contentHash: string) => void
 }
 
 export interface FormatState {
@@ -240,6 +242,7 @@ export function createCollaborativeEditor(options: CollaborativeEditorOptions): 
       }
     },
     onReloadRequired: options.onReloadRequired,
+    onPersisted: options.onPersisted,
     onInitialState: (hasState: boolean) => {
       if (!hasState && options.content) {
         // Server has no saved Yjs state — seed from HTML content.
