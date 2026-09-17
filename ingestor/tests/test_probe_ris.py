@@ -207,4 +207,4 @@ def test_cli_probe_ris_nutzt_vorhandenes_user_agent_setting(monkeypatch: pytest.
     )
     assert ergebnis.exit_code == 0, ergebnis.output
     assert gesehen and "mandari" in gesehen[0].lower()
-    assert json.loads(ausgabe.read_text(encoding="utf-8"))[0]["vendor"] == "sessionnet"
+    assert json.loads(ausgabe.read_text(encoding="utf-8"))["ergebnisse"][0]["vendor"] == "sessionnet"
