@@ -95,6 +95,8 @@ class DjangoYjsProvider {
   private reconnectAttempts = 0
   private saveTimer: any = null
   private destroyed = false
+  /** Nach einer Reload-Aufforderung des Servers ist unser Stand veraltet: nichts mehr persistieren (#184). */
+  private reloadRequested = false
   private initialStateReceived = false
   private onStatusChange?: (status: CollabStatus) => void
   private onInitialState?: (hasState: boolean) => void
@@ -231,7 +233,11 @@ class DjangoYjsProvider {
       // Server persisted our yjs_save; remember the fingerprint of the stored HTML (#184).
       this.onPersisted?.(msg.content_hash)
     } else if (msg.type === 'reload') {
-      // Server requests a full document reload (e.g. after revision restore).
+      // Server requests a full document reload (e.g. after revision restore or a POST
+      // save by someone without connection). Our Yjs state is now stale: a late yjs_save
+      // (tab hidden, beforeunload, destroy) must not overwrite the stored content (#184).
+      this.reloadRequested = true
+      if (this.saveTimer) clearInterval(this.saveTimer)
       if (this.onReloadRequired) {
         this.onReloadRequired()
       } else {
@@ -296,6 +302,7 @@ class DjangoYjsProvider {
 
   /** Send full Yjs state to server for persistence (via yjs_save message). */
   private _saveFullState() {
+    if (this.reloadRequested) return
     if (!this.ws || !this.connected || this.ws.readyState !== WebSocket.OPEN) return
     try {
       const state = Y.encodeStateAsUpdate(this.ydoc)

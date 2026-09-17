@@ -46,7 +46,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
     - connected: {"type": "connected", "user": {...}}       — Server → Client on connect
     - yjs_state: {"type": "yjs_state", "data": "<base64>"} — Server → Client (initial state)
     - presence:  {"type": "presence", "users": [...]}       — Server → Client
-    - reload:    {"type": "reload"}                         — Server → Client (z.B. nach Revision-Restore)
+    - reload:    {"type": "reload"}                         — Server → Client (z.B. nach Revision-Restore, POST-Speichern)
+    - yjs_save_rejected: {"type": "yjs_save_rejected", "reason": "reload_pending"} — Server → Client, yjs_save nach reload verworfen
     """
 
     # Teilnehmer pro Dokument (prozesslokal). Bei mehreren Workern ist die
@@ -64,6 +65,10 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         self.membership_id = None
         self._counted = False
         self._save_counter = 0
+        # Nach einer Reload-Aufforderung ist der Stand dieser Verbindung veraltet:
+        # ein spaetes yjs_save (Tab-Wechsel, beforeunload, destroy) darf den
+        # inzwischen per POST gespeicherten Inhalt nicht mehr ueberschreiben (#184).
+        self.veraltet = False
 
     async def connect(self):
         self.document_id = self.scope["url_route"]["kwargs"]["document_id"]
@@ -168,6 +173,11 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             )
 
         elif msg_type == "yjs_save":
+            if self.veraltet:
+                # Der Client wurde zum Neuladen aufgefordert; sein Yjs-Zustand ist aelter als
+                # der gespeicherte Inhalt. Verwerfen statt persistieren.
+                await self.send_json({"type": "yjs_save_rejected", "reason": "reload_pending"})
+                return
             # Client sends full state (plus aktuelles HTML) for persistence
             content_hash = await self._persist_yjs_state(content.get("data", ""), content.get("html"))
             if content_hash:
@@ -199,7 +209,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             )
 
     async def doc_reload(self, event):
-        """Ask all clients to reload the document (e.g. after revision restore)."""
+        """Ask all clients to reload the document (e.g. after revision restore or POST save)."""
+        self.veraltet = True
         await self.send_json(
             {
                 "type": "reload",

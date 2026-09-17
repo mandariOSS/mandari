@@ -12,6 +12,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Session-Einladung und Provisioning-Einladung im gemeinsamen Mail-Layout, „Einladung erneut senden“ (#239).
 - Protokollkonzept mit journald, zeitbasierter Aufbewahrung und Überlaufwarnung (#263).
 - Release- und Support-Politik sowie SLA-Entwurf (#96, #93).
+- E2E-Tests der Editor-Kollaboration mit zwei Browsern gegen einen ASGI-Testserver (#289).
 
 ### Geändert
 - Elasticsearch-Indizes legt ausschließlich Django an; der Ingestor schreibt nur noch (#215).
@@ -22,6 +23,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ### Behoben
 - Editor: Speichern ohne Kollaborationsverbindung überschreibt keinen neueren Stand mehr still; Konflikthinweis mit „Neu laden“ / „Trotzdem speichern“ (#184).
+- Editor: Ein verbundener Client konnte nach der Reload-Aufforderung mit einem späten `yjs_save` den ohne Verbindung gespeicherten Stand überschreiben; Server und Client verwerfen ihn jetzt (#298).
 - Fünf Lösch-Routen antworteten auf GET mit 500 statt 405; Federführende und Mitwirkende sahen ihre Anträge nicht (#249).
 
 ### Sicherheit

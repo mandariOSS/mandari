@@ -7,10 +7,12 @@ import asyncio
 import json
 import os
 import sys
+import threading
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.conf import settings
@@ -146,19 +148,91 @@ def dark_mode(page: Any) -> Callable[[bool], None]:
     return toggle
 
 
+def login_via_form(page: Any, base_url: str, email: str, password: str) -> None:
+    """Meldet einen Nutzer über das Login-Formular des Servers unter ``base_url`` an."""
+    page.goto(f"{base_url}/accounts/login/")
+    wait_for_bundle(page)
+    page.fill("input[name=email]", email)
+    page.fill("input[name=password]", password)
+    page.click("button[type=submit]")
+    page.wait_for_load_state("networkidle")
+
+
 @pytest.fixture
 def login(page: Any, live_server: Any) -> Callable[[str, str], None]:
     """Meldet einen Nutzer über das Login-Formular an (prüft dabei Alpine/Vite im Browser)."""
 
     def do_login(email: str, password: str) -> None:
-        page.goto(f"{live_server.url}/accounts/login/")
-        wait_for_bundle(page)
-        page.fill("input[name=email]", email)
-        page.fill("input[name=password]", password)
-        page.click("button[type=submit]")
-        page.wait_for_load_state("networkidle")
+        login_via_form(page, live_server.url, email, password)
 
     return do_login
+
+
+class AsgiLiveServer:
+    """
+    Daphne im Thread desselben Prozesses – für Kollaborationstests mit WebSockets.
+
+    Der Live-Server von pytest-django spricht nur WSGI; die Yjs-Kollaboration braucht
+    Channels über ASGI. Läuft der Server im Testprozess, reicht der In-Memory-Channel-Layer
+    (kein Redis): HTTP-Views (Reload-Broadcast nach POST-Speichern) und WebSocket-Consumer
+    teilen sich dieselbe Event-Loop des Reactors. Die Datenbank ist die Datei-SQLite aus
+    settings_test (bzw. die CI-Datenbank); die Server-Threads öffnen eigene Verbindungen,
+    darum laufen die E2E-Tests transaktional (siehe pytest_collection_modifyitems).
+    """
+
+    host = "localhost"
+
+    def __init__(self) -> None:
+        from daphne.server import Server
+        from django.contrib.staticfiles.handlers import ASGIStaticFilesHandler
+
+        from mandari.asgi import application
+
+        self._ready = threading.Event()
+        # Der Static-Handler bedient nur HTTP-Pfade unter STATIC_URL (über die Finder, wie der
+        # WSGI-Live-Server) und reicht alles andere – auch WebSockets – an den Router durch.
+        self._server = Server(
+            application=ASGIStaticFilesHandler(application),
+            endpoints=[f"tcp:port=0:interface={self.host}"],
+            signal_handlers=False,  # Signale gehören dem Hauptthread (pytest)
+            ready_callable=self._ready.set,
+        )
+        self._thread = threading.Thread(target=self._server.run, name="e2e-asgi-server", daemon=True)
+        self._thread.start()
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if self._ready.is_set() and self._server.listening_addresses:
+                break
+            if not self._thread.is_alive():
+                raise RuntimeError("ASGI-Testserver ist beim Start abgebrochen")
+            time.sleep(0.05)
+        else:
+            raise RuntimeError("ASGI-Testserver hat innerhalb von 15 s keinen Port geöffnet")
+        self.port: int = self._server.listening_addresses[0][1]
+
+    @property
+    def url(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+    def stop(self) -> None:
+        from twisted.internet import reactor
+
+        # Der Reactor läuft im Server-Thread; stop() muss von dort ausgeführt werden.
+        cast(Any, reactor).callFromThread(cast(Any, reactor).stop)
+        self._thread.join(timeout=10)
+
+
+@pytest.fixture(scope="session")
+def asgi_server(django_db_setup: Any) -> Iterator[AsgiLiveServer]:
+    """ASGI-Testserver (Daphne, In-Memory-Channel-Layer) – nur für Kollaborationstests."""
+    from channels.layers import InMemoryChannelLayer, get_channel_layer
+
+    # Ohne REDIS_URL wählt settings_test den In-Memory-Layer; mit Redis wäre der Server
+    # zwar lauffähig, der Test soll aber ausdrücklich ohne laufen (#289).
+    assert isinstance(get_channel_layer(), InMemoryChannelLayer), "Kollaborationstests erwarten den In-Memory-Layer"
+    server = AsgiLiveServer()
+    yield server
+    server.stop()
 
 
 @pytest.fixture
