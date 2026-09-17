@@ -187,6 +187,7 @@ NAME_PARAM_VALUES = {
 SKIP_PREFIXES = (
     "admin/",  # Django-Admin (eigene Test-Suite von Django)
     "media/",  # Datei-Serving (eigener Test: smoke_org_logo.py)
+    "health/ready/",  # Readiness-Probe: 503 ohne Elasticsearch/Redis ist hier korrekt (Tests: test_health.py)
     "__debug__",
 )
 # Suffix-Match (Namespace-Präfixe variieren, z.B. insight_core:insight:...)
