@@ -80,9 +80,12 @@ class EinmaligMixin:
     sperre: str = ""
     sperre_ttl: int = 3600
 
-    def add_arguments(self, parser: Any) -> None:
-        super().add_arguments(parser)  # type: ignore[misc]
+    def create_parser(self, prog_name: str, subcommand: str, **kwargs: Any) -> Any:
+        # Nicht über add_arguments: Das überschreiben die meisten Commands ohne super()-Aufruf,
+        # und die Option wäre still verschwunden. create_parser bleibt bei BaseCommand.
+        parser = super().create_parser(prog_name, subcommand, **kwargs)  # type: ignore[misc]
         parser.add_argument("--ohne-sperre", action="store_true", help="Singleton-Sperre ignorieren (Notfall).")
+        return parser
 
     def execute(self, *args: Any, **options: Any) -> Any:
         name = self.sperre or getattr(self, "_command_name", "") or type(self).__module__.rsplit(".", 1)[-1]
