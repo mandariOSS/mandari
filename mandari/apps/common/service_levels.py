@@ -122,6 +122,8 @@ def tls_hosts() -> list[str]:
 def zertifikat_restlaufzeit_tage(host: str, port: int = 443, timeout: float = 5.0) -> float:
     """Tage bis zum Ablauf des Zertifikats, das der Host per SNI ausliefert."""
     kontext = ssl.create_default_context()
+    # Die Vorgabe ließe noch TLS 1.0/1.1 zu; die eigenen Domains sprechen ohnehin nur TLS 1.2+.
+    kontext.minimum_version = ssl.TLSVersion.TLSv1_2
     with (
         socket.create_connection((host, port), timeout=timeout) as sock,
         kontext.wrap_socket(sock, server_hostname=host) as tls,
