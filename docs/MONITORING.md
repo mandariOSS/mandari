@@ -71,6 +71,14 @@ Handlungsempfehlung bei „User-Agent gesperrt“: den Betreiber ansprechen. Neu
 > Mit freundlichen Grüßen
 > <Name>, mandari
 
+## CSP-Verstoßmeldungen
+
+Die Report-Only-Policy (#172) meldet Verstöße an `/csp-report/`. Der Endpunkt gehört zur
+Anwendung, nicht zur Website: In der Caddy-Konfiguration muss der Pfad in der App-Pfadliste
+stehen (`Caddyfile`, Matcher `@mandari_app`), sonst landen die Meldungen auf der Marketing-
+Website (403). Auswertung: `journalctl CONTAINER_NAME=<app> | grep CSP-Verstoß` und die
+Metrik `mandari_csp_violations_total{directive}`; Limit 60 Meldungen je Adresse und Minute.
+
 ## Liveness und Readiness
 
 Zwei Endpunkte, zwei Fragen (Issue #231):
