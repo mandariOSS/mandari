@@ -8,11 +8,43 @@ Provides:
 - Role-based access control
 """
 
+import time
 from functools import wraps
+from typing import Any
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
+
+USER_TENANTS_MAX_AGE = 600
+USER_TENANTS_SESSION_KEY = "session_user_tenants"
+
+
+def user_tenants(request: Any) -> list[dict[str, str]]:
+    """
+    Aktive Mandanten des angemeldeten Nutzers für den Mandantenwechsel (slug, name).
+
+    Liegt in der ohnehin geladenen Login-Session und wird höchstens alle zehn Minuten
+    erneuert – so kostet die Seitenleiste keine zusätzliche Abfrage je Seitenaufruf
+    (Performance-Budgets). Neue Mitgliedschaften erscheinen spätestens nach zehn Minuten.
+    """
+    user = request.user
+    jetzt = time.time()
+    eintrag = request.session.get(USER_TENANTS_SESSION_KEY)
+    if (
+        not isinstance(eintrag, dict)
+        or eintrag.get("u") != str(user.pk)
+        or jetzt - float(eintrag.get("t", 0)) > USER_TENANTS_MAX_AGE
+    ):
+        liste = [
+            {"slug": slug, "name": name}
+            for slug, name in user.session_memberships.filter(is_active=True, tenant__is_active=True)
+            .order_by("tenant__name")
+            .values_list("tenant__slug", "tenant__name")
+        ]
+        eintrag = {"u": str(user.pk), "t": jetzt, "list": liste}
+        request.session[USER_TENANTS_SESSION_KEY] = eintrag
+    return list(eintrag["list"])
 
 
 class SessionPermissionChecker:
@@ -186,13 +218,8 @@ class SessionMixin(LoginRequiredMixin):
         context["tenant_slug"] = self.session_tenant.slug
         checker = SessionPermissionChecker(self.session_user)
         context["permission_checker"] = checker
-        # Mandantenwechsel (z. B. Bezirke mit gemeinsamer Leitstelle): alle aktiven Mandanten des Nutzers
-        context["user_tenants"] = [
-            m.tenant
-            for m in self.request.user.session_memberships.filter(is_active=True, tenant__is_active=True)
-            .select_related("tenant")
-            .order_by("tenant__name")
-        ]
+        # Mandantenwechsel (z. B. Bezirke mit gemeinsamer Leitstelle): aktive Mandanten des Nutzers
+        context["user_tenants"] = user_tenants(self.request)
 
         # Arbeitsvorrat-Badge (Issue #33): Anzahl zu prüfender Vorlagen
         if checker.has_permission("approve_papers"):
