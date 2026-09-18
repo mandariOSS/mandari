@@ -164,6 +164,13 @@ class Command(BaseCommand):
         self.counters: dict[str, int] = {}
         self.passwords: dict[str, str] = {}
 
+        # Berechtigungen sicherstellen, bevor Standardrollen entstehen: Sie stammen sonst nur aus einer
+        # Datenmigration und fehlen nach einem Datenbank-Flush (z. B. transaktionale Tests) – die
+        # Demo-Rollen hätten dann keine Rechte.
+        from apps.tenants.models import Permission
+
+        Permission.sync_permissions()
+
         with transaction.atomic():
             body = self._setup_insight()
             org = self._setup_work(body)
