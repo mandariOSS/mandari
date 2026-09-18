@@ -1,4 +1,5 @@
 {% extends "work/base_work.html" %}
+{% load permission_tags %}
 
 {% block page_title %}Mitglied einladen{% endblock %}
 
@@ -61,7 +62,7 @@
                 </label>
                 {% empty %}
                 <div class="col-span-2 p-4 text-center text-gray-500">
-                    Keine Rollen verfügbar. <a href="{% url 'work:roles' org_slug=organization.slug %}" class="text-primary-600 hover:underline">Rollen verwalten</a>
+                    Keine Rollen verfügbar.{% if membership|has_perm:"organization.manage_roles" %} <a href="{% url 'work:roles' org_slug=organization.slug %}" class="text-primary-600 hover:underline">Rollen verwalten</a>{% endif %}
                 </div>
                 {% endfor %}
             </div>

@@ -17,6 +17,7 @@ from ..models import (
     OParlPaper,
 )
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._withdrawn import withdrawn_response
 
 # =============================================================================
 # Vorgänge (Papers)
@@ -89,12 +90,19 @@ class PaperDetailView(DetailView):
     template_name = "pages/papers/detail.html"
     context_object_name = "paper"
 
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if self.object.withdrawn_by_publisher:
+            return withdrawn_response(request, self.object)
+        context = self.get_context_data(object=self.object)
+        return self.render_to_response(context)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         paper = self.object
 
-        # Alle Dateien
-        files = paper.files.all()
+        # Alle Dateien (zurückgenommene Anlagen aus Session nie)
+        files = [f for f in paper.files.all() if not f.withdrawn_by_publisher]
         context["files"] = files
 
         # Dateien mit extrahiertem Text für Rohtext-Tab

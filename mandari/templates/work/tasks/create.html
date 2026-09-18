@@ -206,7 +206,8 @@
 
         <!-- Tags -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
-             x-data="{ tags: {{ form.tags.value|default:'[]'|safe }}, newTag: '' }">
+             x-data="{ tags: JSON.parse(document.getElementById('task-tags').textContent), newTag: '' }">
+            {{ form.tags_list|json_script:"task-tags" }}
             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Tags</h3>
 
             <div class="flex flex-wrap gap-2 mb-3">
@@ -249,7 +250,7 @@
 </div>
 {% endblock %}
 
-{% block extra_js %}
+{% block extra_scripts %}
 <script nonce="{{ csp_nonce }}">
 function assignmentHandler() {
     return {

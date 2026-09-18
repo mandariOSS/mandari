@@ -45,6 +45,15 @@ def _parse_date(value):
         return None
 
 
+def _parse_number(value):
+    """Nummer der Wahlperiode (Platzhalter {wp} in Nummernkreisen, Issue #150)."""
+    try:
+        zahl = int(value)
+    except (TypeError, ValueError):
+        return None
+    return zahl if 0 < zahl < 100 else None
+
+
 def term_date_filter(term, field="date"):
     """Q-Filter: Datumsfeld liegt im Zeitraum der Periode (für Vorlagen u. Ä.)."""
     q = Q()
@@ -108,10 +117,12 @@ class TermSaveView(SessionViewMixin, View):
             term.name = name
             term.start_date = start_date
             term.end_date = end_date
+            term.number = _parse_number(request.POST.get("number"))
             term.save()
             messages.success(request, f"Wahlperiode „{term.name}“ wurde aktualisiert.")
         else:
             term = SessionLegislativeTerm.objects.create(
+                number=_parse_number(request.POST.get("number")),
                 tenant=self.session_tenant,
                 name=name,
                 start_date=start_date,
@@ -186,6 +197,7 @@ class TermChangeView(SessionViewMixin, View):
             old_term.save(update_fields=["end_date", "updated_at"])
 
         new_term = SessionLegislativeTerm.objects.create(
+            number=_parse_number(request.POST.get("number")),
             tenant=self.session_tenant,
             name=name,
             start_date=start_date,

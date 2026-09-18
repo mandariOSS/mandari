@@ -186,6 +186,13 @@ class SessionMixin(LoginRequiredMixin):
         context["tenant_slug"] = self.session_tenant.slug
         checker = SessionPermissionChecker(self.session_user)
         context["permission_checker"] = checker
+        # Mandantenwechsel (z. B. Bezirke mit gemeinsamer Leitstelle): alle aktiven Mandanten des Nutzers
+        context["user_tenants"] = [
+            m.tenant
+            for m in self.request.user.session_memberships.filter(is_active=True, tenant__is_active=True)
+            .select_related("tenant")
+            .order_by("tenant__name")
+        ]
 
         # Arbeitsvorrat-Badge (Issue #33): Anzahl zu prüfender Vorlagen
         if checker.has_permission("approve_papers"):

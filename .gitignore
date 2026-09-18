@@ -265,3 +265,6 @@ mandari/tests_e2e/screenshots/
 
 # SBOM-Ausgabe von scripts/build_sbom.sh (Release-Anhang, nicht versioniert)
 sbom/
+
+# Von Smoke-Skripten erzeugte Medienverzeichnisse
+smoke_*_media/

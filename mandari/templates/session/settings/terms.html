@@ -49,6 +49,11 @@
                                class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                     </div>
                     <div>
+                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" title="Für Drucksachennummern wie 22-0593 (Platzhalter {wp})">Nr.</label>
+                        <input type="number" name="number" value="{{ term.number|default_if_none:'' }}" min="1" max="99"
+                               class="w-20 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    <div>
                         <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Beginn</label>
                         <input type="date" name="start_date" value="{{ term.start_date|date:'Y-m-d' }}"
                                class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
@@ -102,6 +107,11 @@
                        class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
             </div>
             <div>
+                <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" title="Für Drucksachennummern wie 22-0593 (Platzhalter {wp})">Nr.</label>
+                <input type="number" name="number" min="1" max="99" placeholder="22"
+                       class="w-20 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            </div>
+            <div>
                 <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Beginn</label>
                 <input type="date" name="start_date"
                        class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
@@ -142,6 +152,11 @@
                     <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Name der neuen Periode</label>
                     <input type="text" name="name" required placeholder="z. B. Wahlperiode 2025–2030"
                            class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" title="Für Drucksachennummern wie 22-0593 (Platzhalter {wp})">Nr.</label>
+                    <input type="number" name="number" min="1" max="99" placeholder="22"
+                           class="w-20 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Beginn (Stichtag)</label>

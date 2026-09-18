@@ -22,7 +22,6 @@ from ..models import (
     SessionApplication,
     SessionOrganization,
     SessionPaper,
-    SessionTenant,
 )
 from ..permissions import SessionViewMixin
 
@@ -168,29 +167,21 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
                 paper_id=existing.id,
             )
 
-        # Vorlage mit fortlaufendem Aktenzeichen anlegen; der Mandanten-Lock
-        # verhindert doppelte Nummern bei parallelen Umwandlungen
-        with transaction.atomic():
-            SessionTenant.objects.select_for_update().get(pk=self.session_tenant.pk)
-            paper = SessionPaper.objects.create(
-                tenant=self.session_tenant,
-                reference=SessionPaper.next_reference(self.session_tenant),
-                name=application.title,
-                paper_type="motion",
-                main_text=application.justification,
-                resolution_text=application.resolution_proposal,
-                is_public=True,
-                date=timezone.now().date(),
-                main_organization_id=request.POST.get("main_organization") or None,
-                source_application=application,
-                created_by=self.session_user,
+        # Vorlage anlegen; die Nummer vergibt der Nummernkreis atomar beim Speichern (Issue #150)
+        from ..services.numbering_service import NumberingError
+
+        try:
+            with transaction.atomic():
+                paper = self._create_paper(request, application)
+        except NumberingError as exc:
+            messages.error(request, f"Umwandlung nicht möglich: {exc}")
+            return redirect(
+                "session:application_detail", tenant_slug=self.session_tenant.slug, application_id=application.id
             )
-            application.status = "converted"
-            application.save(update_fields=["status", "updated_at"])
 
         messages.success(
             request,
-            f'Antrag wurde in Vorlage "{paper.reference}" umgewandelt.',
+            f"Antrag wurde in eine Vorlage umgewandelt – {self.session_tenant.reference_label} {paper.display_reference}.",
         )
 
         return redirect(
@@ -198,3 +189,28 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
             tenant_slug=self.session_tenant.slug,
             paper_id=paper.id,
         )
+
+    #: Antragsart → Vorlagenart (bestimmt den Nummernkreis, z. B. „AN/…“ für Anträge der Politik)
+    PAPER_TYPE_FOR = {"inquiry": "inquiry", "amendment": "amendment", "resolution": "resolution"}
+
+    def _create_paper(self, request, application):
+        paper = SessionPaper.objects.create(
+            tenant=self.session_tenant,
+            name=application.title,
+            paper_type=self.PAPER_TYPE_FOR.get(application.application_type, "motion"),
+            main_text=application.justification,
+            resolution_text=application.resolution_proposal,
+            is_public=True,
+            date=timezone.localdate(),
+            main_organization_id=request.POST.get("main_organization") or None,
+            source_application=application,
+            created_by=self.session_user,
+            # Ein angenommener Antrag der Politik ist sofort Drucksache und beratungsfähig –
+            # anders als eine Verwaltungsvorlage durchläuft er keinen Freigabelauf.
+            status="approved",
+            approved_by=self.session_user,
+            approved_at=timezone.now(),
+        )
+        application.status = "converted"
+        application.save(update_fields=["status", "updated_at"])
+        return paper

@@ -13,6 +13,7 @@ als Ausbaustufe.
 """
 
 import logging
+from typing import Any
 
 from django.contrib import messages
 from django.db.models import Q
@@ -44,6 +45,79 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # PAPERS
 # =============================================================================
+
+
+class PaperNumberingFormMixin:
+    """
+    Vorlagennummer im Formular (Issue #150): Die Nummer vergibt der Nummernkreis. Nach der
+    Vergabe ist sie unveränderlich; vorher dürfen nur Einstellungsberechtigte eine Nummer
+    von Hand setzen (Altbestand aus einem Vorsystem). Der Status wechselt über den Freigabelauf,
+    nicht über das Bearbeiten-Formular.
+    """
+
+    #: Status, die im Bearbeiten-Formular zusätzlich zum aktuellen wählbar sind
+    MANUELLE_STATUS = ("withdrawn", "completed")
+
+    def _prepare_numbering(self, form: Any) -> Any:
+        instance = form.instance
+        if "reference" in form.fields:
+            if instance.reference or not self.has_permission("manage_settings"):
+                del form.fields["reference"]
+            else:
+                feld = form.fields["reference"]
+                feld.required = False
+                feld.label = self.session_tenant.reference_label
+                feld.help_text = "Leer lassen für die automatische Vergabe – nur für Altbestände ausfüllen."
+        if "status" in form.fields:
+            erlaubt = {instance.status, *self.MANUELLE_STATUS}
+            if instance.status == "withdrawn":
+                erlaubt.add("draft")
+            feld = form.fields["status"]
+            feld.choices = [(wert, text) for wert, text in feld.choices if wert in erlaubt]
+        return form
+
+    def _numbering_context(self, context: dict[str, Any]) -> dict[str, Any]:
+        from ..services import numbering_service
+
+        paper = getattr(self, "object", None)
+        typ = paper.paper_type if paper else "proposal"
+        rng = numbering_service.range_for(self.session_tenant, typ)
+        context["reference_label"] = self.session_tenant.reference_label
+        if rng is None:
+            context["numbering_hint"] = "Für diese Vorlagenart ist kein Nummernkreis eingerichtet."
+        elif rng.assign_on == "release":
+            context["numbering_hint"] = (
+                f"Die Nummer wird bei der Freigabe vergeben (Nummernkreis „{rng.name}“, "
+                f"nächste {numbering_service.preview(rng, paper)})."
+            )
+        else:
+            context["numbering_hint"] = (
+                f"Die Nummer wird beim Speichern vergeben (Nummernkreis „{rng.name}“, "
+                f"nächste {numbering_service.preview(rng, paper)})."
+            )
+        return context
+
+    def _save_with_numbering(self, form: Any, erfolg: str) -> Any:
+        from ..services.numbering_service import NumberingError
+
+        ref = (form.cleaned_data.get("reference") or "").strip()
+        if (
+            ref
+            and SessionPaper.objects.filter(tenant=self.session_tenant, reference=ref)
+            .exclude(pk=form.instance.pk)
+            .exists()
+        ):
+            form.add_error("reference", f"{self.session_tenant.reference_label} {ref} ist bereits vergeben.")
+            return self.form_invalid(form)
+        try:
+            response = super().form_valid(form)
+        except NumberingError as exc:
+            form.add_error(None, str(exc))
+            return self.form_invalid(form)
+        messages.success(
+            self.request, f"{erfolg} {self.session_tenant.reference_label}: {self.object.display_reference}."
+        )
+        return response
 
 
 def _active_text_blocks(tenant, categories=("resolution", "general")):
@@ -141,6 +215,7 @@ class PaperDetailView(SessionViewMixin, DetailView):
             "created_by__user",
             "approved_by__user",
             "source_application",
+            "parent_paper",
         )
 
     def get_context_data(self, **kwargs):
@@ -196,10 +271,68 @@ class PaperDetailView(SessionViewMixin, DetailView):
                 meetings = meetings.filter(is_public=True)
             context["consultation_meetings"] = meetings.select_related("organization").order_by("start")[:200]
 
+        # Bezüge (Issue #150): Unternummern wie Ergänzung, Neufassung, Antwort
+        children = paper.child_papers.order_by("sub_number", "created_at")
+        if not self.has_permission("view_non_public_papers"):
+            children = children.filter(is_public=True)
+        context["child_papers"] = list(children)
+        context["relation_choices"] = SessionPaper.RELATION_CHOICES
+        context["can_create_papers"] = self.has_permission("create_papers")
         return context
 
 
-class PaperCreateView(SessionViewMixin, CreateView):
+class PaperChildCreateView(SessionViewMixin, View):
+    """
+    Unternummer anlegen (Issue #150): Ergänzung, Neufassung, Änderungsantrag, Antwort oder
+    Beschlussempfehlung zu einer Vorlage. Die neue Vorlage bekommt sofort die Unternummer der
+    Bezugsvorlage (z. B. 22-0593.1) und öffnet sich zur Bearbeitung.
+    """
+
+    http_method_names = ["post"]
+    permission_required = "create_papers"
+
+    def post(self, request, tenant_slug, paper_id):
+        from ..services.numbering_service import ART_JE_BEZUG, NumberingError
+
+        qs = SessionPaper.objects.filter(tenant=self.session_tenant)
+        if not self.has_permission("view_non_public_papers"):
+            qs = qs.filter(is_public=True)
+        parent = get_object_or_404(qs, pk=paper_id)
+        relation = request.POST.get("relation_type", "")
+        labels = dict(SessionPaper.RELATION_CHOICES)
+        if relation not in labels:
+            messages.error(request, "Bitte die Art des Bezugs wählen.")
+            return redirect("session:paper_detail", tenant_slug=tenant_slug, paper_id=parent.id)
+        if not parent.reference:
+            messages.error(
+                request,
+                f"Die Bezugsvorlage hat noch keine {self.session_tenant.reference_label} – "
+                "Unternummern entstehen erst danach.",
+            )
+            return redirect("session:paper_detail", tenant_slug=tenant_slug, paper_id=parent.id)
+        try:
+            child = SessionPaper.objects.create(
+                tenant=self.session_tenant,
+                parent_paper=parent,
+                relation_type=relation,
+                name=f"{labels[relation]} zu {parent.reference}: {parent.name}"[:500],
+                paper_type=ART_JE_BEZUG.get(relation, parent.paper_type),
+                is_public=parent.is_public,
+                main_organization=parent.main_organization,
+                lead_department=parent.lead_department,
+                date=timezone.localdate(),
+                created_by=self.session_user,
+            )
+        except NumberingError as exc:
+            messages.error(request, str(exc))
+            return redirect("session:paper_detail", tenant_slug=tenant_slug, paper_id=parent.id)
+        messages.success(
+            request, f"{labels[relation]} angelegt – {self.session_tenant.reference_label} {child.display_reference}."
+        )
+        return redirect("session:paper_edit", tenant_slug=tenant_slug, paper_id=child.id)
+
+
+class PaperCreateView(PaperNumberingFormMixin, SessionViewMixin, CreateView):
     """Create a new paper."""
 
     model = SessionPaper
@@ -225,7 +358,7 @@ class PaperCreateView(SessionViewMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["text_blocks"] = _active_text_blocks(self.session_tenant)
-        return context
+        return self._numbering_context(context)
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
@@ -241,13 +374,12 @@ class PaperCreateView(SessionViewMixin, CreateView):
         form.fields["lead_department"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True, organization_type="department"
         )
-        return form
+        return self._prepare_numbering(form)
 
     def form_valid(self, form):
         form.instance.tenant = self.session_tenant
         form.instance.created_by = self.session_user
-        messages.success(self.request, "Vorlage wurde erstellt.")
-        return super().form_valid(form)
+        return self._save_with_numbering(form, "Vorlage wurde erstellt.")
 
     def get_success_url(self):
         return reverse(
@@ -356,17 +488,26 @@ class PaperWorkflowView(SessionViewMixin, View):
             if chain_count:
                 messages.success(
                     request,
-                    f"Vorlage {paper.reference} wurde zur Freigabe vorgelegt "
+                    f"Vorlage {paper.display_reference} wurde zur Freigabe vorgelegt "
                     f"({chain_count} Mitzeichnung(en) erforderlich).",
                 )
             else:
-                messages.success(request, f"Vorlage {paper.reference} wurde zur Freigabe vorgelegt.")
+                messages.success(request, f"Vorlage {paper.display_reference} wurde zur Freigabe vorgelegt.")
 
         elif action == "approve":
+            from ..services.numbering_service import NumberingError
+
             paper.approved_by = self.session_user
             paper.approved_at = timezone.now()
-            paper.save()  # Audit: approve-Aktion über Signal
-            messages.success(request, f"Vorlage {paper.reference} wurde freigegeben.")
+            try:
+                paper.save()  # Audit: approve-Aktion über Signal; vergibt ggf. die Nummer (Issue #150)
+            except NumberingError as exc:
+                messages.error(request, f"Freigabe nicht möglich: {exc}")
+                return self._redirect(paper)
+            messages.success(
+                request,
+                f"Vorlage wurde freigegeben – {self.session_tenant.reference_label} {paper.display_reference}.",
+            )
 
         elif action == "reject":
             comment = request.POST.get("comment", "").strip()
@@ -385,7 +526,7 @@ class PaperWorkflowView(SessionViewMixin, View):
                 },
             )
             self._notify_creator(paper, comment)
-            messages.success(request, f"Vorlage {paper.reference} wurde mit Anmerkungen zurückgewiesen.")
+            messages.success(request, f"Vorlage {paper.display_reference} wurde mit Anmerkungen zurückgewiesen.")
 
         return self._redirect(paper)
 
@@ -421,19 +562,19 @@ class PaperWorkflowView(SessionViewMixin, View):
         )
         body = (
             f"Guten Tag,\n\n"
-            f"die Vorlage {paper.reference} „{paper.name}“ wurde zur Freigabe vorgelegt.\n\n"
+            f"die Vorlage {paper.display_reference} „{paper.name}“ wurde zur Freigabe vorgelegt.\n\n"
             f"Zur Vorlage: {self._absolute_url(detail_path)}\n\n"
             f"Mit freundlichen Grüßen\n{self.session_tenant.name}"
         )
         try:
             send_email(
-                subject=f"Vorlage zur Freigabe: {paper.reference}",
+                subject=f"Vorlage zur Freigabe: {paper.display_reference}",
                 body=body,
                 to=recipients,
                 fail_silently=False,
             )
         except Exception:
-            logger.exception("Freigabe-Benachrichtigung für %s konnte nicht versendet werden.", paper.reference)
+            logger.exception("Freigabe-Benachrichtigung für %s konnte nicht versendet werden.", paper.pk)
 
     def _notify_creator(self, paper, comment):
         from apps.common.email import send_email
@@ -447,20 +588,20 @@ class PaperWorkflowView(SessionViewMixin, View):
         )
         body = (
             f"Guten Tag,\n\n"
-            f"die Vorlage {paper.reference} „{paper.name}“ wurde in der Prüfung zurückgewiesen.\n\n"
+            f"die Vorlage {paper.display_reference} „{paper.name}“ wurde in der Prüfung zurückgewiesen.\n\n"
             + (f"Anmerkung: {comment}\n\n" if comment else "")
             + f"Zur Vorlage: {self._absolute_url(detail_path)}\n\n"
             f"Mit freundlichen Grüßen\n{self.session_tenant.name}"
         )
         try:
             send_email(
-                subject=f"Vorlage zurückgewiesen: {paper.reference}",
+                subject=f"Vorlage zurückgewiesen: {paper.display_reference}",
                 body=body,
                 to=[creator_email],
                 fail_silently=False,
             )
         except Exception:
-            logger.exception("Zurückweisungs-Benachrichtigung für %s konnte nicht versendet werden.", paper.reference)
+            logger.exception("Zurückweisungs-Benachrichtigung für %s konnte nicht versendet werden.", paper.pk)
 
     @staticmethod
     def _absolute_url(path):
@@ -470,7 +611,7 @@ class PaperWorkflowView(SessionViewMixin, View):
         return f"{base_url}{path}"
 
 
-class PaperUpdateView(SessionViewMixin, UpdateView):
+class PaperUpdateView(PaperNumberingFormMixin, SessionViewMixin, UpdateView):
     """Update a paper."""
 
     model = SessionPaper
@@ -498,7 +639,7 @@ class PaperUpdateView(SessionViewMixin, UpdateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["text_blocks"] = _active_text_blocks(self.session_tenant)
-        return context
+        return self._numbering_context(context)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -521,11 +662,25 @@ class PaperUpdateView(SessionViewMixin, UpdateView):
         form.fields["lead_department"].queryset = SessionOrganization.objects.filter(
             tenant=self.session_tenant, is_active=True, organization_type="department"
         )
-        return form
+        return self._prepare_numbering(form)
 
     def form_valid(self, form):
-        messages.success(self.request, "Vorlage wurde aktualisiert.")
-        return super().form_valid(form)
+        # Ö→NÖ: Steht die Vorlage noch auf einem öffentlichen TOP, erschiene ihr Betreff dort weiter
+        if "is_public" in form.changed_data and not form.instance.is_public:
+            offen = list(
+                form.instance.agenda_items.filter(is_public=True)
+                .select_related("meeting")
+                .order_by("meeting__start")[:3]
+            )
+            if offen:
+                tops = ", ".join(f"TOP {i.number} ({i.meeting.name})" for i in offen)
+                form.add_error(
+                    "is_public",
+                    f"Die Vorlage steht noch auf öffentlichen Tagesordnungspunkten: {tops}. "
+                    "Bitte zuerst diese TOPs auf nicht-öffentlich stellen.",
+                )
+                return self.form_invalid(form)
+        return self._save_with_numbering(form, "Vorlage wurde aktualisiert.")
 
     def get_success_url(self):
         return reverse(

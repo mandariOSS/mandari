@@ -52,6 +52,13 @@ jobs:
       - name: Template-Kommentare prüfen (kein mehrzeiliges {# … #})
         run: python scripts/check_template_comments.py mandari/templates
 
+      # Django verwirft Bloecke, die keine Vorlage der Kette definiert, stillschweigend; das Skript
+      # darin kommt nie im Browser an (Dokument-Import, Aufgabe anlegen: 09/2026).
+      - name: Template-Bloecke und Alpine-Komponenten vollstaendig
+        run: |
+          python scripts/check_template_blocks.py
+          python scripts/check_alpine_components.py
+
       - name: Upload-Stellen mit gemeinsamer Pruefung (Issue 260)
         run: python scripts/check_upload_validation.py
 

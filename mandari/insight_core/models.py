@@ -6,6 +6,7 @@ Migriert von SQLAlchemy zu Django ORM.
 """
 
 import uuid
+from typing import Any
 
 from django.core.validators import FileExtensionValidator
 from django.db import models
@@ -41,7 +42,7 @@ class SourceDeletionModel(models.Model):
     class Meta:
         abstract = True
 
-    def mark_deleted(self, when=None):
+    def mark_deleted(self, when: Any = None) -> None:
         """Markiert das Objekt als in der Quelle gelöscht (idempotent).
 
         ``oparl_modified`` wird auf den Löschzeitpunkt gesetzt, damit der
@@ -56,6 +57,18 @@ class SourceDeletionModel(models.Model):
         self.deleted_at = when or timezone.now()
         self.oparl_modified = self.deleted_at
         self.save(update_fields=["deleted", "deleted_at", "oparl_modified", "updated_at"])
+
+    @property
+    def withdrawn_by_publisher(self) -> bool:
+        """
+        Von mandari Session selbst zurückgenommen (nicht-öffentlich gestellt oder gelöscht).
+
+        Fremde Ratsinformationssysteme: Gelöschtes bleibt aus Transparenzgründen mit Hinweis
+        sichtbar. Eigene Session-Daten dagegen verlassen die Öffentlichkeit vollständig – eine
+        Ö→NÖ-Umstellung darf im Bürgerportal keinen Inhalt mehr zeigen.
+        """
+        ext = getattr(self, "external_id", "") or ""
+        return bool(self.deleted) and "/session/" in ext and "/api/oparl/" in ext
 
 
 class OParlSource(models.Model):

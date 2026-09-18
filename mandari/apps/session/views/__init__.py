@@ -111,6 +111,7 @@ from .monthly_allowances import (
     MonthlyRateSaveView,
     MonthlySepaExportView,
 )
+from .numbering import NumberingSaveView, NumberingSettingsView
 from .organizations import (
     OrganizationCreateView,
     OrganizationDeactivateView,
@@ -119,6 +120,7 @@ from .organizations import (
     OrganizationUpdateView,
 )
 from .papers import (
+    PaperChildCreateView,
     PaperCreateView,
     PaperDetailView,
     PaperListView,
@@ -305,6 +307,9 @@ __all__ = [
     "OrganizationListView",
     "OrganizationUpdateView",
     "PaperCreateView",
+    "NumberingSaveView",
+    "NumberingSettingsView",
+    "PaperChildCreateView",
     "PaperDetailView",
     "PaperListView",
     "PaperReviewListView",

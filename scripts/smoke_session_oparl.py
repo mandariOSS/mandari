@@ -157,13 +157,19 @@ meeting_np = SessionMeeting.objects.create(
 )
 
 paper = SessionPaper.objects.create(
-    tenant=tenant, reference="V/2026/0100", name="OEFFENTLICHE-VORLAGE-SPIELPLATZ", is_public=True
+    tenant=tenant, reference="V/2026/0100", name="OEFFENTLICHE-VORLAGE-SPIELPLATZ", is_public=True, status="approved"
 )
 paper_np = SessionPaper.objects.create(
     tenant=tenant, reference="V/2026/0101", name="GEHEIME-GRUNDSTUECKSVORLAGE", is_public=False
 )
-paper2 = SessionPaper.objects.create(tenant=tenant, reference="V/2026/0102", name="ZWEITE-VORLAGE", is_public=True)
-paper3 = SessionPaper.objects.create(tenant=tenant, reference="V/2026/0103", name="DRITTE-VORLAGE", is_public=True)
+paper2 = SessionPaper.objects.create(
+    tenant=tenant, reference="V/2026/0102", name="ZWEITE-VORLAGE", is_public=True, status="approved"
+)
+paper3 = SessionPaper.objects.create(
+    tenant=tenant, reference="V/2026/0103", name="DRITTE-VORLAGE", is_public=True, status="completed"
+)
+# Entwurf: öffentlich markiert, aber noch nicht freigegeben – darf nicht in der API erscheinen
+SessionPaper.objects.create(tenant=tenant, reference="V/2026/0104", name="ENTWURF-NOCH-INTERN", is_public=True)
 
 top_pub = SessionAgendaItem.objects.create(
     meeting=meeting_pub,
@@ -259,6 +265,7 @@ SessionPaper.objects.create(tenant=tenant_b, reference="V/9", name="FREMD-VORLAG
 BASE = f"/session/{tenant.slug}/api/oparl/"
 
 NON_PUBLIC_MARKERS = [
+    "ENTWURF-NOCH-INTERN",
     "GEHEIME-SONDERSITZUNG",
     "GEHEIMER-TOP-PERSONALIE",
     "GEHEIME-GRUNDSTUECKSVORLAGE",

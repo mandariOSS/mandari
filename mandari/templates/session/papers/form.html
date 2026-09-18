@@ -29,26 +29,18 @@
 
         <form method="post" class="p-6 space-y-6">
             {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-300" role="alert">
+                {% for e in form.non_field_errors %}{{ e }}{% endfor %}
+            </div>
+            {% endif %}
 
             <!-- Grunddaten -->
             <div>
                 <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Grunddaten</h2>
 
                 <div class="grid sm:grid-cols-2 gap-4">
-                    <!-- Aktenzeichen -->
-                    <div>
-                        <label for="id_reference" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Aktenzeichen *
-                        </label>
-                        <input type="text" name="reference" id="id_reference"
-                               value="{{ form.reference.value|default:'' }}"
-                               required
-                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                               placeholder="z.B. V/2026/0042">
-                        {% if form.reference.errors %}
-                        <p class="mt-1 text-sm text-red-600">{{ form.reference.errors.0 }}</p>
-                        {% endif %}
-                    </div>
+                    {% include "session/papers/_reference_field.html" %}
 
                     <!-- Vorlagentyp -->
                     <div>
@@ -257,6 +249,9 @@
                     <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 ml-7">
                         Öffentliche Vorlagen werden über die OParl-API veröffentlicht.
                     </p>
+                    {% if form.is_public.errors %}
+                    <p class="mt-1 text-sm text-red-600 ml-7" role="alert">{{ form.is_public.errors.0 }}</p>
+                    {% endif %}
                 </div>
             </div>
 

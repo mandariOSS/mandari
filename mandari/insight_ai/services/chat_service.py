@@ -97,7 +97,7 @@ def build_rag_context(query: str, body_id: str | None) -> tuple[str, list[dict]]
         # Build context snippet
         snippet_parts = [f"### {title}"]
         if hit.get("reference"):
-            snippet_parts.append(f"Aktenzeichen: {hit['reference']}")
+            snippet_parts.append(f"Vorlagen-Nr.: {hit['reference']}")
         if hit.get("paper_type"):
             snippet_parts.append(f"Typ: {hit['paper_type']}")
         if hit.get("date") or hit.get("start"):

@@ -295,8 +295,9 @@ def _build_world() -> World:
     meeting_np = SessionMeeting.objects.create(
         tenant=tenant_a, name="GEHEIME-SITZUNG-A", organization=org_a, start=now, is_public=False
     )
+    # Öffentlich heißt auch freigegeben: Entwürfe erscheinen nicht in der OParl-API
     paper_pub = SessionPaper.objects.create(
-        tenant=tenant_a, reference="V/2026/1001", name="OEFFENTLICHE-VORLAGE-A", is_public=True
+        tenant=tenant_a, reference="V/2026/1001", name="OEFFENTLICHE-VORLAGE-A", is_public=True, status="approved"
     )
     paper_np = SessionPaper.objects.create(
         tenant=tenant_a, reference="V/2026/1002", name="GEHEIME-VORLAGE-A", is_public=False

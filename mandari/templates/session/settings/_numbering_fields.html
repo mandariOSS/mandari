@@ -1,0 +1,53 @@
+{% comment %}
+Formularfelder eines Nummernkreises (Issue #150). Kontext: rng (oder None für neu), paper_types,
+reset_choices, assign_choices. Feld-IDs sind je Kreis eindeutig.
+{% endcomment %}
+{% with fid=rng.id|default:"neu" %}
+<div>
+    <label for="name-{{ fid }}" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bezeichnung</label>
+    <input type="text" id="name-{{ fid }}" name="name" value="{{ rng.name|default:'' }}" required maxlength="100"
+           class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+</div>
+<div>
+    <label for="pattern-{{ fid }}" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Muster</label>
+    <input type="text" id="pattern-{{ fid }}" name="pattern" value="{{ rng.pattern|default:'V/{jahr}/{lfd:4}' }}" required maxlength="100"
+           class="w-full px-3 py-2 text-sm font-mono border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+</div>
+<div>
+    <label for="reset-{{ fid }}" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Zähler zurücksetzen</label>
+    <select id="reset-{{ fid }}" name="reset" class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+        {% for value, label in reset_choices %}<option value="{{ value }}" {% if rng.reset == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+</div>
+<div>
+    <label for="assign-{{ fid }}" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Nummer vergeben</label>
+    <select id="assign-{{ fid }}" name="assign_on" class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+        {% for value, label in assign_choices %}<option value="{{ value }}" {% if rng.assign_on == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+</div>
+<div>
+    <label for="prefix-{{ fid }}" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Präfix ({prefix})</label>
+    <input type="text" id="prefix-{{ fid }}" name="prefix" value="{{ rng.prefix|default:'' }}" maxlength="20"
+           class="w-full px-3 py-2 text-sm font-mono border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+</div>
+<div>
+    <label for="sub-{{ fid }}" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Unternummern</label>
+    <input type="text" id="sub-{{ fid }}" name="sub_pattern" value="{{ rng.sub_pattern|default:'{parent}.{sub}' }}" required maxlength="60"
+           class="w-full px-3 py-2 text-sm font-mono border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+</div>
+<fieldset class="sm:col-span-2">
+    <legend class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Vorlagenarten (keine Auswahl = alle ohne eigenen Kreis)</legend>
+    <div class="flex flex-wrap gap-x-4 gap-y-1">
+        {% for value, label in paper_types %}
+        <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300">
+            <input type="checkbox" name="paper_types" value="{{ value }}" {% if value in rng.paper_types %}checked{% endif %} class="rounded text-primary-600">
+            {{ label }}
+        </label>
+        {% endfor %}
+    </div>
+</fieldset>
+<label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+    <input type="checkbox" name="is_active" {% if not rng or rng.is_active %}checked{% endif %} class="rounded text-primary-600">
+    Aktiv
+</label>
+{% endwith %}

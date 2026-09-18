@@ -18,6 +18,7 @@ Security:
 
 import uuid
 from decimal import Decimal
+from typing import Any
 
 from django.conf import settings
 from django.db import models
@@ -101,6 +102,14 @@ class SessionTenant(models.Model):
         default=False,
         verbose_name="Umsetzungsstand im Bürgerportal veröffentlichen",
         help_text="Zeigt den Umsetzungsstand öffentlicher, angenommener Beschlüsse in Insight („Was wurde aus …?“)",
+    )
+    # Bezeichnung der Vorlagennummer in Oberfläche und Dokumenten (Nummernkreise, Issue #150):
+    # „Drucksache“ (Hamburger Bezirke), „Vorlagen-Nr.“ (NRW-Kommunen) …
+    reference_label = models.CharField(
+        max_length=40,
+        default="Vorlagen-Nr.",
+        verbose_name="Bezeichnung der Vorlagennummer",
+        help_text="z. B. „Drucksache“ oder „Vorlagen-Nr.“",
     )
     # Zwei-Faktor-Pflicht für alle Nutzer (Admins und Nutzer mit Verwaltungsrechten sind immer verpflichtet)
     require_2fa = models.BooleanField(
@@ -1282,6 +1291,105 @@ class SessionResolutionForwarding(models.Model):
 # =============================================================================
 
 
+class SessionNumberRange(models.Model):
+    """
+    Nummernkreis für Vorlagen bzw. Drucksachen eines Mandanten (Issue #150).
+
+    Das Muster setzt sich aus Platzhaltern zusammen (siehe
+    ``services/numbering_service.py``): ``{wp}-{lfd:4}`` ergibt „22-0593“ (Hamburger
+    Bezirke), ``V/{lfd:4}/{jahr}`` ergibt „V/0599/2024“ (Münster). Der Zähler läuft je
+    Zählerbereich (Jahr, Wahlperiode oder nie zurückgesetzt) und wird atomar in
+    ``SessionNumberCounter`` hochgezählt. Ein Kreis ohne ``paper_types`` gilt für alle
+    Vorlagenarten, für die kein spezieller Kreis existiert.
+    """
+
+    RESET_CHOICES = [
+        ("yearly", "Jährlich"),
+        ("term", "Je Wahlperiode"),
+        ("never", "Nie (fortlaufend)"),
+    ]
+    ASSIGN_CHOICES = [
+        ("create", "Beim Anlegen"),
+        ("release", "Bei der Freigabe"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="number_ranges",
+        verbose_name="Mandant",
+    )
+    name = models.CharField(
+        max_length=100, verbose_name="Bezeichnung", help_text="z. B. Drucksachen, Anträge der Politik"
+    )
+    prefix = models.CharField(
+        max_length=20, blank=True, verbose_name="Präfix", help_text="Wert des Platzhalters {prefix}"
+    )
+    pattern = models.CharField(
+        max_length=100,
+        default="V/{jahr}/{lfd:4}",
+        verbose_name="Muster",
+        help_text="Platzhalter: {lfd} bzw. {lfd:4}, {jahr}, {jj}, {wp}, {prefix}, {gremium}",
+    )
+    reset = models.CharField(max_length=10, choices=RESET_CHOICES, default="yearly", verbose_name="Zähler zurücksetzen")
+    assign_on = models.CharField(
+        max_length=10, choices=ASSIGN_CHOICES, default="create", verbose_name="Nummer vergeben"
+    )
+    paper_types = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Vorlagenarten",
+        help_text="Leer = alle Vorlagenarten ohne eigenen Nummernkreis",
+    )
+    sub_pattern = models.CharField(
+        max_length=60,
+        default="{parent}.{sub}",
+        verbose_name="Muster für Unternummern",
+        help_text="Ergänzungen, Neufassungen, Antworten: Platzhalter {parent} und {sub} bzw. {sub:2}",
+    )
+    order = models.PositiveSmallIntegerField(default=0, verbose_name="Reihenfolge")
+    is_active = models.BooleanField(default=True, verbose_name="Aktiv")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_number_ranges"
+        verbose_name = "Nummernkreis"
+        verbose_name_plural = "Nummernkreise"
+        ordering = ["order", "name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.pattern})"
+
+
+class SessionNumberCounter(models.Model):
+    """Stand eines Nummernkreises je Zählerbereich (z. B. „2026“ oder „wp22“); nur aufsteigend."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    number_range = models.ForeignKey(
+        SessionNumberRange,
+        on_delete=models.CASCADE,
+        related_name="counters",
+        verbose_name="Nummernkreis",
+    )
+    scope = models.CharField(max_length=120, blank=True, verbose_name="Zählerbereich")
+    value = models.PositiveIntegerField(default=0, verbose_name="Zuletzt vergeben")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "session_number_counters"
+        verbose_name = "Zählerstand"
+        verbose_name_plural = "Zählerstände"
+        constraints = [
+            models.UniqueConstraint(fields=["number_range", "scope"], name="uniq_session_number_counter_scope"),
+        ]
+
+    def __str__(self):
+        return f"{self.number_range.name} [{self.scope or '–'}]: {self.value}"
+
+
 class SessionPaper(EncryptionMixin, models.Model):
     """
     Paper/Vorlage within Session RIS.
@@ -1307,12 +1415,34 @@ class SessionPaper(EncryptionMixin, models.Model):
         verbose_name="OParl-Vorlage",
     )
 
-    # Reference
+    # Vorlagen- bzw. Drucksachennummer. Vergabe über den Nummernkreis (Issue #150), danach
+    # unveränderlich; leer, solange die Vergabe noch aussteht (z. B. „bei Freigabe“).
     reference = models.CharField(
         max_length=100,
-        verbose_name="Aktenzeichen",
-        help_text="z.B. V/2024/0001",
+        blank=True,
+        verbose_name="Vorlagennummer",
+        help_text="Wird automatisch aus dem Nummernkreis vergeben, z. B. 22-0593 oder V/0599/2024",
     )
+    reference_assigned_at = models.DateTimeField(null=True, blank=True, verbose_name="Nummer vergeben am")
+
+    # Unternummern (Issue #150): Ergänzung, Neufassung, Antwort … zu einer Bezugsvorlage
+    RELATION_CHOICES = [
+        ("supplement", "Ergänzung"),
+        ("revision", "Neufassung"),
+        ("amendment", "Änderungsantrag"),
+        ("answer", "Antwort/Stellungnahme"),
+        ("recommendation", "Beschlussempfehlung"),
+    ]
+    parent_paper = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="child_papers",
+        verbose_name="Bezugsvorlage",
+    )
+    relation_type = models.CharField(max_length=20, choices=RELATION_CHOICES, blank=True, verbose_name="Art des Bezugs")
+    sub_number = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Unternummer")
 
     # Basic info
     name = models.CharField(max_length=500, verbose_name="Betreff")
@@ -1323,6 +1453,10 @@ class SessionPaper(EncryptionMixin, models.Model):
             ("report", "Mitteilungsvorlage"),
             ("motion", "Antrag"),
             ("inquiry", "Anfrage"),
+            ("major_inquiry", "Große Anfrage"),
+            ("answer", "Antwort/Stellungnahme"),
+            ("recommendation", "Beschlussempfehlung"),
+            ("amendment", "Änderungsantrag"),
             ("resolution", "Resolution"),
             ("bylaw", "Satzung"),
             ("budget", "Haushalt"),
@@ -1447,28 +1581,44 @@ class SessionPaper(EncryptionMixin, models.Model):
         verbose_name = "Vorlage"
         verbose_name_plural = "Vorlagen"
         ordering = ["-date", "-created_at"]
-        unique_together = ["tenant", "reference"]
+        constraints = [
+            # Eindeutig je Mandant, sobald vergeben; mehrere Entwürfe ohne Nummer sind erlaubt
+            models.UniqueConstraint(
+                fields=["tenant", "reference"],
+                condition=~models.Q(reference=""),
+                name="uniq_session_paper_reference",
+            ),
+            models.UniqueConstraint(
+                fields=["parent_paper", "sub_number"],
+                condition=models.Q(sub_number__isnull=False),
+                name="uniq_session_paper_sub_number",
+            ),
+        ]
 
     def __str__(self):
-        return f"{self.reference}: {self.name}"
+        return f"{self.reference or 'ohne Nummer'}: {self.name}"
 
-    @classmethod
-    def next_reference(cls, tenant, year: int | None = None) -> str:
-        """Nächstes freies Aktenzeichen ``V/<Jahr>/<laufende Nummer>`` je Mandant.
+    @property
+    def display_reference(self) -> str:
+        """Nummer für die Anzeige; vor der Vergabe ein klarer Hinweis statt eines leeren Felds."""
+        return self.reference or "Nummer folgt"
 
-        Aufrufer sperren den Mandanten in einer Transaktion
-        (``SessionTenant.objects.select_for_update()``), damit parallele
-        Vergaben keine doppelten Nummern erzeugen.
-        """
-        year = year or timezone.now().year
-        prefix = f"V/{year}/"
-        max_num = 0
-        for ref in cls.objects.filter(tenant=tenant, reference__startswith=prefix).values_list("reference", flat=True):
-            try:
-                max_num = max(max_num, int(ref.rsplit("/", 1)[-1]))
-            except (TypeError, ValueError):
-                continue
-        return f"{prefix}{max_num + 1:04d}"
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        # Nummernvergabe (Issue #150) in derselben Transaktion wie das Speichern: scheitert das
+        # Speichern, wird auch der Zähler zurückgesetzt – keine verbrannten Nummern.
+        if self.reference:
+            super().save(*args, **kwargs)
+            return
+        from django.db import transaction
+
+        from .services import numbering_service
+
+        with transaction.atomic():
+            if numbering_service.assign_if_due(self):
+                update_fields = kwargs.get("update_fields")
+                if update_fields is not None:
+                    kwargs["update_fields"] = {*update_fields, "reference", "reference_assigned_at", "sub_number"}
+            super().save(*args, **kwargs)
 
     def get_encryption_organization(self):
         """Return tenant for encryption."""
@@ -1679,8 +1829,7 @@ class SessionLegislativeTerm(models.Model):
     Wahlperiode eines Mandanten (Issue #35).
 
     Wird in der Session-OParl-API als ``legislativeTerm`` am Body
-    ausgeliefert. Pflege über den Django-Admin (Systemebene) — eine
-    eigene Portal-UI folgt bei Bedarf.
+    ausgeliefert. Pflege unter Einstellungen → Wahlperioden.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1692,6 +1841,13 @@ class SessionLegislativeTerm(models.Model):
     )
 
     name = models.CharField(max_length=255, verbose_name="Name", help_text="z. B. Wahlperiode 2025–2030")
+    # Nummer der Wahlperiode für Drucksachennummern wie „22-0593“ (Platzhalter {wp}, Issue #150)
+    number = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Nummer",
+        help_text="z. B. 22 für die 22. Wahlperiode; Grundlage des Platzhalters {wp} in Nummernkreisen",
+    )
     start_date = models.DateField(blank=True, null=True, verbose_name="Beginn")
     end_date = models.DateField(blank=True, null=True, verbose_name="Ende")
 

@@ -117,6 +117,21 @@ post_save.connect(
 )
 
 
+def tenant_numbering_post_save(sender, instance, created, **kwargs):
+    """Neuer Mandant bekommt sofort einen Nummernkreis – Vorlagen sind nie ohne klare Nummer (Issue #150)."""
+    if created and not kwargs.get("raw"):
+        from apps.session.services import numbering_service
+
+        numbering_service.ensure_default(instance)
+
+
+post_save.connect(
+    tenant_numbering_post_save,
+    sender=SessionTenant,
+    dispatch_uid="session_tenant_numbering_post_save",
+)
+
+
 # =============================================================================
 # Beratungsfolge (Issue #34): Beschlussergebnis an die Station zurückschreiben
 # =============================================================================

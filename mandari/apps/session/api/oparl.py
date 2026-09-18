@@ -233,7 +233,7 @@ def _visible_consultation(item):
         consultation = item.consultation
     except SessionConsultation.DoesNotExist:
         return None
-    if consultation is None or not consultation.paper.is_public:
+    if consultation is None or not pub._is_published(consultation.paper):
         return None
     return consultation
 
@@ -388,7 +388,7 @@ def serialize_consultation(api, consultation):
 def serialize_file(api, file_obj, include_text=False):
     download = api.file_download_url(file_obj.id)
     refs = {}
-    if file_obj.paper_id and file_obj.paper.is_public:
+    if file_obj.paper_id and pub._is_published(file_obj.paper):
         refs["paper"] = [api.obj_url("paper", file_obj.paper_id)]
     if file_obj.meeting_id and file_obj.meeting.is_public:
         refs["meeting"] = [api.obj_url("meeting", file_obj.meeting_id)]

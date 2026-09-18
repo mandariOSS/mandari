@@ -44,7 +44,7 @@ def build_paper_summary_user_prompt(
     Args:
         paper_name: Name of the paper/document
         paper_type: Type of paper (e.g., "Antrag", "Vorlage")
-        reference: Reference number (Aktenzeichen)
+        reference: Reference number (Vorlagen-/Drucksachennummer)
         date: Date of the paper
         text_content: Combined text content from all files
         body_name: Name of the municipality (e.g., "Stadt Münster")
@@ -63,7 +63,7 @@ def build_paper_summary_user_prompt(
     if paper_type:
         metadata_lines.append(f"**Dokumenttyp:** {paper_type}")
     if reference:
-        metadata_lines.append(f"**Aktenzeichen:** {reference}")
+        metadata_lines.append(f"**Vorlagen-Nr.:** {reference}")
     if date:
         metadata_lines.append(f"**Datum:** {date}")
 

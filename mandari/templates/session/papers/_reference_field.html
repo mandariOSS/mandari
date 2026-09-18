@@ -1,0 +1,29 @@
+{% comment %}
+Vorlagennummer im Vorlagenformular (Issue #150). Kontext: form, object, reference_label, numbering_hint.
+Das Feld erscheint nur, solange noch keine Nummer vergeben ist und der Nutzer Einstellungsrechte hat.
+{% endcomment %}
+<div data-testid="vorlagennummer">
+    {% if form.reference %}
+    <label for="id_reference" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        {{ reference_label }} <span class="font-normal text-gray-400">(optional)</span>
+    </label>
+    <input type="text" name="reference" id="id_reference"
+           value="{{ form.reference.value|default:'' }}"
+           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+           aria-describedby="reference-hint"
+           placeholder="automatisch">
+    <p id="reference-hint" class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ numbering_hint }} Nur für Altbestände von Hand ausfüllen.</p>
+    {% if form.reference.errors %}
+    <p class="mt-1 text-sm text-red-600">{{ form.reference.errors.0 }}</p>
+    {% endif %}
+    {% else %}
+    <p class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ reference_label }}</p>
+    {% if object.reference %}
+    <p class="px-4 py-2 rounded-lg bg-gray-50 dark:bg-gray-900 font-mono text-gray-900 dark:text-white">{{ object.reference }}</p>
+    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Vergeben am {{ object.reference_assigned_at|date:"d.m.Y"|default:"–" }}; eine vergebene Nummer bleibt unverändert.</p>
+    {% else %}
+    <p class="px-4 py-2 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400">wird automatisch vergeben</p>
+    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ numbering_hint }}</p>
+    {% endif %}
+    {% endif %}
+</div>

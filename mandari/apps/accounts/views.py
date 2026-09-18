@@ -180,6 +180,16 @@ class LoginView(View):
                 first_org = active_memberships.first().organization
                 return f"/work/{first_org.slug}/"
 
+        # Verwaltungsnutzer ohne Fraktion: direkt in den (ersten) Session-Mandanten statt ins Bürgerportal
+        session_membership = (
+            request.user.session_memberships.filter(is_active=True, tenant__is_active=True)
+            .select_related("tenant")
+            .order_by("tenant__name")
+            .first()
+        )
+        if session_membership:
+            return f"/session/{session_membership.tenant.slug}/"
+
         # Fallback to home
         return "/"
 

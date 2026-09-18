@@ -12,7 +12,7 @@
         Vorlagen
     </a>
     <span class="text-gray-400">/</span>
-    <span class="text-gray-900 dark:text-white font-medium truncate max-w-[200px]">{{ paper.reference }}</span>
+    <span class="text-gray-900 dark:text-white font-medium truncate max-w-[200px]">{{ paper.display_reference }}</span>
 </nav>
 {% endblock %}
 
@@ -28,7 +28,7 @@
                 </div>
                 <div class="flex-1">
                     <div class="flex items-center gap-2 mb-1">
-                        <span class="text-sm font-mono text-gray-500 dark:text-gray-400">{{ paper.reference }}</span>
+                        <span class="text-sm font-mono font-semibold text-gray-700 dark:text-gray-200" data-testid="vorlagennummer">{{ session_tenant.reference_label }} {{ paper.display_reference }}</span>
                         <span class="inline-block px-2.5 py-1 text-xs font-medium rounded-full
                             {% if paper.status == 'draft' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400
                             {% elif paper.status == 'review' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-400
@@ -278,8 +278,8 @@
                     </dd>
                 </div>
                 <div>
-                    <dt class="text-gray-500 dark:text-gray-400">Aktenzeichen</dt>
-                    <dd class="font-medium font-mono text-gray-900 dark:text-white mt-1">{{ paper.reference }}</dd>
+                    <dt class="text-gray-500 dark:text-gray-400">{{ session_tenant.reference_label }}</dt>
+                    <dd class="font-medium font-mono text-gray-900 dark:text-white mt-1">{{ paper.display_reference }}</dd>
                 </div>
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400">Typ</dt>
@@ -363,6 +363,8 @@
                 {% endif %}
             </dl>
         </div>
+
+        {% include "session/papers/_relations.html" %}
 
         <!-- Quelle -->
         {% if paper.source_application %}

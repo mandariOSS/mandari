@@ -58,10 +58,13 @@
                         <option value="">Keine Vorlage</option>
                         {% for paper in form.paper.field.queryset %}
                         <option value="{{ paper.id }}" {% if form.paper.value|stringformat:"s" == paper.id|stringformat:"s" %}selected{% endif %}>
-                            {{ paper.reference }} — {{ paper.name|truncatechars:40 }}
+                            {{ paper.display_reference }} — {{ paper.name|truncatechars:40 }}{% if not paper.is_public %} (nicht-öffentlich){% endif %}
                         </option>
                         {% endfor %}
                     </select>
+                    {% if form.paper.errors %}
+                    <p class="mt-1 text-sm text-red-600" role="alert">{{ form.paper.errors.0 }}</p>
+                    {% endif %}
                 </div>
 
                 <!-- Übergeordneter TOP -->
@@ -86,6 +89,9 @@
 
             <!-- Ö/NÖ -->
             <div>
+                {% if form.is_public.errors %}
+                <p class="mb-2 text-sm text-red-600" role="alert">{{ form.is_public.errors.0 }}</p>
+                {% endif %}
                 <div class="flex items-center gap-3">
                     <input type="checkbox" name="is_public" id="id_is_public"
                            {% if form.is_public.value %}checked{% endif %}
