@@ -9,7 +9,7 @@ die echten SMTP-Backends (ohne Netz) mit der Test-Konfiguration, in der MAILERS 
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.core.cache import cache
@@ -59,10 +59,10 @@ def test_sitesettings_backend_ohne_argumente_wie_ueber_mailers(settings: Any) ->
         "use_ssl": True,
         "timeout": 9,
     }
-    backend = SiteSettingsEmailBackend()
+    backend = cast(Any, SiteSettingsEmailBackend)()
     assert (backend.host, backend.port, backend.use_ssl, backend.timeout) == ("smtp.fallback.example", 465, True, 9)
     settings.DEBUG = False
-    assert ConsoleOrSiteSettingsBackend().host == "smtp.fallback.example"
+    assert cast(Any, ConsoleOrSiteSettingsBackend)().host == "smtp.fallback.example"
 
 
 @pytest.mark.django_db
@@ -73,11 +73,16 @@ def test_send_email_ueber_sitesettings_smtp(settings: Any, monkeypatch: pytest.M
     site.email_host = "smtp.site.example"
     site.email_port = 587
     site.email_backend = SMTP_BACKEND
-    site.save()
+    cast(Any, site).save()
     gesendet: list[EmailMessage] = []
     monkeypatch.setattr(SMTPEmailBackend, "open", lambda self: True)
     monkeypatch.setattr(SMTPEmailBackend, "close", lambda self: None)
-    monkeypatch.setattr(SMTPEmailBackend, "send_messages", lambda self, msgs: gesendet.extend(msgs) or len(msgs))
+
+    def merken(self: Any, msgs: list[EmailMessage]) -> int:
+        gesendet.extend(msgs)
+        return len(msgs)
+
+    monkeypatch.setattr(SMTPEmailBackend, "send_messages", merken)
 
     assert email_modul.send_email("Betreff", "Text", ["ziel@example.org"]) is True
     assert len(gesendet) == 1 and gesendet[0].to == ["ziel@example.org"]
