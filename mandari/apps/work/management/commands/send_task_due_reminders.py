@@ -53,7 +53,7 @@ class Command(EinmaligMixin, BaseCommand):
         days_ahead = options["days_ahead"]
         dry_run = options["dry_run"]
 
-        today = timezone.now().date()
+        today = timezone.localdate()  # Kalendertag in Europe/Berlin, nicht UTC (nach Mitternacht sonst Vortag)
         horizon = today + timedelta(days=days_ahead)
 
         due_tasks = (
