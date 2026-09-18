@@ -39,8 +39,12 @@ class SiteSettingsEmailBackend(SMTPBackend):
         for key in ("host", "port", "username", "password", "use_tls", "use_ssl", "timeout"):
             if kwargs.get(key) is None:
                 kwargs[key] = config.get(key)
+        # Alle Optionen müssen gesetzt sein: Für None liest Django settings.EMAIL_*, das es neben
+        # MAILERS nicht mehr gibt (Deploy-Rückfall 18.09.2026, Issue #80).
+        from apps.common.mail_backends import LAUFZEIT_ALIAS, smtp_options
 
-        super().__init__(**kwargs)
+        kwargs.setdefault("alias", LAUFZEIT_ALIAS)  # über MAILERS kommt "default" herein
+        super().__init__(**smtp_options(**kwargs))
 
         # Log configuration (without password)
         logger.debug(
