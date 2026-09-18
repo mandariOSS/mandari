@@ -193,6 +193,16 @@ def connect_with_token(organization, raw_token: str, membership):
         raise SubmissionError("Dieser Token erlaubt keine Antragseinreichung.")
     if not token.tenant.is_active:
         raise SubmissionError("Die zugehörige Verwaltung ist deaktiviert.")
+    # Ein Token gehört genau einer Organisation: Die Verwaltung stellt je Fraktion einen eigenen aus
+    if (
+        AdministrationConnection.objects.filter(token_hash=hashed, is_active=True)
+        .exclude(organization=organization)
+        .exists()
+    ):
+        raise SubmissionError(
+            "Dieser Token ist bereits mit einer anderen Organisation verbunden. Bitte bei der Verwaltung "
+            "einen eigenen Token anfordern."
+        )
 
     connection, _ = AdministrationConnection.objects.update_or_create(
         organization=organization,
