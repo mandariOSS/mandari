@@ -6,7 +6,7 @@ aus den geladenen Rollen, Gäste nie mit Rechten – auch nicht mit einer Admin-
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -44,5 +44,5 @@ def test_gast_mit_admin_rolle_hat_keine_rechte(org: Any, make_member: Any) -> No
 def test_rollenwechsel_wirkt_sofort(org: Any, make_member: Any) -> None:
     mitglied = make_member(org, ["motions.view"])
     assert not mitglied.has_permission("organization.edit")
-    mitglied.roles.add(RoleFactory(organization=org, permissions=["organization.edit"]))
+    mitglied.roles.add(cast(Any, RoleFactory)(organization=org, permissions=["organization.edit"]))
     assert mitglied.has_permission("organization.edit")
