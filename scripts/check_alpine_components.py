@@ -35,9 +35,9 @@ XDATA_RE = re.compile(r"""x-data\s*=\s*["']\s*([A-Za-z_$][\w$]*)\s*(?=[("'])""")
 EXTENDS_RE = re.compile(r"""{%\s*extends\s+["']([^"']+)["']""")
 INCLUDE_RE = re.compile(r"""{%\s*include\s+["']([^"']+)["']""")
 COTTON_RE = re.compile(r"<c-([\w.-]+)")
-COMMENT_RE = re.compile(r"{%\s*comment\s*%}.*?{%\s*endcomment\s*%}|{#.*?#}|<!--.*?-->", re.S)
+COMMENT_RE = re.compile(r"{%\s*comment\s*%}.*?{%\s*endcomment\s*%}|{#.*?#}|<!--.*?--!?>", re.S | re.I)
 BLOCK_RE = re.compile(r"{%-?\s*block\s+(\w+)\s*-?%}(.*?){%-?\s*endblock\b[^%]*%}", re.S)
-SCRIPT_RE = re.compile(r"<script\b[^>]*>(.*?)</script>", re.S)
+SCRIPT_RE = re.compile(r"<script\b[^>]*>(.*?)</script\b[^>]*>", re.S | re.I)
 
 
 def _definitionen(text: str) -> set[str]:
