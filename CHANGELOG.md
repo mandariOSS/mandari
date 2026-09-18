@@ -7,6 +7,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 ## [Unreleased]
 
 ### Hinzugefügt
+- Präsentationsumgebung `setup_demo_praesentation` (Profile `nrw`/`hamburg`): eine Drucksache von der Fraktion über den Sitzungsdienst bis ins Bürgerportal und die OParl-Schnittstelle – zweiter Demo-Mandant mit eigener Nummernfolge, Leitstelle mit Mandantenwechsel, verbundene Einreichung Work → Session, Beratungsfolge, Ö/NÖ-Tagesordnung, Abstimmung, Protokoll, Beschlusskontrolle und Sitzungsgeld im Vier-Augen-Prinzip; Mandant A wird im Prozess ins Bürgerportal gespiegelt, ein erneuter Lauf setzt die Probe zurück, `--reset` räumt auf; E2E-Test des Drehbuchs (`docs/DEMO_PRAESENTATION.md`).
 - Session: Nummernkreise für Vorlagen und Drucksachen mit Mustern (`{wp}-{lfd:4}`, `V/{lfd:4}/{jahr}`, `AN/…`), Zählerbereich je Jahr oder Wahlperiode, Vergabe beim Anlegen oder bei der Freigabe, Unternummern für Ergänzung/Neufassung/Antwort (`22-0593.1`), Presets für Hamburger Bezirke und NRW-Kommunen, Startwert für den Umstieg aus Altsystemen; Bezeichnung „Drucksache“/„Vorlagen-Nr.“ je Mandant (`docs/SESSION_NUMMERNKREISE.md`, #150).
 - Session: Mandantenwechsel in der Seitenleiste für Nutzer mehrerer Mandanten (z. B. Leitstelle für mehrere Bezirke); Verwaltungsnutzer landen nach dem Login direkt in ihrem Mandanten.
 - CI-Prüfungen gegen verwaiste Template-Blöcke und Alpine-Komponenten ohne Definition (`scripts/check_template_blocks.py`, `scripts/check_alpine_components.py`).
@@ -23,6 +24,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - E2E-Tests der Editor-Kollaboration mit zwei Browsern gegen einen ASGI-Testserver (#289).
 
 ### Geändert
+- Demo-Umgebung: `setup_demo_environment --reset` entfernt eine aufgesetzte Präsentationsumgebung mit (sonst bliebe der Bürgerportal-Spiegel als aktive Quelle ohne Mandant zurück); `docs/DEMO_ENVIRONMENT.md` an den Code angeglichen (vier Verwaltungsnutzer, Kommune nicht gelistet).
 - Session: Ö/NÖ wirkt sofort – ein TOP, eine Vorlage oder Anlage, die nicht-öffentlich wird, verschwindet im selben Moment aus dem Bürgerportal und zeigt dort keinen Inhalt mehr; Entwürfe erscheinen erst nach der Freigabe in der OParl-API; nicht-öffentliche Unterpunkte oder Vorlagen auf öffentlichen TOPs werden abgewiesen.
 - Django 6.1: Mailversand auf `MAILERS` umgestellt; SMTP-Zugänge aus SiteSettings und organisationseigenes SMTP werden zur Laufzeit als Backend aufgebaut (`apps/common/mail_backends.py`), die Umgebungsvariablen `EMAIL_*` bleiben (#80).
 - Session-Portal in der axe-Prüfung der CI (Dashboard, Sitzungen, Vorlagen); Filter beschriftet, Kontrast von Seitenleiste, Datumsbadge und Toast-Schließen-Button behoben (#44, #176).
@@ -36,6 +38,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Datenbankverbindungen laufen über einen Pool (#257).
 
 ### Behoben
+- Session: Beim Umwandeln eines Antrags in eine Vorlage wurden Titel und Vorlagenart aus dem Formular stillschweigend verworfen; die Vorlagenart ist jetzt nach der Antragsart vorausgewählt und bestimmt den Nummernkreis.
 - Work: Dokument-Import und „Aufgabe anlegen“ waren ohne Funktion (Skript im nicht existierenden Block `extra_js`); RIS-Karte brach mit JavaScript-Fehler ab; Rollen-Tab nur noch mit Berechtigung.
 - Editor: Speichern ohne Kollaborationsverbindung überschreibt keinen neueren Stand mehr still; Konflikthinweis mit „Neu laden“ / „Trotzdem speichern“ (#184).
 - Editor: Ein verbundener Client konnte nach der Reload-Aufforderung mit einem späten `yjs_save` den ohne Verbindung gespeicherten Stand überschreiben; Server und Client verwerfen ihn jetzt (#298).

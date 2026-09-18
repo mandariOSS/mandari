@@ -114,15 +114,11 @@
                         </label>
                         <select name="paper_type" id="id_paper_type"
                                 class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
-                            <option value="motion" selected>Antrag</option>
-                            <option value="proposal">Vorlage</option>
-                            <option value="report">Bericht</option>
-                            <option value="inquiry">Anfrage</option>
-                            <option value="resolution">Beschluss</option>
-                            <option value="bylaw">Satzung</option>
-                            <option value="budget">Haushalt</option>
-                            <option value="other">Sonstige</option>
+                            {% for value, label in paper_types %}
+                            <option value="{{ value }}" {% if value == paper_type %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
                         </select>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Die Vorlagenart bestimmt den Nummernkreis ({{ session_tenant.reference_label }}).</p>
                     </div>
 
                     <!-- Federführendes Gremium -->

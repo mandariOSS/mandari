@@ -21,7 +21,8 @@ angelegt. Ein wiederholter Lauf aktualisiert statt zu duplizieren.
 Die Passwörter der Demo-Nutzer werden bei JEDEM Lauf neu generiert und
 ausschließlich auf stdout ausgegeben (niemals gespeichert).
 
-Aufräumen: --reset entfernt sämtliche Demo-Daten (und nur diese) wieder.
+Aufräumen: --reset entfernt sämtliche Demo-Daten (und nur diese) wieder – einschließlich einer
+darauf aufgesetzten Präsentationsumgebung (setup_demo_praesentation).
 
 Verwendung:
     python manage.py setup_demo_environment
@@ -1262,6 +1263,12 @@ class Command(BaseCommand):
         from insight_core.models import OParlSource
 
         deleted = []
+
+        # Präsentationsumgebung zuerst: Mandant B, Leitstelle und Bürgerportal-Spiegel hängen an der
+        # Basisdemo und blieben sonst verwaist zurück (der Spiegel als aktive Quelle ohne Mandant)
+        from django.core.management import call_command
+
+        call_command("setup_demo_praesentation", "--reset", stdout=self.stdout)
 
         # Die Audit-Receiver erkennen die Mandanten-Kaskadenlöschung selbst
         # und überspringen das Protokollieren (Issue #56) — keine lokale

@@ -149,6 +149,8 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
         )
         context["application"] = application
         context["organizations"] = SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True)
+        context["paper_types"] = SessionPaper._meta.get_field("paper_type").choices
+        context["paper_type"] = self.PAPER_TYPE_FOR.get(application.application_type, "motion")
         return context
 
     def post(self, request, *args, **kwargs):
@@ -194,10 +196,14 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
     PAPER_TYPE_FOR = {"inquiry": "inquiry", "amendment": "amendment", "resolution": "resolution"}
 
     def _create_paper(self, request, application):
+        # Titel und Vorlagenart aus dem Formular; ohne gültige Angabe gelten Antragstitel und -art
+        paper_type = request.POST.get("paper_type", "")
+        if paper_type not in {wert for wert, _ in SessionPaper._meta.get_field("paper_type").flatchoices}:
+            paper_type = self.PAPER_TYPE_FOR.get(application.application_type, "motion")
         paper = SessionPaper.objects.create(
             tenant=self.session_tenant,
-            name=application.title,
-            paper_type=self.PAPER_TYPE_FOR.get(application.application_type, "motion"),
+            name=(request.POST.get("name") or "").strip()[:500] or application.title,
+            paper_type=paper_type,
             main_text=application.justification,
             resolution_text=application.resolution_proposal,
             is_public=True,
