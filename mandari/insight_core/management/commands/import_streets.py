@@ -6,10 +6,16 @@ Lädt alle benannten highway-Ways innerhalb der Kommunengrenze
 (osm_relation_id am OParlBody) über die Overpass-API und legt sie
 idempotent (Upsert per osm_id) als Street-Einträge ab.
 
+Mit ``--with-addresses`` werden zusätzlich die Hausnummern-Punkte
+(OSM-Objekte mit addr:street + addr:housenumber) als Address-Einträge
+importiert; die Georeferenzierung bevorzugt sie bei „Straße Hausnummer“
+im Text, das Nachbarschafts-Autocomplete schlägt sie vor (Issue #54).
+
 Verwendung:
     python manage.py import_streets --body muenster
     python manage.py import_streets --all
     python manage.py import_streets --body muenster --with-geometry
+    python manage.py import_streets --body muenster --with-addresses
 """
 
 import time
@@ -19,8 +25,8 @@ from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 
-from insight_core.models import OParlBody, Street
-from insight_core.services.gazetteer import normalize_street_name
+from insight_core.models import Address, OParlBody, Street
+from insight_core.services.gazetteer import normalize_house_number, normalize_street_name
 
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
@@ -34,8 +40,47 @@ HIGHWAY_FILTER = (
 )
 
 
+def parse_address_element(el: dict) -> dict | None:
+    """
+    Wandelt ein Overpass-Element mit addr:*-Tags in Address-Felder um.
+
+    Nodes tragen lat/lon direkt, Ways/Relations liefern über ``out center`` einen
+    Mittelpunkt. Ohne Straße, Hausnummer oder Koordinaten: None.
+    """
+    osm_type = el.get("type")
+    if osm_type not in ("node", "way", "relation"):
+        return None
+    tags = el.get("tags") or {}
+    street = (tags.get("addr:street") or "").strip()
+    house_number = (tags.get("addr:housenumber") or "").strip()
+    if not street or not house_number:
+        return None
+    if osm_type == "node":
+        lat, lon = el.get("lat"), el.get("lon")
+    else:
+        center = el.get("center") or {}
+        lat, lon = center.get("lat"), center.get("lon")
+    if lat is None or lon is None:
+        return None
+    normalized_street = normalize_street_name(street)
+    normalized_number = normalize_house_number(house_number)
+    if not normalized_street or not normalized_number:
+        return None
+    return {
+        "osm_type": osm_type,
+        "osm_id": int(el["id"]),
+        "street": street[:255],
+        "normalized_street": normalized_street[:255],
+        "house_number": house_number[:20],
+        "normalized_house_number": normalized_number[:20],
+        "postal_code": (tags.get("addr:postcode") or "").strip()[:20],
+        "latitude": lat,
+        "longitude": lon,
+    }
+
+
 class Command(BaseCommand):
-    help = "Importiert das Straßenverzeichnis einer Kommune aus OpenStreetMap (Overpass)."
+    help = "Importiert das Straßenverzeichnis (und optional Adressen) einer Kommune aus OpenStreetMap (Overpass)."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -55,6 +100,11 @@ class Command(BaseCommand):
             help="Zusätzlich die Way-Geometrie (LineString) speichern (größere Antwort)",
         )
         parser.add_argument(
+            "--with-addresses",
+            action="store_true",
+            help="Zusätzlich Hausnummern-Punkte (addr:street + addr:housenumber) als Adressen importieren",
+        )
+        parser.add_argument(
             "--timeout",
             type=int,
             default=180,
@@ -65,6 +115,7 @@ class Command(BaseCommand):
         body_id = options["body"]
         import_all = options["all"]
         with_geometry = options["with_geometry"]
+        with_addresses = options["with_addresses"]
         timeout = options["timeout"]
 
         if not body_id and not import_all:
@@ -91,6 +142,9 @@ class Command(BaseCommand):
             if i > 0:
                 time.sleep(5)  # Overpass-Rate-Limit zwischen Kommunen
             self._import_body(body, with_geometry, timeout)
+            if with_addresses and body.osm_relation_id:
+                time.sleep(5)
+                self._import_addresses(body, timeout)
 
     def _import_body(self, body, with_geometry: bool, timeout: int):
         if not body.osm_relation_id:
@@ -178,8 +232,72 @@ class Command(BaseCommand):
             )
         )
 
+    def _import_addresses(self, body, timeout: int):
+        """Hausnummern-Punkte (addr:*-Tags) der Kommune als Address-Einträge upserten."""
+        self.stdout.write(f"{body.get_display_name()}: lade Adressen (addr:*-Tags)...")
+        elements = self._fetch_overpass_addresses(body.osm_relation_id, timeout)
+        if elements is None:
+            self.stdout.write(self.style.ERROR("  Overpass-Abfrage (Adressen) fehlgeschlagen."))
+            return
+
+        existing = {(a.osm_type, a.osm_id): a for a in Address.objects.filter(body=body)}
+        to_create: list[Address] = []
+        to_update: list[Address] = []
+        skipped = 0
+        seen: set[tuple[str, int]] = set()
+        for el in elements:
+            parsed = parse_address_element(el)
+            if parsed is None:
+                skipped += 1
+                continue
+            key = (parsed["osm_type"], parsed["osm_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            address = existing.get(key)
+            if address:
+                for field, value in parsed.items():
+                    setattr(address, field, value)
+                to_update.append(address)
+            else:
+                to_create.append(Address(body=body, **parsed))
+
+        if to_create:
+            Address.objects.bulk_create(to_create, batch_size=1000, ignore_conflicts=True)
+        if to_update:
+            Address.objects.bulk_update(
+                to_update,
+                [
+                    "street",
+                    "normalized_street",
+                    "house_number",
+                    "normalized_house_number",
+                    "postal_code",
+                    "latitude",
+                    "longitude",
+                    "updated_at",
+                ],
+                batch_size=1000,
+            )
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"  {len(to_create)} Adressen neu, {len(to_update)} aktualisiert, {skipped} übersprungen "
+                f"— {Address.objects.filter(body=body).count()} Adressen im Verzeichnis."
+            )
+        )
+
+    def _fetch_overpass_addresses(self, relation_id: int, timeout: int):
+        area_id = 3600000000 + relation_id
+        query = (
+            f"[out:json][timeout:{timeout}];"
+            f"area({area_id})->.searchArea;"
+            'nwr["addr:housenumber"]["addr:street"](area.searchArea);'
+            "out tags center;"
+        )
+        return self._run_overpass(query, timeout)
+
     def _fetch_overpass(self, relation_id: int, with_geometry: bool, timeout: int):
-        """Overpass-Abfrage mit Endpoint-Fallback und Retry bei 429/504."""
+        """Overpass-Abfrage (Straßen) mit Endpoint-Fallback und Retry bei 429/504."""
         area_id = 3600000000 + relation_id
         output = "geom" if with_geometry else ""
         query = (
@@ -188,7 +306,10 @@ class Command(BaseCommand):
             f'way["highway"~"^({HIGHWAY_FILTER})$"]["name"](area.searchArea);'
             f"out tags center {output};"
         )
+        return self._run_overpass(query, timeout)
 
+    def _run_overpass(self, query: str, timeout: int):
+        """Overpass-Abfrage mit Endpoint-Fallback und Retry bei 429/504."""
         for endpoint in OVERPASS_ENDPOINTS:
             for attempt in range(3):
                 try:

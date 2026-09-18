@@ -1156,6 +1156,133 @@ class Street(models.Model):
         return f"{self.name} ({self.body.get_display_name()})"
 
 
+class Address(models.Model):
+    """Hausnummern-Punkte pro Kommune, importiert aus OpenStreetMap (addr:*-Tags).
+
+    Ergänzt das Straßenverzeichnis um Adresspunkte: Erkennt die Georeferenzierung
+    im Text „Straße Hausnummer“ und liegt die Adresse hier vor, wird ihr Punkt
+    statt des Straßen-Zentroids verwendet (Issue #54).
+    """
+
+    OSM_TYPE_CHOICES = [
+        ("node", "Node"),
+        ("way", "Way"),
+        ("relation", "Relation"),
+    ]
+
+    body = models.ForeignKey(
+        OParlBody,
+        on_delete=models.CASCADE,
+        related_name="addresses",
+        verbose_name="Kommune",
+    )
+    osm_type = models.CharField(max_length=8, choices=OSM_TYPE_CHOICES, default="node")
+    osm_id = models.BigIntegerField(help_text="OpenStreetMap-ID des Objekts mit addr:*-Tags")
+    street = models.CharField(max_length=255, verbose_name="Straße")
+    normalized_street = models.CharField(max_length=255, db_index=True)
+    house_number = models.CharField(max_length=20, verbose_name="Hausnummer")
+    # Kleinschreibung ohne Leerzeichen ("12 a" → "12a"), für den Abgleich mit Textfunden
+    normalized_house_number = models.CharField(max_length=20)
+    postal_code = models.CharField(max_length=20, blank=True, default="")
+
+    latitude = models.DecimalField(max_digits=10, decimal_places=7)
+    longitude = models.DecimalField(max_digits=10, decimal_places=7)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "insight_addresses"
+        verbose_name = "Adresse"
+        verbose_name_plural = "Adressen"
+        constraints = [
+            models.UniqueConstraint(fields=["body", "osm_type", "osm_id"], name="uniq_address_body_osm"),
+        ]
+        indexes = [
+            models.Index(
+                fields=["body", "normalized_street", "normalized_house_number"],
+                name="idx_address_body_street_hn",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.street} {self.house_number} ({self.body.get_display_name()})"
+
+
+class PaperLocation(models.Model):
+    """Eine Verortung eines Vorgangs als eigene, indexierbare Zeile.
+
+    Spiegelt die Einträge aus ``OParlPaper.locations`` (JSON, Anzeigeformat für
+    Karte und Detailseite) in eine Tabelle mit Index auf (Kommune, Breite, Länge).
+    Die Umkreissuche filtert damit per Bounding-Box statt per JSONB-Vollscan.
+    Zusätzlich trägt jede Zeile Herkunft und Prüfstatus für den Korrektur-Workflow
+    im Admin: Entfernte Verortungen legt der automatische Lauf nicht wieder an.
+    """
+
+    SOURCE_CHOICES = [
+        ("oparl", "OParl-Ort"),
+        ("address_match", "Adresse (Straßenverzeichnis)"),
+        ("street_match", "Straße (Straßenverzeichnis)"),
+        ("ai", "KI-Extraktion"),
+        ("manual", "Manuell"),
+    ]
+    STATUS_AUTO = "auto"
+    STATUS_CONFIRMED = "confirmed"
+    STATUS_REMOVED = "removed"
+    STATUS_CHOICES = [
+        (STATUS_AUTO, "Automatisch"),
+        (STATUS_CONFIRMED, "Bestätigt"),
+        (STATUS_REMOVED, "Entfernt"),
+    ]
+
+    paper = models.ForeignKey(
+        OParlPaper,
+        on_delete=models.CASCADE,
+        related_name="paper_locations",
+        verbose_name="Vorgang",
+    )
+    body = models.ForeignKey(
+        OParlBody,
+        on_delete=models.CASCADE,
+        related_name="paper_locations",
+        verbose_name="Kommune",
+    )
+    name = models.CharField(max_length=500, blank=True, default="", verbose_name="Ortsbezeichnung")
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="street_match", verbose_name="Herkunft")
+    confidence = models.FloatField(blank=True, null=True, verbose_name="Konfidenz")
+    latitude = models.FloatField(verbose_name="Breite")
+    longitude = models.FloatField(verbose_name="Länge")
+    status = models.CharField(
+        max_length=12,
+        choices=STATUS_CHOICES,
+        default=STATUS_AUTO,
+        db_index=True,
+        verbose_name="Prüfstatus",
+    )
+    reviewed_at = models.DateTimeField(blank=True, null=True, verbose_name="Geprüft am")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "insight_paper_locations"
+        verbose_name = "Verortung"
+        verbose_name_plural = "Verortungen"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["paper", "latitude", "longitude"],
+                name="uniq_paperloc_paper_point",
+            ),
+        ]
+        indexes = [
+            # Bounding-Box-Vorfilter der Umkreissuche: Kommune, dann Breite/Länge
+            models.Index(fields=["body", "latitude", "longitude"], name="idx_paperloc_body_lat_lon"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name or 'Verortung'} ({self.get_source_display()})"
+
+
 # =============================================================================
 # Tile Cache für performante Karten
 # =============================================================================
