@@ -203,6 +203,26 @@ _INSIGHT_MODELS = {
 }
 
 
+def sync_agenda_numbers_to_portal(tenant_id, nummern) -> int:
+    """
+    Neue TOP-Nummern sofort in den Bürgerportal-Spiegel schreiben (Gegenstück zur Rücknahme).
+
+    ``nummern``: Liste aus (TOP-ID, Nummer) öffentlicher TOPs. Der nächste reguläre Abgleich
+    schreibt dieselben Werte; bis dahin zeigt das Portal keine veraltete Nummerierung.
+    """
+    from insight_core.models import OParlAgendaItem
+
+    slug = SessionTenant.objects.filter(pk=tenant_id).values_list("slug", flat=True).first()
+    if slug is None:
+        return 0
+    anzahl = 0
+    for item_id, nummer in nummern:
+        anzahl += OParlAgendaItem.objects.filter(
+            external_id__endswith=f"/session/{slug}/api/oparl/agendaitem/{item_id}/", deleted=False
+        ).update(number=nummer)
+    return anzahl
+
+
 def retract_from_portal(tenant_id, kind, object_id) -> int:
     """
     Gespiegeltes Objekt im Bürgerportal sofort als zurückgenommen markieren.

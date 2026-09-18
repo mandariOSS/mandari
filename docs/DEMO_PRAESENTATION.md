@@ -113,9 +113,10 @@ Hinweise für die Vorführung:
 
 - Jede Rolle in einem eigenen Browserfenster bzw. Profil anmelden; das Bürgerportal in einem
   privaten Fenster ohne Anmeldung öffnen.
-- Die Rücknahme im Bürgerportal (Schritt 3) wirkt sofort. Die neue Nummerierung der übrigen
-  TOPs und die in Schritt 2 umgewandelte Vorlage erscheinen dort erst mit dem nächsten Abgleich
-  des Spiegels (Ingestor bzw. erneuter Befehlslauf).
+- Die Rücknahme im Bürgerportal (Schritt 3) wirkt sofort, ebenso die neue Nummerierung der
+  übrigen TOPs. Die in Schritt 2 umgewandelte Vorlage steht sofort in der OParl-Schnittstelle
+  (Schritt 4); im Bürgerportal erscheint sie mit dem nächsten Abgleich des Spiegels (Ingestor
+  alle 10 Minuten bzw. erneuter Befehlslauf).
 - Der Umsetzungsstand im Bürgerportal hängt an der mit dem Mandanten verknüpften Kommune der
   Basisdemo („Musterstadt (Demo)“), nicht an der gespiegelten. Der ausgegebene Beschluss-Link
   führt direkt dorthin.

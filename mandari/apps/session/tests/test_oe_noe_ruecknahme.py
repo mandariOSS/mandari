@@ -164,3 +164,20 @@ class TestOParlNurFreigegebenes:
         entwurf.status = "approved"
         entwurf.save()
         assert "ENTWURF-INTERN" in Client().get("/session/nord/api/oparl/papers/").content.decode()
+
+
+class TestNummernImPortal:
+    def test_neue_nummern_sofort_im_portal(self, welt: dict[str, Any], django_capture_on_commit_callbacks: Any) -> None:
+        zweiter = SessionAgendaItem.objects.create(meeting=welt["sitzung"], name="Spielplatz", number="2", order=2)
+        spiegel = OParlAgendaItem.objects.create(
+            external_id=f"{HOST}/session/nord/api/oparl/agendaitem/{zweiter.id}/",
+            meeting=welt["m"],
+            name="Spielplatz",
+            number="2",
+        )
+        with django_capture_on_commit_callbacks(execute=True):
+            welt["top"].is_public = False
+            welt["top"].save()
+            agenda_service.renumber_agenda(welt["sitzung"])
+        spiegel.refresh_from_db()
+        assert spiegel.number == "1"  # keine Lücke „2“ nach dem Wegfall von TOP 1
