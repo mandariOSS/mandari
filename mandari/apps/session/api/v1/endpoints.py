@@ -215,11 +215,15 @@ def submit_application(request: HttpRequest, tenant_slug: str, payload: Applicat
     if not principal.has_permission("submit_applications"):
         raise Problem(403, "Dieses Token darf keine Anträge einreichen.", kind="keine-berechtigung")
 
-    submitting_org = None
-    if payload.submitting_organization_id:
-        from apps.tenants.models import Organization
+    from apps.session.services.application_service import (
+        SubmittingOrganizationMismatchError,
+        submitting_organization_for_token,
+    )
 
-        submitting_org = Organization.objects.filter(id=payload.submitting_organization_id).first()
+    try:
+        submitting_org = submitting_organization_for_token(principal.token, payload.submitting_organization_id)
+    except SubmittingOrganizationMismatchError as exc:
+        raise Problem(403, str(exc), kind="keine-berechtigung") from exc
     target_org = None
     if payload.target_organization_id:
         with contextlib.suppress(SessionOrganization.DoesNotExist):

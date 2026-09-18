@@ -465,15 +465,16 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
                 status=400,
             )
 
-        # Get submitting organization (from Work module) - optional
-        submitting_org = None
-        if data.get("submitting_organization_id"):
-            try:
-                from apps.tenants.models import Organization
+        # Einreichende Organisation: nur die, die den Token in Work verbunden hat
+        from apps.session.services.application_service import (
+            SubmittingOrganizationMismatchError,
+            submitting_organization_for_token,
+        )
 
-                submitting_org = Organization.objects.get(id=data["submitting_organization_id"])
-            except (Organization.DoesNotExist, ImportError):
-                pass
+        try:
+            submitting_org = submitting_organization_for_token(api_token, data.get("submitting_organization_id"))
+        except SubmittingOrganizationMismatchError as exc:
+            return self.json_response({"error": str(exc)}, status=403)
 
         # Get target organization - optional
         target_org = None

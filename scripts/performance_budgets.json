@@ -46,17 +46,17 @@
   },
   "work_dashboard": {
     "beschreibung": "Work: Dashboard",
-    "abfragen": 37,
+    "abfragen": 33,
     "ms": 500
   },
   "work_dokumentliste": {
     "beschreibung": "Work: Dokumentliste",
-    "abfragen": 47,
+    "abfragen": 42,
     "ms": 500
   },
   "work_editor": {
     "beschreibung": "Work: Editor-Seite eines Antrags",
-    "abfragen": 53,
+    "abfragen": 46,
     "ms": 500
   }
 }

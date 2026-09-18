@@ -54,6 +54,12 @@ GUEST_ALLOWED = {
     "document_revision_detail",
     "profile",
     "security",
+    # Glocke/Benachrichtigungen: nur eigene (recipient=membership); Gäste erhalten In-App-Hinweise (#75)
+    "notifications",
+    "notifications_partial",
+    "notifications_mark_all_read",
+    "notification_count",
+    "notification_latest",
 }
 # Kein Org-Kontext (Redirect-Helfer bzw. öffentliche Einladungsannahme)
 SKIP = {"root", "accept_invitation"}

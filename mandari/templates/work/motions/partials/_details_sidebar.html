@@ -5,6 +5,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
          competent_members, approvals, approval_summary, my_pending_approval,
          approval_type_choices, can_edit, membership, organization
 {% endcomment %}
+{% load permission_tags %}
 <div class="flex-1 overflow-y-auto p-4 space-y-6">
 
     <!-- Zuständigkeit -->
@@ -84,7 +85,7 @@ Kontext: motion, org_members, org_topics, motion_topic_ids, contributor_ids,
         </div>
         {% else %}
         <p class="text-xs text-gray-400">Noch keine Themen im Katalog.
-            {% if membership %}<a href="{% url 'work:document_topic_list' org_slug=organization.slug %}" class="text-primary-600 hover:underline">Themen verwalten</a>{% endif %}
+            {% if membership|has_perm:"organization.edit" %}<a href="{% url 'work:document_topic_list' org_slug=organization.slug %}" class="text-primary-600 hover:underline">Themen verwalten</a>{% endif %}
         </p>
         {% endif %}
     </div>

@@ -6,6 +6,7 @@ This service provides the integration between Work module and Session RIS,
 enabling political organizations to submit applications (Anträge) directly.
 """
 
+from typing import Any
 from uuid import UUID
 
 from django.db import transaction
@@ -15,6 +16,35 @@ from apps.session.models import (
     SessionOrganization,
     SessionTenant,
 )
+
+
+class SubmittingOrganizationMismatchError(PermissionError):
+    """Die angegebene einreichende Organisation passt nicht zur Verbindung des Tokens."""
+
+
+def submitting_organization_for_token(token: Any, claimed_id: object = None) -> Any:
+    """
+    Einreichende Organisation eines API-Tokens.
+
+    Maßgeblich ist die Verbindung, die eine Organisation in Work mit diesem Token hergestellt
+    hat (``AdministrationConnection``). Eine in der Anfrage genannte Organisation wird nur
+    akzeptiert, wenn sie dazu passt – sonst könnte ein Tokeninhaber im Namen einer anderen
+    Fraktion einreichen. Ohne Verbindung wird keine Organisation zugeordnet.
+    """
+    from apps.work.motions.models import AdministrationConnection
+
+    connection = (
+        AdministrationConnection.objects.filter(token_hash=token.token, tenant=token.tenant, is_active=True)
+        .select_related("organization")
+        .first()
+    )
+    bound = connection.organization if connection else None
+    if claimed_id and (bound is None or str(bound.pk) != str(claimed_id)):
+        raise SubmittingOrganizationMismatchError(
+            "Die einreichende Organisation passt nicht zu diesem Token. Anträge werden der Organisation "
+            "zugeordnet, die den Token in mandari Work verbunden hat."
+        )
+    return bound
 
 
 class ApplicationService:

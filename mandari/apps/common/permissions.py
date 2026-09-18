@@ -1036,6 +1036,7 @@ class PermissionChecker:
         self.membership = membership
         self._permissions: set[str] = None
         self._denied: set[str] = None
+        self._admin: bool | None = None
 
     @property
     def permissions(self) -> set[str]:
@@ -1055,6 +1056,7 @@ class PermissionChecker:
         """Load permissions from membership."""
         self._permissions = set()
         self._denied = set()
+        self._admin = False
 
         # Gäste haben grundsätzlich KEINE Berechtigungen — sie sehen nur
         # explizit freigegebene Dokumente (MotionShare, scope=user).
@@ -1073,6 +1075,7 @@ class PermissionChecker:
         # Get role-based permissions
         for role in self.membership.roles.all():
             if role.is_admin:
+                self._admin = True
                 # Admin role grants all permissions
                 for perm_code in PERMISSIONS:
                     if perm_code not in self._denied:
@@ -1096,8 +1099,8 @@ class PermissionChecker:
         if permission in self.denied_permissions:
             return False
 
-        # Check if admin (has all permissions)
-        if self.membership.roles.filter(is_admin=True).exists():
+        # Admin (alle Rechte) – beim Laden der Rollen ermittelt statt je Prüfung neu abgefragt
+        if self.is_admin():
             return True
 
         return permission in self.permissions
@@ -1127,8 +1130,10 @@ class PermissionChecker:
         return all(self.has_permission(p) for p in permissions)
 
     def is_admin(self) -> bool:
-        """Check if the user is an admin."""
-        return self.membership.roles.filter(is_admin=True).exists()
+        """Check if the user is an admin (Gäste nie, siehe _load_permissions)."""
+        if self._admin is None:
+            self._load_permissions()
+        return bool(self._admin)
 
     def has_voting_rights(self) -> bool:
         """Check if the user has voting rights."""
