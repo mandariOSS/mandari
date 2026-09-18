@@ -24,8 +24,9 @@ PERMISSIONS = ["dashboard.view", "motions.view", "motions.edit"]
 @pytest.fixture
 def kurz_nach_mitternacht(monkeypatch: pytest.MonkeyPatch, settings: Any) -> datetime:
     """00:30 Uhr in Berlin = 22:30 UTC am Vortag."""
-    settings.TIME_ZONE = "Europe/Berlin"
-    settings.USE_TZ = True
+    # Keine Settings-Änderung: TIME_ZONE/USE_TZ umzustellen lässt Django die DB-Verbindungen neu
+    # aufbauen, was in der CI (PostgreSQL) spätere transaktionale Tests ohne Tabellen zurückließ.
+    assert settings.TIME_ZONE == "Europe/Berlin" and settings.USE_TZ
     jetzt = datetime(2026, 9, 17, 22, 30, tzinfo=UTC)
     monkeypatch.setattr(timezone, "now", lambda: jetzt)
     return jetzt
