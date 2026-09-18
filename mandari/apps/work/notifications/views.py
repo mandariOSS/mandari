@@ -19,6 +19,9 @@ from .services import NotificationHub
 class NotificationCenterView(WorkViewMixin, TemplateView):
     """Full notification center page."""
 
+    # Nur eigene Benachrichtigungen (recipient=self.membership) – auch Gäste pollen die Glocke
+    guest_allowed = True
+
     template_name = "work/notifications/center.html"
     permission_required = None  # All members can view their notifications
 
@@ -62,6 +65,9 @@ class NotificationPreferencesView(WorkViewMixin, View):
 class NotificationListPartialView(WorkViewMixin, View):
     """HTMX partial for notification dropdown."""
 
+    # Nur eigene Benachrichtigungen (recipient=self.membership) – auch Gäste pollen die Glocke
+    guest_allowed = True
+
     permission_required = None
 
     def get(self, request, *args, **kwargs):
@@ -93,6 +99,9 @@ class NotificationListPartialView(WorkViewMixin, View):
 class NotificationMarkReadView(WorkViewMixin, View):
     """Mark notification(s) as read."""
 
+    # Nur eigene Benachrichtigungen (recipient=self.membership) – auch Gäste pollen die Glocke
+    guest_allowed = True
+
     permission_required = None
 
     def post(self, request, *args, **kwargs):
@@ -121,6 +130,9 @@ class NotificationMarkReadView(WorkViewMixin, View):
 class NotificationCountView(WorkViewMixin, View):
     """Get unread notification count (for polling/SSE)."""
 
+    # Nur eigene Benachrichtigungen (recipient=self.membership) – auch Gäste pollen die Glocke
+    guest_allowed = True
+
     permission_required = None
 
     def get(self, request, *args, **kwargs):
@@ -131,6 +143,9 @@ class NotificationCountView(WorkViewMixin, View):
 
 class NotificationLatestView(WorkViewMixin, View):
     """Get latest unread notifications (for polling fallback)."""
+
+    # Nur eigene Benachrichtigungen (recipient=self.membership) – auch Gäste pollen die Glocke
+    guest_allowed = True
 
     permission_required = None
 
