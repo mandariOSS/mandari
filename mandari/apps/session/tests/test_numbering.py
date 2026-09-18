@@ -230,6 +230,34 @@ class TestOberflaeche:
         assert antwort.status_code == 302
         assert SessionPaper.objects.get(source_application=antrag).reference == f"AN/0001/{JAHR}"
 
+    def test_umwandeln_uebernimmt_titel_und_vorlagenart_aus_dem_formular(self) -> None:
+        """Titel und Vorlagenart im Umwandlungsformular wurden bisher stillschweigend verworfen."""
+        tenant = _tenant()
+        numbering_service.apply_preset(tenant, "nrw_verwaltung_politik")
+        anfrage = SessionApplication.objects.create(
+            tenant=tenant, title="Anfrage: Radwege", application_type="inquiry", submitter_name="Fraktion"
+        )
+        antrag = SessionApplication.objects.create(
+            tenant=tenant, title="Antrag: Bänke", application_type="motion", submitter_name="Fraktion"
+        )
+        client = _client(tenant, can_process_applications=True, can_create_papers=True, can_view_papers=True)
+        # Die Vorlagenart ist nach der Antragsart vorausgewählt
+        formular = client.get(f"/session/{tenant.slug}/applications/{anfrage.id}/convert/").content.decode()
+        assert '<option value="inquiry" selected>' in formular
+
+        antwort = client.post(
+            f"/session/{tenant.slug}/applications/{antrag.id}/convert/",
+            {"name": "Sitzbänke in der Innenstadt", "paper_type": "proposal"},
+        )
+        assert antwort.status_code == 302
+        vorlage = SessionPaper.objects.get(source_application=antrag)
+        # Als Verwaltungsvorlage kommt die Nummer aus dem Verwaltungskreis, nicht aus AN/…
+        assert (vorlage.name, vorlage.paper_type, vorlage.reference) == (
+            "Sitzbänke in der Innenstadt",
+            "proposal",
+            f"0001/{JAHR}",
+        )
+
     def test_einstellungen_preset_und_startwert(self) -> None:
         tenant = _tenant()
         SessionLegislativeTerm.objects.create(tenant=tenant, name="WP", number=22, start_date=date(2024, 6, 9))

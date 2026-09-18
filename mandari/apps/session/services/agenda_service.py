@@ -100,6 +100,16 @@ def renumber_agenda(meeting: SessionMeeting) -> None:
         for item in changed:
             item.updated_at = jetzt
         SessionAgendaItem.objects.bulk_update(changed, ["number", "order", "updated_at"])
+        # Sofort im Bürgerportal nachziehen: Nach einem Ö/NÖ-Wechsel stünde dort sonst bis zum
+        # nächsten Abgleich eine Lücke („1, 3“)
+        if meeting.is_public:
+            from django.db import transaction
+
+            from apps.session.oparl_publication import sync_agenda_numbers_to_portal
+
+            nummern = [(item.id, item.number) for item in changed if item.is_public]
+            if nummern:
+                transaction.on_commit(lambda: sync_agenda_numbers_to_portal(meeting.tenant_id, nummern))
 
 
 def grouped_agenda(meeting: SessionMeeting, include_non_public: bool = True):
