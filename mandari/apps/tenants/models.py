@@ -1050,9 +1050,15 @@ class Membership(models.Model):
 
         Uses the PermissionChecker for consistent permission evaluation.
         """
-        from apps.common.permissions import PermissionChecker
+        # Ein Checker je Membership-Objekt: Rechte werden einmal je Anfrage geladen statt bei jeder
+        # Prüfung erneut (Performance-Budgets); Änderungen an Rollen/Rechten leeren ihn (signals.py).
+        checker = self.__dict__.get("_permission_checker")
+        if checker is None:
+            from apps.common.permissions import PermissionChecker
 
-        return PermissionChecker(self).has_permission(permission)
+            checker = PermissionChecker(self)
+            self.__dict__["_permission_checker"] = checker
+        return bool(checker.has_permission(permission))
 
 
 class UserInvitation(models.Model):
