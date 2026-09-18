@@ -359,7 +359,19 @@
                 </a>
                 <div class="session-org-info">
                     <div class="session-org-name">{{ session_tenant.name }}</div>
+                    {% if user_tenants|length > 1 %}
+                    <details class="session-tenant-switch" data-testid="mandant-wechseln">
+                        <summary class="session-org-type cursor-pointer select-none">Mandant wechseln</summary>
+                        <ul class="mt-1 space-y-0.5">
+                            {% for t in user_tenants %}{% if t.slug != session_tenant.slug %}
+                            <li><a href="{% url 'session:dashboard' tenant_slug=t.slug %}"
+                                   class="block rounded px-2 py-1 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">{{ t.name }}</a></li>
+                            {% endif %}{% endfor %}
+                        </ul>
+                    </details>
+                    {% else %}
                     <div class="session-org-type">Session RIS</div>
+                    {% endif %}
                 </div>
             </div>
 

@@ -1,0 +1,49 @@
+{% comment %}
+Bezüge einer Vorlage (Issue #150): Bezugsvorlage, Unternummern (Ergänzung, Neufassung, Antwort …)
+und das Anlegen einer neuen Unternummer. Kontext: paper, child_papers, relation_choices, can_create_papers.
+{% endcomment %}
+{% if paper.parent_paper or child_papers or can_create_papers %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6" data-testid="bezuege">
+    <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <i data-lucide="git-branch" class="w-5 h-5 text-indigo-500"></i>
+        Bezüge
+    </h3>
+    {% if paper.parent_paper %}
+    <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+        {{ paper.get_relation_type_display|default:"Bezug" }} zu
+        <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.parent_paper.id %}"
+           class="font-mono text-primary-600 dark:text-primary-400 hover:underline">{{ paper.parent_paper.display_reference }}</a>
+        {{ paper.parent_paper.name|truncatechars:60 }}
+    </p>
+    {% endif %}
+    {% if child_papers %}
+    <ul class="divide-y divide-gray-100 dark:divide-gray-700/50 mb-4">
+        {% for child in child_papers %}
+        <li class="py-2 flex items-center gap-3 text-sm">
+            <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=child.id %}"
+               class="font-mono text-primary-600 dark:text-primary-400 hover:underline">{{ child.display_reference }}</a>
+            <span class="text-gray-500 dark:text-gray-400">{{ child.get_relation_type_display }}</span>
+            <span class="text-gray-700 dark:text-gray-300 truncate">{{ child.name|truncatechars:60 }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% if can_create_papers %}
+    <form method="post" action="{% url 'session:paper_child_create' tenant_slug=tenant_slug paper_id=paper.id %}"
+          class="flex flex-wrap items-end gap-2">
+        {% csrf_token %}
+        <div>
+            <label for="relation_type" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Neue Unternummer</label>
+            <select name="relation_type" id="relation_type" required
+                    class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                {% for value, label in relation_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+        </div>
+        <button type="submit" {% if not paper.reference %}disabled title="Erst nach Vergabe der Nummer möglich"{% endif %}
+                class="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">
+            Anlegen
+        </button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}

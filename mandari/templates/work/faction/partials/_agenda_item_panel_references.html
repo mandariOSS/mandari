@@ -97,7 +97,7 @@
                 <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute left-2.5 top-2"></i>
                 <input type="text" x-ref="paperSearchInput" x-model="paperSearchQuery"
                        @input.debounce.300ms="searchPapers()"
-                       placeholder="Vorlage suchen (Name oder Aktenzeichen)..."
+                       placeholder="Vorlage suchen (Name oder Vorlagen-Nr.)..."
                        class="w-full text-sm pl-8 pr-3 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg outline-none focus:border-primary-500">
             </div>
             <div x-show="paperSearching" class="text-center py-2">

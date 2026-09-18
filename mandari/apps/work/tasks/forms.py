@@ -3,6 +3,8 @@
 Forms for the Tasks module.
 """
 
+import json
+
 from django import forms
 
 from apps.common.uploads import DOCUMENTS, MB, validate_upload
@@ -76,6 +78,17 @@ class TaskForm(forms.ModelForm):
             self.fields["assigned_to"].label_from_instance = lambda obj: obj.user.get_display_name()
         self.fields["assigned_to"].required = False
         self.fields["due_date"].required = False
+
+    @property
+    def tags_list(self) -> list[str]:
+        """Tags als Liste für ``json_script`` – nach einem Fehler steht der gepostete JSON-Text im Feld."""
+        wert = self["tags"].value()
+        if isinstance(wert, str):
+            try:
+                wert = json.loads(wert or "[]")
+            except ValueError:
+                wert = []
+        return [str(t) for t in wert or [] if str(t).strip()]
 
 
 class TaskPanelForm(forms.ModelForm):

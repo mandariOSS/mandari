@@ -52,9 +52,10 @@
     Klicken Sie auf einen Marker, um Details zum Vorgang anzuzeigen.
 </div>
 
+{{ map_config|json_script:"ris-map-config" }}
 <script nonce="{{ csp_nonce }}">
 document.addEventListener('DOMContentLoaded', function() {
-    const mapConfig = {{ map_config|safe }};
+    const mapConfig = JSON.parse(document.getElementById('ris-map-config').textContent);
 
     // Initialize map
     const map = L.map('map').setView([mapConfig.center_lat, mapConfig.center_lng], mapConfig.zoom);

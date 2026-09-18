@@ -19,6 +19,7 @@ Sicherheit: Tombstones enthalten keine Inhalte — nur Typ, ID, Zeitstempel.
 """
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -34,6 +35,7 @@ from apps.session.models import (
     SessionOrganizationMembership,
     SessionPaper,
     SessionPerson,
+    SessionTenant,
 )
 
 # =============================================================================
@@ -66,8 +68,12 @@ def visible_agenda_items(tenant):
     )
 
 
+#: Vorlagen im Entwurf oder in der Prüfung sind Verwaltungsinterna – öffentlich erst ab Freigabe
+UNVEROEFFENTLICHT = ("draft", "review")
+
+
 def visible_papers(tenant):
-    return SessionPaper.objects.filter(tenant=tenant, is_public=True)
+    return SessionPaper.objects.filter(tenant=tenant, is_public=True).exclude(status__in=UNVEROEFFENTLICHT)
 
 
 def visible_files(tenant):
@@ -76,7 +82,7 @@ def visible_files(tenant):
     ist — eine Ö-Datei an einer NÖ-Vorlage bleibt unsichtbar.
     """
     return SessionFile.objects.filter(tenant=tenant, is_public=True).filter(
-        Q(paper__isnull=False, paper__is_public=True)
+        Q(paper__isnull=False, paper__is_public=True) & ~Q(paper__status__in=UNVEROEFFENTLICHT)
         | Q(meeting__isnull=False, meeting__is_public=True)
         | Q(
             agenda_item__isnull=False,
@@ -87,7 +93,9 @@ def visible_files(tenant):
 
 
 def visible_consultations(tenant):
-    return SessionConsultation.objects.filter(paper__tenant=tenant, paper__is_public=True)
+    return SessionConsultation.objects.filter(paper__tenant=tenant, paper__is_public=True).exclude(
+        paper__status__in=UNVEROEFFENTLICHT
+    )
 
 
 def visible_legislative_terms(tenant):
@@ -105,14 +113,14 @@ def _is_published(instance) -> bool:
         if isinstance(instance, SessionMeeting):
             return instance.is_public
         if isinstance(instance, SessionPaper):
-            return instance.is_public
+            return instance.is_public and instance.status not in UNVEROEFFENTLICHT
         if isinstance(instance, SessionAgendaItem):
             return instance.is_public and instance.meeting.is_public
         if isinstance(instance, SessionFile):
             if not instance.is_public:
                 return False
             if instance.paper_id:
-                return instance.paper.is_public
+                return _is_published(instance.paper)
             if instance.meeting_id:
                 return instance.meeting.is_public
             if instance.agenda_item_id:
@@ -120,7 +128,7 @@ def _is_published(instance) -> bool:
                 return item.is_public and item.meeting.is_public
             return False
         if isinstance(instance, SessionConsultation):
-            return instance.paper.is_public
+            return _is_published(instance.paper)
         # Organisationen, Personen, Mitgliedschaften, Wahlperioden sind
         # nicht Ö/NÖ-unterteilt und damit immer Teil der öffentlichen API.
         return True
@@ -177,6 +185,49 @@ def _write_tombstone(tenant_id, kind, object_id, object_created_at):
             "deleted_at": timezone.now(),
         },
     )
+    # Sofort aus dem Bürgerportal zurücknehmen – nicht erst beim nächsten Sync des Spiegels
+    transaction.on_commit(lambda: retract_from_portal(tenant_id, kind, object_id))
+
+
+#: OParl-Art -> Insight-Modell des Spiegels
+_INSIGHT_MODELS = {
+    "organization": "OParlOrganization",
+    "person": "OParlPerson",
+    "membership": "OParlMembership",
+    "meeting": "OParlMeeting",
+    "agendaitem": "OParlAgendaItem",
+    "paper": "OParlPaper",
+    "file": "OParlFile",
+    "consultation": "OParlConsultation",
+    "legislativeterm": "OParlLegislativeTerm",
+}
+
+
+def retract_from_portal(tenant_id, kind, object_id) -> int:
+    """
+    Gespiegeltes Objekt im Bürgerportal sofort als zurückgenommen markieren.
+
+    Der Spiegel (Ingestor bzw. ``sync_session_insight``) übernimmt Tombstones erst beim
+    nächsten Lauf. Ein TOP, der in Session nicht-öffentlich wird, muss aber im selben Moment
+    aus der Öffentlichkeit verschwinden. Die gespiegelte Kennung ist die OParl-URL
+    ``…/session/<slug>/api/oparl/<art>/<id>/``; ``mark_deleted`` entfernt das Objekt zugleich
+    aus Suche und Listen, die Detailseite zeigt keinen Inhalt mehr (``withdrawn_by_publisher``).
+    """
+    from django.apps import apps
+
+    modell = _INSIGHT_MODELS.get(kind)
+    slug = SessionTenant.objects.filter(pk=tenant_id).values_list("slug", flat=True).first()
+    if modell is None or slug is None:
+        return 0
+    model = apps.get_model("insight_core", modell)
+    treffer = model.objects.filter(
+        external_id__endswith=f"/session/{slug}/api/oparl/{kind}/{object_id}/", deleted=False
+    )
+    anzahl = 0
+    for obj in treffer:
+        obj.mark_deleted()
+        anzahl += 1
+    return anzahl
 
 
 def _clear_tombstones(tenant_id, pairs):

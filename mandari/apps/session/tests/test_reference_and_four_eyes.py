@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Aktenzeichen bei Antrag→Vorlage und Vier-Augen-Prinzip bei Monatspauschalen."""
+"""Vier-Augen-Prinzip bei Monatspauschalen (Vorlagennummern: test_numbering.py)."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
-from apps.session.models import SessionPaper, SessionTenant
 from apps.session.services import allowance_service
 
 
@@ -20,21 +17,6 @@ class _Allowance:
 
     def save(self, update_fields: list[str] | None = None) -> None:
         pass
-
-
-class TestPaperReference:
-    @pytest.mark.django_db
-    def test_fortlaufend_je_jahr_und_mandant(self) -> None:
-        tenant = SessionTenant.objects.create(name="Stadt A", slug="stadt-a")
-        other = SessionTenant.objects.create(name="Stadt B", slug="stadt-b")
-        SessionPaper.objects.create(tenant=tenant, reference="V/2026/0001", name="Eins")
-        SessionPaper.objects.create(tenant=tenant, reference="V/2026/0009", name="Neun")
-        SessionPaper.objects.create(tenant=tenant, reference="V/2025/0042", name="Vorjahr")
-        SessionPaper.objects.create(tenant=tenant, reference="V/2026/sonder", name="Freitext")
-
-        assert SessionPaper.next_reference(tenant, 2026) == "V/2026/0010"
-        assert SessionPaper.next_reference(tenant, 2027) == "V/2027/0001"
-        assert SessionPaper.next_reference(other, 2026) == "V/2026/0001"
 
 
 class TestMonthlyAllowanceFourEyes:

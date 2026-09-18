@@ -9,7 +9,43 @@ Zentrale Logik für:
 - Umsortieren (Drag-and-drop-Reihenfolge, Auf/Ab)
 """
 
+from django.utils import timezone
+
 from apps.session.models import SessionAgendaItem, SessionMeeting
+
+
+def visibility_errors(item: SessionAgendaItem) -> dict[str, str]:
+    """
+    Ö/NÖ-Regeln eines TOPs (Feld -> Meldung; leer = in Ordnung).
+
+    - Unterpunkte teilen die Öffentlichkeit ihres TOPs: ein nicht-öffentlicher Unterpunkt unter
+      einem öffentlichen TOP verriete sich über Nummer und Einladung, ein öffentlicher unter einem
+      nicht-öffentlichen den ganzen NÖ-TOP.
+    - Eine nicht-öffentliche Vorlage steht nie auf einem öffentlichen TOP (sonst erschiene ihr
+      Betreff in Tagesordnung, Einladung und Bürgerportal).
+    """
+    errors: dict[str, str] = {}
+    parent = item.parent
+    if parent is not None and parent.is_public != item.is_public:
+        teil = "öffentlich" if parent.is_public else "nicht-öffentlich"
+        errors["is_public"] = f"Unterpunkte haben dieselbe Öffentlichkeit wie ihr TOP – TOP {parent.number} ist {teil}."
+    paper = item.paper
+    if item.is_public and paper is not None and not paper.is_public:
+        errors["paper"] = (
+            f"Die Vorlage {paper.display_reference} ist nicht-öffentlich und kann nur auf einem "
+            "nicht-öffentlichen TOP beraten werden."
+        )
+    return errors
+
+
+def cascade_visibility(item: SessionAgendaItem) -> int:
+    """Unterpunkte folgen der Öffentlichkeit ihres TOPs (einzeln gespeichert: Audit + Rücknahme)."""
+    anzahl = 0
+    for child in item.sub_items.exclude(is_public=item.is_public):
+        child.is_public = item.is_public
+        child.save()
+        anzahl += 1
+    return anzahl
 
 
 def renumber_agenda(meeting: SessionMeeting) -> None:
@@ -58,7 +94,12 @@ def renumber_agenda(meeting: SessionMeeting) -> None:
                 assign(sub_item, f"{number}.{sub_idx}")
 
     if changed:
-        SessionAgendaItem.objects.bulk_update(changed, ["number", "order"])
+        # updated_at mitsetzen: bulk_update umgeht auto_now, der Spiegel im Bürgerportal zieht
+        # neue Nummern sonst nie nach (inkrementeller Abgleich per modified_since)
+        jetzt = timezone.now()
+        for item in changed:
+            item.updated_at = jetzt
+        SessionAgendaItem.objects.bulk_update(changed, ["number", "order", "updated_at"])
 
 
 def grouped_agenda(meeting: SessionMeeting, include_non_public: bool = True):
@@ -74,7 +115,9 @@ def grouped_agenda(meeting: SessionMeeting, include_non_public: bool = True):
 
     children: dict = {}
     for item in items:
-        if item.parent_id:
+        # Öffentliche Ansichten (Einladung an Gäste, Ö-Niederschrift, Nutzer ohne NÖ-Recht):
+        # nie nicht-öffentliche Unterpunkte, auch nicht unter einem öffentlichen TOP
+        if item.parent_id and (include_non_public or item.is_public):
             children.setdefault(item.parent_id, []).append(item)
     for item in items:
         item.children_list = children.get(item.id, [])

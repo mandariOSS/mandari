@@ -378,7 +378,10 @@ print("=== Phase 6: Inkrementeller Sync + Tombstones ===")
 paper.name = "DURCHSTICH-VORLAGE-RADWEG-GEAENDERT"
 paper.save()
 paper_new = SessionPaper.objects.create(
-    tenant=tenant, reference="V/2026/0502", name="NEUE-DURCHSTICH-VORLAGE", is_public=True
+    tenant=tenant, reference="V/2026/0502", name="NEUE-DURCHSTICH-VORLAGE", is_public=True, status="approved"
+)
+paper_entwurf = SessionPaper.objects.create(
+    tenant=tenant, reference="V/2026/0503", name="ENTWURF-DURCHSTICH", is_public=True
 )
 
 call_command("sync_session_insight", source_url=local_source.url)
@@ -386,6 +389,7 @@ call_command("sync_session_insight", source_url=local_source.url)
 insight_paper.refresh_from_db()
 check("Inkrementell: Namensänderung übernommen", insight_paper.name == "DURCHSTICH-VORLAGE-RADWEG-GEAENDERT")
 check("Inkrementell: neue Vorlage übernommen", OParlPaper.objects.filter(reference="V/2026/0502").exists())
+check("Entwurf bleibt intern (erst nach Freigabe öffentlich)", not OParlPaper.objects.filter(reference="V/2026/0503").exists())
 
 # Ö->NÖ in Session -> Tombstone -> Insight-Spiegel als gelöscht markiert
 meeting_pub.is_public = False

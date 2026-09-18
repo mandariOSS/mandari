@@ -77,6 +77,10 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
 
     def form_valid(self, form):
         meeting = _get_meeting(self, self.kwargs["meeting_id"])
+        for feld, meldung in agenda_service.visibility_errors(form.instance).items():
+            form.add_error(feld, meldung)
+        if form.errors:
+            return self.form_invalid(form)
         form.instance.meeting = meeting
         form.instance.order = (meeting.agenda_items.count() + 1) * 100
         form.instance.number = "?"  # wird durch renumber_agenda gesetzt
@@ -126,6 +130,10 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
         if form.instance.parent_id and form.instance.sub_items.exists():
             form.add_error("parent", "Ein TOP mit Unterpunkten kann nicht selbst Unterpunkt sein.")
             return self.form_invalid(form)
+        for feld, meldung in agenda_service.visibility_errors(form.instance).items():
+            form.add_error(feld, meldung)
+        if form.errors:
+            return self.form_invalid(form)
         # Wechsel Ö <-> NÖ: TOP am Ende des Zielteils einreihen
         if "is_public" in form.changed_data:
             from django.db.models import Max
@@ -135,6 +143,8 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
             )
             form.instance.order = max_order + 1
         response = super().form_valid(form)
+        if "is_public" in form.changed_data:
+            agenda_service.cascade_visibility(self.object)
         agenda_service.renumber_agenda(self.object.meeting)
         messages.success(self.request, f"TOP „{self.object.name}“ wurde aktualisiert.")
         return response

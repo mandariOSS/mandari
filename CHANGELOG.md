@@ -7,6 +7,9 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 ## [Unreleased]
 
 ### Hinzugefügt
+- Session: Nummernkreise für Vorlagen und Drucksachen mit Mustern (`{wp}-{lfd:4}`, `V/{lfd:4}/{jahr}`, `AN/…`), Zählerbereich je Jahr oder Wahlperiode, Vergabe beim Anlegen oder bei der Freigabe, Unternummern für Ergänzung/Neufassung/Antwort (`22-0593.1`), Presets für Hamburger Bezirke und NRW-Kommunen, Startwert für den Umstieg aus Altsystemen; Bezeichnung „Drucksache“/„Vorlagen-Nr.“ je Mandant (`docs/SESSION_NUMMERNKREISE.md`, #150).
+- Session: Mandantenwechsel in der Seitenleiste für Nutzer mehrerer Mandanten (z. B. Leitstelle für mehrere Bezirke); Verwaltungsnutzer landen nach dem Login direkt in ihrem Mandanten.
+- CI-Prüfungen gegen verwaiste Template-Blöcke und Alpine-Komponenten ohne Definition (`scripts/check_template_blocks.py`, `scripts/check_alpine_components.py`).
 - Betriebsmonitor bewertet Scraper-Quellen nach Parse-Quote und Entitäten-Zufluss des letzten Laufs, Alarm über `check_source_health` (#53).
 - Insight Geo-Verortung: Hausnummern-Punkte aus OSM (`import_streets --with-addresses`), Umkreissuche über eine indexierte Verortungstabelle statt JSONB-Vollscan (`backfill_paper_locations`), Nachbarschafts-Autocomplete aus dem eigenen Straßenverzeichnis, Admin-Korrektur „bestätigen/entfernen“ mit Sperre gegen Wiederanlage, `check_body_geodata` für Kommunen ohne OSM-Zuordnung (#54).
 - Scraper-Quellen: robots-Sperren als Fehlerklasse `robots_blocked` im Betriebsmonitor mit Empfehlung; Download-Header je Quelle (`download_headers`, z. B. Referer/Cookie) für Dateicache und Textextraktion (#116).
@@ -20,6 +23,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - E2E-Tests der Editor-Kollaboration mit zwei Browsern gegen einen ASGI-Testserver (#289).
 
 ### Geändert
+- Session: Ö/NÖ wirkt sofort – ein TOP, eine Vorlage oder Anlage, die nicht-öffentlich wird, verschwindet im selben Moment aus dem Bürgerportal und zeigt dort keinen Inhalt mehr; Entwürfe erscheinen erst nach der Freigabe in der OParl-API; nicht-öffentliche Unterpunkte oder Vorlagen auf öffentlichen TOPs werden abgewiesen.
 - Django 6.1: Mailversand auf `MAILERS` umgestellt; SMTP-Zugänge aus SiteSettings und organisationseigenes SMTP werden zur Laufzeit als Backend aufgebaut (`apps/common/mail_backends.py`), die Umgebungsvariablen `EMAIL_*` bleiben (#80).
 - Session-Portal in der axe-Prüfung der CI (Dashboard, Sitzungen, Vorlagen); Filter beschriftet, Kontrast von Seitenleiste, Datumsbadge und Toast-Schließen-Button behoben (#44, #176).
 - Barrierefreiheit: Alpine-Modals mit `role=dialog`, `aria-modal`, Fokusfalle (`x-trap.inert.noscroll`) und Escape; axe-core in der CI zusätzlich auf Insight-Startseite, Dokumentenliste und Aufgaben; Prüfprotokoll `docs/BARRIEREFREIHEIT_PRUEFPROTOKOLL.md` (#176).
@@ -32,6 +36,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Datenbankverbindungen laufen über einen Pool (#257).
 
 ### Behoben
+- Work: Dokument-Import und „Aufgabe anlegen“ waren ohne Funktion (Skript im nicht existierenden Block `extra_js`); RIS-Karte brach mit JavaScript-Fehler ab; Rollen-Tab nur noch mit Berechtigung.
 - Editor: Speichern ohne Kollaborationsverbindung überschreibt keinen neueren Stand mehr still; Konflikthinweis mit „Neu laden“ / „Trotzdem speichern“ (#184).
 - Editor: Ein verbundener Client konnte nach der Reload-Aufforderung mit einem späten `yjs_save` den ohne Verbindung gespeicherten Stand überschreiben; Server und Client verwerfen ihn jetzt (#298).
 - Fünf Lösch-Routen antworteten auf GET mit 500 statt 405; Federführende und Mitwirkende sahen ihre Anträge nicht (#249).

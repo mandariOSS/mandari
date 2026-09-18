@@ -723,16 +723,16 @@ class MotionImportView(WorkViewMixin, TemplateView):
         successes = [r for r in results if r.success]
         failures = [r for r in results if not r.success]
 
+        # Fehlschläge immer melden – auch wenn danach direkt in den Editor des einen Erfolgs gewechselt wird
+        for failure in failures:
+            messages.error(request, f"Import fehlgeschlagen: {failure.error}")
+
         if successes:
             if len(successes) == 1:
                 motion = successes[0].motion
                 messages.success(request, f"Dokument '{motion.title}' erfolgreich importiert.")
                 return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
             messages.success(request, f"{len(successes)} Dokumente erfolgreich importiert.")
-
-        if failures:
-            for failure in failures:
-                messages.error(request, f"Import fehlgeschlagen: {failure.error}")
 
         return redirect("work:documents", org_slug=self.organization.slug)
 

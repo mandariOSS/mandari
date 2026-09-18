@@ -250,6 +250,10 @@ def file_proxy(request, file_id):
     file_obj = get_object_or_404(
         OParlFile.objects.select_related("body").defer("text_content", "raw_json", "body__raw_json"), id=file_id
     )
+    if file_obj.withdrawn_by_publisher:
+        from ._withdrawn import withdrawn_response
+
+        return withdrawn_response(request, file_obj)
     force_download = request.GET.get("download") == "1"
     filename = file_obj.file_name or file_obj.name or "dokument.pdf"
 

@@ -22,6 +22,7 @@ from ..models import (
     OParlOrganization,
 )
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._withdrawn import withdrawn_response
 
 # =============================================================================
 # Termine (Meetings)
@@ -266,12 +267,20 @@ class MeetingDetailView(DetailView):
     def get_queryset(self):
         return OParlMeeting.objects.prefetch_related("organizations")
 
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if self.object.withdrawn_by_publisher:
+            return withdrawn_response(request, self.object)
+        context = self.get_context_data(object=self.object)
+        return self.render_to_response(context)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         meeting = self.object
 
-        # Tagesordnungspunkte mit batch-loaded Papers (vermeidet N+1 Queries)
-        agenda_items = list(meeting.agenda_items.all())
+        # Tagesordnungspunkte mit batch-loaded Papers (vermeidet N+1 Queries); zurückgezogene TOPs
+        # (z. B. in Session nicht-öffentlich gestellt) erscheinen nicht mehr
+        agenda_items = list(meeting.agenda_items.filter(deleted=False))
         # Natural sort: 1, 2, 10 instead of 1, 10, 2
         import re
 

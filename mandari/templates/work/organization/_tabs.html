@@ -2,6 +2,7 @@
 Shared organization settings tab navigation. Expects `active_tab` in context.
 Values: "general", "faction", "api", "documents", "parties", "members", "roles"
 {% endcomment %}
+{% load permission_tags %}
 <div class="mb-8 border-b border-gray-200 dark:border-gray-700">
     <nav class="flex gap-1 overflow-x-auto">
         {% with tab_active="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 whitespace-nowrap" tab_inactive="px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap" %}
@@ -41,10 +42,12 @@ Values: "general", "faction", "api", "documents", "parties", "members", "roles"
            class="{% if active_tab == 'members' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
             Mitglieder
         </a>
+        {% if membership|has_perm:"organization.manage_roles" %}
         <a href="{% url 'work:roles' org_slug=organization.slug %}"
            class="{% if active_tab == 'roles' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
             Rollen
         </a>
+        {% endif %}
         <a href="{% url 'work:organization_registration' org_slug=organization.slug %}"
            class="{% if active_tab == 'registration' %}{{ tab_active }}{% else %}{{ tab_inactive }}{% endif %}">
             Registrierung

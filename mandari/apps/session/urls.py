@@ -229,6 +229,11 @@ urlpatterns = [
         views.PaperUpdateView.as_view(),
         name="paper_edit",
     ),
+    path(
+        "<slug:tenant_slug>/papers/<uuid:paper_id>/unternummer/",
+        views.PaperChildCreateView.as_view(),
+        name="paper_child_create",
+    ),
     # Beratungsfolge (Issue #34)
     path(
         "<slug:tenant_slug>/papers/<uuid:paper_id>/consultations/add/",
@@ -648,6 +653,17 @@ urlpatterns = [
         "<slug:tenant_slug>/settings/roles/delete/",
         views.RoleDeleteView.as_view(),
         name="role_delete",
+    ),
+    # Nummernkreise (Issue #150)
+    path(
+        "<slug:tenant_slug>/settings/numbering/",
+        views.NumberingSettingsView.as_view(),
+        name="settings_numbering",
+    ),
+    path(
+        "<slug:tenant_slug>/settings/numbering/save/",
+        views.NumberingSaveView.as_view(),
+        name="settings_numbering_save",
     ),
     # Textbausteine und Standard-TOPs (Issue #85)
     path(

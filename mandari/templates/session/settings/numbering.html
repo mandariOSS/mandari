@@ -1,0 +1,125 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Nummernkreise{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Einstellungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Nummernkreise</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-5xl space-y-8">
+    <c-layout.page-header title="Nummernkreise"
+        subtitle="Jede Vorlage erhält ihre {{ session_tenant.reference_label }} automatisch aus einem Nummernkreis. Eine vergebene Nummer bleibt unverändert und wird nie ein zweites Mal vergeben." />
+    <p class="text-xs text-gray-500 dark:text-gray-400 -mt-6">
+        Platzhalter: <code>{lfd}</code>/<code>{lfd:4}</code> laufende Nummer, <code>{jahr}</code>, <code>{jj}</code>, <code>{wp}</code> (Wahlperiode),
+        <code>{prefix}</code>, <code>{gremium}</code>. Unternummern: <code>{parent}</code> und <code>{sub}</code>.
+    </p>
+
+    <!-- Bezeichnung -->
+    <form method="post" action="{% url 'session:settings_numbering_save' tenant_slug=tenant_slug %}"
+          class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 flex flex-wrap items-end gap-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="label">
+        <div class="flex-1 min-w-[220px]">
+            <label for="reference_label" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bezeichnung der Nummer</label>
+            <input type="text" id="reference_label" name="reference_label" value="{{ session_tenant.reference_label }}" maxlength="40" required
+                   class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">z. B. „Drucksache“ (Hamburger Bezirke) oder „Vorlagen-Nr.“</p>
+        </div>
+        <button type="submit" class="px-4 py-2 text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">Speichern</button>
+    </form>
+
+    <!-- Kreise -->
+    <div class="space-y-4" data-testid="nummernkreise">
+        {% for rng in ranges %}
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 {% if not rng.is_active %}opacity-60{% endif %}">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="font-semibold text-gray-900 dark:text-white">{{ rng.name }}{% if not rng.is_active %} <span class="text-xs font-normal text-gray-500">(inaktiv)</span>{% endif %}</h2>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {% if rng.typ_namen %}{{ rng.typ_namen|join:", " }}{% else %}alle Vorlagenarten ohne eigenen Kreis{% endif %}
+                        · {{ rng.get_reset_display }} · Vergabe: {{ rng.get_assign_on_display }}
+                    </p>
+                </div>
+                <div class="text-right">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Nächste Nummer</p>
+                    <p class="font-mono font-semibold text-gray-900 dark:text-white" data-testid="naechste-nummer">{{ rng.vorschau }}</p>
+                </div>
+            </div>
+            <details class="px-6 py-4">
+                <summary class="cursor-pointer text-sm font-medium text-primary-600 dark:text-primary-400">Bearbeiten</summary>
+                <form method="post" action="{% url 'session:settings_numbering_save' tenant_slug=tenant_slug %}" class="mt-4 grid sm:grid-cols-2 gap-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="range">
+                    <input type="hidden" name="range_id" value="{{ rng.id }}">
+                    {% include "session/settings/_numbering_fields.html" %}
+                    <div class="sm:col-span-2 flex justify-end">
+                        <button type="submit" class="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg">Speichern</button>
+                    </div>
+                </form>
+                {% if rng.is_active %}
+                <form method="post" action="{% url 'session:settings_numbering_save' tenant_slug=tenant_slug %}" class="mt-4 flex flex-wrap items-end gap-3 border-t border-gray-100 dark:border-gray-700 pt-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="next">
+                    <input type="hidden" name="range_id" value="{{ rng.id }}">
+                    <div>
+                        <label for="next-{{ rng.id }}" class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Nächste laufende Nummer setzen</label>
+                        <input type="number" min="1" id="next-{{ rng.id }}" name="next_number" required
+                               class="w-32 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    <button type="submit" class="px-3 py-2 text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">Übernehmen</button>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 basis-full">Beim Umstieg aus einem Altsystem: die dort zuletzt vergebene Nummer + 1. Nur aufwärts möglich.</p>
+                </form>
+                {% endif %}
+            </details>
+        </div>
+        {% empty %}
+        <p class="text-sm text-gray-500 dark:text-gray-400">Noch kein Nummernkreis – bitte ein Preset übernehmen oder einen Kreis anlegen.</p>
+        {% endfor %}
+    </div>
+
+    <!-- Neuer Kreis -->
+    <details class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <summary class="cursor-pointer font-semibold text-gray-900 dark:text-white">Weiteren Nummernkreis anlegen</summary>
+        <form method="post" action="{% url 'session:settings_numbering_save' tenant_slug=tenant_slug %}" class="mt-4 grid sm:grid-cols-2 gap-4">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="range">
+            {% include "session/settings/_numbering_fields.html" with rng=None %}
+            <div class="sm:col-span-2 flex justify-end">
+                <button type="submit" class="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white rounded-lg">Anlegen</button>
+            </div>
+        </form>
+    </details>
+
+    <!-- Presets -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 class="font-semibold text-gray-900 dark:text-white">Vorlagen für verbreitete Praxis</h2>
+            <p class="text-xs text-gray-500 dark:text-gray-400">Übernehmen ersetzt die aktiven Kreise; bestehende Kreise mit gleichem Muster behalten ihren Zählerstand, andere werden deaktiviert (nicht gelöscht).</p>
+        </div>
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for key, preset in presets.items %}
+            <li class="px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ preset.label }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ preset.beschreibung }}</p>
+                </div>
+                <form method="post" action="{% url 'session:settings_numbering_save' tenant_slug=tenant_slug %}"
+                      data-confirm="Preset „{{ preset.label }}“ übernehmen?">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="preset">
+                    <input type="hidden" name="preset" value="{{ key }}">
+                    <button type="submit" class="px-3 py-1.5 text-sm font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg">Übernehmen</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}

@@ -42,9 +42,10 @@
                         class="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                     <option value="">Keine</option>
                     {% for paper in form.paper.field.queryset %}
-                    <option value="{{ paper.id }}">{{ paper.reference }} - {{ paper.name|truncatechars:30 }}</option>
+                    <option value="{{ paper.id }}">{{ paper.display_reference }} - {{ paper.name|truncatechars:30 }}{% if not paper.is_public %} (NÖ){% endif %}</option>
                     {% endfor %}
                 </select>
+                {% for feld in form %}{% if feld.name == "paper" or feld.name == "is_public" %}{% for e in feld.errors %}<p class="mt-0.5 text-xs text-red-600" role="alert">{{ e }}</p>{% endfor %}{% endif %}{% endfor %}
             </div>
 
             <!-- Öffentlich -->
