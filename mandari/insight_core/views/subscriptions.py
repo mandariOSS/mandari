@@ -168,7 +168,6 @@ def _send_confirmation_email(subscriber):
             from_email=from_email,
             recipient_list=[subscriber.email],
             html_message=html_message,
-            fail_silently=True,
         )
     except Exception as e:
         logging.getLogger(__name__).warning(f"Failed to send confirmation email: {e}")

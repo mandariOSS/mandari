@@ -80,7 +80,6 @@ def send_notification_email_task(notification_id: str):
             from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"),
             recipient_list=[recipient_email],
             html_message=html_content,
-            fail_silently=False,
         )
 
         # Mark as sent
@@ -142,7 +141,6 @@ def send_meeting_invitation_task(meeting_id: str, attendance_id: str):
             from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"),
             recipient_list=[recipient_email],
             html_message=html_content,
-            fail_silently=False,
         )
 
         # Mark invitation as sent
@@ -195,14 +193,16 @@ def send_meeting_reminder_task(meeting_id: str):
         try:
             html_content, text_content = render_email("work/faction/email/reminder.html", context)
 
-            send_mail(
-                subject=f"Erinnerung: {meeting.title}",
-                message=text_content,
-                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"),
-                recipient_list=[recipient_email],
-                html_message=html_content,
-                fail_silently=True,  # Don't fail entire batch if one fails
-            )
+            try:
+                send_mail(
+                    subject=f"Erinnerung: {meeting.title}",
+                    message=text_content,
+                    from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@mandari.de"),
+                    recipient_list=[recipient_email],
+                    html_message=html_content,
+                )
+            except Exception as exc:  # noqa: BLE001 - eine fehlgeschlagene Mail bricht den Stapel nicht ab
+                logger.warning("Erinnerung an %s nicht zustellbar: %s", recipient_email, exc)
 
             logger.info(f"Meeting reminder sent to {recipient_email}")
 

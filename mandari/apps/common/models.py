@@ -158,17 +158,25 @@ class SiteSettings(models.Model):
         if site_settings.email_host:
             backend = site_settings.email_backend or "django.core.mail.backends.smtp.EmailBackend"
         else:
-            backend = site_settings.email_backend or django_settings.EMAIL_BACKEND
+            backend = site_settings.email_backend or django_settings.MAIL_BACKEND
 
         return {
             "EMAIL_BACKEND": backend,
-            "EMAIL_HOST": site_settings.email_host or django_settings.EMAIL_HOST,
-            "EMAIL_PORT": site_settings.email_port if site_settings.email_host else django_settings.EMAIL_PORT,
-            "EMAIL_HOST_USER": site_settings.email_host_user or django_settings.EMAIL_HOST_USER,
-            "EMAIL_HOST_PASSWORD": site_settings.email_host_password or django_settings.EMAIL_HOST_PASSWORD,
-            "EMAIL_USE_TLS": site_settings.email_use_tls if site_settings.email_host else django_settings.EMAIL_USE_TLS,
-            "EMAIL_USE_SSL": site_settings.email_use_ssl if site_settings.email_host else django_settings.EMAIL_USE_SSL,
-            "EMAIL_TIMEOUT": site_settings.email_timeout if site_settings.email_host else django_settings.EMAIL_TIMEOUT,
+            "EMAIL_HOST": site_settings.email_host or django_settings.SMTP_FALLBACK["host"],
+            "EMAIL_PORT": site_settings.email_port
+            if site_settings.email_host
+            else django_settings.SMTP_FALLBACK["port"],
+            "EMAIL_HOST_USER": site_settings.email_host_user or django_settings.SMTP_FALLBACK["username"],
+            "EMAIL_HOST_PASSWORD": site_settings.email_host_password or django_settings.SMTP_FALLBACK["password"],
+            "EMAIL_USE_TLS": site_settings.email_use_tls
+            if site_settings.email_host
+            else django_settings.SMTP_FALLBACK["use_tls"],
+            "EMAIL_USE_SSL": site_settings.email_use_ssl
+            if site_settings.email_host
+            else django_settings.SMTP_FALLBACK["use_ssl"],
+            "EMAIL_TIMEOUT": site_settings.email_timeout
+            if site_settings.email_host
+            else django_settings.SMTP_FALLBACK["timeout"],
             "DEFAULT_FROM_EMAIL": site_settings.default_from_email or django_settings.DEFAULT_FROM_EMAIL,
         }
 

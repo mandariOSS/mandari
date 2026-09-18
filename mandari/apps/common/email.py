@@ -18,12 +18,13 @@ from typing import Any
 
 import css_inline
 import html2text
-from django.core.mail import EmailMessage, EmailMultiAlternatives, get_connection
+from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.core.mail.backends.base import BaseEmailBackend
 from django.http import HttpRequest
 from django.template import TemplateDoesNotExist
 from django.template.loader import render_to_string
 
+from apps.common.mail_backends import build_backend, send_with
 from apps.common.metrics import EMAILS
 
 logger = logging.getLogger(__name__)
@@ -46,8 +47,8 @@ def get_email_connection() -> BaseEmailBackend:
 
     config = SiteSettings.get_email_config()
 
-    return get_connection(
-        backend=config["EMAIL_BACKEND"],
+    return build_backend(
+        config["EMAIL_BACKEND"],
         host=config["EMAIL_HOST"],
         port=config["EMAIL_PORT"],
         username=config["EMAIL_HOST_USER"],
@@ -183,7 +184,6 @@ def send_email(
                 from_email=sender,
                 to=to,
                 reply_to=reply_to,
-                connection=connection,
             )
             email.attach_alternative(html_body, "text/html")
         else:
@@ -194,7 +194,6 @@ def send_email(
                 from_email=sender,
                 to=to,
                 reply_to=reply_to,
-                connection=connection,
             )
 
         # Add attachments
@@ -202,11 +201,9 @@ def send_email(
             for filename, content, mimetype in attachments:
                 email.attach(filename, content, mimetype)
 
-        # Kein fail_silently an send() – ab Django 6.1 ist die Kombination mit
-        # einer expliziten connection ein TypeError (der hier still geschluckt
-        # würde: "keine Mail, kein Fehler"). Die fail_silently-Semantik
-        # übernimmt der umschließende try/except.
-        email.send()
+        # Versand über das aufgebaute Backend (Django ≥ 6.1: kein connection-Argument mehr,
+        # Issue #80). Die fail_silently-Semantik übernimmt der umschließende try/except.
+        send_with(connection, email)
         EMAILS.labels(result="sent").inc()
         logger.info(f"Email sent successfully to {', '.join(to)}: {subject}")
         return True

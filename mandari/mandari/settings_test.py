@@ -28,7 +28,8 @@ from .settings import *  # noqa: E402, F403
 
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
-EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+MAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+MAILERS = {"default": {"BACKEND": MAIL_BACKEND, "OPTIONS": {}}}
 ELASTICSEARCH_AUTO_INDEX = False
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # schnelle Hashes nur im Test
 TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}}

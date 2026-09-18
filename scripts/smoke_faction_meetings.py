@@ -1565,7 +1565,7 @@ print()
 print("=== Phase O: Eigene Absender-Mail (SMTP gemockt) ===")
 
 from apps.common.org_email import OrgMailError, send_org_email  # noqa: E402
-from django.core.mail import get_connection as _get_connection  # noqa: E402
+from apps.common.mail_backends import build_backend as _build_backend  # noqa: E402
 
 org.mail_sender_mode = "smtp"
 org.smtp_host = "smtp.example.invalid"
@@ -1586,7 +1586,7 @@ check(
 
 
 def _locmem_connection(organization):
-    return _get_connection("django.core.mail.backends.locmem.EmailBackend")
+    return _build_backend("django.core.mail.backends.locmem.EmailBackend")
 
 
 # Erfolgsfall: Versand über das (gemockte) Organisations-SMTP mit eigener Absender-Adresse

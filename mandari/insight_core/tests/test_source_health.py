@@ -114,7 +114,7 @@ def test_collect_source_health_sorts_blocked_source_first(blocked_source: OParlS
 
 def test_alert_mail_contains_reason_and_recommendation(blocked_source: OParlSource, settings: Any) -> None:
     settings.INSIGHT_ALERT_EMAILS = ["betrieb@example.org"]
-    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+    settings.MAILERS = {"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend", "OPTIONS": {}}}
 
     result = send_health_alerts()
 

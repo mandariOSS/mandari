@@ -45,10 +45,10 @@ def get_organization_connection(organization):
     Das Passwort wird über den Accessor entschlüsselt (tenant-spezifische
     AES-256-GCM-Ablage) und niemals geloggt.
     """
-    from django.core.mail import get_connection
+    from apps.common.mail_backends import SMTP_BACKEND, build_backend
 
-    return get_connection(
-        backend="django.core.mail.backends.smtp.EmailBackend",
+    return build_backend(
+        SMTP_BACKEND,
         host=organization.smtp_host,
         port=organization.smtp_port or 587,
         username=organization.smtp_username,
