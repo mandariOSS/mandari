@@ -216,6 +216,7 @@ def submit_application(request: HttpRequest, tenant_slug: str, payload: Applicat
         raise Problem(403, "Dieses Token darf keine Anträge einreichen.", kind="keine-berechtigung")
 
     from apps.session.services.application_service import (
+        SUBMITTING_ORGANIZATION_MISMATCH,
         SubmittingOrganizationMismatchError,
         submitting_organization_for_token,
     )
@@ -223,7 +224,7 @@ def submit_application(request: HttpRequest, tenant_slug: str, payload: Applicat
     try:
         submitting_org = submitting_organization_for_token(principal.token, payload.submitting_organization_id)
     except SubmittingOrganizationMismatchError as exc:
-        raise Problem(403, str(exc), kind="keine-berechtigung") from exc
+        raise Problem(403, SUBMITTING_ORGANIZATION_MISMATCH, kind="keine-berechtigung") from exc
     target_org = None
     if payload.target_organization_id:
         with contextlib.suppress(SessionOrganization.DoesNotExist):

@@ -467,14 +467,15 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
 
         # Einreichende Organisation: nur die, die den Token in Work verbunden hat
         from apps.session.services.application_service import (
+            SUBMITTING_ORGANIZATION_MISMATCH,
             SubmittingOrganizationMismatchError,
             submitting_organization_for_token,
         )
 
         try:
             submitting_org = submitting_organization_for_token(api_token, data.get("submitting_organization_id"))
-        except SubmittingOrganizationMismatchError as exc:
-            return self.json_response({"error": str(exc)}, status=403)
+        except SubmittingOrganizationMismatchError:
+            return self.json_response({"error": SUBMITTING_ORGANIZATION_MISMATCH}, status=403)
 
         # Get target organization - optional
         target_org = None
