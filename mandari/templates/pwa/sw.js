@@ -1,4 +1,5 @@
-{% load static %}// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// {% load static %} – im Kommentar, damit die Vorlage gültiges JavaScript bleibt (CodeQL, Linter)
 // Mandari Service Worker — bewusst konservativ:
 //   * HTML/Navigationen: IMMER network-first und NIE in den Cache schreiben
 //     (Cache Storage ist unverschlüsselt — keine authentifizierten Inhalte ablegen).
