@@ -24,6 +24,7 @@ Prüfungen:
 import base64
 import json
 import os
+import re
 import secrets
 import sys
 import tempfile
@@ -134,7 +135,12 @@ check(
     resp.headers.get("Content-Type"),
 )
 sw = resp.content.decode("utf-8")
-check("SW: Cache-Version eingerendert", "const CACHE_VERSION = '" in sw and "const CACHE_VERSION = ''" not in sw)
+_sw_config = re.search(r"^const SW_CONFIG = (\{.*\});$", sw, re.MULTILINE)
+check(
+    "SW: Cache-Version eingerendert",
+    bool(_sw_config) and bool(json.loads(_sw_config.group(1)).get("cacheVersion")),
+    _sw_config.group(1) if _sw_config else "SW_CONFIG fehlt",
+)
 check("SW: nur GET-Requests", "request.method !== 'GET'" in sw)
 check("SW: network-first für Navigationen", "request.mode === 'navigate'" in sw)
 check("SW: cache-first nur für /static/", "url.pathname.startsWith('/static/')" in sw)

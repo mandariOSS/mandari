@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// {% load static %} – im Kommentar, damit die Vorlage gültiges JavaScript bleibt (CodeQL, Linter)
 // Mandari Service Worker — bewusst konservativ:
 //   * HTML/Navigationen: IMMER network-first und NIE in den Cache schreiben
 //     (Cache Storage ist unverschlüsselt — keine authentifizierten Inhalte ablegen).
 //   * /static/: cache-first (Dateinamen sind inhaltsgehasht, also immutable).
 //   * Offline: vorgecachte Fallback-Seite nur für Navigationsanfragen.
-// Versionierung: CACHE_VERSION kommt aus dem Django-View (Build/Release-Kennung);
-// neue Version übernimmt beim nächsten Laden (skipWaiting + clients.claim).
+// Versionierung: Die Konfiguration setzt der Django-View ein (mandari/pwa.py ersetzt die markierte
+// SW_CONFIG-Zeile durch JSON: Build/Release-Kennung, Offline-URL, Kern-Assets).
+// Die Datei ist reines JavaScript ohne Template-Syntax, damit Linter und CodeQL sie prüfen.
+// Neue Version übernimmt beim nächsten Laden (skipWaiting + clients.claim).
 
-const CACHE_VERSION = '{{ cache_version|escapejs }}';
+const SW_CONFIG = { cacheVersion: 'dev', offlineUrl: '/offline/', precache: [] }; // __SW_CONFIG__
+
+const CACHE_VERSION = SW_CONFIG.cacheVersion;
 const STATIC_CACHE = 'mandari-static-' + CACHE_VERSION;
 const OFFLINE_CACHE = 'mandari-offline-' + CACHE_VERSION;
-const OFFLINE_URL = '{% url "pwa_offline" %}';
+const OFFLINE_URL = SW_CONFIG.offlineUrl;
 
 // Kern-Assets fürs App-Shell-Gefühl (gehashte Namen => sicher cachebar).
-const PRECACHE_STATIC = [
-    '{% static "css/styles.css" %}',
-    '{% static "brand/icon-192.png" %}',
-    '{% static "brand/favicon.svg" %}',
-];
+const PRECACHE_STATIC = SW_CONFIG.precache;
 
 self.addEventListener('install', (event) => {
     event.waitUntil((async () => {

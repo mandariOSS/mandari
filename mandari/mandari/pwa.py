@@ -8,10 +8,14 @@ authentifizierten Inhalten — Cache Storage ist unverschlüsselt).
 """
 
 import hashlib
+import json
+import re
 
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.template.loader import render_to_string
 from django.templatetags.static import static
+from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 
@@ -64,15 +68,30 @@ def manifest(request):
     return response
 
 
+#: Kern-Assets, die der Service Worker bei der Installation vorlädt (gehashte Namen, sicher cachebar)
+SW_PRECACHE = ("css/styles.css", "brand/icon-192.png", "brand/favicon.svg")
+#: Die Konfigurationszeile in pwa/sw.js; der Rest der Datei bleibt unverändert
+_SW_CONFIG_LINE = re.compile(r"^const SW_CONFIG = .*// __SW_CONFIG__$", re.MULTILINE)
+
+
+def service_worker_source() -> str:
+    """Service Worker mit eingesetzter Konfiguration (reines JavaScript, keine Template-Syntax)."""
+    konfiguration = {
+        "cacheVersion": _cache_version(),
+        "offlineUrl": reverse("pwa_offline"),
+        "precache": [static(pfad) for pfad in SW_PRECACHE],
+    }
+    zeile = f"const SW_CONFIG = {json.dumps(konfiguration)};"
+    quelle, anzahl = _SW_CONFIG_LINE.subn(lambda _m: zeile, render_to_string("pwa/sw.js"))
+    if anzahl != 1:
+        raise RuntimeError("pwa/sw.js: Konfigurationszeile __SW_CONFIG__ nicht gefunden")
+    return quelle
+
+
 @require_GET
 def service_worker(request):
     """Service Worker unter /sw.js — Root-Scope für /work/ und /accounts/."""
-    response = render(
-        request,
-        "pwa/sw.js",
-        {"cache_version": _cache_version()},
-        content_type="text/javascript; charset=utf-8",
-    )
+    response = HttpResponse(service_worker_source(), content_type="text/javascript; charset=utf-8")
     # Immer frisch prüfen, damit neue Versionen zügig aktiv werden.
     response["Cache-Control"] = "no-cache"
     return response
