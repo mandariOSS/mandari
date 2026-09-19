@@ -17,7 +17,6 @@ from apps.session.models import (
     SessionTenant,
 )
 
-
 #: Antworttext der APIs bei abweichender Organisation (fester Text, keine Ausnahme-Details nach außen)
 SUBMITTING_ORGANIZATION_MISMATCH = (
     "Die einreichende Organisation passt nicht zu diesem Token. Anträge werden der Organisation "
