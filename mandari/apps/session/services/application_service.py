@@ -17,6 +17,12 @@ from apps.session.models import (
     SessionTenant,
 )
 
+#: Antworttext der APIs bei abweichender Organisation (fester Text, keine Ausnahme-Details nach außen)
+SUBMITTING_ORGANIZATION_MISMATCH = (
+    "Die einreichende Organisation passt nicht zu diesem Token. Anträge werden der Organisation "
+    "zugeordnet, die den Token in mandari Work verbunden hat."
+)
+
 
 class SubmittingOrganizationMismatchError(PermissionError):
     """Die angegebene einreichende Organisation passt nicht zur Verbindung des Tokens."""
@@ -40,10 +46,7 @@ def submitting_organization_for_token(token: Any, claimed_id: object = None) -> 
     )
     bound = connection.organization if connection else None
     if claimed_id and (bound is None or str(bound.pk) != str(claimed_id)):
-        raise SubmittingOrganizationMismatchError(
-            "Die einreichende Organisation passt nicht zu diesem Token. Anträge werden der Organisation "
-            "zugeordnet, die den Token in mandari Work verbunden hat."
-        )
+        raise SubmittingOrganizationMismatchError(SUBMITTING_ORGANIZATION_MISMATCH)
     return bound
 
 

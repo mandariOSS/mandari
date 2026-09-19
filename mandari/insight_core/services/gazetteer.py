@@ -52,12 +52,18 @@ def normalize_street_name(name: str) -> str:
     return s.strip()
 
 
+# Hausnummer am Ende, durch Leerraum abgetrennt. Bewusst ohne führendes \s+: Das ließe re.search
+# bei langen Leerzeichenfolgen an jeder Startposition neu suchen (quadratischer Aufwand, ReDoS).
+_HOUSE_NUMBER_RE = re.compile(r"(?<=\s)(\d{1,4}\s{0,3}[a-zA-Z]?)$")
+
+
 def strip_house_number(name: str) -> tuple[str, str | None]:
     """Trennt eine ggf. angehängte Hausnummer ab: 'Hauptstraße 12a' → ('Hauptstraße', '12a')."""
-    match = re.search(r"\s+(\d{1,4}\s*[a-zA-Z]?)\s*$", name or "")
+    text = (name or "").strip()
+    match = _HOUSE_NUMBER_RE.search(text)
     if match:
-        return name[: match.start()].strip(), match.group(1).replace(" ", "")
-    return (name or "").strip(), None
+        return text[: match.start()].strip(), match.group(1).replace(" ", "")
+    return text, None
 
 
 def normalize_house_number(house_number: str | None) -> str:
