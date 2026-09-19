@@ -399,6 +399,11 @@ jobs:
         run: cd mandari && npm run lint
       - name: Frontend-Unit-Tests (Navigations-Helfer)
         run: cd mandari && npm run test:navigation
+      # JS-Vorlagen (z. B. der Service Worker) werden von Django gerendert; Template-Tags nur in
+      # Kommentaren oder Strings, sonst kann CodeQL die Datei nicht analysieren.
+      - name: JS-Vorlagen sind gültiges JavaScript
+        run: |
+          for f in $(git ls-files 'mandari/templates/*.js' 'mandari/templates/**/*.js'); do node --check "$f"; done
       - name: Vite-Build (Manifest muss entstehen)
         run: |
           cd mandari && npx vite build
