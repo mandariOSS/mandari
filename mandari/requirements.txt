@@ -48,7 +48,7 @@ html2text>=2025.4.15
 # Document extraction (OCR)
 # Note: PyPDF2 is deprecated, using pypdf instead
 pypdf>=6.18.1  # Security: fixes resource exhaustion, data amplification, infinite loop
-pytesseract>=0.3.10
+pytesseract>=0.3.13
 pdf2image>=1.16.0
 
 # PDF generation
