@@ -43,7 +43,7 @@
     "yjs": "^13.6.32"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
+    "@biomejs/biome": "^2.5.14",
     "@types/alpinejs": "^3.13.11",
     "@types/node": "^26.0.0",
     "axe-core": "^4.13.0",
