@@ -42,7 +42,7 @@ cryptography>=50.0.1
 webauthn>=3.0.0
 
 # E-Mail: CSS-Inliner (Rust-Wheel, keine Systemabhängigkeiten) und Text-Alternative (Issue #175)
-css-inline>=0.14
+css-inline>=0.21.3
 html2text>=2025.4.15
 
 # Document extraction (OCR)
