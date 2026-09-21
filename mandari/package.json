@@ -15,7 +15,7 @@
     "test:navigation": "node frontend/js/test/navigation.test.mjs"
   },
   "dependencies": {
-    "@alpinejs/collapse": "^3.17.2",
+    "@alpinejs/collapse": "^3.17.3",
     "@alpinejs/focus": "^3.17.2",
     "@tiptap/core": "^3.31.3",
     "@tiptap/extension-collaboration": "^3.31.3",
