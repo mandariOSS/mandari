@@ -75,7 +75,7 @@ cryptography==50.0.1
     #   pyopenssl
     #   service-identity
     #   webauthn
-css-inline==0.21.2
+css-inline==0.21.3
     # via -r requirements.txt
 cssselect2==0.10.1
     # via svglib
@@ -109,7 +109,7 @@ django-safemigrate==6.0
     # via -r requirements.txt
 django-unfold==0.105.0
     # via -r requirements.txt
-django-vite==3.1.0
+django-vite==3.2.0
     # via -r requirements.txt
 elastic-transport==8.19.0
     # via elasticsearch

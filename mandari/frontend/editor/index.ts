@@ -21,8 +21,8 @@ import StarterKit from '@tiptap/starter-kit'
 import Alpine from 'alpinejs'
 import { documentEditor } from '../alpine/document-editor'
 import { preparationApp } from '../alpine/prepare-meeting'
-import { initCollaboration } from './collaboration'
 import type { CollabOptions, CollabResult, CollabUser } from './collaboration'
+import { initCollaboration } from './collaboration'
 import { renderDiff } from './diff'
 import { CommentMark } from './extensions/comment-mark'
 import { FindReplace } from './extensions/find-replace'
@@ -293,18 +293,18 @@ export function createCollaborativeEditor(options: CollaborativeEditorOptions): 
   return { editor, collab }
 }
 
+export type { CollabOptions, CollabResult, CollabUser }
 export {
-  Editor,
-  getFormatState,
   CommentMark,
-  FindReplace,
-  PageBreakNode,
   cleanPastedHtml,
+  Editor,
+  FindReplace,
+  getFormatState,
+  initCollaboration,
+  PageBreakNode,
   renderDiff,
   renderLetterhead,
-  initCollaboration,
 }
-export type { CollabOptions, CollabUser, CollabResult }
 
 // Globales Objekt für die Alpine-Komponenten in den Templates (ES-Modul via Vite)
 const MandariEditor = {

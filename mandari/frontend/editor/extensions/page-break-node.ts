@@ -7,7 +7,7 @@
  * Umbruch (page-break-after), im DOCX-Export einen add_page_break().
  */
 
-import { Node, mergeAttributes } from '@tiptap/core'
+import { mergeAttributes, Node } from '@tiptap/core'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {

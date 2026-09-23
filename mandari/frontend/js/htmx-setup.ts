@@ -13,7 +13,7 @@
 
 import htmx from 'htmx.org'
 import { confirmAction } from './alpine/confirm-dialog'
-import { type ToastType, showToast } from './alpine/toast'
+import { showToast, type ToastType } from './alpine/toast'
 import { csrfToken } from './csrf'
 
 export { csrfToken }

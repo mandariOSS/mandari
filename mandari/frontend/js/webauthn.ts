@@ -163,5 +163,5 @@ function setup(root: HTMLElement, run: (root: HTMLElement) => Promise<void>): vo
   })
 }
 
-document.querySelectorAll<HTMLElement>('[data-webauthn-register]').forEach((root) => setup(root, register))
-document.querySelectorAll<HTMLElement>('[data-webauthn-login]').forEach((root) => setup(root, login))
+for (const root of document.querySelectorAll<HTMLElement>('[data-webauthn-register]')) setup(root, register)
+for (const root of document.querySelectorAll<HTMLElement>('[data-webauthn-login]')) setup(root, login)

@@ -6,8 +6,8 @@
  */
 
 import { Extension } from '@tiptap/core'
-import Suggestion from '@tiptap/suggestion'
 import type { SuggestionKeyDownProps, SuggestionOptions, SuggestionProps } from '@tiptap/suggestion'
+import Suggestion from '@tiptap/suggestion'
 
 interface SlashCommandItem {
   title: string

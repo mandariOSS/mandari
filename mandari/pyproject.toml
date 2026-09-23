@@ -63,7 +63,7 @@ dev = [
     "pytest-playwright>=0.7.0",  # E2E (tests_e2e/), Browser: playwright install chromium
     "ruff>=0.8.0",
     "mypy==2.3.1",  # wie CI: Ergebnisse unterscheiden sich zwischen mypy-Versionen
-    "django-stubs[compatible-mypy]==6.1.0",
+    "django-stubs[compatible-mypy]==6.1.1",
     "sqlalchemy>=2.0",  # Schema-Contract gegen die Ingestor-Modelle (insight_core/schema_contract.py)
     "djlint==1.46.1",  # gleiche Version wie CI und pre-commit (Regelsatz weicht zwischen Versionen ab)
 ]
