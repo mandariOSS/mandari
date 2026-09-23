@@ -247,7 +247,7 @@ def test_testdaten_ueberstehen_eine_anfrage_durch_den_ganzen_stapel(client: Clie
     Testdaten nach der ersten Anfrage verschwunden — in der ganzen Testsuite."""
     from django.contrib.auth import get_user_model
 
-    nutzer = get_user_model().objects.create_user(email="pool-probe@example.org")
+    nutzer = get_user_model().objects.create(email="pool-probe@example.org")
 
     assert client.get("/health/live/").status_code == 200
 
