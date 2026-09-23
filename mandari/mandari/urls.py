@@ -17,6 +17,7 @@ from django.views.static import serve as static_serve
 
 from apps.accounts.views import admin_login_redirect
 from apps.common import csp, health, metrics
+from apps.common.db_connections import releases_db_connections
 from apps.common.uploads import is_embeddable
 from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
@@ -178,21 +179,33 @@ urlpatterns += [
 # =============================================================================
 
 
-def handler_400(request, exception=None):
+# Alle Fehler-Handler geben am Ende die Datenbankverbindungen ihres Threads zurück (#344).
+# Unter ASGI ruft Django sie über response_for_exception mit thread_sensitive=False auf,
+# also in den langlebigen Threads des Standard-Executors. Die schließen nie eine Anfrage ab:
+# Jeder, der einmal eine Fehlerseite mit Datenbankzugriff (Anmeldestatus, Navigation)
+# gerendert hat, behielte seine Verbindung für immer. Der Executor hat zehn Threads, der
+# Pool zehn Verbindungen — eine 404-Welle eines Scanners genügte, um ihn ganz zu belegen.
+
+
+@releases_db_connections
+def handler_400(request: HttpRequest, exception: Exception | None = None) -> HttpResponse:
     """Bad Request error handler."""
     return render(request, "400.html", status=400)
 
 
-def handler_403(request, exception=None):
+@releases_db_connections
+def handler_403(request: HttpRequest, exception: Exception | None = None) -> HttpResponse:
     """Permission Denied error handler."""
     return render(request, "403.html", status=403)
 
 
-def handler_404(request, exception=None):
+@releases_db_connections
+def handler_404(request: HttpRequest, exception: Exception | None = None) -> HttpResponse:
     """Page Not Found error handler."""
     return render(request, "404.html", status=404)
 
 
+@releases_db_connections
 def handler_500(request: HttpRequest) -> HttpResponse:
     """Server Error handler.
 
