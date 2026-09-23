@@ -10,7 +10,6 @@ apps.common.encryption
 apps.common.ical
 apps.common.management.commands.rotate_encryption
 apps.common.management.commands.setup_demo_environment
-apps.common.middleware
 apps.common.mixins
 apps.common.models
 apps.common.org_email

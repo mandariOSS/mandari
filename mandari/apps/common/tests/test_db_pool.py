@@ -45,12 +45,20 @@ class TestPoolFuerPostgres:
         assert "pool" in db["OPTIONS"], "Ohne Pool wächst die Verbindungszahl mit der Last"
         assert db["CONN_MAX_AGE"] == 0, "Django verlangt CONN_MAX_AGE=0, sonst ImproperlyConfigured"
 
-    def test_vorgaben_passen_zum_thread_pool(self) -> None:
+    def test_vorgaben(self) -> None:
         s = lade_einstellungen({"DATABASE_URL": "postgres://u:p@localhost:5432/db", "DEBUG": "false"})
         pool = s.DATABASES["default"]["OPTIONS"]["pool"]
         assert pool["min_size"] == 2
-        assert pool["max_size"] == 10, "Mehr als der ASGI-Thread-Pool kann ein Prozess nicht nutzen"
-        assert pool["timeout"] > 0, "Bei erschöpftem Pool warten, nicht sofort scheitern"
+        assert pool["max_size"] == 10
+        assert pool["timeout"] > 0, "Bei erschöpftem Pool kurz warten, nicht sofort scheitern"
+
+    def test_warteschlange_ist_begrenzt(self) -> None:
+        """Unter ASGI bekommt jede Anfrage einen eigenen Thread — ohne Grenze stapeln sich
+        bei einer Anfragespitze beliebig viele vor dem Pool (Issue #344)."""
+        s = lade_einstellungen({"DATABASE_URL": "postgres://u:p@localhost:5432/db", "DEBUG": "false"})
+        pool = s.DATABASES["default"]["OPTIONS"]["pool"]
+        assert pool["max_waiting"] > 0, "0 hieße unbegrenzt"
+        assert pool["timeout"] <= 5, "Wer länger wartet, dessen Client hat meist schon aufgegeben"
 
     def test_grenzen_sind_einstellbar(self) -> None:
         s = lade_einstellungen(
@@ -60,10 +68,11 @@ class TestPoolFuerPostgres:
                 "DB_POOL_MIN": "1",
                 "DB_POOL_MAX": "4",
                 "DB_POOL_TIMEOUT": "3.5",
+                "DB_POOL_MAX_WAITING": "7",
             }
         )
         pool = s.DATABASES["default"]["OPTIONS"]["pool"]
-        assert (pool["min_size"], pool["max_size"], pool["timeout"]) == (1, 4, 3.5)
+        assert (pool["min_size"], pool["max_size"], pool["timeout"], pool["max_waiting"]) == (1, 4, 3.5, 7)
 
     def test_abschaltbar(self) -> None:
         """Wer den Pool nicht will, muss ihn ausschalten können."""
@@ -104,11 +113,14 @@ class TestGrenzeUnterLast:
         if not obergrenze:
             pytest.skip("Pool in dieser Konfiguration nicht aktiv")
 
+        from apps.common.db_connections import is_pool_exhausted
+
         hoechststand = 0
         fehler: list[str] = []
+        abgewiesen = 0
 
         def abfrage(_: int) -> None:
-            nonlocal hoechststand
+            nonlocal hoechststand, abgewiesen
             try:
                 with connections["default"].cursor() as cur:
                     cur.execute("SELECT pg_sleep(0.05)")
@@ -117,8 +129,13 @@ class TestGrenzeUnterLast:
                         "WHERE backend_type = 'client backend' AND datname = current_database()"
                     )
                     hoechststand = max(hoechststand, cur.fetchone()[0])
-            except Exception as exc:  # noqa: BLE001 — jeder Fehler ist hier ein Befund
-                fehler.append(f"{type(exc).__name__}: {exc}")
+            except Exception as exc:  # noqa: BLE001 — jeder andere Fehler ist hier ein Befund
+                if is_pool_exhausted(exc):
+                    # Seit #344 ist die Warteschlange begrenzt: Was darüber hinausgeht,
+                    # prallt sofort ab, statt Threads zu stapeln. Gewollt.
+                    abgewiesen += 1
+                else:
+                    fehler.append(f"{type(exc).__name__}: {exc}")
             finally:
                 connections["default"].close()
 
@@ -127,6 +144,7 @@ class TestGrenzeUnterLast:
             list(pool.map(abfrage, range(obergrenze * 8)))
 
         assert not fehler, f"Unter Last sind Fehler aufgetreten: {fehler[:3]}"
+        assert abgewiesen < obergrenze * 8, "Es muss auch etwas durchgekommen sein"
         # Grosszuegige Reserve: pytest, andere Tests und Postgres selbst halten
         # ebenfalls Verbindungen. Entscheidend ist, dass die Zahl NICHT mit der
         # Zahl der Anfragen waechst.

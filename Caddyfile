@@ -46,6 +46,19 @@
 	@production not host localhost
 	header @production Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 
+	# Offensichtliche Scanner-Anfragen gar nicht erst weiterreichen (Issue #344). Keiner dieser
+	# Pfade gehört zu mandari, aber jeder davon belegt sonst einen Anwendungs-Thread. Eine Welle
+	# solcher Anfragen hat am 22.09.2026 den Datenbank-Pool einer Installation leergeräumt.
+	@scanner {
+		path */.env* */.git/* */.git */.svn/* */.hg/* */.aws/* */.ssh/* */.DS_Store
+		path *.php *.asp *.aspx *.jsp *.cgi *.swp *.bak
+		path /wp-* */wp-admin* */wp-content/* */wp-includes/* /wordpress* /xmlrpc*
+		path /actuator* /cgi-bin/* /phpmyadmin* /vendor/phpunit/* /server-status /boaform/* /HNAP1*
+	}
+	handle @scanner {
+		respond 404
+	}
+
 	# Health check endpoint (for Docker/internal monitoring)
 	handle /health {
 		respond "OK" 200

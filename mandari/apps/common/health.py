@@ -3,7 +3,10 @@
 Getrennte Gesundheitsprüfungen (Issue #231, Teil 1).
 
 - ``/health/live/``  (Liveness): Antwortet der Prozess? Keine Abhängigkeiten. Ein Fehler
-  hier heißt „Prozess neu starten“.
+  hier heißt „Prozess neu starten“. Einzige Ausnahme ist ein festgefahrener
+  Datenbank-Pool (Issue #344): Sind alle Verbindungen seit einer Minute verliehen, ohne
+  dass eine zurückkommt, und ist die Datenbank selbst erreichbar, dann ist der *Prozess*
+  kaputt, und nur ein Neustart hilft. Ist die Datenbank weg, bleibt die Liveness grün.
 - ``/health/ready/`` (Readiness): Kann die Instanz Anfragen bedienen? Prüft Datenbank,
   Cache (Redis), Elasticsearch und den Medienspeicher, jede Prüfung mit eigenem
   Zeitlimit. Ein Fehler hier heißt „keine Anfragen mehr zuteilen“, nicht „neu starten“.
@@ -36,6 +39,8 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
 
+from apps.common.db_connections import pool_starved, releases_db_connections
+
 logger = logging.getLogger(__name__)
 
 #: Zeitlimit je Prüfung in Sekunden; die Antwort insgesamt bleibt unter der Probe-Grenze (5 s).
@@ -50,6 +55,7 @@ class CheckResult:
     duration_ms: int
 
 
+@releases_db_connections  # läuft in einem eigenen Thread, der die Verbindung sonst nie zurückgibt (#344)
 def check_database() -> str:
     with connection.cursor() as cursor:
         cursor.execute("SELECT 1")
@@ -127,7 +133,9 @@ def run_readiness_checks() -> list[CheckResult]:
 @never_cache
 @require_GET
 def live(request: HttpRequest) -> JsonResponse:
-    """Liveness: Der Prozess nimmt Anfragen an. Keine Abhängigkeiten."""
+    """Liveness: Der Prozess nimmt Anfragen an und sein Datenbank-Pool ist nicht festgefahren."""
+    if pool_starved():
+        return JsonResponse({"status": "error", "detail": "Datenbank-Pool festgefahren"}, status=503)
     return JsonResponse({"status": "ok"})
 
 
