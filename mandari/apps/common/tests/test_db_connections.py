@@ -163,7 +163,7 @@ class TestAbgebrocheneAnfrageGibtVerbindungZurueck:
             # zurückgeben. Den Pool neu aufzubauen (close_pool) wäre gefährlicher: Den neuen
             # baut der Thread, der ihn als Nächstes anfasst, mit *seinen* Verbindungsdaten.
             for roh in _gehaltene_verbindungen:
-                if not roh.closed and getattr(roh, "_pool", None) is pool:
+                if not roh.closed and roh._pool is pool:
                     pool.putconn(roh)
             _gehaltene_verbindungen.clear()
 
@@ -299,6 +299,37 @@ def test_readiness_datenbankpruefung_gibt_ihre_verbindung_zurueck() -> None:
     t.join(10)
 
     assert ergebnis == {"offen_danach": False}
+
+
+def test_sync_watchdog_gibt_seine_verbindung_nach_jedem_lauf_zurueck(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Der Watchdog lebt so lange wie der Webprozess; ohne Aufräumen belegte er dauerhaft
+    einen Pool-Platz (gemessen in Produktion am 23.09.2026)."""
+    from insight_sync import daemon
+
+    aufrufe: list[frozenset[str]] = []
+    monkeypatch.setattr(db_connections, "close_thread_connections", lambda ausser=frozenset(): aufrufe.append(ausser))
+    for name in (
+        "_cleanup_stale_syncs",
+        "_run_periodic_georef",
+        "_run_periodic_faction_reminders",
+        "_run_periodic_faction_schedule",
+        "_run_periodic_faction_invitations",
+    ):
+        monkeypatch.setattr(daemon, name, lambda: None)
+    # Eigenes Stop-Signal, damit der echte Watchdog im Testprozess unberührt bleibt.
+    stop = threading.Event()
+    monkeypatch.setattr(daemon, "_stop_event", stop)
+
+    def warten(sekunden: float) -> bool:
+        if sekunden == 60:  # Ende des ersten Durchlaufs
+            stop.set()
+        return stop.is_set()
+
+    monkeypatch.setattr(daemon, "_wait", warten)
+
+    daemon._watchdog_loop()
+
+    assert len(aufrufe) == 1, "Nach dem Durchlauf muss die Verbindung zurück in den Pool"
 
 
 # --- Erschöpfter Pool: 503 ohne Datenbank ---------------------------------------------
