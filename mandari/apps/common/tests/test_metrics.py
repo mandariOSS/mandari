@@ -199,3 +199,37 @@ def test_cache_statistik_erscheint_als_metrik(client: Client, monkeypatch: pytes
 
     assert "mandari_cache_keyspace_hits_total 75.0" in text
     assert "mandari_cache_hit_ratio 0.75" in text
+
+
+# --- Registrieren ohne Abruf (Issue #344) ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("sammler", "messfunktion", "leerwert"),
+    [
+        (metrics.DatabaseCollector, "db_pool_stats", {"pool_available": 0}),
+        (metrics.CacheCollector, "cache_stats", None),
+        (metrics.QueueCollector, "transcription_queue", {}),
+    ],
+)
+def test_registrieren_fragt_nichts_ab(
+    monkeypatch: pytest.MonkeyPatch, sammler: type, messfunktion: str, leerwert: object
+) -> None:
+    """Ohne describe() ruft prometheus_client beim Registrieren collect() auf. Beim Start von
+    Daphne holte sich der QueueCollector dafür eine Datenbankverbindung, die nie zurückkam."""
+    from prometheus_client import CollectorRegistry, generate_latest
+
+    aufrufe: list[str] = []
+
+    def messen() -> object:
+        aufrufe.append(messfunktion)
+        return leerwert
+
+    monkeypatch.setattr(metrics, messfunktion, messen)
+
+    register = CollectorRegistry(auto_describe=True)
+    register.register(sammler())
+    assert aufrufe == [], "Registrieren darf nichts messen"
+
+    generate_latest(register)
+    assert aufrufe == [messfunktion], "Beim Abruf wird weiterhin gemessen"

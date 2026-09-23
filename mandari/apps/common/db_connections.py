@@ -101,6 +101,16 @@ def close_thread_connections(ausser: frozenset[str] = frozenset()) -> None:
             verbindung.close()
 
 
+def release_idle_thread_connections() -> None:
+    """Gibt die Verbindungen dieses Threads zurück, soweit keine in einer Transaktion steckt.
+
+    Für Stellen außerhalb einer Anfrage, etwa den Start der Anwendung: Was dort im
+    Hauptthread geöffnet wird, bliebe sonst für immer ausgeliehen, denn dieser Thread
+    bedient keine Anfragen und räumt nie auf.
+    """
+    close_thread_connections(ausser=_aliase_in_transaktion())
+
+
 def releases_db_connections[**P, R](func: Callable[P, R]) -> Callable[P, R]:
     """Für Funktionen, die in einem eigenen Thread laufen und die Datenbank benutzen.
 
