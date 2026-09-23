@@ -4,8 +4,8 @@
 # Django 6.0
 django>=6.1,<6.2
 django-htmx>=1.19.0
-django-cotton>=2.7.0
-django-vite>=3.1.0
+django-cotton>=2.7.2
+django-vite>=3.2.0
 django-ninja>=1.7.0
 django-unfold>=0.40.0
 whitenoise>=6.7.0
@@ -42,20 +42,20 @@ cryptography>=50.0.1
 webauthn>=3.0.0
 
 # E-Mail: CSS-Inliner (Rust-Wheel, keine Systemabhängigkeiten) und Text-Alternative (Issue #175)
-css-inline>=0.14
+css-inline>=0.21.3
 html2text>=2025.4.15
 
 # Document extraction (OCR)
 # Note: PyPDF2 is deprecated, using pypdf instead
 pypdf>=6.18.1  # Security: fixes resource exhaustion, data amplification, infinite loop
-pytesseract>=0.3.10
+pytesseract>=0.3.13
 pdf2image>=1.16.0
 
 # PDF generation
-xhtml2pdf>=0.2.19  # Security: fixes ReDoS vulnerability
+xhtml2pdf>=0.2.20  # Security: fixes ReDoS vulnerability
 defusedxml>=0.7.1  # Security: sicheres XML-Parsing (Task-Import)
 reportlab>=5.0.1
-segno>=1.6.0  # QR-Codes (reines Python, Teilnahmenachweis-Verifikation)
+segno>=1.6.6  # QR-Codes (reines Python, Teilnahmenachweis-Verifikation)
 
 # DOCX generation
 python-docx>=1.1.0
@@ -74,12 +74,12 @@ gunicorn>=23.0.0
 # Transitive dependencies pinned for security
 urllib3>=2.7.0  # Security: fixes open redirect, info disclosure
 requests>=2.32.4  # Security: fixes control flow, sensitive data issues
-anyio>=4.4.0  # Security: fixes race condition
+anyio>=4.15.1  # Security: fixes race condition
 zipp>=4.1.0  # Security: fixes infinite loop
 
 # OpenTelemetry (aktiv nur mit OTEL_EXPORTER_OTLP_ENDPOINT, siehe apps/common/observability.py)
-opentelemetry-sdk>=1.27.0
-opentelemetry-exporter-otlp-proto-http>=1.27.0
+opentelemetry-sdk>=1.44.0
+opentelemetry-exporter-otlp-proto-http>=1.44.0
 opentelemetry-instrumentation-django>=0.65b0
 opentelemetry-instrumentation-psycopg>=0.48b0
 opentelemetry-instrumentation-redis>=0.48b0

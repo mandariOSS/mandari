@@ -346,7 +346,7 @@ jobs:
           pip install shared/
           pip install -r mandari/requirements.lock
           # Versionen wie in pyproject [dev] – mypy-Ergebnisse unterscheiden sich zwischen Versionen
-          pip install "mypy==2.3.1" "django-stubs[compatible-mypy]==6.1.0" "sqlalchemy>=2.0"
+          pip install "mypy==2.3.1" "django-stubs[compatible-mypy]==6.1.1" "sqlalchemy>=2.0"
           # Test-Abhängigkeiten, damit Fixtures/Decorator in Testmodulen typisiert sind (sonst "untyped decorator")
           pip install pytest pytest-django factory-boy pytest-playwright
       - name: mypy mit Allowlist
