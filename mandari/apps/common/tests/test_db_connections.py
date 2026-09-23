@@ -518,3 +518,16 @@ def test_liveness_endpunkt_meldet_festgefahrenen_pool(client: Client, monkeypatc
     antwort = client.get("/health/live/")
     assert antwort.status_code == 503
     assert antwort.json()["status"] == "error"
+
+
+def test_start_gibt_verbindungen_zurueck_ausser_in_transaktion(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``asgi.py`` gibt nach dem Start zurück, was der Hauptthread geöffnet hat — eine
+    Testtransaktion (Import von asgi.py in Tests) bleibt dabei unberührt."""
+    frei = _FalscheVerbindung("default")
+    in_transaktion = _FalscheVerbindung("andere", in_atomic_block=True)
+    monkeypatch.setattr(db_connections, "connections", _FalscheVerbindungen(frei, in_transaktion))
+
+    db_connections.release_idle_thread_connections()
+
+    assert frei.geschlossen == 1
+    assert in_transaktion.geschlossen == 0

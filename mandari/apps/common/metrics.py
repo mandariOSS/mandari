@@ -136,7 +136,22 @@ def db_open_connections() -> int | None:
     return int(row[0]) if row else None
 
 
-class DatabaseCollector(Collector):
+class _MisstErstBeimAbruf(Collector):
+    """Sammler, die erst beim Abruf von ``/metrics/`` messen.
+
+    Ohne ``describe()`` ruft prometheus_client beim Registrieren einmal ``collect()`` auf,
+    um die Metriknamen zu erfahren (``auto_describe``). Das geschah beim Import dieses
+    Moduls, also beim Start von Daphne im Hauptthread — und der QueueCollector holte sich
+    dafür eine Datenbankverbindung, die nie zurückkam: ein dauerhaft belegter Platz im Pool
+    (Issue #344). Die leere Beschreibung verzichtet nur auf die Prüfung auf doppelte
+    Metriknamen für diese Sammler.
+    """
+
+    def describe(self) -> Iterator[Metric]:
+        return iter(())
+
+
+class DatabaseCollector(_MisstErstBeimAbruf):
     def collect(self) -> Iterator[Metric]:
         try:
             stats = db_pool_stats()
@@ -186,7 +201,7 @@ def cache_stats() -> dict[str, int] | None:
     return {"hits": int(info.get("keyspace_hits", 0)), "misses": int(info.get("keyspace_misses", 0))}
 
 
-class CacheCollector(Collector):
+class CacheCollector(_MisstErstBeimAbruf):
     def collect(self) -> Iterator[Metric]:
         try:
             stats = cache_stats()
@@ -218,7 +233,7 @@ def transcription_queue() -> dict[str, int]:
     }
 
 
-class QueueCollector(Collector):
+class QueueCollector(_MisstErstBeimAbruf):
     def collect(self) -> Iterator[Metric]:
         try:
             zaehler = transcription_queue()

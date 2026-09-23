@@ -24,6 +24,13 @@ from apps.work.motions.routing import websocket_urlpatterns as motions_websocket
 
 websocket_urlpatterns = motions_websocket_urlpatterns + meetings_websocket_urlpatterns
 
+# Was beim Start im Hauptthread an Datenbankverbindungen geöffnet wurde (Importe,
+# App-Initialisierung), zurückgeben. Dieser Thread bedient keine Anfragen und hielte sie
+# sonst für immer fest — mit Pool ein dauerhaft belegter Platz (Issue #344).
+from apps.common.db_connections import release_idle_thread_connections  # noqa: E402
+
+release_idle_thread_connections()
+
 application = ProtocolTypeRouter(
     {
         "http": django_asgi_app,
