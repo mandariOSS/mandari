@@ -531,3 +531,107 @@ def test_start_gibt_verbindungen_zurueck_ausser_in_transaktion(monkeypatch: pyte
 
     assert frei.geschlossen == 1
     assert in_transaktion.geschlossen == 0
+
+
+# --- Fehlerseiten im Standard-Executor ------------------------------------------------
+#
+# Unter ASGI rendert Django Fehlerseiten über response_for_exception mit
+# thread_sensitive=False, also in den langlebigen Threads des Standard-Executors. Ohne
+# Rückgabe behielt jeder Thread, der einmal eine Fehlerseite mit Datenbankzugriff gerendert
+# hatte, seine Verbindung — zehn Executor-Threads, zehn Pool-Plätze.
+
+
+def _nicht_da(request: Any) -> HttpResponse:
+    from django.http import Http404
+
+    raise Http404("gibt es nicht")
+
+
+def _fehlerseite_mit_datenbank(request: Any, exception: Exception | None = None) -> HttpResponse:
+    """Wie die echte 404-Seite: fragt beim Rendern die Datenbank ab."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1")
+    _gehaltene_verbindungen.append(connection.connection)
+    return HttpResponse("nicht gefunden", status=404)
+
+
+def _urlconf_mit(fehlerseite: Any) -> Any:
+    import types
+
+    modul = types.ModuleType("urlconf_fehlerseite_probe")
+    modul.urlpatterns = [path("nicht-da/", _nicht_da)]  # type: ignore[attr-defined]
+    modul.handler404 = fehlerseite  # type: ignore[attr-defined]
+    return modul
+
+
+def _404_ueber_asgi() -> None:
+    from django.core.handlers.asgi import ASGIHandler
+
+    async def ablauf() -> None:
+        handler = ASGIHandler()
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/nicht-da/",
+            "raw_path": b"/nicht-da/",
+            "query_string": b"",
+            "root_path": "",
+            "headers": [(b"host", b"testserver")],
+            "client": ("127.0.0.1", 40001),
+            "server": ("testserver", 80),
+        }
+        nachrichten: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        await nachrichten.put({"type": "http.request", "body": b"", "more_body": False})
+
+        async def receive() -> dict[str, Any]:
+            return await nachrichten.get()
+
+        async def send(message: Mapping[str, Any]) -> None:
+            return None
+
+        await handler(scope, receive, send)
+
+    asyncio.run(ablauf())
+
+
+@pytest.mark.django_db(transaction=True)
+class TestFehlerseitenGebenVerbindungZurueck:
+    def test_mit_dekorator_kommt_die_verbindung_zurueck(self) -> None:
+        pool = _pool_oder_skip()
+        _gehaltene_verbindungen.clear()
+        with override_settings(
+            ROOT_URLCONF=_urlconf_mit(releases_db_connections(_fehlerseite_mit_datenbank)), MIDDLEWARE=[]
+        ):
+            vorher = _ausgeliehen(pool)
+            _404_ueber_asgi()
+            nachher = _ausgeliehen(pool)
+        assert _gehaltene_verbindungen, (
+            "Die Fehlerseite muss die Datenbank benutzt haben, sonst beweist der Test nichts"
+        )
+        assert nachher == vorher, f"Nach der 404 sind {nachher - vorher} Verbindung(en) mehr verliehen"
+
+    def test_gegenprobe_ohne_dekorator_bleibt_die_verbindung_im_executor_thread(self) -> None:
+        """Beweist, dass der Test den Executor-Pfad wirklich trifft."""
+        pool = _pool_oder_skip()
+        _gehaltene_verbindungen.clear()
+        try:
+            with override_settings(ROOT_URLCONF=_urlconf_mit(_fehlerseite_mit_datenbank), MIDDLEWARE=[]):
+                vorher = _ausgeliehen(pool)
+                _404_ueber_asgi()
+                nachher = _ausgeliehen(pool)
+            assert nachher == vorher + 1, "Ohne Dekorator sollte der Executor-Thread seine Verbindung behalten"
+        finally:
+            for roh in _gehaltene_verbindungen:
+                if not roh.closed and roh._pool is pool:
+                    pool.putconn(roh)
+            _gehaltene_verbindungen.clear()
+
+
+@pytest.mark.parametrize("name", ["handler_400", "handler_403", "handler_404", "handler_500"])
+def test_alle_fehler_handler_geben_ihre_verbindung_zurueck(name: str) -> None:
+    import mandari.urls as urls
+
+    assert hasattr(getattr(urls, name), "__wrapped__"), f"{name} muss mit releases_db_connections dekoriert sein"
