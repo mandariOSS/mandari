@@ -117,7 +117,11 @@ AUTH_USER_MODEL = "accounts.User"
 ASGI_APPLICATION = "mandari.asgi.application"
 
 MIDDLEWARE = [
-    # Ganz außen, damit die gemessene Antwortzeit den gesamten Middleware-Stapel umfasst (apps/common/metrics.py)
+    # Vor allem anderen: gibt die Datenbankverbindung am Ende jeder Anfrage im Thread der
+    # View zurück, auch wenn der Client aufgelegt und asgiref die Aufgabe abgebrochen hat.
+    # Ohne sie läuft der Pool nach abgebrochenen Anfragen leer (Issue #344).
+    "apps.common.db_connections.ReleaseDatabaseConnectionsMiddleware",
+    # Direkt danach, damit die gemessene Antwortzeit den gesamten Middleware-Stapel umfasst (apps/common/metrics.py)
     "apps.common.metrics.RequestMetricsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Content-Security-Policy (Django 6): zunächst Report-Only, siehe Block SECURE_CSP_REPORT_ONLY
@@ -264,6 +268,15 @@ DATABASES = {
 # Django verlangt dafür ``CONN_MAX_AGE = 0``: Die Wiederverwendung übernimmt der
 # Pool, nicht mehr Django. Nur für PostgreSQL — SQLite kennt weder das Problem
 # noch die Option.
+#
+# Wichtig (Issue #344): Unter ASGI bekommt jede Anfrage ihren *eigenen* Thread,
+# asgiref legt je Anfrage einen Executor mit einem Thread an. Die Zahl
+# gleichzeitiger Threads ist also nicht begrenzt; eine Anfragespitze stellt
+# beliebig viele Threads vor die ``max_size`` Verbindungen. Deshalb begrenzt
+# ``max_waiting`` die Warteschlange: Was darüber hinausgeht, bekommt sofort 503,
+# statt Threads zu stapeln, deren Clients ohnehin aufgeben. Dass abgebrochene
+# Anfragen ihre Verbindung zurückgeben, regelt
+# ``apps.common.db_connections.ReleaseDatabaseConnectionsMiddleware``.
 DB_POOL_ENABLED = os.environ.get("DB_POOL", "true").lower() in ("true", "1", "yes")
 
 if DB_POOL_ENABLED and DATABASES["default"]["ENGINE"].endswith("postgresql"):
@@ -271,13 +284,14 @@ if DB_POOL_ENABLED and DATABASES["default"]["ENGINE"].endswith("postgresql"):
     DATABASES["default"].setdefault("OPTIONS", {})["pool"] = {
         # Vorgehalten, damit die erste Anfrage nicht auf den Verbindungsaufbau wartet.
         "min_size": int(os.environ.get("DB_POOL_MIN", "2")),
-        # Obergrenze je Prozess. Voreinstellung passt zum Thread-Pool von Django
-        # unter ASGI (min(32, CPU+4)); mehr Verbindungen kann ein Prozess gar
-        # nicht gleichzeitig benutzen.
+        # Obergrenze gleichzeitig benutzter Verbindungen je Prozess.
         "max_size": int(os.environ.get("DB_POOL_MAX", "10")),
-        # Bei erschöpftem Pool kurz warten statt sofort scheitern. Eine Anfrage,
-        # die zwei Sekunden später bedient wird, ist besser als ein Serverfehler.
-        "timeout": float(os.environ.get("DB_POOL_TIMEOUT", "10")),
+        # Höchstens so viele Anfragen dürfen auf eine Verbindung warten; jede weitere
+        # scheitert sofort mit 503 (TooManyRequests). 0 hieße unbegrenzt.
+        "max_waiting": int(os.environ.get("DB_POOL_MAX_WAITING", "20")),
+        # So lange wartet eine Anfrage höchstens auf eine Verbindung. Kurz genug, dass
+        # ein Besucher eine Fehlerseite sieht statt eines hängenden Browsers.
+        "timeout": float(os.environ.get("DB_POOL_TIMEOUT", "5")),
         "max_lifetime": float(os.environ.get("DB_POOL_MAX_LIFETIME", "1800")),
     }
 

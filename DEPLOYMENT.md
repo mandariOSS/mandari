@@ -366,7 +366,7 @@ Obergrenze der Datenbank.
 
 | Dienst | Obergrenze | Woher |
 |---|---|---|
-| mandari (Daphne, 1 Prozess) | **10** | `DB_POOL_MAX`, passt zum ASGI-Thread-Pool von Django |
+| mandari (Daphne, 1 Prozess) | **10** | `DB_POOL_MAX`; höchstens `DB_POOL_MAX_WAITING` Anfragen warten, der Rest bekommt 503 |
 | Ingestor | 30 | SQLAlchemy `pool_size=10` + `max_overflow=20` |
 | OCR-Worker | 30 | gleiches Image wie der Ingestor |
 | Website (Wagtail) | 10 | eigener Container, eigene Datenbank |
@@ -386,12 +386,59 @@ Reserve: rund 100 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
 | `DB_POOL` | `true` | Pool an- oder abschalten. Bei SQLite ohne Wirkung |
 | `DB_POOL_MIN` | `2` | Vorgehaltene Verbindungen, damit die erste Anfrage nicht wartet |
 | `DB_POOL_MAX` | `10` | Obergrenze je Prozess |
-| `DB_POOL_TIMEOUT` | `10` | Sekunden warten bei erschöpftem Pool, statt sofort zu scheitern |
+| `DB_POOL_MAX_WAITING` | `20` | So viele Anfragen dürfen auf eine Verbindung warten; jede weitere bekommt sofort 503. `0` = unbegrenzt |
+| `DB_POOL_TIMEOUT` | `5` | Sekunden warten bei erschöpftem Pool, danach 503 |
 | `DB_POOL_MAX_LIFETIME` | `1800` | Verbindungen nach dieser Zeit erneuern |
 
 Bei eingeschaltetem Pool setzt die Anwendung `CONN_MAX_AGE` selbsttätig auf `0` —
 Django verlangt das, weil sonst zwei Mechanismen dieselbe Verbindung verwalten
 würden.
+
+### Wenn der Pool leerläuft (Issue #344)
+
+**Anzeichen:** Im Protokoll der Anwendung häufen sich `PoolTimeout: couldn't get a connection`
+oder Antworten mit 503, die Datenbank selbst hat aber reichlich freie Verbindungen (Abfrage
+unten). Seiten, die ganz aus dem Cache kommen, funktionieren weiter — das täuscht.
+
+**Ursache, die am 22.09.2026 zugeschlagen hat:** Unter ASGI bekommt jede Anfrage ihren
+*eigenen* Thread; eine Anfragespitze stellt also beliebig viele Threads vor die zehn
+Verbindungen. Legt ein Client auf, bricht asgiref die Aufgabe ab, und Django verschickt bei
+einem Teil dieser Anfragen nie `request_finished` — die Verbindung blieb dann für immer
+ausgeliehen. Ein Schwachstellen-Scanner, der Dutzende Anfragen pro Sekunde schickt und sofort
+auflegt, räumte so den Pool binnen Sekunden leer, bis zum Neustart gut 25 Stunden später.
+
+**Was heute dagegen schützt:**
+
+| Schutz | Wo |
+|---|---|
+| Verbindung wird im Thread der View zurückgegeben, auch nach einem Abbruch | `ReleaseDatabaseConnectionsMiddleware`, ganz vorn in `MIDDLEWARE` |
+| Eigene Threads geben ihre Verbindung zurück | Dekorator `releases_db_connections` (Readiness-Prüfung, Admin-Sync), `close_thread_connections()` nach jedem Lauf des Sync-Watchdogs |
+| Eine Welle prallt schnell ab, statt Threads zu stapeln | `DB_POOL_MAX_WAITING`, `DB_POOL_TIMEOUT` |
+| Leerer Pool liefert 503 mit `Retry-After`, ohne selbst die Datenbank zu brauchen | `DatabaseErrorMiddleware`, `handler_500` |
+| Festgefahrener Pool wird erkannt | `/health/live/` antwortet 503, wenn eine Minute lang keine Verbindung zurückkam, die Datenbank aber erreichbar ist |
+| Offensichtliche Scanner-Pfade erreichen die Anwendung gar nicht | Block `@scanner` im `Caddyfile` |
+
+Wer eigene Hintergrund-Threads schreibt, die die Datenbank benutzen, versieht die
+Thread-Funktion mit `@releases_db_connections` (aus `apps.common.db_connections`). Ein
+Thread, der seine Verbindung nicht selbst schließt, nimmt sie mit ins Grab.
+
+Den Zustand des Pools zeigt der Metriken-Endpunkt (`mandari_db_pool_connections`).
+
+### Automatischer Neustart
+
+Kubernetes startet einen Pod mit roter Liveness von selbst neu. **Docker Compose tut das
+nicht** — ein ungesunder Container läuft einfach weiter. Dafür liegt
+`deploy/scripts/restart-unhealthy.sh` bei: Es startet jeden Container mit dem Label
+`mandari.autoheal=true` neu, den Docker als `unhealthy` meldet, höchstens einmal je fünf
+Minuten, und schreibt jeden Neustart ins Systemprotokoll (Kennung `mandari-autoheal`).
+Einrichtung, z. B. per Cron:
+
+```
+* * * * * root sh /opt/mandari/deploy/scripts/restart-unhealthy.sh >> /var/log/mandari-autoheal.log 2>&1
+```
+
+Ein Neustart ist die Notbremse, keine Lösung. Taucht `mandari-autoheal` im Protokoll auf,
+lohnt der Blick, *warum* der Pool festgefahren war.
 
 ### Prüfen, was tatsächlich offen ist
 

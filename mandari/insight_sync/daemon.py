@@ -154,9 +154,11 @@ def _run_periodic_faction_schedule():
         logger.exception("Periodische Fraktions-Sitzungserzeugung fehlgeschlagen")
 
 
-def _watchdog_loop():
+def _watchdog_loop() -> None:
     """Watchdog-Loop: Bereinigt hängende Logs, prüft Ingestor-Status."""
     from django.conf import settings
+
+    from apps.common.db_connections import close_thread_connections
 
     _wait(10)
 
@@ -203,11 +205,14 @@ def _watchdog_loop():
             if minutes_since_invitation >= invitation_interval:
                 minutes_since_invitation = 0
                 _run_periodic_faction_invitations()
-
-            _wait(60)
         except Exception:
             logger.exception("Fehler im Watchdog-Loop")
-            _wait(60)
+        finally:
+            # Zwischen den Läufen keine Verbindung festhalten: Der Thread lebt so lange wie
+            # der Webprozess und belegte sonst dauerhaft einen Platz im Datenbank-Pool
+            # (Issue #344). Beim nächsten Lauf holt er sich einfach eine neue.
+            close_thread_connections()
+        _wait(60)
 
 
 def _wait(seconds: float) -> bool:

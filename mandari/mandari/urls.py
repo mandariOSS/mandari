@@ -10,7 +10,7 @@ from pathlib import PurePosixPath
 from django.conf import settings
 from django.contrib import admin
 from django.db import connection
-from django.http import JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import include, path, re_path
 from django.views.static import serve as static_serve
@@ -193,11 +193,31 @@ def handler_404(request, exception=None):
     return render(request, "404.html", status=404)
 
 
-def handler_500(request):
-    """Server Error handler."""
+def handler_500(request: HttpRequest) -> HttpResponse:
+    """Server Error handler.
+
+    Fehlt die Datenbank (erschöpfter Pool, Ausfall), gibt es eine 503-Seite ohne
+    Datenbankzugriff — auch dann, wenn der Fehler nicht aus der View, sondern aus einer
+    Middleware kam (Issue #344). Scheitert die normale Fehlerseite selbst, weil ihre
+    Kontextprozessoren die Datenbank brauchen, wird sie ohne Request-Kontext gerendert.
+    """
+    import sys
     import uuid
 
-    return render(request, "500.html", {"request_id": str(uuid.uuid4())[:8]}, status=500)
+    from django.template.loader import render_to_string
+
+    from apps.common.db_connections import is_pool_exhausted
+    from apps.common.middleware import database_unavailable_response, is_database_unavailable
+
+    ausnahme = sys.exc_info()[1]
+    if is_database_unavailable(ausnahme):
+        return database_unavailable_response(request, pool=is_pool_exhausted(ausnahme))
+
+    kontext = {"request_id": str(uuid.uuid4())[:8]}
+    try:
+        return render(request, "500.html", kontext, status=500)
+    except Exception:  # noqa: BLE001 - die Fehlerseite darf nicht selbst zum zweiten Fehler werden
+        return HttpResponse(render_to_string("500.html", kontext), status=500)
 
 
 # Register custom error handlers

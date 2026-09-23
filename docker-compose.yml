@@ -183,6 +183,9 @@ services:
     image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
     container_name: ${COMPOSE_PROJECT_NAME:-mandari}
     restart: unless-stopped
+    labels:
+      # deploy/scripts/restart-unhealthy.sh startet den Dienst neu, wenn die Liveness rot ist (#344)
+      mandari.autoheal: "true"
     environment:
       # Database
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
@@ -223,7 +226,9 @@ services:
       - no-new-privileges:true
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health/ || exit 1"]
+      # Liveness (Issue #344): wird bei festgefahrenem Datenbank-Pool rot. Compose startet
+      # einen ungesunden Container nicht selbst neu – siehe DEPLOYMENT.md, „Automatischer Neustart“.
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health/live/ || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 3

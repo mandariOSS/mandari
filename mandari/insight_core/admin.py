@@ -15,6 +15,8 @@ from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
+from apps.common.db_connections import releases_db_connections
+
 from .models import (
     ChatUsage,
     DigestLog,
@@ -43,6 +45,9 @@ def run_sync_in_thread(source, full: bool = False):
         full: True für Full Sync
     """
 
+    # Eigener Thread: Ohne den Dekorator nähme er seine Datenbankverbindung mit ins Grab,
+    # und mit Pool wäre der Platz für immer verloren (Issue #344).
+    @releases_db_connections
     def sync_task():
         try:
             from insight_sync.tasks import run_sync_with_logging
