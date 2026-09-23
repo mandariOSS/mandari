@@ -159,15 +159,13 @@ class TestAbgebrocheneAnfrageGibtVerbindungZurueck:
                 nachher = _ausgeliehen(pool)
             assert nachher == vorher + 1, "Ohne Middleware sollte die Verbindung der View ausgeliehen bleiben"
         finally:
-            # Der verlorene Platz kommt nie zurück: die Verbindung von Hand schließen (sonst
-            # bleibt eine Sitzung offen und blockiert das Löschen der Testdatenbank) und den
-            # Pool neu aufbauen, damit andere Tests ihn nicht vermissen.
+            # Von allein kommt der Platz nie zurück — die Verbindung von Hand an denselben Pool
+            # zurückgeben. Den Pool neu aufzubauen (close_pool) wäre gefährlicher: Den neuen
+            # baut der Thread, der ihn als Nächstes anfasst, mit *seinen* Verbindungsdaten.
             for roh in _gehaltene_verbindungen:
-                if not roh.closed:
-                    roh.close()
+                if not roh.closed and getattr(roh, "_pool", None) is pool:
+                    pool.putconn(roh)
             _gehaltene_verbindungen.clear()
-            connection.close()
-            cast(Any, connections["default"]).close_pool()
 
 
 # --- Middleware und Konfiguration -----------------------------------------------------
