@@ -43,6 +43,46 @@ def test_geo_status_lists_gaps(
     assert gaps_only == ["beispielstadt", "ohne-osm"]
 
 
+@pytest.mark.parametrize(
+    ("ags", "regional"),
+    [("05315000", False), ("053", True), ("05", True), ("05315", True), ("", False), (None, False)],
+)
+def test_is_regional_level(geo_body: OParlBody, ags: str | None, regional: bool) -> None:
+    geo_body.ags = ags
+    assert geo_body.is_regional_level is regional
+
+
+def test_regional_body_needs_no_streets_or_addresses(geo_body: OParlBody) -> None:
+    """Regierungsbezirk: Relation und Bounding-Box genügen, Straßen und Adressen fehlen nicht."""
+    regional = OParlBody.objects.create(
+        external_id="https://ris.bezirk.example/oparl/bodies/1",
+        source=OParlSource.objects.get(),
+        name="Regionalrat Beispiel",
+        slug="regionalrat",
+        osm_relation_id=72022,
+        ags="053",
+        bbox_north=51.3,
+        bbox_south=50.3,
+        bbox_east=7.8,
+        bbox_west=5.9,
+    )
+    status = next(s for s in geo_status_for_bodies(only_gaps=False) if s.body == regional)
+    assert status.regional
+    assert status.missing == []
+    assert regional.slug not in [s.body.slug for s in geo_status_for_bodies()]
+
+    regional.bbox_north = None
+    regional.save(update_fields=["bbox_north"])
+    status = next(s for s in geo_status_for_bodies() if s.body == regional)
+    assert status.missing == ["Bounding-Box"]
+
+    out = StringIO()
+    call_command("check_body_geodata", stdout=out)
+    zeile = next(z for z in out.getvalue().splitlines() if z.startswith("Regionalrat Beispiel"))
+    assert " Region " in zeile
+    assert zeile.rstrip().endswith("Bounding-Box")
+
+
 def test_command_output(geo_body: OParlBody, unmapped_body: OParlBody) -> None:
     out = StringIO()
     call_command("check_body_geodata", stdout=out)

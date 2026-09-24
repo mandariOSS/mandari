@@ -138,6 +138,15 @@ class Command(BaseCommand):
                     raise CommandError(f"Kommune mit Slug '{body_id}' nicht gefunden.") from None
                 bodies = [body]
 
+        regional = [body for body in bodies if body.is_regional_level]
+        for body in regional:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"{body.get_display_name()}: Regionalebene (AGS {body.ags}) – kein Straßen- und Adressimport."
+                )
+            )
+        bodies = [body for body in bodies if not body.is_regional_level]
+
         for i, body in enumerate(bodies):
             if i > 0:
                 time.sleep(5)  # Overpass-Rate-Limit zwischen Kommunen

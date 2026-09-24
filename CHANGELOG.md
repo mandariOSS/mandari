@@ -24,6 +24,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - E2E-Tests der Editor-Kollaboration mit zwei Browsern gegen einen ASGI-Testserver (#289).
 
 ### Geändert
+- Insight Geo-Verortung: Gebiete oberhalb der Gemeinde (Regierungsbezirk, Kreis – erkennbar am amtlichen Schlüssel mit weniger als acht Stellen, z. B. `053`) brauchen nur Grenze und Kartenausschnitt; `import_streets` überspringt sie, `check_body_geodata` zeigt die Ebene (#54).
 - Abhängigkeiten gesammelt aktualisiert: Biome 2.5 (Konfiguration migriert, Importe neu sortiert), esbuild 0.28, Alpine.js 3.17.4, django-vite 3.2, css-inline 0.21.3, django-stubs 6.1.1; Ingestor: SQLAlchemy 2.0.54, pypdf 6.19, APScheduler 3.11.3, idna 3.20, pytest-asyncio 1.4. Untergrenzen in `requirements.txt` an das Lockfile angeglichen.
 - Demo-Umgebung: `setup_demo_environment --reset` entfernt eine aufgesetzte Präsentationsumgebung mit (sonst bliebe der Bürgerportal-Spiegel als aktive Quelle ohne Mandant zurück); `docs/DEMO_ENVIRONMENT.md` an den Code angeglichen (vier Verwaltungsnutzer, Kommune nicht gelistet).
 - Session: Ö/NÖ wirkt sofort – ein TOP, eine Vorlage oder Anlage, die nicht-öffentlich wird, verschwindet im selben Moment aus dem Bürgerportal und zeigt dort keinen Inhalt mehr; Entwürfe erscheinen erst nach der Freigabe in der OParl-API; nicht-öffentliche Unterpunkte oder Vorlagen auf öffentlichen TOPs werden abgewiesen.

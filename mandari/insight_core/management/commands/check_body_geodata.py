@@ -3,7 +3,8 @@
 Management Command: Kommunen ohne OSM-Zuordnung bzw. mit Geo-Lücken auflisten.
 
 Zeigt je Kommune, was für die Georeferenzierung fehlt: OSM-Relation-ID, AGS,
-Bounding-Box, Straßenverzeichnis, Adressen. Es werden keine Daten geändert –
+Bounding-Box, Straßenverzeichnis, Adressen. Gebiete oberhalb der Gemeinde (AGS kürzer
+als acht Stellen) brauchen nur Relation und Bounding-Box. Es werden keine Daten geändert –
 die Pflege erfolgt im Admin (Kommune → „Geografische Daten“) und anschließend mit
 ``fetch_osm_geodata`` sowie ``import_streets --with-addresses`` (Issue #54).
 
@@ -33,13 +34,14 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Alle Kommunen sind vollständig an OSM angebunden."))
             return
 
-        header = f"{'Kommune':<40} {'OSM-Rel.':>10} {'AGS':>9} {'BBox':>5} {'Straßen':>8} {'Adressen':>9}  fehlt"
+        header = f"{'Kommune':<40} {'Ebene':<8} {'OSM-Rel.':>10} {'AGS':>9} {'BBox':>5} {'Straßen':>8} {'Adressen':>9}  fehlt"
         self.stdout.write(header)
         self.stdout.write("-" * len(header))
         for status in statuses:
             body = status.body
             line = (
                 f"{(body.display_name or body.short_name or body.name)[:40]:<40} "
+                f"{('Region' if status.regional else 'Gemeinde'):<8} "
                 f"{(str(body.osm_relation_id) if body.osm_relation_id else '—'):>10} "
                 f"{(body.ags or '—'):>9} "
                 f"{('ja' if status.has_bbox else '—'):>5} "
@@ -53,3 +55,4 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write(f"{with_gaps} Kommune(n) mit Lücken. Pflege: Admin → Kommune → „Geografische Daten“,")
         self.stdout.write("danach fetch_osm_geodata --all und import_streets --all --with-addresses.")
+        self.stdout.write("Regionalebene (AGS kürzer als 8 Stellen): nur OSM-Relation und Bounding-Box nötig.")
