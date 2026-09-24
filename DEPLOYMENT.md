@@ -277,12 +277,20 @@ Alles leitet sich vom Arbeitsspeicher des **Datenbankdienstes** ab
 | `POSTGRES_EFFECTIVE_IO_CONCURRENCY` | `200` für SSD/NVMe, `2` für drehende Platten | `200` |
 | `POSTGRES_MAX_CONNECTIONS` | muss zur Summe aller Dienste passen | `100` |
 | `POSTGRES_MAX_WAL_SIZE` | mehr bedeutet seltenere Checkpoints | `2GB` |
+| `POSTGRES_TEMP_FILE_LIMIT` | Obergrenze für temporäre Dateien **je Sitzung**; deutlich unter dem freien Plattenplatz | `5GB` |
 
 **Die Falle bei `work_mem`:** Der Wert gilt je Sortiervorgang, und eine einzelne
 Abfrage kann mehrere davon haben. Im Extremfall belegt die Datenbank
 `max_connections × work_mem` zusätzlich zu `shared_buffers`. Bei 100 Verbindungen
 und 8 MB sind das rechnerisch 800 MB — deshalb sind `mem_limit`,
 `max_connections` und `work_mem` nur gemeinsam zu ändern.
+
+**Warum `temp_file_limit`:** Sortier- und Gruppiervorgänge, die nicht in `work_mem`
+passen, schreibt PostgreSQL in temporäre Dateien. Ohne Grenze kann eine einzige
+entgleiste Abfrage die Platte füllen – am 24.09.2026 tat das ein Zähl-Join über
+Straßen und Adressen (Kreuzprodukt). Mit Grenze bricht nur diese Abfrage ab. Der
+Wert lässt sich ohne Neustart setzen: `ALTER SYSTEM SET temp_file_limit = '5GB';
+SELECT pg_reload_conf();`
 
 Größenempfehlungen je Größenklasse (klein, mittel, groß) mit Mengengerüst,
 Verbindungsbudget und den Ergebnissen der Lasttests: [docs/LASTTESTS.md](docs/LASTTESTS.md).

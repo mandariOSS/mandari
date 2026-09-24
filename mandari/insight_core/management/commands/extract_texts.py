@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 
+from apps.common.db_connections import releases_db_connections
 from insight_core.models import OParlBody, OParlFile
 from insight_core.services.document_extraction import (
     DocumentDownloadError,
@@ -137,12 +138,16 @@ class Command(BaseCommand):
             "total_chars": 0,
         }
 
-        # Batch-Verarbeitung
-        files = list(queryset)
-        for batch_start in range(0, len(files), batch_size):
-            batch = files[batch_start : batch_start + batch_size]
+        # Batch-Verarbeitung: vorab nur die IDs, die Dateien je Stapel (Speicher, siehe extract_locations)
+        file_ids = list(queryset.values_list("id", flat=True))
+        for batch_start in range(0, len(file_ids), batch_size):
+            batch = list(
+                OParlFile.objects.select_related("paper", "paper__body").filter(
+                    id__in=file_ids[batch_start : batch_start + batch_size]
+                )
+            )
             batch_num = (batch_start // batch_size) + 1
-            total_batches = (len(files) + batch_size - 1) // batch_size
+            total_batches = (len(file_ids) + batch_size - 1) // batch_size
 
             self.stdout.write(f"\nBatch {batch_num}/{total_batches} ({len(batch)} Dateien)...")
 
@@ -178,6 +183,9 @@ class Command(BaseCommand):
         if stats["failed"]:
             self.stdout.write(self.style.ERROR(f"Fehlgeschlagen: {stats['failed']}"))
 
+    # Läuft in Worker-Threads, die je Stapel neu entstehen – ohne Rückgabe leert sich der Pool
+    # nach wenigen Stapeln (siehe extract_locations, Issue #54).
+    @releases_db_connections
     def _process_file(self, file: OParlFile, verbose: bool) -> dict:
         """
         Verarbeitet eine einzelne Datei.

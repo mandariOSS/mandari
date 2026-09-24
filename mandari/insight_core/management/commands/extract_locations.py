@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Exists, OuterRef, Q
 
+from apps.common.db_connections import releases_db_connections
 from insight_core.models import OParlBody, OParlFile, OParlPaper
 from insight_core.services.georeferencing import (
     process_paper_georef,
@@ -159,12 +160,17 @@ class Command(BaseCommand):
             "total_locations": 0,
         }
 
-        # Batch processing
-        papers = list(queryset)
-        for batch_start in range(0, len(papers), batch_size):
-            batch = papers[batch_start : batch_start + batch_size]
+        # Batch processing: vorab nur die IDs laden, die Vorgänge je Stapel. Alle 42.000 Kölner
+        # Vorgänge auf einmal sprengten das Speicherlimit des Containers (Issue #54).
+        paper_ids = list(queryset.values_list("id", flat=True))
+        for batch_start in range(0, len(paper_ids), batch_size):
+            batch = list(
+                OParlPaper.objects.select_related("body").filter(
+                    id__in=paper_ids[batch_start : batch_start + batch_size]
+                )
+            )
             batch_num = (batch_start // batch_size) + 1
-            total_batches = (len(papers) + batch_size - 1) // batch_size
+            total_batches = (len(paper_ids) + batch_size - 1) // batch_size
 
             self.stdout.write(f"\nBatch {batch_num}/{total_batches} ({len(batch)} Papers)...")
 
@@ -210,6 +216,10 @@ class Command(BaseCommand):
         if stats["failed"]:
             self.stdout.write(self.style.ERROR(f"Fehlgeschlagen: {stats['failed']}"))
 
+    # Läuft in den Worker-Threads, die je Stapel neu entstehen. Ohne Rückgabe nahm jeder Thread
+    # seine Verbindung mit ins Grab: Nach fünf Stapeln mit zwei Workern war der Pool (10) leer,
+    # und jeder weitere Vorgang scheiterte am Pool-Timeout (Issue #54, wie #344).
+    @releases_db_connections
     def _process_paper(self, paper, mode: str, verbose: bool) -> dict:
         """Process a single paper for georeferencing."""
         try:

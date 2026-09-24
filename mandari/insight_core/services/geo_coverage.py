@@ -14,9 +14,9 @@ Gebiete oberhalb der Gemeinde (Regierungsbezirk, Kreis; AGS kürzer als acht Ste
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from django.db.models import Count, Q
+from django.db.models import Count, Q, QuerySet
 
 if TYPE_CHECKING:
     from insight_core.models import OParlBody
@@ -54,27 +54,30 @@ class BodyGeoStatus:
         return not self.missing
 
 
-def geo_status_for_bodies(only_gaps: bool = True) -> list[BodyGeoStatus]:
-    """Geo-Status aller (nicht gelöschten) Kommunen, optional nur die mit Lücken."""
-    from insight_core.models import OParlBody
+def _counts_per_body(queryset: QuerySet[Any]) -> dict[Any, int]:
+    return dict(queryset.order_by().values("body_id").annotate(n=Count("id")).values_list("body_id", "n"))
 
-    bodies = (
-        OParlBody.objects.filter(deleted=False)
-        .annotate(
-            street_total=Count("streets", distinct=True),
-            address_total=Count("addresses", distinct=True),
-        )
-        .order_by("name")
-    )
+
+def geo_status_for_bodies(only_gaps: bool = True) -> list[BodyGeoStatus]:
+    """Geo-Status aller (nicht gelöschten) Kommunen, optional nur die mit Lücken.
+
+    Straßen und Adressen werden getrennt gezählt. Beide in einer Abfrage zu annotieren, verbindet
+    sie je Kommune zum Kreuzprodukt – für Köln 26.000 Straßen mal 167.000 Adressen. Das füllte am
+    24.09.2026 mit temporären Dateien die Platte des Datenbankservers.
+    """
+    from insight_core.models import Address, OParlBody, Street
+
+    streets = _counts_per_body(Street.objects.all())
+    addresses = _counts_per_body(Address.objects.all())
     statuses: list[BodyGeoStatus] = []
-    for body in bodies:
+    for body in OParlBody.objects.filter(deleted=False).order_by("name"):
         status = BodyGeoStatus(
             body=body,
             has_osm_relation=bool(body.osm_relation_id),
             has_ags=bool((body.ags or "").strip()),
             has_bbox=bool(body.bbox_north and body.bbox_south and body.bbox_east and body.bbox_west),
-            street_count=int(getattr(body, "street_total", 0)),
-            address_count=int(getattr(body, "address_total", 0)),
+            street_count=streets.get(body.id, 0),
+            address_count=addresses.get(body.id, 0),
             regional=body.is_regional_level,
         )
         if only_gaps and status.complete:

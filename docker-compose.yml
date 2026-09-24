@@ -99,6 +99,10 @@ services:
       - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
       - -c
       - max_wal_size=${POSTGRES_MAX_WAL_SIZE:-2GB}
+      # Obergrenze fuer temporaere Dateien je Sitzung: Eine entgleiste Abfrage bricht ab,
+      # statt die Platte zu fuellen (Vorfall 24.09.2026, Issue #54).
+      - -c
+      - temp_file_limit=${POSTGRES_TEMP_FILE_LIMIT:-5GB}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mandari}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
