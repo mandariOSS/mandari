@@ -335,6 +335,19 @@ class OParlBody(SourceDeletionModel):
         """Gibt den Anzeigenamen zurück (display_name > short_name > name)."""
         return self.display_name or self.short_name or self.name
 
+    @property
+    def is_regional_level(self) -> bool:
+        """Gebiet oberhalb der Gemeinde, etwa ein Regierungsbezirk oder Kreis (Issue #54).
+
+        Der amtliche Schlüssel hat bei Gemeinden acht Stellen, höhere Ebenen tragen ihn gekürzt:
+        Land zwei, Regierungsbezirk drei, Kreis fünf Stellen (``053`` = Regierungsbezirk Köln).
+        OpenStreetMap führt ihn ebenso. Für solche Gebiete gibt es kein Straßen- und
+        Adressverzeichnis – für einen ganzen Bezirk wäre das unverhältnismäßig, die Karte braucht
+        nur Grenze und Ausschnitt.
+        """
+        ags = (self.ags or "").strip()
+        return bool(ags) and len(ags) < 8
+
     def get_initials(self):
         """Gibt die Initialen für Fallback-Anzeige zurück."""
         name = self.get_display_name()

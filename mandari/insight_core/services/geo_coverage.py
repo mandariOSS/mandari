@@ -6,6 +6,9 @@ Für die Georeferenzierung braucht eine Kommune ``osm_relation_id`` (Straßen- u
 Adressimport), Zentrum/Bounding-Box (Karte, Plausibilitätsprüfung) und idealerweise den
 AGS. Dieser Service listet Lücken; die Datenpflege selbst bleibt beim Betreiber
 (Admin → Kommune → „Geografische Daten“, dann ``fetch_osm_geodata`` und ``import_streets``).
+
+Gebiete oberhalb der Gemeinde (Regierungsbezirk, Kreis; AGS kürzer als acht Stellen, siehe
+``OParlBody.is_regional_level``) brauchen nur OSM-Relation und Bounding-Box.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ class BodyGeoStatus:
     has_bbox: bool
     street_count: int
     address_count: int
+    regional: bool = False
 
     @property
     def missing(self) -> list[str]:
@@ -37,6 +41,8 @@ class BodyGeoStatus:
             gaps.append("AGS")
         if not self.has_bbox:
             gaps.append("Bounding-Box")
+        if self.regional:
+            return gaps
         if not self.street_count:
             gaps.append("Straßenverzeichnis")
         if not self.address_count:
@@ -69,6 +75,7 @@ def geo_status_for_bodies(only_gaps: bool = True) -> list[BodyGeoStatus]:
             has_bbox=bool(body.bbox_north and body.bbox_south and body.bbox_east and body.bbox_west),
             street_count=int(getattr(body, "street_total", 0)),
             address_count=int(getattr(body, "address_total", 0)),
+            regional=body.is_regional_level,
         )
         if only_gaps and status.complete:
             continue

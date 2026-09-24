@@ -119,3 +119,29 @@ def test_import_without_flag_skips_addresses(geo_body: OParlBody, monkeypatch: p
     call_command("import_streets", body="beispielstadt", stdout=StringIO())
     assert len(calls) == 1
     assert Address.objects.count() == 0
+
+
+def test_regional_body_is_skipped(geo_body: OParlBody, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regierungsbezirk (AGS 053): kein Overpass-Abruf, weder einzeln noch mit --all (Issue #54)."""
+    regional = OParlBody.objects.create(
+        external_id="https://ris.bezirk.example/oparl/bodies/1",
+        source=geo_body.source,
+        name="Regionalrat Beispiel",
+        slug="regionalrat",
+        osm_relation_id=72022,
+        ags="053",
+    )
+    calls: list[str] = []
+    monkeypatch.setattr("insight_core.management.commands.import_streets.httpx.post", _fake_post(calls))
+    monkeypatch.setattr("insight_core.management.commands.import_streets.time.sleep", lambda _seconds: None)
+
+    out = StringIO()
+    call_command("import_streets", body="regionalrat", with_addresses=True, stdout=out)
+    assert calls == []
+    assert "Regionalebene (AGS 053)" in out.getvalue()
+
+    call_command("import_streets", all=True, with_addresses=True, stdout=StringIO())
+    assert Street.objects.filter(body=regional).count() == 0
+    assert Address.objects.filter(body=regional).count() == 0
+    assert Street.objects.filter(body=geo_body).count() == 2
+    assert len(calls) == 2
