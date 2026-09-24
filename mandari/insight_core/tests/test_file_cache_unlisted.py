@@ -22,8 +22,8 @@ from insight_core.services import file_cache
 pytestmark = pytest.mark.django_db
 
 
-def _kommune(name: str, gelistet: bool) -> OParlBody:
-    source = OParlSource.objects.create(name=name, url=f"https://ris.example/{uuid.uuid4()}/system")
+def _kommune(name: str, gelistet: bool, url: str | None = None) -> OParlBody:
+    source = OParlSource.objects.create(name=name, url=url or f"https://ris.example/{uuid.uuid4()}/system")
     return OParlBody.objects.create(
         source=source, external_id=f"https://ris.example/bodies/{uuid.uuid4()}", name=name, is_listed=gelistet
     )
@@ -84,3 +84,17 @@ def test_prune_leert_nur_ausgeblendete_kommunen(tmp_path: Path, settings: Any) -
 def test_prune_verlangt_ausdruecklich_unlisted() -> None:
     with pytest.raises(CommandError):
         call_command("prune_file_cache", stdout=StringIO())
+
+
+def test_prune_laesst_nicht_abrufbare_quellen_stehen(tmp_path: Path, settings: Any) -> None:
+    """Demo-Quelle (``.invalid``): Die zwischengespeicherte Kopie ist die einzige – sie bleibt."""
+    settings.OPARL_FILES_ROOT = str(tmp_path)
+    demo = _zwischengespeichert(_kommune("Demo", False, url="https://demo.mandari.invalid/oparl/system"))
+
+    out = StringIO()
+    call_command("prune_file_cache", unlisted=True, stdout=out)
+
+    assert "übersprungen" in out.getvalue()
+    demo.refresh_from_db()
+    assert demo.local_status == "ok"
+    assert Path(demo.local_path or "").is_file()

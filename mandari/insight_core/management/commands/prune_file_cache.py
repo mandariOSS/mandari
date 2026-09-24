@@ -6,7 +6,8 @@ Zwischengespeichert werden nur gelistete Kommunen (siehe ``services/file_cache.p
 Befehl räumt den Bestand ab, der vorher für ausgeblendete Kommunen (Piloten, Tests) entstanden
 ist: Er löscht deren Verzeichnisse im Cache und setzt die Dateien in der Datenbank auf „nicht
 zwischengespeichert“ zurück. Extrahierte Texte bleiben erhalten – Suche und Verortung sind nicht
-betroffen. Wird eine Kommune später gelistet, lädt ``cache_files`` ihre Dokumente neu.
+betroffen. Wird eine Kommune später gelistet, lädt ``cache_files`` ihre Dokumente neu. Kommunen synthetischer
+Quellen (Domäne ``.invalid``, etwa die Demo) bleiben unangetastet – ihre Dateien lassen sich nie neu abrufen.
 
 Verwendung:
     python manage.py prune_file_cache --unlisted --dry-run   # nur anzeigen
@@ -18,8 +19,15 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+
+
+def _nicht_abrufbar(body: Any) -> bool:
+    """Synthetische Quelle (Domäne ``.invalid``, etwa die Demo): Die Kopie ist die einzige."""
+    source = getattr(body, "source", None)
+    return (urlparse(getattr(source, "url", "") or "").hostname or "").endswith(".invalid")
 
 
 def _groesse(pfad: Path) -> int:
@@ -44,7 +52,10 @@ class Command(BaseCommand):
         # Ein Verzeichnis, das auch eine gelistete Kommune nutzt, bleibt unangetastet.
         gelistete_verzeichnisse = {body_dir_name(b) for b in OParlBody.objects.filter(is_listed=True)}
         gesamt_bytes = gesamt_dateien = 0
-        for body in OParlBody.objects.filter(is_listed=False).order_by("name"):
+        for body in OParlBody.objects.filter(is_listed=False).select_related("source").order_by("name"):
+            if _nicht_abrufbar(body):
+                self.stdout.write(f"{body.name[:45]:<45} übersprungen – Quelle nicht abrufbar, Kopie wäre verloren")
+                continue
             verzeichnis = cache_root() / body_dir_name(body)
             dateien = OParlFile.objects.filter(body=body).exclude(local_status="none")
             anzahl = dateien.count()
