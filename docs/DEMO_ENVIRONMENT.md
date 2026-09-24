@@ -75,6 +75,30 @@ Die Domain `demo.mandari.de` ist über `TWO_FACTOR_EXEMPT_EMAIL_DOMAINS` (Standa
 Zwei-Faktor-Pflicht ausgenommen – die Zugänge werden gemeinsam genutzt und enthalten keine
 echten Daten.
 
+## Öffentliche Demo-Instanz (Issue #99)
+
+Für den öffentlichen Testzugang läuft die Demo als **eigene Installation mit eigener Datenbank**.
+Dort liegen nur die synthetischen Daten aus diesem Befehl; echte Kunden- oder Ratsdaten sind von
+dort nicht erreichbar. Der Schalter `DEMO_INSTANCE=true` macht aus einer normalen Installation
+diese Demo (`apps/common/demo.py`):
+
+| Was | Verhalten in der Demo-Instanz |
+|---|---|
+| E-Mail | Es wird nichts versendet, auch nicht über SMTP-Zugänge aus den SiteSettings oder der Organisation. |
+| KI-Funktionen | abgeschaltet, keine Aufrufe an KI-Anbieter oder frei eintragbare Adressen |
+| Passwort, zweiter Faktor, Sicherheitsschlüssel | nicht änderbar; alle Besucher teilen sich die Konten |
+| Registrierung, „Passwort vergessen“, Kontolöschung | gesperrt |
+| Hinweis | Auf jeder Seite unten links: „Demo-Umgebung – alle Daten sind erfunden und werden jede Nacht zurückgesetzt.“ |
+
+**Zugangsdaten:** Ist zusätzlich `DEMO_PASSWORD` gesetzt, bekommen alle Demo-Konten dieses feste
+Passwort, damit es auf der Website stehen kann. Das gilt **nur** in einer Demo-Instanz. Ohne
+`DEMO_INSTANCE` ignorieren beide Befehle die Variable und erzeugen wie bisher bei jedem Lauf
+neue Passwörter.
+
+**Nächtlicher Neuaufbau:** Die Demo-Datenbank wird jede Nacht verworfen, neu migriert und mit
+`setup_demo_environment` (und für das Drehbuch `setup_demo_praesentation`) neu befüllt. Was
+Besucher tagsüber anlegen oder ändern, ist am nächsten Morgen wieder weg.
+
 ## Idempotenz und Aufräumen
 
 - Alle Objekte hängen an festen Demo-Kennungen: Slugs (`*-demo`) bzw.

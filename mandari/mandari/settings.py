@@ -116,6 +116,11 @@ AUTH_USER_MODEL = "accounts.User"
 # ASGI Application (for Django Channels WebSocket support)
 ASGI_APPLICATION = "mandari.asgi.application"
 
+# Öffentliche Demo-Instanz (Issue #99, apps/common/demo.py): eigene Installation mit eigener
+# Datenbank und nur synthetischen Daten. Schaltet Mailversand und KI ab, sperrt Änderungen an
+# Passwort, zweitem Faktor und Konto und blendet einen Hinweis ein. In Produktion nie setzen.
+DEMO_INSTANCE = os.environ.get("DEMO_INSTANCE", "false").lower() in ("1", "true", "yes")
+
 MIDDLEWARE = [
     # Vor allem anderen: gibt die Datenbankverbindung am Ende jeder Anfrage im Thread der
     # View zurück, auch wenn der Client aufgelegt und asgiref die Aufgabe abgebrochen hat.
@@ -138,6 +143,8 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # Nur in der Demo-Instanz aktiv: sperrt Konto-Sicherheitsänderungen (Issue #99)
+    "apps.common.demo.DemoInstanceMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
     # Django-Admin nur aus freigegebenen Netzen (ADMIN_ALLOWED_NETWORKS)
@@ -224,6 +231,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "insight_core.context_processors.navigation_context",
                 "insight_core.context_processors.active_body",
+                "apps.common.demo.demo_context",  # Hinweis in der Demo-Instanz (Issue #99)
             ],
         },
     },
@@ -536,6 +544,10 @@ MAILERS = {
         "OPTIONS": {},
     },
 }
+# Demo-Instanz: Es verlässt keine einzige Mail das System, auch nicht über SiteSettings oder
+# organisationseigenes SMTP (apps.common.mail_backends.build_backend, Issue #99).
+if DEMO_INSTANCE:
+    MAILERS["default"]["BACKEND"] = "django.core.mail.backends.locmem.EmailBackend"
 
 
 # =============================================================================

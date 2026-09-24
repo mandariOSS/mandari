@@ -602,9 +602,11 @@ class Command(BaseCommand):
 
     def _make_user(self, key: str):
         from apps.accounts.models import User
+        from apps.common.demo import demo_passwort
 
         info = DEMO_USERS[key]
-        password = secrets.token_urlsafe(14)
+        # Öffentliche Demo-Instanz: festes, veröffentlichtes Passwort (Issue #99); sonst jedes Mal neu
+        password = demo_passwort() or secrets.token_urlsafe(14)
         user, _ = User.objects.update_or_create(
             email=info["email"],
             defaults={

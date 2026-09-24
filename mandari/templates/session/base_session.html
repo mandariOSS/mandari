@@ -336,6 +336,7 @@
 </head>
 
 <body class="bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    {% if demo_instance %}{% include "partials/demo_hinweis.html" %}{% endif %}
     <div class="session-layout" x-data="{
         sidebarOpen: false,
         sidebarCollapsed: localStorage.getItem('sessionSidebarCollapsed') === 'true'
