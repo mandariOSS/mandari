@@ -14,6 +14,11 @@ Storage Box mounten lässt:
 
 Ein Festplatten-Schutz (FILE_CACHE_MIN_FREE_GB) verhindert, dass der Cache das
 Systemlaufwerk vollschreibt.
+
+Nur gelistete Kommunen werden zwischengespeichert. Ausgeblendete Quellen (Piloten, Tests)
+luden sonst ihr ganzes Archiv nach – im September 2026 rund 46 GB, knapp die Hälfte des
+Caches, für Kommunen, die niemand im Portal sieht. Wird eine Kommune gelistet, füllt sich ihr
+Cache von selbst; ``prune_file_cache --unlisted`` räumt den Bestand ausgeblendeter Kommunen ab.
 """
 
 import hashlib
@@ -45,6 +50,11 @@ _UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "Ä": 
 
 def cache_root() -> Path:
     return Path(settings.OPARL_FILES_ROOT)
+
+
+def caches_body(body) -> bool:
+    """Werden Dokumente dieser Kommune zwischengespeichert? Nur, wenn sie im Portal gelistet ist."""
+    return bool(getattr(body, "is_listed", True))
 
 
 def max_bytes() -> int:
@@ -260,7 +270,7 @@ def pending_queryset(body=None, retry_errors: bool = False):
     # Quellen in Schonung (mehrfach nicht erreichbar) werden ausgelassen — Nachladen
     # würde die Sperre nur verlängern (Issue #89).
     qs = (
-        OParlFile.objects.filter(deleted=False, local_status__in=statuses)
+        OParlFile.objects.filter(deleted=False, local_status__in=statuses, body__is_listed=True)
         .exclude(body__source__consecutive_failures__gte=backoff_failures())
         .select_related("body", "body__source")
         .defer("text_content", "raw_json", "body__raw_json")
@@ -313,7 +323,9 @@ def cache_stats() -> dict:
         "root": str(cache_root()),
         "total": total,
         "ok": ok,
-        "pending": by_status.get("none", 0),
+        # offen = nur gelistete Kommunen; ausgeblendete werden bewusst nicht zwischengespeichert
+        "pending": qs.filter(local_status="none", body__is_listed=True).count(),
+        "unlisted": qs.filter(body__is_listed=False).count(),
         "missing": by_status.get("missing", 0),
         "error": by_status.get("error", 0),
         "too_large": by_status.get("too_large", 0),

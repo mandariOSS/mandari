@@ -327,9 +327,13 @@ def file_proxy(request, file_id):
             "(z. B. Wartung). Bitte versuche es später erneut.",
         )
 
-    # Write-Through: beim nächsten Aufruf kommt die Datei von der Platte
+    # Write-Through: beim nächsten Aufruf kommt die Datei von der Platte (nur gelistete Kommunen)
     try:
-        if len(data) <= file_cache.max_bytes() and file_cache.has_room_for(len(data)):
+        if (
+            file_cache.caches_body(file_obj.body)
+            and len(data) <= file_cache.max_bytes()
+            and file_cache.has_room_for(len(data))
+        ):
             file_cache.store_bytes(file_obj, data, content_type=content_type)
     except Exception as exc:  # Cache-Fehler dürfen die Auslieferung nie verhindern
         logger.warning("Dokument %s konnte nicht zwischengespeichert werden: %s", file_obj.id, exc)
