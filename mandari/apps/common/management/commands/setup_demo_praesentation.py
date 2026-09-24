@@ -438,8 +438,12 @@ class Command(BaseCommand):
                 "email_verified": True,
             },
         )
-        if angelegt:
-            passwort = secrets.token_urlsafe(14)
+        from apps.common.demo import demo_passwort
+
+        # Öffentliche Demo-Instanz: festes Passwort bei jedem Lauf (Issue #99); sonst nur bei Neuanlage
+        fest = demo_passwort()
+        if angelegt or fest:
+            passwort = fest or secrets.token_urlsafe(14)
             nutzer.set_password(passwort)
             nutzer.save(update_fields=["password"])
             self.passwoerter[nutzer.email] = passwort

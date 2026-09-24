@@ -7,6 +7,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 ## [Unreleased]
 
 ### Hinzugefügt
+- Öffentliche Demo-Instanz (Schalter `DEMO_INSTANCE`, #99): kein Mailversand, keine KI-Aufrufe, Passwort, zweiter Faktor, Registrierung und Kontolöschung gesperrt, Hinweis auf jeder Seite; feste Zugangsdaten über `DEMO_PASSWORD` nur in der Demo-Instanz.
 - Präsentationsumgebung `setup_demo_praesentation` (Profile `nrw`/`hamburg`): eine Drucksache von der Fraktion über den Sitzungsdienst bis ins Bürgerportal und die OParl-Schnittstelle – zweiter Demo-Mandant mit eigener Nummernfolge, Leitstelle mit Mandantenwechsel, verbundene Einreichung Work → Session, Beratungsfolge, Ö/NÖ-Tagesordnung, Abstimmung, Protokoll, Beschlusskontrolle und Sitzungsgeld im Vier-Augen-Prinzip; Mandant A wird im Prozess ins Bürgerportal gespiegelt, ein erneuter Lauf setzt die Probe zurück, `--reset` räumt auf; E2E-Test des Drehbuchs (`docs/DEMO_PRAESENTATION.md`).
 - Session: Nummernkreise für Vorlagen und Drucksachen mit Mustern (`{wp}-{lfd:4}`, `V/{lfd:4}/{jahr}`, `AN/…`), Zählerbereich je Jahr oder Wahlperiode, Vergabe beim Anlegen oder bei der Freigabe, Unternummern für Ergänzung/Neufassung/Antwort (`22-0593.1`), Presets für Hamburger Bezirke und NRW-Kommunen, Startwert für den Umstieg aus Altsystemen; Bezeichnung „Drucksache“/„Vorlagen-Nr.“ je Mandant (`docs/SESSION_NUMMERNKREISE.md`, #150).
 - Session: Mandantenwechsel in der Seitenleiste für Nutzer mehrerer Mandanten (z. B. Leitstelle für mehrere Bezirke); Verwaltungsnutzer landen nach dem Login direkt in ihrem Mandanten.

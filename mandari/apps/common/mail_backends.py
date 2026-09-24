@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
 from django.core.mail.backends.smtp import EmailBackend as SMTPEmailBackend
 from django.utils.module_loading import import_string
@@ -53,6 +54,9 @@ def build_backend(backend: str, **options: Any) -> BaseEmailBackend:
     SMTP-Optionen gehen nur an SMTP-Backends: Django 6.1 warnt (7.0: Fehler), wenn ein
     Backend wie locmem oder console unbekannte Argumente bekommt.
     """
+    if getattr(settings, "DEMO_INSTANCE", False):
+        # Öffentliche Demo (Issue #99): auch Zugänge aus SiteSettings oder Organisation versenden nichts.
+        backend = "django.core.mail.backends.locmem.EmailBackend"
     klasse = import_string(backend)
     if issubclass(klasse, SMTPEmailBackend):
         options = smtp_options(**options)

@@ -227,6 +227,9 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
         max_tokens: int = 2000,
         temperature: float = 0.5,
     ) -> AIResponse:
+        if getattr(settings, "DEMO_INSTANCE", False):
+            # Öffentliche Demo (Issue #99): keine Aufrufe an KI-Anbieter oder frei eintragbare Adressen.
+            return AIResponse(success=False, error="KI-Funktionen sind in der Demo-Umgebung abgeschaltet.")
         allowed, limit_message = self._check_rate_limit()
         if not allowed:
             return AIResponse(success=False, error=limit_message)
