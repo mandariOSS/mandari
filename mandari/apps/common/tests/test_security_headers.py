@@ -25,10 +25,13 @@ def test_csp_middleware_directly_after_security_middleware():
 
 def test_csp_report_only_policy_is_strict_on_frames_and_objects():
     policy = settings.SECURE_CSP_REPORT_ONLY
-    assert policy["frame-ancestors"] == [CSP.NONE]
+    # Nur eigene Seiten dürfen einbetten (Dokumentvorschau), fremde nie
+    assert policy["frame-ancestors"] == [CSP.SELF]
+    assert CSP.SELF in policy["frame-src"]
     assert policy["object-src"] == [CSP.NONE]
     assert CSP.NONCE in policy["script-src"]
-    assert CSP.UNSAFE_EVAL not in policy["script-src"]
+    # unsafe-eval nur für Alpine bis zum CSP-Build (#172); Inline-Skripte bleiben ohne Nonce verboten
+    assert CSP.UNSAFE_INLINE not in policy["script-src"]
 
 
 def test_password_policy_requires_twelve_characters():
@@ -65,7 +68,7 @@ def _run_through_csp_middleware() -> HttpResponse:
 def test_report_only_csp_header_is_emitted_with_nonce():
     response = _run_through_csp_middleware()
     header = response.headers.get("Content-Security-Policy-Report-Only", "")
-    assert "frame-ancestors 'none'" in header
+    assert "frame-ancestors 'self'" in header
     assert "object-src 'none'" in header
     assert "script-src 'self' 'nonce-" in header
     assert "Content-Security-Policy" not in response.headers
