@@ -33,16 +33,40 @@ from ..services import agenda_service
 # =============================================================================
 
 
+def _meetings(view):
+    """Sitzungen des Mandanten, nichtöffentliche nur mit dem NÖ-Sichtrecht (wie die Sitzungsansicht)."""
+    qs = SessionMeeting.objects.filter(tenant=view.session_tenant)
+    if not view.has_permission("view_non_public_meetings"):
+        qs = qs.filter(is_public=True)
+    return qs
+
+
+def _items(view):
+    """TOPs des Mandanten; nichtöffentliche TOPs und TOPs nichtöffentlicher Sitzungen nur mit NÖ-Sichtrecht.
+
+    Das Bearbeitungsrecht allein genügt nicht: Sonst ließen sich Betreff und Vorlage eines NÖ-TOPs
+    über die Bearbeitungsseite lesen bzw. der TOP absetzen, löschen oder verschieben.
+    """
+    qs = SessionAgendaItem.objects.filter(meeting__tenant=view.session_tenant).select_related("meeting")
+    if not view.has_permission("view_non_public_meetings"):
+        qs = qs.filter(is_public=True, meeting__is_public=True)
+    return qs
+
+
+def _papers(view):
+    """Auswahl „Vorlage“: nichtöffentliche Vorlagen nur mit dem NÖ-Sichtrecht für Vorlagen."""
+    qs = SessionPaper.objects.filter(tenant=view.session_tenant)
+    if not view.has_permission("view_non_public_papers"):
+        qs = qs.filter(is_public=True)
+    return qs
+
+
 def _get_meeting(view, meeting_id):
-    return get_object_or_404(SessionMeeting, pk=meeting_id, tenant=view.session_tenant)
+    return get_object_or_404(_meetings(view), pk=meeting_id)
 
 
 def _get_item(view, item_id):
-    return get_object_or_404(
-        SessionAgendaItem.objects.select_related("meeting"),
-        pk=item_id,
-        meeting__tenant=view.session_tenant,
-    )
+    return get_object_or_404(_items(view), pk=item_id)
 
 
 def _meeting_redirect(view, meeting):
@@ -68,12 +92,10 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
-        form.fields["paper"].queryset = SessionPaper.objects.filter(tenant=self.session_tenant)
-        form.fields["parent"].queryset = SessionAgendaItem.objects.filter(
-            meeting_id=self.kwargs["meeting_id"],
-            meeting__tenant=self.session_tenant,
-            parent__isnull=True,
-        ).order_by("order")
+        form.fields["paper"].queryset = _papers(self)
+        form.fields["parent"].queryset = (
+            _items(self).filter(meeting_id=self.kwargs["meeting_id"], parent__isnull=True).order_by("order")
+        )
         return form
 
     def form_valid(self, form):
@@ -111,7 +133,7 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
     permission_required = "edit_meetings"
 
     def get_queryset(self):
-        return SessionAgendaItem.objects.filter(meeting__tenant=self.session_tenant).select_related("meeting")
+        return _items(self)
 
     def get(self, request, *args, **kwargs):
         response = super().get(request, *args, **kwargs)
@@ -131,12 +153,10 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
-        form.fields["paper"].queryset = SessionPaper.objects.filter(tenant=self.session_tenant)
+        form.fields["paper"].queryset = _papers(self)
         form.fields["parent"].queryset = (
-            SessionAgendaItem.objects.filter(
-                meeting=self.object.meeting,
-                parent__isnull=True,
-            )
+            _items(self)
+            .filter(meeting=self.object.meeting, parent__isnull=True)
             .exclude(pk=self.object.pk)
             .order_by("order")
         )

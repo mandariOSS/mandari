@@ -242,7 +242,13 @@ check(
 start = (timezone.now() + timedelta(days=14)).replace(hour=17, minute=0, second=0, microsecond=0)
 resp = clerk.post(
     f"{base}/meetings/create/",
-    {"name": "Sitzung des Hauptausschusses", "organization": str(org.id), "start": start.strftime("%Y-%m-%dT%H:%M")},
+    {
+        "name": "Sitzung des Hauptausschusses",
+        "organization": str(org.id),
+        "start": start.strftime("%Y-%m-%dT%H:%M"),
+        # öffentliche Sitzung: TOPs nichtöffentlicher Sitzungen bearbeitet nur, wer das NÖ-Recht hat
+        "is_public": "on",
+    },
 )
 meeting = SessionMeeting.objects.filter(tenant=tenant).first()
 check("Sitzung angelegt", meeting is not None)
