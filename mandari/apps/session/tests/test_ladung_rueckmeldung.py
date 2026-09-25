@@ -251,6 +251,7 @@ def test_absage_mit_grund_ist_verschluesselt_und_benachrichtigt_stellvertretung(
     assert GRUND.encode() not in bytes(attendance.response_reason_encrypted or b"")
     assert invitation_response_service.response_reason(attendance) == GRUND
     assert attendance.substitutes_notified_at is not None
+    assert GRUND not in Client().get(_link(recipient)).content.decode(), "Grund nicht über den Link lesbar"
 
     anfrage = SessionInvitationDispatch.objects.get(meeting=welt.meeting, dispatch_type="substitution")
     vertretung = _empfaenger(anfrage, welt.substitute)

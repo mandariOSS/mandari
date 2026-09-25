@@ -83,7 +83,6 @@ class InvitationResponseView(View):
             "tenant": meeting.tenant,
             "person": person,
             "attendance": attendance,
-            "reason": invitation_response_service.response_reason(attendance),
             "location": invitation_response_service.meeting_location(meeting),
             "has_substitutes": bool(invitation_response_service.substitute_memberships(meeting, person)),
             "substitution_rows": invitation_response_service.substitution_requests(attendance),

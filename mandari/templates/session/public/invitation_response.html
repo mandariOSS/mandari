@@ -104,7 +104,7 @@ Der Aufruf allein bestätigt nichts – erst ein Klick auf einen der Knöpfe (PO
             <form method="post" class="space-y-4 pt-6 border-t border-gray-200 dark:border-gray-700">
                 {% csrf_token %}
                 <h3 class="font-semibold text-gray-900 dark:text-white">Ich kann nicht teilnehmen</h3>
-                <c-form.textarea name="reason" label="Grund (optional)" rows="3" value="{{ reason }}" help="Nur für den Sitzungsdienst sichtbar und verschlüsselt gespeichert – nicht öffentlich." />
+                <c-form.textarea name="reason" label="Grund (optional)" rows="3" help="Nur für den Sitzungsdienst sichtbar und verschlüsselt gespeichert – nicht öffentlich." />
                 {% if has_substitutes and not is_substitution %}
                 {% if attendance.substitute_requested %}
                 <c-form.checkbox name="substitute" label="Meine Stellvertretung um Vertretung bitten" checked />
