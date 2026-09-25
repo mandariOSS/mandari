@@ -10,4 +10,4 @@ class InsightCoreConfig(AppConfig):
     def ready(self):
         """Registriert Signals beim App-Start."""
         # Import signals to register them
-        from . import signals  # noqa: F401
+        from . import portal, signals  # noqa: F401  (portal: Systemprüfung PORTAL_HOSTS, Issue #317)

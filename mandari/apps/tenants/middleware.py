@@ -101,7 +101,8 @@ class SubdomainRedirectMiddleware:
         self.enabled = getattr(settings, "SUBDOMAIN_REDIRECT_ENABLED", True)
 
     def __call__(self, request):
-        if not self.enabled:
+        # Eigener Host eines Bürgerportals (PORTAL_HOSTS, Issue #317) ist keine Organisations-Subdomain
+        if not self.enabled or getattr(request, "insight_portal_host_slug", None):
             return self.get_response(request)
 
         # Get the host from the request (e.g., 'volt.mandari.de')

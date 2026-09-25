@@ -10,6 +10,7 @@ from django.http import HttpRequest
 from ..models import (
     OParlBody,
 )
+from ..portal import get_portal
 
 # =============================================================================
 # Helper Functions
@@ -18,6 +19,10 @@ from ..models import (
 
 def get_active_body(request: HttpRequest) -> OParlBody | None:
     """Holt die aktive Kommune aus der Session oder setzt einen Standard."""
+    # Bürgerportal einer Körperschaft (Issue #317): Die Kommune ist festgelegt
+    portal = get_portal(request)
+    if portal is not None:
+        return portal.body
     body_id = request.session.get("active_body_id")
     if body_id == "all":
         # "Alle Kommunen"-Modus: Auswahl NICHT überschreiben. Views, die zwingend
@@ -39,6 +44,8 @@ def get_active_body(request: HttpRequest) -> OParlBody | None:
 
 def is_all_bodies_mode(request):
     """Prüft ob der 'Alle Kommunen' Modus aktiv ist."""
+    if get_portal(request) is not None:
+        return False
     body_id = request.session.get("active_body_id")
     return body_id is None or body_id == "all"
 

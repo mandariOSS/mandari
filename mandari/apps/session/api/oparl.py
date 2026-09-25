@@ -155,7 +155,9 @@ def serialize_body(api, tenant=None):
             "shortName": tenant.short_name,
             "website": tenant.website,
             "contactEmail": tenant.contact_email,
-            "classification": "Kommune",
+            # Körperschaftstyp und AGS aus dem Anlegen des Mandanten (Issue #317); ohne Angabe wie bisher
+            "classification": tenant.get_body_type_display() if tenant.body_type else "Kommune",
+            "ags": tenant.ags or None,
             "organization": api.list_url("organizations"),
             "person": api.list_url("people"),
             "meeting": api.list_url("meetings"),

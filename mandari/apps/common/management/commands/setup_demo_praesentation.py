@@ -447,8 +447,8 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
-        if not mandant_b.roles.exists():
-            SessionRole.create_default_roles(mandant_b)
+        # Wie beim Anlegen eines Mandanten (Issue #317): fehlende Standardrollen ergänzen
+        cast(Any, SessionRole).ensure_default_roles(mandant_b)
         self._profil_anwenden(mandant_b, profil)
         return mandant_b
 

@@ -4,6 +4,11 @@
     "abfragen": 16,
     "ms": 500
   },
+  "insight_einstieg_koerperschaft": {
+    "beschreibung": "Insight: Einstieg einer Körperschaft (/insight/k/<slug>/, Issue #317)",
+    "abfragen": 15,
+    "ms": 500
+  },
   "insight_suche": {
     "beschreibung": "Insight: Suchseite mit Suchbegriff",
     "abfragen": 8,

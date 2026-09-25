@@ -107,12 +107,17 @@ for _model in oparl_publication.KIND_BY_MODEL:
 
 
 def tenant_publication_pre_save(sender, instance, **kwargs):
-    """Alten Veröffentlichungs-Stand merken (Provisioning-Hook)."""
+    """Alten Veröffentlichungs- und Aktiv-Stand merken (Provisioning- und Deaktivierungs-Hook)."""
+    old = None
     if instance.pk:
-        old = sender.objects.filter(pk=instance.pk).values_list("insight_publish", flat=True).first()
-        instance._insight_publish_old = old
-    else:
-        instance._insight_publish_old = None
+        old = sender.objects.filter(pk=instance.pk).values_list("insight_publish", "is_active").first()
+    instance._insight_publish_old, instance._is_active_old = old if old is not None else (None, None)
+
+
+def _field_saved(kwargs, name: str) -> bool:
+    """Wurde das Feld mitgespeichert? Bei ``update_fields`` ohne das Feld zählt der Speicherstand nicht."""
+    update_fields = kwargs.get("update_fields")
+    return update_fields is None or name in update_fields
 
 
 def tenant_publication_post_save(sender, instance, created, **kwargs):
@@ -122,13 +127,28 @@ def tenant_publication_post_save(sender, instance, created, **kwargs):
     Sobald ein Mandant insight_publish aktiviert (Settings-UI, Admin oder
     Provisioning), wird seine OParl-API als Insight-Quelle registriert;
     beim Deaktivieren wird die Quelle inaktiv gesetzt.
+
+    Wird der Mandant selbst deaktiviert oder reaktiviert (Admin-Aktion, Änderungsformular, Befehl),
+    nimmt der Lebenszyklus-Service seine Bürgerportal-Quelle zurück bzw. stellt sie wieder her
+    (Issue #317) – auf jedem Weg, auch ohne die Admin-Aktion.
     """
     if kwargs.get("raw"):
+        return
+    old_active = getattr(instance, "_is_active_old", None)
+    if (
+        not created
+        and old_active is not None
+        and old_active != instance.is_active
+        and _field_saved(kwargs, "is_active")
+    ):
+        from apps.session.services import tenant_provisioning
+
+        tenant_provisioning.on_active_changed(instance)
         return
     old = getattr(instance, "_insight_publish_old", None)
     if created and not instance.insight_publish:
         return
-    if not created and old == instance.insight_publish:
+    if not created and (old == instance.insight_publish or not _field_saved(kwargs, "insight_publish")):
         return
     from apps.session.services import insight_service
 

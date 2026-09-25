@@ -1,0 +1,87 @@
+{% extends "admin/base_site.html" %}
+{% load i18n unfold %}
+
+{% block breadcrumbs %}
+    <div class="px-4">
+        <div class="container mb-6 mx-auto -my-3 lg:mb-12">
+            <ul class="flex flex-wrap">
+                {% url "admin:index" as index_url %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link=index_url name=_("Home") %}
+                {% url "admin:session_sessiontenant_changelist" as changelist_url %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link=changelist_url name=opts.verbose_name_plural|capfirst %}
+                {% include "unfold/helpers/breadcrumb_item.html" with link="" name=title %}
+            </ul>
+        </div>
+    </div>
+{% endblock %}
+
+{% block content %}
+    <div class="flex flex-col gap-6 max-w-4xl">
+        <p>
+            Legt einen Session-Mandanten arbeitsfähig an: Standardrollen (auch Revision und Datenschutz),
+            Nummernkreis, aktuelle Wahlperiode, optional Gremien, erster Administrator und Schlüssel für
+            verschlüsselte Felder. Ein erneuter Lauf mit demselben Kürzel ergänzt nur Fehlendes.
+            Derselbe Ablauf steht als Befehl <code>session_create_tenant</code> bereit.
+        </p>
+
+        {% if fehler_katalog %}
+            <p class="text-red-600 font-semibold">{{ fehler_katalog }}</p>
+        {% endif %}
+
+        {% if ergebnis %}
+            {% if ergebnis.dry_run %}
+                {% trans "Prüflauf – nichts wurde gespeichert, keine E-Mail versendet" as ergebnis_titel %}
+            {% else %}
+                {% trans "Mandant angelegt" as ergebnis_titel %}
+            {% endif %}
+            {% component "unfold/components/card.html" with title=ergebnis_titel %}
+                <ul class="flex flex-col gap-2">
+                    {% for schritt in ergebnis.steps %}<li>{{ schritt }}</li>{% endfor %}
+                </ul>
+                {% if ergebnis.warnings %}
+                    <ul class="flex flex-col gap-2 mt-4 text-amber-700 dark:text-amber-400">
+                        {% for warnung in ergebnis.warnings %}<li>Hinweis: {{ warnung }}</li>{% endfor %}
+                    </ul>
+                {% endif %}
+                {% if not ergebnis.dry_run and ergebnis.tenant_id %}
+                    <div class="flex flex-wrap gap-3 mt-6">
+                        {% url "admin:session_sessiontenant_change" ergebnis.tenant_id as change_url %}
+                        {% component "unfold/components/button.html" with href=change_url variant="default" %}Mandant im Admin{% endcomponent %}
+                        {% url "session:dashboard" tenant_slug=ergebnis.slug as session_url %}
+                        {% component "unfold/components/button.html" with href=session_url variant="default" %}Sitzungsdienst öffnen{% endcomponent %}
+                    </div>
+                {% endif %}
+            {% endcomponent %}
+        {% endif %}
+
+        {% component "unfold/components/card.html" with title="1. Profil als Vorbelegung (optional)" %}
+            <form method="get" class="flex flex-col gap-2">
+                {% for field in profile_form %}
+                    {% include "unfold/helpers/field.html" with field=field %}
+                {% endfor %}
+                <div>
+                    {% component "unfold/components/button.html" with submit=1 variant="default" %}Angaben vorbelegen{% endcomponent %}
+                </div>
+            </form>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with title="2. Angaben prüfen und Mandant anlegen" %}
+            <form method="post" novalidate>
+                {% csrf_token %}
+                {% if form.non_field_errors %}
+                    <ul class="flex flex-col gap-1 mb-6 text-red-600 font-semibold">
+                        {% for fehler in form.non_field_errors %}<li>{{ fehler }}</li>{% endfor %}
+                    </ul>
+                {% endif %}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+                    {% for field in form %}
+                        {% include "unfold/helpers/field.html" with field=field %}
+                    {% endfor %}
+                </div>
+                <div>
+                    {% component "unfold/components/button.html" with submit=1 %}Mandant anlegen{% endcomponent %}
+                </div>
+            </form>
+        {% endcomponent %}
+    </div>
+{% endblock %}

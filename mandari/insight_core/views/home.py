@@ -177,8 +177,17 @@ def set_body(request, body_id):
     """Setzt die aktive Kommune und leitet zur Portal-Homepage weiter."""
     from django.utils.http import url_has_allowed_host_and_scheme
 
+    from .. import portal as portal_context
+
+    aktuell = portal_context.get_portal(request)
+    if aktuell is not None and not aktuell.can_leave:
+        # Eigener Host einer Körperschaft (Issue #317): Die Kommune ist fest
+        return redirect("insight_core:insight:portal_home")
     try:
         body = OParlBody.objects.get(id=body_id)
+        if aktuell is not None and aktuell.body.pk != body.pk:
+            # Andere Kommune gewählt: Einstieg der Körperschaft verlassen
+            portal_context.leave(request)
         request.session["active_body_id"] = str(body.id)
         # Explicitly mark session as modified and save to ensure persistence
         request.session.modified = True
@@ -212,6 +221,14 @@ def set_body(request, body_id):
 
 def clear_body(request):
     """Setzt auf 'Alle Kommunen' Modus und leitet zur Portal-Homepage weiter."""
+    from .. import portal as portal_context
+
+    aktuell = portal_context.get_portal(request)
+    if aktuell is not None and not aktuell.can_leave:
+        # Eigener Host einer Körperschaft (Issue #317): keine gemeinsame Auswahl
+        return redirect("insight_core:insight:portal_home")
+    # Verlässt auch den Einstieg einer Körperschaft (/insight/k/<slug>/)
+    portal_context.leave(request)
     request.session["active_body_id"] = "all"
     # Explicitly mark session as modified and save to ensure persistence
     request.session.modified = True

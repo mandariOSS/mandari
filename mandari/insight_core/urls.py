@@ -23,6 +23,9 @@ insight_patterns = [
     # Kommune wechseln
     path("kommune/<uuid:body_id>/", views.set_body, name="set_body"),
     path("kommune/alle/", views.clear_body, name="clear_body"),
+    # Bürgerportal je Körperschaft (Issue #317): eigener Einstieg, optional mit Zielseite
+    path("k/<slug:slug>/", views.portal_entry, name="portal_entry"),
+    path("k/<slug:slug>/<path:rest>", views.portal_entry, name="portal_entry_path"),
     # Gremien (Organizations)
     path("gremien/", views.OrganizationListView.as_view(), name="organization_list"),
     path("gremien/<uuid:pk>/", views.OrganizationDetailView.as_view(), name="organization_detail"),

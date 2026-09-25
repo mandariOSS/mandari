@@ -68,6 +68,15 @@ if _wildcard_csrf_origin not in CSRF_TRUSTED_ORIGINS:
 MAIN_DOMAIN = os.environ.get("MAIN_DOMAIN", _site_domain.replace("www.", ""))
 SUBDOMAIN_REDIRECT_ENABLED = os.environ.get("SUBDOMAIN_REDIRECT_ENABLED", "true").lower() == "true"
 
+# Bürgerportal je Körperschaft unter eigenem Host (Issue #317): "host=slug,host2=slug2". Der Slug ist
+# der Einstiegs-Slug (/insight/k/<slug>/). Wirkt nur für Hosts, die auch in ALLOWED_HOSTS stehen
+# (insight_core/portal.py); DNS, Zertifikat und Reverse Proxy richtet der Betrieb ein.
+PORTAL_HOSTS: dict[str, str] = {
+    host.strip().lower(): slug.strip()
+    for host, _, slug in (eintrag.partition("=") for eintrag in os.environ.get("PORTAL_HOSTS", "").split(","))
+    if host.strip() and slug.strip()
+}
+
 
 # Application definition
 
@@ -137,6 +146,8 @@ MIDDLEWARE = [
     "apps.common.middleware.DatabaseErrorMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    # Eigener Host je Körperschaft (PORTAL_HOSTS, Issue #317); ohne Einträge wirkungslos
+    "insight_core.portal.PortalHostMiddleware",
     # Subdomain redirect for organization shortcuts (e.g., volt.mandari.de -> /work/volt/)
     "apps.tenants.middleware.SubdomainRedirectMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -892,6 +903,11 @@ UNFOLD = {
                         "title": _("Mandanten"),
                         "icon": "domain",
                         "link": reverse_lazy("admin:session_sessiontenant_changelist"),
+                    },
+                    {
+                        "title": _("Mandant anlegen"),
+                        "icon": "domain_add",
+                        "link": reverse_lazy("admin:session_sessiontenant_provision"),
                     },
                     {
                         "title": _("Gremien"),

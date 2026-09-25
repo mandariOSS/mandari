@@ -71,6 +71,34 @@ class SessionTenant(models.Model):
     short_name = models.CharField(max_length=50, blank=True, verbose_name="Kurzname")
     description = models.TextField(blank=True, verbose_name="Beschreibung")
 
+    # Körperschaft (Issue #317): Art und Amtlicher Gemeindeschlüssel. Die Art erscheint in der OParl-API
+    # als ``classification`` des Body, der Schlüssel als ``ags``. Bei Bestandsmandanten leer.
+    BODY_TYPE_CHOICES = [
+        ("stadt", "Stadt"),
+        ("kreisfreie_stadt", "Kreisfreie Stadt"),
+        ("gemeinde", "Gemeinde"),
+        ("kreis", "Kreis bzw. Landkreis"),
+        ("bezirk", "Bezirk"),
+        ("gemeindeverband", "Gemeindeverband"),
+        ("regionalverband", "Regionalverband"),
+        ("zweckverband", "Zweckverband"),
+        ("sonstige", "Sonstige Körperschaft"),
+    ]
+    body_type = models.CharField(
+        max_length=30,
+        choices=BODY_TYPE_CHOICES,
+        blank=True,
+        null=True,
+        verbose_name="Körperschaftstyp",
+    )
+    ags = models.CharField(
+        max_length=8,
+        blank=True,
+        null=True,
+        verbose_name="Amtlicher Gemeindeschlüssel",
+        help_text="8 Stellen für Gemeinden, 5 für Kreise, 2 oder 3 für Länder und Regierungsbezirke",
+    )
+
     # OParl Connection (optional - for public data sync)
     oparl_body = models.OneToOneField(
         "insight_core.OParlBody",
@@ -355,80 +383,86 @@ class SessionRole(models.Model):
     @classmethod
     def create_default_roles(cls, tenant: SessionTenant) -> dict:
         """Create default roles for a new tenant."""
-        roles = {}
+        return {
+            key: cls.objects.create(tenant=tenant, is_system_role=True, **values)
+            for key, values in cls.default_role_definitions().items()
+        }
 
-        # Administrator
-        roles["admin"] = cls.objects.create(
-            tenant=tenant,
-            name="Administrator",
-            description="Vollzugriff auf alle Funktionen",
-            is_admin=True,
-            is_system_role=True,
-            priority=100,
-            color="#dc2626",
-        )
+    @classmethod
+    def ensure_default_roles(cls, tenant: SessionTenant) -> dict:
+        """
+        Fehlende Standardrollen ergänzen, vorhandene (gleicher Name) unverändert lassen (Issue #317).
 
-        # Sachbearbeiter
-        roles["clerk"] = cls.objects.create(
-            tenant=tenant,
-            name="Sachbearbeiter",
-            description="Kann Sitzungen und Vorlagen verwalten",
-            is_system_role=True,
-            priority=70,
-            color="#7c3aed",
-            can_view_meetings=True,
-            can_create_meetings=True,
-            can_edit_meetings=True,
-            can_view_non_public_meetings=True,
-            can_view_papers=True,
-            can_create_papers=True,
-            can_edit_papers=True,
-            can_view_non_public_papers=True,
-            can_view_applications=True,
-            can_process_applications=True,
-            can_view_protocols=True,
-            can_create_protocols=True,
-            can_edit_protocols=True,
-            can_manage_attendance=True,
-        )
+        Für das idempotente Anlegen eines Mandanten und für Bestandsmandanten, denen z. B. die
+        Kontrollrollen „Revision“ und „Datenschutz“ (Issue #221) noch fehlen. Gibt die neu
+        angelegten Rollen zurück.
+        """
+        vorhanden = set(cls.objects.filter(tenant=tenant).values_list("name", flat=True))
+        return {
+            key: cls.objects.create(tenant=tenant, is_system_role=True, **values)
+            for key, values in cls.default_role_definitions().items()
+            if values["name"] not in vorhanden
+        }
 
-        # Protokollant
-        roles["recorder"] = cls.objects.create(
-            tenant=tenant,
-            name="Protokollant",
-            description="Kann Protokolle erstellen und bearbeiten",
-            is_system_role=True,
-            priority=60,
-            color="#2563eb",
-            can_view_meetings=True,
-            can_view_non_public_meetings=True,
-            can_view_papers=True,
-            can_view_non_public_papers=True,
-            can_view_protocols=True,
-            can_create_protocols=True,
-            can_edit_protocols=True,
-            can_manage_attendance=True,
-        )
+    @classmethod
+    def default_role_definitions(cls) -> dict[str, dict[str, Any]]:
+        """Alle Standardrollen in Anlagereihenfolge: Fachrollen, danach die Kontrollrollen."""
+        return {**cls.BASE_ROLES, **cls.CONTROL_ROLES}
 
-        # Lesezugriff
-        roles["viewer"] = cls.objects.create(
-            tenant=tenant,
-            name="Lesezugriff",
-            description="Nur Anzeige von Informationen",
-            is_system_role=True,
-            priority=10,
-            color="#6b7280",
-            can_view_meetings=True,
-            can_view_papers=True,
-            can_view_applications=True,
-            can_view_protocols=True,
-        )
-
-        # Kontrollrollen (Issue #221): Protokoll einsehen, exportieren und prüfen
-        for key, values in cls.CONTROL_ROLES.items():
-            roles[key] = cls.objects.create(tenant=tenant, is_system_role=True, **values)
-
-        return roles
+    #: Fachliche Standardrollen jedes Mandanten
+    BASE_ROLES: dict[str, dict[str, Any]] = {
+        "admin": {
+            "name": "Administrator",
+            "description": "Vollzugriff auf alle Funktionen",
+            "is_admin": True,
+            "priority": 100,
+            "color": "#dc2626",
+        },
+        "clerk": {
+            "name": "Sachbearbeiter",
+            "description": "Kann Sitzungen und Vorlagen verwalten",
+            "priority": 70,
+            "color": "#7c3aed",
+            "can_view_meetings": True,
+            "can_create_meetings": True,
+            "can_edit_meetings": True,
+            "can_view_non_public_meetings": True,
+            "can_view_papers": True,
+            "can_create_papers": True,
+            "can_edit_papers": True,
+            "can_view_non_public_papers": True,
+            "can_view_applications": True,
+            "can_process_applications": True,
+            "can_view_protocols": True,
+            "can_create_protocols": True,
+            "can_edit_protocols": True,
+            "can_manage_attendance": True,
+        },
+        "recorder": {
+            "name": "Protokollant",
+            "description": "Kann Protokolle erstellen und bearbeiten",
+            "priority": 60,
+            "color": "#2563eb",
+            "can_view_meetings": True,
+            "can_view_non_public_meetings": True,
+            "can_view_papers": True,
+            "can_view_non_public_papers": True,
+            "can_view_protocols": True,
+            "can_create_protocols": True,
+            "can_edit_protocols": True,
+            "can_manage_attendance": True,
+        },
+        "viewer": {
+            "name": "Lesezugriff",
+            "description": "Nur Anzeige von Informationen",
+            "priority": 10,
+            "color": "#6b7280",
+            "can_view_meetings": True,
+            "can_view_papers": True,
+            "can_view_applications": True,
+            "can_view_protocols": True,
+        },
+    }
 
     #: Standardrollen für die Protokollkontrolle (Issue #221). Nur das Protokoll, keine Fachrechte:
     #: Wer prüft, braucht keinen Zugriff auf Sitzungs- oder Vorlageninhalte.

@@ -87,7 +87,7 @@ class SessionTenantAdmin(ModelAdmin):
     actions_detail = ["generate_api_token_action"]
 
     fieldsets = (
-        (None, {"fields": ("name", "slug", "short_name", "description")}),
+        (None, {"fields": ("name", "slug", "short_name", "description", "body_type", "ags")}),
         (
             "OParl-Verknüpfung",
             {
@@ -135,15 +135,64 @@ class SessionTenantAdmin(ModelAdmin):
     def is_active_display(self, obj):
         return obj.is_active
 
-    @admin.action(description="Ausgewählte Mandanten aktivieren")
+    # Mandant anlegen nur über den Assistenten (Issue #317): Rollen, Nummernkreis, Wahlperiode und
+    # Administrator entstehen dort gemeinsam; das nackte Formular legte Mandanten ohne Rollen an.
+    def get_urls(self):
+        from django.urls import path
+
+        from .admin_provisioning import provision_view
+
+        eigene = [
+            path(
+                "anlegen/",
+                self.admin_site.admin_view(lambda request: provision_view(self, request)),
+                name="session_sessiontenant_provision",
+            ),
+        ]
+        return eigene + super().get_urls()
+
+    def add_view(self, request, form_url="", extra_context=None):
+        from django.shortcuts import redirect
+
+        return redirect("admin:session_sessiontenant_provision")
+
+    def save_model(self, request, obj, form, change):
+        # Deaktivieren/Reaktivieren im Formular: Signal nimmt die Bürgerportal-Quelle zurück bzw.
+        # stellt sie wieder her und protokolliert, wer gehandelt hat (Issue #317)
+        from .admin_provisioning import actor_for
+
+        obj._lifecycle_actor = actor_for(request)
+        obj._lifecycle_request = request
+        super().save_model(request, obj, form, change)
+
+    # Einzeln über den Service statt queryset.update(): Rücknahme bzw. Wiederherstellung der
+    # Bürgerportal-Quelle und Audit-Log laufen für jeden Mandanten (Issue #317).
+    @admin.action(description="Ausgewählte Mandanten aktivieren (Bürgerportal wiederherstellen)")
     def activate_tenants(self, request, queryset):
-        count = queryset.update(is_active=True)
+        from .admin_provisioning import actor_for
+        from .services import tenant_provisioning
+
+        count = sum(
+            tenant_provisioning.set_tenant_active(tenant, True, actor=actor_for(request), request=request).changed
+            for tenant in queryset
+        )
         messages.success(request, f"{count} Mandant(en) wurden aktiviert.")
 
-    @admin.action(description="Ausgewählte Mandanten deaktivieren")
+    @admin.action(description="Ausgewählte Mandanten deaktivieren (Bürgerportal zurücknehmen)")
     def deactivate_tenants(self, request, queryset):
-        count = queryset.update(is_active=False)
-        messages.success(request, f"{count} Mandant(en) wurden deaktiviert.")
+        from .admin_provisioning import actor_for
+        from .services import tenant_provisioning
+
+        count = 0
+        entries = 0
+        for tenant in queryset:
+            result = tenant_provisioning.set_tenant_active(tenant, False, actor=actor_for(request), request=request)
+            count += int(result.changed)
+            entries += result.portal.entries if result.portal else 0
+        messages.success(
+            request,
+            f"{count} Mandant(en) wurden deaktiviert; {entries} Einträge aus dem Bürgerportal zurückgenommen.",
+        )
 
     @action(description="API-Token generieren", url_path="generate-token")
     def generate_api_token_action(self, request, object_id):

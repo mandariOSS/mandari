@@ -8,7 +8,7 @@ Migriert von SQLAlchemy zu Django ORM.
 import uuid
 from typing import Any
 
-from django.core.validators import FileExtensionValidator
+from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 from django.utils import timezone
 
@@ -328,6 +328,16 @@ class OParlBody(SourceDeletionModel):
             "Kommune erscheint in Kommunenauswahl, Übersichten, Sitemaps und öffentlichen Listen. "
             "Ausgeschaltet bleibt sie per direkter URL erreichbar (z. B. Demo-Kommune)."
         ),
+    )
+    # Akzentfarbe im Bürgerportal der Körperschaft (/insight/k/<slug>/, Issue #317). Nur Django kennt
+    # die Spalte; sie ist nullable, damit Inserts des Ingestors weiter funktionieren.
+    accent_color = models.CharField(
+        max_length=7,
+        blank=True,
+        null=True,
+        validators=[RegexValidator(r"^#[0-9a-fA-F]{6}$", "Bitte eine Farbe im Format #1a2b3c angeben.")],
+        verbose_name="Akzentfarbe im eigenen Portal",
+        help_text="Hexadezimal, z. B. #1e40af. Leer: Primärfarbe des Session-Mandanten, sonst mandari-Farben.",
     )
 
     # Personenfoto-Konfiguration

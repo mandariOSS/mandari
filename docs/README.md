@@ -23,6 +23,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `INSIGHT_QUESTIONS.md` | [Insight → Ratsfragen](https://docs.mandari.de/insight/ratsfragen/) |
 | `SESSION_REMINDERS.md` | [Session → Fristen-Erinnerungen](https://docs.mandari.de/session/fristen-erinnerungen/) |
 | `PROTOKOLLIERUNG.md` | [Datenschutz → Protokollierungskonzept](https://docs.mandari.de/datenschutz/) (Seite folgt) |
+| `SESSION_MANDANT_ANLEGEN.md` | [Session → Mandanten anlegen und Bürgerportal je Körperschaft](https://docs.mandari.de/session/mandanten/) (Seite folgt) |
 | `SESSION_VIER_AUGEN_VERTRETUNG.md` | [Session → Vier-Augen-Prinzip und Vertretungen](https://docs.mandari.de/session/vier-augen-vertretung/) (Seite folgt) |
 | `SESSION_LEITSTELLE.md` | [Session → Leitstelle und gemeinsame Sitzungen](https://docs.mandari.de/session/leitstelle/) (Seite folgt) |
 | `FILE_CACHE.md` | [Betrieb → Dokument-Cache](https://docs.mandari.de/betrieb/dokument-cache/) |

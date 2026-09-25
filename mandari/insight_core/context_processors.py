@@ -34,30 +34,39 @@ def active_body(request):
     Die Kommune wird aus der Session oder URL ermittelt.
     Wenn "all" in der Session steht, wird keine spezifische Kommune ausgewählt.
     """
+    from .portal import get_portal
+
     # Versuche Body aus Session zu laden
-    body_id = request.session.get("active_body_id")
+    body_id = request.session.get("active_body_id") if hasattr(request, "session") else None
     body = None
     bodies = []
     show_all_bodies = False
+    portal = None
 
     try:
-        bodies = list(OParlBody.objects.listed().order_by("name"))
+        # Bürgerportal einer Körperschaft (Issue #317): Auswahl auf diese Kommune festgelegt
+        portal = get_portal(request)
+        if portal is not None:
+            body = portal.body
+            bodies = [body]
+        else:
+            bodies = list(OParlBody.objects.listed().order_by("name"))
 
-        # "all" bedeutet: Alle Kommunen anzeigen (keine spezifische ausgewählt)
-        if body_id == "all":
-            show_all_bodies = True
-            body = None
-        elif body_id:
-            try:
-                body = OParlBody.objects.get(id=body_id)
-            except OParlBody.DoesNotExist:
+            # "all" bedeutet: Alle Kommunen anzeigen (keine spezifische ausgewählt)
+            if body_id == "all":
+                show_all_bodies = True
                 body = None
+            elif body_id:
+                try:
+                    body = OParlBody.objects.get(id=body_id)
+                except OParlBody.DoesNotExist:
+                    body = None
 
-        # Kein Fallback mehr - wenn keine Kommune ausgewählt, zeigen wir alle
-        # Nur bei erster Nutzung (keine Session) setzen wir auf "all"
-        if body_id is None and bodies:
-            show_all_bodies = True
-            request.session["active_body_id"] = "all"
+            # Kein Fallback mehr - wenn keine Kommune ausgewählt, zeigen wir alle
+            # Nur bei erster Nutzung (keine Session) setzen wir auf "all"
+            if body_id is None and bodies:
+                show_all_bodies = True
+                request.session["active_body_id"] = "all"
 
     except Exception:
         # Datenbank noch nicht migriert oder andere Fehler
@@ -90,4 +99,5 @@ def active_body(request):
         "show_all_bodies": show_all_bodies,
         "upcoming_meeting_count": upcoming_count,
         "active_body_stale_days": stale_days,
+        "insight_portal": portal,
     }
