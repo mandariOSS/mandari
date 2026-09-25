@@ -11,7 +11,7 @@ Jahresübersicht:
   present/joined_late/left_early, keine Gäste) im Zeitraum genau eine
   Sitzungsgeld-Position (OneToOne auf die Anwesenheit — idempotent).
 - **Vier-Augen-Prinzip**: Wer die Positionen erzeugt hat, darf sie nicht
-  selbst genehmigen.
+  selbst genehmigen (je Mandant schaltbar, Standard: an – Issue #222).
 - **Exporte**: generisches CSV fürs Finanzverfahren und SEPA-pain.001-XML
   (Überweisungs-Datei); Abrechnungsmitteilung als PDF je Empfänger.
 - **Bankdaten**: IBAN/BIC/Kontoinhaber werden ausschließlich über die
@@ -127,12 +127,13 @@ def generate_allowances(tenant, period_start, period_end, *, organization=None, 
 # =============================================================================
 
 
-def approve_allowances(allowances, approver) -> dict:
+def approve_allowances(allowances, approver, *, four_eyes: bool = True) -> dict:
     """
     Positionen genehmigen — Vier-Augen-Prinzip (Issue #38).
 
     Positionen, die der/die Genehmigende selbst erzeugt hat, werden
-    NICHT genehmigt (blocked_four_eyes).
+    NICHT genehmigt (blocked_four_eyes). ``four_eyes=False`` nur, wenn der
+    Mandant das Vier-Augen-Prinzip für Sitzungsgeld abgeschaltet hat (Issue #222).
 
     Returns:
         dict: approved, blocked_four_eyes
@@ -142,7 +143,7 @@ def approve_allowances(allowances, approver) -> dict:
     for allowance in allowances:
         if allowance.status != "pending":
             continue
-        if allowance.created_by_id is not None and allowance.created_by_id == approver.pk:
+        if four_eyes and allowance.created_by_id is not None and allowance.created_by_id == approver.pk:
             stats["blocked_four_eyes"] += 1
             continue
         allowance.status = "approved"
@@ -508,7 +509,7 @@ def generate_monthly_allowances(tenant, year: int, month: int, *, created_by=Non
     return {"created": created, "skipped": skipped, "period": period}
 
 
-def approve_monthly_allowances(allowances, approver) -> dict:
+def approve_monthly_allowances(allowances, approver, *, four_eyes: bool = True) -> dict:
     """Monats-Pauschalen genehmigen (nur Status „Ausstehend") — Vier-Augen-Prinzip.
 
     Posten, die der/die Genehmigende selbst erzeugt hat (Monatslauf), werden
@@ -520,7 +521,7 @@ def approve_monthly_allowances(allowances, approver) -> dict:
     for allowance in allowances:
         if allowance.status != "pending":
             continue
-        if allowance.created_by_id is not None and allowance.created_by_id == approver.pk:
+        if four_eyes and allowance.created_by_id is not None and allowance.created_by_id == approver.pk:
             blocked += 1
             continue
         allowance.status = "approved"

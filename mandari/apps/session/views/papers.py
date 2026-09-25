@@ -7,9 +7,10 @@ Provides views for the Session RIS administration interface.
 Enthält auch den Vorlagen-Freigabelauf (Issue #33): Entwurf ->
 Mitzeichnung/Prüfung -> Freigabe bzw. Zurückweisung mit Kommentar,
 Arbeitsvorrat „Meine zu prüfenden Vorlagen" und E-Mail-Benachrichtigungen.
-Vertreterregelung bewusst einfach: Jede/r mit der Berechtigung
-approve_papers kann freigeben — feste Zuordnungen/Mehrstufigkeit folgen
-als Ausbaustufe.
+Jede/r mit der Berechtigung approve_papers kann freigeben; seit Issue #222
+gelten zusätzlich das Vier-Augen-Prinzip (je Mandant schaltbar) und
+nutzerbezogene Vertretungen (services/four_eyes_service.py,
+services/delegation_service.py).
 """
 
 import logging
@@ -37,10 +38,25 @@ from ..models import (
     SessionPerson,
     SessionUser,
 )
-from ..permissions import SessionViewMixin
+from ..permissions import SessionViewMixin, role_permissions
+from ..services import delegation_service, four_eyes_service
 from .nexturl import safe_next_url
 
 logger = logging.getLogger(__name__)
+
+
+def _deputy_emails(people, paper):
+    """
+    Vertretungen mit Umfang „Benachrichtigungen“ erhalten Mails in Kopie (Issue #222).
+
+    Nichtöffentliche Vorlagen nur an Vertretungen, die sie selbst sehen dürfen.
+    """
+    emails = set()
+    for deputy, _principal in delegation_service.notification_deputies(people):
+        if deputy.user.email and (paper.is_public or "view_non_public_papers" in role_permissions(deputy)):
+            emails.add(deputy.user.email)
+    return emails
+
 
 # =============================================================================
 # PAPERS
@@ -214,6 +230,8 @@ class PaperDetailView(SessionViewMixin, DetailView):
             "originator_person",
             "created_by__user",
             "approved_by__user",
+            "approved_on_behalf_of__user",
+            "content_edited_by__user",
             "source_application",
             "parent_paper",
         )
@@ -278,6 +296,9 @@ class PaperDetailView(SessionViewMixin, DetailView):
         context["child_papers"] = list(children)
         context["relation_choices"] = SessionPaper.RELATION_CHOICES
         context["can_create_papers"] = self.has_permission("create_papers")
+        # Vier-Augen-Prinzip und Vertretung (Issue #222): Hinweis statt wirkungslosem Knopf
+        if paper.status == "review" and self.has_permission("approve_papers"):
+            context["freigabe"] = four_eyes_service.evaluate(four_eyes_service.PROCESS_PAPER, paper, self.session_user)
         return context
 
 
@@ -406,6 +427,14 @@ class PaperReviewListView(SessionViewMixin, ListView):
             qs = qs.filter(is_public=True)
         return qs.select_related("main_organization", "created_by__user").order_by("created_at")
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Vier-Augen-Prinzip und Vertretung (Issue #222) je Vorlage
+        for paper in context["papers"]:
+            paper.freigabe = four_eyes_service.evaluate(four_eyes_service.PROCESS_PAPER, paper, self.session_user)
+        context["my_delegations"] = delegation_service.incoming(self.session_user)
+        return context
+
 
 class PaperWorkflowView(SessionViewMixin, View):
     """
@@ -478,6 +507,18 @@ class PaperWorkflowView(SessionViewMixin, View):
                 )
                 return self._redirect(paper)
 
+        # Vier-Augen-Prinzip und Vertretung (Issue #222): Prüfung im Service, vor jeder Änderung
+        vertreten = None
+        if action in ("approve", "reject"):
+            try:
+                vertreten = four_eyes_service.authorize(
+                    four_eyes_service.PROCESS_PAPER, paper, self.session_user, four_eyes=action == "approve"
+                )
+            except four_eyes_service.ApprovalError as exc:
+                messages.error(request, str(exc))
+                return self._redirect(paper)
+        vermerk = f" (in Vertretung für {vertreten.user.email})" if vertreten else ""
+
         paper.status = new_status
 
         if action == "submit":
@@ -498,35 +539,42 @@ class PaperWorkflowView(SessionViewMixin, View):
             from ..services.numbering_service import NumberingError
 
             paper.approved_by = self.session_user
+            paper.approved_on_behalf_of = vertreten
             paper.approved_at = timezone.now()
             try:
-                paper.save()  # Audit: approve-Aktion über Signal; vergibt ggf. die Nummer (Issue #150)
+                with audit.in_vertretung(vertreten):
+                    paper.save()  # Audit: approve-Aktion über Signal; vergibt ggf. die Nummer (Issue #150)
             except NumberingError as exc:
                 messages.error(request, f"Freigabe nicht möglich: {exc}")
                 return self._redirect(paper)
             messages.success(
                 request,
-                f"Vorlage wurde freigegeben – {self.session_tenant.reference_label} {paper.display_reference}.",
+                f"Vorlage wurde freigegeben{vermerk} – {self.session_tenant.reference_label} {paper.display_reference}.",
             )
 
         elif action == "reject":
             comment = request.POST.get("comment", "").strip()
             paper.approved_by = None
             paper.approved_at = None
-            paper.save()
+            paper.approved_on_behalf_of = None
+            with audit.in_vertretung(vertreten):
+                paper.save()
             # Audit: Zurückweisung mit Kommentar nachvollziehbar machen
             audit.log_event(
                 "update",
                 paper,
                 user=self.session_user,
                 request=request,
+                on_behalf_of=vertreten,
                 changes={
                     "status": {"alt": old_status, "neu": new_status},
                     "zurueckweisungs_kommentar": comment[:300],
                 },
             )
             self._notify_creator(paper, comment)
-            messages.success(request, f"Vorlage {paper.display_reference} wurde mit Anmerkungen zurückgewiesen.")
+            messages.success(
+                request, f"Vorlage {paper.display_reference} wurde mit Anmerkungen zurückgewiesen{vermerk}."
+            )
 
         return self._redirect(paper)
 
@@ -541,14 +589,15 @@ class PaperWorkflowView(SessionViewMixin, View):
         )
 
     def _approver_emails(self, paper):
-        """E-Mails aller Freigabeberechtigten des Mandanten (einfache Vertreterregelung)."""
-        approvers = (
+        """E-Mails aller Freigabeberechtigten des Mandanten und ihrer Vertretungen (Issue #222)."""
+        approvers = list(
             SessionUser.objects.filter(tenant=self.session_tenant, is_active=True)
             .filter(Q(roles__is_admin=True) | Q(roles__can_approve_papers=True))
             .select_related("user")
             .distinct()
         )
-        return sorted({su.user.email for su in approvers if su.user.email} - {self.session_user.user.email})
+        emails = {su.user.email for su in approvers if su.user.email} | _deputy_emails(approvers, paper)
+        return sorted(emails - {self.session_user.user.email})
 
     def _notify_approvers(self, paper):
         from apps.common.email import send_email
@@ -579,8 +628,13 @@ class PaperWorkflowView(SessionViewMixin, View):
     def _notify_creator(self, paper, comment):
         from apps.common.email import send_email
 
-        creator_email = paper.created_by.user.email if paper.created_by else ""
-        if not creator_email:
+        creator = paper.created_by
+        # Vertretung der erstellenden Person erhält die Zurückweisung in Kopie (Issue #222)
+        recipients = sorted(
+            ({creator.user.email} if creator and creator.user.email else set())
+            | (_deputy_emails([creator], paper) if creator else set())
+        )
+        if not recipients:
             return
         detail_path = reverse(
             "session:paper_detail",
@@ -597,7 +651,7 @@ class PaperWorkflowView(SessionViewMixin, View):
             send_email(
                 subject=f"Vorlage zurückgewiesen: {paper.display_reference}",
                 body=body,
-                to=[creator_email],
+                to=recipients,
                 fail_silently=False,
             )
         except Exception:

@@ -1,0 +1,58 @@
+{% extends "session/base_session.html" %}
+
+{% block page_title %}Vier-Augen-Prinzip{% endblock %}
+
+{% block breadcrumb %}
+<nav class="flex items-center gap-2 text-sm">
+    <a href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Einstellungen
+    </a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-900 dark:text-white font-medium">Vier-Augen-Prinzip</span>
+</nav>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-3xl space-y-6">
+    <c-layout.page-header title="Vier-Augen-Prinzip"
+        subtitle="Wer einen Vorgang erstellt oder zuletzt inhaltlich bearbeitet hat, gibt ihn nicht selbst frei – auch nicht in Vertretung.">
+        {% if can_manage_users %}
+        <c-ui.button variant="secondary" size="sm" icon="user-check" href="{% url 'session:settings_delegations' tenant_slug=tenant_slug %}">Vertretungen</c-ui.button>
+        {% endif %}
+    </c-layout.page-header>
+
+    <form method="post" action="{% url 'session:settings_four_eyes' tenant_slug=tenant_slug %}" data-testid="vier-augen-einstellungen">
+        {% csrf_token %}
+        <c-ui.card title="Je Vorgangsart" subtitle="Standard: an für Sitzungsgeld und Pauschalen, aus für die übrigen Vorgänge.">
+            <ul class="divide-y divide-gray-100 dark:divide-gray-700/50 -my-3">
+                {% for process in processes %}
+                <li class="py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                    <div class="min-w-0">
+                        {% if process.key == "paper" %}
+                        <label for="four_eyes_papers" class="text-sm font-medium text-gray-900 dark:text-white">{{ process.label }}</label>
+                        {% else %}
+                        <c-form.checkbox name="{{ process.field }}" label="{{ process.label }}" :checked="process.value" />
+                        {% endif %}
+                        <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">„Selbst“: {{ process.self_definition }}</p>
+                    </div>
+                    {% if process.key == "paper" %}
+                    <select id="four_eyes_papers" name="four_eyes_papers"
+                            class="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        {% for value, text in paper_choices %}
+                        <option value="{{ value }}"{% if value == process.value %} selected{% endif %}>{{ text }}</option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            <c-slot name="footer">
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Die Prüfung greift serverseitig; Änderungen stehen im Audit-Log.</p>
+                    <c-ui.button type="submit" size="sm" icon="save">Speichern</c-ui.button>
+                </div>
+            </c-slot>
+        </c-ui.card>
+    </form>
+</div>
+{% endblock %}

@@ -39,7 +39,10 @@ als Anlage zum Auftragsverarbeitungsvertrag ([AVV-Muster](DSGVO_AVV_MUSTER.md)).
   Nutzer, Zeitstempel, IP; Einträge sind unveränderbar und nicht einzeln
   löschbar.
 - Verschlüsselte Feldinhalte erscheinen im Audit-Log niemals im Klartext.
-- Vier-Augen-Prinzip bei der Sitzungsgeld-Genehmigung.
+- Vier-Augen-Prinzip bei der Sitzungsgeld-Genehmigung (Standard), je Mandant
+  zusätzlich für Vorlagenfreigabe, Niederschrift und Übergabe von
+  Beschlussauszügen; Vertretungen nur im Zeitraum, ohne Rechteausweitung und
+  mit Vermerk „in Vertretung für …“ im Audit-Log.
 
 ## 3. Verfügbarkeit und Belastbarkeit
 

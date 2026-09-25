@@ -47,6 +47,62 @@ def user_tenants(request: Any) -> list[dict[str, str]]:
     return list(eintrag["list"])
 
 
+# Vollständiger Rechtesatz der Administrator-Rolle
+ALL_PERMISSIONS = frozenset(
+    {
+        "view_dashboard",
+        "view_meetings",
+        "create_meetings",
+        "edit_meetings",
+        "delete_meetings",
+        "view_non_public_meetings",
+        "view_papers",
+        "create_papers",
+        "edit_papers",
+        "delete_papers",
+        "approve_papers",
+        "view_non_public_papers",
+        "view_applications",
+        "process_applications",
+        "view_protocols",
+        "create_protocols",
+        "edit_protocols",
+        "approve_protocols",
+        "manage_attendance",
+        "manage_allowances",
+        "manage_devices",
+        "manage_users",
+        "manage_organizations",
+        "manage_settings",
+        "view_audit_log",
+        "access_api",
+        "access_oparl_api",
+    }
+)
+
+
+def role_permissions(session_user: Any) -> set[str]:
+    """
+    Rechte aus den eigenen Rollen – ohne Vertretungen.
+
+    Grundlage für Vertretungen (Issue #222): Eine Vertretung erhält höchstens diese Rechte
+    der vertretenen Person, nie deren Rechte aus weiteren Vertretungen (keine Kettenvertretung).
+    """
+    if not session_user:
+        return set()
+    permissions: set[str] = set()
+    for role in session_user.roles.all():
+        # Admin has all permissions
+        if role.is_admin:
+            return set(ALL_PERMISSIONS)
+        # Collect individual permissions from role
+        for attr in dir(role):
+            if attr.startswith("can_") and getattr(role, attr, False):
+                # Convert can_view_meetings to view_meetings
+                permissions.add(attr[4:])
+    return permissions
+
+
 class SessionPermissionChecker:
     """
     Utility class for checking permissions.
@@ -57,7 +113,7 @@ class SessionPermissionChecker:
             # ...
     """
 
-    def __init__(self, session_user):
+    def __init__(self, session_user: Any) -> None:
         """
         Initialize with a SessionUser instance.
 
@@ -75,54 +131,13 @@ class SessionPermissionChecker:
         return self._permissions_cache
 
     def _collect_permissions(self) -> set:
-        """Collect all permissions from roles."""
+        """Rechte aus den eigenen Rollen plus Freigaberechte aus aktiven Vertretungen (Issue #222)."""
         if not self.session_user:
             return set()
+        own = role_permissions(self.session_user)
+        from apps.session.services import delegation_service
 
-        permissions = set()
-
-        for role in self.session_user.roles.all():
-            # Admin has all permissions
-            if role.is_admin:
-                # Return all possible permissions
-                return {
-                    "view_dashboard",
-                    "view_meetings",
-                    "create_meetings",
-                    "edit_meetings",
-                    "delete_meetings",
-                    "view_non_public_meetings",
-                    "view_papers",
-                    "create_papers",
-                    "edit_papers",
-                    "delete_papers",
-                    "approve_papers",
-                    "view_non_public_papers",
-                    "view_applications",
-                    "process_applications",
-                    "view_protocols",
-                    "create_protocols",
-                    "edit_protocols",
-                    "approve_protocols",
-                    "manage_attendance",
-                    "manage_allowances",
-                    "manage_devices",
-                    "manage_users",
-                    "manage_organizations",
-                    "manage_settings",
-                    "view_audit_log",
-                    "access_api",
-                    "access_oparl_api",
-                }
-
-            # Collect individual permissions from role
-            for attr in dir(role):
-                if attr.startswith("can_") and getattr(role, attr, False):
-                    # Convert can_view_meetings to view_meetings
-                    perm_name = attr[4:]  # Remove 'can_' prefix
-                    permissions.add(perm_name)
-
-        return permissions
+        return own | delegation_service.delegated_permissions(self.session_user, own)
 
     def has_permission(self, permission: str) -> bool:
         """Check if user has a specific permission."""
@@ -180,15 +195,16 @@ class SessionMixin(LoginRequiredMixin):
 
         # Get session user for current user
         if request.user.is_authenticated:
+            from apps.session.services.delegation_service import annotate_active
+
             try:
-                self.session_user = (
-                    SessionUser.objects.select_related("tenant")
-                    .prefetch_related("roles")
-                    .get(
-                        user=request.user,
-                        tenant=self.session_tenant,
-                        is_active=True,
-                    )
+                # Vertretungen (Issue #222): ob heute eine wirkt, kommt ohne eigene Abfrage mit
+                self.session_user = annotate_active(
+                    SessionUser.objects.select_related("tenant").prefetch_related("roles")
+                ).get(
+                    user=request.user,
+                    tenant=self.session_tenant,
+                    is_active=True,
                 )
             except SessionUser.DoesNotExist:
                 raise PermissionDenied("Kein Zugang zu diesem Mandanten") from None

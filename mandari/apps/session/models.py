@@ -139,6 +139,28 @@ class SessionTenant(models.Model):
         help_text="Alle Session-Nutzer dieses Mandanten müssen einen zweiten Faktor einrichten",
     )
 
+    # Vier-Augen-Prinzip je Vorgangsart (Issue #222): Wer einen Vorgang erstellt oder zuletzt
+    # inhaltlich bearbeitet hat, gibt ihn nicht selbst frei. Standard: an für Vorgänge mit
+    # finanziellen Auswirkungen (Sitzungsgeld, Pauschalen), aus für die übrigen.
+    FOUR_EYES_PAPER_CHOICES = [
+        ("off", "Aus"),
+        ("financial", "Nur bei finanziellen Auswirkungen"),
+        ("always", "Immer"),
+    ]
+    four_eyes_papers = models.CharField(
+        max_length=10,
+        choices=FOUR_EYES_PAPER_CHOICES,
+        default="off",
+        verbose_name="Vier-Augen-Prinzip: Vorlagenfreigabe",
+    )
+    four_eyes_protocols = models.BooleanField(default=False, verbose_name="Vier-Augen-Prinzip: Niederschrift")
+    four_eyes_allowances = models.BooleanField(
+        default=True, verbose_name="Vier-Augen-Prinzip: Sitzungsgeld und Pauschalen"
+    )
+    four_eyes_forwardings = models.BooleanField(
+        default=False, verbose_name="Vier-Augen-Prinzip: Übergabe von Beschlussauszügen"
+    )
+
     # Fristen-Erinnerungen (Issue #83): Vorlaufzeiten und An/Aus je Typ.
     # Nur abweichende Werte werden gespeichert; Defaults siehe
     # REMINDER_DEFAULTS bzw. reminder_config().
@@ -535,6 +557,122 @@ class SessionInvitation(models.Model):
                     raise ValueError(f"Rolle '{role.name}' gehört nicht zu diesem Mandanten.")
             invitation.roles.set(roles)
         return invitation
+
+
+class SessionDelegation(models.Model):
+    """
+    Vertretung eines Session-Nutzers für einen Zeitraum (Issue #222).
+
+    Wirkt nur vom ersten bis einschließlich zum letzten Tag und nur im gewählten Umfang:
+
+    - Freigaben und Genehmigungen: Vorlagen freigeben und Niederschriften genehmigen,
+      soweit die vertretene Person es selbst darf
+    - Arbeitsvorrat: offene Mitzeichnungen der Ämter der vertretenen Person
+    - Benachrichtigungen: E-Mails an die vertretene Person gehen in Kopie an die Vertretung
+
+    Die Vertretung darf nie mehr als die vertretene Person. Rechte aus einer Vertretung werden
+    nicht weitergereicht (keine Kettenvertretung), und das Vier-Augen-Prinzip gilt auch hier.
+    Aufgehobene Vertretungen bleiben als Nachweis erhalten.
+    """
+
+    SCOPE_FIELDS = {
+        "approvals": "scope_approvals",
+        "worklist": "scope_worklist",
+        "notifications": "scope_notifications",
+    }
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="delegations",
+        verbose_name="Mandant",
+    )
+    principal = models.ForeignKey(
+        SessionUser,
+        on_delete=models.CASCADE,
+        related_name="delegations_given",
+        verbose_name="Vertretene Person",
+    )
+    deputy = models.ForeignKey(
+        SessionUser,
+        on_delete=models.CASCADE,
+        related_name="delegations_received",
+        verbose_name="Vertretung",
+    )
+    start_date = models.DateField(verbose_name="Von")
+    end_date = models.DateField(verbose_name="Bis einschließlich")
+
+    # Umfang
+    scope_approvals = models.BooleanField(default=True, verbose_name="Freigaben und Genehmigungen")
+    scope_worklist = models.BooleanField(default=True, verbose_name="Arbeitsvorrat")
+    scope_notifications = models.BooleanField(default=True, verbose_name="Benachrichtigungen")
+
+    created_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Eingetragen von",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True, verbose_name="Aufgehoben am")
+    revoked_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Aufgehoben von",
+    )
+
+    class Meta:
+        db_table = "session_delegations"
+        verbose_name = "Vertretung"
+        verbose_name_plural = "Vertretungen"
+        ordering = ["start_date", "created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "deputy", "end_date"]),
+            models.Index(fields=["tenant", "principal", "end_date"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(principal=models.F("deputy")),
+                name="session_delegation_not_self",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_date__gte=models.F("start_date")),
+                name="session_delegation_period",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.deputy.user.email} vertritt {self.principal.user.email} "
+            f"({self.start_date:%d.%m.%Y}–{self.end_date:%d.%m.%Y})"
+        )
+
+    def is_active_on(self, day: Any) -> bool:
+        """Wirkt die Vertretung an diesem Tag? Aufgehobene Vertretungen wirken nie."""
+        return self.revoked_at is None and self.start_date <= day <= self.end_date
+
+    @property
+    def state(self) -> str:
+        """Zustand für die Übersicht: aktiv, geplant, beendet oder aufgehoben."""
+        if self.revoked_at is not None:
+            return "revoked"
+        today = timezone.localdate()
+        if self.start_date > today:
+            return "planned"
+        return "active" if self.end_date >= today else "ended"
+
+    @property
+    def scope_labels(self) -> list[str]:
+        """Beschriftungen des gewählten Umfangs."""
+        return [
+            str(self._meta.get_field(name).verbose_name) for name in self.SCOPE_FIELDS.values() if getattr(self, name)
+        ]
 
 
 # =============================================================================
@@ -1657,6 +1795,23 @@ class SessionPaper(EncryptionMixin, models.Model):
         verbose_name="Freigegeben von",
     )
     approved_at = models.DateTimeField(blank=True, null=True, verbose_name="Freigegeben am")
+    # Vier-Augen-Prinzip und Vertretung (Issue #222)
+    content_edited_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Zuletzt inhaltlich bearbeitet von",
+    )
+    approved_on_behalf_of = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Freigegeben in Vertretung für",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -2228,6 +2383,23 @@ class SessionProtocol(EncryptionMixin, models.Model):
         verbose_name="Genehmigt von",
     )
     approved_at = models.DateTimeField(blank=True, null=True, verbose_name="Genehmigt am")
+    # Vier-Augen-Prinzip und Vertretung (Issue #222)
+    content_edited_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Zuletzt inhaltlich bearbeitet von",
+    )
+    approved_on_behalf_of = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Genehmigt in Vertretung für",
+    )
     published_at = models.DateTimeField(blank=True, null=True, verbose_name="Veröffentlicht am")
 
     # Genehmigungsvermerk (Issue #31): Genehmigung erfolgt üblicherweise in
@@ -2737,6 +2909,15 @@ class SessionAuditLog(models.Model):
         null=True,
         related_name="audit_logs",
         verbose_name="Benutzer",
+    )
+    # Handlung aus einer Vertretung (Issue #222): „in Vertretung für …“
+    on_behalf_of = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="In Vertretung für",
     )
     ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name="IP-Adresse")
     user_agent = models.TextField(blank=True, verbose_name="User-Agent")

@@ -29,7 +29,7 @@ class AuditLogListView(SessionViewMixin, ListView):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        qs = qs.select_related("user__user").order_by("-created_at")
+        qs = qs.select_related("user__user", "on_behalf_of__user").order_by("-created_at")
 
         # Filter: Objekt-Typ
         model_name = self.request.GET.get("model")

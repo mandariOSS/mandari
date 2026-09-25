@@ -7,6 +7,7 @@
 {% endblock %}
 
 {% block page_content %}
+{% include "session/partials/my_delegations.html" %}
 <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
     {% for paper in papers %}
     <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700/50 last:border-b-0 flex items-center gap-4 flex-wrap">
@@ -23,8 +24,14 @@
                 · {{ paper.created_at|date:"d.m.Y" }}
                 {% if not paper.is_public %}· <span class="text-red-600 dark:text-red-400">NÖ</span>{% endif %}
             </p>
+            {% if paper.freigabe.on_behalf_of %}
+            <p class="text-xs text-blue-700 dark:text-blue-400 mt-0.5">Freigabe in Vertretung für {{ paper.freigabe.on_behalf_of.user.email }}</p>
+            {% elif not paper.freigabe.allowed %}
+            <p class="text-xs text-amber-700 dark:text-amber-400 mt-0.5">{{ paper.freigabe.reason }}</p>
+            {% endif %}
         </div>
         <div class="flex items-center gap-2">
+            {% if paper.freigabe.allowed %}
             <form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='approve' %}">
                 {% csrf_token %}
                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
@@ -32,6 +39,7 @@
                     <i data-lucide="check" class="w-4 h-4"></i> Freigeben
                 </button>
             </form>
+            {% endif %}
             <form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='reject' %}"
                   class="flex items-center gap-1.5">
                 {% csrf_token %}

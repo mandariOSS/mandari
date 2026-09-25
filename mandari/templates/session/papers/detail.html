@@ -74,6 +74,8 @@
             </div>
             {% elif paper.status == "review" and "approve_papers" in permission_checker.permissions %}
             <div class="mt-2 pt-4 border-t border-gray-100 dark:border-gray-700 flex items-center gap-2 flex-wrap">
+                {% include "session/partials/four_eyes_hint.html" with decision=freigabe %}
+                {% if freigabe.allowed %}
                 <form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='approve' %}">
                     {% csrf_token %}
                     <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors">
@@ -81,6 +83,7 @@
                         Freigeben
                     </button>
                 </form>
+                {% endif %}
                 <form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='reject' %}"
                       class="flex items-center gap-2">
                     {% csrf_token %}
@@ -352,11 +355,18 @@
                     <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ paper.created_by.user.email }}</dd>
                 </div>
                 {% endif %}
+                {% if paper.content_edited_by and paper.content_edited_by_id != paper.created_by_id %}
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Zuletzt inhaltlich bearbeitet von</dt>
+                    <dd class="font-medium text-gray-900 dark:text-white mt-1">{{ paper.content_edited_by.user.email }}</dd>
+                </div>
+                {% endif %}
                 {% if paper.approved_by %}
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400">Freigegeben von</dt>
                     <dd class="font-medium text-gray-900 dark:text-white mt-1">
                         {{ paper.approved_by.user.email }}
+                        {% if paper.approved_on_behalf_of %}<br><span class="text-gray-500 dark:text-gray-400 font-normal">in Vertretung für {{ paper.approved_on_behalf_of.user.email }}</span>{% endif %}
                         {% if paper.approved_at %}<br><span class="text-gray-500 dark:text-gray-400 font-normal">{{ paper.approved_at|date:"d.m.Y H:i" }}</span>{% endif %}
                     </dd>
                 </div>

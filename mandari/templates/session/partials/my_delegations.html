@@ -1,0 +1,8 @@
+{# Vertretungen (Issue #222): wen die angemeldete Person gerade vertritt #}
+{% if my_delegations %}
+<c-ui.alert variant="info" icon="user-check" class="mb-4" data-testid="meine-vertretungen">
+    Sie vertreten derzeit
+    {% for delegation in my_delegations %}{{ delegation.principal.user.email }} bis {{ delegation.end_date|date:"d.m.Y" }} ({{ delegation.scope_labels|join:", " }}){% if not forloop.last %}; {% endif %}{% endfor %}.
+    Was Sie in Vertretung erledigen, vermerkt das Audit-Log.
+</c-ui.alert>
+{% endif %}

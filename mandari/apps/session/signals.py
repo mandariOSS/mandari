@@ -29,6 +29,7 @@ from apps.session.models import (
     SessionTenant,
     SessionUser,
 )
+from apps.session.services import four_eyes_service
 
 # Zentrale Models, deren Änderungen revisionssicher protokolliert werden
 AUDITED_MODELS = [
@@ -61,6 +62,24 @@ for _model in AUDITED_MODELS:
 # verschwindenden Mandanten anlegen (IntegrityError/hängende Fremdschlüssel).
 pre_delete.connect(audit.tenant_pre_delete, sender=SessionTenant, dispatch_uid="session_audit_tenant_pre_delete")
 post_delete.connect(audit.tenant_post_delete, sender=SessionTenant, dispatch_uid="session_audit_tenant_post_delete")
+
+
+# =============================================================================
+# Vier-Augen-Prinzip (Issue #222): letzte inhaltliche Bearbeitung festhalten
+# =============================================================================
+# Nach den Audit-Receivern registriert: Sie nutzen den dort geladenen Altzustand.
+
+post_save.connect(four_eyes_service.track_paper_edit, sender=SessionPaper, dispatch_uid="session_four_eyes_paper")
+post_save.connect(
+    four_eyes_service.track_protocol_edit, sender=SessionProtocol, dispatch_uid="session_four_eyes_protocol"
+)
+post_save.connect(
+    four_eyes_service.track_agenda_protocol_edit, sender=SessionAgendaItem, dispatch_uid="session_four_eyes_agenda"
+)
+post_save.connect(four_eyes_service.track_file_save, sender=SessionFile, dispatch_uid="session_four_eyes_file_save")
+post_delete.connect(
+    four_eyes_service.track_file_delete, sender=SessionFile, dispatch_uid="session_four_eyes_file_delete"
+)
 
 
 # =============================================================================

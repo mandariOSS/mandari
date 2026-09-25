@@ -22,6 +22,9 @@ Sicherheit:
   den die SessionTenantMiddleware setzt.
 """
 
+import threading
+from contextlib import contextmanager
+
 from apps.common import audit_core
 
 # Öffentliche API (unverändert) — delegiert an den gemeinsamen Baustein
@@ -43,6 +46,25 @@ _serialize_value = audit_core.serialize_value
 
 # Kaskadenlösch-Schutz-Scope für Session-Mandanten (Issue #56)
 _TENANT_SCOPE = "session_tenant"
+
+# Handlungen aus einer Vertretung (Issue #222)
+_vertretung = threading.local()
+
+
+@contextmanager
+def in_vertretung(principal):
+    """
+    Audit-Einträge in diesem Block als Handlung „in Vertretung für …“ kennzeichnen.
+
+    Gilt auch für Einträge, die Model-Signale beim Speichern erzeugen (z. B. die Freigabe).
+    Ohne vertretene Person (``None``) bleibt alles wie bisher.
+    """
+    previous = getattr(_vertretung, "principal", None)
+    _vertretung.principal = principal
+    try:
+        yield
+    finally:
+        _vertretung.principal = previous
 
 
 # =============================================================================
@@ -101,7 +123,7 @@ def resolve_tenant(instance):
     return None
 
 
-def log_event(action, instance, *, tenant=None, user=None, changes=None, request=None):
+def log_event(action, instance, *, tenant=None, user=None, changes=None, request=None, on_behalf_of=None):
     """
     Audit-Eintrag schreiben.
 
@@ -112,6 +134,7 @@ def log_event(action, instance, *, tenant=None, user=None, changes=None, request
         user: SessionUser (sonst aus dem aktuellen Request abgeleitet)
         changes: Optionaler Änderungs-Diff (dict)
         request: Optionaler Request (sonst Thread-Local)
+        on_behalf_of: Vertretene Person (sonst aus :func:`in_vertretung`), Issue #222
     """
     from apps.session.models import SessionAuditLog
 
@@ -130,9 +153,15 @@ def log_event(action, instance, *, tenant=None, user=None, changes=None, request
             user = session_user
     ip_address, user_agent = audit_core.get_client_meta(request)
 
+    if on_behalf_of is None:
+        on_behalf_of = getattr(_vertretung, "principal", None)
+    if on_behalf_of is not None and on_behalf_of.tenant_id != tenant.pk:
+        on_behalf_of = None
+
     return SessionAuditLog.objects.create(
         tenant=tenant,
         user=user,
+        on_behalf_of=on_behalf_of,
         ip_address=ip_address,
         user_agent=user_agent,
         action=action,

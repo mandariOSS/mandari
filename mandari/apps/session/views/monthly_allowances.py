@@ -29,7 +29,7 @@ from ..models import (
     SessionPersonMonthlyRate,
 )
 from ..permissions import SessionViewMixin
-from ..services import allowance_service
+from ..services import allowance_service, four_eyes_service
 
 logger = logging.getLogger(__name__)
 
@@ -289,7 +289,11 @@ class MonthlyApproveView(SessionViewMixin, View):
     def post(self, request, tenant_slug):
         period = _parse_period(request)
         pending = _period_allowances(self, period).filter(status="pending")
-        result = allowance_service.approve_monthly_allowances(pending, self.session_user)
+        result = allowance_service.approve_monthly_allowances(
+            pending,
+            self.session_user,
+            four_eyes=four_eyes_service.required(self.session_tenant, four_eyes_service.PROCESS_ALLOWANCE),
+        )
         if result.get("blocked_four_eyes"):
             messages.warning(
                 request,

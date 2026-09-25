@@ -1,0 +1,8 @@
+{# Vier-Augen-Prinzip und Vertretung (Issue #222): Ergebnis von four_eyes_service.evaluate #}
+{% if decision and not decision.allowed %}
+<c-ui.alert variant="warning" icon="users" class="w-full" data-testid="vier-augen-hinweis">{{ decision.reason }}</c-ui.alert>
+{% elif decision.on_behalf_of %}
+<c-ui.alert variant="info" icon="user-check" class="w-full" data-testid="vertretung-hinweis">
+    Sie handeln hier in Vertretung für {{ decision.on_behalf_of.user.email }}. Das Audit-Log vermerkt es.
+</c-ui.alert>
+{% endif %}

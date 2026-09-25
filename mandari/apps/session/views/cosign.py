@@ -24,7 +24,7 @@ from ..models import (
     SessionUser,
 )
 from ..permissions import SessionViewMixin
-from ..services import cosign_service
+from ..services import cosign_service, delegation_service
 from .nexturl import safe_next_url
 
 
@@ -63,45 +63,51 @@ class CosignatureActionView(SessionViewMixin, View):
             return self._redirect(request, paper)
 
         comment = request.POST.get("comment", "").strip()
+        if action == "reject" and not comment:
+            messages.error(request, "Bitte einen Kommentar zur Zurückweisung angeben.")
+            return self._redirect(request, paper)
+        # Vertretung (Issue #222): Mitzeichnung für eine vertretene Person, im Audit-Log vermerkt
+        vertreten = cosign_service.acting_for(self.session_user, cosignature)
+        vermerk = f" (in Vertretung für {vertreten.user.email})" if vertreten else ""
         cosignature.comment = comment
         cosignature.decided_by = self.session_user
         cosignature.decided_at = timezone.now()
 
-        if action == "sign":
-            cosignature.status = "signed"
-            cosignature.save()
-            messages.success(
-                request,
-                f"Mitzeichnung {cosignature.department.name} für {paper.reference} erteilt.",
-            )
-        else:
-            if not comment:
-                messages.error(request, "Bitte einen Kommentar zur Zurückweisung angeben.")
-                return self._redirect(request, paper)
-            cosignature.status = "rejected"
-            cosignature.save()
-            # Zurückweisung wirft die Vorlage zurück an die Sachbearbeitung
-            paper.status = "draft"
-            paper.approved_by = None
-            paper.approved_at = None
-            paper.save()
-            messages.success(
-                request,
-                f"Mitzeichnung {cosignature.department.name} zurückgewiesen — {paper.reference} ist wieder im Entwurf.",
-            )
+        with audit.in_vertretung(vertreten):
+            if action == "sign":
+                cosignature.status = "signed"
+                cosignature.save()
+                messages.success(
+                    request,
+                    f"Mitzeichnung {cosignature.department.name} für {paper.reference} erteilt{vermerk}.",
+                )
+            else:
+                cosignature.status = "rejected"
+                cosignature.save()
+                # Zurückweisung wirft die Vorlage zurück an die Sachbearbeitung
+                paper.status = "draft"
+                paper.approved_by = None
+                paper.approved_at = None
+                paper.approved_on_behalf_of = None
+                paper.save()
+                messages.success(
+                    request,
+                    f"Mitzeichnung {cosignature.department.name} zurückgewiesen{vermerk} — "
+                    f"{paper.reference} ist wieder im Entwurf.",
+                )
 
-        audit.log_event(
-            "update",
-            paper,
-            tenant=self.session_tenant,
-            user=self.session_user,
-            request=request,
-            changes={
-                "mitzeichnung": cosignature.department.name,
-                "entscheidung": cosignature.get_status_display(),
-                "kommentar": comment[:300],
-            },
-        )
+            audit.log_event(
+                "update",
+                paper,
+                tenant=self.session_tenant,
+                user=self.session_user,
+                request=request,
+                changes={
+                    "mitzeichnung": cosignature.department.name,
+                    "entscheidung": cosignature.get_status_display(),
+                    "kommentar": comment[:300],
+                },
+            )
         return self._redirect(request, paper)
 
     def _redirect(self, request, paper):
@@ -122,10 +128,13 @@ class MyCosignaturesView(SessionViewMixin, TemplateView):
         cosignatures = list(cosign_service.my_pending_cosignatures(self.session_user))
         for cosignature in cosignatures:
             cosignature.actionable = cosign_service.is_actionable(cosignature)
+            # Vertretung (Issue #222): Stationen aus dem Arbeitsvorrat einer vertretenen Person
+            cosignature.on_behalf_of = cosign_service.acting_for(self.session_user, cosignature)
         context.update(
             {
                 "cosignatures": cosignatures,
                 "my_departments": list(self.session_user.departments.all()),
+                "my_delegations": delegation_service.incoming(self.session_user),
             }
         )
         return context

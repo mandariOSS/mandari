@@ -1,0 +1,40 @@
+{# Vertretungen (Issue #222): Tabellenzeilen der Übersicht; revocable blendet „Aufheben“ ein #}
+<div class="overflow-x-auto">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-50 dark:bg-gray-900/50">
+            <tr>
+                <c-ui.th>Vertretene Person</c-ui.th>
+                <c-ui.th>Vertretung</c-ui.th>
+                <c-ui.th>Zeitraum</c-ui.th>
+                <c-ui.th>Umfang</c-ui.th>
+                <c-ui.th align="right"><span class="sr-only">Aktion</span></c-ui.th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for delegation in rows %}
+            <tr class="align-top">
+                <td class="px-4 py-3 text-gray-900 dark:text-white">{{ delegation.principal.user.email }}</td>
+                <td class="px-4 py-3 text-gray-900 dark:text-white">{{ delegation.deputy.user.email }}</td>
+                <td class="px-4 py-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                    {{ delegation.start_date|date:"d.m.Y" }} – {{ delegation.end_date|date:"d.m.Y" }}
+                    {% if delegation.revoked_at %}
+                    <div class="text-xs text-gray-500 dark:text-gray-400">aufgehoben {{ delegation.revoked_at|date:"d.m.Y H:i" }}{% if delegation.revoked_by %} von {{ delegation.revoked_by.user.email }}{% endif %}</div>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-gray-600 dark:text-gray-300">{{ delegation.scope_labels|join:", " }}</td>
+                <td class="px-4 py-3 text-right">
+                    {% if revocable %}
+                    <form method="post" action="{% url 'session:settings_delegation_revoke' tenant_slug=tenant_slug delegation_id=delegation.id %}"
+                          data-confirm="Vertretung aufheben? Sie wirkt dann sofort nicht mehr.">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" variant="ghost" size="sm" icon="x">Aufheben</c-ui.button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">{{ empty_text }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

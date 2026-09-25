@@ -22,6 +22,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `INSIGHT_GEO.md` | [Insight → Nachbarschaft und Verortung](https://docs.mandari.de/insight/nachbarschaft/) (Seite folgt) |
 | `INSIGHT_QUESTIONS.md` | [Insight → Ratsfragen](https://docs.mandari.de/insight/ratsfragen/) |
 | `SESSION_REMINDERS.md` | [Session → Fristen-Erinnerungen](https://docs.mandari.de/session/fristen-erinnerungen/) |
+| `SESSION_VIER_AUGEN_VERTRETUNG.md` | [Session → Vier-Augen-Prinzip und Vertretungen](https://docs.mandari.de/session/vier-augen-vertretung/) (Seite folgt) |
 | `FILE_CACHE.md` | [Betrieb → Dokument-Cache](https://docs.mandari.de/betrieb/dokument-cache/) |
 | `MONITORING.md` | [Betrieb → Betriebsmonitor](https://docs.mandari.de/betrieb/monitoring/) |
 | `BACKUP.md` | [Betrieb → Backups](https://docs.mandari.de/betrieb/backups/) (Seite folgt) |

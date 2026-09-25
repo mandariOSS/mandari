@@ -21,7 +21,7 @@ from django.views.generic import TemplateView
 from .. import audit
 from ..models import SessionAgendaItem, SessionMeeting, SessionTextBlock
 from ..permissions import SessionViewMixin
-from ..services import agenda_service, protocol_service
+from ..services import agenda_service, four_eyes_service, protocol_service
 
 _VOTE_RESULTS = {choice[0] for choice in SessionAgendaItem._meta.get_field("vote_result").choices}
 
@@ -84,6 +84,11 @@ class ProtocolDetailView(SessionViewMixin, TemplateView):
                 "approval_meetings": approval_meetings,
             }
         )
+        # Vier-Augen-Prinzip und Vertretung (Issue #222): Hinweis statt wirkungslosem Knopf
+        if protocol and protocol.status == "review" and context["can_approve"]:
+            context["freigabe"] = four_eyes_service.evaluate(
+                four_eyes_service.PROCESS_PROTOCOL, protocol, self.session_user
+            )
         return context
 
 
@@ -250,6 +255,18 @@ class ProtocolWorkflowView(SessionViewMixin, View):
             )
             return _protocol_redirect(self, meeting)
 
+        # Vier-Augen-Prinzip und Vertretung (Issue #222): Prüfung im Service, vor dem Speichern
+        vertreten = None
+        if action != "submit":
+            try:
+                vertreten = four_eyes_service.authorize(
+                    four_eyes_service.PROCESS_PROTOCOL, protocol, self.session_user, four_eyes=action == "approve"
+                )
+            except four_eyes_service.ApprovalError as exc:
+                messages.error(request, str(exc))
+                return _protocol_redirect(self, meeting)
+        vermerk = f" (in Vertretung für {vertreten.user.email})" if vertreten else ""
+
         if action == "submit":
             protocol.review_requested_by = self.session_user
             protocol.review_requested_at = timezone.now()
@@ -258,22 +275,25 @@ class ProtocolWorkflowView(SessionViewMixin, View):
 
         elif action == "reject":
             comment = request.POST.get("comment", "").strip()
-            protocol.save()
+            with audit.in_vertretung(vertreten):
+                protocol.save()
             # Audit: Zurückweisung mit Kommentar nachvollziehbar machen
             audit.log_event(
                 "update",
                 protocol,
                 user=self.session_user,
                 request=request,
+                on_behalf_of=vertreten,
                 changes={
                     "status": {"alt": old_status, "neu": protocol.status},
                     "zurueckweisungs_kommentar": comment[:300],
                 },
             )
-            messages.success(request, "Protokoll wurde mit Anmerkungen zurück in den Entwurf gegeben.")
+            messages.success(request, f"Protokoll wurde mit Anmerkungen zurück in den Entwurf gegeben{vermerk}.")
 
         elif action == "approve":
             protocol.approved_by = self.session_user
+            protocol.approved_on_behalf_of = vertreten
             protocol.approved_at = timezone.now()
             approval_meeting_id = request.POST.get("approval_meeting", "")
             if approval_meeting_id:
@@ -288,13 +308,15 @@ class ProtocolWorkflowView(SessionViewMixin, View):
             elif protocol.approval_meeting:
                 start_local = timezone.localtime(protocol.approval_meeting.start)
                 protocol.approval_note = f"Genehmigt in der Sitzung am {start_local.strftime('%d.%m.%Y')}."
-            protocol.save()  # Audit: approve-Aktion über Signal
-            messages.success(request, "Niederschrift wurde genehmigt.")
+            with audit.in_vertretung(vertreten):
+                protocol.save()  # Audit: approve-Aktion über Signal
+            messages.success(request, f"Niederschrift wurde genehmigt{vermerk}.")
 
         elif action == "publish":
             protocol.published_at = timezone.now()
-            protocol.save()  # Audit: publish-Aktion über Signal
-            messages.success(request, "Öffentliche Fassung der Niederschrift wurde veröffentlicht.")
+            with audit.in_vertretung(vertreten):
+                protocol.save()  # Audit: publish-Aktion über Signal
+            messages.success(request, f"Öffentliche Fassung der Niederschrift wurde veröffentlicht{vermerk}.")
 
         return _protocol_redirect(self, meeting)
 
