@@ -20,7 +20,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 from unfold.admin import ModelAdmin
 
-from .models import LoginAttempt, User
+from .models import LoginAttempt, SecurityAuditLog, User
 
 
 class GDPRUserCreationForm(UserCreationForm):
@@ -239,6 +239,43 @@ class LoginAttemptAdmin(ModelAdmin):
         return "***"
 
     email_masked.short_description = "E-Mail (maskiert)"
+
+
+@admin.register(SecurityAuditLog)
+class SecurityAuditLogAdmin(ModelAdmin):
+    """
+    Mandantenübergreifendes Sicherheitsprotokoll (Issue #221), nur lesend.
+
+    Enthält keine Kennungen im Klartext (Fehlversuche mit unbekannter Kennung nur als HMAC).
+    Einträge sind Glieder einer Hash-Kette: weder anlegen noch ändern noch löschen.
+    """
+
+    list_display = ("created_at", "event", "user_ref", "ip_address", "seq")
+    list_filter = ("event", "created_at")
+    search_fields = ("user_ref", "identifier_hash", "ip_address")
+    date_hierarchy = "created_at"
+    readonly_fields = (
+        "created_at",
+        "event",
+        "user_ref",
+        "identifier_hash",
+        "ip_address",
+        "user_agent",
+        "details",
+        "seq",
+        "prev_hash",
+        "entry_hash",
+    )
+    ordering = ("-created_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 # ============================================================================

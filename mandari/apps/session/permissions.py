@@ -19,6 +19,10 @@ from django.http import Http404
 USER_TENANTS_MAX_AGE = 600
 USER_TENANTS_SESSION_KEY = "session_user_tenants"
 
+#: Kontrollrechte (Issue #221): Protokoll einsehen bzw. exportieren und prüfen. Funktionstrennung:
+#: Sie sind nicht in der Administrator-Vollmacht enthalten und werden je Rolle vergeben.
+AUDIT_PERMISSIONS = frozenset({"view_audit_log", "export_audit_log"})
+
 
 def user_tenants(request: Any) -> list[dict[str, str]]:
     """
@@ -47,7 +51,8 @@ def user_tenants(request: Any) -> list[dict[str, str]]:
     return list(eintrag["list"])
 
 
-# Vollständiger Rechtesatz der Administrator-Rolle
+# Vollständiger Rechtesatz der Administrator-Rolle – ohne die Kontrollrechte (AUDIT_PERMISSIONS),
+# die auch Administratoren nur über die Einzelhaken ihrer Rolle erhalten (Issue #221)
 ALL_PERMISSIONS = frozenset(
     {
         "view_dashboard",
@@ -74,7 +79,6 @@ ALL_PERMISSIONS = frozenset(
         "manage_users",
         "manage_organizations",
         "manage_settings",
-        "view_audit_log",
         "access_api",
         "access_oparl_api",
     }
@@ -87,14 +91,16 @@ def role_permissions(session_user: Any) -> set[str]:
 
     Grundlage für Vertretungen (Issue #222): Eine Vertretung erhält höchstens diese Rechte
     der vertretenen Person, nie deren Rechte aus weiteren Vertretungen (keine Kettenvertretung).
+
+    Administratoren haben alle Fachrechte; die Kontrollrechte (Protokoll einsehen und
+    exportieren, Issue #221) kommen auch bei ihnen nur aus den Einzelhaken der Rolle.
     """
     if not session_user:
         return set()
     permissions: set[str] = set()
     for role in session_user.roles.all():
-        # Admin has all permissions
         if role.is_admin:
-            return set(ALL_PERMISSIONS)
+            permissions |= ALL_PERMISSIONS
         # Collect individual permissions from role
         for attr in dir(role):
             if attr.startswith("can_") and getattr(role, attr, False):

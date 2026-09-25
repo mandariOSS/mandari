@@ -119,6 +119,18 @@ class MeetingDetailView(SessionViewMixin, DetailView):
         context["agenda_non_public"] = agenda["non_public"]
         context["agenda_can_edit"] = self.has_permission("edit_meetings")
 
+        # Lesezugriff auf Nichtöffentliches protokollieren (Issue #221): nur Objekt, nie Inhalt
+        if not meeting.is_public or agenda["non_public"]:
+            from .. import audit
+
+            audit.log_read(
+                self.request,
+                meeting,
+                tenant=self.session_tenant,
+                user=self.session_user,
+                changes={"umfang": "nichtöffentliche Sitzung" if not meeting.is_public else "nichtöffentlicher Teil"},
+            )
+
         # Beratungsfolge (Issue #34): Kette je Vorlagen-TOP anzeigen, damit
         # z. B. das Vorberatungsergebnis in der Ratssitzung sichtbar ist.
         from ..models import SessionConsultation

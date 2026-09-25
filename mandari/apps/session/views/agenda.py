@@ -113,6 +113,22 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
     def get_queryset(self):
         return SessionAgendaItem.objects.filter(meeting__tenant=self.session_tenant).select_related("meeting")
 
+    def get(self, request, *args, **kwargs):
+        response = super().get(request, *args, **kwargs)
+        item = self.object
+        # Lesezugriff auf einen nichtöffentlichen TOP protokollieren (Issue #221): nur Objekt, nie Inhalt
+        if not item.is_public or not item.meeting.is_public:
+            from .. import audit
+
+            audit.log_read(
+                request,
+                item,
+                tenant=self.session_tenant,
+                user=self.session_user,
+                changes={"umfang": "nichtöffentlicher Tagesordnungspunkt"},
+            )
+        return response
+
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         form.fields["paper"].queryset = SessionPaper.objects.filter(tenant=self.session_tenant)

@@ -44,6 +44,8 @@ PUBLIC_MEDIA_PREFIXES = (
 PROTECTED_MEDIA_PREFIXES = (
     "session/files/",
     "motions/documents/",
+    # Archivpakete des Protokolls (Issue #221): nie über eine URL
+    "audit_archive/",
 )
 
 

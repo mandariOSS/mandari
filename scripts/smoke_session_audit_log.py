@@ -105,7 +105,8 @@ tenant2 = SessionTenant.objects.create(name="Stadt Fremdstadt", slug="fremdstadt
 admin_user = User.objects.create_user(email="admin@example.org", password="pw-Smoke-Test-1!")
 viewer_user = User.objects.create_user(email="viewer@example.org", password="pw-Smoke-Test-1!")
 
-admin_role = SessionRole.objects.create(tenant=tenant, name="Admin", is_admin=True)
+# Kontrollrecht ausdrücklich: Die Administrator-Vollmacht umfasst das Protokoll nicht (Issue #221)
+admin_role = SessionRole.objects.create(tenant=tenant, name="Admin", is_admin=True, can_view_audit_log=True)
 viewer_role = SessionRole.objects.create(tenant=tenant, name="Nur-Lesen")
 
 su_admin = SessionUser.objects.create(user=admin_user, tenant=tenant)

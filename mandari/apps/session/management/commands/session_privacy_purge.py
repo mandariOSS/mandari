@@ -8,7 +8,8 @@ Wendet die je Mandant konfigurierten Aufbewahrungsfristen an
 - Kontakt-/Bankdaten ausgeschiedener Mandatsträger anonymisieren
   (der Name bleibt für historische Beschlüsse erhalten)
 - Nicht-öffentliche Inhalte (NÖ-Protokollteil, interne Notizen) leeren
-- Audit-Log-Einträge nach Fristablauf löschen
+- Audit-Log-Einträge nach Fristablauf löschen – vorher entsteht ein geprüftes Archivpaket
+  (Issue #221, Speicherort AUDIT_ARCHIVE_ROOT bzw. AUDIT_ARCHIVE_STORAGE)
 
 Jeder Lauf wird nachweisbar im Audit-Log dokumentiert.
 
@@ -45,12 +46,14 @@ class Command(BaseCommand):
 
         dry_run = options.get("dry_run", False)
         for tenant in tenants:
-            stats = privacy_service.run_privacy_purge(tenant, dry_run=dry_run)
+            # Befehlszeile: Altbestand vorher verketten (Issue #221), keine Mengenbegrenzung
+            stats = privacy_service.run_privacy_purge(tenant, dry_run=dry_run, allow_backfill=not dry_run)
             prefix = "[DRY-RUN] " if dry_run else ""
+            archive = f" (Archivpaket {stats['audit_archive']})" if stats.get("audit_archive") else ""
             self.stdout.write(
                 f"{prefix}{tenant.name}: "
                 f"{stats['persons_anonymized']} Person(en) anonymisiert, "
                 f"{stats['np_meetings_cleared']} Sitzung(en) NÖ-Inhalte geleert, "
-                f"{stats['audit_deleted']} Audit-Eintrag/-Einträge gelöscht"
+                f"{stats['audit_deleted']} Audit-Eintrag/-Einträge gelöscht{archive}"
                 + (f" — übersprungen: {', '.join(stats['skipped'])}" if stats["skipped"] else "")
             )

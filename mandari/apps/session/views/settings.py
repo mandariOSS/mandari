@@ -267,7 +267,13 @@ class UserInviteView(SessionViewMixin, TemplateView):
             session_user.is_active = True
             session_user.save()
             if roles:
+                from .. import audit
+
+                old_roles = [] if created else list(session_user.roles.all())
                 session_user.roles.set(roles)
+                audit.log_role_assignment(
+                    session_user, old_roles, roles, request=request, user=self.session_user, reason="Aufnahme"
+                )
             messages.success(request, f"{email} wurde als Benutzer hinzugefügt.")
             return redirect("session:users", tenant_slug=self.session_tenant.slug)
 
@@ -319,7 +325,12 @@ class UserRolesUpdateView(SessionViewMixin, View):
                 messages.error(request, "Der letzte Administrator kann nicht entfernt werden.")
                 return redirect("session:users", tenant_slug=tenant_slug)
 
+        from .. import audit
+
+        old_roles = list(target.roles.all())
         target.roles.set(roles)
+        # Rollen- und Rechteänderung direkt protokollieren (Issue #221)
+        audit.log_role_assignment(target, old_roles, list(roles), request=request, user=self.session_user)
         messages.success(request, f"Rollen von {target.user.email} wurden aktualisiert.")
         return redirect("session:users", tenant_slug=tenant_slug)
 
@@ -471,10 +482,23 @@ class InvitationAcceptView(View):
             )
             login(request, user)
 
-        session_user, _created = SessionUser.objects.get_or_create(user=user, tenant=invitation.tenant)
+        from .. import audit
+
+        session_user, created = SessionUser.objects.get_or_create(user=user, tenant=invitation.tenant)
         session_user.is_active = True
         session_user.save()
-        session_user.roles.set(invitation.roles.all())
+        old_roles = [] if created else list(session_user.roles.all())
+        new_roles = list(invitation.roles.all())
+        session_user.roles.set(new_roles)
+        # Rollen aus der Einladung (Issue #221); vergeben hat sie die einladende Person
+        audit.log_role_assignment(
+            session_user,
+            old_roles,
+            new_roles,
+            request=request,
+            user=session_user,
+            reason="Einladung angenommen",
+        )
 
         invitation.accepted_at = timezone.now()
         invitation.accepted_by = user

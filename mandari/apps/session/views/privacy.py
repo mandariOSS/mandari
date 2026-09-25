@@ -55,6 +55,8 @@ class PrivacySettingsView(SessionViewMixin, TemplateView):
             except (TypeError, ValueError):
                 privacy[key] = 0
         privacy["notice"] = (request.POST.get("notice") or "").strip()[:20000]
+        # Lesezugriffe auf nichtöffentliche Inhalte protokollieren (Issue #221)
+        privacy["read_logging"] = request.POST.get("read_logging") == "1"
 
         tenant.settings = settings
         tenant.save(update_fields=["settings", "updated_at"])
@@ -72,6 +74,7 @@ class PrivacySettingsView(SessionViewMixin, TemplateView):
                     "audit_jahre": {"alt": old["audit_years"], "neu": new["audit_years"]},
                     "noe_jahre": {"alt": old["np_content_years"], "neu": new["np_content_years"]},
                     "hinweisseite_geaendert": old["notice"] != new["notice"],
+                    "lesezugriffe_protokollieren": {"alt": old["read_logging"], "neu": new["read_logging"]},
                 }
             },
         )
@@ -86,16 +89,20 @@ class PrivacyPurgeRunView(SessionViewMixin, View):
     http_method_names = ["post"]
 
     def post(self, request, tenant_slug):
+        from ..services.audit_log_service import UI_PURGE_LIMIT
+
         dry_run = request.POST.get("dry_run") == "1"
+        # Aus der Oberfläche begrenzt (kein langer Lauf im Request); Rest beim nächsten Lauf
         stats = privacy_service.run_privacy_purge(
-            self.session_tenant, dry_run=dry_run, user=self.session_user, request=request
+            self.session_tenant, dry_run=dry_run, user=self.session_user, request=request, audit_limit=UI_PURGE_LIMIT
         )
         prefix = "Probelauf: " if dry_run else "Löschlauf abgeschlossen: "
+        archive = " (vorher archiviert)" if stats.get("audit_archive") else ""
         messages.success(
             request,
             f"{prefix}{stats['persons_anonymized']} Person(en) anonymisiert, "
             f"{stats['np_meetings_cleared']} Sitzung(en) NÖ-Inhalte geleert, "
-            f"{stats['audit_deleted']} Audit-Eintrag/-Einträge gelöscht.",
+            f"{stats['audit_deleted']} Audit-Eintrag/-Einträge gelöscht{archive}.",
         )
         if stats["skipped"]:
             messages.info(request, "Übersprungen: " + ", ".join(stats["skipped"]))

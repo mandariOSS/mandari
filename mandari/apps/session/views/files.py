@@ -75,6 +75,14 @@ def can_view_file(session_user, session_file: SessionFile) -> bool:
     return file_service.file_visible(SessionPermissionChecker(session_user).permissions, session_file)
 
 
+def _download_changes(session_file: SessionFile, **extra) -> dict:
+    """Angaben zum Download im Protokoll: Kennzeichen „nichtöffentlich“ (Issue #221), nie Inhalte."""
+    changes = dict(extra)
+    if file_service.is_non_public(session_file):
+        changes["nichtoeffentlich"] = True
+    return changes
+
+
 def _redirect_to_parent(tenant_slug: str, session_file: SessionFile):
     """Nach einer Datei-Aktion zurück zur Detailseite des Elternobjekts."""
     if session_file.paper_id:
@@ -171,7 +179,8 @@ class FileDownloadView(SessionMixin, View):
         if not can_view_file(self.session_user, session_file):
             raise PermissionDenied("Keine Berechtigung für diese Anlage")
 
-        audit.log_event("download", session_file)
+        # Jeder Download ist ein Lesezugriff; nichtöffentliche sind gekennzeichnet (Issue #221)
+        audit.log_event("download", session_file, changes=_download_changes(session_file))
 
         try:
             handle = session_file.file.open("rb")
@@ -339,7 +348,7 @@ class FileVersionDownloadView(_FileVersionMixin):
         handle = file_version_service.open_blob(version.blob)
         if handle is None:
             raise Http404("Der Inhalt dieser Fassung ist nicht mehr vorhanden.")
-        audit.log_event("download", session_file, changes={"fassung": version.number})
+        audit.log_event("download", session_file, changes=_download_changes(session_file, fassung=version.number))
         return protected_download(handle, version.name, version.mime_type)
 
 

@@ -98,8 +98,9 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
                 votes_by_person[attendance.person] = request.POST.get(key, "")
         tally = voting_service.capture_votes(item, votes_by_person, recorded_by=self.session_user)
 
+        # Direkter Eintrag „Stimmabgabe erfasst“ mit den einzelnen Stimmänderungen (Issue #221)
         audit.log_event(
-            "update",
+            "vote",
             item,
             tenant=self.session_tenant,
             user=self.session_user,
@@ -111,6 +112,7 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
                 "nein": item.votes_no,
                 "enthaltung": item.votes_abstain,
                 "befangen": [p.display_name for p in tally["excluded"]],
+                "stimmen": tally["changed"],
             },
         )
         messages.success(
@@ -280,6 +282,11 @@ class CircularVoteView(SessionViewMixin, View):
         except (TypeError, ValueError):
             received_at = timezone.localdate()
 
+        previous = (
+            SessionCircularVote.objects.filter(circular=circular, person=membership.person)
+            .values_list("vote", flat=True)
+            .first()
+        )
         SessionCircularVote.objects.update_or_create(
             circular=circular,
             person=membership.person,
@@ -289,8 +296,10 @@ class CircularVoteView(SessionViewMixin, View):
                 "recorded_by": self.session_user,
             },
         )
+        vote_labels = dict(SessionCircularVote.VOTE_CHOICES)
+        # Direkter Eintrag „Stimmabgabe erfasst“ je Rücklauf, mit vorheriger Stimme (Issue #221)
         audit.log_event(
-            "update",
+            "vote",
             circular,
             tenant=self.session_tenant,
             user=self.session_user,
@@ -298,7 +307,8 @@ class CircularVoteView(SessionViewMixin, View):
             changes={
                 "umlauf": circular.reference,
                 "ruecklauf": membership.person.display_name,
-                "stimme": dict(SessionCircularVote.VOTE_CHOICES)[vote_value],
+                "stimme": vote_labels[vote_value],
+                "vorher": vote_labels.get(previous, previous) if previous else None,
             },
         )
         messages.success(request, f"Rücklauf von {membership.person.display_name} erfasst.")
@@ -330,7 +340,7 @@ class CircularCloseView(SessionViewMixin, View):
         circular.save()
 
         audit.log_event(
-            "update",
+            "vote_result",
             circular,
             tenant=self.session_tenant,
             user=self.session_user,

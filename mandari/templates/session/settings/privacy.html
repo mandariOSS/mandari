@@ -71,9 +71,26 @@
                 </label>
                 <input type="number" name="audit_years" value="{{ privacy.audit_years }}" min="0" max="100"
                        class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                <p class="text-xs text-gray-400 mt-1">Jahre nach Eintragsdatum.</p>
+                <p class="text-xs text-gray-400 mt-1">Jahre nach Eintragsdatum. Vor der Löschung entsteht ein Archivpaket.</p>
             </div>
         </div>
+
+        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2 pt-2">
+            <i data-lucide="eye" class="w-5 h-5 text-primary-500"></i>
+            Protokollierung von Lesezugriffen
+        </h2>
+        <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input type="checkbox" name="read_logging" value="1" {% if privacy.read_logging %}checked{% endif %}
+                   class="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+            <span>
+                Lesezugriffe auf nichtöffentliche Sitzungen, Tagesordnungspunkte, Vorlagen und Niederschriften protokollieren.
+                <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Erfasst werden nur Person, Zeitpunkt und Objekt, nie Inhalte; wiederholte Aufrufe innerhalb von zehn Minuten
+                    zählen als ein Zugriff. Downloads von Anlagen, Anmeldungen und Zugriffe auf das Protokoll selbst werden
+                    unabhängig von dieser Einstellung protokolliert. Details im Protokollierungskonzept.
+                </span>
+            </span>
+        </label>
 
         <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2 pt-2">
             <i data-lucide="shield" class="w-5 h-5 text-teal-500"></i>

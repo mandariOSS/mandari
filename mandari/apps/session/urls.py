@@ -787,6 +787,17 @@ urlpatterns = [
         views.AuditLogListView.as_view(),
         name="audit_log",
     ),
+    # Protokoll-Export und Kettenprüfung (Issue #221)
+    path(
+        "<slug:tenant_slug>/audit/export/",
+        views.AuditLogExportView.as_view(),
+        name="audit_log_export",
+    ),
+    path(
+        "<slug:tenant_slug>/audit/pruefen/",
+        views.AuditLogVerifyView.as_view(),
+        name="audit_log_verify",
+    ),
     # Files / Anlagen
     path(
         "<slug:tenant_slug>/files/upload/",

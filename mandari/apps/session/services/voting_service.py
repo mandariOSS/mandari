@@ -39,11 +39,21 @@ def capture_votes(agenda_item: SessionAgendaItem, votes_by_person: dict, *, reco
     """
     secret = agenda_item.voting_method == "secret"
     valid_votes = {value for value, _ in SessionVote.VOTE_CHOICES}
+    labels = dict(SessionVote.VOTE_CHOICES)
+
+    def _aenderung(person: Any, alt: str | None, neu_wert: str | None) -> dict[str, Any]:
+        """Eine Stimmänderung für das Protokoll (Issue #221): Person, alte und neue Stimme."""
+        return {
+            "person": person.display_name,
+            "alt": labels.get(alt, alt) if alt else None,
+            "neu": labels.get(neu_wert, neu_wert) if neu_wert else None,
+        }
 
     # Gesammelt statt je Person einzeln (Issue #291): Bei 90 Ratsmitgliedern kosteten
     # update_or_create-Aufrufe rund zwei Sekunden je Erfassung; jetzt eine Leseabfrage,
     # ein Löschen, ein bulk_create und ein bulk_update in einer Transaktion.
     personen = list(votes_by_person)
+    geaendert: list[dict[str, Any]] = []
     with transaction.atomic():
         vorhanden = {
             stimme.person_id: stimme
@@ -61,12 +71,16 @@ def capture_votes(agenda_item: SessionAgendaItem, votes_by_person: dict, *, reco
             if ungueltig or verboten:
                 if bestehend is not None:
                     loeschen.append(bestehend.pk)
+                    geaendert.append(_aenderung(person, bestehend.vote, None))
                 continue
             if bestehend is None:
                 neu.append(
                     SessionVote(agenda_item=agenda_item, person=person, vote=vote_value, recorded_by=recorded_by)
                 )
+                geaendert.append(_aenderung(person, None, vote_value))
             elif bestehend.vote != vote_value or bestehend.recorded_by_id != getattr(recorded_by, "pk", None):
+                if bestehend.vote != vote_value:
+                    geaendert.append(_aenderung(person, bestehend.vote, vote_value))
                 bestehend.vote = vote_value
                 bestehend.recorded_by = recorded_by
                 bestehend.updated_at = jetzt  # bulk_update setzt auto_now nicht selbst
@@ -80,7 +94,10 @@ def capture_votes(agenda_item: SessionAgendaItem, votes_by_person: dict, *, reco
 
         if not secret:
             recompute_sums(agenda_item)
-    return tally(agenda_item)
+    result = tally(agenda_item)
+    # Einzelne Stimmänderungen für den direkten Protokolleintrag „Stimmabgabe erfasst“ (Issue #221)
+    result["changed"] = geaendert
+    return result
 
 
 def recompute_sums(agenda_item: SessionAgendaItem) -> None:

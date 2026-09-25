@@ -39,6 +39,15 @@ als Anlage zum Auftragsverarbeitungsvertrag ([AVV-Muster](DSGVO_AVV_MUSTER.md)).
   Nutzer, Zeitstempel, IP; Einträge sind unveränderbar und nicht einzeln
   löschbar.
 - Verschlüsselte Feldinhalte erscheinen im Audit-Log niemals im Klartext.
+- Zusätzlich protokolliert: Lesezugriffe auf nichtöffentliche Inhalte (nur
+  Objekt-Referenz, je Mandant abschaltbar), Anmeldungen, Abmeldungen und
+  Fehlversuche (ohne Passwort), Stimmabgaben, Mitzeichnungen, Entschädigungen
+  sowie Rollen- und Rechteänderungen.
+- Manipulationsschutz durch eine Hash-Kette je Mandant (SHA-256) mit
+  Prüfwerkzeug; Export für Prüfinstanzen mit Prüfsumme; Archivpaket vor der
+  fristgerechten Löschung. Einsicht und Export nur mit eigenen Kontrollrechten
+  (Revision, Datenschutz) und zweitem Faktor; jeder Zugriff auf das Protokoll
+  wird selbst protokolliert ([Protokollierungskonzept](PROTOKOLLIERUNG.md)).
 - Vier-Augen-Prinzip bei der Sitzungsgeld-Genehmigung (Standard), je Mandant
   zusätzlich für Vorlagenfreigabe, Niederschrift und Übergabe von
   Beschlussauszügen; Vertretungen nur im Zeitraum, ohne Rechteausweitung und

@@ -23,6 +23,7 @@ from apps.session.models import (
     SessionLegislativeTerm,
     SessionMeeting,
     SessionMeetingPackage,
+    SessionMonthlyAllowance,
     SessionOrganization,
     SessionOrganizationMembership,
     SessionPaper,
@@ -52,6 +53,8 @@ AUDITED_MODELS = [
     # Sitzungsgeld (Issue #38): Positionen und Sätze revisionssicher
     SessionAllowance,
     SessionAllowanceRate,
+    # Monatspauschalen (Issue #221): jeder Posten direkt – festgesetzt, genehmigt, ausgezahlt
+    SessionMonthlyAllowance,
 ]
 
 for _model in AUDITED_MODELS:

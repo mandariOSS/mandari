@@ -283,7 +283,10 @@ class SessionRole(models.Model):
     can_manage_organizations = models.BooleanField(default=False, verbose_name="Gremien verwalten")
     can_manage_settings = models.BooleanField(default=False, verbose_name="Einstellungen verwalten")
     can_manage_devices = models.BooleanField(default=False, verbose_name="Endgeräte verwalten")
+
+    # Kontrollrechte (Issue #221): nicht in der Administrator-Vollmacht enthalten (Funktionstrennung)
     can_view_audit_log = models.BooleanField(default=False, verbose_name="Audit-Log anzeigen")
+    can_export_audit_log = models.BooleanField(default=False, verbose_name="Audit-Log exportieren und prüfen")
 
     # API Access
     can_access_api = models.BooleanField(default=False, verbose_name="API-Zugang")
@@ -316,9 +319,13 @@ class SessionRole(models.Model):
     def __str__(self):
         return f"{self.name} ({self.tenant.name})"
 
+    #: Kontrollrechte (Issue #221): Protokoll einsehen und exportieren. Sie sind bewusst NICHT in der
+    #: Administrator-Vollmacht enthalten, sondern werden je Rolle vergeben (Revision, Datenschutz).
+    AUDIT_PERMISSIONS = frozenset({"view_audit_log", "export_audit_log"})
+
     def has_permission(self, permission: str) -> bool:
         """Check if role has a specific permission."""
-        if self.is_admin:
+        if self.is_admin and permission not in self.AUDIT_PERMISSIONS:
             return True
         return getattr(self, f"can_{permission}", False)
 
@@ -394,7 +401,42 @@ class SessionRole(models.Model):
             can_view_protocols=True,
         )
 
+        # Kontrollrollen (Issue #221): Protokoll einsehen, exportieren und prüfen
+        for key, values in cls.CONTROL_ROLES.items():
+            roles[key] = cls.objects.create(tenant=tenant, is_system_role=True, **values)
+
         return roles
+
+    #: Standardrollen für die Protokollkontrolle (Issue #221). Nur das Protokoll, keine Fachrechte:
+    #: Wer prüft, braucht keinen Zugriff auf Sitzungs- oder Vorlageninhalte.
+    CONTROL_ROLES: dict[str, dict[str, Any]] = {
+        "revision": {
+            "name": "Revision",
+            "description": "Rechnungsprüfung: Protokoll einsehen, exportieren und auf Manipulation prüfen",
+            "priority": 20,
+            "color": "#0f766e",
+            "can_view_meetings": False,
+            "can_view_papers": False,
+            "can_view_applications": False,
+            "can_view_protocols": False,
+            "can_access_oparl_api": False,
+            "can_view_audit_log": True,
+            "can_export_audit_log": True,
+        },
+        "privacy": {
+            "name": "Datenschutz",
+            "description": "Datenschutzbeauftragte: Protokoll einsehen, exportieren und auf Manipulation prüfen",
+            "priority": 20,
+            "color": "#0369a1",
+            "can_view_meetings": False,
+            "can_view_papers": False,
+            "can_view_applications": False,
+            "can_view_protocols": False,
+            "can_access_oparl_api": False,
+            "can_view_audit_log": True,
+            "can_export_audit_log": True,
+        },
+    }
 
 
 class SessionUser(models.Model):
@@ -3215,10 +3257,43 @@ class SessionMeetingPackage(models.Model):
 
 class SessionAuditLog(models.Model):
     """
-    Audit log for tracking changes.
+    Revisionssicheres Protokoll des Mandanten (Issues #23, #221).
 
-    Records all significant actions within the system for compliance.
+    Erfasst Änderungen an Kernobjekten, Lesezugriffe auf nichtöffentliche Inhalte, Anmeldungen,
+    Stimmabgaben, Mitzeichnungen, Pauschalen sowie Rollen- und Rechteänderungen. Jeder Eintrag ist
+    Glied einer Hash-Kette je Mandant (``seq``, ``prev_hash``, ``entry_hash``, siehe
+    ``apps/common/audit_chain.py``); nachträgliche Änderungen erkennt ``verify_audit_chain``.
     """
+
+    ACTION_CHOICES = [
+        ("create", "Erstellt"),
+        ("update", "Geändert"),
+        ("delete", "Gelöscht"),
+        ("view", "Angesehen"),
+        ("download", "Heruntergeladen"),
+        ("approve", "Freigegeben"),
+        ("publish", "Veröffentlicht"),
+        ("invitation_sent", "Einladung versandt"),
+        ("withdraw", "Abgesetzt"),
+        ("replace", "Ersetzt"),
+        ("login", "Anmeldung"),
+        ("logout", "Abmeldung"),
+        # Issue #221: direkte, sprechende Einträge
+        ("login_failed", "Anmeldung fehlgeschlagen"),
+        ("vote", "Stimmabgabe erfasst"),
+        ("vote_result", "Abstimmungsergebnis festgestellt"),
+        ("cosign", "Mitzeichnung entschieden"),
+        ("allowance_created", "Entschädigung festgesetzt"),
+        ("allowance_approved", "Entschädigung genehmigt"),
+        ("allowance_paid", "Entschädigung ausgezahlt"),
+        ("allowance_cancelled", "Entschädigung storniert"),
+        ("roles_changed", "Rollen geändert"),
+        ("permissions_changed", "Rechte geändert"),
+        ("audit_view", "Protokoll eingesehen"),
+        ("audit_export", "Protokoll exportiert"),
+        ("audit_verify", "Protokoll geprüft"),
+        ("audit_archive", "Protokoll archiviert"),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -3245,28 +3320,18 @@ class SessionAuditLog(models.Model):
         related_name="+",
         verbose_name="In Vertretung für",
     )
+    # Unveränderliche Kopien der Nutzer-IDs (Issue #221): Die Hash-Kette sichert diese Referenzen.
+    # ``user`` und ``on_behalf_of`` werden beim Löschen eines Nutzers geleert und sind deshalb
+    # nicht Teil des Hashes.
+    user_ref = models.UUIDField(blank=True, null=True, editable=False, verbose_name="Benutzer-Referenz")
+    on_behalf_of_ref = models.UUIDField(
+        blank=True, null=True, editable=False, verbose_name="Referenz „in Vertretung für“"
+    )
     ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name="IP-Adresse")
     user_agent = models.TextField(blank=True, verbose_name="User-Agent")
 
     # Action
-    action = models.CharField(
-        max_length=50,
-        choices=[
-            ("create", "Erstellt"),
-            ("update", "Geändert"),
-            ("delete", "Gelöscht"),
-            ("view", "Angesehen"),
-            ("download", "Heruntergeladen"),
-            ("approve", "Freigegeben"),
-            ("publish", "Veröffentlicht"),
-            ("invitation_sent", "Einladung versandt"),
-            ("withdraw", "Abgesetzt"),
-            ("replace", "Ersetzt"),
-            ("login", "Anmeldung"),
-            ("logout", "Abmeldung"),
-        ],
-        verbose_name="Aktion",
-    )
+    action = models.CharField(max_length=50, choices=ACTION_CHOICES, verbose_name="Aktion")
 
     # Target
     model_name = models.CharField(max_length=100, verbose_name="Modell")
@@ -3276,8 +3341,13 @@ class SessionAuditLog(models.Model):
     # Changes (JSON diff)
     changes = models.JSONField(default=dict, blank=True, verbose_name="Änderungen")
 
-    # Timestamp
-    created_at = models.DateTimeField(auto_now_add=True)
+    # Zeitpunkt: setzt die Hash-Kette beim Schreiben (unter der Sperre des Kettenkopfs)
+    created_at = models.DateTimeField(default=timezone.now, editable=False, verbose_name="Zeitpunkt")
+
+    # Hash-Kette je Mandant (Issue #221); NULL = Altbestand, noch nicht verkettet
+    seq = models.BigIntegerField(blank=True, null=True, editable=False, verbose_name="Laufende Nummer")
+    prev_hash = models.CharField(max_length=64, blank=True, null=True, editable=False, verbose_name="Vorgänger-Hash")
+    entry_hash = models.CharField(max_length=64, blank=True, null=True, editable=False, verbose_name="Eintrags-Hash")
 
     class Meta:
         db_table = "session_audit_logs"
@@ -3287,18 +3357,30 @@ class SessionAuditLog(models.Model):
         indexes = [
             models.Index(fields=["tenant", "model_name", "object_id"]),
             models.Index(fields=["tenant", "user", "created_at"]),
+            models.Index(fields=["tenant", "created_at"], name="session_audit_tenant_created"),
+        ]
+        constraints = [
+            # Keine Verzweigung der Kette, auch wenn die Sperre einmal fehlen sollte (Issue #221)
+            models.UniqueConstraint(
+                fields=["tenant", "seq"], condition=models.Q(seq__isnull=False), name="uniq_session_audit_seq"
+            ),
         ]
 
     def __str__(self):
         return f"{self.user}: {self.action} {self.model_name} {self.object_repr}"
 
-    def save(self, *args, **kwargs):
-        """Revisionssicherheit: Einträge sind nach dem Anlegen unveränderbar."""
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Revisionssicherheit: Einträge sind unveränderbar; neue Einträge laufen über die Hash-Kette."""
         if not self._state.adding:
             raise ValueError("Audit-Einträge sind unveränderbar und können nicht aktualisiert werden.")
-        super().save(*args, **kwargs)
+        from apps.common import audit_chain
 
-    def delete(self, *args, **kwargs):
+        if audit_chain.is_chain_insert(self):
+            super().save(*args, **kwargs)
+            return
+        audit_chain.append(audit_chain.SESSION, self)
+
+    def delete(self, *args: Any, **kwargs: Any) -> Any:
         """Revisionssicherheit: Einträge können nicht gelöscht werden."""
         raise ValueError("Audit-Einträge sind unveränderbar und können nicht gelöscht werden.")
 

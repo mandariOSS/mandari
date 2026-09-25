@@ -298,6 +298,11 @@ class LoginTwoFactorView(View):
                 was_successful=success,
                 failure_reason="" if success else "invalid_2fa",
             )
+        if not success:
+            # Revisionsprotokoll (Issue #221); fehlertolerant, die erfolgreiche Anmeldung meldet das Signal
+            from .security_audit import log_second_factor_failed
+
+            log_second_factor_failed(request, user)
 
     def get(self, request):
         _data, user = self._pending(request)

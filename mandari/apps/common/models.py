@@ -391,3 +391,43 @@ class ProblemReport(models.Model):
         if self.user and self.user.email:
             return self.user.email
         return ""
+
+
+class AuditChainHead(models.Model):
+    """
+    Kettenkopf einer Protokoll-Hash-Kette (Issue #221).
+
+    Je Protokollbereich – ein Session-Mandant, eine Fraktion oder das plattformweite
+    Sicherheitsprotokoll – gibt es genau eine Zeile. Wer einen neuen Protokolleintrag schreibt,
+    sperrt diese Zeile (``SELECT … FOR UPDATE``); so können parallele Einträge die Kette nicht
+    verzweigen. Nach einer fristgerechten Löschung hält der Anker fest, ab welchem Eintrag die
+    Prüfung beginnt, damit die Kette trotz gelöschter Anfangsstücke prüfbar bleibt.
+
+    Bewusst ohne Fremdschlüssel auf Mandant oder Organisation: Der Bereich ist ein Textschlüssel
+    (``session:<uuid>``, ``faction:<uuid>``, ``security``), die Zeile verschwindet beim Löschen des
+    Mandanten über dessen ``post_delete``-Signal.
+    """
+
+    scope = models.CharField(max_length=80, primary_key=True, verbose_name="Bereich")
+    last_seq = models.BigIntegerField(default=0, verbose_name="Letzte laufende Nummer")
+    last_hash = models.CharField(max_length=64, blank=True, verbose_name="Hash des letzten Eintrags")
+    initialized = models.BooleanField(
+        default=False,
+        verbose_name="Verkettung aktiv",
+        help_text="Aus, solange Altbestand noch nicht verkettet ist (audit_chain_backfill)",
+    )
+    started_at = models.DateTimeField(blank=True, null=True, verbose_name="Verkettet seit")
+    anchor_seq = models.BigIntegerField(default=0, verbose_name="Anker: letzte gelöschte Nummer")
+    anchor_hash = models.CharField(
+        max_length=64, blank=True, verbose_name="Anker: Hash des letzten gelöschten Eintrags"
+    )
+    anchor_archive = models.CharField(max_length=255, blank=True, verbose_name="Anker: Archivpaket")
+    anchor_at = models.DateTimeField(blank=True, null=True, verbose_name="Anker gesetzt am")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Protokoll-Kettenkopf"
+        verbose_name_plural = "Protokoll-Kettenköpfe"
+
+    def __str__(self) -> str:
+        return f"{self.scope} (Nr. {self.last_seq})"

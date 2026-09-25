@@ -6,7 +6,7 @@ Ein zweiter Faktor ist Pflicht für
 - Superuser und Staff (Plattform-Administration),
 - Work: Mitglieder mit Administrator-Rolle oder einer Rolle mit „2FA erforderlich"
   sowie alle Mitglieder einer Organisation mit „2FA für alle Mitglieder",
-- Session: Nutzer mit Administrator-, Benutzer- oder Einstellungsrechten sowie alle
+- Session: Nutzer mit Administrator-, Benutzer-, Einstellungs- oder Protokollrechten sowie alle
   Nutzer eines Mandanten mit „2FA für alle Nutzer".
 
 Durchgesetzt wird nur bei ``TWO_FACTOR_ENFORCEMENT`` (Produktion); gemeinsam
@@ -66,6 +66,9 @@ def two_factor_reasons(user: Any) -> list[str]:
             Q(roles__is_admin=True)
             | Q(roles__can_manage_users=True)
             | Q(roles__can_manage_settings=True)
+            # Protokollzugriff (Issue #221): Lese- und Anmeldeprotokolle sind besonders schutzbedürftig
+            | Q(roles__can_view_audit_log=True)
+            | Q(roles__can_export_audit_log=True)
             | Q(tenant__require_2fa=True)
         )
         .select_related("tenant")

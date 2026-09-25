@@ -174,6 +174,16 @@ class ResolutionMeetingPdfView(SessionViewMixin, TemplateView):
             )
 
         pdf_bytes = resolution_service.build_extract_pdf(items, internal=include_np)
+        # Nichtöffentliche Beschlüsse im Dokument: Abruf protokollieren (Issue #221)
+        if not meeting.is_public or any(not i.is_public for i in items):
+            audit.log_read(
+                request,
+                meeting,
+                tenant=self.session_tenant,
+                user=self.session_user,
+                action="download",
+                changes={"dokument": "Beschlussauszüge mit nichtöffentlichen Beschlüssen (PDF)"},
+            )
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = 'attachment; filename="beschlussauszuege.pdf"'
         return response
@@ -195,6 +205,16 @@ class ResolutionExtractPdfView(SessionViewMixin, TemplateView):
             )
         include_np = self.has_permission("view_non_public_meetings")
         pdf_bytes = resolution_service.build_extract_pdf([item], internal=include_np)
+        # Beschlussauszug eines nichtöffentlichen TOP: Abruf protokollieren (Issue #221)
+        if not item.is_public or not item.meeting.is_public:
+            audit.log_read(
+                request,
+                item,
+                tenant=self.session_tenant,
+                user=self.session_user,
+                action="download",
+                changes={"dokument": "Beschlussauszug, nichtöffentlicher TOP (PDF)"},
+            )
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = 'attachment; filename="beschlussauszug.pdf"'
         return response

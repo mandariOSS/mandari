@@ -12,6 +12,7 @@ Internal meetings for political organizations with:
 import secrets
 import uuid
 from datetime import timedelta
+from typing import Any
 
 from django.db import models
 from django.utils import timezone
@@ -1120,6 +1121,9 @@ class FactionAuditLog(models.Model):
         verbose_name="Mitglied",
     )
     actor_label = models.CharField(max_length=200, blank=True, verbose_name="Akteur")
+    # Unveränderliche Kopie der Membership-ID (Issue #221): ``membership`` wird beim Löschen
+    # geleert und ist deshalb nicht Teil des Hashes, diese Referenz schon.
+    membership_ref = models.UUIDField(blank=True, null=True, editable=False, verbose_name="Mitglied-Referenz")
     ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name="IP-Adresse")
     user_agent = models.TextField(blank=True, verbose_name="User-Agent")
 
@@ -1141,7 +1145,13 @@ class FactionAuditLog(models.Model):
     # Änderungs-Diff (verschlüsselte Felder maskiert)
     changes = models.JSONField(default=dict, blank=True, verbose_name="Änderungen")
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    # Zeitpunkt: setzt die Hash-Kette beim Schreiben (unter der Sperre des Kettenkopfs)
+    created_at = models.DateTimeField(default=timezone.now, editable=False, verbose_name="Zeitpunkt")
+
+    # Hash-Kette je Organisation (Issue #221, apps/common/audit_chain.py); NULL = Altbestand
+    seq = models.BigIntegerField(blank=True, null=True, editable=False, verbose_name="Laufende Nummer")
+    prev_hash = models.CharField(max_length=64, blank=True, null=True, editable=False, verbose_name="Vorgänger-Hash")
+    entry_hash = models.CharField(max_length=64, blank=True, null=True, editable=False, verbose_name="Eintrags-Hash")
 
     class Meta:
         verbose_name = "Fraktions-Audit-Eintrag"
@@ -1152,15 +1162,26 @@ class FactionAuditLog(models.Model):
             models.Index(fields=["organization", "created_at"]),
             models.Index(fields=["organization", "meeting_id_ref"]),
         ]
+        constraints = [
+            # Keine Verzweigung der Kette, auch wenn die Sperre einmal fehlen sollte (Issue #221)
+            models.UniqueConstraint(
+                fields=["organization", "seq"], condition=models.Q(seq__isnull=False), name="uniq_faction_audit_seq"
+            ),
+        ]
 
     def __str__(self):
         return f"{self.actor_label or 'System'}: {self.action} {self.model_name} {self.object_repr}"
 
-    def save(self, *args, **kwargs):
-        """Revisionssicherheit: Einträge sind nach dem Anlegen unveränderbar."""
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Revisionssicherheit: Einträge sind unveränderbar; neue Einträge laufen über die Hash-Kette."""
         if not self._state.adding:
             raise ValueError("Audit-Einträge sind unveränderbar und können nicht aktualisiert werden.")
-        super().save(*args, **kwargs)
+        from apps.common import audit_chain
+
+        if audit_chain.is_chain_insert(self):
+            super().save(*args, **kwargs)
+            return
+        audit_chain.append(audit_chain.FACTION, self)
 
     def delete(self, *args, **kwargs):
         """Revisionssicherheit: Einträge können nicht gelöscht werden."""

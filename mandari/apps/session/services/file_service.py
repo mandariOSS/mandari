@@ -107,6 +107,18 @@ def file_parent(session_file: Any) -> Any:
     return None
 
 
+def is_non_public(session_file: Any) -> bool:
+    """Ist die Anlage selbst oder ihr Elternobjekt nichtöffentlich? (Kennzeichen im Protokoll, Issue #221)."""
+    if not session_file.is_public:
+        return True
+    parent = file_parent(session_file)
+    if parent is None:
+        return False
+    if session_file.agenda_item_id:
+        return not (parent.is_public and parent.meeting.is_public)
+    return not parent.is_public
+
+
 def file_visible(permissions: Set[str], session_file: Any) -> bool:
     """
     Darf, wer genau diese Berechtigungen hat, die Anlage sehen/herunterladen?

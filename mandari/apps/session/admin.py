@@ -233,6 +233,7 @@ class SessionRoleAdmin(ModelAdmin):
                     "can_manage_organizations",
                     "can_manage_settings",
                     "can_view_audit_log",
+                    "can_export_audit_log",
                 ),
             },
         ),
@@ -759,6 +760,9 @@ class SessionAuditLogAdmin(ModelAdmin):
         "object_repr",
         "changes",
         "created_at",
+        "seq",
+        "prev_hash",
+        "entry_hash",
     ]
     # Excluded: user, ip_address, user_agent - personal data
 
@@ -776,6 +780,8 @@ class SessionAuditLogAdmin(ModelAdmin):
                 "fields": ("created_at",),
             },
         ),
+        # Hash-Kette je Mandant (Issue #221)
+        ("Hash-Kette", {"fields": ("seq", "prev_hash", "entry_hash")}),
         # User/IP information not shown - privacy
     )
 

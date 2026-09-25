@@ -89,6 +89,17 @@ class ProtocolDetailView(SessionViewMixin, TemplateView):
             context["freigabe"] = four_eyes_service.evaluate(
                 four_eyes_service.PROCESS_PROTOCOL, protocol, self.session_user
             )
+        # Lesezugriff auf nichtöffentliche Niederschriftteile protokollieren (Issue #221)
+        if can_view_np and (not meeting.is_public or agenda["non_public"] or context["content_np"]):
+            from .. import audit
+
+            audit.log_read(
+                self.request,
+                protocol or meeting,
+                tenant=self.session_tenant,
+                user=self.session_user,
+                changes={"umfang": "Niederschrift, nichtöffentlicher Teil"},
+            )
         return context
 
 
@@ -345,6 +356,18 @@ class ProtocolPdfView(SessionViewMixin, TemplateView):
             raise PermissionDenied("Fehlende Berechtigung für die interne Fassung")
 
         pdf_bytes = protocol_service.build_protocol_pdf(protocol, internal=internal)
+        if internal:
+            # Interne Fassung enthält den nichtöffentlichen Teil (Issue #221)
+            from .. import audit
+
+            audit.log_read(
+                request,
+                protocol,
+                tenant=self.session_tenant,
+                user=self.session_user,
+                action="download",
+                changes={"dokument": "Niederschrift, interne Fassung (PDF)"},
+            )
         filename = "niederschrift-intern.pdf" if internal else "niederschrift.pdf"
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'

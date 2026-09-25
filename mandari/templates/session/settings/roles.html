@@ -89,8 +89,9 @@
                 <input type="checkbox" name="is_admin" value="1" {% if edit_role.is_admin %}checked{% endif %}
                        class="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-purple-500">
                 <span class="text-purple-800 dark:text-purple-300">
-                    <span class="font-medium">Administrator</span> — volle Rechte, unabhängig von der Matrix unten.
-                    Die letzte Admin-Rolle des Mandanten ist gegen Entmachtung und Löschung geschützt.
+                    <span class="font-medium">Administrator</span> — volle Fachrechte, unabhängig von der Matrix unten.
+                    Ausgenommen sind die Kontrollrechte (Protokoll einsehen, exportieren und prüfen): Sie gelten nur,
+                    wenn sie unten angehakt sind. Die letzte Admin-Rolle des Mandanten ist gegen Entmachtung und Löschung geschützt.
                 </span>
             </label>
 

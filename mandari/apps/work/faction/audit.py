@@ -39,8 +39,11 @@ def organization_pre_delete(sender, instance, **kwargs):
 
 
 def organization_post_delete(sender, instance, **kwargs):
-    """post_delete(Organization): Kaskadenlöschung abgeschlossen."""
+    """post_delete(Organization): Kaskadenlöschung abgeschlossen, Kettenkopf entfernen (Issue #221)."""
+    from apps.common import audit_chain
+
     audit_core.unmark_root_deleting(_ORG_SCOPE, instance.pk)
+    audit_chain.drop_head(audit_chain.FACTION, instance.pk)
 
 
 def is_organization_deleting(org_pk) -> bool:

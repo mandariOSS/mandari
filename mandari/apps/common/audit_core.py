@@ -20,6 +20,7 @@ Sicherheit:
 """
 
 import threading
+from typing import Any
 
 from django.db import models
 
@@ -55,8 +56,14 @@ def get_current_request():
     return getattr(_thread_state, "request", None)
 
 
-def get_client_meta(request):
-    """IP-Adresse und User-Agent aus dem Request extrahieren."""
+def get_client_meta(request: Any) -> tuple[str | None, str]:
+    """IP-Adresse und User-Agent aus dem Request extrahieren.
+
+    Die Adresse wird geprüft und normalisiert (Issue #221): Ein ungültiger Wert im
+    ``X-Forwarded-For``-Kopf darf weder den Eintrag scheitern lassen noch den Hash der Kette.
+    """
+    from apps.common.audit_chain import normalize_ip
+
     ip_address = None
     user_agent = ""
     if request is not None:
@@ -65,6 +72,7 @@ def get_client_meta(request):
             ip_address = x_forwarded_for.split(",")[0].strip()
         else:
             ip_address = request.META.get("REMOTE_ADDR") or None
+        ip_address = normalize_ip(ip_address)
         user_agent = request.META.get("HTTP_USER_AGENT", "")[:500]
     return ip_address, user_agent
 

@@ -13,6 +13,7 @@ Provides:
 import secrets
 import uuid
 from datetime import timedelta
+from typing import Any
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
@@ -474,3 +475,74 @@ class WebAuthnCredential(models.Model):
     def is_hardware_key(self) -> bool:
         """Gerätegebundener Schlüssel (z. B. YubiKey) statt synchronisiertem Passkey."""
         return self.device_type == "single_device" and not self.backed_up
+
+
+class SecurityAuditLog(models.Model):
+    """
+    Mandantenübergreifendes Sicherheitsprotokoll (Issue #221).
+
+    Nimmt Anmeldungen, Abmeldungen und fehlgeschlagene Anmeldungen von Konten auf, die keinem
+    Session-Mandanten zugeordnet sind (Work-Portal, Bürgerportal, Plattform-Administration),
+    sowie Fehlversuche mit unbekannter Kennung. Ereignisse von Session-Nutzern stehen im
+    Protokoll ihres Mandanten (``SessionAuditLog``).
+
+    Datensparsam: kein Passwort, keine eingegebene Kennung im Klartext. Für Fehlversuche mit
+    unbekannter Kennung steht nur ein geheimer, schlüsselgebundener Hash (HMAC-SHA-256) darin –
+    gleiche Kennungen lassen sich so zusammenführen, ohne sie lesbar zu speichern.
+
+    Bewusst ohne Fremdschlüssel auf das Konto: ``user_ref`` ist eine reine Referenz. So hält das
+    Protokoll kein Konto am Leben (Löschung verwaister Konten) und bleibt als Hash-Kette prüfbar,
+    auch wenn das Konto später gelöscht wird.
+    """
+
+    EVENT_CHOICES = [
+        ("login", "Anmeldung"),
+        ("logout", "Abmeldung"),
+        ("login_failed", "Anmeldung fehlgeschlagen"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(default=timezone.now, editable=False, verbose_name="Zeitpunkt")
+    event = models.CharField(max_length=30, choices=EVENT_CHOICES, verbose_name="Ereignis")
+    user_ref = models.UUIDField(blank=True, null=True, editable=False, verbose_name="Konto-Referenz")
+    identifier_hash = models.CharField(max_length=64, blank=True, editable=False, verbose_name="Kennung (HMAC-SHA-256)")
+    ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name="IP-Adresse")
+    user_agent = models.CharField(max_length=300, blank=True, verbose_name="User-Agent")
+    details = models.JSONField(default=dict, blank=True, verbose_name="Angaben")
+
+    # Hash-Kette (ein Bereich für die ganze Plattform, apps/common/audit_chain.py)
+    seq = models.BigIntegerField(blank=True, null=True, editable=False, verbose_name="Laufende Nummer")
+    prev_hash = models.CharField(max_length=64, blank=True, null=True, editable=False, verbose_name="Vorgänger-Hash")
+    entry_hash = models.CharField(max_length=64, blank=True, null=True, editable=False, verbose_name="Eintrags-Hash")
+
+    class Meta:
+        verbose_name = "Sicherheitsprotokoll-Eintrag"
+        verbose_name_plural = "Sicherheitsprotokoll"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["created_at"], name="security_audit_created"),
+            models.Index(fields=["user_ref", "created_at"], name="security_audit_user_created"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["seq"], condition=models.Q(seq__isnull=False), name="uniq_security_audit_seq"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_event_display()} {self.created_at:%d.%m.%Y %H:%M}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Revisionssicherheit: Einträge sind unveränderbar; neue Einträge laufen über die Hash-Kette."""
+        if not self._state.adding:
+            raise ValueError("Protokolleinträge sind unveränderbar und können nicht aktualisiert werden.")
+        from apps.common import audit_chain
+
+        if audit_chain.is_chain_insert(self):
+            super().save(*args, **kwargs)
+            return
+        audit_chain.append(audit_chain.SECURITY, self)
+
+    def delete(self, *args: Any, **kwargs: Any) -> Any:
+        """Revisionssicherheit: Einträge verschwinden nur über die fristgerechte Löschung mit Archiv."""
+        raise ValueError("Protokolleinträge sind unveränderbar und können nicht gelöscht werden.")
