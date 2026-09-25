@@ -132,14 +132,14 @@
                     <i data-lucide="users" class="w-5 h-5 text-green-500"></i>
                     Empfängerkreis ({{ recipients|length }})
                 </h3>
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Automatisch aus der Besetzung von {{ meeting.organization.name }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Automatisch aus der Besetzung von {{ meeting.organizations_label }}{% if meeting.is_joint %} – jede Person einmal, auch bei Mitgliedschaft in mehreren Gremien{% endif %}</p>
             </div>
             <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
                 {% for recipient in recipients %}
                 <div class="px-6 py-2.5 text-sm">
                     <p class="font-medium text-gray-900 dark:text-white">{{ recipient.name }}</p>
                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                        {{ recipient.role }} ·
+                        {{ recipient.role }}{% if meeting.is_joint %} ({{ recipient.organizations|join:", " }}){% endif %} ·
                         {% if recipient.missing_email %}
                         <span class="text-red-600 dark:text-red-400">keine E-Mail hinterlegt</span>
                         {% elif recipient.channel == "letter" %}

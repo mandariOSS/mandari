@@ -6,7 +6,8 @@ Ein zweiter Faktor ist Pflicht für
 - Superuser und Staff (Plattform-Administration),
 - Work: Mitglieder mit Administrator-Rolle oder einer Rolle mit „2FA erforderlich"
   sowie alle Mitglieder einer Organisation mit „2FA für alle Mitglieder",
-- Session: Nutzer mit Administrator-, Benutzer-, Einstellungs- oder Protokollrechten sowie alle
+- Session: Nutzer mit Administrator-, Benutzer-, Einstellungs- oder Protokollrechten, Mitglieder einer
+  Leitstelle (Mandantengruppe, Issue #317) sowie alle
   Nutzer eines Mandanten mit „2FA für alle Nutzer".
 
 Durchgesetzt wird nur bei ``TWO_FACTOR_ENFORCEMENT`` (Produktion); gemeinsam
@@ -75,6 +76,14 @@ def two_factor_reasons(user: Any) -> list[str]:
         .distinct()
     )
     reasons.extend(f"Verwaltung {session_user.tenant.name}" for session_user in session_users)
+
+    # Leitstelle einer Mandantengruppe (Issue #317): mandantenübergreifende Sicht
+    from apps.session.models import SessionTenantGroupMembership
+
+    leitstellen = SessionTenantGroupMembership.objects.filter(
+        user=user, is_active=True, group__is_active=True
+    ).select_related("group")
+    reasons.extend(f"Leitstelle {membership.group.name}" for membership in leitstellen)
 
     return list(dict.fromkeys(reasons))
 

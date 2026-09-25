@@ -253,6 +253,9 @@ def read_reference(instance: Any) -> str:
         return f"Niederschrift, Sitzung vom {_meeting_date(instance.meeting)}"
     if name == "SessionTenant":
         return "Protokoll"
+    if name == "SessionTenantGroup":
+        # Leitstellen-Übersicht (Issue #317): ein Eintrag je Mandant der Gruppe
+        return f"Leitstellen-Übersicht {instance.name}"
     return f"{name} {instance.pk}"
 
 

@@ -7,7 +7,7 @@ Session-Models. Wird über SessionConfig.ready() geladen.
 """
 
 from django.db import transaction
-from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete, pre_save
 
 from apps.session import audit, oparl_publication
 from apps.session.models import (
@@ -31,9 +31,12 @@ from apps.session.models import (
     SessionPerson,
     SessionProtocol,
     SessionTenant,
+    SessionTenantGroup,
+    SessionTenantGroupMembership,
+    SessionTenantGroupTenant,
     SessionUser,
 )
-from apps.session.services import four_eyes_service
+from apps.session.services import four_eyes_service, joint_meeting_service, leitstelle_service
 
 # Zentrale Models, deren Änderungen revisionssicher protokolliert werden
 AUDITED_MODELS = [
@@ -406,3 +409,39 @@ post_delete.connect(
     dispatch_uid="session_paper_version_file_post_delete",
 )
 post_delete.connect(blob_post_delete, sender=SessionFileBlob, dispatch_uid="session_file_blob_post_delete")
+
+
+# =============================================================================
+# Mandantengruppen und gemeinsame Sitzungen (Issue #317)
+# =============================================================================
+# Leitstellen-Rechte erteilen, ändern oder entziehen steht im Protokoll jedes betroffenen Mandanten;
+# weitere Gremien einer Sitzung nur aus demselben Mandanten, Änderungen mit Audit-Eintrag.
+
+post_save.connect(
+    leitstelle_service.membership_saved,
+    sender=SessionTenantGroupMembership,
+    dispatch_uid="session_leitstelle_membership_saved",
+)
+post_delete.connect(
+    leitstelle_service.membership_deleted,
+    sender=SessionTenantGroupMembership,
+    dispatch_uid="session_leitstelle_membership_deleted",
+)
+post_save.connect(
+    leitstelle_service.group_tenant_saved,
+    sender=SessionTenantGroupTenant,
+    dispatch_uid="session_leitstelle_tenant_saved",
+)
+post_delete.connect(
+    leitstelle_service.group_tenant_deleted,
+    sender=SessionTenantGroupTenant,
+    dispatch_uid="session_leitstelle_tenant_deleted",
+)
+pre_delete.connect(
+    leitstelle_service.group_pre_delete, sender=SessionTenantGroup, dispatch_uid="session_leitstelle_group_pre_delete"
+)
+m2m_changed.connect(
+    joint_meeting_service.joint_organizations_changed,
+    sender=SessionMeeting.joint_organizations.through,
+    dispatch_uid="session_joint_organizations_changed",
+)

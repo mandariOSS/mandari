@@ -48,6 +48,8 @@ ZEIT_FAKTOR = 5
 ZEIT_MINDESTENS_MS = 500
 SESSION_SLUG = "last-klein-stadt"
 ORG_SLUG = "last-klein-stadt-fraktion"
+#: Mandantengruppe mit Leitstelle über dem Lasttest-Mandanten (Issue #317), angelegt in _kontext()
+LEITSTELLE_SLUG = "last-klein-leitstelle"
 
 
 @dataclass(frozen=True)
@@ -198,6 +200,12 @@ def _seiten() -> list[Seite]:
             lambda k: f"/session/{SESSION_SLUG}/agenda/{k['live_item_id']}/voting/",
             sachbearbeitung,
         ),
+        Seite(
+            "session_leitstelle",
+            "Session: Leitstellen-Übersicht einer Mandantengruppe",
+            lambda k: f"/session/leitstelle/{LEITSTELLE_SLUG}/",
+            sachbearbeitung,
+        ),
         Seite("work_dashboard", "Work: Dashboard", lambda k: f"/work/{ORG_SLUG}/", fraktion),
         Seite("work_dokumentliste", "Work: Dokumentliste", lambda k: f"/work/{ORG_SLUG}/documents/", fraktion),
         Seite(
@@ -209,11 +217,24 @@ def _seiten() -> list[Seite]:
     ]
 
 
+def _leitstelle_anlegen() -> None:
+    """Mandantengruppe über dem Lasttest-Mandanten; die Sachbearbeitung ist Mitglied der Leitstelle (Issue #317)."""
+    from apps.accounts.models import User
+    from apps.session.management.commands.generate_load_data import DOMAENE
+    from apps.session.models import SessionTenant, SessionTenantGroup, SessionTenantGroupMembership
+
+    gruppe, _ = SessionTenantGroup.objects.get_or_create(slug=LEITSTELLE_SLUG, defaults={"name": "Lasttest-Leitstelle"})
+    gruppe.tenant_links.get_or_create(tenant=SessionTenant.objects.get(slug=SESSION_SLUG))
+    nutzer = User.objects.get(email=f"last-klein-stadt-sachbearbeitung-1@{DOMAENE}")
+    SessionTenantGroupMembership.objects.get_or_create(group=gruppe, user=nutzer)
+
+
 def _kontext() -> dict[str, Any]:
     from apps.session.models import SessionAgendaItem, SessionMeeting
     from apps.work.models import Motion
     from insight_core.models import OParlBody
 
+    _leitstelle_anlegen()
     live = SessionMeeting.objects.get(tenant__slug=SESSION_SLUG, meeting_state="in_progress")
     return {
         "body_id": OParlBody.objects.get(slug=SESSION_SLUG).id,

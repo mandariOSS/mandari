@@ -76,10 +76,11 @@
                        {% if meeting.cancelled %}bg-gray-100 text-gray-400 line-through dark:bg-gray-700 dark:text-gray-500
                        {% elif not meeting.is_public %}bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-900/40 dark:text-red-300
                        {% else %}bg-primary-50 text-primary-700 hover:bg-primary-100 dark:bg-primary-900/40 dark:text-primary-300{% endif %}"
-                   title="{{ meeting.name }} · {{ meeting.organization.name }} · {{ meeting.start|date:'H:i' }} Uhr{% if meeting.room %} · {{ meeting.room }}{% endif %}">
+                   title="{{ meeting.name }} · {{ meeting.organizations_label }}{% if meeting.is_joint %} (gemeinsame Sitzung){% endif %} · {{ meeting.start|date:'H:i' }} Uhr{% if meeting.room %} · {{ meeting.room }}{% endif %}">
                     <span class="font-semibold">{{ meeting.start|date:"H:i" }}</span>
                     {% if not meeting.is_public %}<i data-lucide="lock" class="w-3 h-3 inline"></i>{% endif %}
-                    {{ meeting.organization.name }}
+                    {% if meeting.is_joint %}<i data-lucide="users" class="w-3 h-3 inline" aria-label="Gemeinsame Sitzung"></i>{% endif %}
+                    {{ meeting.organizations_label }}
                 </a>
                 {% endfor %}
             </div>

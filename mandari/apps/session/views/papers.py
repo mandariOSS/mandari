@@ -299,7 +299,10 @@ class PaperDetailView(SessionViewMixin, DetailView):
             )
             if not self.has_permission("view_non_public_meetings"):
                 meetings = meetings.filter(is_public=True)
-            context["consultation_meetings"] = meetings.select_related("organization").order_by("start")[:200]
+            # Gemeinsame Sitzungen (Issue #317): auch Stationen weiterer beteiligter Gremien
+            context["consultation_meetings"] = (
+                meetings.select_related("organization").prefetch_related("joint_organizations").order_by("start")[:200]
+            )
 
         # Bezüge (Issue #150): Unternummern wie Ergänzung, Neufassung, Antwort
         children = paper.child_papers.order_by("sub_number", "created_at")

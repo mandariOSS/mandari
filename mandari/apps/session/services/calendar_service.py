@@ -19,6 +19,7 @@ from apps.common.ical import build_ics_feed
 from apps.common.pdf import html_to_pdf
 
 from ..models import SessionMeeting, SessionOrganization, SessionTenant
+from . import joint_meeting_service
 
 # Ohne gepflegtes Ende nehmen wir eine typische Sitzungsdauer für die
 # Überschneidungsprüfung an.
@@ -133,7 +134,7 @@ def month_grid(tenant: SessionTenant, year: int, month: int, *, include_non_publ
         (weeks, meetings_count): weeks = Liste von Wochen, jede Woche eine
         Liste von dicts {day, in_month, is_today, meetings}
     """
-    qs = (
+    qs = SessionMeeting.with_joint_flag(
         SessionMeeting.objects.filter(tenant=tenant, start__year=year, start__month=month)
         .select_related("organization")
         .order_by("start")
@@ -141,8 +142,11 @@ def month_grid(tenant: SessionTenant, year: int, month: int, *, include_non_publ
     if not include_non_public:
         qs = qs.filter(is_public=True)
 
+    meetings = list(qs)
+    # Gemeinsame Sitzungen (Issue #317): weitere Gremien in einer Abfrage, nur wenn es welche gibt
+    joint_meeting_service.prefetch_joint(meetings)
     by_day: dict[date, list[SessionMeeting]] = {}
-    for meeting in qs:
+    for meeting in meetings:
         day = timezone.localtime(meeting.start).date()
         by_day.setdefault(day, []).append(meeting)
 
@@ -160,23 +164,26 @@ def month_grid(tenant: SessionTenant, year: int, month: int, *, include_non_publ
                 for day in week
             ]
         )
-    return weeks, qs.count()
+    return weeks, len(meetings)
 
 
 def year_meetings(tenant: SessionTenant, year: int, *, organization=None, include_non_public: bool):
     """Sitzungen eines Jahres, gruppiert nach Monat (für den Sitzungsplan)."""
-    qs = (
+    qs = SessionMeeting.with_joint_flag(
         SessionMeeting.objects.filter(tenant=tenant, start__year=year, cancelled=False)
         .select_related("organization")
         .order_by("start")
     )
     if organization is not None:
-        qs = qs.filter(organization=organization)
+        # Auch gemeinsame Sitzungen, an denen das Gremium beteiligt ist (Issue #317)
+        qs = qs.filter(SessionMeeting.organization_q(organization)).distinct()
     if not include_non_public:
         qs = qs.filter(is_public=True)
 
+    meetings = list(qs)
+    joint_meeting_service.prefetch_joint(meetings)
     months: dict[int, list[SessionMeeting]] = {}
-    for meeting in qs:
+    for meeting in meetings:
         months.setdefault(timezone.localtime(meeting.start).month, []).append(meeting)
     return [{"month": month, "meetings": meetings} for month, meetings in sorted(months.items())]
 
@@ -205,22 +212,35 @@ def build_organization_feed(organization: SessionOrganization) -> bytes:
     Sitzungen erscheinen hier nie.
     """
     since = timezone.now() - timedelta(days=90)
-    meetings = SessionMeeting.objects.filter(
-        organization=organization,
-        is_public=True,
-        cancelled=False,
-        start__gte=since,
-    ).order_by("start")[:200]
+    # Auch gemeinsame Sitzungen, an denen das Gremium beteiligt ist (Issue #317)
+    meetings = list(
+        SessionMeeting.with_joint_flag(
+            SessionMeeting.objects.filter(
+                SessionMeeting.organization_q(organization),
+                is_public=True,
+                cancelled=False,
+                start__gte=since,
+            ).select_related("organization")
+        )
+        .distinct()
+        .order_by("start")[:200]
+    )
+    joint_meeting_service.prefetch_joint(meetings)
     events = []
     for meeting in meetings:
         location = ", ".join(part for part in (meeting.location, meeting.room) if part)
+        description = (
+            f"Gemeinsame Sitzung der Gremien {meeting.organizations_label}"
+            if meeting.is_joint
+            else f"Sitzung des Gremiums {organization.name}"
+        )
         events.append(
             {
                 "uid": f"session-meeting-{meeting.pk}@mandari",
                 "summary": meeting.name,
                 "start": meeting.start,
                 "end": meeting.end,
-                "description": f"Sitzung des Gremiums {organization.name}",
+                "description": description,
                 "location": location,
             }
         )

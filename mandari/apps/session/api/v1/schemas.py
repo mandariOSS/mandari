@@ -32,6 +32,9 @@ class MeetingOut(Schema):
     id: UUID
     name: str
     organization: OrganizationRef
+    joint_organizations: list[OrganizationRef] = Field(
+        default_factory=list, description="Gemeinsame Sitzung: weitere beteiligte Gremien (leer bei einem Gremium)"
+    )
     start: datetime | None
     end: datetime | None
     location: str = ""

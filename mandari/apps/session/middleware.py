@@ -13,6 +13,9 @@ from django.utils.deprecation import MiddlewareMixin
 
 from apps.session.audit import clear_current_request, set_current_request
 
+#: Erste Pfadsegmente unter /session/, die kein Mandant sind. Ein Mandant darf keinen dieser Slugs tragen.
+RESERVED_SLUGS = frozenset({"static", "api", "health", "invite", "leitstelle"})
+
 
 class SessionTenantMiddleware(MiddlewareMixin):
     """
@@ -46,9 +49,10 @@ class SessionTenantMiddleware(MiddlewareMixin):
 
         tenant_slug = parts[1]
 
-        # Skip for static paths like /session/static/ und die
-        # tenant-unabhängige Einladungs-Annahme (/session/invite/<token>/)
-        if tenant_slug in ("static", "api", "health", "invite"):
+        # Skip for static paths like /session/static/, die tenant-unabhängige
+        # Einladungs-Annahme (/session/invite/<token>/) und die mandantenübergreifende
+        # Leitstellen-Übersicht (/session/leitstelle/<gruppe>/, Issue #317)
+        if tenant_slug in RESERVED_SLUGS:
             request.session_tenant = None
             request.session_user = None
             return

@@ -19,6 +19,7 @@ from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action
 
+from . import audit
 from .models import (
     SessionAgendaItem,
     SessionAPIToken,
@@ -33,6 +34,9 @@ from .models import (
     SessionProtocol,
     SessionRole,
     SessionTenant,
+    SessionTenantGroup,
+    SessionTenantGroupMembership,
+    SessionTenantGroupTenant,
 )
 
 # NOTE: The following models are intentionally NOT registered in Django admin
@@ -1006,3 +1010,70 @@ class SessionAPITokenAdmin(ModelAdmin):
             "Kopieren Sie ihn sofort, da er danach nicht mehr abgerufen werden kann!",
         )
         return super().add_view(request, form_url, extra_context)
+
+
+# =============================================================================
+# MANDANTENGRUPPEN UND LEITSTELLE (Issue #317)
+# =============================================================================
+
+
+class SessionTenantGroupTenantInline(TabularInline):
+    model = SessionTenantGroupTenant
+    extra = 0
+    autocomplete_fields = ["tenant"]
+    verbose_name = "Mandant"
+    verbose_name_plural = "Mandanten der Gruppe (ein Mandant gehört höchstens einer Gruppe an)"
+
+
+class SessionTenantGroupMembershipInline(TabularInline):
+    model = SessionTenantGroupMembership
+    extra = 0
+    autocomplete_fields = ["user"]
+    fields = ["user", "role", "is_active", "note"]
+    verbose_name = "Mitglied der Leitstelle"
+    verbose_name_plural = "Leitstelle (Mitglieder und Gruppenrolle)"
+
+
+@admin.register(SessionTenantGroup)
+class SessionTenantGroupAdmin(ModelAdmin):
+    """
+    Mandantengruppen mit Leitstelle (Issue #317).
+
+    Die Gruppenrolle gilt nur für die Leitstellen-Übersicht; sie öffnet keine Mandantenseite und
+    ersetzt keine Rolle im Mandanten. Jede Änderung an Mitgliedern und Mandanten der Gruppe steht im
+    Protokoll der betroffenen Mandanten („Rechte geändert“).
+    """
+
+    list_display = ["name", "slug", "tenant_count", "member_count", "is_active"]
+    list_filter = ["is_active"]
+    search_fields = ["name", "slug"]
+    prepopulated_fields = {"slug": ("name",)}
+    readonly_fields = ["created_at", "updated_at"]
+    inlines = [SessionTenantGroupTenantInline, SessionTenantGroupMembershipInline]
+    fieldsets = (
+        (None, {"fields": ("name", "slug", "description", "is_active")}),
+        ("Zeitstempel", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+    )
+
+    @admin.display(description="Mandanten")
+    def tenant_count(self, obj):
+        return obj.tenant_links.count()
+
+    @admin.display(description="Leitstelle")
+    def member_count(self, obj):
+        return obj.memberships.filter(is_active=True).count()
+
+    # Das Protokoll der Mandanten nennt, wer die Leitstellen-Rechte geändert hat (Signale lesen den Request)
+    def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
+        audit.set_current_request(request)
+        try:
+            return super().changeform_view(request, object_id, form_url, extra_context)
+        finally:
+            audit.clear_current_request()
+
+    def delete_view(self, request, object_id, extra_context=None):
+        audit.set_current_request(request)
+        try:
+            return super().delete_view(request, object_id, extra_context)
+        finally:
+            audit.clear_current_request()

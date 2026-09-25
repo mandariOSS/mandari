@@ -44,6 +44,11 @@
     "abfragen": 22,
     "ms": 500
   },
+  "session_leitstelle": {
+    "beschreibung": "Session: Leitstellen-Übersicht einer Mandantengruppe",
+    "abfragen": 22,
+    "ms": 500
+  },
   "work_dashboard": {
     "beschreibung": "Work: Dashboard",
     "abfragen": 33,

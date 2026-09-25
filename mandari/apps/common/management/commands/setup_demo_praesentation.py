@@ -9,7 +9,9 @@ Bürgerportal (Insight) und in die OParl-Schnittstelle:
 1. Mandant A (der Demo-Mandant) bekommt Wahlperiode und Nummernkreis des Profils, veröffentlicht im
    Bürgerportal und zeigt dort den Umsetzungsstand seiner Beschlüsse.
 2. Mandant B „Bezirksamt Musterstadt-Süd (Demo)“ zählt seine Drucksachen selbst (eigener Zähler).
-3. Die Leitstelle ist Administrator in A und B – daran lässt sich der Mandantenwechsel zeigen.
+3. Die Leitstelle ist Administrator in A und B – daran lässt sich der Mandantenwechsel zeigen. Im Profil
+   hamburg bilden A und B zudem eine Mandantengruppe mit Leitstellen-Übersicht, und Haupt- und Bauausschuss
+   tagen in einer gemeinsamen Sitzung (Issue #317).
 4. Die Musterfraktion ist über einen Einreichungs-Token mit Mandant A verbunden.
 5. Drehbuch-Daten in A: Antrag im Entwurf (Work), kommende Sitzung mit Ö- und NÖ-Teil,
    Beratungsfolge, vergangene Sitzung mit Anwesenheit, namentlicher Abstimmung, Protokoll und
@@ -65,6 +67,7 @@ if TYPE_CHECKING:
         SessionPaper,
         SessionPerson,
         SessionTenant,
+        SessionTenantGroup,
         SessionUser,
     )
     from apps.tenants.models import Membership, Organization
@@ -121,7 +124,13 @@ SITZUNG_KOMMEND = "Hauptausschuss (Demo-Drehbuch)"
 SITZUNG_VERGANGEN = "Hauptausschuss (Demo-Drehbuch, vergangen)"
 SITZUNG_VORBERATUNG = "Bauausschuss (Demo-Drehbuch, Vorberatung)"
 SITZUNG_B = "Regionalausschuss (Demo-Drehbuch)"
-DREHBUCH_SITZUNGEN = (SITZUNG_KOMMEND, SITZUNG_VERGANGEN, SITZUNG_VORBERATUNG)
+SITZUNG_GEMEINSAM = "Gemeinsame Sitzung Haupt- und Bauausschuss (Demo-Drehbuch)"
+DREHBUCH_SITZUNGEN = (SITZUNG_KOMMEND, SITZUNG_VERGANGEN, SITZUNG_VORBERATUNG, SITZUNG_GEMEINSAM)
+
+#: Mandantengruppe mit Leitstelle (Issue #317), nur im Profil hamburg
+GRUPPE_SLUG = "bezirke-musterstadt-demo"
+GRUPPE_NAME = "Bezirke Musterstadt (Demo)"
+TOP_VERKEHR = "Verkehrskonzept Innenstadt: gemeinsame Beratung"
 
 TOP_EROEFFNUNG = "Eröffnung"
 TOP_JUGENDZENTRUM = "Anmietung von Räumen für das Jugendzentrum"
@@ -244,6 +253,17 @@ VORLAGEN_B = (
     ),
 )
 
+#: Arbeitsvorrat für die Leitstellen-Übersicht (Profil hamburg): eine Vorlage in Prüfung mit Frist
+VORLAGE_LEITSTELLE = Vorlage(
+    "Sanierung der Stadtteilbibliothek Süd",
+    "review",
+    GREMIUM_REGIONAL,
+    "Dach und Heizung der Stadtteilbibliothek Süd sind sanierungsbedürftig; die Verwaltung legt ein Konzept vor.",
+    "Der Regionalausschuss stimmt dem Sanierungskonzept für die Stadtteilbibliothek Süd zu.",
+    "ca. 420.000 € brutto aus dem Sanierungsprogramm.",
+    alter_tage=6,
+)
+
 
 @dataclass
 class Top:
@@ -266,6 +286,9 @@ class Welt:
     sitzung_vergangen: SessionMeeting
     top_jugendzentrum: SessionAgendaItem
     beschluss: SessionAgendaItem
+    #: Nur im Profil hamburg (Issue #317)
+    gruppe: SessionTenantGroup | None = None
+    sitzung_gemeinsam: SessionMeeting | None = None
 
 
 def inprozess_abruf(basis_url: str) -> Callable[[str], dict[str, Any]]:
@@ -329,6 +352,8 @@ class Command(BaseCommand):
 
         profil_name = str(options["profil"])
         profil = PROFILE[profil_name]
+        # Mandantengruppe mit Leitstelle und gemeinsame Sitzung zeigt das Profil hamburg (Issue #317)
+        self.mit_gruppe = profil_name == "hamburg"
         self.passwoerter: dict[str, str] = {}
         self.hinweise: list[str] = []
 
@@ -370,9 +395,12 @@ class Command(BaseCommand):
         mandant_b = self._mandant_b(profil)
         zugaenge = self._leitstelle([mandant_a, mandant_b])
         self._inhalte_b(mandant_b, zugaenge[mandant_b.pk])
+        gruppe = self._gruppe([mandant_a, mandant_b], zugaenge[mandant_a.pk].user, zugaenge[mandant_b.pk])
         self._verbindung(mandant_a, fraktion, vorsitz, verwaltung)
         antrag = self._antrag(fraktion, vorsitz)
-        return self._drehbuch(mandant_a, antrag, mandant_b)
+        welt = self._drehbuch(mandant_a, antrag, mandant_b)
+        welt.gruppe = gruppe
+        return welt
 
     def _session_user(self, mandant: SessionTenant, key: str) -> SessionUser:
         from apps.session.models import SessionUser
@@ -492,6 +520,94 @@ class Command(BaseCommand):
             mandant_b, gremien[GREMIUM_REGIONAL], SITZUNG_B, self._termin(10), "scheduled", leitstelle
         )
         self._tagesordnung(sitzung, [Top(TOP_EROEFFNUNG), *(Top(v.name, v) for v in vorlagen)])
+
+    def _gruppe(
+        self, mandanten: list[SessionTenant], nutzer: User, leitstelle_b: SessionUser
+    ) -> SessionTenantGroup | None:
+        """
+        Mandantengruppe beider Bezirke mit der Leitstelle (Profil hamburg, Issue #317).
+
+        Die Leitstelle sieht auf einer Seite die Arbeitsvorräte beider Bezirke. In B liegt dafür eine
+        Vorlage in Prüfung mit Frist. Andere Profile entfernen Gruppe und Vorlage wieder.
+        """
+        from apps.session.models import (
+            SessionOrganization,
+            SessionPaper,
+            SessionTenantGroup,
+            SessionTenantGroupMembership,
+            SessionTenantGroupTenant,
+        )
+
+        if not self.mit_gruppe:
+            SessionTenantGroup.objects.filter(slug=GRUPPE_SLUG).delete()
+            SessionPaper.objects.filter(tenant__in=mandanten, name=VORLAGE_LEITSTELLE.name).delete()
+            return None
+        gruppe, _ = SessionTenantGroup.objects.update_or_create(
+            slug=GRUPPE_SLUG,
+            defaults={
+                "name": GRUPPE_NAME,
+                "description": "Demo: beide Bezirke mit gemeinsamer Leitstelle. Alle Daten sind synthetisch.",
+                "is_active": True,
+            },
+        )
+        for mandant in mandanten:
+            zuordnung = SessionTenantGroupTenant.objects.filter(tenant=mandant).first()
+            if zuordnung is None:
+                SessionTenantGroupTenant.objects.create(group=gruppe, tenant=mandant)
+            elif zuordnung.group_id != gruppe.pk:
+                self.hinweise.append(
+                    f"{mandant.name} gehört bereits einer anderen Mandantengruppe an und wurde nicht umgehängt."
+                )
+        mitglied, angelegt = SessionTenantGroupMembership.objects.get_or_create(
+            group=gruppe,
+            user=nutzer,
+            defaults={"role": SessionTenantGroupMembership.ROLE_LEITSTELLE, "note": "Demo-Drehbuch"},
+        )
+        if not angelegt and (not mitglied.is_active or mitglied.role != SessionTenantGroupMembership.ROLE_LEITSTELLE):
+            mitglied.is_active, mitglied.role = True, SessionTenantGroupMembership.ROLE_LEITSTELLE
+            mitglied.save(update_fields=["is_active", "role", "updated_at"])
+
+        # Arbeitsvorrat in B: eine Vorlage in Prüfung mit Frist (noch nicht freigegeben)
+        mandant_b = mandanten[-1]
+        v = VORLAGE_LEITSTELLE
+        SessionPaper.objects.update_or_create(
+            tenant=mandant_b,
+            name=v.name,
+            defaults={
+                "paper_type": "proposal",
+                "status": v.status,
+                "is_public": v.oeffentlich,
+                "main_text": v.sachverhalt,
+                "resolution_text": v.beschlussvorschlag,
+                "date": timezone.localdate() - timedelta(days=v.alter_tage),
+                "deadline": timezone.localdate() + timedelta(days=5),
+                "main_organization": SessionOrganization.objects.filter(tenant=mandant_b, name=v.gremium).first(),
+                "has_financial_impact": bool(v.kosten),
+                "financial_impact_note": v.kosten,
+                "created_by": leitstelle_b,
+                "approved_by": None,
+                "approved_at": None,
+            },
+        )
+        return gruppe
+
+    def _gemeinsame_sitzung(
+        self, mandant: SessionTenant, ha: SessionOrganization, bau: SessionOrganization, verwaltung: SessionUser
+    ) -> SessionMeeting | None:
+        """
+        Gemeinsame Sitzung von Haupt- und Bauausschuss (Profil hamburg, Issue #317).
+
+        Hakan Heller sitzt in beiden Ausschüssen: Die Ladung nennt ihn einmal, er hat eine Stimme.
+        """
+        from apps.session.models import SessionMeeting
+
+        if not self.mit_gruppe:
+            SessionMeeting.objects.filter(tenant=mandant, name=SITZUNG_GEMEINSAM).delete()
+            return None
+        sitzung = self._sitzung(mandant, ha, SITZUNG_GEMEINSAM, self._termin(14), "scheduled", verwaltung)
+        sitzung.joint_organizations.set([bau])
+        self._tagesordnung(sitzung, [Top(TOP_EROEFFNUNG), Top(TOP_VERKEHR)])
+        return sitzung
 
     def _verbindung(
         self, mandant: SessionTenant, fraktion: Organization, vorsitz: Membership, verwaltung: SessionUser
@@ -783,6 +899,7 @@ class Command(BaseCommand):
             sitzung_vergangen=vergangen,
             top_jugendzentrum=tops_kommend[TOP_JUGENDZENTRUM],
             beschluss=beschluss,
+            sitzung_gemeinsam=self._gemeinsame_sitzung(mandant, ha, bau, verwaltung),
         )
 
     def _vergangene_sitzung(
@@ -1000,6 +1117,7 @@ class Command(BaseCommand):
             SessionOrganizationMembership,
             SessionPaper,
             SessionTenant,
+            SessionTenantGroup,
         )
         from apps.session.services import numbering_service
         from apps.tenants.models import Organization
@@ -1048,6 +1166,8 @@ class Command(BaseCommand):
 
         anzahl, _ = OParlSource.objects.filter(url__contains=f"/session/{DEMO_SESSION_SLUG}/api/oparl/").delete()
         entfernt.append(f"Bürgerportal-Spiegel inkl. Kommune (+abhängige Objekte): {anzahl}")
+        anzahl, _ = SessionTenantGroup.objects.filter(slug=GRUPPE_SLUG).delete()
+        entfernt.append(f"Mandantengruppe mit Leitstelle (+Zuordnungen): {anzahl}")
         anzahl, _ = SessionTenant.objects.filter(slug=MANDANT_B_SLUG).delete()
         entfernt.append(f"Mandant B (+abhängige Objekte): {anzahl}")
         anzahl, _ = User.objects.filter(email=LEITSTELLE["email"]).delete()
@@ -1102,6 +1222,8 @@ class Command(BaseCommand):
             ("Session A", link("session:dashboard", tenant_slug=a.slug)),
             ("Session B", link("session:dashboard", tenant_slug=b.slug)),
         ]
+        if welt.gruppe is not None:
+            einstiege.append(("Leitstelle", link("session:leitstelle", group_slug=welt.gruppe.slug)))
         self.stdout.write("\nEinstiegspunkte:")
         for bezeichnung, adresse in einstiege:
             self.stdout.write(f"  {bezeichnung + ':':<24}{adresse}")
@@ -1128,6 +1250,16 @@ class Command(BaseCommand):
             f"8. Leitstelle – als {LEITSTELLE['email']}: Seitenleiste „Mandant wechseln“ → "
             f"„{MANDANT_B_NAME}“. Mandant B zählt seine Drucksachen selbst.",
         ]
+        if welt.gruppe is not None and welt.sitzung_gemeinsam is not None:
+            gemeinsam = link("session:meeting_invitation", tenant_slug=a.slug, meeting_id=welt.sitzung_gemeinsam.id)
+            spickzettel += [
+                f"9. Leitstellen-Übersicht – als {LEITSTELLE['email']}: "
+                f"{link('session:leitstelle', group_slug=welt.gruppe.slug)} – Vorlagen in Prüfung, Fristen und "
+                f"Sitzungen beider Bezirke auf einer Seite („{VORLAGE_LEITSTELLE.name}“ wartet in B), dazu die "
+                "Suche über alle Bezirke. Jeder Aufruf steht im Protokoll beider Mandanten.",
+                f"10. Gemeinsame Sitzung: {gemeinsam} – Haupt- und Bauausschuss tagen gemeinsam; Hakan Heller "
+                "gehört beiden an und steht im Empfängerkreis nur einmal (eine Ladung, eine Stimme).",
+            ]
         self.stdout.write("\nDrehbuch-Spickzettel:")
         for zeile in spickzettel:
             self.stdout.write(f"  {zeile}")

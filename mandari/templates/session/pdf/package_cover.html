@@ -12,7 +12,7 @@
     {% endif %}
 
     <table class="meta-table">
-        <tr><td class="meta-label"><strong>Gremium:</strong></td><td>{{ meeting.organization.name }}</td></tr>
+        <tr><td class="meta-label"><strong>{% if meeting.is_joint %}Gremien:{% else %}Gremium:{% endif %}</strong></td><td>{{ meeting.organizations_label }}</td></tr>
         {% if plan.ordinal %}
         <tr><td class="meta-label"><strong>Sitzungsnummer:</strong></td><td>{{ plan.ordinal }}</td></tr>
         {% endif %}

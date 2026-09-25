@@ -104,13 +104,16 @@ def meetings(
     qs = SessionMeeting.objects.filter(tenant=tenant)
     if not non_public:
         qs = qs.filter(is_public=True)
-    rows, total = _page(qs.select_related("organization").order_by("-start"), limit, offset)
+    rows, total = _page(
+        qs.select_related("organization").prefetch_related("joint_organizations").order_by("-start"), limit, offset
+    )
     data = []
     for meeting in rows:
         item: dict[str, Any] = {
             "id": meeting.id,
             "name": meeting.name,
             "organization": _org(meeting.organization),
+            "joint_organizations": [_org(org) for org in meeting.joint_organization_list],
             "start": meeting.start,
             "end": meeting.end,
             "location": meeting.location or "",

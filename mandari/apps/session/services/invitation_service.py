@@ -17,7 +17,6 @@ Zentrale Logik für:
 import logging
 from typing import Any, cast
 
-from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -29,7 +28,7 @@ from apps.session.models import (
     SessionInvitationRecipient,
     SessionMeeting,
 )
-from apps.session.services import agenda_service
+from apps.session.services import agenda_service, joint_meeting_service
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +44,9 @@ def get_recipients(meeting: SessionMeeting) -> list[dict]:
       alle übrigen Funktionen (Mitglied, Vorsitz, Vertreter, beratende
       Mitglieder, sachkundige Bürger) die vollständige Tagesordnung
     - Zustellweg der Person (Issue #225); „Portal“ ohne Portalzugang wird per E-Mail zugestellt
+    - gemeinsame Sitzung mehrerer Gremien (Issue #317): Mitglieder aller beteiligten Gremien,
+      jede Person genau einmal; die vollständige Tagesordnung erhält, wer in einem der Gremien
+      mehr als Gast ist
 
     Returns:
         Liste von dicts: person, membership, name, email, role,
@@ -54,33 +56,24 @@ def get_recipients(meeting: SessionMeeting) -> list[dict]:
     """
     from apps.session.services import invitation_response_service, portal_link_service
 
-    meeting_date = timezone.localtime(meeting.start).date()
-    memberships = list(
-        meeting.organization.memberships.select_related("person", "substitute_for")
-        .filter(person__is_active=True)
-        .filter(Q(start_date__isnull=True) | Q(start_date__lte=meeting_date))
-        .filter(Q(end_date__isnull=True) | Q(end_date__gte=meeting_date))
-        .order_by("person__family_name", "person__given_name")
-    )
-    needs_portal = any(m.person.delivery_channel == "portal" for m in memberships)
+    # Je Person ein Sitz – auch wer mehreren beteiligten Gremien angehört, erhält eine Ladung
+    seats = joint_meeting_service.seats(meeting)
+    needs_portal = any(seat.person.delivery_channel == "portal" for seat in seats)
     portal_ids = portal_link_service.portal_person_ids(meeting.tenant) if needs_portal else set()
 
     recipients = []
-    seen_person_ids = set()
-    for membership in memberships:
-        person = membership.person
-        if person.pk in seen_person_ids:
-            continue
-        seen_person_ids.add(person.pk)
+    for seat in seats:
+        person, membership = seat.person, seat.membership
         channel = invitation_response_service.effective_channel(person, portal_ids)
         recipients.append(
             {
                 "person": person,
                 "membership": membership,
+                "organizations": seat.organizations,
                 "name": person.display_name,
                 "email": person.email,
                 "role": membership.get_role_display(),
-                "include_non_public": membership.role != "guest",
+                "include_non_public": seat.full_agenda,
                 "channel": channel,
                 "configured_channel": person.delivery_channel,
                 "portal_fallback": person.delivery_channel == "portal" and channel != "portal",
@@ -148,11 +141,18 @@ def build_meeting_ics(meeting: SessionMeeting) -> bytes:
         summary=meeting.name,
         start=meeting.start,
         end=meeting.end,
-        description=f"Sitzung des Gremiums {meeting.organization.name}",
+        description=_meeting_description(meeting),
         location=location,
         organizer_name=meeting.tenant.name,
         organizer_email=meeting.tenant.contact_email,
     )
+
+
+def _meeting_description(meeting: SessionMeeting) -> str:
+    """Beschreibung für den Kalendereintrag; gemeinsame Sitzungen nennen alle Gremien (Issue #317)."""
+    if meeting.is_joint:
+        return f"Gemeinsame Sitzung der Gremien {meeting.organizations_label}"
+    return f"Sitzung des Gremiums {meeting.organization.name}"
 
 
 def send_invitations(

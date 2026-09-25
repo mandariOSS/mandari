@@ -64,6 +64,29 @@
                 {% endif %}
             </div>
 
+            <!-- Weitere beteiligte Gremien: gemeinsame Sitzung (Issue #317) -->
+            {% if form.joint_organizations.field.queryset %}
+            <fieldset>
+                <legend class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Weitere beteiligte Gremien (gemeinsame Sitzung)</legend>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                    Optional. Geladen werden die Mitglieder aller beteiligten Gremien. Wer mehreren angehört, erhält eine Ladung und hat eine Stimme.
+                </p>
+                <div class="grid sm:grid-cols-2 gap-2">
+                    {% for org in form.joint_organizations.field.queryset %}
+                    <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                        <input type="checkbox" name="joint_organizations" value="{{ org.id }}"
+                               {% if org.id|stringformat:"s" in joint_selected %}checked{% endif %}
+                               class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                        {{ org.name }}
+                    </label>
+                    {% endfor %}
+                </div>
+                {% if form.joint_organizations.errors %}
+                <p class="mt-1 text-sm text-red-600">{{ form.joint_organizations.errors.0 }}</p>
+                {% endif %}
+            </fieldset>
+            {% endif %}
+
             <!-- Date/Time -->
             <div class="grid sm:grid-cols-2 gap-4">
                 <div>

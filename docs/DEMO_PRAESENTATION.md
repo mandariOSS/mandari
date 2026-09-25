@@ -87,6 +87,12 @@ ein neues setzt `python manage.py changepassword demo-leitstelle@demo.mandari.de
 `demo.mandari.de` ist über `TWO_FACTOR_EXEMPT_EMAIL_DOMAINS` von der Zwei-Faktor-Pflicht
 ausgenommen (Standardwert); fehlt sie dort, weist der Befehl darauf hin.
 
+Im Profil `hamburg` bilden A und B zusätzlich die Mandantengruppe „Bezirke Musterstadt (Demo)“
+(Slug `bezirke-musterstadt-demo`) mit der Leitstelle als Mitglied. In B liegt dafür die Vorlage
+„Sanierung der Stadtteilbibliothek Süd“ in Prüfung mit Frist, in A tagen Haupt- und Bauausschuss in
+einer gemeinsamen Sitzung. Das Profil `nrw` entfernt Gruppe, Vorlage und gemeinsame Sitzung wieder.
+Siehe [SESSION_LEITSTELLE.md](SESSION_LEITSTELLE.md).
+
 ### Spiegel ins Bürgerportal
 
 Nach dem Anlegen spiegelt der Befehl Mandant A synchron im eigenen Prozess ins Bürgerportal
@@ -108,6 +114,8 @@ Link `/insight/kommune/<uuid>/` erreichbar.
 | 6 | Bürgerportal | Link „Bürgerportal-Beschluss“ | „Was wurde aus …?“ mit öffentlicher Statusmeldung, ohne internen Vermerk |
 | 7 | Verwaltung, dann Leitstelle | Sitzungsgeld (Link mit Zeitraum der vergangenen Sitzung) → „2. Genehmigen (Vier-Augen)“ | Die Verwaltung wird abgewiesen, die Leitstelle genehmigt fünf Positionen |
 | 8 | Leitstelle | Seitenleiste „Mandant wechseln“ → „Bezirksamt Musterstadt-Süd (Demo)“ | Eigener Mandant, eigene Nummernfolge ab `…0001` |
+| 9 | Leitstelle (nur `hamburg`) | Seitenleiste „Leitstelle Bezirke Musterstadt (Demo)“ | Kennzahlen, Vorlagen in Prüfung, Fristen und Sitzungen beider Bezirke auf einer Seite; Suche über beide Bezirke |
+| 10 | Verwaltung (nur `hamburg`) | Sitzungen → „Gemeinsame Sitzung Haupt- und Bauausschuss (Demo-Drehbuch)“ → Ladung | Beide Ausschüsse genannt; Hakan Heller sitzt in beiden und steht im Empfängerkreis einmal |
 
 Hinweise für die Vorführung:
 
@@ -127,8 +135,8 @@ Hinweise für die Vorführung:
   Vorlage zurück (Antrag wieder im Entwurf), stellt den TOP wieder öffentlich, setzt das
   Sitzungsgeld auf „offen“ und gleicht den Spiegel neu ab. Vergebene Nummern bleiben vergeben,
   die nächste Umwandlung bekommt also eine höhere Nummer.
-- **Aufräumen:** `--reset` entfernt Mandant B, den Leitstellen-Nutzer, die Drehbuch-Daten in A
-  und Work, Verbindung und Token sowie die gespiegelte Quelle samt Kommune. Mandant A kehrt zum
+- **Aufräumen:** `--reset` entfernt Mandant B, den Leitstellen-Nutzer, die Mandantengruppe, die
+  Drehbuch-Daten in A und Work, Verbindung und Token sowie die gespiegelte Quelle samt Kommune. Mandant A kehrt zum
   Standard-Nummernkreis ohne Veröffentlichung zurück. Die Basisdemo bleibt.
 - `setup_demo_environment --reset` räumt eine aufgesetzte Präsentation automatisch mit auf.
 

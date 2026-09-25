@@ -4,17 +4,19 @@ Anwesenheits-Service für das Session RIS (Issue #30).
 
 Zentrale Logik für:
 - Erzeugen der Anwesenheitsliste aus der aktuellen Gremienbesetzung
-  (inkl. Vertreter/Nachrücker; Stimmrecht wird aus der Besetzung übernommen)
+  (inkl. Vertreter/Nachrücker; Stimmrecht wird aus der Besetzung übernommen).
+  Bei gemeinsamen Sitzungen mehrerer Gremien (Issue #317) zählt die Besetzung aller beteiligten
+  Gremien; wer mehreren angehört, erhält eine Zeile (und damit eine Stimme).
 - Beschlussfähigkeits-Berechnung (Quorum: mehr als die Hälfte der
   stimmberechtigten Mitglieder anwesend)
 """
 
 from typing import Any
 
-from django.db.models import Q, QuerySet
-from django.utils import timezone
+from django.db.models import QuerySet
 
 from apps.session.models import SessionAttendance, SessionMeeting, SessionOrganizationMembership, SessionPerson
+from apps.session.services import joint_meeting_service
 
 # Besetzungs-Funktion -> Anwesenheits-Funktion
 _ROLE_MAP = {
@@ -31,15 +33,8 @@ PRESENT_STATUSES = ("present", "joined_late")
 
 
 def active_memberships(meeting: SessionMeeting) -> QuerySet[SessionOrganizationMembership]:
-    """Aktive Mitgliedschaften der Besetzung zum Sitzungsdatum."""
-    meeting_date = timezone.localtime(meeting.start).date()
-    return (
-        meeting.organization.memberships.select_related("person", "substitute_for")
-        .filter(person__is_active=True)
-        .filter(Q(start_date__isnull=True) | Q(start_date__lte=meeting_date))
-        .filter(Q(end_date__isnull=True) | Q(end_date__gte=meeting_date))
-        .order_by("person__family_name", "person__given_name")
-    )
+    """Aktive Mitgliedschaften der Besetzung zum Sitzungsdatum – aller beteiligten Gremien (Issue #317)."""
+    return joint_meeting_service.active_memberships(meeting)
 
 
 def generate_attendance(meeting: SessionMeeting) -> int:
@@ -56,23 +51,28 @@ def generate_attendance(meeting: SessionMeeting) -> int:
         Anzahl neu angelegter Zeilen
     """
     created_count = 0
-    for membership in active_memberships(meeting):
+    # Je Person ein Sitz, auch bei gemeinsamen Sitzungen mehrerer Gremien (Issue #317)
+    for seat in joint_meeting_service.seats(meeting):
         _attendance, created = SessionAttendance.objects.get_or_create(
             meeting=meeting,
-            person=membership.person,
-            defaults=attendance_defaults(membership),
+            person=seat.person,
+            defaults=attendance_defaults(seat.membership, has_voting_rights=seat.has_voting_rights),
         )
         if created:
             created_count += 1
     return created_count
 
 
-def attendance_defaults(membership: SessionOrganizationMembership | None) -> dict[str, Any]:
+def attendance_defaults(
+    membership: SessionOrganizationMembership | None, *, has_voting_rights: bool | None = None
+) -> dict[str, Any]:
     """
     Vorbelegung einer Anwesenheitszeile aus der Besetzung.
 
     Funktion und Stimmrecht kommen aus der Mitgliedschaft; Vertreter erhalten den Hinweis,
     für wen sie vertreten. Ohne Mitgliedschaft (z. B. ausgeschieden) gilt: Mitglied ohne Notiz.
+    ``has_voting_rights`` überschreibt das Stimmrecht (gemeinsame Sitzung: Stimmrecht in einem
+    der beteiligten Gremien genügt).
     """
     if membership is None:
         return {"status": "invited", "role": "member", "has_voting_rights": True, "notes": ""}
@@ -82,17 +82,20 @@ def attendance_defaults(membership: SessionOrganizationMembership | None) -> dic
     return {
         "status": "invited",
         "role": _ROLE_MAP.get(membership.role, "member"),
-        "has_voting_rights": membership.has_voting_rights,
+        "has_voting_rights": membership.has_voting_rights if has_voting_rights is None else has_voting_rights,
         "notes": notes,
     }
 
 
 def ensure_attendance(meeting: SessionMeeting, person: SessionPerson) -> SessionAttendance:
     """Anwesenheitszeile einer Person holen oder aus ihrer Besetzung anlegen (Issue #225)."""
-    membership = active_memberships(meeting).filter(person=person).first()
-    attendance, _created = SessionAttendance.objects.get_or_create(
-        meeting=meeting, person=person, defaults=attendance_defaults(membership)
+    seat = joint_meeting_service.seat_for(meeting, person)
+    defaults = (
+        attendance_defaults(seat.membership, has_voting_rights=seat.has_voting_rights)
+        if seat is not None
+        else attendance_defaults(None)
     )
+    attendance, _created = SessionAttendance.objects.get_or_create(meeting=meeting, person=person, defaults=defaults)
     return attendance
 
 
