@@ -161,6 +161,24 @@ class SessionTenant(models.Model):
         default=False, verbose_name="Vier-Augen-Prinzip: Übergabe von Beschlussauszügen"
     )
 
+    # Genehmigungsweg der Niederschrift (Issue #318): Genehmigung in der Folgesitzung (Standard)
+    # oder direkte Veröffentlichung ohne Genehmigungsschritt (z. B. Freischaltung im RIS).
+    # Leer bedeutet Standard, damit bestehende Mandanten ohne Umschreiben der Tabelle bleiben.
+    PROTOCOL_APPROVAL_FOLLOW_UP = "follow_up"
+    PROTOCOL_APPROVAL_DIRECT = "direct"
+    PROTOCOL_APPROVAL_CHOICES = [
+        (PROTOCOL_APPROVAL_FOLLOW_UP, "Genehmigung in der Folgesitzung"),
+        (PROTOCOL_APPROVAL_DIRECT, "Direkte Veröffentlichung ohne Genehmigungsschritt"),
+    ]
+    protocol_approval_mode = models.CharField(
+        max_length=20,
+        choices=PROTOCOL_APPROVAL_CHOICES,
+        blank=True,
+        null=True,
+        verbose_name="Genehmigungsweg der Niederschrift",
+        help_text="Leer: Genehmigung in der Folgesitzung",
+    )
+
     # Fristen-Erinnerungen (Issue #83): Vorlaufzeiten und An/Aus je Typ.
     # Nur abweichende Werte werden gespeichert; Defaults siehe
     # REMINDER_DEFAULTS bzw. reminder_config().
@@ -199,6 +217,11 @@ class SessionTenant(models.Model):
         if not self.slug:
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
+
+    @property
+    def protocol_direct_publication(self) -> bool:
+        """Niederschriften ohne Genehmigungsschritt veröffentlichen? (Issue #318)."""
+        return self.protocol_approval_mode == self.PROTOCOL_APPROVAL_DIRECT
 
     def reminder_config(self) -> dict:
         """Erinnerungs-Einstellungen mit Defaults zusammenführen (Issue #83)."""
@@ -1113,6 +1136,13 @@ class SessionMeeting(EncryptionMixin, models.Model):
     def __str__(self):
         return f"{self.organization.name}: {self.name}"
 
+    def delete(self, *args: Any, **kwargs: Any) -> Any:
+        """Sitzungen mit genehmigter Niederschrift bleiben erhalten (Issue #318)."""
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_meeting_delete(self)
+        return super().delete(*args, **kwargs)
+
     def get_encryption_organization(self):
         """Return tenant for encryption."""
         return self.tenant
@@ -1484,6 +1514,20 @@ class SessionAgendaItem(EncryptionMixin, models.Model):
 
     def __str__(self):
         return f"TOP {self.number}: {self.name}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Nach der Genehmigung der Niederschrift sind Ergebnis, Stimmen und Texte gesperrt (Issue #318)."""
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_agenda_item(self, kwargs.get("update_fields"))
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> Any:
+        """TOPs einer Sitzung mit genehmigter Niederschrift lassen sich nicht löschen (Issue #318)."""
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_agenda_item_delete(self)
+        return super().delete(*args, **kwargs)
 
     def get_encryption_organization(self):
         """Return tenant for encryption."""
@@ -2353,6 +2397,13 @@ class SessionConsultation(models.Model):
     def __str__(self):
         return f"{self.paper.reference} – Station {self.order}: {self.organization.name} ({self.get_role_display()})"
 
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Das Ergebnis einer Station mit gesperrtem TOP folgt nur dem TOP (Issue #318)."""
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_consultation(self, kwargs.get("update_fields"))
+        super().save(*args, **kwargs)
+
     @property
     def tenant(self):
         """Tenant der Station (für Audit-Attribution und Filterung)."""
@@ -2466,6 +2517,27 @@ class SessionProtocol(EncryptionMixin, models.Model):
         help_text="Folgesitzung, in der die Niederschrift genehmigt wurde",
     )
     approval_note = models.CharField(max_length=500, blank=True, verbose_name="Genehmigungsvermerk")
+    # TOP „Genehmigung der Niederschrift“ der Folgesitzung desselben Gremiums (Issue #318)
+    approval_agenda_item = models.ForeignKey(
+        "SessionAgendaItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="protocol_approvals",
+        verbose_name="Genehmigt unter TOP",
+    )
+
+    # Öffentliche Fassung als Datei an der Sitzung (Issue #318): OParl resultsProtocol und
+    # Bürgerportal. Entsteht beim Veröffentlichen, wird bei Berichtigung neu erzeugt und bei
+    # Rücknahme gelöscht (Tombstone, sofortige Rücknahme aus dem Bürgerportal).
+    public_file = models.OneToOneField(
+        "SessionFile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="public_protocol",
+        verbose_name="Öffentliche Fassung (Datei)",
+    )
 
     # Unterschriften-Block (Vorsitz + Protokollführung)
     chair_name = models.CharField(max_length=255, blank=True, verbose_name="Vorsitz (Unterschrift)")
@@ -2482,9 +2554,155 @@ class SessionProtocol(EncryptionMixin, models.Model):
     def __str__(self):
         return f"Protokoll: {self.meeting}"
 
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Genehmigte Niederschrift: Inhalt gesperrt, kein Rückfall in Entwurf oder Prüfung (Issue #318)."""
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_protocol(self, kwargs.get("update_fields"))
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> Any:
+        """Eine genehmigte Niederschrift lässt sich nicht löschen (Issue #318)."""
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_protocol_delete(self)
+        return super().delete(*args, **kwargs)
+
     def get_encryption_organization(self):
         """Return tenant for encryption."""
         return self.meeting.tenant
+
+    @property
+    def is_locked(self) -> bool:
+        """Genehmigt oder veröffentlicht: Ergebnis, Stimmen und Texte sind schreibgeschützt (Issue #318)."""
+        from apps.session.services import protocol_lock
+
+        return self.status in protocol_lock.LOCKED_STATUSES
+
+
+class SessionProtocolCorrection(EncryptionMixin, models.Model):
+    """
+    Berichtigung einer genehmigten Niederschrift (Issue #318).
+
+    Nach der Genehmigung sind Ergebnis, Stimmen und Texte gesperrt; Korrekturen laufen nur über
+    diesen dokumentierten Vorgang mit Grund und geänderten Werten. Ist das Vier-Augen-Prinzip
+    für Niederschriften aktiv, wird eine Berichtigung erst wirksam, wenn eine zweite Person sie
+    bestätigt; sonst sofort.
+
+    Datenschutz: ``changes`` enthält nur unverschlüsselte Werte und dient der Anzeige, bei
+    Berichtigungen des öffentlichen Teils auch in der öffentlichen Niederschrift. Die vollständigen
+    alten und neuen Werte (auch nichtöffentliche) liegen verschlüsselt in ``payload_encrypted``.
+    Der Grund einer Berichtigung des nichtöffentlichen Teils steht nur verschlüsselt in
+    ``reason_encrypted``.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_APPLIED = "applied"
+    STATUS_REJECTED = "rejected"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Zur Bestätigung"),
+        (STATUS_APPLIED, "Wirksam"),
+        (STATUS_REJECTED, "Abgelehnt"),
+    ]
+    TARGET_ITEM = "item"
+    TARGET_GENERAL = "general"
+    TARGET_GENERAL_NP = "general_np"
+    TARGET_CHOICES = [
+        (TARGET_ITEM, "Tagesordnungspunkt"),
+        (TARGET_GENERAL, "Allgemeiner Teil"),
+        (TARGET_GENERAL_NP, "Allgemeiner Teil (nichtöffentlich)"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    protocol = models.ForeignKey(
+        SessionProtocol,
+        on_delete=models.CASCADE,
+        related_name="corrections",
+        verbose_name="Niederschrift",
+    )
+    target = models.CharField(max_length=20, choices=TARGET_CHOICES, verbose_name="Gegenstand")
+    agenda_item = models.ForeignKey(
+        "SessionAgendaItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="protocol_corrections",
+        verbose_name="Tagesordnungspunkt",
+    )
+    is_public = models.BooleanField(
+        default=False,
+        verbose_name="Betrifft den öffentlichen Teil",
+        help_text="Erscheint mit Datum und Grund in der öffentlichen Niederschrift",
+    )
+    reason = models.TextField(blank=True, verbose_name="Grund")
+    reason_encrypted = EncryptedTextField(verbose_name="Grund (nichtöffentlich, verschlüsselt)")
+    changes = models.JSONField(default=list, blank=True, verbose_name="Änderungen (Anzeige)")
+    payload_encrypted = EncryptedTextField(verbose_name="Alte und neue Werte (verschlüsselt)")
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, verbose_name="Status")
+    requested_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Berichtigt von",
+    )
+    requested_on_behalf_of = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Berichtigt in Vertretung für",
+    )
+    requested_at = models.DateTimeField(default=timezone.now, verbose_name="Berichtigt am")
+    decided_by = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Bestätigt bzw. abgelehnt von",
+    )
+    decided_on_behalf_of = models.ForeignKey(
+        SessionUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Entschieden in Vertretung für",
+    )
+    decided_at = models.DateTimeField(blank=True, null=True, verbose_name="Entschieden am")
+    decision_note = models.CharField(max_length=500, blank=True, verbose_name="Vermerk zur Entscheidung")
+    applied_at = models.DateTimeField(blank=True, null=True, verbose_name="Wirksam seit")
+
+    class Meta:
+        db_table = "session_protocol_corrections"
+        verbose_name = "Berichtigung der Niederschrift"
+        verbose_name_plural = "Berichtigungen der Niederschrift"
+        ordering = ["requested_at"]
+        indexes = [models.Index(fields=["protocol", "status"], name="session_corr_protocol_status")]
+
+    def __str__(self):
+        subject = f"TOP {self.agenda_item.number}" if self.agenda_item_id and self.agenda_item else "Allgemeiner Teil"
+        return f"Berichtigung vom {timezone.localtime(self.requested_at):%d.%m.%Y}, {subject}"
+
+    def get_encryption_organization(self):
+        """Mandanten-Schlüssel der Sitzung."""
+        return self.protocol.meeting.tenant
+
+    @property
+    def tenant(self):
+        """Mandant (Audit-Attribution)."""
+        return self.protocol.meeting.tenant
+
+    @property
+    def subject_label(self) -> str:
+        """Gegenstand für Anzeige und Niederschrift, z. B. „TOP 3“."""
+        if self.target == self.TARGET_ITEM and self.agenda_item_id and self.agenda_item is not None:
+            return f"TOP {self.agenda_item.number}"
+        return self.get_target_display()
 
 
 # =============================================================================
@@ -3303,6 +3521,11 @@ class SessionAuditLog(models.Model):
         ("audit_export", "Protokoll exportiert"),
         ("audit_verify", "Protokoll geprüft"),
         ("audit_archive", "Protokoll archiviert"),
+        # Issue #318: Niederschrift nach der Genehmigung
+        ("unpublish", "Veröffentlichung zurückgenommen"),
+        ("protocol_correction", "Niederschrift berichtigt"),
+        ("protocol_correction_requested", "Berichtigung der Niederschrift beantragt"),
+        ("protocol_correction_rejected", "Berichtigung der Niederschrift abgelehnt"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -3829,6 +4052,19 @@ class SessionVote(models.Model):
 
     def __str__(self):
         return f"{self.person.display_name}: {self.get_vote_display()}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Namentliche Stimmen sind nach der Genehmigung der Niederschrift gesperrt (Issue #318)."""
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_vote(self)
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> Any:
+        from apps.session.services import protocol_lock
+
+        protocol_lock.guard_vote(self)
+        return super().delete(*args, **kwargs)
 
 
 class SessionCircularResolution(models.Model):

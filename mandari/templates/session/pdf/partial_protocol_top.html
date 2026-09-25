@@ -5,7 +5,7 @@
         <span class="{% if item.is_withdrawn %}withdrawn{% endif %}"><strong>{{ item.name }}</strong></span>
         {% if item.is_supplementary %}<span class="tag"> (Nachtrag)</span>{% endif %}
         {% if item.is_withdrawn %}<span class="tag"> (abgesetzt{% if item.withdrawn_reason %}: {{ item.withdrawn_reason }}{% endif %})</span>{% endif %}
-        {% if item.paper %}<br><span class="muted">Vorlage: {{ item.paper.reference }}</span>{% endif %}
+        {% if item.paper and item.paper_visible %}<br><span class="muted">Vorlage: {{ item.paper.reference }}</span>{% endif %}
         {% if item.protocol_note %}<br>{{ item.protocol_note|linebreaksbr }}{% endif %}
         {% if internal and item.protocol_note_np %}<br><span class="muted">[NÖ]</span> {{ item.protocol_note_np|linebreaksbr }}{% endif %}
         {% if item.resolution_text %}<br><strong>Beschluss:</strong> {{ item.resolution_text|linebreaksbr }}{% endif %}

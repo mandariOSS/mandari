@@ -68,6 +68,11 @@ class FourEyesSettingsView(SessionViewMixin, TemplateView):
         ]
         context["paper_choices"] = SessionTenant.FOUR_EYES_PAPER_CHOICES
         context["can_manage_users"] = "manage_users" in context["permission_checker"].permissions
+        # Genehmigungsweg der Niederschrift (Issue #318)
+        context["protocol_approval_choices"] = SessionTenant.PROTOCOL_APPROVAL_CHOICES
+        context["protocol_approval_mode"] = (
+            self.tenant.protocol_approval_mode or SessionTenant.PROTOCOL_APPROVAL_FOLLOW_UP
+        )
         return context
 
     def post(self, request: HttpRequest, tenant_slug: str) -> HttpResponse:
@@ -97,6 +102,37 @@ class FourEyesSettingsView(SessionViewMixin, TemplateView):
                 "Sitzungsgeld und Pauschalen darf jetzt auch genehmigen, wer den Lauf erzeugt hat. "
                 "Für Auszahlungen empfehlen wir das Vier-Augen-Prinzip.",
             )
+        return redirect("session:settings_four_eyes", tenant_slug=tenant_slug)
+
+
+class ProtocolApprovalSettingsView(SessionViewMixin, View):
+    """
+    Genehmigungsweg der Niederschrift je Mandant (Issue #318): Genehmigung in der Folgesitzung
+    (Standard) oder direkte Veröffentlichung ohne Genehmigungsschritt.
+    """
+
+    permission_required = "manage_settings"
+    http_method_names = ["post"]
+
+    def post(self, request: HttpRequest, tenant_slug: str) -> HttpResponse:
+        tenant = cast(SessionTenant, self.session_tenant)
+        mode = request.POST.get("protocol_approval_mode", "")
+        if mode not in dict(SessionTenant.PROTOCOL_APPROVAL_CHOICES):
+            messages.error(request, "Unbekannter Genehmigungsweg.")
+            return redirect("session:settings_four_eyes", tenant_slug=tenant_slug)
+        old = tenant.protocol_approval_mode or SessionTenant.PROTOCOL_APPROVAL_FOLLOW_UP
+        if old != mode:
+            tenant.protocol_approval_mode = mode
+            cast(Any, tenant).save(update_fields=["protocol_approval_mode", "updated_at"])
+            _log_event(
+                "update",
+                tenant,
+                tenant=tenant,
+                user=self.session_user,
+                request=request,
+                changes={"protocol_approval_mode": {"alt": old, "neu": mode}},
+            )
+        messages.success(request, "Genehmigungsweg der Niederschrift gespeichert.")
         return redirect("session:settings_four_eyes", tenant_slug=tenant_slug)
 
 

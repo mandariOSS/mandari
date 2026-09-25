@@ -54,5 +54,26 @@
             </c-slot>
         </c-ui.card>
     </form>
+
+    <form method="post" action="{% url 'session:settings_protocol_approval' tenant_slug=tenant_slug %}" data-testid="genehmigungsweg-einstellung">
+        {% csrf_token %}
+        <c-ui.card title="Genehmigungsweg der Niederschrift"
+            subtitle="Mit der Genehmigung bzw. Veröffentlichung sind Ergebnis, Stimmen und Texte schreibgeschützt; danach ändert nur eine Berichtigung.">
+            <c-form.select name="protocol_approval_mode" label="Niederschriften werden …">
+                {% for value, text in protocol_approval_choices %}
+                <option value="{{ value }}"{% if value == protocol_approval_mode %} selected{% endif %}>{{ text }}</option>
+                {% endfor %}
+            </c-form.select>
+            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Ohne Genehmigungsschritt gibt die Person mit dem Recht „Protokolle freigeben“ die geprüfte Niederschrift
+                direkt frei (z. B. Freischaltung im RIS); das Vier-Augen-Prinzip für die Niederschrift gilt dann für diesen Schritt.
+            </p>
+            <c-slot name="footer">
+                <div class="flex justify-end">
+                    <c-ui.button type="submit" size="sm" icon="save">Speichern</c-ui.button>
+                </div>
+            </c-slot>
+        </c-ui.card>
+    </form>
 </div>
 {% endblock %}

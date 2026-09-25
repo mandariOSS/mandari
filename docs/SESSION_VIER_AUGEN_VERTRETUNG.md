@@ -19,6 +19,13 @@ Vorgangsart:
 | Sitzungsgeld und Pauschalen | wer den Abrechnungs- bzw. Monatslauf erzeugt hat | **an** |
 | Übergabe von Beschlussauszügen | Ersteller:in und letzte:r inhaltliche:r Bearbeiter:in der Niederschrift der Sitzung | aus |
 
+Berichtigungen einer genehmigten Niederschrift (Issue #318) folgen der Einstellung für die
+Niederschrift: Ist sie an, wird eine Berichtigung erst wirksam, wenn eine zweite Person mit
+`approve_protocols` sie bestätigt – wer sie beantragt hat, auch in Vertretung, bestätigt sie nicht
+selbst. Ist sie aus, wird die Berichtigung sofort wirksam und protokolliert. Ohne
+Genehmigungsschritt (Einstellung „Genehmigungsweg der Niederschrift“: direkte Veröffentlichung)
+gilt das Vier-Augen-Prinzip für die Niederschrift beim Freigeben und Veröffentlichen.
+
 Die Migration `session.0029_vier_augen_vertretung` setzt diese Standardwerte auch für bestehende
 Mandanten; damit ändert sich nichts an bisherigen Abläufen (Sitzungsgeld galt schon im
 Vier-Augen-Prinzip).

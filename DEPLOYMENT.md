@@ -364,6 +364,14 @@ kurzen Transaktionen:
 docker exec mandari-app python manage.py audit_chain_backfill
 ```
 
+Nach dem Update mit der öffentlichen Niederschrift (Issue #318) einmal die öffentliche Fassung für
+bereits veröffentlichte Niederschriften erzeugen (OParl `resultsProtocol`, Bürgerportal). Der Befehl
+ist wiederholbar, erzeugt nur Fehlendes und kennt `--dry-run` und `--tenant <slug>`:
+
+```bash
+docker exec mandari-app python manage.py session_publish_protocols
+```
+
 Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vorgabe
 `<MEDIA_ROOT>/audit_archive`, also im persistenten Medien-Volume und in der Sicherung; nie per
 URL abrufbar) oder in einem Speicher aus `STORAGES`, dessen Alias `AUDIT_ARCHIVE_STORAGE` nennt.

@@ -31,74 +31,7 @@
 <div class="grid lg:grid-cols-3 gap-6">
     <div class="lg:col-span-2 space-y-6">
 
-        <!-- Status + Aktionen -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-            <div class="flex items-center justify-between flex-wrap gap-3">
-                <div class="flex items-center gap-3">
-                    <span class="px-2.5 py-1 text-xs font-medium rounded-full
-                        {% if protocol.status == 'draft' %}bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400
-                        {% elif protocol.status == 'review' %}bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-400
-                        {% elif protocol.status == 'approved' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400
-                        {% else %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-400{% endif %}">
-                        {{ protocol.get_status_display }}
-                    </span>
-                    {% if protocol.approval_note %}
-                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ protocol.approval_note }}</span>
-                    {% endif %}
-                </div>
-                <div class="flex items-center gap-2 flex-wrap">
-                    {% if can_edit and protocol.status == 'draft' or can_edit and protocol.status == 'review' %}
-                    <a href="{% url 'session:meeting_protocol_edit' tenant_slug=tenant_slug meeting_id=meeting.id %}"
-                       class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                        <i data-lucide="edit" class="w-4 h-4"></i> Bearbeiten
-                    </a>
-                    {% endif %}
-                    {% if can_edit and protocol.status == 'draft' %}
-                    <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='submit' %}">
-                        {% csrf_token %}
-                        <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors">
-                            <i data-lucide="send" class="w-4 h-4"></i> Zur Prüfung geben
-                        </button>
-                    </form>
-                    {% endif %}
-                    {% if can_approve and protocol.status == 'review' %}
-                    {% include "session/partials/four_eyes_hint.html" with decision=freigabe %}
-                    {% if freigabe.allowed %}
-                    <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='approve' %}"
-                          class="flex items-center gap-2">
-                        {% csrf_token %}
-                        <select name="approval_meeting" class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                            <option value="">Genehmigt in Sitzung … (optional)</option>
-                            {% for am in approval_meetings %}
-                            <option value="{{ am.id }}">{{ am.name }} ({{ am.start|date:"d.m.Y" }})</option>
-                            {% endfor %}
-                        </select>
-                        <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
-                            <i data-lucide="check" class="w-4 h-4"></i> Genehmigen
-                        </button>
-                    </form>
-                    {% endif %}
-                    <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='reject' %}"
-                          class="flex items-center gap-2">
-                        {% csrf_token %}
-                        <input type="text" name="comment" placeholder="Anmerkung zur Zurückweisung"
-                               class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                        <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors">
-                            <i data-lucide="undo-2" class="w-4 h-4"></i> Zurückweisen
-                        </button>
-                    </form>
-                    {% endif %}
-                    {% if can_approve and protocol.status == 'approved' %}
-                    <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='publish' %}">
-                        {% csrf_token %}
-                        <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors">
-                            <i data-lucide="globe" class="w-4 h-4"></i> Ö-Fassung veröffentlichen
-                        </button>
-                    </form>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
+        {% include "session/protocols/_workflow.html" %}
 
         <!-- Allgemeiner Teil -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
@@ -116,6 +49,8 @@
             </div>
             {% endif %}
         </div>
+
+        {% include "session/protocols/_corrections.html" %}
 
         <!-- TOP-weise Protokollierung -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">

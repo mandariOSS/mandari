@@ -796,136 +796,142 @@ class Command(BaseCommand):
     ) -> tuple[SessionMeeting, SessionAgendaItem]:
         """Anwesenheit, Abstimmung, Protokoll, Beschlusskontrolle und Sitzungsgeld."""
         from apps.session.models import SessionAttendance, SessionProtocol
-        from apps.session.services import resolution_service, voting_service
+        from apps.session.services import protocol_lock, resolution_service, voting_service
 
         heute = timezone.localdate()
         jetzt = timezone.now()
         vergangen = self._sitzung(mandant, ha, SITZUNG_VERGANGEN, self._termin(-21), "completed", verwaltung)
-        tops = self._tagesordnung(
-            vergangen,
-            [
-                Top(
-                    TOP_EROEFFNUNG,
-                    felder={
-                        "protocol_note": "Der Vorsitz eröffnet die Sitzung und stellt die Beschlussfähigkeit fest."
-                    },
-                ),
-                Top(
-                    BESCHLUSS_LASTENRAD,
-                    vorlagen[BESCHLUSS_LASTENRAD],
-                    felder={
-                        "voting_method": "roll_call",
-                        "vote_result": "approved",
-                        "resolution_text": vorlagen[BESCHLUSS_LASTENRAD].resolution_text,
-                        "protocol_note": "Die Verwaltung erläutert Förderung und Einsatzplanung. Namentliche "
-                        "Abstimmung auf Antrag eines Mitglieds.",
-                        "implementation_status": "in_progress",
-                        "implementation_recipient": "Bauhof (Demo)",
-                        "implementation_deadline": heute + timedelta(days=14),
-                        "implementation_note": "Ausschreibung veröffentlicht, Angebotsfrist läuft.",
-                        "implementation_public": True,
-                        "implementation_public_note": "Die Ausschreibung läuft, die Räder kommen voraussichtlich "
-                        "im nächsten Quartal.",
-                        "implementation_updated_at": jetzt - timedelta(days=3),
-                        "implementation_updated_by": verwaltung,
-                    },
-                ),
-                Top(
-                    BESCHLUSS_HALTESTELLE,
-                    vorlagen[BESCHLUSS_HALTESTELLE],
-                    felder={
-                        "voting_method": "summary",
-                        "vote_result": "approved",
-                        "votes_yes": 5,
-                        "votes_no": 0,
-                        "votes_abstain": 0,
-                        "resolution_text": vorlagen[BESCHLUSS_HALTESTELLE].resolution_text,
-                        "implementation_status": "open",
-                        "implementation_recipient": "Tiefbauamt (Demo)",
-                        # Frist bereits verstrichen: zeigt Überfällig-Filter und Erinnerung
-                        "implementation_deadline": heute - timedelta(days=7),
-                        "implementation_public": True,
-                        "implementation_updated_at": None,
-                        "implementation_updated_by": None,
-                    },
-                ),
-                Top(
-                    TOP_REINIGUNG,
-                    oeffentlich=False,
-                    felder={"vote_result": "approved", "votes_yes": 4, "votes_no": 0, "votes_abstain": 1},
-                ),
-            ],
-        )
-        for name in (BESCHLUSS_LASTENRAD, BESCHLUSS_HALTESTELLE):
-            self._beratung(vorlagen[name], ha, tops[name], "decision", 1, "approved")
-        reinigung = tops[TOP_REINIGUNG]
-        cast(Any, reinigung).set_resolution_text_encrypted(
-            "Der Auftrag wird an den wirtschaftlichsten Bieter (Angebot Nr. 2) vergeben."
-        )
-        cast(Any, reinigung).set_protocol_note_encrypted("Beratung der Angebote unter Ausschluss der Öffentlichkeit.")
-        reinigung.save()
+        # Die Drehbuch-Niederschrift ist genehmigt und damit gesperrt (Issue #318). Der Aufbau setzt
+        # Tagesordnung, Stimmen und Niederschrift bei jedem Lauf auf den Ausgangsstand – als Datenpflege,
+        # nicht als Änderung der Niederschrift.
+        with protocol_lock.permit(vergangen.pk):
+            tops = self._tagesordnung(
+                vergangen,
+                [
+                    Top(
+                        TOP_EROEFFNUNG,
+                        felder={
+                            "protocol_note": "Der Vorsitz eröffnet die Sitzung und stellt die Beschlussfähigkeit fest."
+                        },
+                    ),
+                    Top(
+                        BESCHLUSS_LASTENRAD,
+                        vorlagen[BESCHLUSS_LASTENRAD],
+                        felder={
+                            "voting_method": "roll_call",
+                            "vote_result": "approved",
+                            "resolution_text": vorlagen[BESCHLUSS_LASTENRAD].resolution_text,
+                            "protocol_note": "Die Verwaltung erläutert Förderung und Einsatzplanung. Namentliche "
+                            "Abstimmung auf Antrag eines Mitglieds.",
+                            "implementation_status": "in_progress",
+                            "implementation_recipient": "Bauhof (Demo)",
+                            "implementation_deadline": heute + timedelta(days=14),
+                            "implementation_note": "Ausschreibung veröffentlicht, Angebotsfrist läuft.",
+                            "implementation_public": True,
+                            "implementation_public_note": "Die Ausschreibung läuft, die Räder kommen voraussichtlich "
+                            "im nächsten Quartal.",
+                            "implementation_updated_at": jetzt - timedelta(days=3),
+                            "implementation_updated_by": verwaltung,
+                        },
+                    ),
+                    Top(
+                        BESCHLUSS_HALTESTELLE,
+                        vorlagen[BESCHLUSS_HALTESTELLE],
+                        felder={
+                            "voting_method": "summary",
+                            "vote_result": "approved",
+                            "votes_yes": 5,
+                            "votes_no": 0,
+                            "votes_abstain": 0,
+                            "resolution_text": vorlagen[BESCHLUSS_HALTESTELLE].resolution_text,
+                            "implementation_status": "open",
+                            "implementation_recipient": "Tiefbauamt (Demo)",
+                            # Frist bereits verstrichen: zeigt Überfällig-Filter und Erinnerung
+                            "implementation_deadline": heute - timedelta(days=7),
+                            "implementation_public": True,
+                            "implementation_updated_at": None,
+                            "implementation_updated_by": None,
+                        },
+                    ),
+                    Top(
+                        TOP_REINIGUNG,
+                        oeffentlich=False,
+                        felder={"vote_result": "approved", "votes_yes": 4, "votes_no": 0, "votes_abstain": 1},
+                    ),
+                ],
+            )
+            for name in (BESCHLUSS_LASTENRAD, BESCHLUSS_HALTESTELLE):
+                self._beratung(vorlagen[name], ha, tops[name], "decision", 1, "approved")
+            reinigung = tops[TOP_REINIGUNG]
+            cast(Any, reinigung).set_resolution_text_encrypted(
+                "Der Auftrag wird an den wirtschaftlichsten Bieter (Angebot Nr. 2) vergeben."
+            )
+            cast(Any, reinigung).set_protocol_note_encrypted(
+                "Beratung der Angebote unter Ausschluss der Öffentlichkeit."
+            )
+            reinigung.save()
 
-        # --- Anwesenheit und namentliche Abstimmung --------------------
-        anwesenheit = [
-            ("anna-amberg", "present", "chair"),
-            ("elif-erden", "present", "deputy_chair"),
-            ("bernd-birkholz", "present", "member"),
-            ("dieter-dahl", "present", "member"),
-            ("gisela-grote", "present", "member"),
-            ("hakan-heller", "excused", "member"),
-        ]
-        for key, status, rolle in anwesenheit:
-            SessionAttendance.objects.update_or_create(
+            # --- Anwesenheit und namentliche Abstimmung --------------------
+            anwesenheit = [
+                ("anna-amberg", "present", "chair"),
+                ("elif-erden", "present", "deputy_chair"),
+                ("bernd-birkholz", "present", "member"),
+                ("dieter-dahl", "present", "member"),
+                ("gisela-grote", "present", "member"),
+                ("hakan-heller", "excused", "member"),
+            ]
+            for key, status, rolle in anwesenheit:
+                SessionAttendance.objects.update_or_create(
+                    meeting=vergangen,
+                    person=personen[key],
+                    defaults={
+                        "status": status,
+                        "role": rolle,
+                        "has_voting_rights": True,
+                        "excuse_reason": "Terminüberschneidung (Demo)" if status == "excused" else "",
+                    },
+                )
+            lastenrad = tops[BESCHLUSS_LASTENRAD]
+            voting_service.capture_votes(
+                lastenrad,
+                {
+                    personen["anna-amberg"]: "yes",
+                    personen["elif-erden"]: "yes",
+                    personen["bernd-birkholz"]: "no",
+                    personen["dieter-dahl"]: "yes",
+                    personen["gisela-grote"]: "abstain",
+                },
+                recorded_by=protokoll,
+            )
+            # Beschlussnummern (B/<Jahr>/<lfd>) – einmal vergeben, bleiben bei jedem weiteren Lauf
+            resolution_service.ensure_numbers_for_meeting(vergangen)
+
+            # --- Protokoll: Ö-Teil im Klartext, NÖ-Teil verschlüsselt ------
+            niederschrift, _ = SessionProtocol.objects.update_or_create(
                 meeting=vergangen,
-                person=personen[key],
                 defaults={
-                    "status": status,
-                    "role": rolle,
-                    "has_voting_rights": True,
-                    "excuse_reason": "Terminüberschneidung (Demo)" if status == "excused" else "",
+                    "content": (
+                        "Sitzung des Hauptausschusses (Demo-Drehbuch).\n\n"
+                        f"TOP 1 – {TOP_EROEFFNUNG}: Der Vorsitz stellt die ordnungsgemäße Ladung und die "
+                        "Beschlussfähigkeit fest.\n\n"
+                        f"TOP 2 – {BESCHLUSS_LASTENRAD}: Namentliche Abstimmung, angenommen mit 3 Ja-Stimmen, "
+                        "1 Nein-Stimme und 1 Enthaltung.\n\n"
+                        f"TOP 3 – {BESCHLUSS_HALTESTELLE}: Einstimmig angenommen."
+                    ),
+                    "status": "approved",
+                    "created_by": protokoll,
+                    "approved_by": verwaltung,
+                    "approved_at": jetzt - timedelta(days=14),
+                    "approval_note": "Genehmigt durch den Vorsitz (Demo).",
+                    "chair_name": personen["anna-amberg"].display_name,
+                    "recorder_name": f"{protokoll.user.first_name} {protokoll.user.last_name}".strip(),
                 },
             )
-        lastenrad = tops[BESCHLUSS_LASTENRAD]
-        voting_service.capture_votes(
-            lastenrad,
-            {
-                personen["anna-amberg"]: "yes",
-                personen["elif-erden"]: "yes",
-                personen["bernd-birkholz"]: "no",
-                personen["dieter-dahl"]: "yes",
-                personen["gisela-grote"]: "abstain",
-            },
-            recorded_by=protokoll,
-        )
-        # Beschlussnummern (B/<Jahr>/<lfd>) – einmal vergeben, bleiben bei jedem weiteren Lauf
-        resolution_service.ensure_numbers_for_meeting(vergangen)
-
-        # --- Protokoll: Ö-Teil im Klartext, NÖ-Teil verschlüsselt ------
-        niederschrift, _ = SessionProtocol.objects.update_or_create(
-            meeting=vergangen,
-            defaults={
-                "content": (
-                    "Sitzung des Hauptausschusses (Demo-Drehbuch).\n\n"
-                    f"TOP 1 – {TOP_EROEFFNUNG}: Der Vorsitz stellt die ordnungsgemäße Ladung und die "
-                    "Beschlussfähigkeit fest.\n\n"
-                    f"TOP 2 – {BESCHLUSS_LASTENRAD}: Namentliche Abstimmung, angenommen mit 3 Ja-Stimmen, "
-                    "1 Nein-Stimme und 1 Enthaltung.\n\n"
-                    f"TOP 3 – {BESCHLUSS_HALTESTELLE}: Einstimmig angenommen."
-                ),
-                "status": "approved",
-                "created_by": protokoll,
-                "approved_by": verwaltung,
-                "approved_at": jetzt - timedelta(days=14),
-                "approval_note": "Genehmigt durch den Vorsitz (Demo).",
-                "chair_name": personen["anna-amberg"].display_name,
-                "recorder_name": f"{protokoll.user.first_name} {protokoll.user.last_name}".strip(),
-            },
-        )
-        cast(Any, niederschrift).set_content_encrypted(
-            f"Nichtöffentlicher Teil – TOP N1 {TOP_REINIGUNG}: Der Ausschuss vergibt den Auftrag an den "
-            "wirtschaftlichsten Bieter (4 Ja-Stimmen, 1 Enthaltung)."
-        )
-        niederschrift.save()
+            cast(Any, niederschrift).set_content_encrypted(
+                f"Nichtöffentlicher Teil – TOP N1 {TOP_REINIGUNG}: Der Ausschuss vergibt den Auftrag an den "
+                "wirtschaftlichsten Bieter (4 Ja-Stimmen, 1 Enthaltung)."
+            )
+            niederschrift.save()
 
         self._sitzungsgeld(mandant, ha, vergangen, verwaltung)
         return vergangen, lastenrad

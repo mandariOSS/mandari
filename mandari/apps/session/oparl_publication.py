@@ -80,15 +80,22 @@ def visible_files(tenant):
     """
     Nur öffentliche Anlagen, deren übergeordnetes Objekt selbst öffentlich
     ist — eine Ö-Datei an einer NÖ-Vorlage bleibt unsichtbar.
+
+    Die öffentliche Fassung einer Niederschrift (Issue #318) zusätzlich nur, solange die
+    Niederschrift veröffentlicht ist.
     """
-    return SessionFile.objects.filter(tenant=tenant, is_public=True).filter(
-        Q(paper__isnull=False, paper__is_public=True) & ~Q(paper__status__in=UNVEROEFFENTLICHT)
-        | Q(meeting__isnull=False, meeting__is_public=True)
-        | Q(
-            agenda_item__isnull=False,
-            agenda_item__is_public=True,
-            agenda_item__meeting__is_public=True,
+    return (
+        SessionFile.objects.filter(tenant=tenant, is_public=True)
+        .filter(
+            Q(paper__isnull=False, paper__is_public=True) & ~Q(paper__status__in=UNVEROEFFENTLICHT)
+            | Q(meeting__isnull=False, meeting__is_public=True)
+            | Q(
+                agenda_item__isnull=False,
+                agenda_item__is_public=True,
+                agenda_item__meeting__is_public=True,
+            )
         )
+        .exclude(Q(public_protocol__isnull=False) & ~Q(public_protocol__status="published"))
     )
 
 

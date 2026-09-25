@@ -85,6 +85,17 @@ urlpatterns = [
         views.ProtocolEditView.as_view(),
         name="meeting_protocol_edit",
     ),
+    # Berichtigung nach der Genehmigung (Issue #318) – vor der Workflow-Route mit <str:action>
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/protocol/berichtigung/",
+        views.ProtocolCorrectionView.as_view(),
+        name="meeting_protocol_correction",
+    ),
+    path(
+        "<slug:tenant_slug>/meetings/<uuid:meeting_id>/protocol/berichtigung/<uuid:correction_id>/<str:decision>/",
+        views.ProtocolCorrectionDecisionView.as_view(),
+        name="meeting_protocol_correction_decision",
+    ),
     path(
         "<slug:tenant_slug>/meetings/<uuid:meeting_id>/protocol/<str:action>/",
         views.ProtocolWorkflowView.as_view(),
@@ -765,6 +776,12 @@ urlpatterns = [
         "<slug:tenant_slug>/settings/four-eyes/",
         approval_views.FourEyesSettingsView.as_view(),
         name="settings_four_eyes",
+    ),
+    # Genehmigungsweg der Niederschrift (Issue #318)
+    path(
+        "<slug:tenant_slug>/settings/protocol-approval/",
+        approval_views.ProtocolApprovalSettingsView.as_view(),
+        name="settings_protocol_approval",
     ),
     path(
         "<slug:tenant_slug>/settings/delegations/",

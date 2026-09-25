@@ -1,0 +1,12 @@
+{% comment %}Öffentliche Niederschrift der Sitzung (OParl resultsProtocol, Issue #318). Erwartet: protocol_file.{% endcomment %}
+{% if protocol_file %}
+<c-ui.card title="Niederschrift" subtitle="Öffentlicher Teil der Sitzung" data-testid="oeffentliche-niederschrift">
+    <p class="text-sm text-gray-600 dark:text-gray-400">
+        {% if protocol_file.file_date %}Veröffentlicht am {{ protocol_file.file_date|date:"d.m.Y" }}{% endif %}{% if protocol_file.size %}{% if protocol_file.file_date %} · {% endif %}{{ protocol_file.size_human }}{% endif %}
+    </p>
+    <div class="mt-3 flex flex-wrap gap-2">
+        <c-ui.button size="sm" icon="file-text" href="{% url 'insight_core:insight:file_proxy' protocol_file.id %}" target="_blank" rel="noopener">Ansehen</c-ui.button>
+        <c-ui.button size="sm" variant="secondary" icon="download" href="{% url 'insight_core:insight:file_proxy' protocol_file.id %}?download=1">Herunterladen</c-ui.button>
+    </div>
+</c-ui.card>
+{% endif %}

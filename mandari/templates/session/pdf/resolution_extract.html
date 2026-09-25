@@ -6,7 +6,7 @@ Auszugs- und Ausfertigungsvermerk. NÖ-Beschlusstexte nur intern.{% endcomment %
 {% block content %}
     {% for item in items %}
     <h1>Beschlussauszug</h1>
-    <p class="muted">{{ variant_label }}</p>
+    <p class="muted">{{ variant_label }} · {{ item.protocol_state }}</p>
 
     <table class="meta-table">
         {% if item.resolution_number %}
@@ -15,7 +15,7 @@ Auszugs- und Ausfertigungsvermerk. NÖ-Beschlusstexte nur intern.{% endcomment %
         <tr><td><strong>Sitzung:</strong></td><td>{{ item.meeting.name }} am {{ item.meeting.start|date:"d.m.Y" }}</td></tr>
         <tr><td><strong>Gremium:</strong></td><td>{{ item.meeting.organization.name }}</td></tr>
         <tr><td><strong>TOP:</strong></td><td>{{ item.number }} — {{ item.name }}{% if not item.is_public %} (nichtöffentlich){% endif %}</td></tr>
-        {% if item.paper %}
+        {% if item.paper and item.paper_visible %}
         <tr><td><strong>Vorlage:</strong></td><td>{{ item.paper.reference }}: {{ item.paper.name }}</td></tr>
         {% endif %}
     </table>
@@ -53,6 +53,13 @@ Auszugs- und Ausfertigungsvermerk. NÖ-Beschlusstexte nur intern.{% endcomment %
         {% for person in item.excluded_persons %}{{ person.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}
         — an Beratung und Abstimmung nicht beteiligt.
     </p>
+    {% endif %}
+
+    {% if item.correction_notes %}
+    <h2>Berichtigungen</h2>
+    {% for note in item.correction_notes %}
+    <p>Berichtigung vom {{ note.date|date:"d.m.Y" }} ({{ note.reason }}){% if note.changes %}: {{ note.changes|join:"; " }}{% endif %}</p>
+    {% endfor %}
     {% endif %}
 
     <h2>Auszugsvermerk</h2>

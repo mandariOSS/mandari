@@ -160,6 +160,8 @@ from .privacy import (
     PrivacySettingsView,
 )
 from .protocols import (
+    ProtocolCorrectionDecisionView,
+    ProtocolCorrectionView,
     ProtocolCreateView,
     ProtocolDetailView,
     ProtocolEditView,
@@ -356,6 +358,8 @@ __all__ = [
     "PersonDetailView",
     "PersonListView",
     "PersonUpdateView",
+    "ProtocolCorrectionDecisionView",
+    "ProtocolCorrectionView",
     "ProtocolCreateView",
     "ProtocolDetailView",
     "ProtocolEditView",

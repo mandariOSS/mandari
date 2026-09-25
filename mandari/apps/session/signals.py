@@ -192,6 +192,84 @@ post_save.connect(
 
 
 # =============================================================================
+# Öffentliche Niederschrift (Issue #318): nach Änderungen neu erzeugen oder zurücknehmen
+# =============================================================================
+#
+# Die öffentliche Fassung (OParl resultsProtocol, Bürgerportal) ist eine gespeicherte Datei. Ändert
+# sich danach ihr Inhalt – ein TOP wird nichtöffentlich, die Sitzung wird nichtöffentlich, eine
+# Berichtigung wird wirksam, die Anwesenheit wird korrigiert –, entsteht nach dem Commit eine neue
+# Fassung; die alte wird sofort zurückgenommen. Der Hook vergleicht mit dem Altzustand aus
+# audit.audit_pre_save und fragt nur bei inhaltlichen Änderungen einmal nach einer veröffentlichten
+# Niederschrift.
+
+#: Felder, deren Änderung den Inhalt der öffentlichen Fassung berührt
+PUBLIC_PROTOCOL_FIELDS = {
+    SessionAgendaItem: (
+        "is_public",
+        "name",
+        "number",
+        "order",
+        "parent_id",
+        "paper_id",
+        "is_withdrawn",
+        "withdrawn_reason",
+        "is_supplementary",
+        "resolution_text",
+        "protocol_note",
+        "vote_result",
+        "voting_method",
+        "votes_yes",
+        "votes_no",
+        "votes_abstain",
+    ),
+    SessionMeeting: ("is_public", "name", "start", "end", "location", "room", "organization_id"),
+    SessionAttendance: ("status", "role", "person_id"),
+    SessionProtocol: ("status", "content", "chair_name", "recorder_name", "approval_note"),
+}
+
+
+def _public_protocol_meeting_id(instance):
+    return instance.pk if isinstance(instance, SessionMeeting) else instance.meeting_id
+
+
+def public_protocol_post_save(sender, instance, created, **kwargs):
+    """TOP, Sitzung, Anwesenheit oder Niederschrift geändert: öffentliche Fassung nachziehen."""
+    if kwargs.get("raw"):
+        return
+    meeting_id = _public_protocol_meeting_id(instance)
+    tenant_id = getattr(instance, "tenant_id", None)
+    if tenant_id is not None and audit.is_tenant_deleting(tenant_id):
+        return
+    if not created:
+        old = getattr(instance, "_audit_old", None)
+        if old is not None and all(
+            getattr(old, name) == getattr(instance, name) for name in PUBLIC_PROTOCOL_FIELDS[sender]
+        ):
+            return
+    from apps.session.services import protocol_publication
+
+    if protocol_publication.has_public_protocol(meeting_id):
+        protocol_publication.schedule_refresh(meeting_id)
+
+
+def public_protocol_post_delete(sender, instance, **kwargs):
+    """Anwesenheitszeile gelöscht: Teilnehmerverzeichnis der öffentlichen Fassung nachziehen."""
+    from apps.session.services import protocol_publication
+
+    if protocol_publication.has_public_protocol(instance.meeting_id):
+        protocol_publication.schedule_refresh(instance.meeting_id)
+
+
+for _model in PUBLIC_PROTOCOL_FIELDS:
+    post_save.connect(
+        public_protocol_post_save, sender=_model, dispatch_uid=f"session_public_protocol_{_model.__name__}"
+    )
+post_delete.connect(
+    public_protocol_post_delete, sender=SessionAttendance, dispatch_uid="session_public_protocol_attendance_delete"
+)
+
+
+# =============================================================================
 # Sitzungsmappe (Issue #218): Dateien einer gelöschten Fassung entfernen
 # =============================================================================
 

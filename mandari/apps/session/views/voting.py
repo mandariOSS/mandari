@@ -3,7 +3,9 @@
 Digitale Abstimmung und Umlaufbeschlüsse (Issue #41).
 
 - Einzelstimmen-Erfassung je TOP für die Protokollführung
-  (offen/namentlich/geheim, Befangenheit nach Gemeindeordnung)
+  (offen/namentlich/geheim, Befangenheit nach Gemeindeordnung); Stimmen nur von
+  stimmberechtigten Anwesenden, Beratende und Gäste ausgewiesen (Issue #318)
+- nach Genehmigung der Niederschrift schreibgeschützt (Issue #318)
 - Umlaufbeschlüsse: Anlage, Rücklauf-Erfassung, Ergebnisfeststellung
 """
 
@@ -12,6 +14,7 @@ from datetime import date
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
@@ -27,13 +30,14 @@ from ..models import (
     SessionVote,
 )
 from ..permissions import SessionViewMixin
-from ..services import voting_service
+from ..services import protocol_lock, voting_service
 from .nexturl import safe_next_url
 
 
 def _get_item(view, item_id):
+    # Niederschrift mitladen: ihr Status entscheidet über die Sperre (Issue #318)
     qs = SessionAgendaItem.objects.filter(meeting__tenant=view.session_tenant).select_related(
-        "meeting__organization", "meeting__tenant"
+        "meeting__organization", "meeting__tenant", "meeting__protocol"
     )
     if not view.has_permission("view_non_public_meetings"):
         qs = qs.filter(is_public=True, meeting__is_public=True)
@@ -52,27 +56,34 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         item = _get_item(self, self.kwargs["item_id"])
-        attendances = list(
-            item.meeting.attendances.select_related("person").order_by("person__family_name", "person__given_name")
-        )
-        votes = {v.person_id: v.vote for v in item.votes.all()}
-        for attendance in attendances:
+        # Stimmrecht (Issue #318): Stimmberechtigte Anwesende stimmen ab, Beratende und Gäste werden
+        # nur ausgewiesen; eine frühere Stimme ohne Stimmrecht entfernt das nächste Speichern
+        assessed = voting_service.eligibility(item.meeting)
+        loaded = list(item.votes.select_related("person"))
+        votes = {v.person_id: v.vote for v in loaded}
+        protocol = getattr(item.meeting, "protocol", None)
+        for attendance in assessed.voting + assessed.advisory + assessed.others:
             attendance.current_vote = votes.get(attendance.person_id, "")
         context.update(
             {
                 "item": item,
                 "meeting": item.meeting,
-                "attendances": attendances,
+                "attendances": assessed.voting,
+                "advisory": assessed.advisory,
+                "stray_votes": [a for a in assessed.advisory + assessed.others if a.current_vote],
+                "attendance_complete": assessed.complete,
+                "locked": protocol is not None and protocol.is_locked,
                 "method_choices": SessionAgendaItem.VOTING_METHOD_CHOICES,
                 "vote_choices": SessionVote.VOTE_CHOICES,
                 "result_choices": SessionAgendaItem._meta.get_field("vote_result").choices,
-                "tally": voting_service.tally(item),
+                "tally": voting_service.tally(item, loaded),
             }
         )
         return context
 
     def post(self, request, tenant_slug, item_id):
         item = _get_item(self, item_id)
+        back = redirect("session:voting_capture", tenant_slug=tenant_slug, item_id=item.id)
 
         method = request.POST.get("voting_method", item.voting_method)
         if method not in {value for value, _ in SessionAgendaItem.VOTING_METHOD_CHOICES}:
@@ -84,19 +95,49 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         if result in {value for value, _ in item._meta.get_field("vote_result").choices}:
             item.vote_result = result
 
-        if method == "secret":
-            # Geheim: Summen manuell, keine Einzelstimmen
-            for field in ("votes_yes", "votes_no", "votes_abstain"):
-                with contextlib.suppress(TypeError, ValueError):
-                    setattr(item, field, max(0, min(9999, int(request.POST.get(field, 0)))))
-        item.save()
-
+        assessed = voting_service.eligibility(item.meeting)
         votes_by_person = {}
         for attendance in item.meeting.attendances.select_related("person"):
             key = f"vote_{attendance.person_id}"
             if key in request.POST:
                 votes_by_person[attendance.person] = request.POST.get(key, "")
-        tally = voting_service.capture_votes(item, votes_by_person, recorded_by=self.session_user)
+        if method == "secret":
+            # Geheim: Summen manuell, keine Einzelstimmen – höchstens so viele wie stimmberechtigt anwesend,
+            # abzüglich der Befangenen nach dieser Erfassung
+            counts = {}
+            for field in ("votes_yes", "votes_no", "votes_abstain"):
+                counts[field] = getattr(item, field)
+                with contextlib.suppress(TypeError, ValueError):
+                    counts[field] = max(0, min(9999, int(request.POST.get(field, 0))))
+            final = {v.person_id: v.vote for v in item.votes.all()}
+            final.update({person.pk: value for person, value in votes_by_person.items()})
+            excluded = sum(1 for pk, value in final.items() if value == "excluded" and pk in assessed.voting_person_ids)
+            check = voting_service.check_counts(
+                item,
+                counts["votes_yes"],
+                counts["votes_no"],
+                counts["votes_abstain"],
+                assessed=assessed,
+                excluded=excluded,
+            )
+            if check.hard:
+                messages.error(request, check.message)
+                return back
+            if check.exceeded:
+                messages.warning(request, check.message)
+            for field, value in counts.items():
+                setattr(item, field, value)
+
+        # Sperre und Stimmrecht (Issue #318): alles oder nichts
+        try:
+            with transaction.atomic():
+                item.save()
+                tally = voting_service.capture_votes(
+                    item, votes_by_person, recorded_by=self.session_user, assessed=assessed
+                )
+        except (voting_service.VotingRightsError, protocol_lock.ProtocolLockedError) as exc:
+            messages.error(request, exc.user_message)
+            return back
 
         # Direkter Eintrag „Stimmabgabe erfasst“ mit den einzelnen Stimmänderungen (Issue #221)
         audit.log_event(
@@ -123,7 +164,7 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         next_url = safe_next_url(request, self.session_tenant.slug)
         if next_url:
             return redirect(next_url)
-        return redirect("session:voting_capture", tenant_slug=tenant_slug, item_id=item.id)
+        return back
 
 
 class CircularListView(SessionViewMixin, TemplateView):

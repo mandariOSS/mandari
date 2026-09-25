@@ -17,9 +17,20 @@
     <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Abstimmung erfassen</h1>
     <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">TOP {{ item.number }}: {{ item.name }}</p>
 
+    {% if locked %}
+    <c-ui.alert variant="info" icon="lock" class="mb-6" data-testid="abstimmung-gesperrt">
+        Die Niederschrift dieser Sitzung ist genehmigt. Ergebnis und Stimmen sind schreibgeschützt;
+        Korrekturen laufen über eine Berichtigung der Niederschrift.
+    </c-ui.alert>
+    {% endif %}
+
     <form method="post" class="space-y-6">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
+        {% for attendance in stray_votes %}
+        <input type="hidden" name="vote_{{ attendance.person_id }}" value="">
+        {% endfor %}
+        <fieldset class="space-y-6" {% if locked %}disabled{% endif %}>
 
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
             <div class="grid sm:grid-cols-2 gap-4">
@@ -75,7 +86,10 @@
         <div x-show="method !== 'summary'" x-cloak
              class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 class="font-semibold text-gray-900 dark:text-white">Einzelstimmen ({{ attendances|length }} Anwesenheitsliste)</h2>
+                <h2 class="font-semibold text-gray-900 dark:text-white">Einzelstimmen ({{ attendances|length }} stimmberechtigt anwesend)</h2>
+                {% if not attendance_complete %}
+                <p class="mt-1 text-xs text-amber-700 dark:text-amber-400">Die Anwesenheit ist nicht vollständig erfasst. Abstimmen können nur Personen, die als anwesend und stimmberechtigt eingetragen sind.</p>
+                {% endif %}
             </div>
             <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
                 {% for attendance in attendances %}
@@ -103,16 +117,35 @@
                 </div>
                 {% empty %}
                 <p class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                    Keine Anwesenheitsliste vorhanden — bitte zuerst in der Sitzung die Anwesenheit erfassen.
+                    Keine stimmberechtigten Anwesenden erfasst — bitte zuerst in der Sitzung die Anwesenheit erfassen.
                 </p>
                 {% endfor %}
             </div>
         </div>
 
+        {% if advisory or stray_votes %}
+        <c-ui.card title="Beratend und Gäste" subtitle="Werden ausgewiesen, zählen aber nicht mit." data-testid="ohne-stimmrecht">
+            <ul class="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                {% for attendance in advisory %}
+                <li>{{ attendance.person.display_name }} <span class="text-xs text-gray-500 dark:text-gray-400">({{ attendance.get_role_display }}{% if not attendance.has_voting_rights %}, ohne Stimmrecht{% endif %})</span></li>
+                {% endfor %}
+            </ul>
+            {% if stray_votes %}
+            <p class="mt-3 text-xs text-amber-700 dark:text-amber-400">
+                Früher erfasste Stimmen ohne Stimmrecht oder ohne Anwesenheit werden beim Speichern entfernt:
+                {% for attendance in stray_votes %}{{ attendance.person.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+            </p>
+            {% endif %}
+        </c-ui.card>
+        {% endif %}
+
+        </fieldset>
         <div class="flex items-center gap-3">
+            {% if not locked %}
             <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg">
                 <i data-lucide="save" class="w-4 h-4"></i> Abstimmung speichern
             </button>
+            {% endif %}
             <span class="text-sm text-gray-500 dark:text-gray-400">
                 Aktuell: Ja {{ item.votes_yes }} / Nein {{ item.votes_no }} / Enthaltung {{ item.votes_abstain }}
                 {% if tally.excluded %} · Befangen: {% for p in tally.excluded %}{{ p.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}

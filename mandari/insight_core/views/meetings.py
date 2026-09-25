@@ -18,6 +18,7 @@ from django.views.generic import DetailView, ListView, TemplateView
 from ..models import (
     OParlBody,
     OParlConsultation,
+    OParlFile,
     OParlMeeting,
     OParlOrganization,
 )
@@ -257,6 +258,28 @@ def calendar_feed(request):
     return response
 
 
+def _protocol_file(meeting):
+    """
+    Öffentliche Niederschrift einer Sitzung (OParl ``resultsProtocol``, sonst ``verbatimProtocol``).
+
+    Quelle ist das gespiegelte Meeting-Objekt; angezeigt wird nur eine nicht zurückgenommene Datei
+    derselben Kommune (Issue #318: mandari Session veröffentlicht hier ausschließlich den
+    öffentlichen Teil, eine Rücknahme markiert die Datei sofort als gelöscht).
+    """
+    raw = meeting.raw_json if isinstance(meeting.raw_json, dict) else {}
+    for key in ("resultsProtocol", "verbatimProtocol"):
+        ref = raw.get(key)
+        external_id = ref.get("id") if isinstance(ref, dict) else ref if isinstance(ref, str) else None
+        if not external_id:
+            continue
+        found = (
+            OParlFile.objects.filter(external_id=external_id, deleted=False).defer("text_content", "raw_json").first()
+        )
+        if found is not None and (found.body_id is None or found.body_id == meeting.body_id):
+            return found
+    return None
+
+
 class MeetingDetailView(DetailView):
     """Detailseite einer Sitzung."""
 
@@ -310,6 +333,7 @@ class MeetingDetailView(DetailView):
             roll_call = raw.get("mandari:rollCall")
             item.roll_call = roll_call if isinstance(roll_call, list) and roll_call else None
         context["agenda_items"] = agenda_items
+        context["protocol_file"] = _protocol_file(meeting)
 
         # Location Koordinaten für Karte (body kann fehlen bei verwaisten Meetings)
         try:

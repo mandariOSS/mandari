@@ -3,27 +3,42 @@
 Niederschrift-Workflow für das Session RIS (Issue #31).
 
 Views für:
-- Protokoll-Ansicht je Sitzung (Status, TOP-Struktur, Teilnehmerverzeichnis)
+- Protokoll-Ansicht je Sitzung (Status, TOP-Struktur, Teilnehmerverzeichnis, Berichtigungen)
 - Anlegen + Bearbeiten (allgemeiner Teil Ö/NÖ, TOP-weise Protokolltexte und
   Beschlussergebnisse, Unterschriften-Block)
-- Workflow-Aktionen: zur Prüfung geben -> genehmigen (mit
-  Genehmigungsvermerk in Folgesitzung) / zurückweisen -> veröffentlichen
+- Workflow-Aktionen: zur Prüfung geben -> genehmigen (mit Genehmigungsvermerk und TOP der
+  Folgesitzung) / zurückweisen -> veröffentlichen (öffentliche Fassung über OParl und im
+  Bürgerportal) -> Veröffentlichung zurücknehmen; je Mandant ohne Genehmigungsschritt
+- Berichtigung nach der Genehmigung (Issue #318)
 - Niederschrift-PDF (Ö-Fassung und interne NÖ-Fassung)
 """
 
+from urllib.parse import urlencode
+
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
-from django.utils import timezone
+from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
 from .. import audit
-from ..models import SessionAgendaItem, SessionMeeting, SessionTextBlock
+from ..models import SessionAgendaItem, SessionMeeting, SessionProtocolCorrection, SessionTextBlock, SessionVote
 from ..permissions import SessionViewMixin
-from ..services import agenda_service, four_eyes_service, protocol_service
+from ..services import (
+    agenda_service,
+    four_eyes_service,
+    protocol_correction_service,
+    protocol_lock,
+    protocol_service,
+    voting_service,
+)
 
 _VOTE_RESULTS = {choice[0] for choice in SessionAgendaItem._meta.get_field("vote_result").choices}
+_COUNT_FIELDS = ("votes_yes", "votes_no", "votes_abstain")
+#: Farbe des Status-Badges
+STATUS_TONES = {"draft": "gray", "review": "amber", "approved": "blue", "published": "green"}
 
 
 def _get_meeting(view, meeting_id):
@@ -42,7 +57,7 @@ def _protocol_redirect(view, meeting):
 
 
 class ProtocolDetailView(SessionViewMixin, TemplateView):
-    """Protokoll-Ansicht: Status, Workflow-Aktionen, TOP-Struktur, Teilnehmer."""
+    """Protokoll-Ansicht: Status, Workflow-Aktionen, TOP-Struktur, Teilnehmer, Berichtigungen."""
 
     template_name = "session/protocols/detail.html"
     permission_required = "view_protocols"
@@ -62,13 +77,12 @@ class ProtocolDetailView(SessionViewMixin, TemplateView):
                 for sub in item.children_list:
                     sub.protocol_note_np = sub.get_protocol_note_decrypted()
 
-        # Genehmigungsvermerk: mögliche Folgesitzungen des Gremiums
-        approval_meetings = SessionMeeting.objects.filter(
-            tenant=self.session_tenant,
-            organization=meeting.organization,
-            start__gt=meeting.start,
-        ).order_by("start")[:20]
-
+        can_approve = self.has_permission("approve_protocols")
+        corrections = (
+            protocol_correction_service.internal_rows(protocol, can_view_np=can_view_np, actor=self.session_user)
+            if protocol
+            else []
+        )
         context.update(
             {
                 "meeting": meeting,
@@ -80,19 +94,29 @@ class ProtocolDetailView(SessionViewMixin, TemplateView):
                 "can_view_np": can_view_np,
                 "can_create": self.has_permission("create_protocols"),
                 "can_edit": self.has_permission("edit_protocols"),
-                "can_approve": self.has_permission("approve_protocols"),
-                "approval_meetings": approval_meetings,
+                "can_approve": can_approve,
+                "locked": bool(protocol and protocol.is_locked),
+                "status_tone": STATUS_TONES.get(protocol.status, "gray") if protocol else "gray",
+                "direct_mode": self.session_tenant.protocol_direct_publication,
+                "corrections": corrections,
+                "can_correct": bool(protocol and protocol.is_locked and can_approve),
             }
         )
-        # Vier-Augen-Prinzip und Vertretung (Issue #222): Hinweis statt wirkungslosem Knopf
-        if protocol and protocol.status == "review" and context["can_approve"]:
+        # Genehmigungsvermerk: TOP „Genehmigung der Niederschrift“ bzw. Folgesitzung des Gremiums
+        if protocol and protocol.status == "review" and can_approve:
+            context["approval_items"] = protocol_service.approval_candidates(meeting, include_non_public=can_view_np)
+            context["approval_meetings"] = SessionMeeting.objects.filter(
+                tenant=self.session_tenant,
+                organization=meeting.organization,
+                start__gt=meeting.start,
+            ).order_by("start")[:20]
+            # Vier-Augen-Prinzip und Vertretung (Issue #222): Hinweis statt wirkungslosem Knopf
             context["freigabe"] = four_eyes_service.evaluate(
                 four_eyes_service.PROCESS_PROTOCOL, protocol, self.session_user
             )
         # Lesezugriff auf nichtöffentliche Niederschriftteile protokollieren (Issue #221)
-        if can_view_np and (not meeting.is_public or agenda["non_public"] or context["content_np"]):
-            from .. import audit
-
+        np_corrections = any(not row["correction"].is_public for row in corrections)
+        if can_view_np and (not meeting.is_public or agenda["non_public"] or context["content_np"] or np_corrections):
             audit.log_read(
                 self.request,
                 protocol or meeting,
@@ -139,7 +163,11 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
             messages.error(request, "Für diese Sitzung existiert noch kein Protokoll.")
             return _protocol_redirect(self, meeting)
         if protocol.status not in ("draft", "review"):
-            messages.error(request, "Genehmigte/veröffentlichte Niederschriften sind nicht mehr bearbeitbar.")
+            messages.error(
+                request,
+                "Genehmigte/veröffentlichte Niederschriften sind nicht mehr bearbeitbar. "
+                "Korrekturen laufen über eine Berichtigung.",
+            )
             return _protocol_redirect(self, meeting)
         return super().get(request, *args, **kwargs)
 
@@ -178,7 +206,11 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
             messages.error(request, "Für diese Sitzung existiert noch kein Protokoll.")
             return _protocol_redirect(self, meeting)
         if protocol.status not in ("draft", "review"):
-            messages.error(request, "Genehmigte/veröffentlichte Niederschriften sind nicht mehr bearbeitbar.")
+            messages.error(
+                request,
+                "Genehmigte/veröffentlichte Niederschriften sind nicht mehr bearbeitbar. "
+                "Korrekturen laufen über eine Berichtigung.",
+            )
             return _protocol_redirect(self, meeting)
 
         can_view_np = self.has_permission("view_non_public_meetings")
@@ -195,6 +227,8 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
         items = meeting.agenda_items.all()
         if not can_view_np:
             items = items.filter(is_public=True)
+        # Stimmrecht (Issue #318): Stimmenzahlen gegen die stimmberechtigten Anwesenden prüfen
+        assessed = voting_service.eligibility(meeting)
         for item in items:
             prefix = str(item.pk)
             if f"protocol_note_{prefix}" not in request.POST:
@@ -204,10 +238,20 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
             vote = request.POST.get(f"vote_result_{prefix}", item.vote_result)
             if vote in _VOTE_RESULTS:
                 item.vote_result = vote
-            for field in ("votes_yes", "votes_no", "votes_abstain"):
+            counts = {field: getattr(item, field) for field in _COUNT_FIELDS}
+            for field in _COUNT_FIELDS:
                 raw = request.POST.get(f"{field}_{prefix}", "")
                 if raw.isdigit():
-                    setattr(item, field, int(raw))
+                    counts[field] = min(int(raw), 9999)
+            if any(counts[field] != getattr(item, field) for field in _COUNT_FIELDS):
+                check = voting_service.check_counts(
+                    item, counts["votes_yes"], counts["votes_no"], counts["votes_abstain"], assessed=assessed
+                )
+                if check.exceeded:
+                    (messages.error if check.hard else messages.warning)(request, check.message)
+                if not check.hard:
+                    for field, value in counts.items():
+                        setattr(item, field, value)
             if can_view_np:
                 np_note = request.POST.get(f"protocol_note_np_{prefix}", None)
                 if np_note is not None:
@@ -228,7 +272,8 @@ class ProtocolWorkflowView(SessionViewMixin, View):
     """
     Workflow-Aktionen: submit (Entwurf -> Prüfung), reject (Prüfung -> Entwurf),
     approve (Prüfung -> genehmigt, mit Genehmigungsvermerk/Folgesitzung),
-    publish (genehmigt -> veröffentlicht, nur Ö-Fassung).
+    publish (genehmigt -> veröffentlicht; ohne Genehmigungsschritt aus der Prüfung),
+    unpublish (veröffentlicht -> genehmigt, Rücknahme aus OParl und Bürgerportal).
     """
 
     http_method_names = ["post"]
@@ -239,11 +284,10 @@ class ProtocolWorkflowView(SessionViewMixin, View):
         "reject": "approve_protocols",
         "approve": "approve_protocols",
         "publish": "approve_protocols",
+        "unpublish": "approve_protocols",
     }
 
     def check_view_permissions(self):
-        from django.core.exceptions import PermissionDenied
-
         action = self.kwargs.get("action")
         permission = self.ACTION_PERMS.get(action)
         if permission is None:
@@ -257,78 +301,177 @@ class ProtocolWorkflowView(SessionViewMixin, View):
         if protocol is None:
             messages.error(request, "Für diese Sitzung existiert noch kein Protokoll.")
             return _protocol_redirect(self, meeting)
-
-        old_status = protocol.status
-        if not protocol_service.apply_transition(protocol, action):
-            messages.error(
-                request,
-                f"Aktion nicht möglich: Statusübergang aus „{protocol.get_status_display()}“ unzulässig.",
-            )
-            return _protocol_redirect(self, meeting)
-
-        # Vier-Augen-Prinzip und Vertretung (Issue #222): Prüfung im Service, vor dem Speichern
-        vertreten = None
-        if action != "submit":
-            try:
-                vertreten = four_eyes_service.authorize(
-                    four_eyes_service.PROCESS_PROTOCOL, protocol, self.session_user, four_eyes=action == "approve"
-                )
-            except four_eyes_service.ApprovalError as exc:
-                messages.error(request, str(exc))
-                return _protocol_redirect(self, meeting)
-        vermerk = f" (in Vertretung für {vertreten.user.email})" if vertreten else ""
-
-        if action == "submit":
-            protocol.review_requested_by = self.session_user
-            protocol.review_requested_at = timezone.now()
-            protocol.save()
-            messages.success(request, "Protokoll wurde zur Prüfung gegeben.")
-
-        elif action == "reject":
-            comment = request.POST.get("comment", "").strip()
-            with audit.in_vertretung(vertreten):
-                protocol.save()
-            # Audit: Zurückweisung mit Kommentar nachvollziehbar machen
-            audit.log_event(
-                "update",
+        try:
+            message = protocol_service.perform_action(
                 protocol,
+                action,
                 user=self.session_user,
+                data=request.POST,
                 request=request,
-                on_behalf_of=vertreten,
-                changes={
-                    "status": {"alt": old_status, "neu": protocol.status},
-                    "zurueckweisungs_kommentar": comment[:300],
-                },
+                include_non_public=self.has_permission("view_non_public_meetings"),
             )
-            messages.success(request, f"Protokoll wurde mit Anmerkungen zurück in den Entwurf gegeben{vermerk}.")
+        except protocol_service.WorkflowError as exc:
+            messages.error(request, exc.user_message)
+        else:
+            messages.success(request, message)
+        return _protocol_redirect(self, meeting)
 
-        elif action == "approve":
-            protocol.approved_by = self.session_user
-            protocol.approved_on_behalf_of = vertreten
-            protocol.approved_at = timezone.now()
-            approval_meeting_id = request.POST.get("approval_meeting", "")
-            if approval_meeting_id:
-                protocol.approval_meeting = SessionMeeting.objects.filter(
-                    pk=approval_meeting_id,
-                    tenant=self.session_tenant,
-                    organization=meeting.organization,
-                ).first()
-            note = request.POST.get("approval_note", "").strip()[:500]
-            if note:
-                protocol.approval_note = note
-            elif protocol.approval_meeting:
-                start_local = timezone.localtime(protocol.approval_meeting.start)
-                protocol.approval_note = f"Genehmigt in der Sitzung am {start_local.strftime('%d.%m.%Y')}."
-            with audit.in_vertretung(vertreten):
-                protocol.save()  # Audit: approve-Aktion über Signal
-            messages.success(request, f"Niederschrift wurde genehmigt{vermerk}.")
 
-        elif action == "publish":
-            protocol.published_at = timezone.now()
-            with audit.in_vertretung(vertreten):
-                protocol.save()  # Audit: publish-Aktion über Signal
-            messages.success(request, f"Öffentliche Fassung der Niederschrift wurde veröffentlicht{vermerk}.")
+class ProtocolCorrectionView(SessionViewMixin, TemplateView):
+    """
+    Berichtigung einer genehmigten Niederschrift (Issue #318): Formular je Gegenstand
+    (``?top=<id>``, ``?teil=allgemein`` oder ``?teil=allgemein-noe``) und Antrag.
+    """
 
+    template_name = "session/protocols/correction_form.html"
+    permission_required = "approve_protocols"
+
+    TARGETS = {
+        "allgemein": SessionProtocolCorrection.TARGET_GENERAL,
+        "allgemein-noe": SessionProtocolCorrection.TARGET_GENERAL_NP,
+    }
+
+    def _load(self):
+        meeting = _get_meeting(self, self.kwargs["meeting_id"])
+        protocol = getattr(meeting, "protocol", None)
+        if protocol is None or not protocol.is_locked:
+            return meeting, protocol, None, None
+        params = self.request.POST if self.request.method == "POST" else self.request.GET
+        can_view_np = self.has_permission("view_non_public_meetings")
+        item = None
+        target = self.TARGETS.get(params.get("teil", ""), "")
+        if params.get("top"):
+            target = SessionProtocolCorrection.TARGET_ITEM
+            qs = meeting.agenda_items.select_related("meeting", "parent")
+            if not can_view_np:
+                qs = qs.filter(is_public=True)
+            try:
+                item = qs.filter(pk=params.get("top")).first()
+            except (ValueError, ValidationError):
+                item = None
+            if item is None:
+                return meeting, protocol, None, None
+        if not target or (target == SessionProtocolCorrection.TARGET_GENERAL_NP and not can_view_np):
+            return meeting, protocol, None, None
+        return meeting, protocol, target, item
+
+    def _form_url(self, meeting, item):
+        query = {"top": item.pk} if item is not None else {"teil": self.request.POST.get("teil", "")}
+        path = reverse(
+            "session:meeting_protocol_correction",
+            kwargs={"tenant_slug": self.session_tenant.slug, "meeting_id": meeting.id},
+        )
+        return f"{path}?{urlencode(query)}"
+
+    def get(self, request, *args, **kwargs):
+        meeting, protocol, target, _item = self._load()
+        if target is None:
+            messages.error(request, "Berichtigungen gibt es nur für genehmigte Niederschriften und ihre Teile.")
+            return _protocol_redirect(self, meeting)
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        meeting, protocol, target, item = self._load()
+        can_view_np = self.has_permission("view_non_public_meetings")
+        specs = protocol_correction_service.field_specs(target, item, can_view_np=can_view_np)
+        source = item if item is not None else protocol
+        values = protocol_correction_service.current_values(source, specs)
+        voters = []
+        if item is not None and item.voting_method in protocol_correction_service.INDIVIDUAL_METHODS:
+            votes = protocol_correction_service.current_votes(item)
+            for attendance in voting_service.eligibility(meeting).voting:
+                attendance.current_vote = votes.get(str(attendance.person_id), "")
+                voters.append(attendance)
+        public_scope = (
+            protocol_correction_service.item_is_public(item)
+            if item is not None
+            else target == SessionProtocolCorrection.TARGET_GENERAL and meeting.is_public
+        )
+        context.update(
+            {
+                "meeting": meeting,
+                "protocol": protocol,
+                "target": target,
+                "item": item,
+                "fields": [{"spec": spec, "value": values[spec.name]} for spec in specs],
+                "voters": voters,
+                "vote_choices": SessionVote.VOTE_CHOICES,
+                "result_choices": SessionAgendaItem._meta.get_field("vote_result").choices,
+                "public_scope": public_scope,
+                "four_eyes": four_eyes_service.required(self.session_tenant, four_eyes_service.PROCESS_CORRECTION),
+                "teil": self.request.GET.get("teil", ""),
+            }
+        )
+        if any(spec.encrypted for spec in specs) or not public_scope:
+            audit.log_read(
+                self.request,
+                protocol,
+                tenant=self.session_tenant,
+                user=self.session_user,
+                changes={"umfang": "Niederschrift, Berichtigung nichtöffentlicher Teile"},
+            )
+        return context
+
+    def post(self, request, *args, **kwargs):
+        meeting, protocol, target, item = self._load()
+        if target is None:
+            messages.error(request, "Berichtigungen gibt es nur für genehmigte Niederschriften und ihre Teile.")
+            return _protocol_redirect(self, meeting)
+        try:
+            outcome = protocol_correction_service.propose(
+                protocol,
+                target=target,
+                item=item,
+                data=request.POST,
+                reason=request.POST.get("reason", ""),
+                user=self.session_user,
+                can_view_np=self.has_permission("view_non_public_meetings"),
+                request=request,
+            )
+        except (protocol_correction_service.CorrectionError, four_eyes_service.ApprovalError) as exc:
+            messages.error(request, exc.user_message)
+            return redirect(self._form_url(meeting, item))
+        for warning in outcome.warnings:
+            messages.warning(request, warning)
+        if outcome.applied:
+            messages.success(request, "Die Berichtigung ist wirksam und in der Niederschrift vermerkt.")
+        else:
+            messages.success(
+                request,
+                "Die Berichtigung ist beantragt. Wirksam wird sie, sobald eine zweite Person sie bestätigt "
+                "(Vier-Augen-Prinzip).",
+            )
+        return _protocol_redirect(self, meeting)
+
+
+class ProtocolCorrectionDecisionView(SessionViewMixin, View):
+    """Beantragte Berichtigung bestätigen oder ablehnen (Vier-Augen-Prinzip, Issue #318)."""
+
+    permission_required = "approve_protocols"
+    http_method_names = ["post"]
+
+    def post(self, request, tenant_slug, meeting_id, correction_id, decision):
+        meeting = _get_meeting(self, meeting_id)
+        qs = SessionProtocolCorrection.objects.select_related("protocol__meeting__tenant", "agenda_item")
+        if not self.has_permission("view_non_public_meetings"):
+            qs = qs.filter(is_public=True)
+        correction = get_object_or_404(qs, pk=correction_id, protocol__meeting=meeting)
+        try:
+            if decision == "confirm":
+                protocol_correction_service.confirm(correction, user=self.session_user, request=request)
+                messages.success(request, "Die Berichtigung ist bestätigt und wirksam.")
+            elif decision == "reject":
+                protocol_correction_service.reject(
+                    correction, user=self.session_user, note=request.POST.get("note", ""), request=request
+                )
+                messages.success(request, "Die Berichtigung wurde abgelehnt.")
+            else:
+                raise PermissionDenied("Unbekannte Aktion")
+        except (protocol_correction_service.CorrectionError, four_eyes_service.ApprovalError) as exc:
+            messages.error(request, exc.user_message)
+        except protocol_lock.ProtocolLockedError as exc:
+            messages.error(request, exc.user_message)
         return _protocol_redirect(self, meeting)
 
 
@@ -343,8 +486,6 @@ class ProtocolPdfView(SessionViewMixin, TemplateView):
     permission_required = "view_protocols"
 
     def get(self, request, *args, **kwargs):
-        from django.core.exceptions import PermissionDenied
-
         meeting = _get_meeting(self, self.kwargs["meeting_id"])
         protocol = getattr(meeting, "protocol", None)
         if protocol is None:
@@ -358,8 +499,6 @@ class ProtocolPdfView(SessionViewMixin, TemplateView):
         pdf_bytes = protocol_service.build_protocol_pdf(protocol, internal=internal)
         if internal:
             # Interne Fassung enthält den nichtöffentlichen Teil (Issue #221)
-            from .. import audit
-
             audit.log_read(
                 request,
                 protocol,

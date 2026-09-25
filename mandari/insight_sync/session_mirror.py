@@ -292,6 +292,11 @@ class SessionMirror:
         for file_data in data.get("auxiliaryFile", []) or []:
             if isinstance(file_data, dict):
                 self._upsert_file(body, file_data, meeting=meeting)
+        # Öffentliche Niederschrift (Issue #318): Ergebnis- bzw. Wortprotokoll als Datei der Sitzung
+        for key in ("invitation", "resultsProtocol", "verbatimProtocol"):
+            file_data = data.get(key)
+            if isinstance(file_data, dict):
+                self._upsert_file(body, file_data, meeting=meeting)
         self.stats["meetings"] += 1
         return meeting
 

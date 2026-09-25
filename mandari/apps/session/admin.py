@@ -341,12 +341,36 @@ class SessionOrganizationAdmin(ModelAdmin):
 # =============================================================================
 
 
+def _locked(meeting_id) -> bool:
+    """Niederschrift der Sitzung genehmigt? Dann schreibgeschützt (Issue #318)."""
+    from .services import protocol_lock
+
+    return meeting_id is not None and protocol_lock.is_locked(meeting_id)
+
+
 class SessionAgendaItemInline(TabularInline):
     """Inline for agenda items."""
 
     model = SessionAgendaItem
     extra = 1
     fields = ["number", "name", "is_public", "paper", "order"]
+
+    # Genehmigte Niederschrift (Issue #318): Vorlagenzuordnung fest, keine neuen oder gelöschten TOPs.
+    # Das Modell setzt die Sperre ohnehin durch; der Admin bietet sie gar nicht erst an.
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None and _locked(obj.pk):
+            return ["paper"]
+        return super().get_readonly_fields(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and _locked(obj.pk):
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def get_extra(self, request, obj=None, **kwargs):
+        if obj is not None and _locked(obj.pk):
+            return 0
+        return super().get_extra(request, obj, **kwargs)
 
 
 # NOTE: SessionAttendanceInline removed - attendance is managed through Session portal
@@ -420,6 +444,26 @@ class SessionMeetingAdmin(ModelAdmin):
         ),
         # NOTE: created_by removed - references SessionUser (personal data)
     )
+
+    def has_delete_permission(self, request, obj=None):
+        """Sitzungen mit genehmigter Niederschrift bleiben erhalten (Issue #318)."""
+        if obj is not None and _locked(obj.pk):
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        """Sammel-Löschen überspringt Sitzungen mit genehmigter Niederschrift (Issue #318)."""
+        from .services import protocol_lock
+
+        locked = protocol_lock.locked_meeting_ids(queryset.values_list("pk", flat=True))
+        if locked:
+            self.message_user(
+                request,
+                f"{len(locked)} Sitzung(en) mit genehmigter Niederschrift wurden nicht gelöscht.",
+                level=messages.WARNING,
+                fail_silently=True,
+            )
+        super().delete_queryset(request, queryset.exclude(pk__in=locked))
 
     @admin.display(description="Status")
     def meeting_state_display(self, obj):
@@ -570,6 +614,12 @@ class SessionConsultationAdmin(ModelAdmin):
     search_fields = ["paper__reference", "paper__name", "organization__name"]
     raw_id_fields = ["paper", "organization", "meeting", "agenda_item"]
     ordering = ["paper", "order"]
+
+    def get_readonly_fields(self, request, obj=None):
+        """Station eines TOP mit genehmigter Niederschrift: Ergebnis folgt dem TOP (Issue #318)."""
+        if obj is not None and obj.agenda_item_id and _locked(obj.agenda_item.meeting_id):
+            return ["result", "agenda_item", "meeting"]
+        return super().get_readonly_fields(request, obj)
 
 
 # =============================================================================
@@ -730,6 +780,23 @@ class SessionProtocolAdmin(ModelAdmin):
     list_display = ["meeting", "status", "approved_at"]
     list_filter = ["status", "meeting__tenant"]
     search_fields = ["meeting__name"]
+
+    def get_readonly_fields(self, request, obj=None):
+        """Genehmigte Niederschrift: Inhalt und Status nur über Workflow und Berichtigung (Issue #318)."""
+        if obj is not None and obj.is_locked:
+            return ["meeting", "content", "status", "approved_at"]
+        return super().get_readonly_fields(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.is_locked:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        """Sammel-Löschen überspringt genehmigte Niederschriften (Issue #318)."""
+        from .services import protocol_lock
+
+        super().delete_queryset(request, queryset.exclude(status__in=protocol_lock.LOCKED_STATUSES))
 
     fieldsets = (
         (None, {"fields": ("meeting",)}),

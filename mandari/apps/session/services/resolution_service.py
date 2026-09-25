@@ -8,6 +8,8 @@ Zentrale Logik für:
 - Beschlussauszug-PDF je TOP bzw. als Sammel-Ausfertigung einer Sitzung
   (amtlicher Briefkopf, Beschlusstext, Abstimmungsergebnis,
   Auszugs-/Ausfertigungsvermerk; NÖ-Beschlusstexte nur intern)
+- Stand des Auszugs (Issue #318): Nach der Genehmigung ist der TOP gesperrt, der Auszug gibt
+  den genehmigten Stand samt Berichtigungen wieder; vorher ist er als vorläufig gekennzeichnet
 """
 
 from django.db import transaction
@@ -15,7 +17,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 from apps.common.pdf import html_to_pdf
-from apps.session.models import SessionAgendaItem, SessionMeeting, SessionTenant
+from apps.session.models import SessionAgendaItem, SessionMeeting, SessionProtocol, SessionTenant
 
 # Abstimmungsergebnisse, die als gefasster Beschluss ins Register aufgenommen werden
 DECIDED_RESULTS = ("approved", "rejected", "deferred", "noted")
@@ -98,8 +100,35 @@ def build_extract_pdf(items: list, *, internal: bool) -> bytes:
     if not items:
         raise ValueError("Keine Beschlüsse für die Ausfertigung übergeben.")
 
+    from apps.session.oparl_publication import UNVEROEFFENTLICHT
+    from apps.session.services import protocol_service
+
     tenant = items[0].meeting.tenant
+    protocols = {
+        protocol.meeting_id: protocol
+        for protocol in SessionProtocol.objects.filter(meeting_id__in={item.meeting_id for item in items})
+    }
+    notes_by_meeting: dict = {}
     for item in items:
+        # Stand: genehmigte (gesperrte) Niederschrift oder vorläufig (Issue #318)
+        protocol = protocols.get(item.meeting_id)
+        if protocol is not None and protocol.is_locked:
+            stamp = protocol.approved_at or protocol.published_at
+            item.protocol_state = "Stand der genehmigten Niederschrift" + (
+                f" vom {timezone.localtime(stamp).strftime('%d.%m.%Y')}" if stamp else ""
+            )
+            if item.meeting_id not in notes_by_meeting:
+                notes_by_meeting[item.meeting_id] = protocol_service.correction_notes(
+                    protocol, internal=internal, visible_item_ids={i.pk for i in items if i.is_public}
+                )
+            item.correction_notes = [n for n in notes_by_meeting[item.meeting_id] if n["item_id"] == item.pk]
+        else:
+            item.protocol_state = "Vorläufiger Stand – die Niederschrift ist noch nicht genehmigt."
+            item.correction_notes = []
+        paper = item.paper
+        item.paper_visible = paper is not None and (
+            internal or (paper.is_public and paper.status not in UNVEROEFFENTLICHT)
+        )
         item.resolution_np = item.get_resolution_text_decrypted() if internal else ""
         # Namentliche Abstimmung + Befangenheit (Issue #41)
         votes = list(item.votes.select_related("person"))

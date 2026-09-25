@@ -17,7 +17,9 @@ Session-Modellen: Jeder aktive SessionTenant erhält unter
   ``modified_since``-Listen (SessionOParlTombstone, oparl_publication.py).
 - **NUR öffentliche Daten**: Sichtbarkeit strikt über die Querysets in
   oparl_publication.py (is_public auf Sitzung/TOP/Vorlage/Datei, Anlagen
-  nur mit öffentlichem Elternobjekt). Personen ohne geschützte Daten —
+  nur mit öffentlichem Elternobjekt).
+- **Öffentliche Niederschrift** (Issue #318): ``Meeting.resultsProtocol`` verweist auf die beim
+  Veröffentlichen erzeugte Datei (nur öffentlicher Teil, nur öffentliche Sitzungen). Personen ohne geschützte Daten —
   verschlüsselte Felder (Telefon, Adresse, Bankdaten) werden nie gelesen.
 - Anonym, lesend, CORS offen, Rate-Limit wie der Aggregator.
 """
@@ -25,6 +27,7 @@ Session-Modellen: Jeder aktive SessionTenant erhält unter
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.core.paginator import Paginator
 from django.db.models import Prefetch
 from django.http import FileResponse
@@ -238,8 +241,27 @@ def _visible_consultation(item):
     return consultation
 
 
+def _results_protocol(meeting):
+    """
+    Öffentliche Fassung der Niederschrift (Issue #318): nur veröffentlicht, nur öffentliche Sitzung,
+    nur die öffentliche Datei an genau dieser Sitzung.
+    """
+    try:
+        protocol = meeting.protocol
+    except ObjectDoesNotExist:
+        return None
+    if protocol is None or protocol.status != "published" or not meeting.is_public:
+        return None
+    file_obj = protocol.public_file
+    if file_obj is None or not file_obj.is_public or file_obj.meeting_id != meeting.pk:
+        return None
+    return file_obj
+
+
 def serialize_meeting(api, meeting):
-    files = [f for f in meeting.files.all() if f.is_public]
+    protocol_file = _results_protocol(meeting)
+    protocol_file_id = protocol_file.pk if protocol_file is not None else None
+    files = [f for f in meeting.files.all() if f.is_public and f.pk != protocol_file_id]
     items = [i for i in meeting.agenda_items.all() if i.is_public]
     items.sort(key=lambda i: (i.order, i.number))
     return _clean(
@@ -252,6 +274,8 @@ def serialize_meeting(api, meeting):
             "start": iso(meeting.start),
             "end": iso(meeting.end),
             "organization": [api.obj_url("organization", meeting.organization_id)],
+            # Ergebnisprotokoll: öffentliche Fassung der Niederschrift (Issue #318)
+            "resultsProtocol": serialize_file(api, protocol_file) if protocol_file is not None else None,
             "auxiliaryFile": [serialize_file(api, f) for f in files],
             # OParl 1.1 bettet Tagesordnungspunkte in Meeting ein (nur Ö-Teil!)
             "agendaItem": [serialize_agenda_item(api, item) for item in items],
@@ -449,7 +473,7 @@ def _public_files_qs():
 
 
 def _prepare_meetings(qs, tenant):
-    return qs.prefetch_related(
+    return qs.select_related("protocol__public_file__meeting").prefetch_related(
         Prefetch(
             "agenda_items",
             queryset=pub.visible_agenda_items(tenant).select_related("consultation__paper").order_by("order", "number"),
